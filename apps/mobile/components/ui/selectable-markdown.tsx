@@ -1,23 +1,36 @@
 /**
  * SelectableMarkdownText Component
- * 
+ *
  * A wrapper around MarkdownTextInput that provides selectable markdown text
  * with proper styling. This replaces the old hybrid approach with a clean,
  * native solution using @expensify/react-native-live-markdown.
  */
 
 import React, { useMemo, useState, useCallback } from 'react';
-import { StyleSheet, TextStyle, ViewStyle, View, Text as RNText, Pressable, Linking, Alert, LogBox } from 'react-native';
+import {
+  StyleSheet,
+  TextStyle,
+  ViewStyle,
+  View,
+  Text as RNText,
+  Pressable,
+  Linking,
+  Alert,
+  LogBox,
+  Keyboard,
+} from 'react-native';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
 import Markdown from 'react-native-markdown-display';
-import { markdownParser, lightMarkdownStyle, darkMarkdownStyle } from '@/lib/utils/live-markdown-config';
+import {
+  markdownParser,
+  lightMarkdownStyle,
+  darkMarkdownStyle,
+} from '@/lib/utils/live-markdown-config';
 import { useColorScheme } from 'nativewind';
 import * as Clipboard from 'expo-clipboard';
 
 // Suppress known warning from react-native-markdown-display library
-LogBox.ignoreLogs([
-  'A props object containing a "key" prop is being spread into JSX',
-]);
+LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
 
 export interface SelectableMarkdownTextProps {
   /** The markdown text content to render */
@@ -67,7 +80,15 @@ async function handleLinkPress(url: string) {
 /**
  * Render a code block with copy button
  */
-function CodeBlock({ code, language, isDark }: { code: string; language?: string; isDark: boolean }) {
+function CodeBlock({
+  code,
+  language,
+  isDark,
+}: {
+  code: string;
+  language?: string;
+  isDark: boolean;
+}) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -90,20 +111,15 @@ function CodeBlock({ code, language, isDark }: { code: string; language?: string
         )}
         <Pressable
           onPress={handleCopy}
-          style={[styles.copyButton, isDark ? styles.copyButtonDark : styles.copyButtonLight]}
-        >
+          style={[styles.copyButton, isDark ? styles.copyButtonDark : styles.copyButtonLight]}>
           <RNText style={[styles.copyButtonText, isDark ? styles.darkText : styles.lightText]}>
             {copied ? 'Copied!' : 'Copy'}
           </RNText>
         </Pressable>
       </View>
       <RNText
-        style={[
-          styles.codeBlockText,
-          isDark ? styles.darkText : styles.lightText
-        ]}
-        selectable
-      >
+        style={[styles.codeBlockText, isDark ? styles.darkText : styles.lightText]}
+        selectable>
         {code}
       </RNText>
     </View>
@@ -121,7 +137,7 @@ function SimpleTable({ text, isDark }: { text: string; isDark: boolean }) {
       {lines.map((line, idx) => {
         if (!line.includes('|')) return null;
 
-        const cells = line.split('|').filter(cell => cell.trim());
+        const cells = line.split('|').filter((cell) => cell.trim());
         const isSeparator = /^[\s:|-]+$/.test(cells[0]);
 
         if (isSeparator) return null;
@@ -131,11 +147,7 @@ function SimpleTable({ text, isDark }: { text: string; isDark: boolean }) {
         return (
           <View
             key={idx}
-            style={[
-              styles.tableRow,
-              isDark ? styles.tableRowDark : styles.tableRowLight
-            ]}
-          >
+            style={[styles.tableRow, isDark ? styles.tableRowDark : styles.tableRowLight]}>
             {cells.map((cell, cellIdx) => (
               <View
                 key={cellIdx}
@@ -143,17 +155,15 @@ function SimpleTable({ text, isDark }: { text: string; isDark: boolean }) {
                   styles.tableCell,
                   isDark ? styles.tableCellDark : styles.tableCellLight,
                   isHeader && styles.tableHeaderCell,
-                  isHeader && (isDark ? styles.tableHeaderCellDark : styles.tableHeaderCellLight)
-                ]}
-              >
+                  isHeader && (isDark ? styles.tableHeaderCellDark : styles.tableHeaderCellLight),
+                ]}>
                 <RNText
                   style={[
                     styles.tableCellText,
                     isDark ? styles.darkText : styles.lightText,
-                    isHeader && styles.tableHeaderText
+                    isHeader && styles.tableHeaderText,
                   ]}
-                  selectable
-                >
+                  selectable>
                   {cell.trim()}
                 </RNText>
               </View>
@@ -190,7 +200,9 @@ function isSeparatorLine(line: string): boolean {
  * Split text into blocks - separators, lines with links, lines without
  * This minimizes the amount rendered with non-selectable markdown
  */
-function splitIntoBlocks(text: string): Array<{ type: 'separator' | 'links' | 'text'; content: string }> {
+function splitIntoBlocks(
+  text: string
+): Array<{ type: 'separator' | 'links' | 'text'; content: string }> {
   const lines = text.split('\n');
   const blocks: Array<{ type: 'separator' | 'links' | 'text'; content: string }> = [];
 
@@ -206,14 +218,14 @@ function splitIntoBlocks(text: string): Array<{ type: 'separator' | 'links' | 't
       if (currentBlock.length > 0) {
         blocks.push({
           type: currentHasLinks ? 'links' : 'text',
-          content: currentBlock.join('\n')
+          content: currentBlock.join('\n'),
         });
         currentBlock = [];
       }
       // Add separator as its own block
       blocks.push({
         type: 'separator',
-        content: line
+        content: line,
       });
       continue;
     }
@@ -228,7 +240,7 @@ function splitIntoBlocks(text: string): Array<{ type: 'separator' | 'links' | 't
     } else {
       blocks.push({
         type: currentHasLinks ? 'links' : 'text',
-        content: currentBlock.join('\n')
+        content: currentBlock.join('\n'),
       });
       currentBlock = [line];
       currentHasLinks = thisLineHasLink;
@@ -238,7 +250,7 @@ function splitIntoBlocks(text: string): Array<{ type: 'separator' | 'links' | 't
   if (currentBlock.length > 0) {
     blocks.push({
       type: currentHasLinks ? 'links' : 'text',
-      content: currentBlock.join('\n')
+      content: currentBlock.join('\n'),
     });
   }
 
@@ -299,7 +311,7 @@ function MarkdownWithLinkHandling({
   text,
   isDark,
   style,
-  needsSpacing
+  needsSpacing,
 }: {
   text: string;
   isDark: boolean;
@@ -310,15 +322,15 @@ function MarkdownWithLinkHandling({
   const markdownStyles = useMemo(() => getMarkdownDisplayStyles(isDark), [isDark]);
 
   // If no blocks have links or separators, just use selectable MarkdownTextInput
-  const hasAnyLinks = blocks.some(b => b.type === 'links');
-  const hasAnySeparators = blocks.some(b => b.type === 'separator');
+  const hasAnyLinks = blocks.some((b) => b.type === 'links');
+  const hasAnySeparators = blocks.some((b) => b.type === 'separator');
 
   if (!hasAnyLinks && !hasAnySeparators) {
     return (
       <View style={needsSpacing && styles.partSpacing} pointerEvents="box-none">
         <MarkdownTextInput
           value={text}
-          onChangeText={() => { }}
+          onChangeText={() => {}}
           parser={markdownParser}
           markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
           style={[styles.base, isDark ? styles.darkText : styles.lightText, style]}
@@ -328,6 +340,7 @@ function MarkdownWithLinkHandling({
           caretHidden={true}
           showSoftInputOnFocus={false}
           selectTextOnFocus={false}
+          onFocus={() => Keyboard.dismiss()}
         />
       </View>
     );
@@ -352,8 +365,7 @@ function MarkdownWithLinkHandling({
                   console.log('[Link] Clicked:', url);
                   handleLinkPress(url);
                   return false;
-                }}
-              >
+                }}>
                 {block.content}
               </Markdown>
             </View>
@@ -364,7 +376,7 @@ function MarkdownWithLinkHandling({
             <View key={`txt-${idx}`} pointerEvents="box-none">
               <MarkdownTextInput
                 value={block.content}
-                onChangeText={() => { }}
+                onChangeText={() => {}}
                 parser={markdownParser}
                 markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
                 style={[styles.base, isDark ? styles.darkText : styles.lightText, style]}
@@ -374,6 +386,7 @@ function MarkdownWithLinkHandling({
                 caretHidden={true}
                 showSoftInputOnFocus={false}
                 selectTextOnFocus={false}
+                onFocus={() => Keyboard.dismiss()}
               />
             </View>
           );
@@ -385,7 +398,7 @@ function MarkdownWithLinkHandling({
 
 /**
  * SelectableMarkdownText
- * 
+ *
  * Renders markdown text with live formatting and full text selection support.
  * Code blocks and tables are rendered separately, everything else uses MarkdownTextInput.
  */
@@ -406,7 +419,11 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
       return [{ type: 'markdown', content: text }];
     }
 
-    const parts: Array<{ type: 'markdown' | 'table' | 'code'; content: string; language?: string }> = [];
+    const parts: Array<{
+      type: 'markdown' | 'table' | 'code';
+      content: string;
+      language?: string;
+    }> = [];
 
     // First split by code blocks
     const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
@@ -426,7 +443,7 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
       parts.push({
         type: 'code',
         content: match[2].trim(),
-        language: match[1] || undefined
+        language: match[1] || undefined,
       });
 
       lastIndex = match.index + match[0].length;
@@ -446,7 +463,11 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
     }
 
     // Now split markdown parts by tables
-    const finalParts: Array<{ type: 'markdown' | 'table' | 'code'; content: string; language?: string }> = [];
+    const finalParts: Array<{
+      type: 'markdown' | 'table' | 'code';
+      content: string;
+      language?: string;
+    }> = [];
 
     for (const part of parts) {
       if (part.type !== 'markdown' || !hasMarkdownTable(part.content)) {
@@ -496,7 +517,10 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
   }, [text]);
 
   // Render all parts
-  if (contentParts.length > 1 || (contentParts.length === 1 && contentParts[0].type !== 'markdown')) {
+  if (
+    contentParts.length > 1 ||
+    (contentParts.length === 1 && contentParts[0].type !== 'markdown')
+  ) {
     return (
       <View style={styles.partsContainer}>
         {contentParts.map((part, idx) => {
@@ -514,7 +538,11 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
           if (part.type === 'code') {
             return (
               <View key={idx} style={needsSpacing && styles.partSpacing}>
-                <CodeBlock code={part.content} language={'language' in part ? part.language : undefined} isDark={isDark} />
+                <CodeBlock
+                  code={part.content}
+                  language={'language' in part ? part.language : undefined}
+                  isDark={isDark}
+                />
               </View>
             );
           }
@@ -536,13 +564,7 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
   }
 
   // Pure markdown
-  return (
-    <MarkdownWithLinkHandling
-      text={text}
-      isDark={isDark}
-      style={style}
-    />
-  );
+  return <MarkdownWithLinkHandling text={text} isDark={isDark} style={style} />;
 };
 
 const styles = StyleSheet.create({
@@ -677,4 +699,3 @@ const styles = StyleSheet.create({
     padding: 16,
   },
 });
-

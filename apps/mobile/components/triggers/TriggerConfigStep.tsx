@@ -7,7 +7,7 @@
  */
 
 import React from 'react';
-import { View, TextInput, Pressable, ActivityIndicator } from 'react-native';
+import { View, TextInput, Pressable, ActivityIndicator, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Info, Plus, Check, CheckCircle2 } from 'lucide-react-native';
@@ -22,6 +22,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 import * as Haptics from 'expo-haptics';
 import type { ComposioTriggerType, TriggerApp, Model } from '@/api/types';
 import type { ComposioProfile } from '@/hooks/useComposio';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -93,6 +94,7 @@ interface ProfileListItemProps {
 }
 
 function ProfileListItem({ profile, isSelected, onPress }: ProfileListItemProps) {
+  const { t } = useLanguage();
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -136,7 +138,7 @@ function ProfileListItem({ profile, isSelected, onPress }: ProfileListItemProps)
           <View className="mt-1 flex-row items-center gap-2">
             <View className="h-1.5 w-1.5 rounded-full bg-green-500" />
             <Text className="font-roobert-medium text-xs text-green-600 dark:text-green-400">
-              Connected
+              {t('triggers.connected')}
             </Text>
           </View>
         )}
@@ -172,6 +174,7 @@ export function TriggerConfigStep({
   const { data: modelsData } = useAvailableModels();
   const { data: accountState } = useAccountState();
   const isDark = colorScheme === 'dark';
+  const { t } = useLanguage();
 
   if (!trigger || !app) {
     return null;
@@ -196,18 +199,15 @@ export function TriggerConfigStep({
             backgroundColor: isDark ? '#27272A' : '#F4F4F5',
             borderWidth: 0,
           }}>
-          <Markdown
+          <SelectableMarkdownText
+            isDark={isDark}
             style={{
-              ...(isDark ? markdownStylesDark : markdownStyles),
-              body: {
-                ...(isDark ? markdownStylesDark.body : markdownStyles.body),
-                fontSize: 14,
-                lineHeight: 20,
-                color: isDark ? '#A1A1AA' : '#71717A',
-              },
+              fontSize: 14,
+              lineHeight: 20,
+              color: isDark ? '#A1A1AA' : '#71717A',
             }}>
             {normalizeInstructions(trigger.instructions)}
-          </Markdown>
+          </SelectableMarkdownText>
         </View>
       )}
 
@@ -216,7 +216,7 @@ export function TriggerConfigStep({
         <View className="items-center justify-center py-12">
           <ActivityIndicator size="small" color={isDark ? '#FFFFFF' : '#121215'} />
           <Text className="mt-4 font-roobert text-sm text-muted-foreground">
-            Loading profiles...
+            {t('triggers.loadingProfiles')}
           </Text>
         </View>
       )}
@@ -228,10 +228,10 @@ export function TriggerConfigStep({
             <Icon as={Info} size={24} className="text-muted-foreground" />
           </View>
           <Text className="mb-2 font-roobert-semibold text-base text-foreground">
-            No Connected Profile
+            {t('triggers.noConnectedProfile')}
           </Text>
           <Text className="mb-4 text-center text-sm text-muted-foreground">
-            Connect {app.name} first to create triggers.
+            {t('triggers.connectAppFirst', { app: app.name })}
           </Text>
         </View>
       )}
@@ -246,7 +246,7 @@ export function TriggerConfigStep({
                 {trigger.name}
               </Text>
               <Text className="font-roobert text-sm text-muted-foreground">
-                Configure this trigger
+                {t('triggers.configureThisTrigger')}
               </Text>
             </View>
             <DynamicConfigForm
@@ -260,10 +260,10 @@ export function TriggerConfigStep({
           <View className="mt-4 rounded-2xl border border-border bg-card p-4">
             <View className="mb-4">
               <Text className="mb-1 font-roobert-semibold text-base text-foreground">
-                Execution Settings
+                {t('triggers.executionSettings')}
               </Text>
               <Text className="font-roobert text-sm text-muted-foreground">
-                Choose how to handle this event
+                {t('triggers.chooseHowToHandle')}
               </Text>
             </View>
 
@@ -271,7 +271,7 @@ export function TriggerConfigStep({
               {/* Profile Selector */}
               <View className="space-y-3">
                 <Text className="font-roobert-semibold text-sm text-foreground">
-                  Connection Profile *
+                  {t('triggers.connectionProfile')} *
                 </Text>
                 {isLoadingProfiles ? (
                   <View className="items-center py-4">
@@ -300,7 +300,7 @@ export function TriggerConfigStep({
                       </View>
                       <View className="ml-3 flex-1">
                         <Text className="font-roobert-semibold text-base text-primary">
-                          Create New Connection
+                          {t('triggers.createNewConnection')}
                         </Text>
                       </View>
                     </Pressable>
@@ -318,7 +318,7 @@ export function TriggerConfigStep({
                     marginBottom: 8,
                     marginTop: 16,
                   }}>
-                  Trigger Name *
+                  {t('triggers.triggerName')} *
                 </Text>
                 <TextInput
                   value={triggerName}
@@ -346,38 +346,50 @@ export function TriggerConfigStep({
                     color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
                     marginBottom: 8,
                   }}>
-                  Agent Instructions *
+                  {t('triggers.agentInstructions')} *
                 </Text>
-                <TextInput
-                  value={agentPrompt}
-                  onChangeText={onAgentPromptChange}
-                  placeholder="What should the agent do when this event occurs?"
-                  placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                  multiline
-                  numberOfLines={4}
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="on-drag"
+                  showsVerticalScrollIndicator={true}
                   style={{
-                    padding: 12,
                     borderRadius: 12,
                     borderWidth: 1.5,
                     borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
                     backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                    fontSize: 16,
-                    color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                    textAlignVertical: 'top',
-                    minHeight: 120,
+                    maxHeight: 200,
                   }}
-                />
+                  contentContainerStyle={{
+                    padding: 12,
+                  }}>
+                  <TextInput
+                    value={agentPrompt}
+                    onChangeText={onAgentPromptChange}
+                    placeholder={t('triggers.instructionsPlaceholder')}
+                    placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                    multiline
+                    scrollEnabled={false}
+                    style={{
+                      minHeight: 120,
+                      fontSize: 16,
+                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      textAlignVertical: 'top',
+                    }}
+                  />
+                </ScrollView>
                 <Text
                   className="font-roobert text-xs text-muted-foreground"
                   style={{ marginTop: 8 }}>
-                  Use {'{{variable_name}}'} to add variables to the prompt
+                  {t('triggers.variableHint')}
                 </Text>
               </View>
 
               {/* Model Selector */}
               {modelsData && (
                 <View className="space-y-3">
-                  <Text className="font-roobert-semibold text-sm text-foreground">Model</Text>
+                  <Text className="font-roobert-semibold text-sm text-foreground">
+                    {t('triggers.modelSelector')}
+                  </Text>
                   <ModelToggle
                     models={modelsData.models}
                     selectedModelId={model}
@@ -385,7 +397,7 @@ export function TriggerConfigStep({
                     canAccessModel={canAccessModel}
                   />
                   <Text className="font-roobert text-xs text-muted-foreground">
-                    Choose which model to use when this event triggers
+                    {t('triggers.modelHint')}
                   </Text>
                 </View>
               )}

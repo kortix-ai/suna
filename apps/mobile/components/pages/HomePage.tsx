@@ -36,6 +36,8 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
   const { creditsExhausted } = usePricingModalStore();
   const [isUsageDrawerOpen, setIsUsageDrawerOpen] = React.useState(false);
   const [isCreditsPurchaseOpen, setIsCreditsPurchaseOpen] = React.useState(false);
+  const [isWorkerConfigDrawerVisible, setIsWorkerConfigDrawerVisible] = React.useState(false);
+  const [workerConfigWorkerId, setWorkerConfigWorkerId] = React.useState<string | null>(null);
 
   const chatInputRef = React.useRef<ChatInputSectionRef>(null);
   const lastSwipeIndex = React.useRef(-1);
@@ -139,6 +141,11 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
     chat.showModeThread(threadId);
   }, [chat]);
 
+  const handleCloseWorkerConfigDrawer = React.useCallback(() => {
+    setIsWorkerConfigDrawerVisible(false);
+    setWorkerConfigWorkerId(null);
+  }, []);
+
   return (
     <View className="flex-1 bg-background">
       <KeyboardAvoidingView
@@ -202,6 +209,9 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
         <ChatDrawers
           isAgentDrawerVisible={agentManager.isDrawerVisible}
           onCloseAgentDrawer={agentManager.closeDrawer}
+          isWorkerConfigDrawerVisible={isWorkerConfigDrawerVisible}
+          workerConfigWorkerId={workerConfigWorkerId}
+          onCloseWorkerConfigDrawer={handleCloseWorkerConfigDrawer}
           isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
           onCloseAttachmentDrawer={chat.closeAttachmentDrawer}
           onTakePicture={chat.handleTakePicture}

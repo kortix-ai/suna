@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, TextInput } from 'react-native';
+import { View, TextInput, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
@@ -13,6 +13,7 @@ import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
 import { Save, AlertCircle } from 'lucide-react-native';
 import { Pressable, ActivityIndicator, Alert } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface InstructionsScreenProps {
   agentId: string;
@@ -25,6 +26,7 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
   const updateAgentMutation = useUpdateAgent();
   const [systemPrompt, setSystemPrompt] = useState('');
   const [hasChanges, setHasChanges] = useState(false);
+  const { t } = useLanguage();
 
   useEffect(() => {
     if (agent?.system_prompt !== undefined) {
@@ -47,7 +49,10 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
 
     if (!isEditable) {
       if (isSunaAgent) {
-        Alert.alert('Cannot Edit', "Suna's system prompt is managed centrally.");
+        Alert.alert(
+          t('workers.instructions.cannotEditAlert'),
+          t('workers.instructions.sunaManaged')
+        );
       }
       return;
     }
@@ -64,7 +69,7 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
       onUpdate?.();
     } catch (error: any) {
       console.error('Failed to update system prompt:', error);
-      Alert.alert('Error', error?.message || 'Failed to update system prompt');
+      Alert.alert(t('common.error'), error?.message || t('workers.instructions.errorUpdatePrompt'));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   };
@@ -74,7 +79,7 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
       <View className="items-center justify-center py-12">
         <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
         <Text className="mt-4 font-roobert text-sm text-muted-foreground">
-          Loading instructions...
+          {t('workers.instructions.loading')}
         </Text>
       </View>
     );
@@ -88,9 +93,11 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
     <View className="flex-1" style={{ flex: 1, position: 'relative' }}>
       {/* Header content */}
       <View className="mb-4 flex flex-col">
-        <Text className="mb-2 font-roobert-semibold text-base text-foreground">System Prompt</Text>
+        <Text className="mb-2 font-roobert-semibold text-base text-foreground">
+          {t('workers.instructions.title')}
+        </Text>
         <Text className="mb-1 font-roobert text-sm text-muted-foreground">
-          Define how your worker should behave and what it should do
+          {t('workers.instructions.description')}
         </Text>
 
         {!isEditable && (
@@ -102,8 +109,8 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
             />
             <Text className="flex-1 font-roobert text-sm text-yellow-600 dark:text-yellow-400">
               {isSunaAgent
-                ? "Suna's system prompt is managed centrally and cannot be edited."
-                : 'This system prompt cannot be edited.'}
+                ? t('workers.instructions.cannotEditSuna')
+                : t('workers.instructions.cannotEdit')}
             </Text>
           </View>
         )}
@@ -111,27 +118,37 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
 
       {/* TextInput with fixed height based on available space */}
       <View style={{ flex: 1, marginBottom: isEditable ? 84 : 0 }}>
-        <TextInput
-          value={systemPrompt}
-          onChangeText={handleTextChange}
-          placeholder="Define how your agent should behave..."
-          placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-          multiline
-          scrollEnabled
-          editable={isEditable}
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={true}
           style={{
             flex: 1,
-            padding: 16,
             borderRadius: 16,
             borderWidth: 1.5,
             borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
             backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-            fontSize: 16,
-            color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-            textAlignVertical: 'top',
             opacity: isEditable ? 1 : 0.6,
           }}
-        />
+          contentContainerStyle={{
+            padding: 16,
+          }}>
+          <TextInput
+            value={systemPrompt}
+            onChangeText={handleTextChange}
+            placeholder={t('workers.instructions.placeholder')}
+            placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+            multiline
+            scrollEnabled={false}
+            editable={isEditable}
+            style={{
+              minHeight: 200,
+              fontSize: 16,
+              color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+              textAlignVertical: 'top',
+            }}
+          />
+        </ScrollView>
       </View>
 
       {/* Sticky button at bottom */}
@@ -159,7 +176,9 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
               <Icon as={Save} size={18} className="text-primary-foreground" />
             )}
             <Text className="font-roobert-semibold text-base text-primary-foreground">
-              {updateAgentMutation.isPending ? 'Saving...' : 'Save Changes'}
+              {updateAgentMutation.isPending
+                ? t('workers.instructions.saving')
+                : t('workers.instructions.saveChanges')}
             </Text>
           </Pressable>
         </View>

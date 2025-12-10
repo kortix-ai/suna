@@ -10,7 +10,12 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import LottieView from 'lottie-react-native';
-import { ThreadContent, ChatInputSection, ChatDrawers, type ToolMessagePair } from '@/components/chat';
+import {
+  ThreadContent,
+  ChatInputSection,
+  ChatDrawers,
+  type ToolMessagePair,
+} from '@/components/chat';
 import { ThreadHeader, ThreadActionsDrawer } from '@/components/threads';
 import { KortixComputer } from '@/components/kortix-computer';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
@@ -29,7 +34,7 @@ interface ThreadPageProps {
 
 const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
   isRefreshing,
-  insets
+  insets,
 }: {
   isRefreshing: boolean;
   insets: { top: number };
@@ -58,31 +63,33 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
 
       width.value = withTiming(160, {
         duration: 450,
-        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94),
       });
 
       height.value = withTiming(90, {
         duration: 450,
-        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94),
       });
 
       borderTopRadius.value = withTiming(30, {
         duration: 450,
-        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94),
       });
 
       borderBottomRadius.value = withTiming(24, {
         duration: 450,
-        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94),
       });
 
-      contentTranslateY.value = withDelay(100, withTiming(20, {
-        duration: 350,
-        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
-      }));
+      contentTranslateY.value = withDelay(
+        100,
+        withTiming(20, {
+          duration: 350,
+          easing: Easing.bezier(0.25, 0.46, 0.45, 0.94),
+        })
+      );
 
       contentOpacity.value = withDelay(200, withTiming(1, { duration: 200 }));
-
     } else if (opacity.value === 1) {
       // Stop Lottie animation
       lottieRef.current?.pause();
@@ -90,34 +97,34 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
       contentOpacity.value = withTiming(0, { duration: 150 });
       contentTranslateY.value = withTiming(-20, {
         duration: 250,
-        easing: Easing.bezier(0.5, 0, 0.75, 0)
+        easing: Easing.bezier(0.5, 0, 0.75, 0),
       });
 
       setTimeout(() => {
         width.value = withTiming(126, {
           duration: 400,
-          easing: Easing.bezier(0.33, 0, 0.67, 1)
+          easing: Easing.bezier(0.33, 0, 0.67, 1),
         });
 
         borderTopRadius.value = withTiming(20, {
           duration: 400,
-          easing: Easing.bezier(0.33, 0, 0.67, 1)
+          easing: Easing.bezier(0.33, 0, 0.67, 1),
         });
 
         borderBottomRadius.value = withTiming(20, {
           duration: 400,
-          easing: Easing.bezier(0.33, 0, 0.67, 1)
+          easing: Easing.bezier(0.33, 0, 0.67, 1),
         });
 
         height.value = withTiming(37, {
           duration: 400,
-          easing: Easing.bezier(0.33, 0, 0.67, 1)
+          easing: Easing.bezier(0.33, 0, 0.67, 1),
         });
 
         setTimeout(() => {
           opacity.value = withTiming(0, {
             duration: 300,
-            easing: Easing.bezier(0.25, 0.1, 0.25, 1)
+            easing: Easing.bezier(0.25, 0.1, 0.25, 1),
           });
         }, 350);
       }, 150);
@@ -149,8 +156,7 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
             zIndex: 9999,
             elevation: 999,
           }}
-          pointerEvents="none"
-        >
+          pointerEvents="none">
           <Animated.View
             style={[
               animatedContainerStyle,
@@ -159,9 +165,8 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
                 overflow: 'hidden',
                 justifyContent: 'center',
                 alignItems: 'center',
-              }
-            ]}
-          >
+              },
+            ]}>
             <Animated.View style={contentStyle} className="flex-row items-center gap-2">
               <LottieView
                 ref={lottieRef}
@@ -187,8 +192,7 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
             zIndex: 9999,
             elevation: 999,
           }}
-          pointerEvents="none"
-        >
+          pointerEvents="none">
           <Animated.View
             style={[
               animatedContainerStyle,
@@ -197,9 +201,8 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
                 backgroundColor: '#000000',
                 justifyContent: 'center',
                 alignItems: 'center',
-              }
-            ]}
-          >
+              },
+            ]}>
             <Animated.View style={contentStyle} className="flex-row items-center gap-2">
               <LottieView
                 ref={lottieRef}
@@ -220,20 +223,50 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
   );
 });
 
-export function ThreadPage({
-  onMenuPress,
-  chat,
-  isAuthenticated,
-}: ThreadPageProps) {
+export function ThreadPage({ onMenuPress, chat, isAuthenticated }: ThreadPageProps) {
   const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [isThreadActionsVisible, setIsThreadActionsVisible] = React.useState(false);
-  const [selectedToolData, setSelectedToolData] = React.useState<{ toolMessages: ToolMessagePair[]; initialIndex: number } | null>(null);
-  
-  const { isOpen: isKortixComputerOpen, openPanel, openFileInComputer, openFileBrowser } = useKortixComputerStore();
+  const [selectedToolData, setSelectedToolData] = React.useState<{
+    toolMessages: ToolMessagePair[];
+    initialIndex: number;
+  } | null>(null);
+
+  // Handle upgrade press - navigate to plans page
+  const handleUpgradePress = React.useCallback(() => {
+    router.push('/plans');
+  }, [router]);
+  const [isWorkerConfigDrawerVisible, setIsWorkerConfigDrawerVisible] = React.useState(false);
+  const [workerConfigWorkerId, setWorkerConfigWorkerId] = React.useState<string | null>(null);
+  const [workerConfigInitialView, setWorkerConfigInitialView] = React.useState<
+    'instructions' | 'tools' | 'integrations' | 'triggers'
+  >('instructions');
+
+  // Use REF instead of state to avoid stale closure issues in callbacks
+  const pendingWorkerConfigRef = React.useRef<{
+    workerId: string;
+    view?: 'instructions' | 'tools' | 'integrations' | 'triggers';
+  } | null>(null);
+  const pendingWorkerConfigTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup timeout on unmount
+  React.useEffect(() => {
+    return () => {
+      if (pendingWorkerConfigTimeoutRef.current) {
+        clearTimeout(pendingWorkerConfigTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const {
+    isOpen: isKortixComputerOpen,
+    openPanel,
+    openFileInComputer,
+    openFileBrowser,
+  } = useKortixComputerStore();
 
   const deleteThreadMutation = useDeleteThread();
   const shareThreadMutation = useShareThread();
@@ -325,20 +358,28 @@ export function ThreadPage({
   }, [chat]);
 
   // Memoized handlers for ThreadContent
-  const handleToolClick = React.useCallback((assistantMessageId: string | null, toolName: string) => {
-    // Tool click handler - can be extended for analytics
-  }, []);
+  const handleToolClick = React.useCallback(
+    (assistantMessageId: string | null, toolName: string) => {
+      // Tool click handler - can be extended for analytics
+    },
+    []
+  );
 
-  const handleToolPress = React.useCallback((toolMessages: ToolMessagePair[], initialIndex: number) => {
-    setSelectedToolData({ toolMessages, initialIndex });
-    openPanel();
-  }, [openPanel]);
+  const handleToolPress = React.useCallback(
+    (toolMessages: ToolMessagePair[], initialIndex: number) => {
+      setSelectedToolData({ toolMessages, initialIndex });
+      openPanel();
+    },
+    [openPanel]
+  );
 
-  const handleFilePress = React.useCallback((filePath: string) => {
-    const normalizedPath = filePath.startsWith('/') ? filePath : `/workspace/${filePath}`;
-    openFileInComputer(normalizedPath);
-  }, [openFileInComputer]);
-
+  const handleFilePress = React.useCallback(
+    (filePath: string) => {
+      const normalizedPath = filePath.startsWith('/') ? filePath : `/workspace/${filePath}`;
+      openFileInComputer(normalizedPath);
+    },
+    [openFileInComputer]
+  );
 
   // Ensure thread content is loaded when ThreadPage mounts or thread changes
   const hasInitializedRef = React.useRef(false);
@@ -356,7 +397,7 @@ export function ThreadPage({
       lastThreadIdRef.current = currentThreadId;
 
       if (messages.length === 0 && !isLoading && !chat.isStreaming) {
-        chat.refreshMessages().catch(error => {
+        chat.refreshMessages().catch((error) => {
           console.error('Failed to load thread messages:', error);
           Alert.alert('Error', 'Failed to load thread messages. Please try again.');
         });
@@ -369,7 +410,7 @@ export function ThreadPage({
       <View className="flex-1">
         {isLoading ? (
           <View className="flex-1 items-center justify-center">
-            <View className="w-20 h-20 rounded-full items-center justify-center">
+            <View className="h-20 w-20 items-center justify-center rounded-full">
               <LottieView
                 source={require('@/components/animations/loading.json')}
                 style={{ width: 40, height: 40 }}
@@ -406,15 +447,14 @@ export function ThreadPage({
                 colors={['#000000']}
                 progressViewOffset={Math.max(insets.top, 16) + 80}
               />
-            }
-          >
-            <View className="w-20 h-20 rounded-full bg-muted/20 items-center justify-center mb-6">
+            }>
+            <View className="mb-6 h-20 w-20 items-center justify-center rounded-full bg-muted/20">
               <MessageCircle size={40} color={colorScheme === 'dark' ? '#666' : '#999'} />
             </View>
-            <Text className="text-foreground text-xl font-roobert-semibold text-center mb-2">
+            <Text className="mb-2 text-center font-roobert-semibold text-xl text-foreground">
               {chat.activeThread?.title || 'New Thread'}
             </Text>
-            <Text className="text-muted-foreground text-base font-roobert text-center">
+            <Text className="text-center font-roobert text-base text-muted-foreground">
               Start the conversation with a message or voice note
             </Text>
           </ScrollView>
@@ -451,8 +491,7 @@ export function ThreadPage({
                 colors={['#000000']}
                 progressViewOffset={Math.max(insets.top, 16) + 80}
               />
-            }
-          >
+            }>
             <ThreadContent
               messages={messages}
               streamingTextContent={streamingContent}
@@ -472,17 +511,18 @@ export function ThreadPage({
       {showScrollToBottom && hasMessages && (
         <Pressable
           onPress={scrollToBottom}
-          className="absolute right-6 bg-card border border-border rounded-full w-12 h-12 items-center justify-center active:opacity-80"
+          className="absolute right-6 h-12 w-12 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
           style={{
             bottom: 200,
-          }}
-        >
+          }}>
           <Icon as={ArrowDown} size={20} className="text-foreground" strokeWidth={2} />
         </Pressable>
       )}
 
       <ThreadHeader
-        threadTitle={fullThreadData?.project?.name || fullThreadData?.title || chat.activeThread?.title}
+        threadTitle={
+          fullThreadData?.project?.name || fullThreadData?.title || chat.activeThread?.title
+        }
         onTitleChange={async (newTitle) => {
           try {
             await chat.updateThreadTitle(newTitle);
@@ -528,6 +568,81 @@ export function ThreadPage({
       <ChatDrawers
         isAgentDrawerVisible={agentManager.isDrawerVisible}
         onCloseAgentDrawer={agentManager.closeDrawer}
+        onOpenWorkerConfig={(workerId, view) => {
+          console.log('🔧 [ThreadPage] Opening worker config:', {
+            workerId,
+            view,
+            isAgentDrawerVisible: agentManager.isDrawerVisible,
+          });
+
+          // Clear any existing timeout
+          if (pendingWorkerConfigTimeoutRef.current) {
+            clearTimeout(pendingWorkerConfigTimeoutRef.current);
+            pendingWorkerConfigTimeoutRef.current = null;
+          }
+
+          // Store pending config in REF (not state) to avoid stale closure issues
+          pendingWorkerConfigRef.current = { workerId, view };
+
+          // If AgentDrawer is visible, close it and wait for dismiss
+          if (agentManager.isDrawerVisible) {
+            console.log('🔧 [ThreadPage] AgentDrawer visible, closing first');
+            agentManager.closeDrawer();
+
+            // Fallback: if onDismiss doesn't fire within 500ms, open anyway
+            pendingWorkerConfigTimeoutRef.current = setTimeout(() => {
+              console.log('⏰ [ThreadPage] Fallback timeout - opening WorkerConfigDrawer');
+              const pending = pendingWorkerConfigRef.current;
+              if (pending) {
+                pendingWorkerConfigRef.current = null;
+                setWorkerConfigWorkerId(pending.workerId);
+                setWorkerConfigInitialView(pending.view || 'instructions');
+                setIsWorkerConfigDrawerVisible(true);
+              }
+              pendingWorkerConfigTimeoutRef.current = null;
+            }, 500);
+          } else {
+            // AgentDrawer is not visible, open immediately
+            console.log('✅ [ThreadPage] AgentDrawer not visible, opening immediately');
+            pendingWorkerConfigRef.current = null;
+            setWorkerConfigWorkerId(workerId);
+            setWorkerConfigInitialView(view || 'instructions');
+            setIsWorkerConfigDrawerVisible(true);
+          }
+        }}
+        onAgentDrawerDismiss={() => {
+          console.log('🎭 [ThreadPage] AgentDrawer dismissed');
+
+          // Clear fallback timeout since dismiss fired
+          if (pendingWorkerConfigTimeoutRef.current) {
+            clearTimeout(pendingWorkerConfigTimeoutRef.current);
+            pendingWorkerConfigTimeoutRef.current = null;
+          }
+
+          // Check REF (not state) for pending config
+          const pending = pendingWorkerConfigRef.current;
+          if (pending) {
+            console.log('🎭 [ThreadPage] Opening pending WorkerConfigDrawer');
+            pendingWorkerConfigRef.current = null;
+            setWorkerConfigWorkerId(pending.workerId);
+            setWorkerConfigInitialView(pending.view || 'instructions');
+            // Small delay to ensure AgentDrawer animation is complete
+            setTimeout(() => {
+              setIsWorkerConfigDrawerVisible(true);
+            }, 100);
+          }
+        }}
+        isWorkerConfigDrawerVisible={isWorkerConfigDrawerVisible}
+        workerConfigWorkerId={workerConfigWorkerId}
+        workerConfigInitialView={workerConfigInitialView}
+        onCloseWorkerConfigDrawer={() => {
+          setIsWorkerConfigDrawerVisible(false);
+          setWorkerConfigWorkerId(null);
+        }}
+        onWorkerUpdated={() => {
+          // Refresh agent data if needed
+        }}
+        onUpgradePress={handleUpgradePress}
         isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
         onCloseAttachmentDrawer={chat.closeAttachmentDrawer}
         onTakePicture={chat.handleTakePicture}
@@ -601,11 +716,15 @@ export function ThreadPage({
           }}
           messages={messages}
           agentStatus={chat.isAgentRunning ? 'running' : 'idle'}
-          project={fullThreadData?.project ? {
-            id: fullThreadData.project.id,
-            name: fullThreadData.project.name,
-            sandbox: fullThreadData.project.sandbox
-          } : undefined}
+          project={
+            fullThreadData?.project
+              ? {
+                  id: fullThreadData.project.id,
+                  name: fullThreadData.project.name,
+                  sandbox: fullThreadData.project.sandbox,
+                }
+              : undefined
+          }
           isLoading={isLoading}
           agentName={agentManager.selectedAgent?.name}
           onFileClick={handleFilePress}

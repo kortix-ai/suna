@@ -20,6 +20,7 @@ import * as Haptics from 'expo-haptics';
 import type { TriggerApp } from '@/api/types';
 import type { ComposioProfile } from '@/hooks/useComposio';
 import { SvgUri } from 'react-native-svg';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -40,6 +41,7 @@ interface AppCardProps {
 
 function AppCard({ app, connectionStatus, onPress }: AppCardProps) {
   const { colorScheme } = useColorScheme();
+  const { t } = useLanguage();
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -94,10 +96,10 @@ function AppCard({ app, connectionStatus, onPress }: AppCardProps) {
           </Text>
           <Text className="mb-3 text-xs text-muted-foreground" numberOfLines={2}>
             {connectionStatus.isConnected
-              ? `Create automated triggers from ${app.name} events`
+              ? t('triggers.createAutomatedTriggers', { app: app.name })
               : connectionStatus.hasProfiles
-                ? `Connect your ${app.name} account to create triggers`
-                : `Set up ${app.name} connection to get started`}
+                ? t('triggers.connectAccountToCreate', { app: app.name })
+                : t('triggers.setupConnectionToStart', { app: app.name })}
           </Text>
 
           {/* Status Badge */}
@@ -106,21 +108,21 @@ function AppCard({ app, connectionStatus, onPress }: AppCardProps) {
               <>
                 <View className="h-1.5 w-1.5 rounded-full bg-green-500" />
                 <Text className="font-roobert-medium text-xs text-green-600 dark:text-green-400">
-                  Connected
+                  {t('triggers.connected')}
                 </Text>
               </>
             ) : connectionStatus.hasProfiles ? (
               <>
                 <View className="h-1.5 w-1.5 rounded-full bg-yellow-500" />
                 <Text className="font-roobert-medium text-xs text-yellow-600 dark:text-yellow-400">
-                  Not Connected
+                  {t('triggers.notConnected')}
                 </Text>
               </>
             ) : (
               <>
                 <View className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
                 <Text className="font-roobert-medium text-xs text-muted-foreground">
-                  Setup Required
+                  {t('triggers.setupRequired')}
                 </Text>
               </>
             )}
@@ -142,6 +144,8 @@ export function AppSelectionStep({
   onAppSelect,
   profiles = [],
 }: AppSelectionStepProps) {
+  const { t } = useLanguage();
+
   // Helper to check connection status for an app
   const getAppConnectionStatus = (appSlug: string) => {
     const appProfiles = profiles.filter((p: ComposioProfile) => p.toolkit_slug === appSlug);
@@ -160,7 +164,7 @@ export function AppSelectionStep({
   );
 
   if (isLoading) {
-    return <Loading title="Loading apps..." />;
+    return <Loading title={t('triggers.loadingApps')} />;
   }
 
   return (
@@ -170,7 +174,7 @@ export function AppSelectionStep({
         <SearchBar
           value={searchQuery}
           onChangeText={onSearchChange}
-          placeholder="Search apps..."
+          placeholder={t('composio.searchApps')}
           onClear={() => onSearchChange('')}
         />
       </View>
@@ -182,10 +186,12 @@ export function AppSelectionStep({
             <Icon as={ChevronRight} size={24} className="text-muted-foreground" />
           </View>
           <Text className="mb-1 font-roobert-semibold text-base text-foreground">
-            No apps found
+            {t('triggers.noAppsFound')}
           </Text>
           <Text className="text-center text-sm text-muted-foreground">
-            {searchQuery ? `No apps match "${searchQuery}"` : 'No apps with triggers available'}
+            {searchQuery
+              ? t('triggers.noAppsMatch', { query: searchQuery })
+              : t('triggers.noAppsWithTriggers')}
           </Text>
         </View>
       ) : (

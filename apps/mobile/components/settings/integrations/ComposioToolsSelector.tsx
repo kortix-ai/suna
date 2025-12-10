@@ -1,8 +1,9 @@
 import * as React from 'react';
 import { View, Pressable, ActivityIndicator, Alert, FlatList, TextInput } from 'react-native';
+import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { ArrowLeft, CheckCircle2, Search, AlertCircle, Save, X } from 'lucide-react-native';
+import { CheckCircle2, Search, AlertCircle, Save, X, Pencil } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import {
@@ -15,6 +16,7 @@ import {
 import { useAgent, agentKeys } from '@/lib/agents/hooks';
 import { useQueryClient } from '@tanstack/react-query';
 import { ToolkitIcon } from './ToolkitIcon';
+import { EmptyState } from '@/components/shared/EmptyState';
 
 interface ComposioToolsContentProps {
   app: ComposioApp;
@@ -22,7 +24,9 @@ interface ComposioToolsContentProps {
   agentId: string;
   onBack?: () => void;
   onComplete: () => void;
+  onEdit?: () => void;
   noPadding?: boolean;
+  useBottomSheetFlatList?: boolean;
 }
 
 export function ComposioToolsContent({
@@ -31,7 +35,9 @@ export function ComposioToolsContent({
   agentId,
   onBack,
   onComplete,
+  onEdit,
   noPadding = false,
+  useBottomSheetFlatList = false,
 }: ComposioToolsContentProps) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
@@ -240,16 +246,202 @@ export function ComposioToolsContent({
     );
   }, [agentId, profile.profile_id, selectedTools, updateTools, app.name, onComplete, t, allTools]);
 
+  const ListComponent = useBottomSheetFlatList ? BottomSheetFlatList : FlatList;
+
+  const renderToolItem = React.useCallback(
+    ({ item: tool }: { item: ComposioTool }) => {
+      const toolIdentifier = tool.slug || tool.name || '';
+      return (
+        <View style={useBottomSheetFlatList ? { paddingHorizontal: 24, marginBottom: 4 } : { marginBottom: 4 }}>
+          <ToolCard
+            tool={tool}
+            selected={selectedTools.has(toolIdentifier)}
+            onToggle={() => handleToolToggle(toolIdentifier)}
+          />
+        </View>
+      );
+    },
+    [selectedTools, handleToolToggle, useBottomSheetFlatList]
+  );
+
+  const listEmptyComponent = React.useMemo(
+    () => (
+      <View style={{ paddingHorizontal: useBottomSheetFlatList ? 24 : 0, paddingVertical: 32 }}>
+        <EmptyState
+          icon={Search}
+          title={
+            searchQuery
+              ? t('integrations.toolsSelector.noToolsFound')
+              : t('integrations.toolsSelector.noToolsAvailable')
+          }
+          description={
+            searchQuery
+              ? t('integrations.toolsSelector.tryAdjustingSearch')
+              : t('integrations.toolsSelector.toolsAppearHere')
+          }
+        />
+      </View>
+    ),
+    [searchQuery, t, useBottomSheetFlatList]
+  );
+
+  // Render with BottomSheetFlatList layout (fixed header + scrollable list + fixed footer)
+  if (useBottomSheetFlatList) {
+    return (
+      <View style={{ flex: 1 }}>
+        {/* Fixed Header */}
+        <View
+          style={{
+            paddingHorizontal: 24,
+            paddingTop: 16,
+            paddingBottom: 16,
+            backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+          }}>
+          <Text
+            style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+            className="mb-1 font-roobert-semibold text-xl">
+            {app.name || profile.toolkit_name || app.slug}
+          </Text>
+          <Text
+            style={{
+              color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
+            }}
+            className="mb-4 font-roobert text-sm">
+            {profile.profile_name}
+          </Text>
+
+          {/* Search Bar */}
+          <View
+            className="flex-row items-center rounded-2xl border border-border bg-card px-4"
+            style={{
+              backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+              borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+            }}>
+            <Icon as={Search} size={18} className="text-muted-foreground" />
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder={t('composio.searchTools')}
+              placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
+              className="ml-3 flex-1 py-3 font-roobert text-base text-foreground"
+              style={{
+                color: colorScheme === 'dark' ? '#F8F8F8' : '#121215',
+              }}
+            />
+            {searchQuery.length > 0 && (
+              <Pressable onPress={() => setSearchQuery('')} className="ml-2">
+                <Icon as={X} size={18} className="text-muted-foreground" />
+              </Pressable>
+            )}
+          </View>
+
+          {/* Selection Info */}
+          <View className="mt-4 flex-row items-center justify-between">
+            <Text className="font-roobert-medium text-sm uppercase tracking-wider text-muted-foreground">
+              {t('integrations.toolsSelector.selected', {
+                count: selectedTools.size,
+                total: totalTools,
+                plural: selectedTools.size !== 1 ? 's' : '',
+              })}
+            </Text>
+            <Pressable
+              onPress={handleSelectAll}
+              className="rounded-full bg-muted/10 px-4 py-2 active:opacity-70">
+              <Text className="font-roobert-semibold text-sm text-foreground">
+                {filteredTools.length > 0 &&
+                filteredTools.every((tool: ComposioTool) => {
+                  const id = tool.slug || tool.name;
+                  return id && selectedTools.has(id);
+                })
+                  ? t('integrations.toolsSelector.deselectAll')
+                  : t('integrations.toolsSelector.selectAll')}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Scrollable Tools List */}
+        {isLoading && allTools.length === 0 ? (
+          <View style={{ flex: 1, paddingHorizontal: 24 }}>
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+              <View key={i} className="mb-2 rounded-2xl border border-border bg-card p-4">
+                <View className="flex-row items-center gap-3">
+                  <View className="h-6 w-6 rounded-full bg-muted" />
+                  <View className="flex-1 space-y-2">
+                    <View className="h-4 w-3/4 rounded bg-muted" />
+                    <View className="h-3 w-full rounded bg-muted" />
+                  </View>
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : error ? (
+          <View style={{ flex: 1, paddingHorizontal: 24 }} className="items-center justify-center">
+            <Icon as={AlertCircle} size={48} className="text-destructive/40" />
+            <Text className="mt-4 font-roobert-medium text-lg text-foreground">
+              {t('composio.failedToLoadTools')}
+            </Text>
+            <Text className="mt-2 text-center font-roobert text-sm text-muted-foreground">
+              {error.message}
+            </Text>
+            <Pressable onPress={() => refetch()} className="mt-4 rounded-xl bg-primary px-4 py-2">
+              <Text className="font-roobert-medium text-sm text-white">{t('composio.retry')}</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <BottomSheetFlatList
+            data={filteredTools}
+            keyExtractor={(item, index) => item.slug || item.name || `tool-${index}`}
+            renderItem={renderToolItem}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingTop: 8, paddingBottom: 16, flexGrow: 1 }}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={listEmptyComponent}
+          />
+        )}
+
+        {/* Fixed Footer Button */}
+        <View
+          style={{
+            paddingHorizontal: 24,
+            paddingTop: 16,
+            paddingBottom: 24,
+            backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+          }}>
+          <Pressable
+            onPress={handleSaveTools}
+            disabled={selectedTools.size === 0 || isSaving}
+            className={`flex-row items-center justify-center gap-2 rounded-xl p-4 ${
+              selectedTools.size === 0 || isSaving
+                ? 'bg-primary/50 opacity-50'
+                : 'bg-primary active:opacity-80'
+            }`}>
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Icon as={Save} size={18} className="text-primary-foreground" />
+            )}
+            <Text className="font-roobert-semibold text-base text-primary-foreground">
+              {isSaving
+                ? t('composio.saving')
+                : selectedTools.size === 0
+                  ? t('composio.selectTools')
+                  : selectedTools.size === 1
+                    ? t('composio.saveTools', { count: 1 }).replace('Tools', 'Tool')
+                    : t('composio.saveTools', { count: selectedTools.size })}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  // Regular layout (for non-BottomSheet usage)
   return (
     <View className="mb-4 flex-1" style={{ flex: 1, position: 'relative' }}>
-      {/* Header with back button, title, and description */}
-      <View className="mb-4 flex-row items-center">
-        {onBack && (
-          <Pressable onPress={onBack} className="flex-row items-center active:opacity-70">
-            <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-          </Pressable>
-        )}
-        <View className="ml-3 flex-1">
+      {/* Header with title, description and edit button */}
+      <View className="mb-4 flex-row items-center justify-between">
+        <View className="flex-1">
           <Text
             style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
             className="font-roobert-semibold text-xl">
@@ -263,6 +455,13 @@ export function ComposioToolsContent({
             {profile.profile_name}
           </Text>
         </View>
+        {onEdit && (
+          <Pressable
+            onPress={onEdit}
+            className="h-10 w-10 items-center justify-center rounded-xl bg-muted/10 active:opacity-70">
+            <Icon as={Pencil} size={18} className="text-foreground" />
+          </Pressable>
+        )}
       </View>
 
       {/* Sticky Search Bar */}
@@ -277,7 +476,7 @@ export function ComposioToolsContent({
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search tools..."
+            placeholder={t('composio.searchTools')}
             placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
             className="ml-3 flex-1 py-3 font-roobert text-base text-foreground"
             style={{
@@ -338,52 +537,27 @@ export function ComposioToolsContent({
           <View className="items-center py-8">
             <Icon as={AlertCircle} size={48} className="text-destructive/40" />
             <Text className="mt-4 font-roobert-medium text-lg text-foreground">
-              Failed to Load Tools
+              {t('composio.failedToLoadTools')}
             </Text>
             <Text className="mt-2 text-center font-roobert text-sm text-muted-foreground">
               {error.message}
             </Text>
             <Pressable onPress={() => refetch()} className="mt-4 rounded-xl bg-primary px-4 py-2">
-              <Text className="font-roobert-medium text-sm text-white">Retry</Text>
+              <Text className="font-roobert-medium text-sm text-white">{t('composio.retry')}</Text>
             </Pressable>
           </View>
         ) : (
           <FlatList
             data={filteredTools}
             keyExtractor={(item, index) => item.slug || item.name || `tool-${index}`}
-            renderItem={({ item: tool }) => {
-              const toolIdentifier = tool.slug || tool.name || '';
-              return (
-                <View className="mb-1">
-                  <ToolCard
-                    tool={tool}
-                    selected={selectedTools.has(toolIdentifier)}
-                    onToggle={() => handleToolToggle(toolIdentifier)}
-                  />
-                </View>
-              );
-            }}
+            renderItem={renderToolItem}
             showsVerticalScrollIndicator={false}
             removeClippedSubviews={true}
             maxToRenderPerBatch={10}
             updateCellsBatchingPeriod={50}
             initialNumToRender={20}
             windowSize={10}
-            ListEmptyComponent={
-              <View className="items-center px-6 py-12">
-                <Icon as={Search} size={48} className="text-muted-foreground/40" />
-                <Text className="mt-4 font-roobert-medium text-lg text-foreground">
-                  {searchQuery
-                    ? 'No tools found'
-                    : t('integrations.toolsSelector.noToolsAvailable')}
-                </Text>
-                <Text className="text-center font-roobert text-sm text-muted-foreground">
-                  {searchQuery
-                    ? 'Try adjusting your search query'
-                    : t('integrations.toolsSelector.noToolsDescription')}
-                </Text>
-              </View>
-            }
+            ListEmptyComponent={listEmptyComponent}
           />
         )}
       </View>
@@ -405,10 +579,12 @@ export function ComposioToolsContent({
           )}
           <Text className="font-roobert-semibold text-base text-primary-foreground">
             {isSaving
-              ? 'Saving...'
+              ? t('composio.saving')
               : selectedTools.size === 0
-                ? 'Select Tools'
-                : `Save ${selectedTools.size} Tool${selectedTools.size !== 1 ? 's' : ''}`}
+                ? t('composio.selectTools')
+                : selectedTools.size === 1
+                  ? t('composio.saveTools', { count: 1 }).replace('Tools', 'Tool')
+                  : t('composio.saveTools', { count: selectedTools.size })}
           </Text>
         </Pressable>
       </View>
@@ -426,7 +602,7 @@ const ToolCard = React.memo(({ tool, selected, onToggle }: ToolCardProps) => {
   return (
     <Pressable
       onPress={onToggle}
-      className={`mb-2 flex-row items-start gap-3 rounded-3xl p-4 active:opacity-80 ${
+      className={`mb-2 flex-row items-start gap-3 rounded-2xl p-4 active:opacity-80 ${
         selected ? 'bg-primary/10' : 'bg-muted/5'
       }`}>
       <View
