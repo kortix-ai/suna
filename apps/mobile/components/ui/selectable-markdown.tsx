@@ -7,12 +7,17 @@
  */
 
 import React, { useMemo, useState, useCallback } from 'react';
-import { StyleSheet, TextStyle, ViewStyle, View, Text as RNText, Pressable, Linking, Alert } from 'react-native';
+import { StyleSheet, TextStyle, ViewStyle, View, Text as RNText, Pressable, Linking, Alert, LogBox } from 'react-native';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
 import Markdown from 'react-native-markdown-display';
 import { markdownParser, lightMarkdownStyle, darkMarkdownStyle } from '@/lib/utils/live-markdown-config';
 import { useColorScheme } from 'nativewind';
 import * as Clipboard from 'expo-clipboard';
+
+// Suppress known warning from react-native-markdown-display library
+LogBox.ignoreLogs([
+  'A props object containing a "key" prop is being spread into JSX',
+]);
 
 export interface SelectableMarkdownTextProps {
   /** The markdown text content to render */
@@ -343,9 +348,8 @@ function MarkdownWithLinkHandling({
           return <Separator key={`sep-${idx}`} isDark={isDark} />;
         } else if (block.type === 'links') {
           // Lines with links → react-native-markdown-display (clickable)
-          // Wrap in React Fragment to avoid key spreading into Markdown
           return (
-            <React.Fragment key={`md-${idx}`}>
+            <View key={`md-${idx}`} style={{ marginVertical: 0 }}>
               <Markdown
                 style={markdownStyles}
                 onLinkPress={(url) => {
@@ -356,7 +360,7 @@ function MarkdownWithLinkHandling({
               >
                 {block.content}
               </Markdown>
-            </React.Fragment>
+            </View>
           );
         } else {
           // Lines without links → MarkdownTextInput (selectable)
