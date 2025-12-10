@@ -199,18 +199,15 @@ export function TriggerConfigStep({
             backgroundColor: isDark ? '#27272A' : '#F4F4F5',
             borderWidth: 0,
           }}>
-          <Markdown
+          <SelectableMarkdownText
+            isDark={isDark}
             style={{
-              ...(isDark ? markdownStylesDark : markdownStyles),
-              body: {
-                ...(isDark ? markdownStylesDark.body : markdownStyles.body),
-                fontSize: 14,
-                lineHeight: 20,
-                color: isDark ? '#A1A1AA' : '#71717A',
-              },
+              fontSize: 14,
+              lineHeight: 20,
+              color: isDark ? '#A1A1AA' : '#71717A',
             }}>
             {normalizeInstructions(trigger.instructions)}
-          </Markdown>
+          </SelectableMarkdownText>
         </View>
       )}
 
