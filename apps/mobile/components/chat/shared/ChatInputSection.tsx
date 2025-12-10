@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, KeyboardAvoidingView, Platform, ViewStyle } from 'react-native';
+import { View, KeyboardAvoidingView, Platform, ViewStyle, Keyboard } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
@@ -129,6 +129,22 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const chatInputRef = React.useRef<ChatInputRef>(null);
+  const [isKeyboardVisible, setIsKeyboardVisible] = React.useState(false);
+
+  // Track keyboard visibility
+  React.useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardWillShow', () => {
+      setIsKeyboardVisible(true);
+    });
+    const hideSubscription = Keyboard.addListener('keyboardWillHide', () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   // Memoize gradient colors based on color scheme
   const gradientColors = React.useMemo(
@@ -230,9 +246,9 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
         </View>
       )}
 
-      {/* Safe area bottom padding (only when quick actions are hidden) */}
-      {!showQuickActions && (
-        <View style={{ paddingBottom: insets.bottom }} />
+      {/* Safe area bottom padding (only when keyboard is NOT visible and quick actions are hidden) */}
+      {!showQuickActions && !isKeyboardVisible && (
+        <View style={{ paddingBottom: Math.max(insets.bottom - 8, 0) }} />
       )}
     </KeyboardAvoidingView>
   );
