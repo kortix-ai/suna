@@ -189,11 +189,11 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
   const { hasFreeTier } = useBillingContext();
 
   const browseAppsSheetRef = useRef<BottomSheetModal>(null);
+  const toolsSheetRef = useRef<BottomSheetModal>(null);
   const [browseAppsSearchQuery, setBrowseAppsSearchQuery] = useState('');
 
   const [selectedApp, setSelectedApp] = useState<ComposioApp | null>(null);
   const [showConnector, setShowConnector] = useState(false);
-  const [showToolsManager, setShowToolsManager] = useState(false);
   const [showBrowseApps, setShowBrowseApps] = useState(false);
   const [showCustomMcp, setShowCustomMcp] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<ComposioProfile | null>(null);
@@ -204,6 +204,11 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
   const [drawerSelectedApp, setDrawerSelectedApp] = useState<ComposioApp | null>(null);
   const [drawerSelectedProfile, setDrawerSelectedProfile] = useState<ComposioProfile | null>(null);
   const [isDrawerSaving, setIsDrawerSaving] = useState(false);
+
+  // Tools sheet state
+  const [toolsSheetApp, setToolsSheetApp] = useState<ComposioApp | null>(null);
+  const [toolsSheetProfile, setToolsSheetProfile] = useState<ComposioProfile | null>(null);
+  const [toolsSheetView, setToolsSheetView] = useState<'tools' | 'connector'>('tools');
 
   // Handle upgrade press - use provided callback or navigate to plans
   const handleUpgradePress = useCallback(() => {
@@ -310,9 +315,43 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
       categories: [],
       connected: profile.is_connected,
     };
-    setSelectedApp(finalApp);
-    setSelectedProfile(profile);
-    setShowToolsManager(true);
+    // Open tools in a sheet
+    setToolsSheetApp(finalApp);
+    setToolsSheetProfile(profile);
+    setToolsSheetView('tools');
+    toolsSheetRef.current?.present();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const handleCloseToolsSheet = () => {
+    toolsSheetRef.current?.dismiss();
+    setToolsSheetApp(null);
+    setToolsSheetProfile(null);
+    setToolsSheetView('tools');
+  };
+
+  const handleToolsSheetComplete = () => {
+    handleCloseToolsSheet();
+    onUpdate?.();
+  };
+
+  const handleToolsSheetEdit = () => {
+    // Switch to connector view within the tools sheet
+    setToolsSheetView('connector');
+  };
+
+  const handleToolsSheetConnectorComplete = (
+    profileId: string,
+    appName: string,
+    appSlug: string
+  ) => {
+    // After editing connection, go back to tools view
+    // Update the profile reference
+    const updatedProfile = profiles?.find((p: ComposioProfile) => p.profile_id === profileId);
+    if (updatedProfile) {
+      setToolsSheetProfile(updatedProfile);
+    }
+    setToolsSheetView('tools');
   };
 
   const handleDeleteIntegration = (mcp: any) => {
@@ -605,30 +644,6 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
     );
   }
 
-  if (showToolsManager && selectedApp && selectedProfile) {
-    return (
-      <View className="flex-1">
-        <ComposioToolsContent
-          app={selectedApp}
-          profile={selectedProfile}
-          agentId={agentId}
-          onBack={() => {
-            setShowToolsManager(false);
-            setSelectedApp(null);
-            setSelectedProfile(null);
-          }}
-          onComplete={() => {
-            setShowToolsManager(false);
-            setSelectedApp(null);
-            setSelectedProfile(null);
-            onUpdate?.();
-          }}
-          noPadding={true}
-        />
-      </View>
-    );
-  }
-
   // Show free tier block if user is on free tier
   if (hasFreeTier) {
     return (
@@ -815,7 +830,7 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
                         <Pressable
                           onPress={() => handleBrowseAppSelect(app)}
                           disabled={isConnected}
-                          className={`mb-3 flex-row items-center gap-4 rounded-3xl p-4 ${
+                          className={`mb-3 flex-row items-center gap-4 rounded-2xl p-4 ${
                             isConnected ? 'bg-muted/5 opacity-50' : 'bg-primary/5 active:opacity-80'
                           }`}>
                           <ToolkitIcon slug={app.slug} name={app.name} size="sm" />
@@ -906,6 +921,65 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
               onBack={handleDrawerBack}
               onComplete={handleDrawerToolsComplete}
               noPadding={false}
+              useBottomSheetFlatList={true}
+            />
+          )}
+        </View>
+      </BottomSheetModal>
+
+      {/* Tools Manager Sheet (for editing existing integrations) */}
+      <BottomSheetModal
+        ref={toolsSheetRef}
+        snapPoints={['90%']}
+        enableDynamicSizing={false}
+        enablePanDownToClose
+        onDismiss={handleCloseToolsSheet}
+        backdropComponent={renderBackdrop}
+        backgroundStyle={{
+          backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+        }}
+        handleIndicatorStyle={{
+          backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
+          width: 36,
+          height: 5,
+          borderRadius: 3,
+          marginTop: 8,
+          marginBottom: 0,
+        }}
+        style={{
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+          overflow: 'hidden',
+        }}>
+        <View style={{ flex: 1 }}>
+          {/* Tools View */}
+          {toolsSheetView === 'tools' && toolsSheetApp && toolsSheetProfile && (
+            <ComposioToolsContent
+              app={toolsSheetApp}
+              profile={toolsSheetProfile}
+              agentId={agentId}
+              onComplete={handleToolsSheetComplete}
+              onEdit={handleToolsSheetEdit}
+              noPadding={false}
+              useBottomSheetFlatList={true}
+            />
+          )}
+
+          {/* Connector View (for editing connection) */}
+          {toolsSheetView === 'connector' && toolsSheetApp && (
+            <ComposioConnectorContent
+              app={toolsSheetApp}
+              onBack={() => setToolsSheetView('tools')}
+              onComplete={handleToolsSheetConnectorComplete}
+              onNavigateToTools={(app, profile) => {
+                setToolsSheetApp(app);
+                setToolsSheetProfile(profile);
+                setToolsSheetView('tools');
+              }}
+              agentId={agentId}
+              mode="full"
+              noPadding={false}
+              isSaving={false}
               useBottomSheetFlatList={true}
             />
           )}

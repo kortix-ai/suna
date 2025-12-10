@@ -3,7 +3,7 @@ import { View, Pressable, ActivityIndicator, Alert, FlatList, TextInput } from '
 import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { ArrowLeft, CheckCircle2, Search, AlertCircle, Save, X } from 'lucide-react-native';
+import { CheckCircle2, Search, AlertCircle, Save, X, Pencil } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import {
@@ -24,6 +24,7 @@ interface ComposioToolsContentProps {
   agentId: string;
   onBack?: () => void;
   onComplete: () => void;
+  onEdit?: () => void;
   noPadding?: boolean;
   useBottomSheetFlatList?: boolean;
 }
@@ -34,6 +35,7 @@ export function ComposioToolsContent({
   agentId,
   onBack,
   onComplete,
+  onEdit,
   noPadding = false,
   useBottomSheetFlatList = false,
 }: ComposioToolsContentProps) {
@@ -437,14 +439,9 @@ export function ComposioToolsContent({
   // Regular layout (for non-BottomSheet usage)
   return (
     <View className="mb-4 flex-1" style={{ flex: 1, position: 'relative' }}>
-      {/* Header with back button, title, and description */}
-      <View className="mb-4 flex-row items-center">
-        {onBack && (
-          <Pressable onPress={onBack} className="flex-row items-center active:opacity-70">
-            <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-          </Pressable>
-        )}
-        <View className="ml-3 flex-1">
+      {/* Header with title, description and edit button */}
+      <View className="mb-4 flex-row items-center justify-between">
+        <View className="flex-1">
           <Text
             style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
             className="font-roobert-semibold text-xl">
@@ -458,6 +455,13 @@ export function ComposioToolsContent({
             {profile.profile_name}
           </Text>
         </View>
+        {onEdit && (
+          <Pressable
+            onPress={onEdit}
+            className="h-10 w-10 items-center justify-center rounded-xl bg-muted/10 active:opacity-70">
+            <Icon as={Pencil} size={18} className="text-foreground" />
+          </Pressable>
+        )}
       </View>
 
       {/* Sticky Search Bar */}
