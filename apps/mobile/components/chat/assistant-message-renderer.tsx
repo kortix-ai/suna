@@ -15,8 +15,7 @@ import type { UnifiedMessage, ParsedMetadata, ParsedContent } from '@/api/types'
 import { safeJsonParse } from '@/lib/utils/message-grouping';
 import { getToolIcon, getUserFriendlyToolName } from '@/lib/utils/tool-display';
 import { isAskOrCompleteTool, extractTextFromArguments } from '@/lib/utils/streaming-utils';
-import Markdown from 'react-native-markdown-display';
-import { markdownStyles, markdownStylesDark, selectableRenderRules } from '@/lib/utils/markdown-styles';
+import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { autoLinkUrls } from '@/lib/utils/url-autolink';
 import { Linking } from 'react-native';
 import { FileAttachmentsGrid } from './FileAttachmentRenderer';
@@ -126,12 +125,9 @@ function renderAskToolCall(
   return (
     <View key={`ask-${index}`} className="gap-3">
       {askText && (
-        <Markdown
-          style={isDark ? markdownStylesDark : markdownStyles}
-          rules={selectableRenderRules(isDark)}
-        >
+        <SelectableMarkdownText isDark={isDark}>
           {autoLinkUrls(askText).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
-        </Markdown>
+        </SelectableMarkdownText>
       )}
       {attachments.length > 0 && (
         <FileAttachmentsGrid
@@ -195,12 +191,9 @@ function renderCompleteToolCall(
   return (
     <View key={`complete-${index}`} className="gap-3">
       {completeText && (
-        <Markdown
-          style={isDark ? markdownStylesDark : markdownStyles}
-          rules={selectableRenderRules(isDark)}
-        >
+        <SelectableMarkdownText isDark={isDark}>
           {autoLinkUrls(completeText).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
-        </Markdown>
+        </SelectableMarkdownText>
       )}
       {attachments.length > 0 && (
         <FileAttachmentsGrid
@@ -323,13 +316,9 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
   // Render text content first (if any)
   if (textContent.trim()) {
     contentParts.push(
-      <Markdown
-        key="text-content"
-        style={isDark ? markdownStylesDark : markdownStyles}
-        rules={selectableRenderRules(isDark)}
-      >
+      <SelectableMarkdownText key="text-content" isDark={isDark}>
         {autoLinkUrls(textContent).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
-      </Markdown>
+      </SelectableMarkdownText>
     );
   }
 

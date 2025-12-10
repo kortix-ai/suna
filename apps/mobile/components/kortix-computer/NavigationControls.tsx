@@ -4,6 +4,7 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
 interface NavigationControlsProps {
@@ -31,6 +32,7 @@ export function NavigationControls({
   onJumpToLive,
   onJumpToLatest,
 }: NavigationControlsProps) {
+  const insets = useSafeAreaInsets();
 
   const handlePrevious = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -116,7 +118,10 @@ export function NavigationControls({
   };
 
   return (
-    <View className="px-4 pt-4 pb-6 border-t border-border bg-card">
+    <View
+      className="px-4 pt-4 border-t border-border bg-card"
+      style={{ paddingBottom: Math.max(24, insets.bottom + 8) }}
+    >
       <View className="flex-row items-center justify-between gap-3">
         <View className="flex-row items-center gap-2">
           <Button
