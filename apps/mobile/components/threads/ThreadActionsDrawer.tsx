@@ -127,7 +127,7 @@ export function ThreadActionsDrawer({
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const isOpeningRef = React.useRef(false);
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
-  const snapPoints = React.useMemo(() => ['95%'], []);
+  const snapPoints = React.useMemo(() => ['50%'], []);
   const { colorScheme } = useColorScheme();
   const router = useRouter();
   const { hasFreeTier } = useBillingContext();
@@ -203,9 +203,6 @@ export function ThreadActionsDrawer({
     ),
     []
   );
-
-  // Don't render BottomSheet when not visible to avoid navigation context issues
-  if (!visible) return null;
 
   return (
     <BottomSheet
