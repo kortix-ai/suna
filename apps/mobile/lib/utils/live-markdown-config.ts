@@ -59,14 +59,16 @@ export function markdownParser(input: string) {
     ranges.push({ start: match.index + 1 + match[1].length, length: 1, type: 'syntax' });
   }
 
-  // Links: [text](url)
-  const linkRegex = /\[([^\]]+)\]\(([^\)]+)\)/g;
+  // Links: [text](url) - improved to handle parentheses in URLs
+  const linkRegex = /\[([^\]]+)\]\(((?:[^()]|\([^)]*\))*)\)/g;
   while ((match = linkRegex.exec(input)) !== null) {
-    ranges.push({ start: match.index, length: 1, type: 'syntax' });
-    ranges.push({ start: match.index + 1, length: match[1].length, type: 'link', url: match[2] });
-    ranges.push({ start: match.index + 1 + match[1].length, length: 2, type: 'syntax' });
-    ranges.push({ start: match.index + 1 + match[1].length + 2, length: match[2].length, type: 'syntax' });
-    ranges.push({ start: match.index + 1 + match[1].length + 2 + match[2].length, length: 1, type: 'syntax' });
+    const linkText = match[1];
+    const url = match[2];
+    ranges.push({ start: match.index, length: 1, type: 'syntax' }); // [
+    ranges.push({ start: match.index + 1, length: linkText.length, type: 'link', url: url }); // text
+    ranges.push({ start: match.index + 1 + linkText.length, length: 2, type: 'syntax' }); // ](
+    ranges.push({ start: match.index + 1 + linkText.length + 2, length: url.length, type: 'syntax' }); // url
+    ranges.push({ start: match.index + 1 + linkText.length + 2 + url.length, length: 1, type: 'syntax' }); // )
   }
 
   // Headings: # Heading (all levels h1-h6 use h1 style)
