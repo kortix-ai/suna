@@ -1090,7 +1090,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
           </View>
         )}
 
-      <View className="h-4" />
+      <View className="h-2" />
     </View>
   );
 });
