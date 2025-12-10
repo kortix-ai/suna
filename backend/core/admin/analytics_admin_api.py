@@ -418,63 +418,66 @@ async def _browse_threads_filtered(
 ) -> PaginatedResponse[ThreadAnalytics]:
     """Filtered path: fetch threads with optional category/date filtering using JOINs."""
     
-    # When filtering by category with date range, use JOIN to filter by PROJECT creation date
-    # (since category distribution shows projects created on that date)
-    if category and (date_from or date_to):
-        # Use INNER JOIN with projects table - single query instead of two
-        threads_query = client.from_('threads').select(
-            'thread_id, project_id, account_id, is_public, created_at, updated_at, user_message_count, total_message_count, project:projects!inner(category)'
-        ).eq('project.category', category)
+    # When filtering by category, use database function for efficient JOIN with pagination
+    # This fetches only the records we need (e.g., 15) instead of 1000
+    if category:
+        # Build date parameters for RPC
+        date_from_param = None
+        date_to_param = None
         
-        # Filter by project creation date
         if date_from:
-            date_from_start = f"{date_from}T00:00:00Z" if 'T' not in date_from else date_from
-            threads_query = threads_query.gte('project.created_at', date_from_start)
+            date_from_param = f"{date_from}T00:00:00Z" if 'T' not in date_from else date_from
         if date_to:
-            date_to_end = f"{date_to}T23:59:59.999999Z" if 'T' not in date_to else date_to
-            threads_query = threads_query.lte('project.created_at', date_to_end)
+            date_to_param = f"{date_to}T23:59:59.999999Z" if 'T' not in date_to else date_to
         
-        if sort_by == 'created_at':
-            threads_query = threads_query.order('created_at', desc=(sort_order == 'desc'))
-        elif sort_by == 'updated_at':
-            threads_query = threads_query.order('updated_at', desc=(sort_order == 'desc'))
+        # Calculate offset for pagination
+        offset = (params.page - 1) * params.page_size
         
-        threads_query = threads_query.limit(1000)
-        threads_result = await threads_query.execute()
-        all_threads = threads_result.data or []
+        # Get total count first for pagination
+        count_params = {
+            'p_category': category,
+            'p_date_from': date_from_param,
+            'p_date_to': date_to_param,
+            'p_min_messages': min_messages,
+            'p_max_messages': max_messages
+        }
+        count_result = await client.rpc('get_threads_by_category_count', count_params).execute()
+        total_count = count_result.data if isinstance(count_result.data, int) else 0
         
-        logger.debug(f"Category filter with JOIN: category={category}, date_from={date_from}, date_to={date_to}, found {len(all_threads)} threads")
+        # Get only the page of threads we need
+        rpc_params = {
+            'p_category': category,
+            'p_date_from': date_from_param,
+            'p_date_to': date_to_param,
+            'p_min_messages': min_messages,
+            'p_max_messages': max_messages,
+            'p_sort_by': sort_by,
+            'p_sort_order': sort_order,
+            'p_limit': params.page_size,
+            'p_offset': offset
+        }
         
-        # Extract project data from joined result and flatten
-        for thread in all_threads:
-            if 'project' in thread:
-                del thread['project']  # Remove nested project object, we already filtered by it
-    
-    elif category:
-        # Category filter without date range - use JOIN to filter by category
-        threads_query = client.from_('threads').select(
-            'thread_id, project_id, account_id, is_public, created_at, updated_at, user_message_count, total_message_count, project:projects!inner(category)'
-        ).eq('project.category', category)
+        result = await client.rpc('get_threads_by_category', rpc_params).execute()
+        page_threads = result.data or []
         
-        # Default to last 7 days for thread creation date
-        if date_from:
-            threads_query = threads_query.gte('created_at', date_from)
-        if date_to:
-            threads_query = threads_query.lte('created_at', date_to)
+        logger.debug(f"Category filter via RPC: category={category}, page={params.page}, fetched {len(page_threads)} of {total_count} total")
         
-        if sort_by == 'created_at':
-            threads_query = threads_query.order('created_at', desc=(sort_order == 'desc'))
-        elif sort_by == 'updated_at':
-            threads_query = threads_query.order('updated_at', desc=(sort_order == 'desc'))
+        # Enrich threads with project/user data and return directly
+        enriched_threads = await _enrich_threads(client, page_threads)
         
-        threads_query = threads_query.limit(1000)
-        threads_result = await threads_query.execute()
-        all_threads = threads_result.data or []
+        # Handle email search if specified (filter enriched results)
+        if search_email and enriched_threads:
+            search_lower = search_email.lower()
+            enriched_threads = [
+                t for t in enriched_threads
+                if t.user_email and search_lower in t.user_email.lower()
+            ]
+            # Adjust total count for email filter (approximate)
+            total_count = len(enriched_threads) if len(enriched_threads) < params.page_size else total_count
         
-        # Remove nested project object
-        for thread in all_threads:
-            if 'project' in thread:
-                del thread['project']
+        return await PaginationService.paginate_with_total_count(
+            items=enriched_threads, total_count=total_count, params=params
+        )
     
     else:
         # No category filter - simple thread query
