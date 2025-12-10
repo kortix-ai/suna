@@ -67,7 +67,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
     .failOffsetY([-20, 20])
     .onEnd((event) => {
       const currentIndex = selectedIndex;
-      
+
       if (event.translationX < -SWIPE_THRESHOLD || event.velocityX < -500) {
         // Swipe left - next mode
         runOnJS(switchToMode)(currentIndex + 1);
@@ -153,7 +153,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
             onUpgradePress={handleUpgradePress}
             onCreditsPress={handleCreditsPress}
           />
-          
+
           {/* Swipeable content area - Always show thread list for current mode */}
           <GestureDetector gesture={panGesture}>
             <View className="flex-1">
@@ -195,6 +195,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
             isAgentRunning={chat.isAgentRunning}
             isSendingMessage={chat.isSendingMessage}
             isTranscribing={isTranscribing}
+            showQuickActions={true}
           />
         </View>
 

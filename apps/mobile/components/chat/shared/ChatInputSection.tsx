@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { View, KeyboardAvoidingView, Platform, ViewStyle } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
 import { ChatInput, type ChatInputRef } from '../ChatInput';
@@ -17,17 +18,17 @@ export interface ChatInputSectionProps {
   onSendAudio: () => Promise<void>;
   placeholder: string;
   agent?: Agent;
-  
+
   // Attachment props
   attachments: Attachment[];
   onRemoveAttachment: (index: number) => void;
   onAttachPress: () => void;
-  
+
   // Agent selection
   onAgentPress: () => void;
 
   style?: ViewStyle;
-  
+
   // Audio recording
   onAudioRecord: () => Promise<void>;
   onCancelRecording: () => void;
@@ -35,7 +36,7 @@ export interface ChatInputSectionProps {
   recordingDuration: number;
   audioLevel: number;
   audioLevels: number[];
-  
+
   // Quick actions
   selectedQuickAction: string | null;
   selectedQuickActionOption?: string | null;
@@ -44,21 +45,23 @@ export interface ChatInputSectionProps {
   onQuickActionSelectOption?: (optionId: string) => void;
   onQuickActionSelectPrompt?: (prompt: string) => void;
   onQuickActionThreadPress?: (threadId: string) => void;
-  
+
   // Agent running state
   isAgentRunning: boolean;
   onStopAgentRun: () => void;
-  
+
   // Auth
   isAuthenticated: boolean;
-  
+
   // Loading states
   isSendingMessage: boolean;
   isTranscribing: boolean;
-  
+
   // Container styles
   containerClassName?: string;
 
+  // Show quick actions (mode selector)
+  showQuickActions?: boolean;
 }
 
 export interface ChatInputSectionRef {
@@ -120,11 +123,13 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
   isSendingMessage,
   isTranscribing,
   containerClassName = "mx-3 mb-4",
+  showQuickActions = false,
 }, ref) => {
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
+  const insets = useSafeAreaInsets();
   const chatInputRef = React.useRef<ChatInputRef>(null);
-  
+
   // Memoize gradient colors based on color scheme
   const gradientColors = React.useMemo(
     () => colorScheme === 'dark' ? DARK_GRADIENT_COLORS : LIGHT_GRADIENT_COLORS,
@@ -163,15 +168,15 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
         style={GRADIENT_STYLE}
         pointerEvents="none"
       />
-      
+
       {/* Attachment Bar - Above everything */}
-      <AttachmentBar 
+      <AttachmentBar
         attachments={attachments}
         onRemove={onRemoveAttachment}
       />
 
-      {/* Quick Action Expanded Content - Above Input */}
-      {selectedQuickAction && selectedAction && (
+      {/* Quick Action Expanded Content - Above Input (only on home) */}
+      {showQuickActions && selectedQuickAction && selectedAction && (
         <View className="mb-3">
           <QuickActionExpandedView
             actionId={selectedQuickAction}
@@ -183,7 +188,7 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
           />
         </View>
       )}
-      
+
       {/* Chat Input */}
       <View className={containerClassName}>
         <ChatInput
@@ -215,14 +220,19 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
         />
       </View>
 
-      {/* Quick Action Bar - Below input (camera-style mode selector) */}
-      {onQuickActionPress && (
+      {/* Quick Action Bar - Below input (camera-style mode selector, only on home) */}
+      {showQuickActions && onQuickActionPress && (
         <View className="pb-8" pointerEvents="box-none">
-          <QuickActionBar 
+          <QuickActionBar
             onActionPress={onQuickActionPress}
             selectedActionId={selectedQuickAction}
           />
         </View>
+      )}
+
+      {/* Safe area bottom padding (only when quick actions are hidden) */}
+      {!showQuickActions && (
+        <View style={{ paddingBottom: insets.bottom }} />
       )}
     </KeyboardAvoidingView>
   );

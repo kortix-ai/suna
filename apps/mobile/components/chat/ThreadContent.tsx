@@ -1,5 +1,7 @@
 import React, { useMemo, useCallback } from 'react';
-import { View, Pressable, Linking, Text as RNText, TextInput } from 'react-native';
+import { View, Pressable, Linking, Text as RNText, TextInput, Platform } from 'react-native';
+import ContextMenu from 'react-native-context-menu-view';
+import * as Clipboard from 'expo-clipboard';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import type { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/api/types';
@@ -789,15 +791,45 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
               {cleanContent && (
                 <View className="flex-row justify-end">
                   <View
-                    className="max-w-[85%] bg-card border border-border px-4 py-3"
+                    className="max-w-[85%] border border-border"
                     style={{
                       borderRadius: 24,
                       borderBottomRightRadius: 8,
                     }}
                   >
-                    <SelectableMarkdownText isDark={isDark}>
-                      {autoLinkUrls(cleanContent).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
-                    </SelectableMarkdownText>
+                    <ContextMenu
+                      actions={[{ title: 'Copy', systemIcon: 'doc.on.doc' }]}
+                      onPress={async (e) => {
+                        if (e.nativeEvent.index === 0) {
+                          await Clipboard.setStringAsync(cleanContent);
+                        }
+                      }}
+                      dropdownMenuMode={false}
+                      borderTopLeftRadius={24}
+                      borderTopRightRadius={24}
+                      borderBottomLeftRadius={24}
+                      borderBottomRightRadius={8}
+                    >
+                      <View
+                        className="bg-card px-4 py-3"
+                        style={{
+                          borderRadius: 24,
+                          borderBottomRightRadius: 8,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <RNText
+                          selectable
+                          style={{
+                            fontSize: 16,
+                            lineHeight: 24,
+                            color: isDark ? '#fafafa' : '#18181b',
+                          }}
+                        >
+                          {cleanContent}
+                        </RNText>
+                      </View>
+                    </ContextMenu>
                   </View>
                 </View>
               )}
