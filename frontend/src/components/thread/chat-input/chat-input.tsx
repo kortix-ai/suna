@@ -202,6 +202,85 @@ interface IntegrationsDropdownProps {
   onOpenPlanModal: () => void;
 }
 
+// Rotating integration logos carousel
+const IntegrationLogosCarousel = memo(function IntegrationLogosCarousel({ 
+  enabled 
+}: { enabled: boolean }) {
+  const popularIntegrations = useMemo(() => [
+    'googledrive',
+    'gmail',
+    'googlecalendar',
+    'slack',
+    'notion',
+    'github',
+    'linear',
+    'airtable',
+    'asana',
+    'trello',
+    'salesforce',
+    'hubspot',
+  ], []);
+
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [showNext, setShowNext] = useState(false);
+
+  const currentSlug = popularIntegrations[currentIndex];
+  const nextIndex = (currentIndex + 1) % popularIntegrations.length;
+  const nextSlug = popularIntegrations[nextIndex];
+  
+  // Always fetch both current and next for smooth transitions
+  const { data: currentIconData } = useComposioToolkitIcon(currentSlug, { enabled });
+  const { data: nextIconData } = useComposioToolkitIcon(nextSlug, { enabled });
+
+  useEffect(() => {
+    if (!enabled) return;
+    
+    const interval = setInterval(() => {
+      setShowNext(true);
+      // After fade completes, update to next index
+      setTimeout(() => {
+        setCurrentIndex((prev) => (prev + 1) % popularIntegrations.length);
+        setShowNext(false);
+      }, 300);
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [enabled, popularIntegrations.length]);
+
+  if (!enabled) {
+    return <Plug className="h-3 w-3" />;
+  }
+
+  if (!currentIconData?.icon_url) {
+    return <Plug className="h-3 w-3 animate-pulse" />;
+  }
+
+  return (
+    <div className="relative h-3 w-3">
+      {/* Current image fading out */}
+      {currentIconData?.icon_url && (
+        <img
+          src={currentIconData.icon_url}
+          alt={currentSlug}
+          className={`absolute inset-0 h-3 w-3 object-contain transition-opacity duration-300 ease-in-out ${
+            showNext ? 'opacity-0' : 'opacity-100'
+          }`}
+        />
+      )}
+      {/* Next image fading in */}
+      {showNext && nextIconData?.icon_url && (
+        <img
+          src={nextIconData.icon_url}
+          alt={nextSlug}
+          className={`absolute inset-0 h-3 w-3 object-contain transition-opacity duration-300 ease-in-out ${
+            showNext ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+      )}
+    </div>
+  );
+});
+
 const IntegrationsDropdown = memo(function IntegrationsDropdown({
   isLoggedIn,
   loading,
@@ -227,7 +306,7 @@ const IntegrationsDropdown = memo(function IntegrationsDropdown({
                 className="h-10 w-10 p-0 bg-transparent border-[1.5px] border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
                 disabled={loading || (disabled && !isAgentRunning)}
               >
-                <Plug className="h-5 w-5" />
+                <IntegrationLogosCarousel enabled={isLoggedIn && !loading && !(disabled && !isAgentRunning)} />
               </Button>
               {isFreeTier && !isLocalMode() && (
                 <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center z-10 pointer-events-none">
