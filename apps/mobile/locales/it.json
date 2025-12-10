@@ -2,6 +2,8 @@
   "common": {
     "cancel": "Annulla",
     "save": "Salva",
+    "saving": "Salvataggio...",
+    "success": "Successo",
     "done": "Fatto",
     "close": "Chiudi",
     "ok": "OK",
@@ -12,11 +14,16 @@
     "search": "Cerca",
     "loading": "Caricamento...",
     "error": "Errore",
+    "errorOccurred": "Si è verificato un errore. Per favore riprova.",
     "retry": "Riprova",
     "send": "Invia",
     "back": "Indietro",
     "new": "Nuovo",
-    "create": "Crea"
+    "create": "Crea",
+    "continue": "Continua",
+    "loadMore": "Carica altro",
+    "previous": "Precedente",
+    "next": "Successivo"
   },
   "auth": {
     "signIn": "Accedi",
@@ -643,7 +650,9 @@
     "connecting": "Connessione...",
     "disconnect": "Disconnetti",
     "noAppsFound": "Nessuna app trovata",
+    "noAppsAvailable": "Nessuna app disponibile",
     "tryDifferentSearch": "Prova un termine di ricerca diverso",
+    "appsAppearHere": "Le app appariranno qui quando disponibili",
     "loadingIntegrations": "Caricamento integrazioni...",
     "failedToLoad": "Caricamento fallito",
     "retry": "Riprova",
@@ -692,7 +701,10 @@
       "loadingTools": "Caricamento strumenti...",
       "failedToLoadTools": "Caricamento Fallito",
       "noToolsAvailable": "Nessuno Strumento Disponibile",
+      "noToolsFound": "Nessuno strumento trovato",
       "noToolsDescription": "Questa integrazione non ha strumenti",
+      "tryAdjustingSearch": "Prova a modificare la tua ricerca",
+      "toolsAppearHere": "Gli strumenti appariranno qui quando disponibili",
       "addingTools": "Aggiunta Strumenti...",
       "addTool": "Aggiungi {{count}} Strumento",
       "addTools": "Aggiungi {{count}} Strumenti",
@@ -828,4 +840,3 @@
     "selectTools": "Seleziona Strumenti"
   }
 }
-
