@@ -34,6 +34,8 @@ interface WorkerConfigDrawerProps {
   workerId: string | null;
   onClose: () => void;
   onWorkerUpdated?: () => void;
+  initialView?: 'instructions' | 'tools' | 'integrations' | 'triggers';
+  onUpgradePress?: () => void;
 }
 
 type ConfigView = 'instructions' | 'tools' | 'integrations' | 'triggers';
@@ -50,36 +52,100 @@ export function WorkerConfigDrawer({
   workerId,
   onClose,
   onWorkerUpdated,
+  initialView = 'instructions',
+  onUpgradePress,
 }: WorkerConfigDrawerProps) {
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const { colorScheme } = useColorScheme();
-  const [activeView, setActiveView] = useState<ConfigView>('instructions');
+  // Initialize activeView with initialView, and update it whenever initialView changes
+  const [activeView, setActiveView] = useState<ConfigView>(initialView);
+  const expandAttemptsRef = React.useRef(0);
+  const maxExpandAttempts = 5;
 
   const { data: agent, isLoading } = useAgent(workerId || undefined);
 
   // Snap points for bottom sheet
   const snapPoints = React.useMemo(() => ['90%'], []);
 
+  // Update activeView when initialView changes (e.g., switching tabs)
+  // This ensures the correct tab is shown when the drawer opens or when switching tabs
+  useEffect(() => {
+    if (initialView && initialView !== activeView) {
+      setActiveView(initialView);
+    }
+  }, [initialView, activeView]);
+
+  // Function to attempt expanding the sheet with retry logic
+  const attemptExpand = React.useCallback(() => {
+    if (!bottomSheetRef.current) {
+      return false;
+    }
+
+    try {
+      // Use expand() method - this is the standard method for @gorhom/bottom-sheet
+      bottomSheetRef.current.expand();
+      expandAttemptsRef.current = 0; // Reset on success
+      return true;
+    } catch (error) {
+      console.warn('Failed to expand BottomSheet:', error);
+      return false;
+    }
+  }, []);
+
+  // Track previous workerId to detect changes
+  const prevWorkerIdRef = React.useRef<string | null>(workerId);
+  const prevVisibleRef = React.useRef(visible);
+
   // Handle visibility changes and worker ID changes
   useEffect(() => {
+    const workerIdChanged = prevWorkerIdRef.current !== workerId;
+    const visibleChanged = prevVisibleRef.current !== visible;
+
+    // Update refs
+    prevWorkerIdRef.current = workerId;
+    prevVisibleRef.current = visible;
+
     if (visible && workerId) {
-      bottomSheetRef.current?.expand();
-      setActiveView('instructions'); // Reset to first view when switching workers
+      // Reset attempts counter when opening or when workerId changes
+      if (visibleChanged || workerIdChanged) {
+        expandAttemptsRef.current = 0;
+      }
+
+      // Ensure activeView matches initialView when opening
+      if (initialView && initialView !== activeView) {
+        setActiveView(initialView);
+      }
+
+      // Function to try expanding with retries
+      const tryExpand = (attempt: number = 0) => {
+        if (attempt >= maxExpandAttempts) {
+          console.warn('Max expand attempts reached for WorkerConfigDrawer');
+          return;
+        }
+
+        // Use increasing delays for retries
+        // If workerId changed, use longer initial delay to allow remount
+        const baseDelay = workerIdChanged && attempt === 0 ? 150 : 50;
+        const delay = attempt === 0 ? baseDelay : attempt * 100;
+
+        setTimeout(() => {
+          if (bottomSheetRef.current && visible && workerId) {
+            const success = attemptExpand();
+            if (!success && attempt < maxExpandAttempts - 1) {
+              // Retry if failed and we haven't exceeded max attempts
+              tryExpand(attempt + 1);
+            }
+          }
+        }, delay);
+      };
+
+      // Start the expand attempt
+      tryExpand();
     } else if (!visible) {
       bottomSheetRef.current?.close();
+      expandAttemptsRef.current = 0; // Reset attempts when closing
     }
-  }, [visible, workerId]);
-
-  // Force expand when workerId changes while drawer is already visible
-  useEffect(() => {
-    if (visible && workerId) {
-      // Small delay to ensure the workerId has updated
-      const timer = setTimeout(() => {
-        bottomSheetRef.current?.expand();
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [workerId, visible]);
+  }, [visible, workerId, initialView, activeView, attemptExpand]);
 
   // Handle sheet changes
   const handleSheetChanges = React.useCallback((index: number) => {
@@ -101,13 +167,9 @@ export function WorkerConfigDrawer({
     []
   );
 
-  if (!workerId) {
-    return null;
-  }
-
+  // Always render BottomSheet - NO key prop as it causes remounts that break the ref
   return (
     <BottomSheet
-      key={workerId} // Force re-render when workerId changes
       ref={bottomSheetRef}
       index={-1}
       snapPoints={snapPoints}
@@ -193,7 +255,11 @@ export function WorkerConfigDrawer({
         </View>
 
         {/* Content */}
-        {isLoading || !agent ? (
+        {!workerId ? (
+          <View className="flex-1 items-center justify-center p-8">
+            <Loading title="Loading worker..." />
+          </View>
+        ) : isLoading || !agent ? (
           <View className="flex-1 items-center justify-center p-8">
             <Loading title="Loading worker..." />
           </View>
@@ -208,10 +274,10 @@ export function WorkerConfigDrawer({
               <ToolsScreen agentId={workerId} onUpdate={onWorkerUpdated} />
             )}
             {activeView === 'integrations' && (
-              <IntegrationsScreen agentId={workerId} onUpdate={onWorkerUpdated} />
+              <IntegrationsScreen agentId={workerId} onUpdate={onWorkerUpdated} onUpgradePress={onUpgradePress} />
             )}
             {activeView === 'triggers' && (
-              <TriggersScreen agentId={workerId} onUpdate={onWorkerUpdated} />
+              <TriggersScreen agentId={workerId} onUpdate={onWorkerUpdated} onUpgradePress={onUpgradePress} />
             )}
           </BottomSheetScrollView>
         )}

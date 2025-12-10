@@ -27,10 +27,10 @@ const getDefaultModel = (accessibleModels: ModelOption[]): string => {
   // kortix/basic should be first for free users since power is not accessible
   const basicModel = accessibleModels.find(m => m.id === 'kortix/basic');
   if (basicModel) return basicModel.id;
-  
+
   const powerModel = accessibleModels.find(m => m.id === 'kortix/power');
   if (powerModel) return powerModel.id;
-  
+
   // Fallback: pick from accessible models sorted by priority
   if (accessibleModels.length > 0) {
     return accessibleModels[0].id;
@@ -41,14 +41,14 @@ const getDefaultModel = (accessibleModels: ModelOption[]): string => {
 
 export const useModelSelection = () => {
   const { user, isLoading: isAuthLoading } = useAuth();
-  
+
   // Get account state which includes models
-  const { data: accountState, isLoading } = useAccountState({ 
-    enabled: !!user && !isAuthLoading 
+  const { data: accountState, isLoading } = useAccountState({
+    enabled: !!user && !isAuthLoading
   });
 
   const { selectedModel, setSelectedModel } = useModelStore();
-  
+
   // Track previous tier to detect upgrades
   const prevTierKey = useRef<string | null>(null);
 
@@ -61,7 +61,7 @@ export const useModelSelection = () => {
   // The backend's `allowed` field is the source of truth!
   const availableModels = useMemo<ModelOption[]>(() => {
     if (!accountState?.models) return [];
-    
+
     return accountState.models.map(model => ({
       id: model.id,
       label: model.name,
@@ -90,12 +90,12 @@ export const useModelSelection = () => {
     if (isLoading || !accessibleModels.length) return;
 
     // If no model selected or selected model is not accessible, set a default
-    const needsUpdate = !selectedModel || 
+    const needsUpdate = !selectedModel ||
                         !accessibleModels.some(m => m.id === selectedModel);
-    
+
     if (needsUpdate) {
       const defaultModelId = getDefaultModel(accessibleModels);
-      
+
       if (defaultModelId && defaultModelId !== selectedModel) {
         console.log('🔧 useModelSelection: Setting default model:', defaultModelId, '(tier:', accountState?.subscription.tier_key, ')');
         setSelectedModel(defaultModelId);
@@ -103,14 +103,14 @@ export const useModelSelection = () => {
     }
   }, [selectedModel, accessibleModels, isLoading, setSelectedModel, accountState?.subscription.tier_key]);
 
-  // Auto-switch to Power mode when user upgrades to paid tier
+  // Auto-switch to Advanced mode when user upgrades to paid tier
   useEffect(() => {
     if (isLoading || !availableModels.length) return;
-    
+
     const currentTier = accountState?.subscription.tier_key;
     const wasFree = prevTierKey.current === 'free' || prevTierKey.current === 'none';
     const isNowPaid = isPaidTier(currentTier);
-    
+
     // Detect upgrade: was free, now paid
     if (wasFree && isNowPaid && prevTierKey.current !== null) {
       // Check if power model is now accessible
@@ -120,7 +120,7 @@ export const useModelSelection = () => {
         setSelectedModel('kortix/power');
       }
     }
-    
+
     // Update ref for next comparison
     prevTierKey.current = currentTier || null;
   }, [accountState?.subscription.tier_key, availableModels, isLoading, setSelectedModel]);

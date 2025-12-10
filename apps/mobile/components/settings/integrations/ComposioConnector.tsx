@@ -8,6 +8,7 @@ import {
   Alert,
   Switch,
 } from 'react-native';
+import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
@@ -50,6 +51,7 @@ interface ComposioConnectorContentProps {
   agentId?: string;
   noPadding?: boolean;
   isSaving?: boolean;
+  useBottomSheetFlatList?: boolean;
 }
 
 enum Step {
@@ -70,6 +72,7 @@ export function ComposioConnectorContent({
   agentId,
   noPadding = false,
   isSaving = false,
+  useBottomSheetFlatList = false,
 }: ComposioConnectorContentProps) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
@@ -351,7 +354,154 @@ export function ComposioConnectorContent({
     }
   };
 
+  // Prepare list data
+  const listData = React.useMemo(() => {
+    const items: Array<ComposioProfile | { type: 'new' }> = [...existingProfiles];
+    items.push({ type: 'new' } as any);
+    return items;
+  }, [existingProfiles]);
+
   if (currentStep === Step.ProfileSelect) {
+    // When using BottomSheetFlatList, render with fixed header and footer
+    if (useBottomSheetFlatList) {
+      return (
+        <View style={{ flex: 1 }}>
+          {/* Fixed header */}
+          <View
+            style={{
+              paddingHorizontal: 24,
+              paddingTop: 24,
+              paddingBottom: 16,
+              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+            }}>
+            {onBack && (
+              <Pressable onPress={onBack} className="mb-4 flex-row items-center active:opacity-70">
+                <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+              </Pressable>
+            )}
+            <View className={onBack ? '' : 'mb-4'}>
+              <Text
+                style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+                className="font-roobert-semibold text-xl">
+                {app.name}
+              </Text>
+              <Text
+                style={{
+                  color:
+                    colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
+                }}
+                className="font-roobert text-sm">
+                {existingProfiles.length > 0
+                  ? t('integrations.connector.selectConnection')
+                  : t('integrations.connector.createFirstConnection')}
+              </Text>
+            </View>
+          </View>
+
+          {/* Scrollable list */}
+          <BottomSheetFlatList
+            data={listData}
+            keyExtractor={(item: any, index: number) =>
+              item.type === 'new' ? 'new-connection' : item.profile_id || `profile-${index}`
+            }
+            renderItem={({ item }: { item: any }) => {
+              if (item.type === 'new') {
+                return (
+                  <View style={{ paddingHorizontal: 24, paddingBottom: 8 }}>
+                    <Pressable
+                      onPress={() => {
+                        setSelectedConnectionType('new');
+                        setSelectedProfileId('new');
+                      }}
+                      className={`flex-row items-center rounded-3xl p-4 active:opacity-80 ${
+                        selectedConnectionType === 'new' ? 'bg-primary/10' : 'bg-muted/5'
+                      }`}>
+                      <View
+                        className={`h-10 w-10 items-center justify-center rounded-xl ${
+                          selectedConnectionType === 'new' ? 'bg-primary' : 'bg-muted/30'
+                        }`}>
+                        <Icon
+                          as={Plus}
+                          size={20}
+                          className={
+                            selectedConnectionType === 'new'
+                              ? 'text-primary-foreground'
+                              : 'text-muted-foreground'
+                          }
+                          strokeWidth={2.5}
+                        />
+                      </View>
+                      <View className="ml-3 flex-1">
+                        <Text className="font-roobert-semibold text-base text-foreground">
+                          {t('integrations.connector.createNewConnection')}
+                        </Text>
+                      </View>
+                      {selectedConnectionType === 'new' && (
+                        <View className="h-5 w-5 items-center justify-center rounded-full bg-primary">
+                          <Icon
+                            as={Check}
+                            size={14}
+                            className="text-primary-foreground"
+                            strokeWidth={3}
+                          />
+                        </View>
+                      )}
+                    </Pressable>
+                  </View>
+                );
+              }
+
+              return (
+                <View style={{ paddingHorizontal: 24, paddingBottom: 8 }}>
+                  <ProfileListItem
+                    profile={item}
+                    isSelected={
+                      selectedProfileId === item.profile_id && selectedConnectionType === 'existing'
+                    }
+                    onPress={() => {
+                      setSelectedConnectionType('existing');
+                      setSelectedProfileId(item.profile_id);
+                    }}
+                  />
+                </View>
+              );
+            }}
+            contentContainerStyle={{ paddingTop: 8, paddingBottom: 16 }}
+            showsVerticalScrollIndicator={false}
+          />
+
+          {/* Fixed footer button */}
+          <View
+            style={{
+              paddingHorizontal: 24,
+              paddingTop: 16,
+              paddingBottom: 24,
+              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+            }}>
+            <ContinueButton
+              onPress={handleMainAction}
+              disabled={
+                isSaving ||
+                !selectedConnectionType ||
+                (selectedConnectionType === 'existing' && !selectedProfileId)
+              }
+              isLoading={isSaving}
+              label={
+                isSaving
+                  ? t('integrations.connector.connecting')
+                  : selectedConnectionType === 'new'
+                    ? t('integrations.connector.continue')
+                    : selectedConnectionType === 'existing' && selectedProfileId
+                      ? t('integrations.connector.continue')
+                      : t('integrations.connector.selectAnOption')
+              }
+            />
+          </View>
+        </View>
+      );
+    }
+
+    // Regular scrollable view (for non-BottomSheet usage)
     return (
       <View className="mb-4 flex-1" style={{ flex: 1, position: 'relative' }}>
         {/* Header with back button, title, and description */}

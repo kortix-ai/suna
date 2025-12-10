@@ -6,7 +6,7 @@
  * Supports both Schedule and Event-based triggers
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Pressable, TextInput, Alert, Image, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -24,8 +24,12 @@ import {
   CheckCircle2,
   ArrowLeft,
   Info,
+  Lock,
 } from 'lucide-react-native';
+import { useBillingContext } from '@/contexts/BillingContext';
+import { FreeTierBlock } from '@/components/billing/FreeTierBlock';
 import { useAgent } from '@/contexts/AgentContext';
+import { useRouter } from 'expo-router';
 import { extractErrorMessage } from '@/lib/utils/error-handler';
 import {
   useCreateTrigger,
@@ -58,6 +62,7 @@ interface TriggerCreationDrawerProps {
   isEditMode?: boolean;
   existingTrigger?: TriggerConfiguration | null;
   agentId?: string; // Optional agentId prop - if not provided, uses selectedAgentId from context
+  onUpgradePress?: () => void;
 }
 
 type TriggerStep = 'type' | 'config';
@@ -147,10 +152,23 @@ export function TriggerCreationDrawer({
   isEditMode = false,
   existingTrigger = null,
   agentId: propAgentId,
+  onUpgradePress,
 }: TriggerCreationDrawerProps) {
   const bottomSheetModalRef = React.useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
+  const router = useRouter();
   const { selectedAgentId: contextAgentId } = useAgent();
+  const { hasFreeTier } = useBillingContext();
+
+  // Handle upgrade press - use provided callback or navigate to plans
+  const handleUpgradePress = useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    if (onUpgradePress) {
+      onUpgradePress();
+    } else {
+      router.push('/plans');
+    }
+  }, [onUpgradePress, router]);
 
   // Use prop agentId if provided, otherwise fall back to context
   const agentId = propAgentId || contextAgentId;
@@ -923,18 +941,28 @@ export function TriggerCreationDrawer({
             {/* Type Selection Step */}
             {currentStep === 'type' && !isEditMode && (
               <View className="space-y-3">
-                <TypeCard
-                  icon={Clock}
-                  title="Schedule Trigger"
-                  subtitle="Run on a schedule"
-                  onPress={() => handleTypeSelect('schedule')}
-                />
-                <TypeCard
-                  icon={Sparkles}
-                  title="Event Trigger"
-                  subtitle="From external apps"
-                  onPress={() => handleTypeSelect('event')}
-                />
+                {hasFreeTier ? (
+                  <FreeTierBlock
+                    variant="automation"
+                    onUpgradePress={handleUpgradePress}
+                    style="card"
+                  />
+                ) : (
+                  <>
+                    <TypeCard
+                      icon={Clock}
+                      title="Schedule Trigger"
+                      subtitle="Run on a schedule"
+                      onPress={() => handleTypeSelect('schedule')}
+                    />
+                    <TypeCard
+                      icon={Sparkles}
+                      title="Event Trigger"
+                      subtitle="From external apps"
+                      onPress={() => handleTypeSelect('event')}
+                    />
+                  </>
+                )}
               </View>
             )}
 

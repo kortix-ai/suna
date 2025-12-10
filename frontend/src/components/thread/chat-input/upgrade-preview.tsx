@@ -53,7 +53,7 @@ export const UpgradePreview: React.FC<UpgradePreviewProps> = ({
                 </motion.div>
 
                 <span className="text-xs text-muted-foreground truncate block">
-                    Kortix Power mode, 100+ Integrations, Triggers, Custom AI Workers & more
+                    Kortix Advanced mode, 100+ Integrations, Triggers, Custom AI Workers & more
                 </span>
             </div>
 
@@ -64,7 +64,7 @@ export const UpgradePreview: React.FC<UpgradePreviewProps> = ({
                     onClick={(e) => {
                         e.stopPropagation();
                         // For 2 notifications, toggle. For more, cycle through
-                        const nextIndex = totalCount === 2 
+                        const nextIndex = totalCount === 2
                             ? (currentIndex === 0 ? 1 : 0)
                             : (currentIndex + 1) % totalCount;
                         onIndicatorClick?.(nextIndex);
