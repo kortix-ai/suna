@@ -787,7 +787,8 @@ export function TriggerCreationDrawer({
           paddingBottom: showActionButtons ? 30 : 40,
         }}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled">
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag">
         {/* Composio Connector - Show instead of other content */}
         {selectedApp && showComposioConnector ? (
           <ComposioConnectorContent
@@ -1200,25 +1201,35 @@ export function TriggerCreationDrawer({
                     }}>
                     {t('triggers.descriptionOptional')}
                   </Text>
-                  <TextInput
-                    value={description}
-                    onChangeText={setDescription}
-                    placeholder={t('triggers.describePlaceholder')}
-                    placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                    multiline
-                    numberOfLines={3}
+                  <ScrollView
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="on-drag"
+                    showsVerticalScrollIndicator={true}
                     style={{
-                      padding: 12,
                       borderRadius: 12,
                       borderWidth: 1.5,
                       borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
                       backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                      fontSize: 16,
-                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                      textAlignVertical: 'top',
-                      minHeight: 100,
+                      maxHeight: 150,
                     }}
-                  />
+                    contentContainerStyle={{
+                      padding: 12,
+                    }}>
+                    <TextInput
+                      value={description}
+                      onChangeText={setDescription}
+                      placeholder={t('triggers.describePlaceholder')}
+                      placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                      multiline
+                      scrollEnabled={false}
+                      style={{
+                        minHeight: 100,
+                        fontSize: 16,
+                        color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                        textAlignVertical: 'top',
+                      }}
+                    />
+                  </ScrollView>
                 </View>
 
                 {/* Agent Instructions */}
@@ -1232,25 +1243,35 @@ export function TriggerCreationDrawer({
                     }}>
                     {t('triggers.instructionsRequired')}
                   </Text>
-                  <TextInput
-                    value={agentPrompt}
-                    onChangeText={setAgentPrompt}
-                    placeholder={t('triggers.instructionsLabel')}
-                    placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                    multiline
-                    numberOfLines={4}
+                  <ScrollView
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="on-drag"
+                    showsVerticalScrollIndicator={true}
                     style={{
-                      padding: 12,
                       borderRadius: 12,
                       borderWidth: 1.5,
                       borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
                       backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                      fontSize: 16,
-                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                      textAlignVertical: 'top',
-                      minHeight: 120,
+                      maxHeight: 200,
                     }}
-                  />
+                    contentContainerStyle={{
+                      padding: 12,
+                    }}>
+                    <TextInput
+                      value={agentPrompt}
+                      onChangeText={setAgentPrompt}
+                      placeholder={t('triggers.instructionsLabel')}
+                      placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                      multiline
+                      scrollEnabled={false}
+                      style={{
+                        minHeight: 120,
+                        fontSize: 16,
+                        color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                        textAlignVertical: 'top',
+                      }}
+                    />
+                  </ScrollView>
                 </View>
               </View>
             )}

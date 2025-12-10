@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, TextInput } from 'react-native';
+import { View, TextInput, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
@@ -118,27 +118,37 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
 
       {/* TextInput with fixed height based on available space */}
       <View style={{ flex: 1, marginBottom: isEditable ? 84 : 0 }}>
-        <TextInput
-          value={systemPrompt}
-          onChangeText={handleTextChange}
-          placeholder={t('workers.instructions.placeholder')}
-          placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-          multiline
-          scrollEnabled
-          editable={isEditable}
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={true}
           style={{
             flex: 1,
-            padding: 16,
             borderRadius: 16,
             borderWidth: 1.5,
             borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
             backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-            fontSize: 16,
-            color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-            textAlignVertical: 'top',
             opacity: isEditable ? 1 : 0.6,
           }}
-        />
+          contentContainerStyle={{
+            padding: 16,
+          }}>
+          <TextInput
+            value={systemPrompt}
+            onChangeText={handleTextChange}
+            placeholder={t('workers.instructions.placeholder')}
+            placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+            multiline
+            scrollEnabled={false}
+            editable={isEditable}
+            style={{
+              minHeight: 200,
+              fontSize: 16,
+              color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+              textAlignVertical: 'top',
+            }}
+          />
+        </ScrollView>
       </View>
 
       {/* Sticky button at bottom */}

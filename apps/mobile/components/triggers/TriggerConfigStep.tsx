@@ -7,7 +7,7 @@
  */
 
 import React from 'react';
-import { View, TextInput, Pressable, ActivityIndicator } from 'react-native';
+import { View, TextInput, Pressable, ActivityIndicator, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Info, Plus, Check, CheckCircle2 } from 'lucide-react-native';
@@ -352,25 +352,35 @@ export function TriggerConfigStep({
                   }}>
                   {t('triggers.agentInstructions')} *
                 </Text>
-                <TextInput
-                  value={agentPrompt}
-                  onChangeText={onAgentPromptChange}
-                  placeholder={t('triggers.instructionsPlaceholder')}
-                  placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                  multiline
-                  numberOfLines={4}
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="on-drag"
+                  showsVerticalScrollIndicator={true}
                   style={{
-                    padding: 12,
                     borderRadius: 12,
                     borderWidth: 1.5,
                     borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
                     backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                    fontSize: 16,
-                    color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                    textAlignVertical: 'top',
-                    minHeight: 120,
+                    maxHeight: 200,
                   }}
-                />
+                  contentContainerStyle={{
+                    padding: 12,
+                  }}>
+                  <TextInput
+                    value={agentPrompt}
+                    onChangeText={onAgentPromptChange}
+                    placeholder={t('triggers.instructionsPlaceholder')}
+                    placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                    multiline
+                    scrollEnabled={false}
+                    style={{
+                      minHeight: 120,
+                      fontSize: 16,
+                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      textAlignVertical: 'top',
+                    }}
+                  />
+                </ScrollView>
                 <Text
                   className="font-roobert text-xs text-muted-foreground"
                   style={{ marginTop: 8 }}>
