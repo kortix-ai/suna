@@ -1,6 +1,6 @@
 /**
  * ModeThreadListView Component
- * 
+ *
  * Displays a list of threads for a specific mode, grouped by month.
  * Includes an input field at the bottom for creating new threads.
  */
@@ -24,12 +24,12 @@ import { MessageCircle } from 'lucide-react-native';
  * Includes common auto-generated icons that might be assigned to threads
  */
 const MODE_TO_ICON_NAMES: Record<string, string[]> = {
-  'image': ['image', 'camera', 'photo', 'picture'],
-  'slides': ['presentation', 'presentation-icon', 'slides', 'layers'],
-  'data': ['database', 'table', 'data', 'chart', 'bar-chart', 'pie-chart', 'line-chart'],
-  'docs': ['file-text', 'file', 'document', 'docs', 'book', 'book-open', 'edit', 'pencil'],
-  'people': ['user', 'users', 'people', 'contact'],
-  'research': ['search', 'research', 'info', 'help-circle', 'globe', 'magnifying-glass'],
+  image: ['image', 'camera', 'photo', 'picture'],
+  slides: ['presentation', 'presentation-icon', 'slides', 'layers'],
+  data: ['database', 'table', 'data', 'chart', 'bar-chart', 'pie-chart', 'line-chart'],
+  docs: ['file-text', 'file', 'document', 'docs', 'book', 'book-open', 'edit', 'pencil'],
+  people: ['user', 'users', 'people', 'contact'],
+  research: ['search', 'research', 'info', 'help-circle', 'globe', 'magnifying-glass'],
 };
 
 /**
@@ -37,7 +37,7 @@ const MODE_TO_ICON_NAMES: Record<string, string[]> = {
  */
 const ICON_NAME_TO_MODE: Record<string, string> = {};
 Object.entries(MODE_TO_ICON_NAMES).forEach(([modeId, iconNames]) => {
-  iconNames.forEach(iconName => {
+  iconNames.forEach((iconName) => {
     ICON_NAME_TO_MODE[iconName] = modeId;
   });
 });
@@ -50,13 +50,13 @@ function getThreadModeId(thread: Thread): string | null {
   if (thread.metadata?.mode) {
     return thread.metadata.mode;
   }
-  
+
   // Fall back to project.icon_name mapping (existing threads)
   const iconName = thread.project?.icon_name?.toLowerCase();
   if (iconName && ICON_NAME_TO_MODE[iconName]) {
     return ICON_NAME_TO_MODE[iconName];
   }
-  
+
   return null;
 }
 
@@ -90,11 +90,11 @@ function groupThreadsByMonth(threads: Thread[]): ThreadSection[] {
 
   // Group by year-month
   const grouped = new Map<string, Thread[]>();
-  
-  sortedThreads.forEach(thread => {
+
+  sortedThreads.forEach((thread) => {
     const date = new Date(thread.created_at);
     const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    
+
     if (!grouped.has(monthKey)) {
       grouped.set(monthKey, []);
     }
@@ -112,13 +112,7 @@ function groupThreadsByMonth(threads: Thread[]): ThreadSection[] {
 /**
  * Thread Item Component
  */
-function ThreadItem({ 
-  thread, 
-  onPress 
-}: { 
-  thread: Thread; 
-  onPress: () => void;
-}) {
+function ThreadItem({ thread, onPress }: { thread: Thread; onPress: () => void }) {
   const { currentLanguage } = useLanguage();
   const { colorScheme } = useColorScheme();
   const isDarkMode = colorScheme === 'dark';
@@ -127,19 +121,19 @@ function ThreadItem({
     () => formatConversationDate(new Date(thread.created_at), currentLanguage),
     [thread.created_at, currentLanguage]
   );
-  
+
   const title = thread.project?.name || thread.title || 'Untitled Chat';
-  
+
   // Use the thread's icon_name (same as side menu) - fallback to mode-based icon
   const threadIcon = thread.project?.icon_name || MessageCircle;
-  
+
   return (
     <SelectableListItem
       avatar={
-        <ThreadAvatar 
+        <ThreadAvatar
           title={title}
           icon={threadIcon}
-          size={48} 
+          size={48}
           backgroundColor={isDarkMode ? '#1C1D20' : '#ECECEC'}
           className="flex-row items-center justify-center"
           style={{
@@ -159,25 +153,23 @@ function ThreadItem({
 /**
  * Thread Section Component
  */
-function ThreadSection({ 
-  section, 
-  onThreadPress 
-}: { 
+function ThreadSection({
+  section,
+  onThreadPress,
+}: {
   section: ThreadSection;
   onThreadPress: (threadId: string) => void;
 }) {
   const { currentLanguage } = useLanguage();
-  
+
   const sectionTitle = React.useMemo(
     () => formatMonthYear(section.timestamp, currentLanguage),
     [section.timestamp, currentLanguage]
   );
-  
+
   return (
-    <View className="gap-3 w-full">
-      <Text className="text-sm font-roobert-medium text-foreground opacity-50">
-        {sectionTitle}
-      </Text>
+    <View className="w-full gap-3">
+      <Text className="font-roobert-medium text-sm text-foreground opacity-50">{sectionTitle}</Text>
       <View className="gap-4">
         {section.threads.map((thread) => (
           <ThreadItem
@@ -197,19 +189,21 @@ function ThreadSection({
 function EmptyState({ modeLabel }: { modeLabel: string }) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
-  
+
   return (
-    <View className="items-center pt-16 px-8">
-      <View 
-        className="w-20 h-20 rounded-full items-center justify-center mb-6"
-        style={{ backgroundColor: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)' }}
-      >
+    <View className="items-center px-8 pt-16">
+      <View
+        className="mb-6 h-20 w-20 items-center justify-center rounded-full"
+        style={{
+          backgroundColor:
+            colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)',
+        }}>
         <MessageCircle size={40} color={colorScheme === 'dark' ? '#666' : '#999'} />
       </View>
-      <Text className="text-foreground text-xl font-roobert-semibold text-center mb-2">
+      <Text className="mb-2 text-center font-roobert-semibold text-xl text-foreground">
         {t('modes.noThreadsYet', { defaultValue: `No ${modeLabel} threads yet` })}
       </Text>
-      <Text className="text-muted-foreground text-base font-roobert text-center">
+      <Text className="text-center font-roobert text-base text-muted-foreground">
         {t('modes.startTyping', { defaultValue: 'Start typing below to create your first thread' })}
       </Text>
     </View>
@@ -226,43 +220,28 @@ export function ModeThreadListView({
 }: ModeThreadListViewProps) {
   const insets = useSafeAreaInsets();
   const { t } = useLanguage();
-  
+
   // Get mode info
-  const mode = React.useMemo(
-    () => QUICK_ACTIONS.find(a => a.id === modeId),
-    [modeId]
-  );
-  
-  const modeLabel = mode 
-    ? t(`quickActions.${mode.id}`, { defaultValue: mode.label })
-    : modeId;
-  
+  const mode = React.useMemo(() => QUICK_ACTIONS.find((a) => a.id === modeId), [modeId]);
+
+  const modeLabel = mode ? t(`quickActions.${mode.id}`, { defaultValue: mode.label }) : modeId;
+
   const modeIcon = mode?.icon || MessageCircle;
-  
+
   // Fetch and filter threads
   const { data: allThreads = [] } = useThreads();
-  
+
   // Filter threads that belong to this mode (check both metadata.mode and project.icon_name)
+  // Removed console.log statements that could cause side effects during render
   const modeThreads = React.useMemo(() => {
-    console.log(`[ModeThreadListView] Filtering for mode: ${modeId}`);
-    console.log(`[ModeThreadListView] Total threads: ${allThreads.length}`);
-    
-    const filtered = allThreads.filter((thread: Thread) => {
+    return allThreads.filter((thread: Thread) => {
       const threadModeId = getThreadModeId(thread);
-      const matches = threadModeId === modeId;
-      console.log(`[ModeThreadListView] Thread ${thread.thread_id}: mode=${thread.metadata?.mode}, icon=${thread.project?.icon_name}, resolved=${threadModeId}, matches=${matches}`);
-      return matches;
+      return threadModeId === modeId;
     });
-    
-    console.log(`[ModeThreadListView] Filtered threads: ${filtered.length}`);
-    return filtered;
   }, [allThreads, modeId]);
-  
-  const sections = React.useMemo(
-    () => groupThreadsByMonth(modeThreads),
-    [modeThreads]
-  );
-  
+
+  const sections = React.useMemo(() => groupThreadsByMonth(modeThreads), [modeThreads]);
+
   const hasThreads = modeThreads.length > 0;
 
   const ModeIcon = modeIcon;
@@ -276,24 +255,17 @@ export function ModeThreadListView({
           paddingTop: Math.max(insets.top, 16) + 80,
           paddingBottom: 220,
         }}
-        showsVerticalScrollIndicator={false}
-      >
+        showsVerticalScrollIndicator={false}>
         {/* Mode Header */}
-        <View className="flex-row items-center gap-3 mb-6">
+        <View className="mb-6 flex-row items-center gap-3">
           <ModeIcon size={28} strokeWidth={2} color="currentColor" className="text-foreground" />
-          <Text className="text-3xl font-roobert-semibold text-foreground">
-            {modeLabel}
-          </Text>
+          <Text className="font-roobert-semibold text-3xl text-foreground">{modeLabel}</Text>
         </View>
 
         {hasThreads ? (
           <View style={{ gap: 24 }}>
             {sections.map((section) => (
-              <ThreadSection
-                key={section.id}
-                section={section}
-                onThreadPress={onThreadPress}
-              />
+              <ThreadSection key={section.id} section={section} onThreadPress={onThreadPress} />
             ))}
           </View>
         ) : (
@@ -303,4 +275,3 @@ export function ModeThreadListView({
     </View>
   );
 }
-

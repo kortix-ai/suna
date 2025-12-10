@@ -19,6 +19,10 @@ interface HomePageProps {
   onMenuPress?: () => void;
   chat: UseChatReturn;
   isAuthenticated: boolean;
+  onOpenWorkerConfig?: (
+    workerId: string,
+    view?: 'instructions' | 'tools' | 'integrations' | 'triggers'
+  ) => void;
 }
 
 export interface HomePageRef {
@@ -26,7 +30,7 @@ export interface HomePageRef {
 }
 
 export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
-  ({ onMenuPress, chat, isAuthenticated }, ref) => {
+  ({ onMenuPress, chat, isAuthenticated, onOpenWorkerConfig: externalOpenWorkerConfig }, ref) => {
     const router = useRouter();
     const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
 
@@ -178,12 +182,17 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
     const handleOpenWorkerConfig = React.useCallback(
       (workerId: string, view?: 'instructions' | 'tools' | 'integrations' | 'triggers') => {
         console.log('🔧 [HomePage] Opening worker config:', workerId, view);
-        // Store the pending config
+        // If external handler is provided, use it to redirect to MenuPage
+        if (externalOpenWorkerConfig) {
+          externalOpenWorkerConfig(workerId, view);
+          return;
+        }
+        // Fallback: Store the pending config and open locally
         pendingWorkerConfigRef.current = { workerId, view };
         // Close the agent drawer - we'll open worker config in the dismiss callback
         agentManager.closeDrawer();
       },
-      [agentManager]
+      [agentManager, externalOpenWorkerConfig]
     );
 
     const handleAgentDrawerDismiss = React.useCallback(() => {
