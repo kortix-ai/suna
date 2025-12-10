@@ -120,7 +120,21 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
 
       {/* Scrollable text input */}
       <View style={{ flex: 1, marginBottom: isEditable ? 84 : 0 }}>
-        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={true}>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={true}
+          style={{
+            flex: 1,
+            borderRadius: 16,
+            borderWidth: 1.5,
+            borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+            backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+            opacity: isEditable ? 1 : 0.6,
+          }}
+          contentContainerStyle={{
+            padding: 16,
+          }}>
           <TextInput
             ref={inputRef}
             value={systemPrompt}
@@ -135,12 +149,6 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
               color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
               textAlignVertical: 'top',
               minHeight: 300,
-              borderRadius: 16,
-              borderWidth: 1.5,
-              borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-              backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-              opacity: isEditable ? 1 : 0.6,
-              padding: 16,
             }}
           />
         </ScrollView>

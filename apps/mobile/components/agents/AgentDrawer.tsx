@@ -489,63 +489,70 @@ export function AgentDrawer({
                 Worker Settings
               </Text>
             </View>
-            <View className="flex-row gap-1.5">
+            <View className="flex-row gap-2">
               <Pressable
                 style={{
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
                   borderWidth: 1.5,
+                  minHeight: 56,
                 }}
-                className="h-12 flex-1 items-center justify-center rounded-2xl active:opacity-70"
+                className="flex-1 items-center justify-center rounded-2xl active:opacity-70"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
                     onOpenWorkerConfig(selectedAgentId, 'instructions');
                   }
-                }}>
-                <Brain size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                <Brain size={18} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>
               <Pressable
                 style={{
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
                   borderWidth: 1.5,
+                  minHeight: 56,
                 }}
-                className="h-12 flex-1 items-center justify-center rounded-2xl active:opacity-70"
+                className="flex-1 items-center justify-center rounded-2xl active:opacity-70"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
                     onOpenWorkerConfig(selectedAgentId, 'tools');
                   }
-                }}>
-                <Wrench size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                <Wrench size={18} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>
               <Pressable
                 style={{
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
                   borderWidth: 1.5,
+                  minHeight: 56,
                 }}
-                className="h-12 flex-1 items-center justify-center rounded-2xl active:opacity-70"
+                className="flex-1 items-center justify-center rounded-2xl active:opacity-70"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
                     onOpenWorkerConfig(selectedAgentId, 'integrations');
                   }
-                }}>
-                <Server size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                <Server size={18} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>
-
               <Pressable
                 style={{
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
                   borderWidth: 1.5,
+                  minHeight: 56,
                 }}
-                className="h-12 flex-1 items-center justify-center rounded-2xl active:opacity-70"
+                className="flex-1 items-center justify-center rounded-2xl active:opacity-70"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
                     onOpenWorkerConfig(selectedAgentId, 'triggers');
                   }
-                }}>
-                <Zap size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                <Zap size={18} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>
             </View>
           </View>
@@ -767,9 +774,10 @@ export function AgentDrawer({
           contentContainerStyle={{
             paddingHorizontal: 24,
             paddingTop: 24,
-            paddingBottom: 32,
+            paddingBottom: 48,
           }}
-          showsVerticalScrollIndicator={false}>
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled">
           {/* Dynamic content based on current view */}
           {currentView === 'main' && (
             <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>

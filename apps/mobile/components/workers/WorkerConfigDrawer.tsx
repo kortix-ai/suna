@@ -12,15 +12,8 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
-import {
-  Brain,
-  Wrench,
-  Server,
-  Zap,
-  X,
-  ArrowLeft,
-} from 'lucide-react-native';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { Brain, Wrench, Server, Zap, X, ArrowLeft } from 'lucide-react-native';
+import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
 import { Loading } from '../loading/loading';
@@ -55,17 +48,15 @@ export function WorkerConfigDrawer({
   initialView = 'instructions',
   onUpgradePress,
 }: WorkerConfigDrawerProps) {
-  const bottomSheetRef = React.useRef<BottomSheet>(null);
+  const bottomSheetRef = React.useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
   // Initialize activeView with initialView, and update it whenever initialView changes
   const [activeView, setActiveView] = useState<ConfigView>(initialView);
-  const expandAttemptsRef = React.useRef(0);
-  const maxExpandAttempts = 5;
 
   const { data: agent, isLoading } = useAgent(workerId || undefined);
 
   // Snap points for bottom sheet
-  const snapPoints = React.useMemo(() => ['90%'], []);
+  const snapPoints = React.useMemo(() => ['95%'], []);
 
   // Update activeView when initialView changes (e.g., switching tabs)
   // This ensures the correct tab is shown when the drawer opens or when switching tabs
@@ -75,112 +66,50 @@ export function WorkerConfigDrawer({
     }
   }, [initialView, activeView]);
 
-  // Function to attempt expanding the sheet with retry logic
-  const attemptExpand = React.useCallback(() => {
-    if (!bottomSheetRef.current) {
-      return false;
-    }
-
-    try {
-      // Use expand() method - this is the standard method for @gorhom/bottom-sheet
-      bottomSheetRef.current.expand();
-      expandAttemptsRef.current = 0; // Reset on success
-      return true;
-    } catch (error) {
-      console.warn('Failed to expand BottomSheet:', error);
-      return false;
-    }
-  }, []);
-
-  // Track previous workerId to detect changes
-  const prevWorkerIdRef = React.useRef<string | null>(workerId);
-  const prevVisibleRef = React.useRef(visible);
-
-  // Handle visibility changes and worker ID changes
+  // Handle visibility changes
   useEffect(() => {
-    const workerIdChanged = prevWorkerIdRef.current !== workerId;
-    const visibleChanged = prevVisibleRef.current !== visible;
-
-    // Update refs
-    prevWorkerIdRef.current = workerId;
-    prevVisibleRef.current = visible;
-
     if (visible && workerId) {
-      // Reset attempts counter when opening or when workerId changes
-      if (visibleChanged || workerIdChanged) {
-        expandAttemptsRef.current = 0;
-      }
-
       // Ensure activeView matches initialView when opening
       if (initialView && initialView !== activeView) {
         setActiveView(initialView);
       }
-
-      // Function to try expanding with retries
-      const tryExpand = (attempt: number = 0) => {
-        if (attempt >= maxExpandAttempts) {
-          console.warn('Max expand attempts reached for WorkerConfigDrawer');
-          return;
-        }
-
-        // Use increasing delays for retries
-        // If workerId changed, use longer initial delay to allow remount
-        const baseDelay = workerIdChanged && attempt === 0 ? 150 : 50;
-        const delay = attempt === 0 ? baseDelay : attempt * 100;
-
-        setTimeout(() => {
-          if (bottomSheetRef.current && visible && workerId) {
-            const success = attemptExpand();
-            if (!success && attempt < maxExpandAttempts - 1) {
-              // Retry if failed and we haven't exceeded max attempts
-              tryExpand(attempt + 1);
-            }
-          }
-        }, delay);
-      };
-
-      // Start the expand attempt
-      tryExpand();
+      bottomSheetRef.current?.present();
     } else if (!visible) {
-      bottomSheetRef.current?.close();
-      expandAttemptsRef.current = 0; // Reset attempts when closing
+      bottomSheetRef.current?.dismiss();
     }
-  }, [visible, workerId, initialView, activeView, attemptExpand]);
+  }, [visible, workerId, initialView, activeView]);
 
-  // Handle sheet changes
-  const handleSheetChanges = React.useCallback((index: number) => {
-    if (index === -1) {
-      onClose();
-    }
+  // Handle dismiss
+  const handleDismiss = React.useCallback(() => {
+    onClose();
   }, [onClose]);
 
   // Backdrop component
   const renderBackdrop = React.useCallback(
     (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        opacity={0.5}
-      />
+      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
     ),
     []
   );
 
-  // Always render BottomSheet - NO key prop as it causes remounts that break the ref
+  // Use BottomSheetModal to render above everything (hamburger menu, credits, etc.)
   return (
-    <BottomSheet
+    <BottomSheetModal
       ref={bottomSheetRef}
-      index={-1}
       snapPoints={snapPoints}
-      onChange={handleSheetChanges}
+      onDismiss={handleDismiss}
       enablePanDownToClose
       backdropComponent={renderBackdrop}
       backgroundStyle={{
         backgroundColor: colorScheme === 'dark' ? '#18181B' : '#FFFFFF',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
       }}
       handleIndicatorStyle={{
         backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+        width: 36,
+        height: 5,
+        borderRadius: 3,
       }}>
       <View className="flex-1">
         {/* Header */}
@@ -194,12 +123,12 @@ export function WorkerConfigDrawer({
             <View>
               {isLoading || !agent ? (
                 <>
-                  <View className="h-5 w-32 rounded bg-muted animate-pulse" />
-                  <View className="h-3 w-24 rounded bg-muted mt-1 animate-pulse" />
+                  <View className="h-5 w-32 animate-pulse rounded bg-muted" />
+                  <View className="mt-1 h-3 w-24 animate-pulse rounded bg-muted" />
                 </>
               ) : (
                 <>
-                  <Text className="text-lg font-roobert-semibold text-foreground">
+                  <Text className="font-roobert-semibold text-lg text-foreground">
                     {agent.name}
                   </Text>
                   <Text className="text-xs text-muted-foreground">Worker Configuration</Text>
@@ -274,15 +203,22 @@ export function WorkerConfigDrawer({
               <ToolsScreen agentId={workerId} onUpdate={onWorkerUpdated} />
             )}
             {activeView === 'integrations' && (
-              <IntegrationsScreen agentId={workerId} onUpdate={onWorkerUpdated} onUpgradePress={onUpgradePress} />
+              <IntegrationsScreen
+                agentId={workerId}
+                onUpdate={onWorkerUpdated}
+                onUpgradePress={onUpgradePress}
+              />
             )}
             {activeView === 'triggers' && (
-              <TriggersScreen agentId={workerId} onUpdate={onWorkerUpdated} onUpgradePress={onUpgradePress} />
+              <TriggersScreen
+                agentId={workerId}
+                onUpdate={onWorkerUpdated}
+                onUpgradePress={onUpgradePress}
+              />
             )}
           </BottomSheetScrollView>
         )}
       </View>
-    </BottomSheet>
+    </BottomSheetModal>
   );
 }
-
