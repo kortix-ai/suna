@@ -327,11 +327,7 @@ function MarkdownWithLinkHandling({
           scrollEnabled={false}
           caretHidden={true}
           showSoftInputOnFocus={false}
-          contextMenuHidden={true}
           selectTextOnFocus={false}
-          onFocus={(e) => {
-            e.preventDefault?.();
-          }}
         />
       </View>
     );
@@ -377,11 +373,7 @@ function MarkdownWithLinkHandling({
                 scrollEnabled={false}
                 caretHidden={true}
                 showSoftInputOnFocus={false}
-                contextMenuHidden={true}
                 selectTextOnFocus={false}
-                onFocus={(e) => {
-                  e.preventDefault?.();
-                }}
               />
             </View>
           );
@@ -522,7 +514,7 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
           if (part.type === 'code') {
             return (
               <View key={idx} style={needsSpacing && styles.partSpacing}>
-                <CodeBlock code={part.content} language={part.language} isDark={isDark} />
+                <CodeBlock code={part.content} language={'language' in part ? part.language : undefined} isDark={isDark} />
               </View>
             );
           }

@@ -2,15 +2,18 @@ diff --git a/node_modules/@expensify/react-native-live-markdown/apple/MarkdownFo
 index 350653c..744e57a 100644
 --- a/node_modules/@expensify/react-native-live-markdown/apple/MarkdownFormatter.mm
 +++ b/node_modules/@expensify/react-native-live-markdown/apple/MarkdownFormatter.mm
-@@ -85,6 +85,14 @@
+@@ -85,6 +85,17 @@
  
    if (type == "syntax") {
      [attributedString addAttribute:NSForegroundColorAttributeName value:markdownStyle.syntaxColor range:range];
-+    // Check if this syntax is heading markers (# characters + space at start of line)
++    // Hide syntax markers (headings #, bold **, italic *, strikethrough ~~)
 +    NSString *syntaxText = [attributedString.string substringWithRange:range];
-+    BOOL isHeadingSyntax = [syntaxText rangeOfString:@"#"].location != NSNotFound;
-+    if (isHeadingSyntax && markdownStyle.syntaxFontSize > 0) {
-+      // Apply tiny font ONLY to heading # syntax to collapse width
++    BOOL shouldHideSyntax = ([syntaxText rangeOfString:@"#"].location != NSNotFound ||
++                             [syntaxText rangeOfString:@"*"].location != NSNotFound ||
++                             [syntaxText rangeOfString:@"_"].location != NSNotFound ||
++                             [syntaxText rangeOfString:@"~"].location != NSNotFound);
++    if (shouldHideSyntax && markdownStyle.syntaxFontSize > 0) {
++      // Apply tiny font to collapse width of syntax markers
 +      UIFont *tinyFont = [UIFont systemFontOfSize:markdownStyle.syntaxFontSize];
 +      [attributedString addAttribute:NSFontAttributeName value:tinyFont range:range];
 +    }
