@@ -619,7 +619,14 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
             {/* Mobile: Use Sheet */}
             {isMobile ? (
                 <>
-                    {TriggerButton}
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            {TriggerButton}
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                            <p>Worker settings</p>
+                        </TooltipContent>
+                    </Tooltip>
                     <Sheet open={isOpen} onOpenChange={setIsOpen}>
                         <SheetContent 
                             side="bottom" 
@@ -640,9 +647,16 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
             ) : (
                 /* Desktop: Use Dropdown */
                 <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
-                    <DropdownMenuTrigger asChild>
-                        {TriggerButton}
-                    </DropdownMenuTrigger>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <DropdownMenuTrigger asChild>
+                                {TriggerButton}
+                            </DropdownMenuTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                            <p>Worker settings</p>
+                        </TooltipContent>
+                    </Tooltip>
 
                     <DropdownMenuContent align="end" className="w-[320px] px-0 py-3 border-[1.5px] border-border rounded-2xl" sideOffset={6}>
                         <TooltipProvider>
