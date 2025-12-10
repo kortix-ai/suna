@@ -43,6 +43,7 @@ export interface ChatInputSectionProps {
   onQuickActionPress?: (actionId: string) => void;
   onQuickActionSelectOption?: (optionId: string) => void;
   onQuickActionSelectPrompt?: (prompt: string) => void;
+  onQuickActionThreadPress?: (threadId: string) => void;
   
   // Agent running state
   isAgentRunning: boolean;
@@ -111,6 +112,7 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
   onQuickActionPress,
   onQuickActionSelectOption,
   onQuickActionSelectPrompt,
+  onQuickActionThreadPress,
   isAgentRunning,
   onStopAgentRun,
   style,
@@ -177,6 +179,7 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
             onSelectOption={(optionId) => onQuickActionSelectOption?.(optionId)}
             selectedOptionId={selectedQuickActionOption}
             onSelectPrompt={onQuickActionSelectPrompt}
+            onThreadPress={onQuickActionThreadPress}
           />
         </View>
       )}

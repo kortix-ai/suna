@@ -130,7 +130,7 @@ export function AgentCreationModal({ open, onOpenChange, onSuccess }: AgentCreat
           if (error instanceof AgentCountLimitError) {
             onOpenChange(false);
           } else {
-            toast.error(error instanceof Error ? error.message : 'Failed to create agent');
+            toast.error(error instanceof Error ? error.message : 'Failed to create Worker');
           }
         }
       });
@@ -163,7 +163,7 @@ export function AgentCreationModal({ open, onOpenChange, onSuccess }: AgentCreat
       router.push(`/agents/config/${result.agent_id}`);
 
     } catch (error: any) {
-      toast.error('Failed to create agent', { id: 'agent-setup' });
+      toast.error('Failed to create Worker', { id: 'agent-setup' });
       if (error?.detail?.error_code === 'AGENT_LIMIT_EXCEEDED') {
         onOpenChange(false);
       } else {

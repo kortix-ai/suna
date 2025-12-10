@@ -164,20 +164,27 @@ class SunaDefaultAgentService:
         return agent_id
     
     async def _create_initial_version(self, agent_id: str, account_id: str) -> None:
-        """Create initial version for Suna agent."""
+        """Create initial version for Suna agent.
+        
+        Note: We don't save system_prompt, model, or agentpress_tools for Suna agents
+        since they're always loaded from SUNA_CONFIG in memory. We only save MCPs
+        which are user-specific customizations.
+        """
         try:
             from core.versioning.version_service import get_version_service
             from core.suna_config import SUNA_CONFIG
             
             version_service = await get_version_service()
+            # For Suna agents, only save MCPs (user customizations)
+            # System prompt, model, and tools are always loaded from SUNA_CONFIG
             await version_service.create_version(
                 agent_id=agent_id,
                 user_id=account_id,
-                system_prompt=SUNA_CONFIG["system_prompt"],
+                system_prompt="",  # Not saved for Suna - always from SUNA_CONFIG
                 configured_mcps=SUNA_CONFIG["configured_mcps"],
                 custom_mcps=SUNA_CONFIG["custom_mcps"],
-                agentpress_tools=SUNA_CONFIG["agentpress_tools"],
-                model=SUNA_CONFIG["model"],
+                agentpress_tools={},  # Not saved for Suna - always from SUNA_CONFIG
+                model=None,  # Not saved for Suna - always from SUNA_CONFIG
                 version_name="v1",
                 change_description="Initial Suna agent installation"
             )

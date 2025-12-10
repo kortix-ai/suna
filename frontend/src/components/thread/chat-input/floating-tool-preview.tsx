@@ -151,7 +151,7 @@ export const FloatingToolPreview: React.FC<FloatingToolPreviewProps> = ({
                         : "text-red-500"
                   )}>
                     {isStreaming
-                      ? `${agentName || 'Suna'} is working...`
+                      ? `${agentName || 'Kortix'} is working...`
                       : isSuccess
                         ? "Success"
                         : "Failed"

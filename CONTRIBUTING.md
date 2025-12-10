@@ -1,6 +1,6 @@
-# Contributing to Suna
+# Contributing
 
-Thank you for your interest in contributing to Suna! This document outlines the contribution process and guidelines.
+Thank you for your interest in contributing. This document outlines the contribution process and guidelines.
 
 ## Contribution Workflow
 

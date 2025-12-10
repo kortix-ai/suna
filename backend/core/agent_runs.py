@@ -123,7 +123,7 @@ async def _load_agent_config(client, agent_id: Optional[str], account_id: str, u
             from core.agent_loader import AgentData
             agent_data = AgentData(
                 agent_id=agent_id,
-                name="Suna",
+                name="Kortix",
                 description=None,
                 account_id=account_id,
                 is_default=True,
@@ -967,6 +967,8 @@ async def optimistic_agent_start(
         t_billing = time.time()
         await _check_billing_and_limits(client, account_id, resolved_model, check_project_limit=True, check_thread_limit=True)
         logger.debug(f"⏱️ [TIMING] Optimistic billing check: {(time.time() - t_billing) * 1000:.1f}ms")
+        
+        structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id, account_id=account_id)
         
         from core.thread_init_service import create_thread_optimistically
         

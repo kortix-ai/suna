@@ -315,6 +315,11 @@ class Configuration:
             return self.STRIPE_CREDITS_500_PRICE_ID_STAGING
         return self.STRIPE_CREDITS_500_PRICE_ID_PROD
     
+    # PostHog Analytics
+    POSTHOG_PERSONAL_API_KEY: Optional[str] = None  # Personal API key (phx_...) for querying analytics
+    POSTHOG_PROJECT_ID: Optional[str] = None  # Project ID from PostHog
+    POSTHOG_HOST: Optional[str] = "https://eu.posthog.com"  # EU or US host
+
     # LLM API keys
     ANTHROPIC_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None

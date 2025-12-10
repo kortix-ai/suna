@@ -81,7 +81,7 @@ export function SelectableListItem({
   isSelected = false,
   showChevron = false,
   hideIndicator = false,
-  isActive = false,
+  isActive = true,
   onPress,
   accessibilityLabel,
   selectionBackground,

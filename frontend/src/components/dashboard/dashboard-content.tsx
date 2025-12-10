@@ -128,11 +128,11 @@ export function DashboardContent() {
     ? agents.find(agent => agent.agent_id === selectedAgentId)
     : null;
   const sunaAgent = agents.find(agent => agent.metadata?.is_suna_default === true);
-  const displayName = selectedAgent?.name || 'Suna';
+  const displayName = selectedAgent?.name || 'Kortix';
   const agentAvatar = undefined;
-  // Show Suna modes while loading (assume Suna is default) or when Suna agent is selected
+  // Show Kortix modes while loading (assume Kortix is default) or when Kortix agent is selected
   const isSunaAgent = isLoadingAgents 
-    ? true // Show Suna modes while loading
+    ? true // Show Kortix modes while loading
     : (selectedAgent?.metadata?.is_suna_default || (!selectedAgentId && sunaAgent !== undefined) || false);
 
   const threadQuery = useThreadQuery(initiatedThreadId || '');
@@ -345,7 +345,7 @@ export function DashboardContent() {
       const trimmedMessage = message.trim();
       if (!trimmedMessage && files.length === 0) {
         setIsSubmitting(false);
-        throw new Error('Prompt is required when starting a new agent');
+        throw new Error('Prompt is required when starting a new Worker');
       }
       // Always append prompt (even if empty, backend will validate)
       formData.append('prompt', trimmedMessage || message);
@@ -610,7 +610,7 @@ export function DashboardContent() {
                         : "text-muted-foreground hover:text-foreground"
                     )}
                   >
-                    Kortix Super Worker
+                    Kortix
                   </button>
                   <button
                     onClick={() => {

@@ -168,7 +168,7 @@
     "superworker": {
       "title": "Dein KI-Superworker",
       "description": "Kombiniere alle Features, um maßgeschneiderte KI-Workers für jede Aufgabe zu erstellen, die du brauchst.",
-      "example": "Erstelle einen Kundenservice-Agenten"
+      "example": "Erstelle einen Kundenservice-Worker"
     }
   },
   "settings": {
@@ -531,7 +531,7 @@
     "actionCannotBeUndone": "Diese Aktion kann nicht rückgängig gemacht werden",
     "accountWillBeDeleted": "Dein Konto wird dauerhaft gelöscht",
     "whatWillBeDeleted": "Was Gelöscht Wird",
-    "allAgents": "Alle deine Agenten und Agent-Versionen",
+    "allAgents": "Alle deine Workers und Worker-Versionen",
     "allThreads": "Alle deine Threads und Konversationen",
     "allCredentials": "Alle deine Anmeldedaten und Integrationen",
     "subscriptionData": "Deine Abonnement- und Abrechnungsdaten",
@@ -635,7 +635,7 @@
     "composioApps": "Composio Apps",
     "composioAppsDescription": "Mit Hunderten von Geschäftsanwendungen verbinden",
     "connected": "Verbunden",
-    "connectedToAgent": "Mit diesem Agenten verbunden",
+    "connectedToAgent": "Mit diesem Worker verbunden",
     "available": "Verfügbare Apps",
     "connect": "Verbinden",
     "setup": "Einrichten",
@@ -690,7 +690,7 @@
     },
     "toolsSelector": {
       "configureTools": "{{app}}-Tools konfigurieren",
-      "selectTools": "Wähle Tools für deinen Agenten",
+      "selectTools": "Wähle Tools für deinen Worker",
       "readyToConfigureTools": "Bereit zum Konfigurieren",
       "selected": "{{count}} von {{total}} ausgewählt",
       "selectAll": "Alle auswählen",

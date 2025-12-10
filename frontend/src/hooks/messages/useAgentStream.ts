@@ -907,7 +907,7 @@ export function useAgentStream(
       console.error(
         `[useAgentStream] Error sending stop request for ${runIdToStop}: ${errorMessage}`,
       );
-      toast.error(`Failed to stop agent: ${errorMessage}`);
+      toast.error(`Failed to stop Worker: ${errorMessage}`);
     }
   }, [agentRunId, finalizeStream]);
 

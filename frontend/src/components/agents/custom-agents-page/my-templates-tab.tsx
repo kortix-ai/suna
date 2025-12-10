@@ -65,7 +65,7 @@ export const MyTemplatesTab = ({
           </p>
           <Button onClick={onSwitchToMyAgents} size="lg">
             <Plus className="h-4 w-4 mr-2" />
-            Create Your First Agent
+            Create Your First Worker
           </Button>
         </div>
       ) : (

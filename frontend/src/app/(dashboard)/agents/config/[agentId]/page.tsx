@@ -43,7 +43,7 @@ export default function AgentConfigPage() {
   if (!agent) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <p className="text-muted-foreground">Agent not found</p>
+        <p className="text-muted-foreground">Worker not found</p>
       </div>
     );
   }
@@ -64,10 +64,10 @@ export default function AgentConfigPage() {
       });
 
       queryClient.invalidateQueries({ queryKey: ['agents', 'detail', agentId] });
-      toast.success('Agent updated successfully!');
+      toast.success('Worker updated successfully!');
     } catch (error) {
       console.error('Failed to update agent:', error);
-      toast.error('Failed to update agent');
+      toast.error('Failed to update Worker');
     }
   };
 

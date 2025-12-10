@@ -23,7 +23,7 @@ export const TabsNavigation = ({ activeTab, onTabChange, onCreateAgent }: TabsNa
     if (onCreateAgent) {
       return [
         ...agentTabs,
-        { value: 'create-agent', icon: Plus, label: 'Create Agent' }
+        { value: 'create-agent', icon: Plus, label: 'Create Worker' }
       ];
     }
     return agentTabs;

@@ -163,7 +163,7 @@
     "superworker": {
       "title": "あなたのAIスーパーワーカー",
       "description": "すべての機能を組み合わせて、必要なあらゆるタスクのためのカスタムAIワーカーを構築。",
-      "example": "カスタマーサポートエージェントを作成"
+      "example": "カスタマーサポートワーカーを作成"
     }
   },
   "settings": {
@@ -524,7 +524,7 @@
     "actionCannotBeUndone": "この操作は元に戻せません",
     "accountWillBeDeleted": "アカウントが永久に削除されます",
     "whatWillBeDeleted": "削除されるデータ",
-    "allAgents": "すべてのエージェントとバージョン",
+    "allAgents": "すべてのワーカーとバージョン",
     "allThreads": "すべてのスレッドと会話",
     "allCredentials": "すべての認証情報と連携",
     "subscriptionData": "サブスクリプションと請求データ",
@@ -628,7 +628,7 @@
     "composioApps": "Composioアプリ",
     "composioAppsDescription": "数百のビジネスアプリケーションに接続",
     "connected": "接続済み",
-    "connectedToAgent": "このエージェントに接続済み",
+    "connectedToAgent": "このワーカーに接続済み",
     "available": "利用可能なアプリ",
     "connect": "接続",
     "setup": "セットアップ",
@@ -683,7 +683,7 @@
     },
     "toolsSelector": {
       "configureTools": "{{app}}ツールを設定",
-      "selectTools": "エージェントに追加するツールを選択",
+      "selectTools": "ワーカーに追加するツールを選択",
       "readyToConfigureTools": "設定の準備完了",
       "selected": "{{count}}/{{total}}選択済み",
       "selectAll": "すべて選択",

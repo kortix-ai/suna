@@ -29,10 +29,10 @@ Build, manage, and train sophisticated AI agents for any use case. Create powerf
 
 ## 🌟 What Makes Kortix Special
 
-### 🤖 Includes Suna – Flagship Generalist AI Worker
-Meet Suna, our showcase agent that demonstrates the full power of the Kortix platform. Through natural conversation, Suna handles research, data analysis, browser automation, file management, and complex workflows – showing you what's possible when you build with Kortix.
+### 🤖 Includes Kortix Super Worker – Flagship Generalist AI Worker
+Meet Kortix Super Worker, our showcase agent that demonstrates the full power of the Kortix platform. Through natural conversation, Kortix Super Worker handles research, data analysis, browser automation, file management, and complex workflows – showing you what's possible when you build with Kortix.
 
-### 🔧 Build Custom Suna-Type Agents
+### 🔧 Build Custom Kortix Super Worker-Type Agents
 Create your own specialized agents tailored to specific domains, workflows, or business needs. Whether you need agents for customer service, data processing, content creation, or industry-specific tasks, Kortix provides the infrastructure and tools to build, deploy, and scale them.
 
 ### 🚀 Complete Platform Capabilities
@@ -55,9 +55,9 @@ Create your own specialized agents tailored to specific domains, workflows, or b
 
 ## 🎯 Agent Examples & Use Cases
 
-### Suna - Your Generalist AI Worker
+### Kortix Super Worker - Your Generalist AI Worker
 
-Suna demonstrates the full capabilities of the Kortix platform as a versatile AI worker that can:
+Kortix Super Worker demonstrates the full capabilities of the Kortix platform as a versatile AI worker that can:
 
 **🔍 Research & Analysis**
 - Conduct comprehensive web research across multiple sources
@@ -164,7 +164,7 @@ The wizard will guide you through 14 steps with progress saving, so you can resu
 python start.py
 ```
 
-That's it! Your Kortix platform will be running with Suna ready to assist you.
+That's it! Your Kortix platform will be running with Kortix Super Worker ready to assist you.
 
 ## 🏠 Self-Hosting
 
