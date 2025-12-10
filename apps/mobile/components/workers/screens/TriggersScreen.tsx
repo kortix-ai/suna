@@ -273,23 +273,32 @@ export function TriggersScreen({ agentId, onUpdate, onUpgradePress }: TriggersSc
 
   return (
     <View className="space-y-4">
-      <View className="mb-6 flex-row items-center justify-between">
+      <View className="mb-2 flex-row items-center justify-between">
         <View className="flex-1 pr-3">
           <Text className="mb-2 font-roobert-semibold text-base text-foreground">Triggers</Text>
           <Text className="font-roobert text-sm text-muted-foreground">
             Automate your worker with scheduled or event-based triggers
           </Text>
         </View>
-        <Pressable
-          onPress={() => {
-            setEditingTrigger(null);
-            setIsCreateDrawerVisible(true);
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          }}
-          className="h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary active:opacity-80">
-          <Icon as={Plus} size={20} className="text-primary-foreground" />
-        </Pressable>
       </View>
+
+      {/* Create Trigger Button - only show when there are triggers */}
+      {!(runningTriggers.length === 0 && pausedTriggers.length === 0) && (
+        <View className="mb-4 flex-row gap-3">
+          <Pressable
+            onPress={() => {
+              setEditingTrigger(null);
+              setIsCreateDrawerVisible(true);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            }}
+            className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-border bg-card px-4 py-3 active:opacity-80">
+            <Icon as={Plus} size={18} className="text-foreground" />
+            <Text className="font-roobert-semibold text-base text-foreground">
+              {t('triggers.createTrigger')}
+            </Text>
+          </Pressable>
+        </View>
+      )}
 
       {runningTriggers.length === 0 && pausedTriggers.length === 0 ? (
         <EmptyState

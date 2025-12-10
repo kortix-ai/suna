@@ -30,6 +30,10 @@ interface ThreadPageProps {
   onMenuPress?: () => void;
   chat: UseChatReturn;
   isAuthenticated: boolean;
+  onOpenWorkerConfig?: (
+    workerId: string,
+    view?: 'instructions' | 'tools' | 'integrations' | 'triggers'
+  ) => void;
 }
 
 const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
@@ -223,7 +227,12 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
   );
 });
 
-export function ThreadPage({ onMenuPress, chat, isAuthenticated }: ThreadPageProps) {
+export function ThreadPage({
+  onMenuPress,
+  chat,
+  isAuthenticated,
+  onOpenWorkerConfig: externalOpenWorkerConfig,
+}: ThreadPageProps) {
   const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -574,6 +583,12 @@ export function ThreadPage({ onMenuPress, chat, isAuthenticated }: ThreadPagePro
             view,
             isAgentDrawerVisible: agentManager.isDrawerVisible,
           });
+
+          // If external handler is provided, use it to redirect to MenuPage
+          if (externalOpenWorkerConfig) {
+            externalOpenWorkerConfig(workerId, view);
+            return;
+          }
 
           // Clear any existing timeout
           if (pendingWorkerConfigTimeoutRef.current) {
