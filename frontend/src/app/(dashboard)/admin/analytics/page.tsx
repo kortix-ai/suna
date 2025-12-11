@@ -50,7 +50,6 @@ import {
 } from 'recharts';
 import {
   useAnalyticsSummary,
-  useDailyStats,
   useThreadBrowser,
   useMessageDistribution,
   useCategoryDistribution,
@@ -1102,7 +1101,6 @@ export default function AdminAnalyticsPage() {
   const dateString = format(distributionDate, 'yyyy-MM-dd');
   
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
-  const { data: dailyStats } = useDailyStats(7);
   const { data: distribution } = useMessageDistribution(dateString);
   const { data: categoryDistribution } = useCategoryDistribution(dateString);
   const { data: conversionFunnel, isLoading: funnelLoading } = useConversionFunnel(dateString);
