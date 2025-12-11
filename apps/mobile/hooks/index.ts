@@ -1,6 +1,6 @@
 /**
  * Hooks Exports
- * 
+ *
  * High-level composite hooks that orchestrate lib/ modules
  * For low-level API hooks, import from lib/ directly
  */
@@ -31,8 +31,18 @@ export { useChatCommons } from './useChatCommons';
 export { useAccountInitialization } from './useAccountInitialization';
 export { useAccountSetup } from './useAccountSetup';
 
+// Billing hooks
+export { useUpgradePaywall } from './useUpgradePaywall';
+
 // Re-export commonly used hooks from lib for convenience
-export { useMessages, useSendMessage, useThreads, useUnifiedAgentStart, useDeleteThread, useShareThread } from '@/lib/chat';
+export {
+  useMessages,
+  useSendMessage,
+  useThreads,
+  useUnifiedAgentStart,
+  useDeleteThread,
+  useShareThread,
+} from '@/lib/chat';
 export { useAgents, useAgent } from '@/lib/agents';
 export { useTrigger } from '@/lib/triggers';
 export { useSubscription, useCreditBalance } from '@/lib/billing';
