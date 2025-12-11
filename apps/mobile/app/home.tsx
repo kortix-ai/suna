@@ -88,19 +88,19 @@ export default function AppScreen() {
   const handleOpenWorkerConfigFromAgentDrawer = React.useCallback(
     (workerId: string, view?: 'instructions' | 'tools' | 'integrations' | 'triggers') => {
       console.log('🔧 [home] Opening worker config from AgentDrawer:', workerId, view);
-      // Close agent drawer first
+      // Close agent drawer and side menu drawer
       agentManager.closeDrawer();
-      // Open the side menu drawer
-      pageNav.openDrawer();
-      // Switch to workers tab
-      menu.handleWorkersTabPress();
-      // Set the worker config state after a small delay to ensure drawer animation completes
+      pageNav.closeDrawer();
+      // Wait for drawer animation to complete before navigating
       setTimeout(() => {
-        setMenuWorkerConfigWorkerId(workerId);
-        setMenuWorkerConfigInitialView(view);
+        // Navigate directly to the worker config page using push so there's a route to go back to
+        router.push({
+          pathname: '/worker-config',
+          params: { workerId, ...(view && { view }) },
+        });
       }, 300);
     },
-    [agentManager, pageNav, menu]
+    [agentManager, pageNav, router]
   );
 
   // Handle closing worker config drawer in MenuPage

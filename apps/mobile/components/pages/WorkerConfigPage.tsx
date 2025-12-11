@@ -5,13 +5,13 @@
  * Supports: Instructions, Tools, Integrations, Triggers
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Pressable, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Brain, Wrench, Server, Zap, ChevronLeft } from 'lucide-react-native';
 import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
@@ -23,6 +23,7 @@ import { TriggersScreen } from '../workers/screens/TriggersScreen';
 
 interface WorkerConfigPageProps {
   workerId: string;
+  initialView?: 'instructions' | 'tools' | 'integrations' | 'triggers';
 }
 
 type ConfigView = 'instructions' | 'tools' | 'integrations' | 'triggers';
@@ -34,17 +35,40 @@ const menuItems = [
   { id: 'triggers' as const, label: 'Triggers', icon: Zap },
 ];
 
-export function WorkerConfigPage({ workerId }: WorkerConfigPageProps) {
+export function WorkerConfigPage({
+  workerId: propWorkerId,
+  initialView: propInitialView,
+}: WorkerConfigPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const insets = useSafeAreaInsets();
-  const [activeView, setActiveView] = useState<ConfigView>('instructions');
+  // Read params directly from route to react to changes
+  const { workerId: routeWorkerId, view: routeView } = useLocalSearchParams<{
+    workerId?: string;
+    view?: 'instructions' | 'tools' | 'integrations' | 'triggers';
+  }>();
+
+  // Use route params if available, otherwise fall back to props
+  const workerId = routeWorkerId || propWorkerId;
+  const initialView = routeView || propInitialView || 'instructions';
+
+  const [activeView, setActiveView] = useState<ConfigView>(initialView);
 
   const { data: agent, isLoading } = useAgent(workerId);
+
+  // Update activeView when route params change (but only update state, don't navigate)
+  useEffect(() => {
+    if (initialView && initialView !== activeView) {
+      setActiveView(initialView);
+    }
+  }, [initialView]); // Removed activeView from deps to prevent loops
 
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
+    } else {
+      // If no previous screen, navigate to home
+      router.replace('/home');
     }
   };
 
@@ -91,6 +115,7 @@ export function WorkerConfigPage({ workerId }: WorkerConfigPageProps) {
               <Pressable
                 key={item.id}
                 onPress={() => {
+                  // Only update local state, don't navigate to avoid creating new instances
                   setActiveView(item.id);
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 }}

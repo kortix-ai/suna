@@ -3,7 +3,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { WorkerConfigPage } from '@/components/pages/WorkerConfigPage';
 
 export default function WorkerConfigScreen() {
-  const { workerId } = useLocalSearchParams<{ workerId: string }>();
+  const { workerId, view } = useLocalSearchParams<{
+    workerId: string;
+    view?: 'instructions' | 'tools' | 'integrations' | 'triggers';
+  }>();
   const router = useRouter();
 
   if (!workerId) {
@@ -11,6 +14,5 @@ export default function WorkerConfigScreen() {
     return null;
   }
 
-  return <WorkerConfigPage workerId={workerId} />;
+  return <WorkerConfigPage workerId={workerId} initialView={view} />;
 }
-
