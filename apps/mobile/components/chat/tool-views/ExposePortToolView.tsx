@@ -1,7 +1,5 @@
 /**
  * Expose Port Tool View
- * 
- * Specialized view for port exposure operations
  */
 
 import React, { useState } from 'react';
@@ -11,18 +9,15 @@ import { Icon } from '@/components/ui/icon';
 import * as Haptics from 'expo-haptics';
 import * as Clipboard from 'expo-clipboard';
 import {
-  Globe,
   ExternalLink,
   Copy,
   Check,
-  Share2,
-  Network,
+  Clock,
 } from 'lucide-react-native';
 import type { ToolViewProps } from './types';
 import { ToolViewCard, StatusBadge } from './shared';
 import { getToolMetadata } from './tool-metadata';
 
-// Utility functions
 function formatTimestamp(isoString?: string): string {
   if (!isoString) return '';
   try {
@@ -60,7 +55,7 @@ export function ExposePortToolView({ toolCall, toolResult, assistantTimestamp, t
 
   const handleOpenUrl = async () => {
     if (publicUrl) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       try {
         const canOpen = await Linking.canOpenURL(publicUrl);
         if (canOpen) {
@@ -78,118 +73,94 @@ export function ExposePortToolView({ toolCall, toolResult, assistantTimestamp, t
         icon: toolMetadata.icon,
         iconColor: toolMetadata.iconColor,
         iconBgColor: toolMetadata.iconBgColor,
-        subtitle: toolMetadata.subtitle.toUpperCase(),
+        subtitle: '',
         title: toolMetadata.title,
         isSuccess: actualIsSuccess,
         isStreaming: false,
         rightContent: (
           <StatusBadge
             variant={actualIsSuccess ? 'success' : 'error'}
-            label={actualIsSuccess ? 'Exposed' : 'Failed'}
+            iconOnly={true}
           />
         ),
       }}
       footer={
         <View className="flex-row items-center justify-between w-full">
-          {port && (
-            <Text className="text-xs text-muted-foreground">
-              Port {port}
-            </Text>
-          )}
-          {(toolTimestamp || assistantTimestamp) && (
-            <Text className="text-xs text-muted-foreground ml-2">
-              {toolTimestamp ? formatTimestamp(toolTimestamp) : assistantTimestamp ? formatTimestamp(assistantTimestamp) : ''}
-            </Text>
-          )}
-        </View>
-      }
-    >
-      <View className="flex-1 w-full px-4 py-4 gap-6">
-        {/* Port Number */}
-        <View className="gap-2">
-          <Text className="text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-            Local Port
+          <Text className="text-xs text-primary opacity-50">
+            Port {port}
           </Text>
-          <View className="bg-card border border-border rounded-2xl p-6 items-center">
-            <Text className="text-4xl font-roobert-bold text-primary" selectable>
-              {port}
+          <View className="flex-row items-center gap-2">
+            <Icon as={Clock} size={12} className="text-primary opacity-50" />
+            <Text className="text-xs text-primary opacity-50">
+              {toolTimestamp ? formatTimestamp(toolTimestamp) : assistantTimestamp ? formatTimestamp(assistantTimestamp) : ''}
             </Text>
           </View>
         </View>
-
-        {/* Public URL */}
-        {publicUrl && !isError && (
+      }
+    >
+      <View className="flex-1 w-full px-4 py-4">
+        {publicUrl && !isError ? (
           <View className="gap-3">
-            <Text className="text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
+            {/* Gray label */}
+            <Text className="text-xs text-muted-foreground">
               Public URL
             </Text>
 
-            {/* URL Display */}
-            <View className="bg-card border border-border rounded-2xl p-4">
-              <Text className="text-sm font-roobert text-primary leading-5" selectable>
+            {/* Card with URL only */}
+            <View className="bg-card border border-border rounded-xl p-3.5">
+              <Text className="text-sm font-roobert-mono text-primary" selectable numberOfLines={2}>
                 {publicUrl}
               </Text>
             </View>
 
-            {/* Action Buttons */}
-            <View className="flex-row gap-3">
+            {/* Full width buttons */}
+            <View className="flex-row gap-2">
               <Pressable
                 onPress={handleOpenUrl}
-                className="flex-1 bg-primary active:opacity-80 rounded-2xl py-4 flex-row items-center justify-center gap-2"
+                className="flex-1 flex-row items-center justify-center gap-2 py-2.5 rounded-xl bg-primary active:opacity-70"
               >
-                <Icon as={ExternalLink} size={18} className="text-primary-foreground" />
-                <Text className="text-primary-foreground text-base font-roobert-semibold">
-                  Open URL
-                </Text>
+                <Icon as={ExternalLink} size={15} className="text-primary-foreground" />
+                <Text className="text-sm font-roobert-medium text-primary-foreground">Open</Text>
               </Pressable>
-
               <Pressable
                 onPress={handleCopy}
-                className="bg-card border border-border active:bg-muted rounded-2xl px-6 py-4 flex-row items-center justify-center gap-2"
+                className="flex-1 flex-row items-center justify-center gap-2 py-2.5 rounded-xl border border-border active:opacity-70"
               >
-                <Icon
-                  as={copied ? Check : Copy}
-                  size={18}
-                  className={copied ? 'text-primary' : 'text-primary'}
-                />
-                <Text className="text-primary text-base font-roobert-semibold">
-                  {copied ? 'Copied!' : 'Copy'}
+                <Icon as={copied ? Check : Copy} size={15} className="text-primary" />
+                <Text className="text-sm font-roobert-medium text-primary">
+                  {copied ? 'Copied' : 'Copy'}
                 </Text>
               </Pressable>
             </View>
 
-            {/* Info Card */}
-            <View className="bg-card border border-border rounded-2xl p-4 flex-row gap-3">
-              <View className="pt-0.5">
-                <Icon as={Share2} size={16} className="text-primary" />
-              </View>
-              <Text className="flex-1 text-sm font-roobert text-foreground/80 leading-5">
-                This URL is publicly accessible and will remain active as long as the server is running.
+            {/* Info */}
+            <Text className="text-xs text-muted-foreground">
+              This URL is publicly accessible and will remain active as long as the server is running.
+            </Text>
+          </View>
+        ) : isError ? (
+          <View className="gap-3">
+            <Text className="text-xs text-muted-foreground">
+              Error
+            </Text>
+            <View className="bg-card border border-border rounded-xl p-3.5">
+              <Text className="text-sm text-destructive">
+                Failed to expose port {port}
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <View className="gap-3">
+            <Text className="text-xs text-muted-foreground">
+              Status
+            </Text>
+            <View className="bg-card border border-border rounded-xl p-3.5">
+              <Text className="text-sm text-primary opacity-50">
+                Exposing port {port}...
               </Text>
             </View>
           </View>
         )}
-
-        {/* Status */}
-        <View className="gap-2">
-          <Text className="text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-            Status
-          </Text>
-          <View className={`flex-row items-center gap-2 rounded-2xl p-4 border ${isError
-            ? 'bg-destructive/5 border-destructive/20'
-            : 'bg-primary/5 border-primary/20'
-            }`}>
-            <Icon
-              as={isError ? Globe : Network}
-              size={18}
-              className={isError ? 'text-destructive' : 'text-primary'}
-            />
-            <Text className={`text-sm font-roobert-medium ${isError ? 'text-destructive' : 'text-primary'
-              }`}>
-              {isError ? 'Failed to Expose Port' : 'Port Successfully Exposed'}
-            </Text>
-          </View>
-        </View>
       </View>
     </ToolViewCard>
   );
