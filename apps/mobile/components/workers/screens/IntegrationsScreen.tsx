@@ -36,6 +36,7 @@ import {
   Server,
   Lock,
   Search,
+  Plug,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { ComposioConnectorContent } from '@/components/settings/integrations/ComposioConnector';
@@ -51,6 +52,7 @@ import {
   BottomSheetBackdrop,
   BottomSheetView,
   BottomSheetFlatList,
+  BottomSheetScrollView,
 } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -189,13 +191,13 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
   const { hasFreeTier } = useBillingContext();
 
   const browseAppsSheetRef = useRef<BottomSheetModal>(null);
+  const customMcpSheetRef = useRef<BottomSheetModal>(null);
   const toolsSheetRef = useRef<BottomSheetModal>(null);
   const [browseAppsSearchQuery, setBrowseAppsSearchQuery] = useState('');
 
   const [selectedApp, setSelectedApp] = useState<ComposioApp | null>(null);
   const [showConnector, setShowConnector] = useState(false);
   const [showBrowseApps, setShowBrowseApps] = useState(false);
-  const [showCustomMcp, setShowCustomMcp] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<ComposioProfile | null>(null);
   const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
 
@@ -204,6 +206,11 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
   const [drawerSelectedApp, setDrawerSelectedApp] = useState<ComposioApp | null>(null);
   const [drawerSelectedProfile, setDrawerSelectedProfile] = useState<ComposioProfile | null>(null);
   const [isDrawerSaving, setIsDrawerSaving] = useState(false);
+
+  // Custom MCP drawer button state
+  const [customMcpButtonHandler, setCustomMcpButtonHandler] = useState<(() => void) | null>(null);
+  const [customMcpButtonDisabled, setCustomMcpButtonDisabled] = useState(true);
+  const [customMcpButtonLoading, setCustomMcpButtonLoading] = useState(false);
 
   // Tools sheet state
   const [toolsSheetApp, setToolsSheetApp] = useState<ComposioApp | null>(null);
@@ -562,6 +569,19 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
   );
 
   const handleCustomMcpSave = (config: any) => {
+    // Check if this is the initial discovery call (with tool objects) or the final save (with tool names)
+    // If tools is an array of objects, it's the discovery call - we should ignore it
+    // If tools is an array of strings, it's the final save - we should process it
+    const tools = config.tools || [];
+    const isToolObjects =
+      tools.length > 0 && typeof tools[0] === 'object' && tools[0].name !== undefined;
+
+    // Only save if this is the final save with tool names (strings)
+    if (isToolObjects) {
+      // This is the discovery call, just return without saving
+      return;
+    }
+
     const customMcps = agent?.custom_mcps || [];
 
     // Create the custom MCP configuration
@@ -571,7 +591,7 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
       config: {
         url: config.url,
       },
-      enabledTools: config.tools || [],
+      enabledTools: tools, // Array of tool names (strings)
     };
 
     // Check if MCP with same URL already exists
@@ -592,7 +612,8 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
         },
         {
           onSuccess: () => {
-            setShowCustomMcp(false);
+            // Close the Custom MCP drawer
+            handleCloseCustomMcp();
             onUpdate?.();
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           },
@@ -603,9 +624,32 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
         }
       );
     } else {
-      setShowCustomMcp(false);
+      // MCP already exists, close the Custom MCP drawer
+      handleCloseCustomMcp();
     }
   };
+
+  const handleOpenCustomMcp = () => {
+    customMcpSheetRef.current?.present();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const handleCloseCustomMcp = () => {
+    customMcpSheetRef.current?.dismiss();
+    // Reset button state
+    setCustomMcpButtonHandler(null);
+    setCustomMcpButtonDisabled(true);
+    setCustomMcpButtonLoading(false);
+  };
+
+  const handleDiscoverToolsReady = useCallback(
+    (handler: () => void, disabled: boolean, loading: boolean) => {
+      setCustomMcpButtonHandler(() => handler);
+      setCustomMcpButtonDisabled(disabled);
+      setCustomMcpButtonLoading(loading);
+    },
+    []
+  );
 
   if (isLoadingAgent || isLoadingApps) {
     return (
@@ -634,16 +678,6 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
     );
   }
 
-  if (showCustomMcp) {
-    return (
-      <CustomMcpContent
-        onBack={() => setShowCustomMcp(false)}
-        onSave={handleCustomMcpSave}
-        noPadding={true}
-      />
-    );
-  }
-
   // Show free tier block if user is on free tier
   if (hasFreeTier) {
     return (
@@ -655,34 +689,63 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
 
   return (
     <View className="space-y-4">
-      {/* Browse Apps and Custom MCP Buttons */}
-      <View className="mb-4 flex-row gap-3">
-        <Pressable
-          onPress={handleOpenBrowseApps}
-          className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-border bg-card px-4 py-3 active:opacity-80">
-          <Icon as={Store} size={18} className="text-foreground" />
-          <Text className="font-roobert-semibold text-base text-foreground">Browse Apps</Text>
-        </Pressable>
-        <Pressable
-          onPress={() => setShowCustomMcp(true)}
-          className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-border bg-card px-4 py-3 active:opacity-80">
-          <Icon as={Server} size={18} className="text-foreground" />
-          <Text className="font-roobert-semibold text-base text-foreground">Custom MCP</Text>
-        </Pressable>
+      {/* Header - matching Triggers screen style */}
+      <View className="mb-2 flex-row items-center justify-between">
+        <View className="flex-1 pr-3">
+          <Text className="mb-2 font-roobert-semibold text-base text-foreground">Integrations</Text>
+          <Text className="font-roobert text-sm text-muted-foreground">
+            Connect apps and custom MCP servers to extend your worker
+          </Text>
+        </View>
       </View>
+
+      {/* Browse Apps and Custom MCP Buttons - only show when there are integrations */}
+      {activeIntegrations.length > 0 && (
+        <View className="mb-4 flex-row gap-3">
+          <Pressable
+            onPress={handleOpenBrowseApps}
+            className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-border bg-card px-4 py-3 active:opacity-80">
+            <Icon as={Store} size={18} className="text-foreground" />
+            <Text className="font-roobert-semibold text-base text-foreground">Browse Apps</Text>
+          </Pressable>
+          <Pressable
+            onPress={handleOpenCustomMcp}
+            className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-border bg-card px-4 py-3 active:opacity-80">
+            <Icon as={Server} size={18} className="text-foreground" />
+            <Text className="font-roobert-semibold text-base text-foreground">Custom MCP</Text>
+          </Pressable>
+        </View>
+      )}
 
       {/* Active Integrations List */}
       {activeIntegrations.length === 0 ? (
-        <View className="items-center justify-center py-12">
+        <View className="items-center justify-center rounded-2xl border border-border bg-card p-8">
           <View className="mb-3 h-12 w-12 items-center justify-center rounded-xl bg-muted">
-            <Icon as={Plus} size={24} className="text-muted-foreground" />
+            <Icon as={Plug} size={24} className="text-muted-foreground" />
           </View>
           <Text className="mb-1 font-roobert-semibold text-base text-foreground">
             No integrations configured
           </Text>
-          <Text className="text-center text-sm text-muted-foreground">
+          <Text className="mb-4 text-center text-sm text-muted-foreground">
             Browse the app registry to connect your apps or add custom MCP servers
           </Text>
+          {/* Browse Apps and Custom MCP Buttons in empty state - matching EmptyState button style */}
+          <View className="w-full flex-row gap-3">
+            <Pressable
+              onPress={handleOpenBrowseApps}
+              className="flex-1 rounded-xl bg-primary px-4 py-2 active:opacity-80">
+              <Text className="text-center font-roobert-semibold text-sm text-primary-foreground">
+                Browse Apps
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={handleOpenCustomMcp}
+              className="flex-1 rounded-xl bg-primary px-4 py-2 active:opacity-80">
+              <Text className="text-center font-roobert-semibold text-sm text-primary-foreground">
+                Custom MCP
+              </Text>
+            </Pressable>
+          </View>
         </View>
       ) : (
         <View>
@@ -924,6 +987,103 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
               useBottomSheetFlatList={true}
             />
           )}
+        </View>
+      </BottomSheetModal>
+
+      {/* Custom MCP Drawer */}
+      <BottomSheetModal
+        ref={customMcpSheetRef}
+        snapPoints={['90%']}
+        enableDynamicSizing={false}
+        enablePanDownToClose
+        onDismiss={handleCloseCustomMcp}
+        backdropComponent={renderBackdrop}
+        backgroundStyle={{
+          backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+        }}
+        handleIndicatorStyle={{
+          backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
+          width: 36,
+          height: 5,
+          borderRadius: 3,
+          marginTop: 8,
+          marginBottom: 0,
+        }}
+        style={{
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+          overflow: 'hidden',
+        }}>
+        <View style={{ flex: 1 }}>
+          {/* Fixed Header */}
+          <View
+            style={{
+              paddingHorizontal: 24,
+              paddingTop: 16,
+              paddingBottom: 16,
+              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+            }}>
+            <Text
+              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+              className="mb-1 font-roobert-semibold text-xl">
+              {t('integrations.customMcp.title')}
+            </Text>
+            <Text
+              style={{
+                color:
+                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
+              }}
+              className="font-roobert text-sm">
+              {t('integrations.customMcp.description')}
+            </Text>
+          </View>
+
+          {/* Scrollable Content */}
+          <BottomSheetScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 16 }}
+            showsVerticalScrollIndicator={false}>
+            <CustomMcpContent
+              onSave={handleCustomMcpSave}
+              noPadding={true}
+              hideBackButton={true}
+              hideButton={true}
+              onDiscoverToolsReady={handleDiscoverToolsReady}
+            />
+          </BottomSheetScrollView>
+
+          {/* Fixed Footer Button */}
+          <View
+            style={{
+              paddingHorizontal: 24,
+              paddingTop: 16,
+              paddingBottom: 24,
+              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+            }}>
+            <Pressable
+              onPress={() => customMcpButtonHandler?.()}
+              disabled={customMcpButtonDisabled}
+              className={`w-full items-center rounded-2xl py-4 ${
+                customMcpButtonDisabled ? 'bg-muted/20' : 'bg-foreground'
+              }`}>
+              <View className="flex-row items-center gap-2">
+                {customMcpButtonLoading && (
+                  <ActivityIndicator
+                    size="small"
+                    color={colorScheme === 'dark' ? '#FFFFFF' : '#FFFFFF'}
+                  />
+                )}
+                <Text
+                  className={`font-roobert-semibold text-base ${
+                    customMcpButtonDisabled ? 'text-muted-foreground' : 'text-background'
+                  }`}>
+                  {customMcpButtonLoading
+                    ? t('integrations.customMcp.discoveringTools')
+                    : t('integrations.customMcp.discoverTools')}
+                </Text>
+              </View>
+            </Pressable>
+          </View>
         </View>
       </BottomSheetModal>
 

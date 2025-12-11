@@ -30,6 +30,10 @@ interface ThreadPageProps {
   onMenuPress?: () => void;
   chat: UseChatReturn;
   isAuthenticated: boolean;
+  onOpenWorkerConfig?: (
+    workerId: string,
+    view?: 'instructions' | 'tools' | 'integrations' | 'triggers'
+  ) => void;
 }
 
 const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
@@ -223,7 +227,18 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
   );
 });
 
-export function ThreadPage({ onMenuPress, chat, isAuthenticated }: ThreadPageProps) {
+export function ThreadPage({
+  onMenuPress,
+  chat,
+  isAuthenticated,
+  onOpenWorkerConfig: externalOpenWorkerConfig,
+}: ThreadPageProps) {
+  const [isMounted, setIsMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -492,19 +507,21 @@ export function ThreadPage({ onMenuPress, chat, isAuthenticated }: ThreadPagePro
                 progressViewOffset={Math.max(insets.top, 16) + 80}
               />
             }>
-            <ThreadContent
-              messages={messages}
-              streamingTextContent={streamingContent}
-              streamingToolCall={streamingToolCall}
-              agentStatus={chat.isAgentRunning ? 'running' : 'idle'}
-              streamHookStatus={chat.isStreaming ? 'streaming' : 'idle'}
-              sandboxId={chat.activeSandboxId || fullThreadData?.project?.sandbox?.id}
-              sandboxUrl={fullThreadData?.project?.sandbox?.sandbox_url}
-              handleToolClick={handleToolClick}
-              onToolPress={handleToolPress}
-              onFilePress={handleFilePress}
-              onPromptFill={chat.setInputValue}
-            />
+            {isMounted && (
+              <ThreadContent
+                messages={messages}
+                streamingTextContent={streamingContent}
+                streamingToolCall={streamingToolCall}
+                agentStatus={chat.isAgentRunning ? 'running' : 'idle'}
+                streamHookStatus={chat.isStreaming ? 'streaming' : 'idle'}
+                sandboxId={chat.activeSandboxId || fullThreadData?.project?.sandbox?.id}
+                sandboxUrl={fullThreadData?.project?.sandbox?.sandbox_url}
+                handleToolClick={handleToolClick}
+                onToolPress={handleToolPress}
+                onFilePress={handleFilePress}
+                onPromptFill={chat.setInputValue}
+              />
+            )}
           </ScrollView>
         )}
       </View>
@@ -574,6 +591,12 @@ export function ThreadPage({ onMenuPress, chat, isAuthenticated }: ThreadPagePro
             view,
             isAgentDrawerVisible: agentManager.isDrawerVisible,
           });
+
+          // If external handler is provided, use it to redirect to MenuPage
+          if (externalOpenWorkerConfig) {
+            externalOpenWorkerConfig(workerId, view);
+            return;
+          }
 
           // Clear any existing timeout
           if (pendingWorkerConfigTimeoutRef.current) {

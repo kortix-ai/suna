@@ -5,7 +5,7 @@ import { AudioLines, CornerDownLeft, Paperclip, X, Loader2 } from 'lucide-react-
 import { StopIcon } from '@/components/ui/StopIcon';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Keyboard, Pressable, ScrollView, TextInput, View, ViewStyle, type ViewProps, type NativeSyntheticEvent, type TextInputContentSizeChangeEventData } from 'react-native';
+import { Keyboard, Pressable, ScrollView, TextInput, View, ViewStyle, type ViewProps, type NativeSyntheticEvent, type TextInputContentSizeChangeEventData, type TextInputSelectionChangeEventData } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -17,6 +17,7 @@ import type { Attachment } from '@/hooks/useChat';
 import { AgentSelector } from '../agents/AgentSelector';
 import { AudioWaveform } from '../attachments/AudioWaveform';
 import type { Agent } from '@/api/types';
+import { MarkdownToolbar, insertMarkdownFormat, type MarkdownFormat } from './MarkdownToolbar';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
@@ -109,6 +110,8 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   // State
   const [contentHeight, setContentHeight] = React.useState(0);
+  const [isFocused, setIsFocused] = React.useState(false);
+  const [selection, setSelection] = React.useState({ start: 0, end: 0 });
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
 
@@ -302,6 +305,48 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
       }
     },
     []
+  );
+
+  // Selection change handler to track cursor position
+  const handleSelectionChange = React.useCallback(
+    (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+      setSelection(e.nativeEvent.selection);
+    },
+    []
+  );
+
+  // Focus/blur handlers
+  const handleFocus = React.useCallback(() => {
+    if (!isAuthenticated) {
+      textInputRef.current?.blur();
+      return;
+    }
+    setIsFocused(true);
+  }, [isAuthenticated]);
+
+  const handleBlur = React.useCallback(() => {
+    // Delay hiding toolbar to allow button press to register
+    setTimeout(() => setIsFocused(false), 150);
+  }, []);
+
+  // Markdown format handler
+  const handleMarkdownFormat = React.useCallback(
+    (format: MarkdownFormat, extra?: string) => {
+      const currentText = value || '';
+      const { newText, newCursorPosition, newSelectionEnd } = insertMarkdownFormat(
+        currentText,
+        selection.start,
+        selection.end,
+        format,
+        extra
+      );
+      onChangeText?.(newText);
+      // Update selection
+      setSelection({ start: newCursorPosition, end: newSelectionEnd });
+      // Refocus the input
+      textInputRef.current?.focus();
+    },
+    [value, selection, onChangeText]
   );
 
   // Memoized container style

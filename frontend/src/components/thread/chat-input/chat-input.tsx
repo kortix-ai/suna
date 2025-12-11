@@ -202,6 +202,149 @@ interface IntegrationsDropdownProps {
   onOpenPlanModal: () => void;
 }
 
+// Rotating integration logos carousel with smooth transitions
+const IntegrationLogosCarousel = memo(function IntegrationLogosCarousel({ 
+  enabled 
+}: { enabled: boolean }) {
+  const popularIntegrations = useMemo(() => [
+    'googledrive',
+    'gmail',
+    'googlecalendar',
+    'slack',
+    'notion',
+    'github',
+    'linear',
+    'airtable',
+    'asana',
+    'trello',
+    'salesforce',
+    'hubspot',
+  ], []);
+
+  const [displayIndex, setDisplayIndex] = useState(0);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const transitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isTransitioningRef = useRef(false);
+  const popularIntegrationsRef = useRef(popularIntegrations);
+
+  // Keep ref in sync
+  useEffect(() => {
+    popularIntegrationsRef.current = popularIntegrations;
+  }, [popularIntegrations]);
+
+  // Calculate indices for current and next logos
+  const currentSlug = popularIntegrations[displayIndex];
+  const nextIndex = (displayIndex + 1) % popularIntegrations.length;
+  const nextSlug = popularIntegrations[nextIndex];
+  
+  // Preload current and next icons for smooth transitions
+  const { data: currentIconData } = useComposioToolkitIcon(currentSlug, { enabled });
+  const { data: nextIconData } = useComposioToolkitIcon(nextSlug, { enabled });
+
+  // Sync ref with state for isTransitioning
+  useEffect(() => {
+    isTransitioningRef.current = isTransitioning;
+  }, [isTransitioning]);
+
+  // Transition to next logo - using ref to avoid dependency issues
+  const transitionToNextRef = useRef(() => {
+    if (isTransitioningRef.current) {
+      return;
+    }
+
+    // Proceed with transition even if next image is still loading
+    // The image will appear when it loads
+    setIsTransitioning(true);
+    isTransitioningRef.current = true;
+    
+    // After fade transition completes, update index
+    transitionTimeoutRef.current = setTimeout(() => {
+      setDisplayIndex((prev) => {
+        const nextIdx = (prev + 1) % popularIntegrationsRef.current.length;
+        return nextIdx;
+      });
+      setIsTransitioning(false);
+      isTransitioningRef.current = false;
+    }, 500); // Match CSS transition duration
+  });
+
+  // Carousel rotation logic - runs continuously
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+    
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+    
+    // Start interval that runs every second
+    intervalRef.current = setInterval(() => {
+      transitionToNextRef.current();
+    }, 1000);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      if (transitionTimeoutRef.current) {
+        clearTimeout(transitionTimeoutRef.current);
+        transitionTimeoutRef.current = null;
+      }
+    };
+  }, [enabled]);
+
+  if (!enabled) {
+    return <Plug className="h-3 w-3" />;
+  }
+
+  if (!currentIconData?.icon_url) {
+    return <Plug className="h-3 w-3 animate-pulse" />;
+  }
+
+  const currentUrl = currentIconData.icon_url;
+  const nextUrl = nextIconData?.icon_url;
+
+  return (
+    <div className="relative h-3 w-3 overflow-hidden">
+      {/* Current logo - fading out during transition */}
+      <img
+        key={`current-${currentSlug}`}
+        src={currentUrl}
+        alt={currentSlug}
+        className={`absolute inset-0 h-3 w-3 object-contain transition-opacity duration-500 ease-in-out ${
+          isTransitioning ? 'opacity-0' : 'opacity-100'
+        }`}
+        style={{
+          willChange: 'opacity',
+          backfaceVisibility: 'hidden',
+          transform: 'translateZ(0)', // Force GPU acceleration
+        }}
+      />
+      
+      {/* Next logo - fading in during transition */}
+      {nextUrl && (
+        <img
+          key={`next-${nextSlug}`}
+          src={nextUrl}
+          alt={nextSlug}
+          className={`absolute inset-0 h-3 w-3 object-contain transition-opacity duration-500 ease-in-out ${
+            isTransitioning ? 'opacity-100' : 'opacity-0'
+          }`}
+          style={{
+            willChange: 'opacity',
+            backfaceVisibility: 'hidden',
+            transform: 'translateZ(0)', // Force GPU acceleration
+          }}
+        />
+      )}
+    </div>
+  );
+});
+
 const IntegrationsDropdown = memo(function IntegrationsDropdown({
   isLoggedIn,
   loading,
@@ -216,9 +359,9 @@ const IntegrationsDropdown = memo(function IntegrationsDropdown({
   if (!isLoggedIn) return null;
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <DropdownMenu>
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <div className="relative">
               <Button
@@ -227,7 +370,7 @@ const IntegrationsDropdown = memo(function IntegrationsDropdown({
                 className="h-10 w-10 p-0 bg-transparent border-[1.5px] border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
                 disabled={loading || (disabled && !isAgentRunning)}
               >
-                <Plug className="h-5 w-5" />
+                <IntegrationLogosCarousel enabled={isLoggedIn && !loading && !(disabled && !isAgentRunning)} />
               </Button>
               {isFreeTier && !isLocalMode() && (
                 <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center z-10 pointer-events-none">
@@ -236,6 +379,11 @@ const IntegrationsDropdown = memo(function IntegrationsDropdown({
               )}
             </div>
           </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <p>Integrations</p>
+        </TooltipContent>
+      </Tooltip>
           <DropdownMenuContent align="start" className="w-[320px] px-0 py-3 border-[1.5px] border-border rounded-2xl" sideOffset={6}>
             <div className="px-3 mb-3">
               <span className="text-xs font-medium text-muted-foreground pl-1">Integrations</span>
@@ -323,12 +471,7 @@ const IntegrationsDropdown = memo(function IntegrationsDropdown({
               )}
             </div>
           </DropdownMenuContent>
-        </DropdownMenu>
-      </TooltipTrigger>
-      <TooltipContent side="top">
-        <p>Connect integrations</p>
-      </TooltipContent>
-    </Tooltip>
+    </DropdownMenu>
   );
 });
 
