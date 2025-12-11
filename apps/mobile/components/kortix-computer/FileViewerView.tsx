@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, ScrollView, TextInput, Pressable, Alert, Share, Modal, FlatList, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -21,6 +21,7 @@ import {
   Pencil,
 } from 'lucide-react-native';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
+import { MarkdownToolbar, insertMarkdownFormat, type MarkdownFormat } from '@/components/chat/MarkdownToolbar';
 import {
   markdownParser,
   lightMarkdownStyle,
@@ -97,6 +98,8 @@ export function FileViewerView({
   const [isLoadingRevertInfo, setIsLoadingRevertInfo] = useState(false);
   const [isReverting, setIsReverting] = useState(false);
   const [revertMode, setRevertMode] = useState<'single' | 'commit'>('single');
+  const [selection, setSelection] = useState({ start: 0, end: 0 });
+  const markdownInputRef = useRef<any>(null);
 
   const fileName = filePath.split('/').pop() || '';
   const fileExtension = fileName.split('.').pop()?.toLowerCase() || '';
@@ -291,6 +294,33 @@ export function FileViewerView({
       setIsEditing(true);
     }
   }, [canEdit, filePath, setUnsavedContent, setUnsavedState]);
+
+  const handleMarkdownFormat = useCallback((format: MarkdownFormat, extra?: string) => {
+    const { newText, newCursorPosition, newSelectionEnd } = insertMarkdownFormat(
+      localContent,
+      selection.start,
+      selection.end,
+      format,
+      extra
+    );
+    setLocalContent(newText);
+    setSelection({ start: newCursorPosition, end: newSelectionEnd });
+    if (canEdit && filePath) {
+      setUnsavedContent(filePath, newText);
+      setUnsavedState(filePath, true);
+      setIsEditing(true);
+    }
+    // Set selection to new cursor position
+    setTimeout(() => {
+      markdownInputRef.current?.setNativeProps({
+        selection: { start: newCursorPosition, end: newSelectionEnd },
+      });
+    }, 10);
+  }, [localContent, selection, canEdit, filePath, setUnsavedContent, setUnsavedState]);
+
+  const handleSelectionChange = useCallback((event: { nativeEvent: { selection: { start: number; end: number } } }) => {
+    setSelection(event.nativeEvent.selection);
+  }, []);
 
   const handleSelectVersion = async (version: FileVersion | null) => {
     setShowVersionModal(false);
@@ -596,30 +626,41 @@ export function FileViewerView({
             </Text>
           </View>
         ) : isMarkdown ? (
-          <ScrollView
-            className="flex-1"
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag">
-            <MarkdownTextInput
-              value={localContent}
-              onChangeText={handleContentChange}
-              parser={markdownParser}
-              markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
-              multiline
-              scrollEnabled={false}
-              editable={canEdit && isEditing}
-              className="flex-1 px-4 py-4 font-roobert text-[16px] leading-6 text-primary"
-              style={{
-                backgroundColor: 'transparent',
-                minHeight: 400,
-                fontSize: 16,
-                lineHeight: 24,
-              }}
-              textAlignVertical="top"
-              placeholder="Start typing markdown..."
-              placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
+          <View className="flex-1">
+            {/* Markdown Toolbar - only show when editing */}
+            <MarkdownToolbar
+              onFormat={handleMarkdownFormat}
+              isVisible={canEdit && isEditing}
+              text={localContent}
+              selection={selection}
             />
-          </ScrollView>
+            <ScrollView
+              className="flex-1"
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag">
+              <MarkdownTextInput
+                ref={markdownInputRef}
+                value={localContent}
+                onChangeText={handleContentChange}
+                onSelectionChange={handleSelectionChange}
+                parser={markdownParser}
+                markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
+                multiline
+                scrollEnabled={false}
+                editable={canEdit && isEditing}
+                className="flex-1 px-4 py-4 font-roobert text-[16px] leading-6 text-primary"
+                style={{
+                  backgroundColor: 'transparent',
+                  minHeight: 400,
+                  fontSize: 16,
+                  lineHeight: 24,
+                }}
+                textAlignVertical="top"
+                placeholder="Start typing markdown..."
+                placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
+              />
+            </ScrollView>
+          </View>
         ) : isText && canEdit ? (
           <ScrollView
             className="flex-1"
