@@ -1,19 +1,3 @@
-"""
-Configuration management.
-
-This module provides a centralized way to access configuration settings and
-environment variables across the application. It supports different environment
-modes (development, staging, production) and provides validation for required
-values.
-
-Usage:
-    from core.utils.config import config
-    
-    # Access configuration values
-    api_key = config.OPENAI_API_KEY
-    env_mode = config.ENV_MODE
-"""
-
 import os
 from enum import Enum
 from re import S
@@ -25,18 +9,11 @@ import secrets
 logger = logging.getLogger(__name__)
 
 class SafeConfigWrapper:
-    """
-    A safe wrapper around the Configuration class that prevents NoneType AttributeErrors.
-    This ensures that even if the underlying config is None, we can still access attributes
-    without crashing the application.
-    """
-    
     def __init__(self, config_instance=None):
         self._config = config_instance
         self._defaults = {}
     
     def __getattr__(self, name):
-        """Safely get attribute from config, returning None if not found or config is None."""
         if self._config is None:
             logger.debug(f"Config is None, returning None for attribute: {name}")
             return None
@@ -48,7 +25,6 @@ class SafeConfigWrapper:
             return None
     
     def __setattr__(self, name, value):
-        """Set attribute on the underlying config if it exists."""
         if name.startswith('_'):
             super().__setattr__(name, value)
         elif self._config is not None:
@@ -57,33 +33,19 @@ class SafeConfigWrapper:
             logger.debug(f"Cannot set {name} because config is None")
     
     def __bool__(self):
-        """Return True if config is loaded, False otherwise."""
         return self._config is not None
     
     def __repr__(self):
-        """String representation."""
         return f"SafeConfigWrapper(config={'loaded' if self._config else 'None'})"
 
 class EnvMode(Enum):
-    """Environment mode enumeration."""
     LOCAL = "local"
     STAGING = "staging"
     PRODUCTION = "production"
 
 class Configuration:
-    """
-    Centralized configuration for AgentPress backend.
-    
-    This class loads environment variables and provides type checking and validation.
-    Default values can be specified for optional configuration items.
-    """
-    
-    # Environment mode
     ENV_MODE: Optional[EnvMode] = EnvMode.LOCAL
-    
-    # ===== AGENT TOOL CALLING CONFIGURATION =====
-    # Configure which tool calling format to use (XML or Native/OpenAI)
-    # Only ONE should be enabled at a time
+
     AGENT_XML_TOOL_CALLING: bool = False      # Enable XML-based tool calls (<function_calls>)
     AGENT_NATIVE_TOOL_CALLING: bool = True  # Enable OpenAI-style native function calling
     AGENT_EXECUTE_ON_STREAM: bool = True     # Execute tools as they stream (vs. at end)
@@ -323,6 +285,11 @@ class Configuration:
     # LLM API keys
     ANTHROPIC_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
+    
+    MEMORY_EMBEDDING_PROVIDER: Optional[str] = "openai"
+    MEMORY_EMBEDDING_MODEL: Optional[str] = "text-embedding-3-small"
+    MEMORY_EXTRACTION_MODEL: Optional[str] = "kortix/basic"
+    VOYAGE_API_KEY: Optional[str] = None
     GROQ_API_KEY: Optional[str] = None
     OPENROUTER_API_KEY: Optional[str] = None
     XAI_API_KEY: Optional[str] = None

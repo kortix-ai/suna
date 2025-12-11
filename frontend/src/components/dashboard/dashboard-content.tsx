@@ -126,6 +126,7 @@ export function DashboardContent() {
   const [inputValue, setInputValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfigDialog, setShowConfigDialog] = useState(false);
+  const [memoryEnabled, setMemoryEnabled] = useState(true);
   const [configAgentId, setConfigAgentId] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [autoSubmit, setAutoSubmit] = useState(false);
@@ -392,18 +393,13 @@ export function DashboardContent() {
       localStorage.removeItem(PENDING_PROMPT_KEY);
 
       const formData = new FormData();
-      
-      // Always append prompt - it's required for new threads
-      // The message should never be empty due to validation above, but ensure we always send it
       const trimmedMessage = message.trim();
       if (!trimmedMessage && files.length === 0) {
         setIsSubmitting(false);
         throw new Error('Prompt is required when starting a new Worker');
       }
-      // Always append prompt (even if empty, backend will validate)
       formData.append('prompt', trimmedMessage || message);
 
-      // Add selected agent if one is chosen
       if (selectedAgentId) {
         formData.append('agent_id', selectedAgentId);
       }
@@ -416,10 +412,9 @@ export function DashboardContent() {
       if (options?.model_name && options.model_name.trim()) {
         formData.append('model_name', options.model_name.trim());
       }
-      formData.append('stream', 'true'); // Always stream for better UX
+      formData.append('stream', 'true');
       formData.append('enable_context_manager', String(options?.enable_context_manager ?? false));
 
-      // Debug logging
       console.log('[Dashboard] Starting agent with:', {
         prompt: message.substring(0, 100),
         promptLength: message.length,
@@ -446,6 +441,7 @@ export function DashboardContent() {
         files: files,
         model_name: options?.model_name,
         agent_id: selectedAgentId || undefined,
+        memory_enabled: memoryEnabled,
       }).then(() => {
         queryClient.invalidateQueries({ queryKey: ['threads', 'list'] });
         queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });
@@ -723,6 +719,8 @@ export function DashboardContent() {
                           selectedCharts={selectedCharts}
                           selectedOutputFormat={selectedOutputFormat}
                           selectedTemplate={selectedTemplate}
+                          memoryEnabled={memoryEnabled}
+                          onMemoryToggle={setMemoryEnabled}
                         />
 
                         {alertType === 'daily_refresh' && (

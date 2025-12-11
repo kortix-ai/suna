@@ -33,6 +33,7 @@ import {
     Camera,
     Loader2,
     Upload,
+    Brain,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -96,8 +97,9 @@ import { LanguageSwitcher } from './language-switcher';
 import { useTranslations } from 'next-intl';
 import { ReferralsTab } from '@/components/referrals/referrals-tab';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { MemorySettings } from '@/components/memory/MemorySettings';
 
-type TabId = 'general' | 'plan' | 'billing' | 'usage' | 'env-manager' | 'knowledge-base' | 'integrations' | 'api-keys' | 'referrals';
+type TabId = 'general' | 'plan' | 'billing' | 'usage' | 'memory' | 'env-manager' | 'knowledge-base' | 'integrations' | 'api-keys' | 'referrals';
 
 interface Tab {
     id: TabId;
@@ -130,6 +132,7 @@ export function UserSettingsModal({
         { id: 'plan', label: 'Plan', icon: Zap },
         { id: 'billing', label: 'Billing', icon: CreditCard },
         { id: 'usage', label: 'Usage', icon: TrendingDown },
+        { id: 'memory', label: 'Memory', icon: Brain },
         ...(!isProduction ? [{ id: 'referrals' as TabId, label: 'Referrals', icon: Users }] : []),
         { id: 'knowledge-base', label: 'Knowledge Base', icon: FileText },
         { id: 'integrations', label: 'Integrations', icon: Plug },
@@ -223,6 +226,7 @@ export function UserSettingsModal({
                                 {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
                                 {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} onOpenPlanModal={() => setShowPlanModal(true)} isActive={activeTab === 'billing'} />}
                                 {activeTab === 'usage' && <UsageTab />}
+                                {activeTab === 'memory' && <MemorySettings />}
                                 {activeTab === 'referrals' && <ReferralsTab />}
                                 {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
                             </div>
@@ -275,6 +279,7 @@ export function UserSettingsModal({
                             {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
                             {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} onOpenPlanModal={() => setShowPlanModal(true)} isActive={activeTab === 'billing'} />}
                             {activeTab === 'usage' && <UsageTab />}
+                            {activeTab === 'memory' && <MemorySettings />}
                             {activeTab === 'referrals' && <ReferralsTab />}
                             {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
                         </div>

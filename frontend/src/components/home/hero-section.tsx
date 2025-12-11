@@ -49,6 +49,7 @@ export function HeroSection() {
     const isMobile = useIsMobile();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [inputValue, setInputValue] = useState('');
+    const [memoryEnabled, setMemoryEnabled] = useState(true);
 
     const {
         selectedAgentId,
@@ -199,6 +200,7 @@ export function HeroSection() {
                 files: normalizedFiles.length > 0 ? normalizedFiles : undefined,
                 model_name: options?.model_name,
                 agent_id: selectedAgentId || undefined,
+                memory_enabled: memoryEnabled,
             }).then(() => {
                 queryClient.invalidateQueries({ queryKey: ['threads', 'list'] });
                 queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });
@@ -348,6 +350,8 @@ export function HeroSection() {
                                     selectedCharts={selectedCharts}
                                     selectedOutputFormat={selectedOutputFormat}
                                     selectedTemplate={selectedTemplate}
+                                    memoryEnabled={memoryEnabled}
+                                    onMemoryToggle={setMemoryEnabled}
                                 />
                             </div>
                         </div>
