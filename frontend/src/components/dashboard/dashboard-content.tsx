@@ -446,6 +446,9 @@ export function DashboardContent() {
         files: files,
         model_name: options?.model_name,
         agent_id: selectedAgentId || undefined,
+      }).then(() => {
+        queryClient.invalidateQueries({ queryKey: ['threads', 'list'] });
+        queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });
       }).catch((error) => {
         console.error('Background agent start failed:', error);
         

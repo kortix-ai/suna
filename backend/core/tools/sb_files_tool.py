@@ -172,15 +172,17 @@ class SandboxFilesTool(SandboxToolsBase):
             
             message = f"File '{file_path}' created successfully."
             
-            # Check if index.html was created and add 8080 server info (only in root workspace)
-            if file_path.lower() == 'index.html':
+            if file_path.lower().endswith('.html'):
                 try:
                     website_link = await self.sandbox.get_preview_link(8080)
                     website_url = website_link.url if hasattr(website_link, 'url') else str(website_link).split("url='")[1].split("'")[0]
-                    message += f"\n\n[Auto-detected index.html - HTTP server available at: {website_url}]"
-                    message += "\n[Note: Use the provided HTTP server URL above instead of starting a new server]"
+                    if not website_url.endswith('/'):
+                        website_url += '/'
+                    full_preview_url = f"{website_url}{file_path}"
+                    message += f"\n\n✓ HTML file preview available at: {full_preview_url}"
+                    message += "\n[Note: Port 8080 is auto-exposed. Just share this URL with the user - no need to start servers or expose ports manually]"
                 except Exception as e:
-                    logger.warning(f"Failed to get website URL for index.html: {str(e)}")
+                    logger.warning(f"Failed to get preview URL for HTML file: {str(e)}")
             
             return self.success_response(message)
         except Exception as e:
@@ -232,23 +234,15 @@ class SandboxFilesTool(SandboxToolsBase):
                 lines = [i+1 for i, line in enumerate(content.split('\n')) if old_str in line]
                 return self.fail_response(f"Multiple occurrences found in lines {lines}. Please ensure string is unique")
             
-            # Perform replacement
             new_content = content.replace(old_str, new_str)
             await self.sandbox.fs.upload_file(new_content.encode(), full_path)
             
-            # Show snippet around the edit
-            replacement_line = content.split(old_str)[0].count('\n')
-            start_line = max(0, replacement_line - self.SNIPPET_LINES)
-            end_line = replacement_line + self.SNIPPET_LINES + new_str.count('\n')
-            snippet = '\n'.join(new_content.split('\n')[start_line:end_line + 1])
-            
-            # Get preview URL if it's an HTML file
-            # preview_url = self._get_preview_url(file_path)
-            message = f"Replacement successful."
-            # if preview_url:
-            #     message += f"\n\nYou can preview this HTML file at: {preview_url}"
-            
-            return self.success_response(message)
+            return ToolResult(success=True, output=json.dumps({
+                "message": f"Replacement successful.",
+                "file_path": file_path,
+                "original_content": content,
+                "updated_content": new_content
+            }))
             
         except Exception as e:
             return self.fail_response(f"Error replacing string: {str(e)}")
@@ -294,15 +288,17 @@ class SandboxFilesTool(SandboxToolsBase):
             
             message = f"File '{file_path}' completely rewritten successfully."
             
-            # Check if index.html was rewritten and add 8080 server info (only in root workspace)
-            if file_path.lower() == 'index.html':
+            if file_path.lower().endswith('.html'):
                 try:
                     website_link = await self.sandbox.get_preview_link(8080)
                     website_url = website_link.url if hasattr(website_link, 'url') else str(website_link).split("url='")[1].split("'")[0]
-                    message += f"\n\n[Auto-detected index.html - HTTP server available at: {website_url}]"
-                    message += "\n[Note: Use the provided HTTP server URL above instead of starting a new server]"
+                    if not website_url.endswith('/'):
+                        website_url += '/'
+                    full_preview_url = f"{website_url}{file_path}"
+                    message += f"\n\n✓ HTML file preview available at: {full_preview_url}"
+                    message += "\n[Note: Port 8080 is auto-exposed. Just share this URL with the user - no need to start servers or expose ports manually]"
                 except Exception as e:
-                    logger.warning(f"Failed to get website URL for index.html: {str(e)}")
+                    logger.warning(f"Failed to get preview URL for HTML file: {str(e)}")
             
             # Auto-validate presentation slides
             slide_pattern = r'^presentations/([^/]+)/slide_(\d+)\.html$'
@@ -346,22 +342,32 @@ class SandboxFilesTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "delete_file",
-            "description": "Delete a file at the given path. The path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py)",
+            "description": "Delete a file at the given path. **IMPORTANT**: You MUST use the `ask` tool to get explicit user confirmation before calling this tool. Never delete files without user permission. The path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). Before using this tool: 1) Use `ask` to request confirmation with a clear message like 'Do you want me to delete [file_path]?'. 2) Only proceed with deletion if the user confirms.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
                         "description": "Path to the file to be deleted, relative to /workspace (e.g., 'src/main.py')"
+                    },
+                    "user_confirmed": {
+                        "type": "boolean",
+                        "description": "Set to true only after receiving explicit user confirmation via the `ask` tool. Do not set to true without confirmation.",
+                        "default": False
                     }
                 },
-                "required": ["file_path"]
+                "required": ["file_path", "user_confirmed"]
             }
         }
     })
-    async def delete_file(self, file_path: str) -> ToolResult:
+    async def delete_file(self, file_path: str, user_confirmed: bool = False) -> ToolResult:
         try:
-            # Ensure sandbox is initialized
+            if not user_confirmed:
+                return self.fail_response(
+                    f"Cannot delete '{file_path}' without user confirmation. "
+                    f"Please use the `ask` tool to request user permission first, then call this tool again with user_confirmed=true."
+                )
+            
             await self._ensure_sandbox()
             
             file_path = self.clean_path(file_path)

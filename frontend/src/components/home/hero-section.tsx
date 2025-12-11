@@ -20,7 +20,7 @@ import { isLocalMode } from '@/lib/config';
 import { toast } from 'sonner';
 import { ChatInput, ChatInputHandles } from '@/components/thread/chat-input/chat-input';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { agentKeys } from '@/hooks/agents/keys';
 import { getAgents } from '@/hooks/agents/utils';
 import { useSunaModePersistence } from '@/stores/suna-modes-store';
@@ -70,6 +70,7 @@ export function HeroSection() {
     const router = useRouter();
     const { user, isLoading } = useAuth();
     const pricingModalStore = usePricingModalStore();
+    const queryClient = useQueryClient();
     const chatInputRef = useRef<ChatInputHandles>(null);
     const [showAgentLimitDialog, setShowAgentLimitDialog] = useState(false);
     const [agentLimitData, setAgentLimitData] = useState<{
@@ -198,6 +199,9 @@ export function HeroSection() {
                 files: normalizedFiles.length > 0 ? normalizedFiles : undefined,
                 model_name: options?.model_name,
                 agent_id: selectedAgentId || undefined,
+            }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['threads', 'list'] });
+                queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });
             }).catch((error) => {
                 console.error('Background agent start failed:', error);
                 
