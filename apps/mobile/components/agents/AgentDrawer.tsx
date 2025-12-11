@@ -501,6 +501,7 @@ export function AgentDrawer({
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
                     onOpenWorkerConfig(selectedAgentId, 'instructions');
+                    onClose?.();
                   }
                 }}
                 hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
@@ -517,6 +518,7 @@ export function AgentDrawer({
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
                     onOpenWorkerConfig(selectedAgentId, 'tools');
+                    onClose?.();
                   }
                 }}
                 hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
@@ -533,6 +535,7 @@ export function AgentDrawer({
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
                     onOpenWorkerConfig(selectedAgentId, 'integrations');
+                    onClose?.();
                   }
                 }}
                 hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
@@ -549,6 +552,7 @@ export function AgentDrawer({
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
                     onOpenWorkerConfig(selectedAgentId, 'triggers');
+                    onClose?.();
                   }
                 }}
                 hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>

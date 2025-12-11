@@ -1,9 +1,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { View, Pressable, Linking, Text as RNText, TextInput, Platform } from 'react-native';
-// import ContextMenu from 'react-native-context-menu-view';
-// Temporarily disabled due to native module linking issue - rebuild app to re-enable
+import ContextMenu from 'react-native-context-menu-view';
 import * as Clipboard from 'expo-clipboard';
-import * as Haptics from 'expo-haptics';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import type { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/api/types';
@@ -253,9 +251,9 @@ const MarkdownContent = React.memo(function MarkdownContent({
             ? followUpAnswers
             : typeof followUpAnswers === 'string'
               ? followUpAnswers
-                  .split(',')
-                  .map((a) => a.trim())
-                  .filter(Boolean)
+                .split(',')
+                .map((a) => a.trim())
+                .filter(Boolean)
               : [];
 
           contentParts.push(
@@ -314,9 +312,9 @@ const MarkdownContent = React.memo(function MarkdownContent({
             ? followUpPrompts
             : typeof followUpPrompts === 'string'
               ? followUpPrompts
-                  .split(',')
-                  .map((a) => a.trim())
-                  .filter(Boolean)
+                .split(',')
+                .map((a) => a.trim())
+                .filter(Boolean)
               : [];
 
           contentParts.push(
@@ -591,12 +589,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
     agentName = 'Kortix',
     onPromptFill,
   }) => {
-    const [isMounted, setIsMounted] = React.useState(false);
-
-    React.useEffect(() => {
-      setIsMounted(true);
-    }, []);
-
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === 'dark';
 
@@ -849,21 +841,15 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
 
     const handleToolPressInternal = useCallback(
       (clickedToolMsg: UnifiedMessage) => {
-        if (!isMounted) return;
-
         const clickedIndex = allToolMessages.findIndex(
           (t) => t.toolMessage.message_id === clickedToolMsg.message_id
         );
         if (clickedIndex >= 0) {
-          // Call onToolPress first to set selectedToolData, then navigate
           onToolPress?.(allToolMessages, clickedIndex);
-          // Use setTimeout to ensure state update happens after render
-          setTimeout(() => {
-            navigateToToolCall(clickedIndex);
-          }, 0);
+          navigateToToolCall(clickedIndex);
         }
       },
-      [allToolMessages, onToolPress, navigateToToolCall, isMounted]
+      [allToolMessages, onToolPress, navigateToToolCall]
     );
 
     return (
@@ -904,11 +890,11 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
             const attachmentsMatch = messageContent.match(/\[Uploaded File: (.*?)\]/g);
             const attachments = attachmentsMatch
               ? attachmentsMatch
-                  .map((match: string) => {
-                    const pathMatch = match.match(/\[Uploaded File: (.*?)\]/);
-                    return pathMatch ? pathMatch[1] : null;
-                  })
-                  .filter(Boolean)
+                .map((match: string) => {
+                  const pathMatch = match.match(/\[Uploaded File: (.*?)\]/);
+                  return pathMatch ? pathMatch[1] : null;
+                })
+                .filter(Boolean)
               : [];
 
             const cleanContent = messageContent.replace(/\[Uploaded File: .*?\]/g, '').trim();
@@ -931,12 +917,18 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                         borderRadius: 24,
                         borderBottomRightRadius: 8,
                       }}>
-                      <Pressable
-                        onLongPress={async () => {
-                          await Clipboard.setStringAsync(cleanContent);
-                          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                      <ContextMenu
+                        actions={[{ title: 'Copy', systemIcon: 'doc.on.doc' }]}
+                        onPress={async (e) => {
+                          if (e.nativeEvent.index === 0) {
+                            await Clipboard.setStringAsync(cleanContent);
+                          }
                         }}
-                        delayLongPress={500}>
+                        dropdownMenuMode={false}
+                        borderTopLeftRadius={24}
+                        borderTopRightRadius={24}
+                        borderBottomLeftRadius={24}
+                        borderBottomRightRadius={8}>
                         <View
                           className="bg-card px-4 py-3"
                           style={{
@@ -954,7 +946,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                             {cleanContent}
                           </RNText>
                         </View>
-                      </Pressable>
+                      </ContextMenu>
                     </View>
                   </View>
                 )}
@@ -1000,7 +992,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                     // Use metadata-based rendering (new approach)
                     const renderedContent = renderAssistantMessage({
                       message,
-                      onToolClick: handleToolClick || (() => {}),
+                      onToolClick: handleToolClick || (() => { }),
                       onFileClick: onFilePress,
                       sandboxId,
                       sandboxUrl,
@@ -1016,25 +1008,13 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
 
                         {linkedTools && linkedTools.length > 0 && (
                           <View className="mt-2 gap-1">
-                            {linkedTools.map((toolMsg: UnifiedMessage, toolIdx: number) => {
-                              const handlePress = () => {
-                                const clickedIndex = allToolMessages.findIndex(
-                                  (t) => t.toolMessage.message_id === toolMsg.message_id
-                                );
-                                onToolPress?.(
-                                  allToolMessages,
-                                  clickedIndex >= 0 ? clickedIndex : 0
-                                );
-                              };
-
-                              return (
-                                <ToolCard
-                                  key={`tool-${toolMsg.message_id || toolIdx}`}
-                                  message={toolMsg}
-                                  onPress={handlePress}
-                                />
-                              );
-                            })}
+                            {linkedTools.map((toolMsg: UnifiedMessage, toolIdx: number) => (
+                              <ToolCard
+                                key={`tool-${toolMsg.message_id || toolIdx}`}
+                                message={toolMsg}
+                                onPress={() => handleToolPressInternal(toolMsg)}
+                              />
+                            ))}
                           </View>
                         )}
                       </View>
@@ -1117,8 +1097,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                         const lastAssistantMessage =
                           currentGroupAssistantMessages.length > 0
                             ? currentGroupAssistantMessages[
-                                currentGroupAssistantMessages.length - 1
-                              ]
+                            currentGroupAssistantMessages.length - 1
+                            ]
                             : null;
                         if (lastAssistantMessage) {
                           const lastMsgMetadata = safeJsonParse<ParsedMetadata>(
