@@ -200,7 +200,7 @@ export function HeroSection() {
                 files: normalizedFiles.length > 0 ? normalizedFiles : undefined,
                 model_name: options?.model_name,
                 agent_id: selectedAgentId || undefined,
-                memory_enabled: memoryEnabled,
+                memory_enabled: true,
             }).then(() => {
                 queryClient.invalidateQueries({ queryKey: ['threads', 'list'] });
                 queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });
