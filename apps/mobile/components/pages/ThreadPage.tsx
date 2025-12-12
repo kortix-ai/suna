@@ -673,60 +673,62 @@ export function ThreadPage({
         onChooseFiles={chat.handleChooseFiles}
       />
 
-      <ThreadActionsDrawer
-        visible={isThreadActionsVisible}
-        onClose={() => setIsThreadActionsVisible(false)}
-        onShare={async () => {
-          if (!chat.activeThread?.id) return;
+      {isThreadActionsVisible && (
+        <ThreadActionsDrawer
+          visible={isThreadActionsVisible}
+          onClose={() => setIsThreadActionsVisible(false)}
+          onShare={async () => {
+            if (!chat.activeThread?.id) return;
 
-          try {
-            await shareThreadMutation.mutateAsync(chat.activeThread.id);
+            try {
+              await shareThreadMutation.mutateAsync(chat.activeThread.id);
+              setIsThreadActionsVisible(false);
+            } catch (error) {
+              console.error('Failed to share thread:', error);
+            }
+          }}
+          onFiles={() => {
             setIsThreadActionsVisible(false);
-          } catch (error) {
-            console.error('Failed to share thread:', error);
-          }
-        }}
-        onFiles={() => {
-          setIsThreadActionsVisible(false);
-          openFileBrowser();
-        }}
-        onDelete={() => {
-          if (!chat.activeThread?.id) return;
+            openFileBrowser();
+          }}
+          onDelete={() => {
+            if (!chat.activeThread?.id) return;
 
-          const threadTitle = chat.activeThread?.title || 'this thread';
+            const threadTitle = chat.activeThread?.title || 'this thread';
 
-          Alert.alert(
-            'Delete Thread',
-            `Are you sure you want to delete "${threadTitle}"? This action cannot be undone.`,
-            [
-              {
-                text: 'Cancel',
-                style: 'cancel',
-              },
-              {
-                text: 'Delete',
-                style: 'destructive',
-                onPress: async () => {
-                  setIsThreadActionsVisible(false);
-
-                  if (!chat.activeThread?.id) return;
-
-                  try {
-                    await deleteThreadMutation.mutateAsync(chat.activeThread.id);
-                    chat.startNewChat();
-                    if (router.canGoBack()) {
-                      router.back();
-                    }
-                  } catch (error) {
-                    console.error('Failed to delete thread:', error);
-                    Alert.alert('Error', 'Failed to delete thread. Please try again.');
-                  }
+            Alert.alert(
+              'Delete Thread',
+              `Are you sure you want to delete "${threadTitle}"? This action cannot be undone.`,
+              [
+                {
+                  text: 'Cancel',
+                  style: 'cancel',
                 },
-              },
-            ]
-          );
-        }}
-      />
+                {
+                  text: 'Delete',
+                  style: 'destructive',
+                  onPress: async () => {
+                    setIsThreadActionsVisible(false);
+
+                    if (!chat.activeThread?.id) return;
+
+                    try {
+                      await deleteThreadMutation.mutateAsync(chat.activeThread.id);
+                      chat.startNewChat();
+                      if (router.canGoBack()) {
+                        router.back();
+                      }
+                    } catch (error) {
+                      console.error('Failed to delete thread:', error);
+                      Alert.alert('Error', 'Failed to delete thread. Please try again.');
+                    }
+                  },
+                },
+              ]
+            );
+          }}
+        />
+      )}
 
       {isKortixComputerOpen && (
         <KortixComputer

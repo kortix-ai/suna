@@ -7,6 +7,9 @@ import * as React from 'react';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
+// Android hit slop for better touch targets
+const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 8, bottom: 8, left: 8, right: 8 } : undefined;
+
 const buttonVariants = cva(
   cn(
     'group shrink-0 flex-row items-center justify-center gap-2 rounded-2xl shadow-none',
@@ -132,6 +135,12 @@ function Button({ className, variant, size, onPressIn, onPressOut, ...props }: B
         style={animatedStyle}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
+        hitSlop={ANDROID_HIT_SLOP}
+        android_ripple={{ 
+          color: 'rgba(0, 0, 0, 0.1)', 
+          borderless: false,
+          foreground: true 
+        }}
         {...props}
       />
     </TextClassContext.Provider>

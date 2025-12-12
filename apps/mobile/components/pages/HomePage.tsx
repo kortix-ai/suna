@@ -282,17 +282,21 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
             onChooseImages={chat.handleChooseImages}
             onChooseFiles={chat.handleChooseFiles}
           />
-          <UsageDrawer
-            visible={isUsageDrawerOpen}
-            onClose={handleCloseUsageDrawer}
-            onUpgradePress={handleUpgradeFromUsage}
-            onTopUpPress={handleTopUpPress}
-            onThreadPress={handleThreadPressFromUsage}
-          />
-          <CreditsPurchasePage
-            visible={isCreditsPurchaseOpen}
-            onClose={handleCloseCreditsPurchase}
-          />
+          {isUsageDrawerOpen && (
+            <UsageDrawer
+              visible={isUsageDrawerOpen}
+              onClose={handleCloseUsageDrawer}
+              onUpgradePress={handleUpgradeFromUsage}
+              onTopUpPress={handleTopUpPress}
+              onThreadPress={handleThreadPressFromUsage}
+            />
+          )}
+          {isCreditsPurchaseOpen && (
+            <CreditsPurchasePage
+              visible={isCreditsPurchaseOpen}
+              onClose={handleCloseCreditsPurchase}
+            />
+          )}
         </KeyboardAvoidingView>
       </View>
     );

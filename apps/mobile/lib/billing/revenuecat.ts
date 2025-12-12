@@ -187,10 +187,6 @@ export async function initializeRevenueCat(
       console.log('📧 Email:', email || 'No email provided');
       console.log('📊 Tracking allowed:', canTrack);
 
-      if (__DEV__) {
-        Purchases.setLogLevel(LOG_LEVEL.DEBUG);
-      }
-
       Purchases.configure({ apiKey, appUserID: userId });
 
       await new Promise((resolve) => setTimeout(resolve, 100));

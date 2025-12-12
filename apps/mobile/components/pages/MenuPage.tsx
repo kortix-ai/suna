@@ -914,27 +914,30 @@ export function MenuPage({
         />
       )}
 
-      {/* Trigger Creation Drawer */}
-      <TriggerCreationDrawer
-        visible={isTriggerDrawerVisible}
-        onClose={handleTriggerDrawerClose}
-        onTriggerCreated={handleTriggerCreated}
-      />
+      {isTriggerDrawerVisible && (
+        <TriggerCreationDrawer
+          visible={isTriggerDrawerVisible}
+          onClose={handleTriggerDrawerClose}
+          onTriggerCreated={handleTriggerCreated}
+        />
+      )}
 
-      {/* Worker Creation Drawer */}
-      <WorkerCreationDrawer
-        visible={isWorkerCreationDrawerVisible}
-        onClose={handleWorkerCreationDrawerClose}
-        onWorkerCreated={handleWorkerCreated}
-      />
+      {isWorkerCreationDrawerVisible && (
+        <WorkerCreationDrawer
+          visible={isWorkerCreationDrawerVisible}
+          onClose={handleWorkerCreationDrawerClose}
+          onWorkerCreated={handleWorkerCreated}
+        />
+      )}
 
-      {/* Worker Config Drawer - controlled from parent for worker settings access */}
-      <WorkerConfigDrawer
-        visible={!!workerConfigWorkerId}
-        workerId={workerConfigWorkerId || null}
-        initialView={workerConfigInitialView}
-        onClose={onCloseWorkerConfigDrawer || (() => {})}
-      />
+      {workerConfigWorkerId && (
+        <WorkerConfigDrawer
+          visible={!!workerConfigWorkerId}
+          workerId={workerConfigWorkerId || null}
+          initialView={workerConfigInitialView}
+          onClose={onCloseWorkerConfigDrawer || (() => {})}
+        />
+      )}
     </View>
   );
 }

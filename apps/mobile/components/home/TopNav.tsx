@@ -2,7 +2,7 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { TierBadge } from '@/components/menu/TierBadge';
 import * as React from 'react';
-import { Pressable, View, Dimensions } from 'react-native';
+import { Pressable, View, Dimensions, Platform, TouchableOpacity } from 'react-native';
 import { Menu, Coins, Sparkles, TextAlignStart } from 'lucide-react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
@@ -12,8 +12,18 @@ import { useColorScheme } from 'nativewind';
 import { formatCredits } from '@/lib/utils/credit-formatter';
 import { useLanguage } from '@/contexts';
 
+// #region agent log
+const debugLog = (location: string, message: string, data: any, hypothesisId: string) => {
+  fetch('http://127.0.0.1:7242/ingest/75c4e084-f8e3-4454-ac60-13feff134172',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location,message,data,timestamp:Date.now(),sessionId:'debug-session',hypothesisId})}).catch(()=>{});
+};
+// #endregion
+
+// NOTE: On Android, AnimatedPressable blocks touches - use TouchableOpacity instead
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const SCREEN_WIDTH = Dimensions.get('window').width;
+
+// Android hit slop for better touch targets
+const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 10, bottom: 10, left: 10, right: 10 } : undefined;
 
 interface TopNavProps {
   onMenuPress?: () => void;
@@ -68,6 +78,9 @@ export function TopNav({
   }));
 
   const handleMenuPress = () => {
+    // #region agent log
+    debugLog('TopNav.tsx:menuPress', 'MENU BUTTON onPress FIRED', { hasHandler: !!onMenuPress }, 'H4');
+    // #endregion
     console.log('🎯 Menu panel pressed');
     console.log('📱 Opening menu drawer');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -75,12 +88,18 @@ export function TopNav({
   };
 
   const handleUpgradePress = () => {
+    // #region agent log
+    debugLog('TopNav.tsx:upgradePress', 'UPGRADE BUTTON onPress FIRED', {}, 'H4');
+    // #endregion
     console.log('🎯 Upgrade button pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onUpgradePress?.();
   };
 
   const handleCreditsPress = () => {
+    // #region agent log
+    debugLog('TopNav.tsx:creditsPress', 'CREDITS BUTTON onPress FIRED', {}, 'H4');
+    // #endregion
     console.log('🎯 Credits button pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     refetchCredits();
@@ -95,54 +114,45 @@ export function TopNav({
   }
 
   return (
-    <View className="absolute left-0 right-0 top-[62px] z-50 h-[41px] flex-row items-center px-0">
-      <AnimatedPressable
-        onPressIn={() => {
-          menuScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-        }}
-        onPressOut={() => {
-          menuScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-        }}
-        className="absolute left-6 h-6 w-6 items-center justify-center"
+    <View 
+      className="absolute left-0 right-0 top-[62px] z-50 h-[41px] flex-row items-center px-0"
+      style={Platform.OS === 'android' ? { elevation: 50, zIndex: 50 } : undefined}
+    >
+      {/* Use TouchableOpacity on Android - AnimatedPressable blocks touches on Android */}
+      <TouchableOpacity
         onPress={handleMenuPress}
-        style={[menuAnimatedStyle, { top: 8.5 }]}
+        style={{ position: 'absolute', left: 24, top: 8.5, width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}
+        hitSlop={ANDROID_HIT_SLOP}
+        activeOpacity={0.7}
         accessibilityRole="button"
         accessibilityLabel="Open menu"
         accessibilityHint="Opens the navigation drawer">
         <Icon as={TextAlignStart} size={20} className="text-foreground" strokeWidth={2} />
-      </AnimatedPressable>
+      </TouchableOpacity>
 
       <View className="absolute right-6 flex-row items-center gap-2">
         {hasFreeTier && (
-          <AnimatedPressable
-            onPressIn={() => {
-              rightUpgradeScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-            }}
-            onPressOut={() => {
-              rightUpgradeScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-            }}
+          <TouchableOpacity
             onPress={handleUpgradePress}
-            className="h-9 flex-row items-center gap-1.5 rounded-full border-[1.5px] border-primary bg-primary px-3"
-            style={rightUpgradeAnimatedStyle}
+            style={{ height: 36, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 18, borderWidth: 1.5, paddingHorizontal: 12 }}
+            className="border-primary bg-primary"
+            hitSlop={ANDROID_HIT_SLOP}
+            activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel="Upgrade">
             <Icon as={Sparkles} size={14} className="text-primary-foreground" strokeWidth={2.5} />
             <Text className="font-roobert-semibold text-xs text-primary-foreground">
               {t('billing.upgrade')}
             </Text>
-          </AnimatedPressable>
+          </TouchableOpacity>
         )}
 
-        <AnimatedPressable
-          onPressIn={() => {
-            creditsScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-          }}
-          onPressOut={() => {
-            creditsScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-          }}
+        <TouchableOpacity
           onPress={handleCreditsPress}
-          className="flex-row items-center gap-2 rounded-full bg-primary/5 px-3 py-1.5"
-          style={creditsAnimatedStyle}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 6 }}
+          className="bg-primary/5"
+          hitSlop={ANDROID_HIT_SLOP}
+          activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel="View usage"
           accessibilityHint="Opens usage details">
@@ -150,7 +160,7 @@ export function TopNav({
           <Text className="font-roobert-semibold text-sm text-primary">
             {formatCredits(creditBalance?.balance || 0)}
           </Text>
-        </AnimatedPressable>
+        </TouchableOpacity>
       </View>
     </View>
   );
