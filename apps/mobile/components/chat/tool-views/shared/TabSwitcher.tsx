@@ -16,6 +16,7 @@ interface TabSwitcherProps {
   activeTab: string;
   onTabChange: (tabId: string) => void;
   className?: string;
+  iconOnly?: boolean;
 }
 
 export function TabSwitcher({
@@ -23,6 +24,7 @@ export function TabSwitcher({
   activeTab,
   onTabChange,
   className = '',
+  iconOnly = false,
 }: TabSwitcherProps) {
   const handleTabPress = (tabId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -39,7 +41,7 @@ export function TabSwitcher({
           <Pressable
             key={tab.id}
             onPress={() => handleTabPress(tab.id)}
-            className={`flex-row items-center justify-center gap-1.5 px-3 py-1.5 rounded-full ${tabs.length > 2 ? 'flex-1 min-w-0' : 'flex-1'
+            className={`flex-row items-center justify-center gap-1.5 ${iconOnly ? 'px-2' : 'px-3'} py-1.5 rounded-full ${tabs.length > 2 && !iconOnly ? 'flex-1 min-w-0' : iconOnly ? '' : 'flex-1'
               } ${isActive
                 ? 'bg-primary'
                 : 'bg-transparent'
@@ -56,15 +58,17 @@ export function TabSwitcher({
                 }
               />
             )}
-            <Text
-              className={`text-xs font-roobert-medium ${isActive
-                ? 'text-background'
-                : 'text-primary'
-                }`}
-              numberOfLines={1}
-            >
-              {tab.label}
-            </Text>
+            {!iconOnly && (
+              <Text
+                className={`text-xs font-roobert-medium ${isActive
+                  ? 'text-background'
+                  : 'text-primary'
+                  }`}
+                numberOfLines={1}
+              >
+                {tab.label}
+              </Text>
+            )}
           </Pressable>
         );
       })}
