@@ -15,7 +15,6 @@ import {
   CodeSquare,
   Minus,
   Link2,
-  Image,
   Table,
   ChevronDown,
   Heading1,
@@ -324,7 +323,6 @@ export type MarkdownFormat =
   | 'code-block'
   | 'horizontal-rule'
   | 'link'
-  | 'image'
   | 'table'
   | 'heading';
 
@@ -679,19 +677,6 @@ export function insertMarkdownFormat(
     } else {
       const newText = beforeSelection + '[](url)' + afterSelection;
       const newCursorPosition = selectionStart + 1;
-      return { newText, newCursorPosition, newSelectionEnd: newCursorPosition };
-    }
-  }
-
-  // Handle image format
-  if (format === 'image') {
-    if (hasSelection) {
-      const newText = beforeSelection + '![' + selectedText + '](url)' + afterSelection;
-      const newCursorPosition = selectionStart + selectedText.length + 4;
-      return { newText, newCursorPosition, newSelectionEnd: newCursorPosition + 3 };
-    } else {
-      const newText = beforeSelection + '![](url)' + afterSelection;
-      const newCursorPosition = selectionStart + 2;
       return { newText, newCursorPosition, newSelectionEnd: newCursorPosition };
     }
   }
