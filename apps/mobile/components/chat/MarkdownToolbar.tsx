@@ -532,12 +532,6 @@ export const MarkdownToolbar = React.memo(({ onFormat, isVisible, text = '', sel
             label="Italic"
           />
           <ToolButton
-            icon={Underline}
-            onPress={() => onFormat('underline')}
-            isActive={activeFormats.underline}
-            label="Underline"
-          />
-          <ToolButton
             icon={Strikethrough}
             onPress={() => onFormat('strikethrough')}
             isActive={activeFormats.strikethrough}
@@ -591,6 +585,12 @@ export const MarkdownToolbar = React.memo(({ onFormat, isVisible, text = '', sel
           <ToolbarDivider />
 
           {/* Media & Links */}
+          <ToolButton
+            icon={Underline}
+            onPress={() => onFormat('underline')}
+            isActive={activeFormats.underline}
+            label="Underline"
+          />
           <ToolButton
             icon={Link2}
             onPress={() => onFormat('link')}
@@ -648,10 +648,24 @@ export function insertMarkdownFormat(
     const { prefix, suffix } = wrapFormats[format];
 
     if (hasSelection) {
-      // Wrap selected text
-      const newText = beforeSelection + prefix + selectedText + suffix + afterSelection;
-      const newCursorPosition = selectionStart + prefix.length + selectedText.length + suffix.length;
-      return { newText, newCursorPosition, newSelectionEnd: newCursorPosition };
+      // Check if selected text is already wrapped with these markers
+      const beforePrefix = beforeSelection.slice(-prefix.length);
+      const afterSuffix = afterSelection.slice(0, suffix.length);
+
+      const isAlreadyWrapped = beforePrefix === prefix && afterSuffix === suffix;
+
+      if (isAlreadyWrapped) {
+        // Unwrap: remove the markers
+        const newText = beforeSelection.slice(0, -prefix.length) + selectedText + afterSelection.slice(suffix.length);
+        const newCursorPosition = selectionStart - prefix.length;
+        const newSelectionEnd = newCursorPosition + selectedText.length;
+        return { newText, newCursorPosition, newSelectionEnd };
+      } else {
+        // Wrap selected text
+        const newText = beforeSelection + prefix + selectedText + suffix + afterSelection;
+        const newCursorPosition = selectionStart + prefix.length + selectedText.length + suffix.length;
+        return { newText, newCursorPosition, newSelectionEnd: newCursorPosition };
+      }
     } else {
       // Insert empty wrapper and position cursor inside
       const newText = beforeSelection + prefix + suffix + afterSelection;

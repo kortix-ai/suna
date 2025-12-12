@@ -27,6 +27,7 @@ import {
   lightMarkdownStyle,
   darkMarkdownStyle,
 } from '@/lib/utils/live-markdown-config';
+import { HybridMarkdownEditor } from './HybridMarkdownEditor';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import { FilePreview, FilePreviewType, getFilePreviewType } from '@/components/files/FilePreviewRenderers';
@@ -278,12 +279,34 @@ export function FileViewerView({
   }, [isImage, blobUrl, versionBlobUrl, textContent, localContent, fileName, selectedVersion]);
 
   const handleDiscard = useCallback(() => {
-    if (textContent !== undefined) {
-      setLocalContent(textContent);
-      clearUnsavedContent(filePath);
-      setUnsavedState(filePath, false);
-      setIsEditing(false);
-    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    Alert.alert(
+      'Discard Changes',
+      'Are you sure you want to discard your unsaved changes? This action cannot be undone.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          },
+        },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => {
+            if (textContent !== undefined) {
+              setLocalContent(textContent);
+              clearUnsavedContent(filePath);
+              setUnsavedState(filePath, false);
+              setIsEditing(false);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }
+          },
+        },
+      ]
+    );
   }, [textContent, filePath, clearUnsavedContent, setUnsavedState]);
 
   const handleContentChange = useCallback((content: string) => {
@@ -521,9 +544,14 @@ export function FileViewerView({
                     {hasUnsavedChanges && (
                       <Pressable
                         onPress={handleDiscard}
-                        className="h-9 px-3 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
+                        className="h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
                       >
-                        <Text className="text-xs font-roobert-medium text-primary">Discard</Text>
+                        <Icon
+                          as={X}
+                          size={17}
+                          className="text-primary"
+                          strokeWidth={2}
+                        />
                       </Pressable>
                     )}
                     <Pressable
@@ -638,26 +666,14 @@ export function FileViewerView({
               className="flex-1"
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag">
-              <MarkdownTextInput
-                ref={markdownInputRef}
+              <HybridMarkdownEditor
                 value={localContent}
-                onChangeText={handleContentChange}
+                onChange={handleContentChange}
                 onSelectionChange={handleSelectionChange}
-                parser={markdownParser}
-                markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
-                multiline
-                scrollEnabled={false}
                 editable={canEdit && isEditing}
-                className="flex-1 px-4 py-4 font-roobert text-[16px] leading-6 text-primary"
-                style={{
-                  backgroundColor: 'transparent',
-                  minHeight: 400,
-                  fontSize: 16,
-                  lineHeight: 24,
-                }}
-                textAlignVertical="top"
-                placeholder="Start typing markdown..."
-                placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
+                isDark={isDark}
+                markdownInputRef={markdownInputRef}
+                isEditing={canEdit && isEditing}
               />
             </ScrollView>
           </View>
