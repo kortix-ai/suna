@@ -30,7 +30,7 @@ export function TopNav({
 }: TopNavProps) {
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
-  const { hasFreeTier, subscriptionData } = useBillingContext();
+  const { subscriptionData } = useBillingContext();
   const { data: creditBalance, refetch: refetchCredits } = useCreditBalance();
   const menuScale = useSharedValue(1);
   const upgradeScale = useSharedValue(1);
@@ -113,25 +113,23 @@ export function TopNav({
       </AnimatedPressable>
 
       <View className="absolute right-6 flex-row items-center gap-2">
-        {hasFreeTier && (
-          <AnimatedPressable
-            onPressIn={() => {
-              rightUpgradeScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-            }}
-            onPressOut={() => {
-              rightUpgradeScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-            }}
-            onPress={handleUpgradePress}
-            className="h-9 flex-row items-center gap-1.5 rounded-full border-[1.5px] border-primary bg-primary px-3"
-            style={rightUpgradeAnimatedStyle}
-            accessibilityRole="button"
-            accessibilityLabel="Upgrade">
-            <Icon as={Sparkles} size={14} className="text-primary-foreground" strokeWidth={2.5} />
-            <Text className="font-roobert-semibold text-xs text-primary-foreground">
-              {t('billing.upgrade')}
-            </Text>
-          </AnimatedPressable>
-        )}
+        <AnimatedPressable
+          onPressIn={() => {
+            rightUpgradeScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+          }}
+          onPressOut={() => {
+            rightUpgradeScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+          }}
+          onPress={handleUpgradePress}
+          className="h-9 flex-row items-center gap-1.5 rounded-full border-[1.5px] border-primary bg-primary px-3"
+          style={rightUpgradeAnimatedStyle}
+          accessibilityRole="button"
+          accessibilityLabel="Upgrade">
+          <Icon as={Sparkles} size={14} className="text-primary-foreground" strokeWidth={2.5} />
+          <Text className="font-roobert-semibold text-xs text-primary-foreground">
+            {t('billing.upgrade')}
+          </Text>
+        </AnimatedPressable>
 
         <AnimatedPressable
           onPressIn={() => {
