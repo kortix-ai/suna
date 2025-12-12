@@ -108,6 +108,7 @@ export default function BerlinPage() {
         files: normalizedFiles.length > 0 ? normalizedFiles : undefined,
         model_name: options?.model_name,
         agent_id: selectedAgentId || undefined,
+        memory_enabled: true,
       }).catch((error) => {
         console.error('Background agent start failed:', error);
         

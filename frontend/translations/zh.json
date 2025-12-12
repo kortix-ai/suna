@@ -188,6 +188,41 @@
     "integrations": {
       "opening": "正在打开集成",
       "redirecting": "正在重定向到集成页面..."
+    },
+    "memory": {
+      "title": "AI记忆",
+      "description": "自动记住跨对话的上下文",
+      "enabled": "已启用",
+      "disabled": "已禁用",
+      "notAvailable": "您当前的计划不提供记忆功能。升级到Plus或更高版本以启用自动记忆。",
+      "usage": "记忆使用量",
+      "available": "{count}个记忆可用",
+      "noLimit": "无限制",
+      "yourMemories": "您的记忆",
+      "yourMemoriesDescription": "查看和管理AI记住的关于您的信息",
+      "clearAll": "全部清除",
+      "deleteAllTitle": "删除所有记忆？",
+      "deleteAllDescription": "这将永久删除所有{count}个记忆。AI将不再记住过去对话中的信息。此操作无法撤消。",
+      "deleteAllButton": "删除所有记忆",
+      "noMemoriesYet": "还没有记忆",
+      "noMemoriesDescription": "开始对话，AI将自动记住关于您的重要信息",
+      "searchMemories": "搜索记忆...",
+      "filterByType": "按类型筛选",
+      "allTypes": "所有类型",
+      "personalFacts": "个人事实",
+      "preferences": "偏好",
+      "context": "上下文",
+      "conversations": "对话",
+      "noMatchingMemories": "没有匹配的记忆",
+      "adjustFilters": "尝试调整您的筛选器或搜索查询",
+      "loadMore": "加载更多",
+      "loading": "正在加载记忆...",
+      "memoryTypes": {
+        "fact": "事实",
+        "preference": "偏好",
+        "context": "上下文",
+        "conversation_summary": "对话"
+      }
     }
   },
   "triggers": {

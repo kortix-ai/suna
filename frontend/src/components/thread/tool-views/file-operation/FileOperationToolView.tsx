@@ -391,17 +391,33 @@ export function FileOperationToolView({
       if (!filePath && output.file_path) {
         filePath = output.file_path;
       }
-      // Extract str-replace data from output
-      if (isStrReplace) {
-        oldStr = oldStr || output.old_str || output.old_string || null;
-        newStr = newStr || output.new_str || output.new_string || null;
+      if (isStrReplace || operation === 'edit') {
+        oldStr = oldStr || output.old_str || output.old_string || output.original_content || null;
+        newStr = newStr || output.new_str || output.new_string || output.updated_content || null;
+        if (output.updated_content) {
+          fileContent = output.updated_content;
+        }
       }
-    } else if (typeof output === 'string' && operation !== 'delete' && operation !== 'create') {
-      fileContent = output;
+    } else if (typeof output === 'string') {
+      try {
+        const parsed = JSON.parse(output);
+        if (parsed.updated_content) {
+          fileContent = parsed.updated_content;
+        }
+        if (parsed.file_path && !filePath) {
+          filePath = parsed.file_path;
+        }
+        if (isStrReplace || operation === 'edit') {
+          oldStr = oldStr || parsed.old_str || parsed.old_string || parsed.original_content || null;
+          newStr = newStr || parsed.new_str || parsed.new_string || parsed.updated_content || null;
+        }
+      } catch (e) {
+        if (operation !== 'delete' && operation !== 'create' && operation !== 'rewrite') {
+          fileContent = output;
+        }
+      }
     }
   }
-
-  // For str-replace, we don't override fileContent - we use oldStr and newStr directly for Source/Preview
 
   // Generate diff data for str-replace and edit operations
   const lineDiff = React.useMemo(() => {
@@ -454,12 +470,69 @@ export function FileOperationToolView({
   const sourceScrollRef = React.useRef<HTMLDivElement>(null);
   const previewScrollRef = React.useRef<HTMLDivElement>(null);
   const lastLineCountRef = React.useRef<number>(0);
+  const isUserScrollingSourceRef = React.useRef<boolean>(false);
+  const isUserScrollingPreviewRef = React.useRef<boolean>(false);
+  const scrollTimeoutSourceRef = React.useRef<NodeJS.Timeout | null>(null);
+  const scrollTimeoutPreviewRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  const isNearBottom = (element: HTMLElement, threshold: number = 100): boolean => {
+    return element.scrollHeight - element.scrollTop - element.clientHeight < threshold;
+  };
+
+  React.useEffect(() => {
+    const viewport = sourceScrollRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+    if (!viewport) return;
+
+    const handleScroll = () => {
+      if (scrollTimeoutSourceRef.current) {
+        clearTimeout(scrollTimeoutSourceRef.current);
+      }
+
+      isUserScrollingSourceRef.current = !isNearBottom(viewport);
+
+      scrollTimeoutSourceRef.current = setTimeout(() => {
+        isUserScrollingSourceRef.current = false;
+      }, 1000);
+    };
+
+    viewport.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      viewport.removeEventListener('scroll', handleScroll);
+      if (scrollTimeoutSourceRef.current) {
+        clearTimeout(scrollTimeoutSourceRef.current);
+      }
+    };
+  }, []);
+
+  React.useEffect(() => {
+    const viewport = previewScrollRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+    if (!viewport) return;
+
+    const handleScroll = () => {
+      if (scrollTimeoutPreviewRef.current) {
+        clearTimeout(scrollTimeoutPreviewRef.current);
+      }
+
+      isUserScrollingPreviewRef.current = !isNearBottom(viewport);
+
+      scrollTimeoutPreviewRef.current = setTimeout(() => {
+        isUserScrollingPreviewRef.current = false;
+      }, 1000);
+    };
+
+    viewport.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      viewport.removeEventListener('scroll', handleScroll);
+      if (scrollTimeoutPreviewRef.current) {
+        clearTimeout(scrollTimeoutPreviewRef.current);
+      }
+    };
+  }, []);
 
   // Auto-scroll for source code view during streaming - simple and stable
   React.useEffect(() => {
     if (!isStreaming || !fileContent || !sourceScrollRef.current) return;
     
-    // Only scroll when new lines are added
     const currentLineCount = contentLines.length;
     if (currentLineCount <= lastLineCountRef.current) return;
     lastLineCountRef.current = currentLineCount;
@@ -467,7 +540,8 @@ export function FileOperationToolView({
     const viewport = sourceScrollRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
     if (!viewport) return;
 
-    // Instantly scroll to bottom without smooth behavior to prevent jitter
+    if (isUserScrollingSourceRef.current) return;
+
     viewport.scrollTop = viewport.scrollHeight;
   }, [isStreaming, contentLines.length, fileContent]);
 
@@ -475,6 +549,8 @@ export function FileOperationToolView({
   React.useEffect(() => {
     if (!isStreaming) {
       lastLineCountRef.current = 0;
+      isUserScrollingSourceRef.current = false;
+      isUserScrollingPreviewRef.current = false;
     }
   }, [isStreaming]);
 
@@ -485,7 +561,8 @@ export function FileOperationToolView({
     const viewport = previewScrollRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
     if (!viewport) return;
 
-    // Instantly scroll to bottom
+    if (isUserScrollingPreviewRef.current) return;
+
     viewport.scrollTop = viewport.scrollHeight;
   }, [isStreaming, fileContent]);
 
@@ -749,137 +826,14 @@ export function FileOperationToolView({
     ? `${toolTitle} - ${presentationName}${slideNumber ? ` (Slide ${slideNumber})` : ''}`
     : toolTitle;
 
-  // Check if we have diff data available (for edit with original content)
-  const hasDiffData = (operation === 'edit' && oldStr && newStr);
+  const hasDiffData = ((operation === 'edit' || isStrReplace) && oldStr && newStr);
 
-  // =====================================================
-  // STR-REPLACE: Dedicated view without tabs
-  // =====================================================
-  if (isStrReplace) {
-    return (
-      <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card max-w-full min-w-0">
-        {/* Header */}
-        <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2 mb-0 max-w-full min-w-0">
-          <div className="flex flex-row items-center justify-between gap-3 max-w-full min-w-0">
-            <div className="flex items-center gap-3 min-w-0 flex-1 max-w-full">
-              <div className={cn("relative p-2 rounded-lg border flex-shrink-0", `bg-gradient-to-br ${headerGradientBg}`, headerBorderColor)}>
-                <HeaderIcon className={cn("h-5 w-5", headerIconColor)} />
-              </div>
-              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                {displayTitle}
-              </CardTitle>
-              {/* File path badge */}
-              {processedFilePath && (
-                <code className="text-xs font-mono text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">
-                  {fileName}
-                </code>
-              )}
-            </div>
-            {/* View mode toggle */}
-            {oldStr && newStr && (
-              <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-md p-0.5">
-                <button
-                  onClick={() => setDiffViewMode('unified')}
-                  className={cn(
-                    "px-2.5 py-1 text-xs font-medium rounded transition-all",
-                    diffViewMode === 'unified' 
-                      ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm" 
-                      : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
-                  )}
-                >
-                  Unified
-                </button>
-                <button
-                  onClick={() => setDiffViewMode('split')}
-                  className={cn(
-                    "px-2.5 py-1 text-xs font-medium rounded transition-all",
-                    diffViewMode === 'split' 
-                      ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm" 
-                      : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
-                  )}
-                >
-                  Split
-                </button>
-              </div>
-            )}
-          </div>
-        </CardHeader>
 
-        {/* Content - Direct diff view */}
-        <CardContent className="p-0 h-full flex-1 overflow-hidden relative bg-white dark:bg-zinc-950 flex flex-col min-h-0 max-w-full min-w-0">
-          {isStreaming && (!oldStr || !newStr) ? (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center">
-                <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 mx-auto bg-gradient-to-b from-violet-100 to-violet-50 dark:from-violet-800/40 dark:to-violet-900/60">
-                  <FileDiff className="h-8 w-8 text-violet-500 dark:text-violet-400" />
-                </div>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">Processing changes...</p>
-              </div>
-            </div>
-          ) : !oldStr || !newStr ? (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center">
-                <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 mx-auto bg-gradient-to-b from-zinc-100 to-zinc-50 dark:from-zinc-800/40 dark:to-zinc-900/60">
-                  <CheckCircle className="h-8 w-8 text-emerald-500 dark:text-emerald-400" />
-                </div>
-                <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Replacement Complete</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{processedFilePath}</p>
-              </div>
-            </div>
-          ) : (
-            <>
-              <ScrollArea className="flex-1 min-h-0">
-                <div className="bg-white dark:bg-zinc-950">
-                  {diffViewMode === 'unified' ? (
-                    <UnifiedDiffView lineDiff={lineDiff} fileName={fileName} />
-                  ) : (
-                    <SplitDiffView lineDiff={lineDiff} />
-                  )}
-                </div>
-              </ScrollArea>
-              {/* Streaming indicator */}
-              {isStreaming && (
-                <div className="px-4 py-2 bg-violet-50 dark:bg-violet-950/30 border-t border-violet-200 dark:border-violet-800 flex items-center gap-2">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-500" />
-                  <span className="text-xs text-violet-600 dark:text-violet-400">Streaming changes...</span>
-                </div>
-              )}
-            </>
-          )}
-        </CardContent>
-
-        {/* Footer */}
-        <div className="px-4 py-2 h-10 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4">
-          <div className="h-full flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-            <Badge variant="outline" className="py-0.5 h-6">
-              <FileIcon className="h-3 w-3 mr-1" />
-              {hasHighlighting ? language.toUpperCase() : fileExtension.toUpperCase() || 'TEXT'}
-            </Badge>
-            {diffStats.additions + diffStats.deletions > 0 && (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-emerald-600 dark:text-emerald-400">+{diffStats.additions}</span>
-                <span className="text-red-600 dark:text-red-400">-{diffStats.deletions}</span>
-              </div>
-            )}
-          </div>
-          <div className="text-xs text-zinc-500 dark:text-zinc-400">
-            {toolTimestamp && !isStreaming
-              ? formatTimestamp(toolTimestamp)
-              : assistantTimestamp
-                ? formatTimestamp(assistantTimestamp)
-                : ''}
-          </div>
-        </div>
-      </Card>
-    );
-  }
-
-  // =====================================================
-  // OTHER FILE OPERATIONS: Tabs-based view
-  // =====================================================
+  const defaultTab = (isStrReplace || operation === 'edit') && hasDiffData ? 'changes' : 'preview';
+  
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card max-w-full min-w-0">
-      <Tabs defaultValue="preview" className="w-full h-full max-w-full min-w-0">
+      <Tabs defaultValue={defaultTab} className="w-full h-full max-w-full min-w-0">
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2 mb-0 max-w-full min-w-0">
           <div className="flex flex-row items-center justify-between gap-3 max-w-full min-w-0">
             <div className="flex items-center gap-3 min-w-0 flex-1 max-w-full">
@@ -890,20 +844,6 @@ export function FileOperationToolView({
                 {displayTitle}
               </CardTitle>
               <TabsList className="h-8 bg-muted/50 border border-border/50 p-0.5 gap-0.5 flex-shrink-0">
-                <TabsTrigger
-                  value="code"
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all [&[data-state=active]]:bg-white [&[data-state=active]]:dark:bg-primary/10 [&[data-state=active]]:text-foreground hover:bg-background/50 text-muted-foreground shadow-none"
-                >
-                  <Code className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Source</span>
-                </TabsTrigger>
-                <TabsTrigger
-                  value="preview"
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all [&[data-state=active]]:bg-white [&[data-state=active]]:dark:bg-primary/10 [&[data-state=active]]:text-foreground hover:bg-background/50 text-muted-foreground shadow-none"
-                >
-                  <Eye className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Preview</span>
-                </TabsTrigger>
                 {hasDiffData && (
                   <TabsTrigger
                     value="changes"
@@ -913,10 +853,24 @@ export function FileOperationToolView({
                     <span className="hidden sm:inline">Changes</span>
                   </TabsTrigger>
                 )}
+                <TabsTrigger
+                  value="preview"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all [&[data-state=active]]:bg-white [&[data-state=active]]:dark:bg-primary/10 [&[data-state=active]]:text-foreground hover:bg-background/50 text-muted-foreground shadow-none"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Preview</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="code"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all [&[data-state=active]]:bg-white [&[data-state=active]]:dark:bg-primary/10 [&[data-state=active]]:text-foreground hover:bg-background/50 text-muted-foreground shadow-none"
+                >
+                  <Code className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Source</span>
+                </TabsTrigger>
               </TabsList>
             </div>
             <div className='flex items-center gap-1.5 flex-shrink-0'>
-              {fileContent && !isStreaming && !isPresentationSlide && (
+              {fileContent && !isStreaming && !isPresentationSlide && operation !== 'delete' && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -1128,6 +1082,12 @@ export function FileOperationToolView({
               <FileIcon className="h-3 w-3 mr-1" />
               {hasHighlighting ? language.toUpperCase() : fileExtension.toUpperCase() || 'TEXT'}
             </Badge>
+            {hasDiffData && diffStats.additions + diffStats.deletions > 0 && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-emerald-600 dark:text-emerald-400">+{diffStats.additions}</span>
+                <span className="text-red-600 dark:text-red-400">-{diffStats.deletions}</span>
+              </div>
+            )}
           </div>
           <div className="text-xs text-zinc-500 dark:text-zinc-400">
             {toolTimestamp && !isStreaming

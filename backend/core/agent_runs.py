@@ -934,6 +934,7 @@ async def optimistic_agent_start(
     model_name: Optional[str] = Form(None),
     agent_id: Optional[str] = Form(None),
     files: List[UploadFile] = File(default=[]),
+    memory_enabled: Optional[str] = Form(None),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     import time
@@ -972,6 +973,10 @@ async def optimistic_agent_start(
         
         from core.thread_init_service import create_thread_optimistically
         
+        memory_enabled_bool = None
+        if memory_enabled is not None:
+            memory_enabled_bool = memory_enabled.lower() == 'true'
+        
         result = await create_thread_optimistically(
             thread_id=thread_id,
             project_id=project_id,
@@ -980,6 +985,7 @@ async def optimistic_agent_start(
             agent_id=agent_id,
             model_name=resolved_model,
             files=files if len(files) > 0 else None,
+            memory_enabled=memory_enabled_bool,
         )
         
         logger.info(f"⏱️ [TIMING] 🎯 Optimistic API Request Total: {(time.time() - api_request_start) * 1000:.1f}ms")
