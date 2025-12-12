@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,11 +34,26 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
 import {
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  ReferenceLine,
+} from 'recharts';
+import {
   useAnalyticsSummary,
-  useDailyStats,
   useThreadBrowser,
   useMessageDistribution,
   useCategoryDistribution,
+  useConversionFunnel,
   useRetentionData,
   useTranslate,
   useRefreshAnalytics,
@@ -94,10 +109,11 @@ function StatCard({ title, value, description, icon, trend, className }: StatCar
 
 interface ThreadBrowserProps {
   categoryFilter?: string | null;
+  filterDate?: string | null;  // Date string in YYYY-MM-DD format for filtering when category is selected
   onClearCategory?: () => void;
 }
 
-function ThreadBrowser({ categoryFilter, onClearCategory }: ThreadBrowserProps) {
+function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBrowserProps) {
   const [params, setParams] = useState<ThreadBrowseParams>({
     page: 1,
     page_size: 15,
@@ -108,10 +124,28 @@ function ThreadBrowser({ categoryFilter, onClearCategory }: ThreadBrowserProps) 
   const [messageFilter, setMessageFilter] = useState<string>('all');
   const [translations, setTranslations] = useState<Record<string, string>>({});
   
-  // Include category filter in query params
+  // Reset page to 1 when category filter or date changes (date only matters when category is active)
+  const prevCategoryRef = useRef(categoryFilter);
+  const prevDateRef = useRef(filterDate);
+  useEffect(() => {
+    const categoryChanged = prevCategoryRef.current !== categoryFilter;
+    const dateChanged = prevDateRef.current !== filterDate && categoryFilter;
+    
+    if (categoryChanged || dateChanged) {
+      setParams(p => ({ ...p, page: 1 }));
+    }
+    
+    prevCategoryRef.current = categoryFilter;
+    prevDateRef.current = filterDate;
+  }, [categoryFilter, filterDate]);
+  
+  // Include category filter and date filter in query params
+  // When category is selected from distribution, also filter by the selected date
   const queryParams: ThreadBrowseParams = {
     ...params,
     category: categoryFilter || undefined,
+    date_from: categoryFilter && filterDate ? filterDate : undefined,
+    date_to: categoryFilter && filterDate ? filterDate : undefined,
   };
   
   const { data: threadsData, isLoading } = useThreadBrowser(queryParams);
@@ -316,6 +350,11 @@ function ThreadBrowser({ categoryFilter, onClearCategory }: ThreadBrowserProps) 
               <Badge variant="secondary" className="mt-1 flex items-center gap-1 h-10 px-3">
                 <Filter className="h-3 w-3" />
                 {categoryFilter}
+                {filterDate && (
+                  <span className="text-muted-foreground">
+                    ({filterDate})
+                  </span>
+                )}
                 <button
                   onClick={onClearCategory}
                   className="ml-1 hover:text-destructive"
@@ -521,6 +560,529 @@ function RetentionTab() {
 }
 
 // ============================================================================
+// ARR SIMULATOR COMPONENT
+// ============================================================================
+
+interface SimulationMonth {
+  month: string;
+  monthIndex: number;
+  visitors: number;
+  signups: number;
+  newPaid: number;
+  churned: number;
+  totalSubs: number;
+  mrr: number;
+  arr: number;
+}
+
+function ARRSimulator() {
+  // Starting parameters (editable)
+  const [startingSubs, setStartingSubs] = useState(639);
+  const [startingMRR, setStartingMRR] = useState(21646);
+  const [weeklyVisitors, setWeeklyVisitors] = useState(40000);
+  const [landingConversion, setLandingConversion] = useState(25);
+  const [signupToPaid, setSignupToPaid] = useState(1);
+  const [arpu, setArpu] = useState(34);
+  const [monthlyChurn, setMonthlyChurn] = useState(25);
+  const [visitorGrowth, setVisitorGrowth] = useState(5);
+  const [targetARR, setTargetARR] = useState(10000000);
+
+  // Calculate monthly projections (aligned with HTML version logic)
+  const projections = useMemo((): SimulationMonth[] => {
+    const months: SimulationMonth[] = [];
+    const monthNames = ['Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026'];
+    
+    let totalSubs = startingSubs;
+    
+    for (let i = 0; i < 6; i++) {
+      // Monthly views = weekly views * 4.33 weeks per month, with compound growth
+      const monthlyViews = Math.round(weeklyVisitors * 4.33 * Math.pow(1 + visitorGrowth / 100, i));
+      
+      // Signups from landing page
+      const signups = Math.round(monthlyViews * (landingConversion / 100));
+      
+      // New paid customers
+      const newPaid = Math.round(signups * (signupToPaid / 100));
+      
+      // Churned customers (from current total before adding new)
+      const churned = Math.round(totalSubs * (monthlyChurn / 100));
+      
+      // Update subscriber count
+      totalSubs = Math.max(0, totalSubs + newPaid - churned);
+      
+      // MRR = total subs * ARPU
+      const mrr = totalSubs * arpu;
+      
+      // ARR = MRR * 12
+      const arr = mrr * 12;
+      
+      months.push({
+        month: monthNames[i],
+        monthIndex: i,
+        visitors: monthlyViews,
+        signups,
+        newPaid,
+        churned,
+        totalSubs,
+        mrr,
+        arr,
+      });
+    }
+    
+    return months;
+  }, [startingSubs, weeklyVisitors, landingConversion, signupToPaid, arpu, monthlyChurn, visitorGrowth]);
+
+  const finalMonth = projections[projections.length - 1];
+  const gapToTarget = targetARR - (finalMonth?.arr || 0);
+  const progressPercent = Math.min(100, ((finalMonth?.arr || 0) / targetARR) * 100);
+
+  // Prepare chart data with negative churned for bar chart
+  const chartData = projections.map(p => ({
+    ...p,
+    negativeChurned: -p.churned,
+  }));
+
+  // Format currency
+  const formatCurrency = (value: number) => {
+    if (value >= 1000000) {
+      return `$${(value / 1000000).toFixed(2)}M`;
+    } else if (value >= 1000) {
+      return `$${(value / 1000).toFixed(1)}K`;
+    }
+    return `$${value.toFixed(0)}`;
+  };
+
+  const formatNumber = (value: number) => {
+    if (value >= 1000000) {
+      return `${(value / 1000000).toFixed(2)}M`;
+    } else if (value >= 1000) {
+      return `${(value / 1000).toFixed(1)}K`;
+    }
+    return value.toLocaleString();
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Parameters */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            ARR Growth Simulator
+          </CardTitle>
+          <CardDescription>
+            Adjust parameters to model your path to {formatCurrency(targetARR)} ARR by June 2025
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            <div className="space-y-2">
+              <Label className="text-xs">Starting Subscribers</Label>
+              <Input
+                type="number"
+                value={startingSubs}
+                onChange={(e) => setStartingSubs(Number(e.target.value))}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Starting MRR ($)</Label>
+              <Input
+                type="number"
+                value={startingMRR}
+                onChange={(e) => setStartingMRR(Number(e.target.value))}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Weekly Visitors</Label>
+              <Input
+                type="number"
+                value={weeklyVisitors}
+                onChange={(e) => setWeeklyVisitors(Number(e.target.value))}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Landing Conv. (%)</Label>
+              <Input
+                type="number"
+                value={landingConversion}
+                onChange={(e) => setLandingConversion(Number(e.target.value))}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Signup → Paid (%)</Label>
+              <Input
+                type="number"
+                value={signupToPaid}
+                onChange={(e) => setSignupToPaid(Number(e.target.value))}
+                step="0.1"
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">ARPU ($/mo)</Label>
+              <Input
+                type="number"
+                value={arpu}
+                onChange={(e) => setArpu(Number(e.target.value))}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Monthly Churn (%)</Label>
+              <Input
+                type="number"
+                value={monthlyChurn}
+                onChange={(e) => setMonthlyChurn(Number(e.target.value))}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Visitor Growth (%/mo)</Label>
+              <Input
+                type="number"
+                value={visitorGrowth}
+                onChange={(e) => setVisitorGrowth(Number(e.target.value))}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Target ARR ($)</Label>
+              <Input
+                type="number"
+                value={targetARR}
+                onChange={(e) => setTargetARR(Number(e.target.value))}
+                className="h-9"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Key Metrics */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold text-primary">{formatCurrency(finalMonth?.arr || 0)}</div>
+            <p className="text-xs text-muted-foreground mt-1">Projected ARR (Jun 2025)</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold">{formatNumber(finalMonth?.totalSubs || 0)}</div>
+            <p className="text-xs text-muted-foreground mt-1">Total Subscribers</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className={`text-2xl font-bold ${gapToTarget > 0 ? 'text-red-500' : 'text-green-500'}`}>
+              {gapToTarget > 0 ? `-${formatCurrency(gapToTarget)}` : `+${formatCurrency(Math.abs(gapToTarget))}`}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">Gap to Target</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold">{progressPercent.toFixed(1)}%</div>
+            <p className="text-xs text-muted-foreground mt-1">Progress to Goal</p>
+            <div className="mt-2 h-2 bg-muted rounded-full overflow-hidden">
+              <div 
+                className={`h-full transition-all ${progressPercent >= 100 ? 'bg-green-500' : 'bg-primary'}`}
+                style={{ width: `${Math.min(100, progressPercent)}%` }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ARR Progress Bar */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium">ARR Trajectory</span>
+            <span className="text-sm text-muted-foreground">
+              {formatCurrency(projections[0]?.arr || 0)} → {formatCurrency(finalMonth?.arr || 0)}
+            </span>
+          </div>
+          <div className="relative h-8 bg-muted rounded-lg overflow-hidden">
+            {projections.map((month, i) => {
+              const width = (month.arr / targetARR) * 100;
+              const opacity = 0.3 + (i / projections.length) * 0.7;
+              return (
+                <div
+                  key={month.month}
+                  className="absolute h-full bg-primary transition-all"
+                  style={{
+                    width: `${Math.min(100, width)}%`,
+                    opacity,
+                    left: 0,
+                  }}
+                />
+              );
+            })}
+            <div 
+              className="absolute h-full border-r-2 border-dashed border-green-500"
+              style={{ left: '100%' }}
+            />
+            <div className="absolute inset-0 flex items-center justify-end pr-2">
+              <span className="text-xs font-medium text-green-600 bg-background/80 px-1 rounded">
+                {formatCurrency(targetARR)} target
+              </span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Charts Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* ARR Growth Trajectory */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              📈 ARR Growth Trajectory
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={projections}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis 
+                    dataKey="month" 
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => value.replace(' 2024', '').replace(' 2025', '')}
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`}
+                    domain={[0, Math.max(targetARR * 1.1, (finalMonth?.arr || 0) * 1.2)]}
+                  />
+                  <Tooltip 
+                    formatter={(value: number) => [formatCurrency(value), 'ARR']}
+                    labelStyle={{ color: 'hsl(var(--foreground))' }}
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--background))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px'
+                    }}
+                  />
+                  <Legend />
+                  <ReferenceLine 
+                    y={targetARR} 
+                    stroke="#10b981" 
+                    strokeDasharray="5 5" 
+                    label={{ value: '$10M Target', position: 'right', fill: '#10b981', fontSize: 12 }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="arr" 
+                    name="ARR"
+                    stroke="hsl(var(--primary))" 
+                    strokeWidth={3}
+                    dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2, r: 5 }}
+                    activeDot={{ r: 7 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Subscriber Growth */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              👥 Subscriber Growth
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={projections}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis 
+                    dataKey="month" 
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => value.replace(' 2024', '').replace(' 2025', '')}
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => formatNumber(value)}
+                  />
+                  <Tooltip 
+                    formatter={(value: number) => [formatNumber(value), 'Subscribers']}
+                    labelStyle={{ color: 'hsl(var(--foreground))' }}
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--background))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px'
+                    }}
+                  />
+                  <Legend />
+                  <Area 
+                    type="monotone" 
+                    dataKey="totalSubs" 
+                    name="Total Subscribers"
+                    stroke="#8b5cf6" 
+                    fill="#8b5cf6"
+                    fillOpacity={0.2}
+                    strokeWidth={3}
+                    dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 5 }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* MRR Growth */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              💰 MRR Growth
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={projections}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis 
+                    dataKey="month" 
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => value.replace(' 2024', '').replace(' 2025', '')}
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`}
+                  />
+                  <Tooltip 
+                    formatter={(value: number) => [formatCurrency(value), 'MRR']}
+                    labelStyle={{ color: 'hsl(var(--foreground))' }}
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--background))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px'
+                    }}
+                  />
+                  <Legend />
+                  <Area 
+                    type="monotone" 
+                    dataKey="mrr" 
+                    name="MRR"
+                    stroke="#f59e0b" 
+                    fill="#f59e0b"
+                    fillOpacity={0.2}
+                    strokeWidth={3}
+                    dot={{ fill: '#f59e0b', strokeWidth: 2, r: 5 }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* New Signups vs Churn */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              📊 New Signups vs Churn
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis 
+                    dataKey="month" 
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => value.replace(' 2024', '').replace(' 2025', '')}
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => formatNumber(Math.abs(value))}
+                  />
+                  <Tooltip 
+                    formatter={(value: number, name: string) => [
+                      formatNumber(Math.abs(value)), 
+                      name
+                    ]}
+                    labelStyle={{ color: 'hsl(var(--foreground))' }}
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--background))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px'
+                    }}
+                  />
+                  <Legend />
+                  <Bar 
+                    dataKey="newPaid" 
+                    name="New Paid Customers"
+                    fill="#10b981" 
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Bar 
+                    dataKey="negativeChurned" 
+                    name="Churned Customers"
+                    fill="#ef4444" 
+                    radius={[0, 0, 4, 4]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Monthly Breakdown Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Monthly Breakdown</CardTitle>
+          <CardDescription>Projected growth from Dec 2024 to May 2025</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="text-left p-3 font-medium">Month</th>
+                  <th className="text-right p-3 font-medium">Visitors</th>
+                  <th className="text-right p-3 font-medium">Signups</th>
+                  <th className="text-right p-3 font-medium">New Paid</th>
+                  <th className="text-right p-3 font-medium">Churned</th>
+                  <th className="text-right p-3 font-medium">Total Subs</th>
+                  <th className="text-right p-3 font-medium">MRR</th>
+                  <th className="text-right p-3 font-medium">ARR</th>
+                </tr>
+              </thead>
+              <tbody>
+                {projections.map((month, i) => (
+                  <tr key={month.month} className={`border-b ${i === projections.length - 1 ? 'bg-primary/5 font-medium' : ''}`}>
+                    <td className="p-3">{month.month}</td>
+                    <td className="text-right p-3">{formatNumber(month.visitors)}</td>
+                    <td className="text-right p-3">{formatNumber(month.signups)}</td>
+                    <td className="text-right p-3 text-green-600">+{formatNumber(month.newPaid)}</td>
+                    <td className="text-right p-3 text-red-500">-{formatNumber(month.churned)}</td>
+                    <td className="text-right p-3">{formatNumber(month.totalSubs)}</td>
+                    <td className="text-right p-3">{formatCurrency(month.mrr)}</td>
+                    <td className="text-right p-3 font-medium">{formatCurrency(month.arr)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+    </div>
+  );
+}
+
+// ============================================================================
 // MAIN PAGE COMPONENT
 // ============================================================================
 
@@ -539,9 +1101,9 @@ export default function AdminAnalyticsPage() {
   const dateString = format(distributionDate, 'yyyy-MM-dd');
   
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
-  const { data: dailyStats } = useDailyStats(7);
   const { data: distribution } = useMessageDistribution(dateString);
   const { data: categoryDistribution } = useCategoryDistribution(dateString);
+  const { data: conversionFunnel, isLoading: funnelLoading } = useConversionFunnel(dateString);
   const { refreshAll } = useRefreshAnalytics();
 
   return (
@@ -599,148 +1161,186 @@ export default function AdminAnalyticsPage() {
           )}
         </div>
 
-        {/* Message Distribution */}
-        {distribution && (
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+        {/* Daily Analytics - Unified Card */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5" />
-                Thread Distribution (UTC)
-              </CardTitle>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => {
-                    const prev = new Date(distributionDate);
-                    prev.setDate(prev.getDate() - 1);
-                    setDistributionDate(prev);
-                  }}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="min-w-[160px] justify-start text-left font-normal">
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {format(distributionDate, 'MMM d, yyyy')}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="end">
-                    <Calendar
-                      mode="single"
-                      selected={distributionDate}
-                      onSelect={(date) => {
-                        if (date) {
-                          setDistributionDate(date);
-                          setCalendarOpen(false);
-                        }
-                      }}
-                      disabled={(date) => date > utcToday}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  disabled={format(distributionDate, 'yyyy-MM-dd') === format(utcToday, 'yyyy-MM-dd')}
-                  onClick={() => {
-                    const next = new Date(distributionDate);
-                    next.setDate(next.getDate() + 1);
-                    setDistributionDate(next);
-                  }}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="text-center p-4 rounded-lg bg-muted/50">
-                  <div className="text-3xl font-bold">
-                    {distribution.distribution['1_message']}
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-1">1 message</p>
-                  <p className="text-xs text-muted-foreground">
-                    ({distribution.total_threads > 0 ? ((distribution.distribution['1_message'] / distribution.total_threads) * 100).toFixed(1) : '0.0'}%)
-                  </p>
-                </div>
-                <div className="text-center p-4 rounded-lg bg-muted/50">
-                  <div className="text-3xl font-bold">
-                    {distribution.distribution['2_3_messages']}
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-1">2-3 messages</p>
-                  <p className="text-xs text-muted-foreground">
-                    ({distribution.total_threads > 0 ? ((distribution.distribution['2_3_messages'] / distribution.total_threads) * 100).toFixed(1) : '0.0'}%)
-                  </p>
-                </div>
-                <div className="text-center p-4 rounded-lg bg-muted/50">
-                  <div className="text-3xl font-bold">
-                    {distribution.distribution['5_plus_messages']}
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-1">5+ messages</p>
-                  <p className="text-xs text-muted-foreground">
-                    ({distribution.total_threads > 0 ? ((distribution.distribution['5_plus_messages'] / distribution.total_threads) * 100).toFixed(1) : '0.0'}%)
-                  </p>
-                </div>
-              </div>
-              <p className="text-sm text-muted-foreground mt-4 text-center">
-                Total: <span className="font-semibold text-foreground">{distribution.total_threads}</span> threads on {format(distributionDate, 'MMM d, yyyy')}
-              </p>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Category Distribution */}
-        {categoryDistribution && Object.keys(categoryDistribution.distribution).length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Filter className="h-5 w-5" />
-                Category Distribution (UTC)
+                Daily Analytics (UTC)
               </CardTitle>
               <CardDescription>
-                Project categories for {format(distributionDate, 'MMM d, yyyy')}
+                Conversion funnel, threads, and categories
               </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-2">
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(categoryDistribution.distribution).map(([category, count]) => {
-                  const percentage = categoryDistribution.total_projects > 0 
-                    ? ((count / categoryDistribution.total_projects) * 100).toFixed(1)
-                    : '0.0';
-                  const isSelected = categoryFilter === category;
-                  return (
-                    <button
-                      key={category}
-                      onClick={() => setCategoryFilter(isSelected ? null : category)}
-                      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors border ${
-                        isSelected 
-                          ? 'bg-primary text-primary-foreground border-primary' 
-                          : 'bg-muted/50 hover:bg-muted border-transparent'
-                      }`}
-                    >
-                      <span className="font-medium truncate max-w-[120px]" title={category}>
-                        {category}
-                      </span>
-                      <span className={`text-xs ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
-                        {count} ({percentage}%)
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {categoryFilter && (
-                <p className="text-xs text-muted-foreground mt-3">
-                  <button onClick={() => setCategoryFilter(null)} className="text-primary hover:underline">Clear filter</button>
-                </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => {
+                  const prev = new Date(distributionDate);
+                  prev.setDate(prev.getDate() - 1);
+                  setDistributionDate(prev);
+                }}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="min-w-[160px] justify-start text-left font-normal">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {format(distributionDate, 'MMM d, yyyy')}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="end">
+                  <Calendar
+                    mode="single"
+                    selected={distributionDate}
+                    onSelect={(date) => {
+                      if (date) {
+                        setDistributionDate(date);
+                        setCalendarOpen(false);
+                      }
+                    }}
+                    disabled={(date) => date > utcToday}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                disabled={format(distributionDate, 'yyyy-MM-dd') === format(utcToday, 'yyyy-MM-dd')}
+                onClick={() => {
+                  const next = new Date(distributionDate);
+                  next.setDate(next.getDate() + 1);
+                  setDistributionDate(next);
+                }}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Conversion Funnel Section */}
+            <div>
+              <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                <TrendingUp className="h-4 w-4" />
+                Conversion Funnel
+              </h3>
+              {funnelLoading ? (
+                <div className="grid grid-cols-3 gap-4">
+                  {[...Array(3)].map((_, i) => (
+                    <Skeleton key={i} className="h-20" />
+                  ))}
+                </div>
+              ) : conversionFunnel ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="text-center p-3 rounded-lg bg-muted/50">
+                      <div className="text-2xl font-bold">{conversionFunnel.visitors.toLocaleString()}</div>
+                      <p className="text-xs text-muted-foreground">Visitors</p>
+                    </div>
+                    <div className="text-center p-3 rounded-lg bg-muted/50">
+                      <div className="text-2xl font-bold">{conversionFunnel.signups.toLocaleString()}</div>
+                      <p className="text-xs text-muted-foreground">Signups ({conversionFunnel.visitor_to_signup_rate}%)</p>
+                    </div>
+                    <div className="text-center p-3 rounded-lg bg-muted/50">
+                      <div className="text-2xl font-bold">{conversionFunnel.subscriptions.toLocaleString()}</div>
+                      <p className="text-xs text-muted-foreground">Subs ({conversionFunnel.signup_to_subscription_rate}%)</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Overall: <span className="font-medium text-foreground">{conversionFunnel.overall_conversion_rate}%</span> conversion
+                  </p>
+                </div>
+              ) : (
+                <div className="text-center py-4 text-muted-foreground text-sm">
+                  <Eye className="h-5 w-5 mx-auto mb-1 opacity-50" />
+                  PostHog not configured
+                </div>
               )}
-            </CardContent>
-          </Card>
-        )}
+            </div>
+
+            {/* Divider */}
+            <div className="border-t" />
+
+            {/* Thread Distribution Section */}
+            {distribution && (
+              <div>
+                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4" />
+                  Thread Distribution
+                </h3>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center p-3 rounded-lg bg-muted/50">
+                    <div className="text-2xl font-bold">{distribution.distribution['1_message']}</div>
+                    <p className="text-xs text-muted-foreground">1 message ({distribution.total_threads > 0 ? ((distribution.distribution['1_message'] / distribution.total_threads) * 100).toFixed(1) : '0'}%)</p>
+                  </div>
+                  <div className="text-center p-3 rounded-lg bg-muted/50">
+                    <div className="text-2xl font-bold">{distribution.distribution['2_3_messages']}</div>
+                    <p className="text-xs text-muted-foreground">2-3 msgs ({distribution.total_threads > 0 ? ((distribution.distribution['2_3_messages'] / distribution.total_threads) * 100).toFixed(1) : '0'}%)</p>
+                  </div>
+                  <div className="text-center p-3 rounded-lg bg-muted/50">
+                    <div className="text-2xl font-bold">{distribution.distribution['5_plus_messages']}</div>
+                    <p className="text-xs text-muted-foreground">5+ msgs ({distribution.total_threads > 0 ? ((distribution.distribution['5_plus_messages'] / distribution.total_threads) * 100).toFixed(1) : '0'}%)</p>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground text-center mt-2">
+                  Total: <span className="font-medium text-foreground">{distribution.total_threads}</span> threads
+                </p>
+              </div>
+            )}
+
+            {/* Divider */}
+            {categoryDistribution && Object.keys(categoryDistribution.distribution).length > 0 && (
+              <div className="border-t" />
+            )}
+
+            {/* Category Distribution Section */}
+            {categoryDistribution && Object.keys(categoryDistribution.distribution).length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                  <Filter className="h-4 w-4" />
+                  Category Distribution
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(categoryDistribution.distribution).map(([category, count]) => {
+                    const percentage = categoryDistribution.total_projects > 0 
+                      ? ((count / categoryDistribution.total_projects) * 100).toFixed(1)
+                      : '0.0';
+                    const isSelected = categoryFilter === category;
+                    return (
+                      <button
+                        key={category}
+                        onClick={() => setCategoryFilter(isSelected ? null : category)}
+                        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors border ${
+                          isSelected 
+                            ? 'bg-primary text-primary-foreground border-primary' 
+                            : 'bg-muted/50 hover:bg-muted border-transparent'
+                        }`}
+                      >
+                        <span className="font-medium truncate max-w-[120px]" title={category}>
+                          {category}
+                        </span>
+                        <span className={`text-xs ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                          {count} ({percentage}%)
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {categoryFilter && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    <button onClick={() => setCategoryFilter(null)} className="text-primary hover:underline">Clear filter</button>
+                  </p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Tabs */}
         <Tabs defaultValue="threads" className="space-y-4">
@@ -753,17 +1353,26 @@ export default function AdminAnalyticsPage() {
               <UserCheck className="h-4 w-4" />
               Retention
             </TabsTrigger>
+            <TabsTrigger value="simulator" className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4" />
+              ARR Simulator
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="threads">
-            <ThreadBrowser 
-              categoryFilter={categoryFilter} 
-              onClearCategory={() => setCategoryFilter(null)} 
+            <ThreadBrowser
+              categoryFilter={categoryFilter}
+              filterDate={dateString}
+              onClearCategory={() => setCategoryFilter(null)}
             />
           </TabsContent>
 
           <TabsContent value="retention">
             <RetentionTab />
+          </TabsContent>
+
+          <TabsContent value="simulator">
+            <ARRSimulator />
           </TabsContent>
         </Tabs>
       </div>

@@ -20,6 +20,7 @@ import {
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import {
   useSandboxFiles,
@@ -81,6 +82,7 @@ export function FileBrowserView({
   sandboxId,
   project,
 }: FileBrowserViewProps) {
+  const insets = useSafeAreaInsets();
   const {
     currentPath,
     navigateToPath,
@@ -517,18 +519,23 @@ export function FileBrowserView({
       </View>
 
       {/* Footer */}
-      <View className="px-4 pb-8 pt-2 border-t border-border bg-card flex-row items-center justify-between">
-        <View className="flex-row items-center gap-2">
-          <View className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border">
-            <Icon as={Folder} size={12} className="text-primary" />
-            <Text className="text-xs font-roobert-medium text-primary">
-              {displayFiles.length} {displayFiles.length === 1 ? 'item' : 'items'}
-            </Text>
+      <View
+        className="px-4 pt-4 border-t border-border bg-card"
+        style={{ paddingBottom: Math.max(24, insets.bottom + 8) }}
+      >
+        <View className="flex-row items-center justify-between h-9">
+          <View className="flex-row items-center gap-2">
+            <View className="flex-row items-center gap-1.5 px-2 py-1 rounded-full border border-border">
+              <Icon as={Folder} size={12} className="text-primary" />
+              <Text className="text-xs font-roobert-medium text-primary">
+                {displayFiles.length} {displayFiles.length === 1 ? 'item' : 'items'}
+              </Text>
+            </View>
           </View>
+          <Text className="text-xs text-primary opacity-50 truncate max-w-[200px]" numberOfLines={1}>
+            {currentPath}
+          </Text>
         </View>
-        <Text className="text-xs text-primary opacity-50 truncate max-w-[200px]" numberOfLines={1}>
-          {currentPath}
-        </Text>
       </View>
 
       {/* Version History Modal */}

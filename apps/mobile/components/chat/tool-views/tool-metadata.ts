@@ -469,6 +469,13 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
     subtitle: 'Author Search',
     defaultTitle: 'Authors Found',
   },
+  'search-authors': {
+    icon: GraduationCap,
+    iconColor: 'text-blue-600',
+    iconBgColor: 'bg-blue-50',
+    subtitle: 'Author Search',
+    defaultTitle: 'Authors Found',
+  },
   'author-details': {
     icon: GraduationCap,
     iconColor: 'text-blue-600',
@@ -566,12 +573,33 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
     subtitle: 'MCP Server',
     defaultTitle: 'Server Action',
   },
+  'search-mcp-servers-for-agent': {
+    icon: Server,
+    iconColor: 'text-violet-600',
+    iconBgColor: 'bg-violet-50',
+    subtitle: 'MCP Server',
+    defaultTitle: 'Servers Found',
+  },
   'get-current-agent-config': {
     icon: Settings,
     iconColor: 'text-blue-600',
     iconBgColor: 'bg-blue-50',
     subtitle: 'Agent Config',
     defaultTitle: 'Current Configuration',
+  },
+  'update-agent-config': {
+    icon: Settings,
+    iconColor: 'text-green-600',
+    iconBgColor: 'bg-green-50',
+    subtitle: 'Agent Config',
+    defaultTitle: 'Configuration Updated',
+  },
+  'initialize-tools': {
+    icon: Settings,
+    iconColor: 'text-purple-600',
+    iconBgColor: 'bg-purple-50',
+    subtitle: 'Tools',
+    defaultTitle: 'Tools Initialized',
   },
 
   // Agent Tool

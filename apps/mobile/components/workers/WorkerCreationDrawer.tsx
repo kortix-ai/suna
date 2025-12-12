@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, Pressable, TextInput, Alert } from 'react-native';
+import { View, Pressable, TextInput, Alert, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
@@ -332,26 +332,36 @@ export function WorkerCreationDrawer({
 
             {/* Textarea */}
             <View className="mb-6">
-              <TextInput
-                value={chatDescription}
-                onChangeText={setChatDescription}
-                placeholder="e.g., A worker that monitors competitor prices and sends me daily reports..."
-                placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                multiline
-                numberOfLines={6}
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                showsVerticalScrollIndicator={true}
                 style={{
-                  padding: 16,
                   borderRadius: 16,
                   borderWidth: 1.5,
                   borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
                   backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                  fontSize: 16,
-                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                  textAlignVertical: 'top',
-                  minHeight: 120,
+                  maxHeight: 200,
                 }}
-                autoFocus
-              />
+                contentContainerStyle={{
+                  padding: 16,
+                }}>
+                <TextInput
+                  value={chatDescription}
+                  onChangeText={setChatDescription}
+                  placeholder="e.g., A worker that monitors competitor prices and sends me daily reports..."
+                  placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                  multiline
+                  scrollEnabled={false}
+                  style={{
+                    minHeight: 120,
+                    fontSize: 16,
+                    color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                    textAlignVertical: 'top',
+                  }}
+                  autoFocus
+                />
+              </ScrollView>
             </View>
 
             {/* Actions */}

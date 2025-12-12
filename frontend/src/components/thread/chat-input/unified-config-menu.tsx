@@ -40,14 +40,14 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 
 // Helper to render model labels with special styling for Kortix modes
 const ModelLabel = ({ label, className }: { label: string; className?: string }) => {
-    if (label === 'Kortix POWER Mode') {
+    if (label === 'Kortix Advanced Mode') {
         return (
             <span className={cn("flex items-center gap-2 flex-wrap", className)}>
                 <span className="font-medium">Kortix</span>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 dark:bg-primary/15 rounded-full flex-shrink-0">
                     <KortixLogo size={12} variant="symbol" />
                     <span className="text-[11px] font-semibold tracking-wide uppercase text-primary whitespace-nowrap">
-                        Power
+                        Advanced
                     </span>
                 </span>
             </span>
@@ -105,7 +105,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     const { openPricingModal } = usePricingModalStore();
     const [isMobile, setIsMobile] = useState(false);
     const [mobileSection, setMobileSection] = useState<'main' | 'agents'>('main');
-    
+
     const tierKey = accountStateSelectors.tierKey(accountState);
     const isFreeTier = tierKey && (
       tierKey === 'free' ||
@@ -117,7 +117,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
         const checkMobile = () => {
             setIsMobile(window.innerWidth < 640);
         };
-        
+
         checkMobile();
         window.addEventListener('resize', checkMobile);
         return () => window.removeEventListener('resize', checkMobile);
@@ -155,7 +155,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     const sunaAgent = useMemo(() => {
         return agents.find(a => a.metadata?.is_suna_default === true);
     }, [agents]);
-    
+
     const placeholderSunaAgent = useMemo(() => ({
         agent_id: undefined,
         name: 'Kortix',
@@ -337,8 +337,8 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                 <div className={cn(
                     "flex items-center justify-center border-[1.5px] flex-shrink-0 transition-colors",
                     compact ? "w-8 h-8" : "w-10 h-10 sm:w-8 sm:h-8",
-                    isFreeTier 
-                        ? "bg-primary/10 border-primary/30" 
+                    isFreeTier
+                        ? "bg-primary/10 border-primary/30"
                         : "bg-card border-border"
                 )} style={{ borderRadius: '10.4px' }}>
                     {isFreeTier ? (
@@ -376,12 +376,12 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
 
     const ModeToggle = useCallback(({ compact = false }: { compact?: boolean }) => {
         const basicModel = modelOptions.find(m => m.id === 'kortix/basic' || m.label === 'Kortix Basic');
-        const powerModel = modelOptions.find(m => m.id === 'kortix/power' || m.label === 'Kortix POWER Mode');
-        
+        const powerModel = modelOptions.find(m => m.id === 'kortix/power' || m.label === 'Kortix Advanced Mode');
+
         const canAccessPower = powerModel ? canAccessModel(powerModel.id) : false;
         const isPowerSelected = powerModel && selectedModel === powerModel.id;
         const isBasicSelected = basicModel && selectedModel === basicModel.id;
-        
+
         return (
             <div className={cn(
                 "flex items-center gap-1.5 p-1 bg-muted/50 rounded-xl",
@@ -397,8 +397,8 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     className={cn(
                         "flex-1 flex items-center justify-center gap-1.5 rounded-lg transition-all",
                         compact ? "px-3 py-1.5" : "px-4 py-2",
-                        isBasicSelected 
-                            ? "bg-background shadow-sm text-foreground" 
+                        isBasicSelected
+                            ? "bg-background shadow-sm text-foreground"
                             : "text-muted-foreground hover:text-foreground"
                     )}
                 >
@@ -407,8 +407,8 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                         compact ? "text-xs" : "text-sm"
                     )}>Basic</span>
                 </button>
-                
-                {/* Power Mode */}
+
+                {/* Advanced Mode */}
                 <button
                     onClick={() => {
                         if (powerModel) {
@@ -416,9 +416,9 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                 onModelChange(powerModel.id);
                             } else {
                                 setIsOpen(false);
-                                usePricingModalStore.getState().openPricingModal({ 
-                                    isAlert: true, 
-                                    alertTitle: 'Upgrade to access Kortix Power mode'
+                                usePricingModalStore.getState().openPricingModal({
+                                    isAlert: true,
+                                    alertTitle: 'Upgrade to access Kortix Advanced mode'
                                 });
                             }
                         }
@@ -426,9 +426,9 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     className={cn(
                         "flex-1 flex items-center justify-center gap-1.5 rounded-lg transition-all",
                         compact ? "px-3 py-1.5" : "px-4 py-2",
-                        isPowerSelected 
-                            ? "bg-background shadow-sm" 
-                            : canAccessPower 
+                        isPowerSelected
+                            ? "bg-background shadow-sm"
+                            : canAccessPower
                                 ? "text-muted-foreground hover:text-foreground"
                                 : "text-muted-foreground/50"
                     )}
@@ -503,7 +503,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                 <div className="flex flex-col h-full">
                     {/* Header */}
                     <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-                        <button 
+                        <button
                             onClick={() => setMobileSection('main')}
                             className="p-2 -ml-2 hover:bg-muted/50 rounded-2xl transition-colors"
                         >
@@ -511,7 +511,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                         </button>
                         <span className="text-base font-semibold">Select Worker</span>
                     </div>
-                    
+
                     {/* Search */}
                     <div className="px-4 py-3">
                         <div className="relative">
@@ -526,7 +526,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                             />
                         </div>
                     </div>
-                    
+
                     {/* List */}
                     <div className="flex-1 overflow-hidden">
                         <div className="px-4 pb-2">
@@ -538,7 +538,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                 </div>
             );
         }
-        
+
         // Main section
         return (
             <div className="flex flex-col">
@@ -546,7 +546,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                 <div className="flex justify-center pt-3 pb-2">
                     <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
                 </div>
-                
+
                 {/* Agent selector */}
                 {onAgentSelect && (
                     <>
@@ -569,7 +569,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                         </div>
                     </>
                 )}
-                
+
                 {/* Mode toggle */}
                 <div className="px-3 pt-2 pb-1">
                     <span className="text-xs font-medium text-muted-foreground">Mode</span>
@@ -577,7 +577,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                 <div className="px-3 pb-3">
                     <ModeToggle compact={false} />
                 </div>
-                
+
                 {/* Worker settings */}
                 {onAgentSelect && (selectedAgentId || displayAgent?.agent_id) && (
                     <div className="py-3">
@@ -628,8 +628,8 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                         </TooltipContent>
                     </Tooltip>
                     <Sheet open={isOpen} onOpenChange={setIsOpen}>
-                        <SheetContent 
-                            side="bottom" 
+                        <SheetContent
+                            side="bottom"
                             className={cn(
                                 "rounded-t-2xl px-0 pb-8",
                                 mobileSection === 'main' ? "max-h-[70vh]" : "h-[85vh]"

@@ -13,7 +13,6 @@ export * from './search';
 export * from './theme';
 export * from './fonts';
 export * from './icon-mapping';
-export * from './markdown-styles';
 
 // Parsing & formatting
 export * from './message-grouping';

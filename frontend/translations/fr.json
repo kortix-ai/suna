@@ -188,6 +188,41 @@
     "integrations": {
       "opening": "Ouverture des Intégrations",
       "redirecting": "Redirection vers la page Intégrations..."
+    },
+    "memory": {
+      "title": "Mémoire IA",
+      "description": "Mémorise automatiquement le contexte entre les conversations",
+      "enabled": "Activée",
+      "disabled": "Désactivée",
+      "notAvailable": "La mémoire n'est pas disponible sur votre forfait actuel. Passez à Plus ou supérieur pour activer la mémoire automatique.",
+      "usage": "Utilisation de la Mémoire",
+      "available": "{count} souvenirs disponibles",
+      "noLimit": "Illimité",
+      "yourMemories": "Vos Souvenirs",
+      "yourMemoriesDescription": "Consultez et gérez ce dont l'IA se souvient à votre sujet",
+      "clearAll": "Tout Effacer",
+      "deleteAllTitle": "Supprimer tous les souvenirs ?",
+      "deleteAllDescription": "Cela supprimera définitivement tous les {count} souvenirs. L'IA ne se souviendra plus des informations des conversations passées. Cette action ne peut pas être annulée.",
+      "deleteAllButton": "Supprimer Tous les Souvenirs",
+      "noMemoriesYet": "Pas encore de souvenirs",
+      "noMemoriesDescription": "Démarrez une conversation et l'IA se souviendra automatiquement des informations importantes à votre sujet",
+      "searchMemories": "Rechercher des souvenirs...",
+      "filterByType": "Filtrer par type",
+      "allTypes": "Tous les Types",
+      "personalFacts": "Faits Personnels",
+      "preferences": "Préférences",
+      "context": "Contexte",
+      "conversations": "Conversations",
+      "noMatchingMemories": "Aucun souvenir correspondant",
+      "adjustFilters": "Essayez d'ajuster vos filtres ou votre requête de recherche",
+      "loadMore": "Charger Plus",
+      "loading": "Chargement des souvenirs...",
+      "memoryTypes": {
+        "fact": "Fait",
+        "preference": "Préférence",
+        "context": "Contexte",
+        "conversation_summary": "Conversation"
+      }
     }
   },
   "triggers": {
@@ -1095,6 +1130,28 @@
         "8": "Étudier les stratégies de prix des entreprises de boîtes d'abonnement D2C réussies",
         "9": "Rechercher le paysage concurrentiel des solutions de cybersécurité alimentées par l'IA"
       }
+    }
+  },
+  "announcements": {
+    "memories": {
+      "title": "Présentation des Mémoires",
+      "description": "Kortix se souvient maintenant de vos préférences et du contexte dans toutes les conversations",
+      "features": {
+        "personalized": {
+          "title": "Expérience Personnalisée",
+          "description": "S'adapte à votre style de travail au fil du temps"
+        },
+        "retention": {
+          "title": "Rétention du Contexte",
+          "description": "Détails importants mémorisés entre les conversations"
+        },
+        "control": {
+          "title": "Vous Êtes en Contrôle",
+          "description": "Désactivez ou effacez à tout moment"
+        }
+      },
+      "manageButton": "Gérer les Mémoires",
+      "dismissButton": "Compris"
     }
   }
 }

@@ -21,9 +21,17 @@ export default function AppScreen() {
   const chat = useChat();
   const pageNav = usePageNavigation();
   const homePageRef = React.useRef<HomePageRef>(null);
-  
+
+  // Worker config drawer state for MenuPage
+  const [menuWorkerConfigWorkerId, setMenuWorkerConfigWorkerId] = React.useState<string | null>(
+    null
+  );
+  const [menuWorkerConfigInitialView, setMenuWorkerConfigInitialView] = React.useState<
+    'instructions' | 'tools' | 'integrations' | 'triggers' | undefined
+  >(undefined);
+
   const canSendMessages = isAuthenticated;
-  
+
   // Load thread from URL parameter - only depend on threadId to prevent infinite loops
   React.useEffect(() => {
     if (threadId && threadId !== chat.activeThread?.id) {
@@ -32,33 +40,39 @@ export default function AppScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId]);
-  
+
   const handleNewChat = React.useCallback(() => {
     console.log('🆕 New Chat clicked - Starting new chat');
     chat.startNewChat();
     pageNav.closeDrawer();
-    
+
     setTimeout(() => {
       console.log('🎯 Focusing chat input after new chat');
       homePageRef.current?.focusChatInput();
     }, 300);
   }, [chat, pageNav]);
-  
-  const handleAgentPress = React.useCallback((agent: Agent) => {
-    console.log('🤖 Agent selected:', agent.name);
-    console.log('📊 Starting chat with:', agent);
-    chat.startNewChat();
-    pageNav.closeDrawer();
-  }, [chat, pageNav]);
-  
+
+  const handleAgentPress = React.useCallback(
+    (agent: Agent) => {
+      console.log('🤖 Agent selected:', agent.name);
+      console.log('📊 Starting chat with:', agent);
+      chat.startNewChat();
+      pageNav.closeDrawer();
+    },
+    [chat, pageNav]
+  );
+
   const menu = useSideMenu({ onNewChat: handleNewChat });
   const agentManager = useAgentManager();
 
-  const handleConversationPress = React.useCallback((conversation: Conversation) => {
-    console.log('📖 Loading thread:', conversation.id);
-    chat.loadThread(conversation.id);
-    pageNav.closeDrawer();
-  }, [chat, pageNav]);
+  const handleConversationPress = React.useCallback(
+    (conversation: Conversation) => {
+      console.log('📖 Loading thread:', conversation.id);
+      chat.loadThread(conversation.id);
+      pageNav.closeDrawer();
+    },
+    [chat, pageNav]
+  );
 
   const handleProfilePress = React.useCallback(() => {
     console.log('🎯 Profile pressed');
@@ -70,66 +84,96 @@ export default function AppScreen() {
     }
   }, [isAuthenticated, menu, router]);
 
+  // Handle opening worker config from AgentDrawer's Worker Settings buttons
+  const handleOpenWorkerConfigFromAgentDrawer = React.useCallback(
+    (workerId: string, view?: 'instructions' | 'tools' | 'integrations' | 'triggers') => {
+      console.log('🔧 [home] Opening worker config from AgentDrawer:', workerId, view);
+      // Close agent drawer and side menu drawer
+      agentManager.closeDrawer();
+      pageNav.closeDrawer();
+      // Wait for drawer animation to complete before navigating
+      setTimeout(() => {
+        // Navigate directly to the worker config page using push so there's a route to go back to
+        router.push({
+          pathname: '/worker-config',
+          params: { workerId, ...(view && { view }) },
+        });
+      }, 300);
+    },
+    [agentManager, pageNav, router]
+  );
+
+  // Handle closing worker config drawer in MenuPage
+  const handleCloseMenuWorkerConfig = React.useCallback(() => {
+    console.log('🔧 [home] Closing worker config in MenuPage');
+    setMenuWorkerConfigWorkerId(null);
+    setMenuWorkerConfigInitialView(undefined);
+  }, []);
+
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <RNStatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
-      
+
       <Drawer
         open={pageNav.isDrawerOpen}
         onOpen={pageNav.handleDrawerOpen}
         onClose={pageNav.handleDrawerClose}
-          drawerType="front"
-          drawerStyle={{
-            width: '100%',
-            backgroundColor: 'transparent',
-          }}
-          overlayStyle={{ 
-            backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.2)'
-          }}
-          swipeEnabled={true}
-          swipeEdgeWidth={80}
-          swipeMinDistance={30}
-          swipeMinVelocity={300}
-          renderDrawerContent={() => (
-            <MenuPage
-              sections={menu.sections}
-              profile={menu.profile}
-              activeTab={menu.activeTab}
-              onNewChat={handleNewChat}
-              onNewWorker={() => {
-                console.log('🤖 New Worker clicked');
-                pageNav.closeDrawer();
-              }}
-              onNewTrigger={() => {
-                console.log('⚡ New Trigger clicked');
-                pageNav.closeDrawer();
-              }}
-              selectedAgentId={agentManager.selectedAgent?.agent_id}
-              onConversationPress={handleConversationPress}
-              onAgentPress={handleAgentPress}
-              onProfilePress={handleProfilePress}
-              onChatsPress={menu.handleChatsTabPress}
-              onWorkersPress={menu.handleWorkersTabPress}
-              onTriggersPress={menu.handleTriggersTabPress}
-              onClose={pageNav.closeDrawer}
-            />
-          )}
-        >
-          {chat.hasActiveThread ? (
-            <ThreadPage
-              onMenuPress={pageNav.openDrawer}
-              chat={chat}
-              isAuthenticated={canSendMessages}
-            />
-          ) : (
-            <HomePage
-              ref={homePageRef}
-              onMenuPress={pageNav.openDrawer}
-              chat={chat}
-              isAuthenticated={canSendMessages}
-            />
-          )}
+        drawerType="front"
+        drawerStyle={{
+          width: '100%',
+          backgroundColor: 'transparent',
+        }}
+        overlayStyle={{
+          backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.2)',
+        }}
+        swipeEnabled={true}
+        swipeEdgeWidth={80}
+        swipeMinDistance={30}
+        swipeMinVelocity={300}
+        renderDrawerContent={() => (
+          <MenuPage
+            sections={menu.sections}
+            profile={menu.profile}
+            activeTab={menu.activeTab}
+            onNewChat={handleNewChat}
+            onNewWorker={() => {
+              console.log('🤖 New Worker clicked');
+              pageNav.closeDrawer();
+            }}
+            onNewTrigger={() => {
+              console.log('⚡ New Trigger clicked');
+              pageNav.closeDrawer();
+            }}
+            selectedAgentId={agentManager.selectedAgent?.agent_id}
+            onConversationPress={handleConversationPress}
+            onAgentPress={handleAgentPress}
+            onProfilePress={handleProfilePress}
+            onChatsPress={menu.handleChatsTabPress}
+            onWorkersPress={menu.handleWorkersTabPress}
+            onTriggersPress={menu.handleTriggersTabPress}
+            onClose={pageNav.closeDrawer}
+            workerConfigWorkerId={menuWorkerConfigWorkerId}
+            workerConfigInitialView={menuWorkerConfigInitialView}
+            onCloseWorkerConfigDrawer={handleCloseMenuWorkerConfig}
+          />
+        )}>
+        {chat.hasActiveThread ? (
+          <ThreadPage
+            onMenuPress={pageNav.openDrawer}
+            chat={chat}
+            isAuthenticated={canSendMessages}
+            onOpenWorkerConfig={handleOpenWorkerConfigFromAgentDrawer}
+          />
+        ) : (
+          <HomePage
+            ref={homePageRef}
+            onMenuPress={pageNav.openDrawer}
+            chat={chat}
+            isAuthenticated={canSendMessages}
+            onOpenWorkerConfig={handleOpenWorkerConfigFromAgentDrawer}
+          />
+        )}
       </Drawer>
       <FeedbackDrawer />
     </>

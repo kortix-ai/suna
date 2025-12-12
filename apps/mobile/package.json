@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@bacons/apple-targets": "^3.0.5",
+    "@expensify/react-native-live-markdown": "^0.1.317",
     "@gorhom/bottom-sheet": "^5.2.6",
     "@lottiefiles/dotlottie-react": "^0.13.5",
     "@react-native-async-storage/async-storage": "^2.2.0",
@@ -50,6 +51,7 @@
     "@tanstack/react-query": "^5.90.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "expensify-common": "^2.0.168",
     "expo": "~54.0.20",
     "expo-apple-authentication": "^8.0.7",
     "expo-audio": "^1.0.13",
@@ -57,7 +59,7 @@
     "expo-av": "^16.0.7",
     "expo-blur": "~15.0.7",
     "expo-build-properties": "^1.0.9",
-    "expo-clipboard": "^8.0.7",
+    "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.10",
     "expo-dev-client": "~6.0.18",
     "expo-device": "~8.0.9",
@@ -78,6 +80,7 @@
     "expo-updates": "~29.0.12",
     "expo-web-browser": "^15.0.8",
     "fuse.js": "^7.1.0",
+    "html-entities": "2.5.3",
     "i18next": "^25.6.0",
     "kill-port": "^2.0.1",
     "lottie-react-native": "^7.3.4",
@@ -87,6 +90,7 @@
     "react-dom": "19.1.0",
     "react-i18next": "^16.0.1",
     "react-native": "0.81.5",
+    "react-native-context-menu-view": "^1.21.0",
     "react-native-drawer-layout": "^4.1.13",
     "react-native-email-link": "^1.16.1",
     "react-native-gesture-handler": "~2.28.0",
@@ -100,12 +104,11 @@
     "react-native-sse": "^1.2.1",
     "react-native-svg": "15.12.1",
     "react-native-syntax-highlighter": "^2.1.0",
-    "react-native-uitextview": "^2.1.1",
     "react-native-url-polyfill": "^3.0.0",
     "react-native-vector-icons": "^10.3.0",
     "react-native-web": "^0.21.0",
     "react-native-webview": "^13.16.0",
-    "react-native-worklets": "0.5.1",
+    "react-native-worklets": "^0.6.0",
     "react-syntax-highlighter": "^16.0.0",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^3.4.14",
@@ -122,5 +125,8 @@
     "react-native-svg-transformer": "^1.5.1",
     "typescript": "~5.9.2"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "html-entities": "2.5.3"
+  }
 }

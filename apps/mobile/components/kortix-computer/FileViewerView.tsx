@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, ScrollView, TextInput, Pressable, Alert, Share, Modal, FlatList } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { View, ScrollView, TextInput, Pressable, Alert, Share, Modal, FlatList, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/ui';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Home,
   Save,
@@ -17,7 +18,17 @@ import {
   ChevronDown,
   X,
   Loader2,
+  Pencil,
 } from 'lucide-react-native';
+import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
+import { MarkdownToolbar, insertMarkdownFormat, type MarkdownFormat } from '@/components/chat/MarkdownToolbar';
+import {
+  markdownParser,
+  lightMarkdownStyle,
+  darkMarkdownStyle,
+} from '@/lib/utils/live-markdown-config';
+import { HybridMarkdownEditor } from './HybridMarkdownEditor';
+import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import { FilePreview, FilePreviewType, getFilePreviewType } from '@/components/files/FilePreviewRenderers';
 import {
@@ -56,6 +67,9 @@ export function FileViewerView({
   filePath,
   project,
 }: FileViewerViewProps) {
+  const insets = useSafeAreaInsets();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const {
     filePathList,
     currentFileIndex,
@@ -85,6 +99,8 @@ export function FileViewerView({
   const [isLoadingRevertInfo, setIsLoadingRevertInfo] = useState(false);
   const [isReverting, setIsReverting] = useState(false);
   const [revertMode, setRevertMode] = useState<'single' | 'commit'>('single');
+  const [selection, setSelection] = useState({ start: 0, end: 0 });
+  const markdownInputRef = useRef<any>(null);
 
   const fileName = filePath.split('/').pop() || '';
   const fileExtension = fileName.split('.').pop()?.toLowerCase() || '';
@@ -263,12 +279,34 @@ export function FileViewerView({
   }, [isImage, blobUrl, versionBlobUrl, textContent, localContent, fileName, selectedVersion]);
 
   const handleDiscard = useCallback(() => {
-    if (textContent !== undefined) {
-      setLocalContent(textContent);
-      clearUnsavedContent(filePath);
-      setUnsavedState(filePath, false);
-      setIsEditing(false);
-    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    Alert.alert(
+      'Discard Changes',
+      'Are you sure you want to discard your unsaved changes? This action cannot be undone.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          },
+        },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => {
+            if (textContent !== undefined) {
+              setLocalContent(textContent);
+              clearUnsavedContent(filePath);
+              setUnsavedState(filePath, false);
+              setIsEditing(false);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }
+          },
+        },
+      ]
+    );
   }, [textContent, filePath, clearUnsavedContent, setUnsavedState]);
 
   const handleContentChange = useCallback((content: string) => {
@@ -279,6 +317,33 @@ export function FileViewerView({
       setIsEditing(true);
     }
   }, [canEdit, filePath, setUnsavedContent, setUnsavedState]);
+
+  const handleMarkdownFormat = useCallback((format: MarkdownFormat, extra?: string) => {
+    const { newText, newCursorPosition, newSelectionEnd } = insertMarkdownFormat(
+      localContent,
+      selection.start,
+      selection.end,
+      format,
+      extra
+    );
+    setLocalContent(newText);
+    setSelection({ start: newCursorPosition, end: newSelectionEnd });
+    if (canEdit && filePath) {
+      setUnsavedContent(filePath, newText);
+      setUnsavedState(filePath, true);
+      setIsEditing(true);
+    }
+    // Set selection to new cursor position
+    setTimeout(() => {
+      markdownInputRef.current?.setNativeProps({
+        selection: { start: newCursorPosition, end: newSelectionEnd },
+      });
+    }, 10);
+  }, [localContent, selection, canEdit, filePath, setUnsavedContent, setUnsavedState]);
+
+  const handleSelectionChange = useCallback((event: { nativeEvent: { selection: { start: number; end: number } } }) => {
+    setSelection(event.nativeEvent.selection);
+  }, []);
 
   const handleSelectVersion = async (version: FileVersion | null) => {
     setShowVersionModal(false);
@@ -471,29 +536,53 @@ export function FileViewerView({
               </View>
             )}
 
-            {/* Save/Discard for editable files */}
+            {/* Edit/Save/Discard for editable files */}
             {canEdit && (
               <>
-                {hasUnsavedChanges && (
+                {isEditing ? (
+                  <>
+                    {hasUnsavedChanges && (
+                      <Pressable
+                        onPress={handleDiscard}
+                        className="h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
+                      >
+                        <Icon
+                          as={X}
+                          size={17}
+                          className="text-primary"
+                          strokeWidth={2}
+                        />
+                      </Pressable>
+                    )}
+                    <Pressable
+                      onPress={handleSave}
+                      disabled={!hasUnsavedChanges || saveStatus === 'saving'}
+                      className={`h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70 ${!hasUnsavedChanges ? 'opacity-50' : ''}`}
+                    >
+                      <Icon
+                        as={saveStatus === 'saving' ? Loader2 : saveStatus === 'saved' ? Check : saveStatus === 'error' ? AlertCircle : Save}
+                        size={17}
+                        className="text-primary"
+                        strokeWidth={2}
+                      />
+                    </Pressable>
+                  </>
+                ) : (
                   <Pressable
-                    onPress={handleDiscard}
-                    className="h-9 px-3 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setIsEditing(true);
+                    }}
+                    className="h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
                   >
-                    <Text className="text-xs font-roobert-medium text-primary">Discard</Text>
+                    <Icon
+                      as={Pencil}
+                      size={17}
+                      className="text-primary"
+                      strokeWidth={2}
+                    />
                   </Pressable>
                 )}
-                <Pressable
-                  onPress={handleSave}
-                  disabled={!hasUnsavedChanges || saveStatus === 'saving'}
-                  className={`h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70 ${!hasUnsavedChanges ? 'opacity-50' : ''}`}
-                >
-                  <Icon
-                    as={saveStatus === 'saving' ? Loader2 : saveStatus === 'saved' ? Check : saveStatus === 'error' ? AlertCircle : Save}
-                    size={17}
-                    className="text-primary"
-                    strokeWidth={2}
-                  />
-                </Pressable>
               </>
             )}
 
@@ -504,28 +593,12 @@ export function FileViewerView({
                 setShowVersionModal(true);
                 refetchVersions();
               }}
-              className="flex-row items-center gap-1.5 h-9 px-3 rounded-xl bg-card border border-border active:opacity-70"
+              className={`h-9 w-9 items-center justify-center rounded-xl bg-card border active:opacity-70 ${selectedVersion ? 'border-primary' : 'border-border'}`}
             >
               <Icon
                 as={Clock}
                 size={17}
-                className="text-primary"
-                strokeWidth={2}
-              />
-              <Text className="text-xs font-roobert-medium text-primary">
-                {selectedVersion && selectedVersionDate ? (
-                  new Date(selectedVersionDate).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric'
-                  })
-                ) : (
-                  'History'
-                )}
-              </Text>
-              <Icon
-                as={ChevronDown}
-                size={12}
-                className="text-primary"
+                className={selectedVersion ? 'text-primary' : 'text-primary'}
                 strokeWidth={2}
               />
             </Pressable>
@@ -580,18 +653,49 @@ export function FileViewerView({
               {String(textError || imageError)}
             </Text>
           </View>
-        ) : canEdit && isEditing ? (
-          <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
+        ) : isMarkdown ? (
+          <View className="flex-1">
+            {/* Markdown Toolbar - only show when editing */}
+            <MarkdownToolbar
+              onFormat={handleMarkdownFormat}
+              isVisible={canEdit && isEditing}
+              text={localContent}
+              selection={selection}
+            />
+            <ScrollView
+              className="flex-1"
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag">
+              <HybridMarkdownEditor
+                value={localContent}
+                onChange={handleContentChange}
+                onSelectionChange={handleSelectionChange}
+                editable={canEdit && isEditing}
+                isDark={isDark}
+                markdownInputRef={markdownInputRef}
+                isEditing={canEdit && isEditing}
+              />
+            </ScrollView>
+          </View>
+        ) : isText && canEdit ? (
+          <ScrollView
+            className="flex-1"
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag">
             <TextInput
               value={localContent}
               onChangeText={handleContentChange}
               multiline
+              scrollEnabled={false}
+              editable={isEditing}
               className="flex-1 px-4 py-4 font-roobert-mono text-sm text-primary"
               style={{
                 backgroundColor: 'transparent',
                 minHeight: 400,
               }}
               textAlignVertical="top"
+              placeholder="Start typing..."
+              placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
             />
           </ScrollView>
         ) : (
@@ -607,18 +711,23 @@ export function FileViewerView({
       </View>
 
       {/* Footer */}
-      <View className="px-4 py-2 border-t border-border bg-card flex-row items-center justify-between">
-        <View className="flex-row items-center gap-2">
-          <View className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border">
-            <Icon as={FileText} size={12} className="text-primary" />
-            <Text className="text-xs font-roobert-medium text-primary">
-              {fileExtension.toUpperCase() || 'FILE'}
-            </Text>
+      <View
+        className="px-4 pt-4 border-t border-border bg-card"
+        style={{ paddingBottom: Math.max(24, insets.bottom + 8) }}
+      >
+        <View className="flex-row items-center justify-between h-9">
+          <View className="flex-row items-center gap-2">
+            <View className="flex-row items-center gap-1.5 px-2 py-1 rounded-full border border-border">
+              <Icon as={FileText} size={12} className="text-primary" />
+              <Text className="text-xs font-roobert-medium text-primary">
+                {fileExtension.toUpperCase() || 'FILE'}
+              </Text>
+            </View>
           </View>
+          <Text className="text-xs text-primary opacity-50 truncate max-w-[200px]" numberOfLines={1}>
+            {filePath}
+          </Text>
         </View>
-        <Text className="text-xs text-primary opacity-50 truncate max-w-[200px]" numberOfLines={1}>
-          {filePath}
-        </Text>
       </View>
 
       {/* Version History Modal */}

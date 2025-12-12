@@ -41,6 +41,8 @@ import { useAccountState, accountStateSelectors } from '@/hooks/billing';
 import { isStagingMode, isLocalMode } from '@/lib/config';
 import { PlanSelectionModal } from '@/components/billing/pricing';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
+import { SpotlightCard } from '@/components/ui/spotlight-card';
+import { MemoryToggle } from './memory-toggle';
 
 import posthog from 'posthog-js';
 
@@ -671,6 +673,8 @@ export interface ChatInputProps {
   selectedTemplate?: string | null;
   threadId?: string | null;
   projectId?: string;
+  memoryEnabled?: boolean;
+  onMemoryToggle?: (enabled: boolean) => void;
 }
 
 export interface UploadedFile {
@@ -723,6 +727,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       selectedTemplate = null,
       threadId = null,
       projectId,
+      memoryEnabled,
+      onMemoryToggle,
     },
     ref,
   ) => {
@@ -1289,6 +1295,14 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           onOpenPlanModal={handleOpenPlanModal}
         />
 
+        {/* {isLoggedIn && !threadId && (
+          <MemoryToggle
+            disabled={loading || (disabled && !isAgentRunning)}
+            memoryEnabled={memoryEnabled}
+            onMemoryToggle={onMemoryToggle}
+          />
+        )} */}
+
         <SunaAgentModeSwitcher
           enabled={ENABLE_SUNA_AGENT_MODES}
           isSunaAgent={isSunaAgent}
@@ -1304,7 +1318,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           />
         )}
       </div>
-    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, projectId, messages, isLoggedIn, isFreeTier, quickIntegrations, integrationIcons, handleOpenRegistry, handleOpenPlanModal, isSunaAgent, sunaAgentModes, onModeDeselect, selectedMode, isModeDismissing, handleModeDeselect]);
+    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, projectId, messages, isLoggedIn, isFreeTier, quickIntegrations, integrationIcons, handleOpenRegistry, handleOpenPlanModal, threadId, memoryEnabled, onMemoryToggle, isSunaAgent, sunaAgentModes, onModeDeselect, selectedMode, isModeDismissing, handleModeDeselect]);
 
     const rightControls = useMemo(() => (
       <div className='flex items-center gap-2 flex-shrink-0'>

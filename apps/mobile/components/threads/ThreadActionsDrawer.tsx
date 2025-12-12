@@ -3,15 +3,14 @@ import { Text } from '@/components/ui/text';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
-import { Share, FolderOpen, Trash2, ChevronRight } from 'lucide-react-native';
+import { Share, FolderOpen, Trash2, ChevronRight, Lock } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Pressable, View } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
+import { Pressable, View, Alert } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { useBillingContext } from '@/contexts/BillingContext';
+import { useRouter } from 'expo-router';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -59,10 +58,9 @@ function ActionItem({ icon, label, subtitle, onPress }: ActionItemProps) {
       style={animatedStyle}
       className="flex-row items-center justify-between active:opacity-70"
       accessibilityRole="button"
-      accessibilityLabel={label}
-    >
+      accessibilityLabel={label}>
       {/* Left: Avatar/Icon + Text - Matching SelectableListItem */}
-      <View className="flex-row items-center gap-2 flex-1">
+      <View className="flex-1 flex-row items-center gap-2">
         {/* Icon Container - 48x48 matching avatar size */}
         <View
           style={{
@@ -70,8 +68,7 @@ function ActionItem({ icon, label, subtitle, onPress }: ActionItemProps) {
             width: 48,
             height: 48,
           }}
-          className="rounded-xl items-center justify-center"
-        >
+          className="items-center justify-center rounded-xl">
           <Icon
             as={icon}
             size={20}
@@ -84,17 +81,18 @@ function ActionItem({ icon, label, subtitle, onPress }: ActionItemProps) {
         <View className="flex-1">
           <Text
             style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-            className="text-base font-roobert-medium"
-            numberOfLines={1}
-          >
+            className="font-roobert-medium text-base"
+            numberOfLines={1}>
             {label}
           </Text>
           {subtitle && (
             <Text
-              style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
-              className="text-xs font-roobert mt-0.5"
-              numberOfLines={1}
-            >
+              style={{
+                color:
+                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)',
+              }}
+              className="mt-0.5 font-roobert text-xs"
+              numberOfLines={1}>
               {subtitle}
             </Text>
           )}
@@ -112,7 +110,7 @@ function ActionItem({ icon, label, subtitle, onPress }: ActionItemProps) {
 
 /**
  * ThreadActionsDrawer Component
- * 
+ *
  * Matches AgentDrawer's design system exactly:
  * - Same BottomSheet configuration
  * - Same layout structure and spacing
@@ -129,22 +127,47 @@ export function ThreadActionsDrawer({
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const isOpeningRef = React.useRef(false);
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
-  const snapPoints = React.useMemo(() => ['95%'], []);
+  const snapPoints = React.useMemo(() => ['50%'], []);
   const { colorScheme } = useColorScheme();
+  const router = useRouter();
+  const { hasFreeTier } = useBillingContext();
+  const { t } = useLanguage();
 
-  const handleSheetChange = React.useCallback((index: number) => {
-    console.log('🧵 [ThreadActionsDrawer] Sheet index changed:', index);
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-    if (index === -1) {
-      isOpeningRef.current = false;
-      onClose();
-    } else if (index >= 0) {
-      isOpeningRef.current = false;
-    }
-  }, [onClose]);
+  // Handle upgrade prompt for free tier users
+  const handleUpgradePrompt = React.useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    Alert.alert(
+      t('threadActions.upgradeRequired'),
+      t('threadActions.upgradeRequiredMessage'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('threadActions.upgrade'),
+          onPress: () => {
+            onClose();
+            router.push('/plans');
+          },
+        },
+      ]
+    );
+  }, [onClose, router, t]);
+
+  const handleSheetChange = React.useCallback(
+    (index: number) => {
+      console.log('🧵 [ThreadActionsDrawer] Sheet index changed:', index);
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      if (index === -1) {
+        isOpeningRef.current = false;
+        onClose();
+      } else if (index >= 0) {
+        isOpeningRef.current = false;
+      }
+    },
+    [onClose]
+  );
 
   React.useEffect(() => {
     if (visible && !isOpeningRef.current) {
@@ -181,9 +204,6 @@ export function ThreadActionsDrawer({
     []
   );
 
-  // Don't render BottomSheet when not visible to avoid navigation context issues
-  if (!visible) return null;
-
   return (
     <BottomSheet
       ref={bottomSheetRef}
@@ -193,9 +213,7 @@ export function ThreadActionsDrawer({
       onChange={handleSheetChange}
       backdropComponent={renderBackdrop}
       backgroundStyle={{
-        backgroundColor: colorScheme === 'dark'
-          ? '#161618'
-          : '#FFFFFF',
+        backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
@@ -204,25 +222,25 @@ export function ThreadActionsDrawer({
         width: 36,
         height: 5,
         borderRadius: 3,
-      }}
-    >
+      }}>
       <BottomSheetScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
           paddingHorizontal: 24,
           paddingTop: 24,
           paddingBottom: 32,
-        }}
-      >
+        }}>
         {/* Thread Actions Section - Matching AgentDrawer structure */}
         <View className="pb-3">
           {/* Section Header - Exact AgentDrawer styling */}
-          <View className="flex-row items-center justify-between mb-3">
+          <View className="mb-3 flex-row items-center justify-between">
             <Text
-              style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
-              className="text-sm font-roobert-medium"
-            >
-              Thread Actions
+              style={{
+                color:
+                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)',
+              }}
+              className="font-roobert-medium text-sm">
+              {t('threadActions.title')}
             </Text>
           </View>
 
@@ -230,18 +248,18 @@ export function ThreadActionsDrawer({
           <View className="gap-4">
             {onShare && (
               <ActionItem
-                icon={Share}
-                label="Share Thread"
-                subtitle="Create a public link"
-                onPress={() => handleAction(onShare)}
+                icon={hasFreeTier ? Lock : Share}
+                label={hasFreeTier ? t('threadActions.shareThreadUpgrade') : t('threadActions.shareThread')}
+                subtitle={hasFreeTier ? t('threadActions.availableOnPaidPlans') : t('threadActions.createPublicLink')}
+                onPress={() => (hasFreeTier ? handleUpgradePrompt() : handleAction(onShare))}
               />
             )}
 
             {onFiles && (
               <ActionItem
                 icon={FolderOpen}
-                label="Manage Files"
-                subtitle="View and manage attachments"
+                label={t('threadActions.manageFiles')}
+                subtitle={t('threadActions.viewManageAttachments')}
                 onPress={() => handleAction(onFiles)}
               />
             )}
@@ -249,8 +267,8 @@ export function ThreadActionsDrawer({
             {onDelete && (
               <ActionItem
                 icon={Trash2}
-                label="Delete Thread"
-                subtitle="Permanently delete this conversation"
+                label={t('threadActions.deleteThread')}
+                subtitle={t('threadActions.permanentlyDelete')}
                 onPress={() => handleAction(onDelete)}
               />
             )}
@@ -260,4 +278,3 @@ export function ThreadActionsDrawer({
     </BottomSheet>
   );
 }
-

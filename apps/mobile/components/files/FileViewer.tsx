@@ -3,12 +3,12 @@
  * Full-screen file viewer with preview and actions
  */
 
-import React, { useState, useEffect } from 'react';
-import { View, Modal, Pressable, Share, Platform } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Modal, Pressable, Share, Platform, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/ui';
-import { X, Download, Share2, ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { X, Download, Share2, ChevronLeft, ChevronRight, Lock } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -20,12 +20,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { FilePreview, FilePreviewType, getFilePreviewType } from './FilePreviewRenderers';
-import {
-  useSandboxFileContent,
-  useSandboxImageBlob,
-  blobToDataURL
-} from '@/lib/files/hooks';
+import { useSandboxFileContent, useSandboxImageBlob, blobToDataURL } from '@/lib/files/hooks';
 import type { SandboxFile } from '@/api/types';
+import { useBillingContext } from '@/contexts/BillingContext';
+import { useRouter } from 'expo-router';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -55,9 +53,30 @@ export function FileViewer({
 }: FileViewerProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const router = useRouter();
   const closeScale = useSharedValue(1);
   const [blobUrl, setBlobUrl] = useState<string | undefined>();
   const [viewMode, setViewMode] = useState<'preview' | 'raw'>('preview');
+  const { hasFreeTier } = useBillingContext();
+
+  // Handle upgrade prompt for free tier users
+  const handleUpgradePrompt = useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    Alert.alert(
+      'Upgrade Required',
+      'Downloads and sharing are available on paid plans. Upgrade to unlock this feature.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Upgrade',
+          onPress: () => {
+            onClose();
+            router.push('/plans');
+          },
+        },
+      ]
+    );
+  }, [onClose, router]);
 
   const previewType = file ? getFilePreviewType(file.name) : FilePreviewType.OTHER;
   const isImage = previewType === FilePreviewType.IMAGE;
@@ -65,7 +84,8 @@ export function FileViewer({
   const shouldFetchBlob = file && isImage;
 
   // Can show raw view for non-binary files
-  const canShowRaw = file && previewType !== FilePreviewType.BINARY && previewType !== FilePreviewType.OTHER;
+  const canShowRaw =
+    file && previewType !== FilePreviewType.BINARY && previewType !== FilePreviewType.OTHER;
 
   // Fetch file content for text-based files
   const {
@@ -107,6 +127,12 @@ export function FileViewer({
   const handleDownload = async () => {
     if (!file) return;
 
+    // Block downloads for free tier users
+    if (hasFreeTier) {
+      handleUpgradePrompt();
+      return;
+    }
+
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -137,6 +163,12 @@ export function FileViewer({
 
   const handleShare = async () => {
     if (!file) return;
+
+    // Block sharing for free tier users
+    if (hasFreeTier) {
+      handleUpgradePrompt();
+      return;
+    }
 
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -186,8 +218,7 @@ export function FileViewer({
       visible={visible}
       animationType="slide"
       presentationStyle="fullScreen"
-      onRequestClose={handleClose}
-    >
+      onRequestClose={handleClose}>
       <View className="flex-1" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
         {/* Header */}
         <View
@@ -196,26 +227,22 @@ export function FileViewer({
             backgroundColor: isDark ? '#121215' : '#ffffff',
             borderBottomWidth: 1,
             borderBottomColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
-          }}
-        >
+          }}>
           <Animated.View
             entering={FadeIn.duration(200)}
             exiting={FadeOut.duration(200)}
-            className="px-4 py-4 flex-row items-center justify-between"
-          >
-            <View className="flex-1 min-w-0 mr-4">
+            className="flex-row items-center justify-between px-4 py-4">
+            <View className="mr-4 min-w-0 flex-1">
               <Text
                 style={{ color: isDark ? '#f8f8f8' : '#121215' }}
-                className="text-base font-roobert-medium"
-                numberOfLines={1}
-              >
+                className="font-roobert-medium text-base"
+                numberOfLines={1}>
                 {file.name}
               </Text>
               {canNavigate && (
                 <Text
                   style={{ color: isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
-                  className="text-xs font-roobert mt-0.5"
-                >
+                  className="mt-0.5 font-roobert text-xs">
                   {currentIndex + 1} of {fileList?.length}
                 </Text>
               )}
@@ -229,8 +256,7 @@ export function FileViewer({
                     onPress={handlePrevious}
                     disabled={currentIndex <= 0}
                     className="p-2"
-                    style={{ opacity: currentIndex <= 0 ? 0.3 : 1 }}
-                  >
+                    style={{ opacity: currentIndex <= 0 ? 0.3 : 1 }}>
                     <Icon
                       as={ChevronLeft}
                       size={24}
@@ -242,8 +268,7 @@ export function FileViewer({
                     onPress={handleNext}
                     disabled={currentIndex >= (fileList?.length || 0) - 1}
                     className="p-2"
-                    style={{ opacity: currentIndex >= (fileList?.length || 0) - 1 ? 0.3 : 1 }}
-                  >
+                    style={{ opacity: currentIndex >= (fileList?.length || 0) - 1 ? 0.3 : 1 }}>
                     <Icon
                       as={ChevronRight}
                       size={24}
@@ -253,19 +278,23 @@ export function FileViewer({
                   </AnimatedPressable>
                 </>
               )}
-              <AnimatedPressable onPress={handleDownload} className="p-2">
+              <AnimatedPressable onPress={handleDownload} className="relative p-2">
                 <Icon
-                  as={Download}
+                  as={hasFreeTier ? Lock : Download}
                   size={22}
-                  color={isDark ? '#f8f8f8' : '#121215'}
+                  color={
+                    hasFreeTier ? (isDark ? '#a78bfa' : '#7c3aed') : isDark ? '#f8f8f8' : '#121215'
+                  }
                   strokeWidth={2}
                 />
               </AnimatedPressable>
-              <AnimatedPressable onPress={handleShare} className="p-2">
+              <AnimatedPressable onPress={handleShare} className="relative p-2">
                 <Icon
-                  as={Share2}
+                  as={hasFreeTier ? Lock : Share2}
                   size={22}
-                  color={isDark ? '#f8f8f8' : '#121215'}
+                  color={
+                    hasFreeTier ? (isDark ? '#a78bfa' : '#7c3aed') : isDark ? '#f8f8f8' : '#121215'
+                  }
                   strokeWidth={2}
                 />
               </AnimatedPressable>
@@ -278,14 +307,8 @@ export function FileViewer({
                 }}
                 onPress={handleClose}
                 style={closeAnimatedStyle}
-                className="p-2"
-              >
-                <Icon
-                  as={X}
-                  size={24}
-                  color={isDark ? '#f8f8f8' : '#121215'}
-                  strokeWidth={2}
-                />
+                className="p-2">
+                <Icon as={X} size={24} color={isDark ? '#f8f8f8' : '#121215'} strokeWidth={2} />
               </AnimatedPressable>
             </View>
           </Animated.View>
@@ -296,16 +319,12 @@ export function FileViewer({
           {isLoading ? (
             <View className="flex-1 items-center justify-center">
               <KortixLoader size="large" />
-              <Text className="text-sm text-muted-foreground mt-4">
-                Loading file...
-              </Text>
+              <Text className="mt-4 text-sm text-muted-foreground">Loading file...</Text>
             </View>
           ) : hasError ? (
             <View className="flex-1 items-center justify-center p-8">
-              <Text className="text-sm text-destructive text-center mb-2">
-                Failed to load file
-              </Text>
-              <Text className="text-xs text-muted-foreground text-center">
+              <Text className="mb-2 text-center text-sm text-destructive">Failed to load file</Text>
+              <Text className="text-center text-xs text-muted-foreground">
                 {String(textError || imageError)}
               </Text>
             </View>
@@ -324,4 +343,3 @@ export function FileViewer({
     </Modal>
   );
 }
-

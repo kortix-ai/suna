@@ -12,15 +12,8 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
-import {
-  Brain,
-  Wrench,
-  Server,
-  Zap,
-  X,
-  ArrowLeft,
-} from 'lucide-react-native';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { Brain, Wrench, Server, Zap, X, ArrowLeft } from 'lucide-react-native';
+import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
 import { Loading } from '../loading/loading';
@@ -34,6 +27,8 @@ interface WorkerConfigDrawerProps {
   workerId: string | null;
   onClose: () => void;
   onWorkerUpdated?: () => void;
+  initialView?: 'instructions' | 'tools' | 'integrations' | 'triggers';
+  onUpgradePress?: () => void;
 }
 
 type ConfigView = 'instructions' | 'tools' | 'integrations' | 'triggers';
@@ -50,75 +45,71 @@ export function WorkerConfigDrawer({
   workerId,
   onClose,
   onWorkerUpdated,
+  initialView = 'instructions',
+  onUpgradePress,
 }: WorkerConfigDrawerProps) {
-  const bottomSheetRef = React.useRef<BottomSheet>(null);
+  const bottomSheetRef = React.useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
-  const [activeView, setActiveView] = useState<ConfigView>('instructions');
+  // Initialize activeView with initialView, and update it whenever initialView changes
+  const [activeView, setActiveView] = useState<ConfigView>(initialView);
 
   const { data: agent, isLoading } = useAgent(workerId || undefined);
 
   // Snap points for bottom sheet
-  const snapPoints = React.useMemo(() => ['90%'], []);
+  const snapPoints = React.useMemo(() => ['95%'], []);
 
-  // Handle visibility changes and worker ID changes
+  // Update activeView when initialView changes (e.g., switching tabs)
+  // This ensures the correct tab is shown when the drawer opens or when switching tabs
+  useEffect(() => {
+    if (initialView && initialView !== activeView) {
+      setActiveView(initialView);
+    }
+  }, [initialView, activeView]);
+
+  // Handle visibility changes
   useEffect(() => {
     if (visible && workerId) {
-      bottomSheetRef.current?.expand();
-      setActiveView('instructions'); // Reset to first view when switching workers
+      // Ensure activeView matches initialView when opening
+      if (initialView && initialView !== activeView) {
+        setActiveView(initialView);
+      }
+      bottomSheetRef.current?.present();
     } else if (!visible) {
-      bottomSheetRef.current?.close();
+      bottomSheetRef.current?.dismiss();
     }
-  }, [visible, workerId]);
+  }, [visible, workerId, initialView, activeView]);
 
-  // Force expand when workerId changes while drawer is already visible
-  useEffect(() => {
-    if (visible && workerId) {
-      // Small delay to ensure the workerId has updated
-      const timer = setTimeout(() => {
-        bottomSheetRef.current?.expand();
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [workerId, visible]);
-
-  // Handle sheet changes
-  const handleSheetChanges = React.useCallback((index: number) => {
-    if (index === -1) {
-      onClose();
-    }
+  // Handle dismiss
+  const handleDismiss = React.useCallback(() => {
+    onClose();
   }, [onClose]);
 
   // Backdrop component
   const renderBackdrop = React.useCallback(
     (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        opacity={0.5}
-      />
+      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
     ),
     []
   );
 
-  if (!workerId) {
-    return null;
-  }
-
+  // Use BottomSheetModal to render above everything (hamburger menu, credits, etc.)
   return (
-    <BottomSheet
-      key={workerId} // Force re-render when workerId changes
+    <BottomSheetModal
       ref={bottomSheetRef}
-      index={-1}
       snapPoints={snapPoints}
-      onChange={handleSheetChanges}
+      onDismiss={handleDismiss}
       enablePanDownToClose
       backdropComponent={renderBackdrop}
       backgroundStyle={{
         backgroundColor: colorScheme === 'dark' ? '#18181B' : '#FFFFFF',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
       }}
       handleIndicatorStyle={{
         backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+        width: 36,
+        height: 5,
+        borderRadius: 3,
       }}>
       <View className="flex-1">
         {/* Header */}
@@ -132,12 +123,12 @@ export function WorkerConfigDrawer({
             <View>
               {isLoading || !agent ? (
                 <>
-                  <View className="h-5 w-32 rounded bg-muted animate-pulse" />
-                  <View className="h-3 w-24 rounded bg-muted mt-1 animate-pulse" />
+                  <View className="h-5 w-32 animate-pulse rounded bg-muted" />
+                  <View className="mt-1 h-3 w-24 animate-pulse rounded bg-muted" />
                 </>
               ) : (
                 <>
-                  <Text className="text-lg font-roobert-semibold text-foreground">
+                  <Text className="font-roobert-semibold text-lg text-foreground">
                     {agent.name}
                   </Text>
                   <Text className="text-xs text-muted-foreground">Worker Configuration</Text>
@@ -193,7 +184,11 @@ export function WorkerConfigDrawer({
         </View>
 
         {/* Content */}
-        {isLoading || !agent ? (
+        {!workerId ? (
+          <View className="flex-1 items-center justify-center p-8">
+            <Loading title="Loading worker..." />
+          </View>
+        ) : isLoading || !agent ? (
           <View className="flex-1 items-center justify-center p-8">
             <Loading title="Loading worker..." />
           </View>
@@ -208,15 +203,22 @@ export function WorkerConfigDrawer({
               <ToolsScreen agentId={workerId} onUpdate={onWorkerUpdated} />
             )}
             {activeView === 'integrations' && (
-              <IntegrationsScreen agentId={workerId} onUpdate={onWorkerUpdated} />
+              <IntegrationsScreen
+                agentId={workerId}
+                onUpdate={onWorkerUpdated}
+                onUpgradePress={onUpgradePress}
+              />
             )}
             {activeView === 'triggers' && (
-              <TriggersScreen agentId={workerId} onUpdate={onWorkerUpdated} />
+              <TriggersScreen
+                agentId={workerId}
+                onUpdate={onWorkerUpdated}
+                onUpgradePress={onUpgradePress}
+              />
             )}
           </BottomSheetScrollView>
         )}
       </View>
-    </BottomSheet>
+    </BottomSheetModal>
   );
 }
-

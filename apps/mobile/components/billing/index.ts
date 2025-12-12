@@ -1,11 +1,13 @@
 /**
  * Billing Components
- * 
+ *
  * Standardized, reusable billing UI components
  */
 
 // Composite components
 export { ScheduledDowngradeCard } from './ScheduledDowngradeCard';
+export { FreeTierBlock } from './FreeTierBlock';
+export type { FreeTierBlockVariant } from './FreeTierBlock';
 
 // Atomic components
 export { PricingTierBadge } from './PricingTierBadge';

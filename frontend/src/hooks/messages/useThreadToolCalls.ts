@@ -345,13 +345,12 @@ export function useThreadToolCalls(
               })(),
               source: metadataToolCall.source || 'native',
             },
-            // No result yet - still streaming
             isSuccess: true,
-            assistantTimestamp: new Date().toISOString(),
+            assistantTimestamp: toolCall.created_at || new Date().toISOString(),
+            messages: messages as any,
           };
 
           if (existingIndex !== -1) {
-            // Update existing streaming tool
             const args = metadataToolCall.arguments;
             let normalizedArgs: Record<string, any> = {};
             if (args) {
@@ -371,9 +370,9 @@ export function useThreadToolCalls(
                 ...updated[existingIndex].toolCall,
                 arguments: normalizedArgs,
               },
+              messages: messages as any,
             };
           } else {
-            // Add new streaming tool
             updated.push(newToolCall);
           }
         });

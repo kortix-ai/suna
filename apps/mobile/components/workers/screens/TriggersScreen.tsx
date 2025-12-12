@@ -4,7 +4,7 @@
  * Displays and manages triggers for a specific worker
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { View, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -15,12 +15,18 @@ import { TriggerCreationDrawer } from '@/components/triggers/TriggerCreationDraw
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import type { TriggerConfiguration } from '@/api/types';
+import { useBillingContext } from '@/contexts/BillingContext';
+import { FreeTierBlock } from '@/components/billing/FreeTierBlock';
+import { useRouter } from 'expo-router';
+import { EmptyState } from '@/components/shared/EmptyState';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface TriggersScreenProps {
   agentId: string;
   onUpdate?: () => void;
+  onUpgradePress?: () => void;
 }
 
 interface TriggerCardProps {
@@ -137,17 +143,30 @@ function TriggerCard({
   );
 }
 
-export function TriggersScreen({ agentId, onUpdate }: TriggersScreenProps) {
+export function TriggersScreen({ agentId, onUpdate, onUpgradePress }: TriggersScreenProps) {
+  const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
+  const router = useRouter();
   const { data: triggers = [], isLoading, refetch } = useAgentTriggers(agentId);
   const deleteTriggerMutation = useDeleteTrigger();
   const toggleTriggerMutation = useToggleTrigger();
+  const { hasFreeTier } = useBillingContext();
 
   const [isCreateDrawerVisible, setIsCreateDrawerVisible] = useState(false);
   const [editingTrigger, setEditingTrigger] = useState<TriggerConfiguration | null>(null);
   const [deleteDialogTrigger, setDeleteDialogTrigger] = useState<TriggerConfiguration | null>(null);
   const [togglingTriggerId, setTogglingTriggerId] = useState<string | null>(null);
   const [deletingTriggerId, setDeletingTriggerId] = useState<string | null>(null);
+
+  // Handle upgrade press - use provided callback or navigate to plans
+  const handleUpgradePress = useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    if (onUpgradePress) {
+      onUpgradePress();
+    } else {
+      router.push('/plans');
+    }
+  }, [onUpgradePress, router]);
 
   const runningTriggers = useMemo(
     () => triggers.filter((trigger) => trigger.is_active),
@@ -243,48 +262,55 @@ export function TriggersScreen({ agentId, onUpdate }: TriggersScreenProps) {
     );
   }
 
+  // Show free tier block if user is on free tier
+  if (hasFreeTier) {
+    return (
+      <View className="flex-1 items-center justify-center px-4 py-8">
+        <FreeTierBlock variant="triggers" onUpgradePress={handleUpgradePress} style="card" />
+      </View>
+    );
+  }
+
   return (
     <View className="space-y-4">
-      <View className="mb-6 flex-row items-center justify-between">
+      <View className="mb-2 flex-row items-center justify-between">
         <View className="flex-1 pr-3">
           <Text className="mb-2 font-roobert-semibold text-base text-foreground">Triggers</Text>
           <Text className="font-roobert text-sm text-muted-foreground">
             Automate your worker with scheduled or event-based triggers
           </Text>
         </View>
-        <Pressable
-          onPress={() => {
-            setEditingTrigger(null);
-            setIsCreateDrawerVisible(true);
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          }}
-          className="h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary active:opacity-80">
-          <Icon as={Plus} size={20} className="text-primary-foreground" />
-        </Pressable>
       </View>
 
-      {runningTriggers.length === 0 && pausedTriggers.length === 0 ? (
-        <View className="items-center justify-center rounded-2xl border border-border bg-card p-8">
-          <View className="mb-3 h-12 w-12 items-center justify-center rounded-xl bg-muted">
-            <Icon as={Zap} size={24} className="text-muted-foreground" />
-          </View>
-          <Text className="mb-1 font-roobert-semibold text-base text-foreground">
-            No triggers configured
-          </Text>
-          <Text className="mb-4 text-center text-sm text-muted-foreground">
-            Set up triggers to automate this worker
-          </Text>
+      {/* Create Trigger Button - only show when there are triggers */}
+      {!(runningTriggers.length === 0 && pausedTriggers.length === 0) && (
+        <View className="mb-4 flex-row gap-3">
           <Pressable
             onPress={() => {
               setEditingTrigger(null);
               setIsCreateDrawerVisible(true);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             }}
-            className="rounded-xl bg-primary px-4 py-2 active:opacity-80">
-            <Text className="font-roobert-semibold text-sm text-primary-foreground">
-              Create Trigger
+            className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-border bg-card px-4 py-3 active:opacity-80">
+            <Icon as={Plus} size={18} className="text-foreground" />
+            <Text className="font-roobert-semibold text-base text-foreground">
+              {t('triggers.createTrigger')}
             </Text>
           </Pressable>
         </View>
+      )}
+
+      {runningTriggers.length === 0 && pausedTriggers.length === 0 ? (
+        <EmptyState
+          icon={Zap}
+          title={t('triggers.noTriggersConfigured')}
+          description={t('triggers.setupTriggersToAutomate')}
+          actionLabel={t('triggers.createTrigger')}
+          onActionPress={() => {
+            setEditingTrigger(null);
+            setIsCreateDrawerVisible(true);
+          }}
+        />
       ) : (
         <>
           {/* Running Section */}
@@ -341,6 +367,7 @@ export function TriggersScreen({ agentId, onUpdate }: TriggersScreenProps) {
         onTriggerUpdated={handleTriggerUpdated}
         isEditMode={!!editingTrigger}
         existingTrigger={editingTrigger}
+        onUpgradePress={onUpgradePress}
       />
     </View>
   );

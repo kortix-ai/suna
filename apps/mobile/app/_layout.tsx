@@ -19,9 +19,14 @@ import * as Linking from 'expo-linking';
 import React, { useEffect, useState } from 'react';
 import { useColorScheme } from 'nativewind';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { Platform } from 'react-native';
+import { Platform, LogBox } from 'react-native';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import { supabase } from '@/api/supabase';
+
+// Suppress known warning from react-native-markdown-display library
+LogBox.ignoreLogs([
+  'A props object containing a "key" prop is being spread into JSX',
+]);
 
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,

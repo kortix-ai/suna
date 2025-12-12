@@ -20,7 +20,6 @@ async def initialize_thread_background(
     prompt: str,
     agent_id: Optional[str] = None,
     model_name: Optional[str] = None,
-    files_metadata: Optional[List[Dict[str, Any]]] = None,
 ):
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(
@@ -100,12 +99,14 @@ async def create_thread_optimistically(
     agent_id: Optional[str] = None,
     model_name: Optional[str] = None,
     files: Optional[List[UploadFile]] = None,
+    memory_enabled: Optional[bool] = None,
 ) -> Dict[str, Any]:
     if not db._client:
         await db.initialize()
     client = await db.client
     
     placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt
+    message_content = prompt
     
     try:
         await client.table('projects').insert({
@@ -117,23 +118,47 @@ async def create_thread_optimistically(
         
         logger.debug(f"Created project {project_id} optimistically")
         
-        # Start background task to generate proper name, icon, and category
         asyncio.create_task(generate_and_update_project_name(project_id=project_id, prompt=prompt))
         
     except Exception as e:
         logger.error(f"Failed to create project optimistically: {str(e)}")
         raise
     
+    if files and len(files) > 0:
+        try:
+            from core.agent_runs import _ensure_sandbox_for_thread, _handle_file_uploads
+            
+            logger.info(f"Processing {len(files)} files for optimistic thread {thread_id}")
+            sandbox, _ = await _ensure_sandbox_for_thread(client, project_id, files)
+            
+            if sandbox:
+                message_content = await _handle_file_uploads(files, sandbox, project_id, prompt)
+                logger.info(f"Successfully uploaded files for thread {thread_id}")
+            else:
+                logger.warning(f"No sandbox created for thread {thread_id}, files will not be uploaded")
+        except Exception as e:
+            logger.error(f"Error handling files in optimistic thread creation: {str(e)}\n{traceback.format_exc()}")
+            try:
+                await client.table('projects').delete().eq('project_id', project_id).execute()
+                logger.debug(f"Rolled back project {project_id} due to file handling error")
+            except Exception as rollback_error:
+                logger.error(f"Failed to rollback project {project_id}: {str(rollback_error)}")
+            raise
+    
     try:
-        await client.table('threads').insert({
+        thread_data = {
             "thread_id": thread_id,
             "project_id": project_id,
             "account_id": account_id,
             "status": "pending",
             "created_at": datetime.now(timezone.utc).isoformat()
-        }).execute()
+        }
+        if memory_enabled is not None:
+            thread_data["memory_enabled"] = memory_enabled
         
-        logger.debug(f"Created thread {thread_id} with status=pending")
+        await client.table('threads').insert(thread_data).execute()
+        
+        logger.debug(f"Created thread {thread_id} with status=pending, memory_enabled={memory_enabled}")
         
     except Exception as e:
         logger.error(f"Failed to create thread optimistically: {str(e)}")
@@ -151,15 +176,11 @@ async def create_thread_optimistically(
         "thread_id": thread_id,
         "type": "user",
         "is_llm_message": True,
-        "content": {"role": "user", "content": prompt},
+        "content": {"role": "user", "content": message_content},
         "created_at": datetime.now(timezone.utc).isoformat()
     }).execute()
     
-    logger.debug(f"Created user message for thread {thread_id}")
-    
-    files_metadata = None
-    if files and len(files) > 0:
-        files_metadata = [{"filename": f.filename, "content_type": f.content_type} for f in files]
+    logger.debug(f"Created user message for thread {thread_id} with content length: {len(message_content)}")
     
     initialize_thread_background.send(
         thread_id=thread_id,
@@ -168,7 +189,6 @@ async def create_thread_optimistically(
         prompt=prompt,
         agent_id=agent_id,
         model_name=model_name,
-        files_metadata=files_metadata,
     )
     
     logger.info(f"Dispatched background initialization for thread {thread_id}")

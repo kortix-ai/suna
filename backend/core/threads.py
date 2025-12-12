@@ -674,7 +674,39 @@ async def update_thread(
         
         logger.debug(f"Successfully updated thread: {thread_id}")
         
-        return await get_thread(thread_id, request)
+        updated_thread = await client.table('threads').select('*').eq('thread_id', thread_id).execute()
+        if not updated_thread.data:
+            raise HTTPException(status_code=404, detail="Thread not found")
+        
+        thread_data = updated_thread.data[0]
+        
+        project_data = None
+        if project_id:
+            project_result = await client.table('projects').select('*').eq('project_id', project_id).execute()
+            if project_result.data:
+                project = project_result.data[0]
+                project_data = {
+                    "project_id": project['project_id'],
+                    "name": project.get('name', ''),
+                    "description": project.get('description', ''),
+                    "sandbox": project.get('sandbox', {}),
+                    "is_public": project.get('is_public', False),
+                    "icon_name": project.get('icon_name'),
+                    "created_at": project['created_at'],
+                    "updated_at": project['updated_at']
+                }
+        
+        return {
+            "thread_id": thread_data['thread_id'],
+            "project_id": thread_data.get('project_id'),
+            "metadata": thread_data.get('metadata', {}),
+            "is_public": thread_data.get('is_public', False),
+            "created_at": thread_data['created_at'],
+            "updated_at": thread_data['updated_at'],
+            "project": project_data,
+            "message_count": 0,
+            "recent_agent_runs": []
+        }
         
     except HTTPException:
         raise

@@ -1,6 +1,6 @@
 /**
  * Pricing Configuration
- * 
+ *
  * Defines subscription tiers with backend tier keys
  * Matches backend and frontend pricing configuration
  */
@@ -28,15 +28,15 @@ export interface PricingTier {
 
 /**
  * Pricing Tier Configuration
- * 
+ *
  * This array contains FEATURE DESCRIPTIONS and METADATA for each tier.
- * When RevenueCat is enabled (iOS/Android), actual PRICING and AVAILABILITY 
+ * When RevenueCat is enabled (iOS/Android), actual PRICING and AVAILABILITY
  * are loaded from App Store/Play Store via getOfferings().
- * 
+ *
  * The PlanPage component merges:
  * - RevenueCat data (price, product ID, availability)
  * - Hardcoded data (features, icons, descriptions)
- * 
+ *
  * Features MUST match frontend/src/lib/home.tsx exactly.
  */
 export const PRICING_TIERS: PricingTier[] = [
@@ -83,7 +83,7 @@ export const PRICING_TIERS: PricingTier[] = [
       // '5 scheduled triggers - Run at 9am daily, every Monday, first of month...',
       // '25 app triggers - Auto-respond to new emails, Slack messages, form submissions...',
       // '100+ Integrations - Google Drive, Slack, Notion, Gmail, Calendar, GitHub & more',
-      'Kortix Power mode - Strongest autonomy & decision-making capabilities',
+      'Kortix Advanced mode - Strongest autonomy & decision-making capabilities',
     ],
     isPopular: true,
     buttonText: 'Get started',
@@ -108,7 +108,7 @@ export const PRICING_TIERS: PricingTier[] = [
       // '10 scheduled triggers - Run at 9am daily, every Monday, first of month...',
       // '50 app triggers - Auto-respond to new emails, Slack messages, form submissions...',
       // '100+ Integrations - Google Drive, Slack, Notion, Gmail, Calendar, GitHub & more',
-      'Kortix Power mode - Strongest autonomy & decision-making capabilities',
+      'Kortix Advanced mode - Strongest autonomy & decision-making capabilities',
     ],
     isPopular: false,
     buttonText: 'Get started',
@@ -133,7 +133,7 @@ export const PRICING_TIERS: PricingTier[] = [
       // '50 scheduled triggers - Run at 9am daily, every Monday, first of month...',
       // '200 app triggers - Auto-respond to new emails, Slack messages, form submissions...',
       // '100+ Integrations - Google Drive, Slack, Notion, Gmail, Calendar, GitHub & more',
-      'Kortix Power mode - Strongest autonomy & decision-making capabilities',
+      'Kortix Advanced mode - Strongest autonomy & decision-making capabilities',
     ],
     isPopular: false,
     buttonText: 'Get started',
@@ -154,8 +154,8 @@ export function getDisplayPrice(
 ): string {
   if ((period === 'yearly' || period === 'yearly_commitment') && tier.priceYearly) {
     // Yearly: -10%, Yearly Commitment: -15%
-    const yearlyPrice = period === 'yearly' 
-      ? tier.priceMonthly * 0.9 
+    const yearlyPrice = period === 'yearly'
+      ? tier.priceMonthly * 0.9
       : tier.priceYearly;
     return `$${yearlyPrice.toFixed(0)}`;
   }
