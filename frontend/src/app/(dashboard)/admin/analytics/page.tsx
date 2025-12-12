@@ -590,7 +590,7 @@ function ARRSimulator() {
   // Calculate monthly projections (aligned with HTML version logic)
   const projections = useMemo((): SimulationMonth[] => {
     const months: SimulationMonth[] = [];
-    const monthNames = ['Dec 2024', 'Jan 2025', 'Feb 2025', 'Mar 2025', 'Apr 2025', 'May 2025'];
+    const monthNames = ['Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026'];
     
     let totalSubs = startingSubs;
     
