@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useRef, memo, useMemo } from 'react';
 import * as ResizablePrimitive from 'react-resizable-panels';
 import { SiteHeader } from '@/components/thread/thread-site-header';
-import { FileViewerModal } from '@/components/thread/file-viewer-modal';
-import { ToolCallSidePanel } from '@/components/thread/tool-call-side-panel';
+import { KortixComputer, ToolCallInput } from '@/components/thread/kortix-computer';
 import { Project } from '@/lib/api/threads';
 import { ApiMessageType } from '@/components/thread/types';
-import { ToolCallInput } from '@/components/thread/tool-call-side-panel';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import {
@@ -13,6 +11,7 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from '@/components/ui/resizable';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 
 interface ThreadLayoutProps {
   children: React.ReactNode;
@@ -25,10 +24,6 @@ interface ThreadLayoutProps {
   onToggleSidePanel: () => void;
   onProjectRenamed?: (newName: string) => void;
   onViewFiles: (filePath?: string, filePathList?: string[]) => void;
-  fileViewerOpen: boolean;
-  setFileViewerOpen: (open: boolean) => void;
-  fileToView: string | null;
-  filePathList?: string[];
   toolCalls: ToolCallInput[];
   messages: ApiMessageType[];
   externalNavIndex?: number;
@@ -47,6 +42,8 @@ interface ThreadLayoutProps {
   variant?: 'default' | 'shared';
   chatInput?: React.ReactNode;
   leftSidebarState?: 'collapsed' | 'expanded';
+  streamingTextContent?: string;
+  streamingToolCall?: any;
 }
 
 export const ThreadLayout = memo(function ThreadLayout({
@@ -60,10 +57,6 @@ export const ThreadLayout = memo(function ThreadLayout({
   onToggleSidePanel,
   onProjectRenamed,
   onViewFiles,
-  fileViewerOpen,
-  setFileViewerOpen,
-  fileToView,
-  filePathList,
   toolCalls,
   messages,
   externalNavIndex,
@@ -82,35 +75,80 @@ export const ThreadLayout = memo(function ThreadLayout({
   variant = 'default',
   chatInput,
   leftSidebarState = 'collapsed',
+  streamingTextContent,
+  streamingToolCall,
 }: ThreadLayoutProps) {
   const isActuallyMobile = useIsMobile();
-  
+
+  // Kortix Computer Store - for handling file open requests
+  const { shouldOpenPanel, clearShouldOpenPanel, openFileInComputer, openFileBrowser } = useKortixComputerStore();
+
   // Track when panel should be visible
   const shouldShowPanel = isSidePanelOpen && initialLoadCompleted;
-  
+
+  // Extract streaming tool arguments as JSON string (what FileOperationToolView expects)
+  const streamingToolArgsJson = React.useMemo(() => {
+    if (!streamingToolCall) return undefined;
+
+    try {
+      const metadata = typeof streamingToolCall.metadata === 'string'
+        ? JSON.parse(streamingToolCall.metadata)
+        : streamingToolCall.metadata;
+
+      const args = metadata?.tool_calls?.[0]?.arguments;
+
+      if (!args) return undefined;
+
+      const argsStr = typeof args === 'string' ? args : JSON.stringify(args);
+      return argsStr;
+    } catch (e) {
+      return undefined;
+    }
+  }, [streamingToolCall]);
+
   // Refs for panel APIs to control sizes programmatically
   const mainPanelRef = useRef<ResizablePrimitive.ImperativePanelHandle>(null);
   const sidePanelRef = useRef<ResizablePrimitive.ImperativePanelHandle>(null);
-  
-  // Update sizes when panel visibility changes with smooth animation
+
+  // Handle file click - now opens in Kortix Computer instead of modal
+  const handleFileClick = React.useCallback((filePath?: string, filePathList?: string[]) => {
+    if (filePath) {
+      // If a specific file is provided, open it in the file viewer
+      openFileInComputer(filePath, filePathList);
+      // Open the side panel if it's not already open
+      if (!isSidePanelOpen) {
+        onToggleSidePanel();
+      }
+    } else {
+      // If no file is provided, open the Files browser tab
+      openFileBrowser();
+      // Open the side panel if it's not already open
+      if (!isSidePanelOpen) {
+        onToggleSidePanel();
+      }
+    }
+  }, [openFileInComputer, openFileBrowser, isSidePanelOpen, onToggleSidePanel]);
+
+  // Listen for store's shouldOpenPanel flag to auto-open the panel
+  useEffect(() => {
+    if (shouldOpenPanel && !isSidePanelOpen) {
+      onToggleSidePanel();
+      clearShouldOpenPanel();
+    } else if (shouldOpenPanel) {
+      clearShouldOpenPanel();
+    }
+  }, [shouldOpenPanel, isSidePanelOpen, onToggleSidePanel, clearShouldOpenPanel]);
+
   useEffect(() => {
     if (shouldShowPanel) {
-      // Open panel smoothly
-      requestAnimationFrame(() => {
-        sidePanelRef.current?.resize(40);
-        mainPanelRef.current?.resize(60);
-      });
+      sidePanelRef.current?.resize(50);
+      mainPanelRef.current?.resize(50);
     } else {
-      // Close panel - resize smoothly, content disappears immediately
-      const timeout = setTimeout(() => {
-        sidePanelRef.current?.resize(0);
-        mainPanelRef.current?.resize(100);
-      }, 0);
-      return () => clearTimeout(timeout);
+      sidePanelRef.current?.resize(0);
+      mainPanelRef.current?.resize(100);
     }
   }, [shouldShowPanel]);
 
-  // Compact mode for embedded use
   if (compact) {
     return (
       <>
@@ -120,10 +158,10 @@ export const ThreadLayout = memo(function ThreadLayout({
             {children}
           </div>
 
-          {/* Tool Call Side Panel - Full replacement overlay for compact */}
+          {/* Kortix Computer - Full replacement overlay for compact */}
           {isSidePanelOpen && initialLoadCompleted && (
             <div className="absolute inset-0 bg-background z-40">
-              <ToolCallSidePanel
+              <KortixComputer
                 isOpen={true}
                 onClose={onSidePanelClose}
                 toolCalls={toolCalls}
@@ -136,24 +174,15 @@ export const ThreadLayout = memo(function ThreadLayout({
                 renderAssistantMessage={renderAssistantMessage}
                 renderToolResult={renderToolResult}
                 isLoading={!initialLoadCompleted || isLoading}
-                onFileClick={onViewFiles}
+                onFileClick={handleFileClick}
                 agentName={agentName}
                 disableInitialAnimation={disableInitialAnimation}
                 compact={true}
+                streamingText={streamingToolArgsJson}
+                sandboxId={sandboxId || undefined}
+                projectId={projectId}
               />
             </div>
-          )}
-
-          {/* File Viewer Modal */}
-          {sandboxId && (
-            <FileViewerModal
-              open={fileViewerOpen}
-              onOpenChange={setFileViewerOpen}
-              sandboxId={sandboxId}
-              initialFilePath={fileToView}
-              projectId={projectId}
-              filePathList={filePathList}
-            />
           )}
         </div>
       </>
@@ -170,8 +199,9 @@ export const ThreadLayout = memo(function ThreadLayout({
             threadId={threadId}
             projectName={projectName}
             projectId={projectId}
-            onViewFiles={onViewFiles}
+            onViewFiles={handleFileClick}
             onToggleSidePanel={onToggleSidePanel}
+            isSidePanelOpen={isSidePanelOpen}
             onProjectRenamed={onProjectRenamed}
             isMobileView={isMobile}
             variant={variant}
@@ -189,7 +219,7 @@ export const ThreadLayout = memo(function ThreadLayout({
           )}
         </div>
 
-        <ToolCallSidePanel
+        <KortixComputer
           isOpen={isSidePanelOpen && initialLoadCompleted}
           onClose={onSidePanelClose}
           toolCalls={toolCalls}
@@ -202,21 +232,13 @@ export const ThreadLayout = memo(function ThreadLayout({
           renderAssistantMessage={renderAssistantMessage}
           renderToolResult={renderToolResult}
           isLoading={!initialLoadCompleted || isLoading}
-          onFileClick={onViewFiles}
+          onFileClick={handleFileClick}
           agentName={agentName}
           disableInitialAnimation={disableInitialAnimation}
+          streamingText={streamingToolArgsJson}
+          sandboxId={sandboxId || undefined}
+          projectId={projectId}
         />
-
-        {sandboxId && (
-          <FileViewerModal
-            open={fileViewerOpen}
-            onOpenChange={setFileViewerOpen}
-            sandboxId={sandboxId}
-            initialFilePath={fileToView}
-            projectId={projectId}
-            filePathList={filePathList}
-          />
-        )}
       </div>
     );
   }
@@ -224,15 +246,15 @@ export const ThreadLayout = memo(function ThreadLayout({
   // Desktop layout with resizable panels
   return (
     <div className="flex h-screen">
-      <ResizablePanelGroup 
-        direction="horizontal" 
+      <ResizablePanelGroup
+        direction="horizontal"
         className="h-screen"
         style={{ transition: 'none' }}
       >
         {/* Main content panel */}
         <ResizablePanel
           ref={mainPanelRef}
-          defaultSize={shouldShowPanel ? 60 : 100}
+          defaultSize={shouldShowPanel ? 50 : 100}
           minSize={shouldShowPanel ? 30 : 100}
           maxSize={shouldShowPanel ? 95 : 100}
           className="flex flex-col overflow-hidden relative bg-transparent"
@@ -241,8 +263,9 @@ export const ThreadLayout = memo(function ThreadLayout({
             threadId={threadId}
             projectName={projectName}
             projectId={projectId}
-            onViewFiles={onViewFiles}
+            onViewFiles={handleFileClick}
             onToggleSidePanel={onToggleSidePanel}
+            isSidePanelOpen={isSidePanelOpen}
             onProjectRenamed={onProjectRenamed}
             isMobileView={isMobile}
             variant={variant}
@@ -261,26 +284,25 @@ export const ThreadLayout = memo(function ThreadLayout({
         </ResizablePanel>
 
         {/* Resizable handle - always render */}
-        <ResizableHandle 
+        <ResizableHandle
           withHandle={true}
           className="z-20 w-0"
         />
-        
+
         {/* Side panel - always render but control size */}
         <ResizablePanel
           ref={sidePanelRef}
-          defaultSize={shouldShowPanel ? 40 : 0}
+          defaultSize={shouldShowPanel ? 50 : 0}
           minSize={shouldShowPanel ? 20 : 0}
           maxSize={shouldShowPanel ? 70 : 0}
           collapsible={true}
           className={cn(
             "relative bg-transparent",
-            // Match ChatInput horizontal spacing: px-4
-            shouldShowPanel ? "pr-4 pb-5 pt-4"  : "px-0",
+            shouldShowPanel ? "pr-4 pb-5 pt-4" : "px-0",
             !shouldShowPanel ? "hidden" : ""
           )}
         >
-          <ToolCallSidePanel
+          <KortixComputer
             isOpen={isSidePanelOpen && initialLoadCompleted}
             onClose={onSidePanelClose}
             toolCalls={toolCalls}
@@ -293,22 +315,15 @@ export const ThreadLayout = memo(function ThreadLayout({
             renderAssistantMessage={renderAssistantMessage}
             renderToolResult={renderToolResult}
             isLoading={!initialLoadCompleted || isLoading}
-            onFileClick={onViewFiles}
+            onFileClick={handleFileClick}
             agentName={agentName}
             disableInitialAnimation={disableInitialAnimation}
+            streamingText={streamingToolArgsJson}
+            sandboxId={sandboxId || undefined}
+            projectId={projectId}
           />
         </ResizablePanel>
       </ResizablePanelGroup>
-
-      <FileViewerModal
-        open={fileViewerOpen}
-        onOpenChange={setFileViewerOpen}
-        sandboxId={sandboxId || ''}
-        initialFilePath={fileToView}
-        projectId={projectId}
-        filePathList={filePathList}
-      />
     </div>
   );
 });
-

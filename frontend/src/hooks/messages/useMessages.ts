@@ -7,7 +7,22 @@ export const useMessagesQuery = (threadId: string, options?) => {
     queryKey: threadKeys.messages(threadId),
     queryFn: () => getMessages(threadId),
     enabled: !!threadId,
-    retry: 1,
+    retry: (failureCount, error: any) => {
+      const errorStr = error?.message?.toLowerCase() || '';
+      const is404 = errorStr.includes('404') || errorStr.includes('not found');
+      if (is404 && failureCount < 5) {
+        return true;
+      }
+      return failureCount < 1;
+    },
+    retryDelay: (attemptIndex, error: any) => {
+      const errorStr = error?.message?.toLowerCase() || '';
+      const is404 = errorStr.includes('404') || errorStr.includes('not found');
+      if (is404) {
+        return Math.min(500 * (attemptIndex + 1), 2000);
+      }
+      return 1000;
+    },
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,

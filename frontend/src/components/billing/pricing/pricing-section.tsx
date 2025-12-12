@@ -1,7 +1,7 @@
 'use client';
 
 import type { PricingTier } from '@/lib/pricing-config';
-import { siteConfig } from '@/lib/home';
+import { siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import React, { useState, useEffect, useCallback } from 'react';
@@ -109,14 +109,14 @@ function PricingTier({
   billingPeriod = 'monthly' as 'monthly' | 'yearly' | 'yearly_commitment',
   onBillingPeriodChange,
   currentBillingPeriod = null as 'monthly' | 'yearly' | 'yearly_commitment' | null,
-}: PricingTierProps & { 
+}: PricingTierProps & {
   currentBillingPeriod?: 'monthly' | 'yearly' | 'yearly_commitment' | null;
   onBillingPeriodChange?: (period: 'monthly' | 'yearly' | 'yearly_commitment') => void;
 }) {
   const t = useTranslations('billing');
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
-  
+
   const isFreeTier = tier.price === '$0';
   const effectiveBillingPeriod = isFreeTier ? 'monthly' : billingPeriod;
   const isYearly = effectiveBillingPeriod === 'yearly' || effectiveBillingPeriod === 'yearly_commitment';
@@ -147,7 +147,7 @@ function PricingTier({
   const displayPrice = getDisplayPrice();
 
   const scheduleDowngradeMutation = useScheduleDowngrade();
-  
+
   // Confirmation modal state for downgrades
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [pendingTierKey, setPendingTierKey] = useState<string | null>(null);
@@ -170,7 +170,7 @@ function PricingTier({
   };
 
   const handleSubscribe = async (tierKey: string, isDowngrade = false) => {
-    
+
     if (!isAuthenticated) {
       window.location.href = '/auth?mode=signup';
       return;
@@ -185,7 +185,7 @@ function PricingTier({
       const commitmentType = effectiveBillingPeriod === 'yearly_commitment' ? 'yearly_commitment' :
         effectiveBillingPeriod === 'yearly' ? 'yearly' :
           'monthly';
-      
+
 
       if (isDowngrade) {
         scheduleDowngradeMutation.mutate({
@@ -245,7 +245,7 @@ function PricingTier({
         case 'scheduled':
           const dateValue = (response as any).effective_date || (response as any).scheduled_date;
           let effectiveDate = null;
-          
+
           if (dateValue) {
             try {
               const parsedDate = new Date(dateValue);
@@ -262,7 +262,7 @@ function PricingTier({
           }
 
           const statusChangeMessage = t('subscriptionChangeScheduled');
-          const planChangeDate = effectiveDate 
+          const planChangeDate = effectiveDate
             ? t('planWillChangeOn', { date: effectiveDate })
             : t('planWillChangeOn', { date: 'the end of your billing period' });
 
@@ -305,18 +305,18 @@ function PricingTier({
 
   const userPlanName = currentSubscription?.subscription.tier_display_name || 'none';
 
-  const isSameTier = 
+  const isSameTier =
     currentSubscription?.subscription.tier_key === tier.tierKey ||
     currentSubscription?.tier?.name === tier.tierKey ||
     currentSubscription?.subscription.tier_display_name === tier.tierKey;
   const isSameBillingPeriod = currentBillingPeriod === billingPeriod;
-  
+
 
   const isRevenueCatSubscription = currentSubscription?.subscription.provider === 'revenuecat';
-  
+
   // More robust current plan detection
   const currentStatus = currentSubscription?.subscription.status;
-  const isCurrentActivePlan = isAuthenticated && isSameTier && 
+  const isCurrentActivePlan = isAuthenticated && isSameTier &&
     (isSameBillingPeriod || isRevenueCatSubscription) &&
     (currentStatus === 'active' || currentStatus === 'trialing');
 
@@ -343,11 +343,11 @@ function PricingTier({
     // Free tier has no billing period, so it's always "current" if user is on free tier
     const isFreeTierCard = tier.price === '$0' || tier.tierKey === 'free';
     const isCurrentPlan = isSameTier && (isSameBillingPeriod || isFreeTierCard);
-    
+
     if (isCurrentPlan) {
       buttonText = t('currentPlan');
       buttonDisabled = true;
-      statusBadge = <Badge variant="default" className="text-xs">{t('currentBadge')}</Badge>;
+      statusBadge = null;
       ringClass = '';
     }
     else if (isRevenueCatSubscription && !isCurrentPlan) {
@@ -365,11 +365,7 @@ function PricingTier({
         );
       } else {
         buttonText = t('currentPlan');
-        statusBadge = (
-          <span className="bg-primary/10 text-primary text-[10px] font-medium px-1.5 py-0.5 rounded-full">
-            Current{isRevenueCatSubscription ? ' (Mobile)' : ''}
-          </span>
-        );
+        statusBadge = null;
       }
       buttonDisabled = true;
       buttonVariant = 'secondary';
@@ -414,9 +410,9 @@ function PricingTier({
           : parseFloat(selectedPriceString.replace(/[^\d.]/g, '') || '0') * 100;
 
       const isSameTier = currentTier && currentTier.tierKey === tier.tierKey;
-      
+
       const isBillingPeriodChange = isSameTier && currentBillingPeriod !== billingPeriod;
-      
+
       const isSameTierUpgradeToLongerTerm = isBillingPeriodChange && (
         (currentBillingPeriod === 'monthly' && (effectiveBillingPeriod === 'yearly' || effectiveBillingPeriod === 'yearly_commitment')) ||
         (currentBillingPeriod === 'yearly' && effectiveBillingPeriod === 'yearly_commitment')
@@ -515,8 +511,8 @@ function PricingTier({
     <div
       className={cn(
         'rounded-[14px] sm:rounded-[18px] flex flex-col relative overflow-hidden h-full',
-        isFreeTier 
-          ? 'bg-muted/30 border border-border/50' 
+        isFreeTier
+          ? 'bg-muted/30 border border-border/50'
           : 'bg-card border border-border',
         !insideDialog && ringClass,
       )}
@@ -586,9 +582,38 @@ function PricingTier({
               </Badge>
             ) : null}
             {isAuthenticated && statusBadge}
+            {/* Billing toggle - desktop only, on the right */}
+            {!isFreeTier ? (
+              <div className="hidden sm:flex items-center gap-2.5 bg-muted/50 rounded-full px-3 py-1.5">
+                <span className={cn(
+                  "text-sm transition-colors",
+                  !isYearly ? "text-foreground font-medium" : "text-muted-foreground"
+                )}>Monthly</span>
+                <button
+                  onClick={() => onBillingPeriodChange?.(isYearly ? 'monthly' : 'yearly')}
+                  className={cn(
+                    "relative w-12 h-6 rounded-full transition-colors duration-200",
+                    isYearly
+                      ? "bg-black dark:bg-white"
+                      : "bg-zinc-300 dark:bg-zinc-600"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-md transition-transform duration-200",
+                      isYearly && "translate-x-6"
+                    )}
+                  />
+                </button>
+                <span className={cn(
+                  "text-sm transition-colors",
+                  isYearly ? "text-foreground font-medium" : "text-muted-foreground"
+                )}>Annual</span>
+              </div>
+            ) : null}
           </div>
         </div>
-        
+
         {/* Price row - desktop only */}
         <div className="hidden sm:flex items-center justify-between min-h-[60px]">
           <div className="flex flex-col min-h-[50px] justify-center min-w-[120px]">
@@ -613,38 +638,8 @@ function PricingTier({
               ) : null}
             </div>
           </div>
-          
-          {/* Annual toggle - only for paid tiers - desktop */}
-          {!isFreeTier ? (
-            <div className="flex items-center gap-2.5 bg-muted/50 rounded-full px-3 py-1.5">
-              <span className={cn(
-                "text-sm transition-colors",
-                !isYearly ? "text-foreground font-medium" : "text-muted-foreground"
-              )}>Monthly</span>
-              <button
-                onClick={() => onBillingPeriodChange?.(isYearly ? 'monthly' : 'yearly')}
-                className={cn(
-                  "relative w-12 h-6 rounded-full transition-colors duration-200",
-                  isYearly 
-                    ? "bg-primary" 
-                    : "bg-zinc-300 dark:bg-zinc-600"
-                )}
-              >
-                <span
-                  className={cn(
-                    "absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-md transition-transform duration-200",
-                    isYearly && "translate-x-6"
-                  )}
-                />
-              </button>
-              <span className={cn(
-                "text-sm transition-colors",
-                isYearly ? "text-foreground font-medium" : "text-muted-foreground"
-              )}>Annual</span>
-            </div>
-          ) : null}
         </div>
-        
+
         {/* Mobile billing toggle - matches desktop style */}
         {!isFreeTier && (
           <div className="flex sm:hidden items-center justify-center">
@@ -657,8 +652,8 @@ function PricingTier({
                 onClick={() => onBillingPeriodChange?.(isYearly ? 'monthly' : 'yearly')}
                 className={cn(
                   "relative w-10 h-5 rounded-full transition-colors duration-200",
-                  isYearly 
-                    ? "bg-primary" 
+                  isYearly
+                    ? "bg-black dark:bg-white"
                     : "bg-zinc-300 dark:bg-zinc-600"
                 )}
               >
@@ -733,7 +728,7 @@ function PricingTier({
                   </li>
                 );
               }
-              
+
               // Special handling for custom AI Workers - show with description
               if (feature.includes('custom AI Workers')) {
                 const match = feature.match(/(\d+)\s*custom AI Workers/);
@@ -758,9 +753,9 @@ function PricingTier({
                   );
                 }
               }
-              
-              // Special handling for Kortix Power mode - show with Basic crossed out
-              if (feature.includes('Power mode') || feature.includes('POWER Mode')) {
+
+              // Special handling for Kortix Advanced mode - show with Basic crossed out
+              if (feature.includes('Advanced mode') || feature.includes('ADVANCED Mode')) {
                 const description = feature.split(' - ')[1];
                 return (
                   <li key={feature} className="flex items-start gap-2 sm:gap-3">
@@ -774,7 +769,7 @@ function PricingTier({
                         <span className="inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 bg-primary/10 dark:bg-primary/15 rounded-md">
                           <KortixLogo size={10} variant="symbol" className="sm:hidden" />
                           <KortixLogo size={12} variant="symbol" className="hidden sm:block" />
-                          <span className="text-[10px] sm:text-xs font-semibold text-primary">Power</span>
+                          <span className="text-[10px] sm:text-xs font-semibold text-primary">Advanced</span>
                         </span>
                       </div>
                       {description && (
@@ -806,7 +801,7 @@ function PricingTier({
 
               // Translate feature strings
               let translatedFeature = feature;
-              
+
               // Match and translate common patterns
               if (feature.includes('private project')) {
                 const match = feature.match(/(\d+)\s*private\s+project/);
@@ -826,12 +821,12 @@ function PricingTier({
                 }
               } else if (feature.includes('100+ integrations') || feature === '100+ integrations' || feature.includes('100+ App Integrations')) {
                 translatedFeature = t('features.integrations');
-              } else if (feature.includes('Power mode') || feature.includes('POWER Mode')) {
-                translatedFeature = 'Kortix Power mode';
+              } else if (feature.includes('Advanced mode') || feature.includes('ADVANCED Mode')) {
+                translatedFeature = 'Kortix Advanced mode';
               } else if (feature.includes('Priority Support') || feature === 'Priority Support') {
                 translatedFeature = t('features.prioritySupport');
               }
-              
+
               // Split feature into main text and description if it contains " - "
               const featureParts = translatedFeature.split(' - ');
               const mainFeature = featureParts[0];
@@ -959,7 +954,7 @@ export function PricingSection({
   const { data: accountState, isLoading: isFetchingPlan, error: subscriptionQueryError, refetch: refetchSubscription } = useAccountState({ enabled: isUserAuthenticated });
 
   const isAuthenticated = isUserAuthenticated && !!accountState && subscriptionQueryError === null;
-  
+
   // Get scheduled change and commitment from account state
   const hasScheduledChange = accountState?.subscription.has_scheduled_change && accountState?.subscription.scheduled_change;
   const scheduledChange = accountState?.subscription.scheduled_change;
@@ -971,16 +966,16 @@ export function PricingSection({
       console.log(`[BILLING-PERIOD-DEBUG] No auth or subscription: auth=${isAuthenticated}, sub=${!!currentSubscription}`);
       return null;
     }
-    
+
     console.log(`[BILLING-PERIOD-DEBUG] Current subscription billing_period:`, currentSubscription.subscription.billing_period);
     console.log(`[BILLING-PERIOD-DEBUG] Current subscription plan_type:`, (currentSubscription as any).plan_type);
-    
+
     // Check API billing_period field first
     if (currentSubscription.subscription.billing_period) {
       console.log(`[BILLING-PERIOD-DEBUG] Using API billing_period: ${currentSubscription.subscription.billing_period}`);
       return currentSubscription.subscription.billing_period;
     }
-    
+
     // Check plan_type field as backup
     if ((currentSubscription as any).plan_type) {
       const planType = (currentSubscription as any).plan_type;
@@ -1013,8 +1008,8 @@ export function PricingSection({
     }
 
     // Default to monthly if period is short or can't determine
-    console.log(`[BILLING-PERIOD-DEBUG] Defaulting to monthly`);
-    return 'monthly';
+    console.log(`[BILLING-PERIOD-DEBUG] Defaulting to yearly`);
+    return 'yearly';
   };
 
   const currentBillingPeriod = getCurrentBillingPeriod();
@@ -1033,18 +1028,18 @@ export function PricingSection({
 
   const [planLoadingStates, setPlanLoadingStates] = useState<Record<string, boolean>>({});
   const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
-  
+
   // Shared billing period state across all pricing tiers
   const [sharedBillingPeriod, setSharedBillingPeriod] = useState<'monthly' | 'yearly' | 'yearly_commitment'>(() => {
     return currentBillingPeriod || getDefaultBillingPeriod();
   });
-  
+
   // Plan switcher state for paid tiers
   const paidTiers = siteConfig.cloudPricingItems.filter(
     (tier) => !tier.hidden && tier.price !== '$0' && ['Plus', 'Pro', 'Ultra'].includes(tier.name)
   );
   const freeTier = siteConfig.cloudPricingItems.find((tier) => tier.price === '$0');
-  
+
   // Find the index of the user's current tier to pre-select it
   const getCurrentTierIndex = () => {
     if (!isAuthenticated || !currentSubscription) return 0;
@@ -1052,10 +1047,10 @@ export function PricingSection({
     const index = paidTiers.findIndex(tier => tier.tierKey === currentTierKey);
     return index >= 0 ? index : 0;
   };
-  
+
   const [selectedPaidTierIndex, setSelectedPaidTierIndex] = useState(getCurrentTierIndex);
   const selectedPaidTier = paidTiers[selectedPaidTierIndex] || null;
-  
+
   // Update selected tier when subscription data loads
   React.useEffect(() => {
     if (isAuthenticated && currentSubscription) {
@@ -1075,7 +1070,7 @@ export function PricingSection({
   const handleSubscriptionUpdate = () => {
     // Note: Cache invalidation is handled by mutation hooks (useScheduleDowngrade, etc.)
     // This function just handles UI state updates
-    
+
     // Clear loading states
     setTimeout(() => {
       setPlanLoadingStates({});
@@ -1103,7 +1098,7 @@ export function PricingSection({
   return (
     <section
       id="pricing"
-      className={cn("flex flex-col items-center justify-center w-full relative", noPadding ? "pb-0" : "pb-12")}
+      className={cn("scale-90 flex flex-col items-center justify-center w-full relative", noPadding ? "pb-0" : "pb-12")}
     >
       <div className="w-full mx-auto px-4 sm:px-6 flex flex-col">
         {/* Compact Header for Mobile */}
@@ -1128,7 +1123,7 @@ export function PricingSection({
                 </h2>
               ) : null}
             </div>
-            
+
             {/* Desktop Plan Switcher - Hidden on mobile */}
             {paidTiers.length > 0 && (
               <div className="hidden lg:flex justify-end gap-2">
@@ -1137,22 +1132,22 @@ export function PricingSection({
                     key={tier.name}
                     onClick={() => setSelectedPaidTierIndex(index)}
                     className={cn(
-                      "px-4 py-2 rounded-full font-medium text-sm transition-all duration-200",
+                      "pl-1 pr-2 py-1 rounded-full font-medium text-sm transition-all duration-200 flex items-center gap-2",
                       selectedPaidTierIndex === index
                         ? "bg-primary text-primary-foreground"
                         : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
                     )}
                   >
-                    {tier.name}
+                    <TierBadge planName={tier.name} size="sm" variant="default" />
                     {tier.price && (
-                      <span className="ml-1.5 opacity-70">{tier.price}/mo</span>
+                      <span className="opacity-70">{tier.price}/mo</span>
                     )}
                   </button>
                 ))}
               </div>
             )}
           </div>
-          
+
           {/* Promo text - compact on mobile */}
           {showTitleAndTabs && !isAlert && (
             <p className="text-xs sm:text-sm text-muted-foreground">
@@ -1173,7 +1168,7 @@ export function PricingSection({
             />
           </div>
         )}
-        
+
         {/* Main Layout: Free tier (1/4) | Paid tier (3/4) side by side */}
         <div className="w-full max-w-6xl mx-auto flex flex-col lg:flex-row gap-3 sm:gap-6 lg:items-stretch">
           {/* Free Tier - 1/4 width on desktop, hidden on mobile when inside dialog */}
@@ -1213,19 +1208,19 @@ export function PricingSection({
                       key={tier.name}
                       onClick={() => setSelectedPaidTierIndex(index)}
                       className={cn(
-                        "flex-1 px-3 py-2 rounded-full font-medium text-xs transition-all duration-200",
+                        "flex-1 pl-1 pr-2 py-1 rounded-full font-medium text-xs transition-all duration-200 flex items-center justify-center gap-1.5",
                         selectedPaidTierIndex === index
                           ? "bg-primary text-primary-foreground shadow-sm"
                           : "text-muted-foreground hover:text-foreground"
                       )}
                     >
-                      {tier.name}
-                      <span className="ml-1.5 opacity-80">{tier.price}</span>
+                      <TierBadge planName={tier.name} size="xs" variant="default" />
+                      <span className="opacity-80">{tier.price}</span>
                     </button>
                   ))}
                 </div>
               )}
-              
+
               {/* Selected Paid Plan */}
               <div className="flex-1">
                 {selectedPaidTier && (

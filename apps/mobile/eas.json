@@ -10,7 +10,7 @@
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://heprlhlltebrxydgtsjs.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlcHJsaGxsdGVicnh5ZGd0c2pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxODcxNjQsImV4cCI6MjA2MDc2MzE2NH0.YRo1iZw06YSxqBhotBnD1d5jZxw7hHwswe1wKp8VpfA",
-        "EXPO_PUBLIC_BACKEND_URL": "https://staging-api.suna.so/api",
+        "EXPO_PUBLIC_BACKEND_URL": "https://staging-api.suna.so/v1",
         "EXPO_PUBLIC_USE_REVENUECAT": "true",
         "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "appl_UpcFYduOZYUgSqKPNvtzgXkPCeh",
         "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "incoming"
@@ -21,10 +21,13 @@
         "simulator": false,
         "autoIncrement": true
       },
+      "android": {
+        "autoIncrement": true
+      },
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://heprlhlltebrxydgtsjs.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlcHJsaGxsdGVicnh5ZGd0c2pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxODcxNjQsImV4cCI6MjA2MDc2MzE2NH0.YRo1iZw06YSxqBhotBnD1d5jZxw7hHwswe1wKp8VpfA",
-        "EXPO_PUBLIC_BACKEND_URL": "https://staging-api.suna.so/api",
+        "EXPO_PUBLIC_BACKEND_URL": "https://staging-api.suna.so/v1",
         "EXPO_PUBLIC_USE_REVENUECAT": "true",
         "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "appl_UpcFYduOZYUgSqKPNvtzgXkPCeh",
         "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "incoming"
@@ -37,14 +40,25 @@
         "distribution": "store",
         "autoIncrement": true
       },
+      "android": {
+        "autoIncrement": true
+      },
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://heprlhlltebrxydgtsjs.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlcHJsaGxsdGVicnh5ZGd0c2pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxODcxNjQsImV4cCI6MjA2MDc2MzE2NH0.YRo1iZw06YSxqBhotBnD1d5jZxw7hHwswe1wKp8VpfA",
-        "EXPO_PUBLIC_BACKEND_URL": "https://staging-api.suna.so/api",
+        "EXPO_PUBLIC_BACKEND_URL": "https://staging-api.suna.so/v1",
         "EXPO_PUBLIC_USE_REVENUECAT": "true",
         "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "appl_UpcFYduOZYUgSqKPNvtzgXkPCeh",
         "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "incoming"
       }
+    },
+    "development-simulator": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      },
+      "environment": "development"
     }
   },
   "submit": {
@@ -53,6 +67,10 @@
         "appleId": "mkprivat2005@gmail.com",
         "ascAppId": "6754448524",
         "appleTeamId": "T8G9J33433"
+      },
+      "android": {
+        "track": "internal",
+        "releaseStatus": "draft"
       }
     },
     "testflight": {
@@ -60,6 +78,10 @@
         "appleId": "mkprivat2005@gmail.com",
         "ascAppId": "6754448524",
         "appleTeamId": "T8G9J33433"
+      },
+      "android": {
+        "track": "internal",
+        "releaseStatus": "draft"
       }
     }
   }

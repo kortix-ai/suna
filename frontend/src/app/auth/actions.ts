@@ -176,6 +176,76 @@ export async function resendMagicLink(prevState: any, formData: FormData) {
   };
 }
 
+export async function signInWithPassword(prevState: any, formData: FormData) {
+  const email = formData.get('email') as string;
+  const password = formData.get('password') as string;
+  const returnUrl = formData.get('returnUrl') as string | undefined;
+
+  if (!email || !email.includes('@')) {
+    return { message: 'Please enter a valid email address' };
+  }
+
+  if (!password || password.length < 6) {
+    return { message: 'Password must be at least 6 characters' };
+  }
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.auth.signInWithPassword({
+    email: email.trim().toLowerCase(),
+    password,
+  });
+
+  if (error) {
+    return { message: error.message || 'Invalid email or password' };
+  }
+
+  // Return success - client will handle redirect
+  const finalReturnUrl = returnUrl || '/dashboard';
+  redirect(finalReturnUrl);
+}
+
+export async function signUpWithPassword(prevState: any, formData: FormData) {
+  const email = formData.get('email') as string;
+  const password = formData.get('password') as string;
+  const confirmPassword = formData.get('confirmPassword') as string;
+  const returnUrl = formData.get('returnUrl') as string | undefined;
+  const origin = formData.get('origin') as string;
+
+  if (!email || !email.includes('@')) {
+    return { message: 'Please enter a valid email address' };
+  }
+
+  if (!password || password.length < 6) {
+    return { message: 'Password must be at least 6 characters' };
+  }
+
+  if (password !== confirmPassword) {
+    return { message: 'Passwords do not match' };
+  }
+
+  const supabase = await createClient();
+
+  const baseUrl = origin || process.env.NEXT_PUBLIC_URL || 'http://localhost:3000';
+  const emailRedirectTo = `${baseUrl}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}`;
+
+  const { error } = await supabase.auth.signUp({
+    email: email.trim().toLowerCase(),
+    password,
+    options: {
+      emailRedirectTo,
+    },
+  });
+
+  if (error) {
+    return { message: error.message || 'Could not create account' };
+  }
+
+  // Return success - client will handle redirect
+  const finalReturnUrl = returnUrl || '/dashboard';
+  redirect(finalReturnUrl);
+}
+
 export async function signOut() {
   const supabase = await createClient();
   const { error } = await supabase.auth.signOut();

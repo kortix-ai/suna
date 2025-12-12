@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/api/supabase';
 import { API_URL } from '@/api/config';
@@ -77,12 +77,14 @@ const useComposioApps = () => {
   return useQuery({
     queryKey: composioKeys.apps(),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
       const response = await fetch(`${API_URL}/composio/toolkits`, {
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
       });
@@ -101,12 +103,14 @@ const useComposioProfiles = () => {
   return useQuery({
     queryKey: composioKeys.profiles(),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
       const response = await fetch(`${API_URL}/composio/profiles`, {
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
       });
@@ -122,16 +126,18 @@ const useComposioProfiles = () => {
   });
 };
 
-const useComposioToolkitDetails = (slug: string) => {
+const useComposioToolkitDetails = (slug: string, options?: { enabled?: boolean }) => {
   return useQuery({
     queryKey: composioKeys.toolkitDetails(slug),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
       const response = await fetch(`${API_URL}/composio/toolkits/${slug}/details`, {
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
       });
@@ -141,6 +147,7 @@ const useComposioToolkitDetails = (slug: string) => {
 
       return response.json();
     },
+    enabled: options?.enabled !== false && !!slug,
     enabled: !!slug,
     staleTime: 10 * 60 * 1000,
   });
@@ -150,13 +157,15 @@ const useComposioTools = (profileId: string) => {
   return useQuery({
     queryKey: composioKeys.tools(profileId),
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
       const response = await fetch(`${API_URL}/composio/profiles/${profileId}/discover-tools`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
       });
@@ -176,18 +185,20 @@ const useComposioToolsBySlug = (slug: string, options?: { enabled?: boolean; lim
   return useQuery({
     queryKey: [...composioKeys.toolkitTools(slug), options?.limit],
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
-      
+
       const response = await fetch(`${API_URL}/composio/tools/list`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           toolkit_slug: slug,
-          limit: options?.limit || 50
+          limit: options?.limit || 50,
         }),
       });
 
@@ -202,16 +213,58 @@ const useComposioToolsBySlug = (slug: string, options?: { enabled?: boolean; lim
   });
 };
 
+const useComposioToolsBySlugInfinite = (
+  slug: string,
+  options?: { enabled?: boolean; limit?: number }
+) => {
+  return useInfiniteQuery({
+    queryKey: [...composioKeys.toolkitTools(slug), 'infinite', options?.limit],
+    queryFn: async ({ pageParam }) => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+
+      const response = await fetch(`${API_URL}/composio/tools/list`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          toolkit_slug: slug,
+          limit: options?.limit || 50,
+          cursor: pageParam,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch toolkit tools');
+      }
+
+      return response.json();
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => {
+      return lastPage.next_cursor || undefined;
+    },
+    enabled: options?.enabled !== false && !!slug,
+    staleTime: 10 * 60 * 1000,
+  });
+};
+
 const useComposioToolkitIcon = (slug: string) => {
   return useQuery({
     queryKey: [...composioKeys.all, 'icon', slug] as const,
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
       const response = await fetch(`${API_URL}/composio/toolkits/${slug}/icon`, {
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
       });
@@ -232,7 +285,9 @@ const useCreateComposioProfile = () => {
 
   return useMutation({
     mutationFn: async (request: CreateComposioProfileRequest) => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
       console.log('🔄 Creating Composio profile:', request);
@@ -240,7 +295,7 @@ const useCreateComposioProfile = () => {
       const response = await fetch(`${API_URL}/composio/profiles`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(request),
@@ -249,7 +304,7 @@ const useCreateComposioProfile = () => {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ Profile creation error:', errorText);
-        
+
         try {
           const errorJson = JSON.parse(errorText);
           throw new Error(errorJson.detail || errorJson.message || 'Failed to create profile');
@@ -294,24 +349,29 @@ const useCheckProfileNameAvailability = (
         return {
           available: true,
           message: '',
-          suggestions: []
+          suggestions: [],
         };
       }
 
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
       const params = new URLSearchParams({
         toolkit_slug: toolkitSlug,
-        profile_name: debouncedName
+        profile_name: debouncedName,
       });
 
-      const response = await fetch(`${API_URL}/composio/profiles/check-name-availability?${params.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      const response = await fetch(
+        `${API_URL}/composio/profiles/check-name-availability?${params.toString()}`,
+        {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
 
       if (!response.ok) {
         throw new Error('Failed to check profile name availability');
@@ -319,7 +379,11 @@ const useCheckProfileNameAvailability = (
 
       return response.json();
     },
-    enabled: options?.enabled !== false && !!toolkitSlug && !!debouncedName && debouncedName.trim().length > 0,
+    enabled:
+      options?.enabled !== false &&
+      !!toolkitSlug &&
+      !!debouncedName &&
+      debouncedName.trim().length > 0,
     staleTime: 30000,
   });
 };
@@ -328,28 +392,33 @@ const useUpdateComposioTools = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ 
-      agentId, 
-      profileId, 
-      selectedTools 
-    }: { 
-      agentId: string; 
-      profileId: string; 
-      selectedTools: string[] 
+    mutationFn: async ({
+      agentId,
+      profileId,
+      selectedTools,
+    }: {
+      agentId: string;
+      profileId: string;
+      selectedTools: string[];
     }) => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
       console.log('💾 Updating agent tools - Profile ID:', profileId, 'Agent ID:', agentId);
       console.log('🔧 Selected tools:', selectedTools);
 
       // First get MCP config for the profile
-      const mcpConfigResponse = await fetch(`${API_URL}/composio/profiles/${profileId}/mcp-config`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      const mcpConfigResponse = await fetch(
+        `${API_URL}/composio/profiles/${profileId}/mcp-config`,
+        {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
 
       if (!mcpConfigResponse.ok) {
         const mcpError = await mcpConfigResponse.text();
@@ -363,14 +432,16 @@ const useUpdateComposioTools = () => {
       // Structure the request body to match backend expectations
       const mcpConfigData = mcpConfig.mcp_config;
       const requestBody = {
-        custom_mcps: [{
-          name: mcpConfigData.name,
-          type: mcpConfigData.type,
-          mcp_qualified_name: mcpConfigData.mcp_qualified_name,
-          toolkit_slug: mcpConfigData.toolkit_slug,
-          config: mcpConfigData.config,
-          enabledTools: selectedTools
-        }]
+        custom_mcps: [
+          {
+            name: mcpConfigData.name,
+            type: mcpConfigData.type,
+            mcp_qualified_name: mcpConfigData.mcp_qualified_name,
+            toolkit_slug: mcpConfigData.toolkit_slug,
+            config: mcpConfigData.config,
+            enabledTools: selectedTools,
+          },
+        ],
       };
       console.log('📤 Sending request to update tools:', JSON.stringify(requestBody, null, 2));
 
@@ -378,7 +449,7 @@ const useUpdateComposioTools = () => {
       const response = await fetch(`${API_URL}/agents/${agentId}/custom-mcp-tools`, {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody),
@@ -388,7 +459,7 @@ const useUpdateComposioTools = () => {
         const errorText = await response.text();
         console.error('❌ Update tools error:', errorText);
         console.error('❌ Response status:', response.status, response.statusText);
-        
+
         try {
           const errorJson = JSON.parse(errorText);
           throw new Error(errorJson.detail || errorJson.message || 'Failed to update tools');
@@ -413,6 +484,7 @@ export {
   useComposioToolkitIcon,
   useComposioTools,
   useComposioToolsBySlug,
+  useComposioToolsBySlugInfinite,
   useCreateComposioProfile,
   useCheckProfileNameAvailability,
   useUpdateComposioTools,

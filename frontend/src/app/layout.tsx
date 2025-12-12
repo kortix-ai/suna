@@ -39,7 +39,7 @@ export const metadata: Metadata = {
   },
   description: siteMetadata.description,
   keywords: siteMetadata.keywords,
-  authors: [{ name: 'Kortix Team', url: 'https://kortix.com' }],
+  authors: [{ name: 'Kortix Team', url: 'https://www.kortix.com' }],
   creator: 'Kortix Team',
   publisher: 'Kortix Team',
   applicationName: siteMetadata.name,
@@ -112,10 +112,13 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://connect.facebook.net" />
         <link rel="dns-prefetch" href="https://eu.i.posthog.com" />
         
+        {/* React Scan removed - causing initialization errors */}
+        {/* rest of your scripts go under */}
+        
         {/* Static SEO meta tags - rendered in initial HTML */}
         <title>Kortix: Your Autonomous AI Worker</title>
         <meta name="description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
-        <meta name="keywords" content="Kortix, Autonomous AI Worker, AI Worker, Generalist AI, Open Source AI, Autonomous Agent, Complex Tasks, AI Assistant" />
+        <meta name="keywords" content="Kortix, AI Agent, Agentic AI, Autonomous AI Agent, AI Automation, AI Workflow Automation, AI Assistant, AI Worker, Task Automation" />
         <meta property="og:title" content="Kortix: Your Autonomous AI Worker" />
         <meta property="og:description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
         <meta property="og:image" content="https://kortix.com/banner.png" />
@@ -161,7 +164,7 @@ export default function RootLayout({
               '@context': 'https://schema.org',
               '@type': 'Organization',
               name: siteMetadata.name,
-              alternateName: ['Suna', 'Kortix AI', 'Kortix: Your Autonomous AI Worker'],
+              alternateName: ['Kortix', 'Kortix AI', 'Kortix: Your Autonomous AI Worker'],
               url: siteMetadata.url,
               logo: `${siteMetadata.url}/favicon.png`,
               description: siteMetadata.description,
@@ -187,7 +190,7 @@ export default function RootLayout({
               '@context': 'https://schema.org',
               '@type': 'SoftwareApplication',
               name: siteMetadata.title,
-              alternateName: [siteMetadata.name, 'Suna'],
+              alternateName: [siteMetadata.name, 'Kortix'],
               applicationCategory: 'BusinessApplication',
               operatingSystem: 'Web, macOS, Windows, Linux',
               description: siteMetadata.description,

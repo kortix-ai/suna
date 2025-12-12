@@ -7,7 +7,7 @@ export const useGenerateAgentIcon = () => {
     mutationFn: generateAgentIcon,
     onError: (error) => {
       console.error('Error generating agent icon:', error);
-      toast.error('Failed to generate agent icon. Please try again.');
+      toast.error('Failed to generate Worker icon. Please try again.');
     },
   });
 };

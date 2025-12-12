@@ -34,8 +34,8 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           <View key={getKey()} className="mb-4">
             {listItems.map((item, idx) => (
               <View key={`list-item-${idx}`} className="flex-row items-start mb-2">
-                <Text className="text-sm font-roobert text-foreground/60 mr-2">•</Text>
-                <Text className="text-sm font-roobert text-foreground/90 flex-1">{item}</Text>
+                <Text className="text-sm font-roobert text-primary opacity-50 mr-2">•</Text>
+                <Text className="text-sm font-roobert text-primary flex-1">{item}</Text>
               </View>
             ))}
           </View>
@@ -49,8 +49,8 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
       if (line.startsWith('```')) {
         if (inCodeBlock) {
           elements.push(
-            <View key={getKey()} className="bg-muted/30 border border-border rounded-xl p-4 mb-4">
-              <Text className="text-xs font-mono text-foreground/80 leading-5">
+            <View key={getKey()} className="bg-card border border-border rounded-xl p-4 mb-4">
+              <Text className="text-xs font-roobert-mono text-primary leading-5">
                 {codeBlockContent.join('\n')}
               </Text>
             </View>
@@ -74,7 +74,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
         const marginBottom = level <= 2 ? 'mb-4' : 'mb-3';
 
         elements.push(
-          <Text key={getKey()} className={`font-roobert-semibold text-foreground ${fontSize} ${marginBottom}`}>
+          <Text key={getKey()} className={`font-roobert-semibold text-primary ${fontSize} ${marginBottom}`}>
             {text}
           </Text>
         );
@@ -90,8 +90,8 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
         flushList();
         const text = line.replace(/^>\s*/, '');
         elements.push(
-          <View key={getKey()} className="border-l-4 border-primary/30 pl-4 mb-4">
-            <Text className="text-sm font-roobert text-foreground/80 italic">
+          <View key={getKey()} className="border-l-4 border-border pl-4 mb-4">
+            <Text className="text-sm font-roobert text-primary opacity-70 italic">
               {text}
             </Text>
           </View>
@@ -110,7 +110,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
         processedLine = processedLine.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
 
         elements.push(
-          <Text key={getKey()} className="text-sm font-roobert text-foreground/90 leading-6 mb-2">
+          <Text key={getKey()} className="text-sm font-roobert text-primary leading-6 mb-2">
             {processedLine}
           </Text>
         );
@@ -121,8 +121,8 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
 
     if (inCodeBlock && codeBlockContent.length > 0) {
       elements.push(
-        <View key={getKey()} className="bg-muted/30 border border-border rounded-xl p-4 mb-4">
-          <Text className="text-xs font-mono text-foreground/80 leading-5">
+        <View key={getKey()} className="bg-card border border-border rounded-xl p-4 mb-4">
+          <Text className="text-xs font-roobert-mono text-primary leading-5">
             {codeBlockContent.join('\n')}
           </Text>
         </View>

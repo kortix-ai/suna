@@ -2,6 +2,8 @@
   "common": {
     "cancel": "キャンセル",
     "save": "保存",
+    "saving": "保存中...",
+    "success": "成功",
     "done": "完了",
     "close": "閉じる",
     "ok": "OK",
@@ -12,11 +14,16 @@
     "search": "検索",
     "loading": "読み込み中...",
     "error": "エラー",
+    "errorOccurred": "エラーが発生しました。もう一度お試しください。",
     "retry": "もう一度",
     "send": "送信",
     "back": "戻る",
     "new": "新規",
-    "create": "作成"
+    "create": "作成",
+    "continue": "続ける",
+    "loadMore": "さらに読み込む",
+    "previous": "前へ",
+    "next": "次へ"
   },
   "auth": {
     "signIn": "ログイン",
@@ -163,7 +170,7 @@
     "superworker": {
       "title": "あなたのAIスーパーワーカー",
       "description": "すべての機能を組み合わせて、必要なあらゆるタスクのためのカスタムAIワーカーを構築。",
-      "example": "カスタマーサポートエージェントを作成"
+      "example": "カスタマーサポートワーカーを作成"
     }
   },
   "settings": {
@@ -485,7 +492,9 @@
     "balanceAfter": "残高（取引後）",
     "noDescription": "説明なし",
     "popular": "人気",
-    "subscription": "サブスクリプション"
+    "subscription": "サブスクリプション",
+    "subscriptionDisclaimerIos": "購入確認時にApple IDアカウントに請求されます。サブスクリプションは自動的に更新されますが、現在の期間終了の24時間以上前に自動更新をオフにしない限り、自動更新されます。現在の期間終了の24時間以内に更新のための請求が行われます。購入後、App Storeのアカウント設定に移動して、サブスクリプションを管理およびキャンセルできます。",
+    "subscriptionDisclaimerAndroid": "購入確認時にGoogleアカウントに請求されます。サブスクリプションは自動的に更新されますが、現在の期間終了の24時間以上前に自動更新をオフにしない限り、自動更新されます。Google Playストアに移動して、サブスクリプションを管理およびキャンセルできます。"
   },
   "theme": {
     "title": "外観",
@@ -522,7 +531,7 @@
     "actionCannotBeUndone": "この操作は元に戻せません",
     "accountWillBeDeleted": "アカウントが永久に削除されます",
     "whatWillBeDeleted": "削除されるデータ",
-    "allAgents": "すべてのエージェントとバージョン",
+    "allAgents": "すべてのワーカーとバージョン",
     "allThreads": "すべてのスレッドと会話",
     "allCredentials": "すべての認証情報と連携",
     "subscriptionData": "サブスクリプションと請求データ",
@@ -552,6 +561,8 @@
     "search": "検索...",
     "searchConversations": "チャット検索",
     "searchAgents": "Worker検索",
+    "searchWorkers": "Worker検索",
+    "searchTriggers": "トリガー検索",
     "imageGeneration": "作りたい画像を説明して...",
     "imageWithStyle": "{{style}}の画像を説明して...",
     "slidesGeneration": "どんなプレゼンが必要？",
@@ -624,7 +635,7 @@
     "composioApps": "Composioアプリ",
     "composioAppsDescription": "数百のビジネスアプリケーションに接続",
     "connected": "接続済み",
-    "connectedToAgent": "このエージェントに接続済み",
+    "connectedToAgent": "このワーカーに接続済み",
     "available": "利用可能なアプリ",
     "connect": "接続",
     "setup": "セットアップ",
@@ -638,7 +649,9 @@
     "connecting": "接続中...",
     "disconnect": "切断",
     "noAppsFound": "アプリが見つかりません",
+    "noAppsAvailable": "利用可能なアプリがありません",
     "tryDifferentSearch": "別の検索語を試してください",
+    "appsAppearHere": "アプリは利用可能になるとここに表示されます",
     "loadingIntegrations": "統合を読み込み中...",
     "failedToLoad": "読み込みに失敗しました",
     "retry": "再試行",
@@ -679,7 +692,7 @@
     },
     "toolsSelector": {
       "configureTools": "{{app}}ツールを設定",
-      "selectTools": "エージェントに追加するツールを選択",
+      "selectTools": "ワーカーに追加するツールを選択",
       "readyToConfigureTools": "設定の準備完了",
       "selected": "{{count}}/{{total}}選択済み",
       "selectAll": "すべて選択",
@@ -687,7 +700,10 @@
       "loadingTools": "ツールを読み込み中...",
       "failedToLoadTools": "読み込みに失敗",
       "noToolsAvailable": "利用可能なツールはありません",
+      "noToolsFound": "ツールが見つかりません",
       "noToolsDescription": "この統合には設定するツールがありません",
+      "tryAdjustingSearch": "検索条件を調整してみてください",
+      "toolsAppearHere": "ツールは利用可能になるとここに表示されます",
       "addingTools": "ツールを追加中...",
       "addTool": "{{count}}個のツールを追加",
       "addTools": "{{count}}個のツールを追加",
@@ -710,5 +726,116 @@
       "toolsConfigured": "カスタムMCPを追加しました",
       "toolsConfiguredMessage": "{{count}}個のツールを設定しました"
     }
+  },
+  "threadHeader": {
+    "goBack": "戻る",
+    "openMenu": "メニューを開く",
+    "enterTitle": "タイトルを入力",
+    "threadActions": "スレッドアクション",
+    "untitled": "無題"
+  },
+  "threadActions": {
+    "title": "スレッドアクション",
+    "upgradeRequired": "アップグレードが必要",
+    "upgradeRequiredMessage": "スレッドの共有は有料プランで利用可能です。この機能のロックを解除するにはアップグレードしてください。",
+    "upgrade": "アップグレード",
+    "shareThread": "スレッドを共有",
+    "shareThreadUpgrade": "スレッドを共有（アップグレード）",
+    "availableOnPaidPlans": "有料プランで利用可能",
+    "createPublicLink": "公開リンクを作成",
+    "manageFiles": "ファイルを管理",
+    "viewManageAttachments": "添付ファイルを表示・管理",
+    "deleteThread": "スレッドを削除",
+    "permanentlyDelete": "この会話を完全に削除"
+  },
+  "triggers": {
+    "title": "トリガー",
+    "createTrigger": "トリガーを作成",
+    "editTrigger": "トリガーを編集",
+    "deleteTrigger": "トリガーを削除",
+    "updateTrigger": "トリガーを更新",
+    "scheduleTrigger": "スケジュールトリガー",
+    "eventTrigger": "イベントトリガー",
+    "runOnSchedule": "スケジュールで実行",
+    "fromExternalApps": "外部アプリから",
+    "selectApplication": "アプリケーションを選択",
+    "configureTrigger": "トリガーを設定",
+    "loadingTriggerConfig": "トリガー設定を読み込み中...",
+    "loadingTriggers": "トリガーを読み込み中...",
+    "loadingApps": "アプリを読み込み中...",
+    "loadingProfiles": "プロファイルを読み込み中...",
+    "noTriggersAvailable": "利用可能なトリガーがありません",
+    "noAppsFound": "アプリが見つかりません",
+    "connected": "接続済み",
+    "notConnected": "未接続",
+    "setupRequired": "セットアップが必要",
+    "retry": "再試行",
+    "back": "戻る",
+    "creating": "作成中...",
+    "updating": "更新中...",
+    "triggerDetails": "トリガーの詳細",
+    "active": "アクティブ",
+    "inactive": "非アクティブ",
+    "noTriggersConfigured": "トリガーが設定されていません",
+    "setupTriggersToAutomate": "このワーカーを自動化するためにトリガーを設定してください"
+  },
+  "files": {
+    "title": "ファイル",
+    "loadingFiles": "ファイルを読み込み中...",
+    "failedToLoad": "読み込みに失敗",
+    "retry": "再試行",
+    "folderEmpty": "このフォルダーは空です",
+    "uploadOrCreate": "ファイルをアップロードまたはフォルダーを作成",
+    "createFolder": "フォルダーを作成",
+    "folderName": "フォルダー名",
+    "cancel": "キャンセル",
+    "create": "作成"
+  },
+  "workers": {
+    "title": "ワーカー",
+    "instructions": {
+      "title": "システムプロンプト",
+      "description": "ワーカーの動作を定義",
+      "loading": "手順を読み込み中...",
+      "saving": "保存中...",
+      "saveChanges": "変更を保存"
+    },
+    "loadingWorker": "ワーカーを読み込み中...",
+    "core": "コア",
+    "capabilitiesEnabled": "{{enabled}} / {{total}} 機能が有効",
+    "toolConfiguration": "ツール設定",
+    "configureToolsDescription": "エージェントのツールと個別の機能を設定します",
+    "toolsEnabled": "{{enabled}} / {{total}} 有効",
+    "loadingTools": "ツールを読み込み中...",
+    "noToolsAvailable": "利用可能なツールがありません",
+    "toolsWillAppear": "ツールが利用可能になるとここに表示されます",
+    "sunaToolsManaged": "Sunaのツールは一元管理されており、編集できません。",
+    "toolsNotEditable": "これらのツールは編集できません。",
+    "cannotEditTools": "編集不可",
+    "sunaToolsManagedAlert": "Sunaのツールは一元管理されています。",
+    "savingChanges": "保存中...",
+    "saveChanges": "変更を保存"
+  },
+  "tools": {
+    "executing": "ツールを実行中",
+    "input": "入力",
+    "output": "出力",
+    "noContentAvailable": "コンテンツがありません",
+    "processing": "処理中",
+    "loading": "読み込み中",
+    "searching": "検索中",
+    "completed": "完了",
+    "failed": "失敗"
+  },
+  "composio": {
+    "noAppsFound": "アプリが見つかりません",
+    "noAppsAvailable": "利用可能なアプリがありません",
+    "searchApps": "アプリを検索...",
+    "searchTools": "ツールを検索...",
+    "failedToLoadTools": "ツールの読み込みに失敗",
+    "retry": "再試行",
+    "noToolsFound": "ツールが見つかりません",
+    "saving": "保存中...",
+    "selectTools": "ツールを選択"
   }
 }

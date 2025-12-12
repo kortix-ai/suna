@@ -43,15 +43,15 @@ export function ToolViewWrapper({
   const Icon = getToolIcon(name);
 
   return (
-    <div className={cn("flex flex-col h-full", className)}>
+    <div className={cn("flex flex-col h-full max-w-full overflow-hidden min-w-0", className)}>
       {(headerContent || showStatus) && (
         <div className={cn(
-          "flex items-center p-2 bg-zinc-100 dark:bg-zinc-900 justify-between border-zinc-200 dark:border-zinc-800",
+          "flex items-center p-2 bg-zinc-100 dark:bg-zinc-900 justify-between border-zinc-200 dark:border-zinc-800 max-w-full min-w-0",
           headerClassName
         )}>
-          <div className="flex ml-1 items-center">
-            {Icon && <Icon className="h-4 w-4 mr-2 text-zinc-600 dark:text-zinc-400" />}
-            <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+          <div className="flex ml-1 items-center min-w-0 flex-1">
+            {Icon && <Icon className="h-4 w-4 mr-2 text-zinc-600 dark:text-zinc-400 flex-shrink-0" />}
+            <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate min-w-0">
               {toolTitle}
             </span>
           </div>
@@ -59,7 +59,7 @@ export function ToolViewWrapper({
         </div>
       )}
 
-      <div className={cn("flex-1 overflow-auto", contentClassName)}>
+      <div className={cn("flex-1 overflow-auto max-w-full min-w-0", contentClassName)}>
         {children}
       </div>
 

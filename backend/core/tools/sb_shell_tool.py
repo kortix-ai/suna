@@ -14,7 +14,47 @@ from core.agentpress.thread_manager import ThreadManager
     color="bg-gray-100 dark:bg-gray-800/50",
     is_core=True,
     weight=20,
-    visible=True
+    visible=True,
+    usage_guide="""
+### CLI OPERATIONS & TERMINAL COMMANDS
+
+**EXECUTION MODES:**
+1. **Synchronous Commands (blocking=true):**
+   - Use for quick operations under 60 seconds
+   - Commands run directly and wait for completion
+   - Example: `execute_command(command="ls -l", blocking=true)`
+
+2. **Asynchronous Commands (blocking=false or omit):**
+   - Use for ANY command that might take longer than 60 seconds
+   - Commands run in background and return immediately
+   - Common use cases: Build processes, long-running data processing, background services
+   - **NOTE:** DO NOT start web servers - port 8080 is already running and publicly accessible
+
+**SESSION MANAGEMENT:**
+- Each command must specify a session_name
+- Use consistent session names for related commands (e.g., "build" for build commands)
+- Different sessions are isolated from each other
+- Sessions maintain state between commands
+
+**COMMAND EXECUTION GUIDELINES:**
+- For long-running commands: ALWAYS use `blocking=false` (or omit)
+- Use proper session names for organization
+- Chain commands with && for sequential execution
+- Use | for piping output between commands
+- Redirect output to files for long-running processes
+
+**BEST PRACTICES:**
+- Avoid commands requiring confirmation; use -y or -f flags
+- Avoid commands with excessive output; save to files when necessary
+- Chain multiple commands with && to minimize interruptions
+- Use pipe operator to pass command outputs
+- Use non-interactive `bc` for simple calculations, Python for complex math
+
+**CLI TOOLS PREFERENCE:**
+- Always prefer CLI tools over Python scripts when possible
+- CLI tools are faster for: file operations, text processing, system operations, data transformation
+- Use Python only when: complex logic required, CLI tools insufficient, custom processing needed
+"""
 )
 class SandboxShellTool(SandboxToolsBase):
     """Tool for executing tasks in a Daytona sandbox with browser-use capabilities. 
@@ -446,12 +486,15 @@ class SandboxShellTool(SandboxToolsBase):
 
     async def cleanup(self):
         """Clean up all sessions."""
+        # Only cleanup if we actually have a sandbox - don't create one during cleanup
+        if self._sandbox is None:
+            return
+        
         for session_name in list(self._sessions.keys()):
             await self._cleanup_session(session_name)
         
         # Also clean up any tmux sessions
         try:
-            await self._ensure_sandbox()
             await self._execute_raw_command("tmux kill-server 2>/dev/null || true")
         except:
             pass

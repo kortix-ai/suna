@@ -50,7 +50,8 @@ jobs:
 
       - name: Install dependencies
         working-directory: apps/mobile
-        run: npm ci
+        run: |
+          npm install --package-lock-only || npm install
 
       - name: Get branch name
         id: branch
@@ -67,7 +68,8 @@ jobs:
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             echo "platform=${{ github.event.inputs.platform }}" >> $GITHUB_OUTPUT
           else
-            echo "platform=ios" >> $GITHUB_OUTPUT
+            # On push events, publish for both platforms
+            echo "platform=all" >> $GITHUB_OUTPUT
           fi
 
       - name: Get commit message
@@ -81,23 +83,41 @@ jobs:
         env:
           EXPO_PUBLIC_SUPABASE_URL: https://heprlhlltebrxydgtsjs.supabase.co
           EXPO_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlcHJsaGxsdGVicnh5ZGd0c2pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxODcxNjQsImV4cCI6MjA2MDc2MzE2NH0.YRo1iZw06YSxqBhotBnD1d5jZxw7hHwswe1wKp8VpfA
-          EXPO_PUBLIC_BACKEND_URL: https://staging-api.suna.so/api
+          EXPO_PUBLIC_BACKEND_URL: https://staging-api.suna.so/v1
         run: |
-          eas update \
-            --branch ${{ steps.branch.outputs.branch }} \
-            --message "${{ steps.commit.outputs.message }} (${{ steps.commit.outputs.sha }})" \
-            --platform ${{ steps.platform.outputs.platform }} \
-            --non-interactive
+          PLATFORM="${{ steps.platform.outputs.platform }}"
+          if [ "$PLATFORM" == "all" ]; then
+            # Publish for both iOS and Android
+            eas update \
+              --branch ${{ steps.branch.outputs.branch }} \
+              --message "${{ steps.commit.outputs.message }} (${{ steps.commit.outputs.sha }})" \
+              --platform ios \
+              --non-interactive
+            eas update \
+              --branch ${{ steps.branch.outputs.branch }} \
+              --message "${{ steps.commit.outputs.message }} (${{ steps.commit.outputs.sha }})" \
+              --platform android \
+              --non-interactive
+          else
+            # Single platform (workflow_dispatch)
+            eas update \
+              --branch ${{ steps.branch.outputs.branch }} \
+              --message "${{ steps.commit.outputs.message }} (${{ steps.commit.outputs.sha }})" \
+              --platform $PLATFORM \
+              --non-interactive
+          fi
 
       - name: Comment on PR (if applicable)
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
+            const platform = '${{ steps.platform.outputs.platform }}';
+            const platformText = platform === 'all' ? 'iOS and Android' : platform;
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '✅ EAS Update published to branch `${{ steps.branch.outputs.branch }}` for `${{ steps.platform.outputs.platform }}`'
+              body: `✅ EAS Update published to branch \`${{ steps.branch.outputs.branch }}\` for \`${platformText}\``
             })
 

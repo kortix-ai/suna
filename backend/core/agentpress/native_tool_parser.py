@@ -148,33 +148,26 @@ def convert_to_exec_tool_call(
 
 
 def convert_buffer_to_complete_tool_calls(tool_calls_buffer: Dict[int, Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Convert buffered tool calls to complete native tool calls format.
-    
-    Args:
-        tool_calls_buffer: Dictionary mapping index -> buffered tool call data
-        
-    Returns:
-        List of complete tool calls in LiteLLM format
-    """
     complete_tool_calls = []
     
     for idx, tc_buf in tool_calls_buffer.items():
         if tc_buf.get('id') and tc_buf.get('function', {}).get('name') and tc_buf.get('function', {}).get('arguments'):
+            arguments_str = tc_buf['function']['arguments']
             try:
-                # Validate that arguments are valid JSON
-                from core.utils.json_helpers import safe_json_parse
-                safe_json_parse(tc_buf['function']['arguments'])
-                # Keep arguments as JSON string for LiteLLM compatibility
+                parsed = json.loads(arguments_str)
+                if not isinstance(parsed, dict):
+                    logger.warning(f"Tool call {tc_buf.get('id')} has non-dict arguments, skipping")
+                    continue
                 complete_tool_calls.append({
                     "id": tc_buf['id'],
                     "type": "function",
                     "function": {
                         "name": tc_buf['function']['name'],
-                        "arguments": tc_buf['function']['arguments']
+                        "arguments": arguments_str
                     }
                 })
-            except (json.JSONDecodeError, TypeError):
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(f"Tool call {tc_buf.get('id')} has invalid JSON arguments, skipping: {str(e)[:100]}")
                 continue
     
     return complete_tool_calls
@@ -184,16 +177,6 @@ def convert_to_unified_tool_call_format(
     tool_call: Dict[str, Any],
     parse_arguments: bool = True
 ) -> Dict[str, Any]:
-    """
-    Convert a native tool call to unified format for metadata storage.
-    
-    Args:
-        tool_call: Tool call dict with 'id' and 'function' keys (LiteLLM format)
-        parse_arguments: Whether to parse arguments JSON string to dict
-        
-    Returns:
-        Dictionary with 'tool_call_id', 'function_name', 'arguments', 'source'
-    """
     function_name = tool_call.get('function', {}).get('name', 'unknown')
     tool_call_id = tool_call.get('id', str(uuid.uuid4()))
     raw_arguments = tool_call.get('function', {}).get('arguments', '')

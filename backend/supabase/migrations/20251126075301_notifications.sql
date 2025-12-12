@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS notification_settings (
 );
 
 CREATE TABLE IF NOT EXISTS device_tokens (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     device_token TEXT NOT NULL,
     device_type TEXT NOT NULL,

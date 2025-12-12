@@ -264,7 +264,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
         const mermaid = (await import('mermaid')).default;
         await mermaid.initialize({
           startOnLoad: false,
-          securityLevel: 'loose',
+          securityLevel: 'strict',
           theme: 'base',
           fontFamily: 'ui-sans-serif, system-ui, sans-serif',
           // Enable experimental features including gitgraph
@@ -392,7 +392,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
           const mermaid = (await import('mermaid')).default;
           await mermaid.initialize({
             startOnLoad: false,
-            securityLevel: 'loose',
+            securityLevel: 'strict',
             theme: 'base',
             fontFamily: 'ui-sans-serif, system-ui, sans-serif',
             // Enable experimental features including gitgraph
@@ -549,21 +549,21 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
           }
           .mermaid-container .node {
             fill: hsl(var(--card)) !important;
-            stroke: hsl(var(--border)) !important;
+            stroke: hsl(var(--foreground)) !important;
           }
           .mermaid-container .cluster {
             fill: hsl(var(--muted)) !important;
-            stroke: hsl(var(--border)) !important;
+            stroke: hsl(var(--foreground)) !important;
           }
           .mermaid-container text {
             fill: hsl(var(--foreground)) !important;
             font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif !important;
           }
           .mermaid-container .edgePath {
-            stroke: hsl(var(--border)) !important;
+            stroke: hsl(var(--foreground)) !important;
           }
           .mermaid-container .marker {
-            fill: hsl(var(--border)) !important;
+            fill: hsl(var(--foreground)) !important;
           }
 
           /* Fullscreen modal specific styles */

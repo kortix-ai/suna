@@ -4,9 +4,10 @@ import { GenericToolView } from '../GenericToolView';
 import { BrowserToolView } from '../BrowserToolView';
 import { CommandToolView } from '../command-tool/CommandToolView';
 import { CheckCommandOutputToolView } from '../command-tool/CheckCommandOutputToolView';
+import { TerminateCommandToolView } from '../command-tool/TerminateCommandToolView';
+import { ListCommandsToolView } from '../command-tool/ListCommandsToolView';
 import { ExposePortToolView } from '../expose-port-tool/ExposePortToolView';
 import { FileOperationToolView } from '../file-operation/FileOperationToolView';
-import { StrReplaceToolView } from '../str-replace/StrReplaceToolView';
 import { WebCrawlToolView } from '../WebCrawlToolView';
 import { WebScrapeToolView } from '../web-scrape-tool/WebScrapeToolView';
 import { WebSearchToolView } from '../web-search-tool/WebSearchToolView';
@@ -14,7 +15,6 @@ import { PeopleSearchToolView } from '../people-search-tool/PeopleSearchToolView
 import { CompanySearchToolView } from '../company-search-tool/CompanySearchToolView';
 import { DocumentParserToolView } from '../document-parser-tool/DocumentParserToolView';
 import { SeeImageToolView } from '../see-image-tool/SeeImageToolView';
-import { TerminateCommandToolView } from '../command-tool/TerminateCommandToolView';
 import { WaitToolView } from '../wait-tool/WaitToolView';
 import { ExecuteDataProviderCallToolView } from '../data-provider-tool/ExecuteDataProviderCallToolView';
 import { DataProviderEndpointsToolView } from '../data-provider-tool/DataProviderEndpointsToolView';
@@ -33,13 +33,12 @@ import { ListPresentationsToolView } from '../presentation-tools/ListPresentatio
 import { DeleteSlideToolView } from '../presentation-tools/DeleteSlideToolView';
 import { DeletePresentationToolView } from '../presentation-tools/DeletePresentationToolView';
 // import { PresentationStylesToolView } from '../presentation-tools/PresentationStylesToolView';
-import { ExportToPptxToolView, ExportToPdfToolView } from '../presentation-tools/ExportToolView';
+import { ExportToolView } from '../presentation-tools/ExportToolView';
 import { SheetsToolView } from '../sheets-tools/sheets-tool-view';
 import { GetProjectStructureView } from '../web-dev/GetProjectStructureView';
 import { ImageEditGenerateToolView } from '../image-edit-generate-tool/ImageEditGenerateToolView';
 import { DesignerToolView } from '../designer-tool/DesignerToolView';
 import { UploadFileToolView } from '../UploadFileToolView';
-import { DocsToolView, ListDocumentsToolView, DeleteDocumentToolView } from '../docs-tool';
 import { CreateNewAgentToolView } from '../create-new-agent/create-new-agent';
 import { UpdateAgentToolView } from '../update-agent/update-agent';
 import { SearchMcpServersForAgentToolView } from '../search-mcp-servers-for-agent/search-mcp-servers-for-agent';
@@ -74,7 +73,7 @@ const defaultRegistry: ToolViewRegistryType = {
   'execute-command': CommandToolView,
   'check-command-output': CheckCommandOutputToolView,
   'terminate-command': TerminateCommandToolView,
-  'list-commands': GenericToolView,
+  'list-commands': ListCommandsToolView,
 
   'create-file': FileOperationToolView,
   'delete-file': FileOperationToolView,
@@ -84,7 +83,7 @@ const defaultRegistry: ToolViewRegistryType = {
 
   'parse-document': DocumentParserToolView,
 
-  'str-replace': StrReplaceToolView,
+  'str-replace': FileOperationToolView,
 
   'web-search': WebSearchToolView,
   'people-search': PeopleSearchToolView,
@@ -135,8 +134,13 @@ const defaultRegistry: ToolViewRegistryType = {
   'delete-presentation': DeletePresentationToolView,
   'validate-slide': PresentationViewer,
   // 'presentation-styles': PresentationStylesToolView,
-  'export-to-pptx': ExportToPptxToolView,
-  'export-to-pdf': ExportToPdfToolView,
+  'export-presentation': ExportToolView,
+  'export_presentation': ExportToolView,
+  // Legacy support for old tool names (backward compatibility)
+  'export-to-pptx': ExportToolView,
+  'export-to-pdf': ExportToolView,
+  'export_to_pptx': ExportToolView,
+  'export_to_pdf': ExportToolView,
 
   'create-sheet': SheetsToolView,
   'update-sheet': SheetsToolView,
@@ -171,21 +175,6 @@ const defaultRegistry: ToolViewRegistryType = {
   'global-kb-delete-item': KbToolView,
   'global_kb_enable_item': KbToolView,
   'global-kb-enable-item': KbToolView,
-
-  // Document operations - using specific views for different operations
-  'create-document': DocsToolView,
-  'update-document': DocsToolView,
-  'read-document': DocsToolView,
-  'list-documents': ListDocumentsToolView,
-  'delete-document': DeleteDocumentToolView,
-  'export-document': DocsToolView,
-  'create_document': DocsToolView,
-  'update_document': DocsToolView,
-  'read_document': DocsToolView,
-  'list_documents': ListDocumentsToolView,
-  'delete_document': DeleteDocumentToolView,
-  'export_document': DocsToolView,
-  'get_tiptap_format_guide': DocsToolView,
 
   'default': GenericToolView,
 
@@ -261,7 +250,7 @@ export function useToolView(toolName: string): ToolViewComponent {
 export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
   // Extract tool name from function_name (handle undefined case)
   const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'default';
-  
+
   // Get file path directly from tool call arguments (from metadata)
   const filePath = toolCall?.arguments?.file_path || toolCall?.arguments?.target_file;
 
@@ -290,7 +279,11 @@ export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
   if (!toolCall || !toolCall.function_name) {
     console.warn('ToolView: toolCall is undefined or missing function_name. Tool views should use structured props.');
     // Fallback to GenericToolView with error handling
-    return <GenericToolView toolCall={toolCall} toolResult={toolResult} {...props} />;
+    return (
+      <div className="h-full w-full max-h-full max-w-full overflow-hidden min-w-0 min-h-0" style={{ contain: 'strict' }}>
+        <GenericToolView toolCall={toolCall} toolResult={toolResult} {...props} />
+      </div>
+    );
   }
 
   // if the file path is a presentation slide, we need to modify the tool result to match the expected structure for PresentationViewer
@@ -303,5 +296,10 @@ export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
     };
   }
 
-  return <ToolViewComponent toolCall={toolCall} toolResult={modifiedToolResult} {...props} />;
+  // Wrap all tool views in a container with CSS containment to prevent overflow
+  return (
+    <div className="h-full w-full max-h-full max-w-full overflow-auto min-w-0 min-h-0" style={{ contain: 'layout style' }}>
+      <ToolViewComponent toolCall={toolCall} toolResult={modifiedToolResult} {...props} />
+    </div>
+  );
 }

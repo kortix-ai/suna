@@ -1,7 +1,7 @@
 'use client';
 
 import { useModelStore } from '@/stores/model-store';
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useAccountState } from '@/hooks/billing';
 import { useAuth } from '@/components/AuthProvider';
 
@@ -27,10 +27,10 @@ const getDefaultModel = (accessibleModels: ModelOption[]): string => {
   // kortix/basic should be first for free users since power is not accessible
   const basicModel = accessibleModels.find(m => m.id === 'kortix/basic');
   if (basicModel) return basicModel.id;
-  
+
   const powerModel = accessibleModels.find(m => m.id === 'kortix/power');
   if (powerModel) return powerModel.id;
-  
+
   // Fallback: pick from accessible models sorted by priority
   if (accessibleModels.length > 0) {
     return accessibleModels[0].id;
@@ -41,14 +41,14 @@ const getDefaultModel = (accessibleModels: ModelOption[]): string => {
 
 export const useModelSelection = () => {
   const { user, isLoading: isAuthLoading } = useAuth();
-  
+
   // Get account state which includes models
-  const { data: accountState, isLoading } = useAccountState({ 
-    enabled: !!user && !isAuthLoading 
+  const { data: accountState, isLoading } = useAccountState({
+    enabled: !!user && !isAuthLoading
   });
 
   const { selectedModel, setSelectedModel } = useModelStore();
-  
+
   // Track previous tier to detect upgrades
   const prevTierKey = useRef<string | null>(null);
 
@@ -61,7 +61,7 @@ export const useModelSelection = () => {
   // The backend's `allowed` field is the source of truth!
   const availableModels = useMemo<ModelOption[]>(() => {
     if (!accountState?.models) return [];
-    
+
     return accountState.models.map(model => ({
       id: model.id,
       label: model.name,
@@ -90,12 +90,12 @@ export const useModelSelection = () => {
     if (isLoading || !accessibleModels.length) return;
 
     // If no model selected or selected model is not accessible, set a default
-    const needsUpdate = !selectedModel || 
+    const needsUpdate = !selectedModel ||
                         !accessibleModels.some(m => m.id === selectedModel);
-    
+
     if (needsUpdate) {
       const defaultModelId = getDefaultModel(accessibleModels);
-      
+
       if (defaultModelId && defaultModelId !== selectedModel) {
         console.log('🔧 useModelSelection: Setting default model:', defaultModelId, '(tier:', accountState?.subscription.tier_key, ')');
         setSelectedModel(defaultModelId);
@@ -103,14 +103,14 @@ export const useModelSelection = () => {
     }
   }, [selectedModel, accessibleModels, isLoading, setSelectedModel, accountState?.subscription.tier_key]);
 
-  // Auto-switch to Power mode when user upgrades to paid tier
+  // Auto-switch to Advanced mode when user upgrades to paid tier
   useEffect(() => {
     if (isLoading || !availableModels.length) return;
-    
+
     const currentTier = accountState?.subscription.tier_key;
     const wasFree = prevTierKey.current === 'free' || prevTierKey.current === 'none';
     const isNowPaid = isPaidTier(currentTier);
-    
+
     // Detect upgrade: was free, now paid
     if (wasFree && isNowPaid && prevTierKey.current !== null) {
       // Check if power model is now accessible
@@ -120,21 +120,44 @@ export const useModelSelection = () => {
         setSelectedModel('kortix/power');
       }
     }
-    
+
     // Update ref for next comparison
     prevTierKey.current = currentTier || null;
   }, [accountState?.subscription.tier_key, availableModels, isLoading, setSelectedModel]);
 
-  const handleModelChange = (modelId: string) => {
+  const handleModelChange = useCallback((modelId: string) => {
     const model = accessibleModels.find(m => m.id === modelId);
     if (model) {
       console.log('🔧 useModelSelection: Changing model to:', modelId);
       setSelectedModel(modelId);
     }
-  };
+  }, [accessibleModels, setSelectedModel]);
 
   // subscriptionStatus for UI purposes - based on tier, not status
   const subscriptionStatus = hasPaidSubscription ? 'active' as const : 'no_subscription' as const;
+
+  // Stable callback for checking model access
+  const canAccessModel = useCallback((modelId: string) => {
+    // Use the backend's `allowed` field directly - it's the source of truth
+    const model = availableModels.find(m => m.id === modelId);
+    if (!model) return false;
+    return !model.requiresSubscription; // requiresSubscription = !allowed from backend
+  }, [availableModels]);
+
+  // Stable callback for checking subscription requirement
+  const isSubscriptionRequired = useCallback((modelId: string) => {
+    const model = availableModels.find(m => m.id === modelId);
+    return model?.requiresSubscription || false;
+  }, [availableModels]);
+
+  // Stable callback for getting actual model ID
+  const getActualModelId = useCallback((modelId: string) => modelId, []);
+
+  // Stable no-op callbacks for custom models (not implemented)
+  const refreshCustomModels = useCallback(() => {}, []);
+  const addCustomModel = useCallback((_model: any) => {}, []);
+  const updateCustomModel = useCallback((_id: string, _model: any) => {}, []);
+  const removeCustomModel = useCallback((_id: string) => {}, []);
 
   return {
     selectedModel,
@@ -144,25 +167,14 @@ export const useModelSelection = () => {
     isLoading,
     modelsData: accountState ? { models: accountState.models, tier: accountState.subscription.tier_key } : undefined,
     subscriptionStatus,
-    canAccessModel: (modelId: string) => {
-      // Use the backend's `allowed` field directly - it's the source of truth
-      const model = availableModels.find(m => m.id === modelId);
-      if (!model) return false;
-      return !model.requiresSubscription; // requiresSubscription = !allowed from backend
-    },
-    isSubscriptionRequired: (modelId: string) => {
-      const model = availableModels.find(m => m.id === modelId);
-      return model?.requiresSubscription || false;
-    },
-    
+    canAccessModel,
+    isSubscriptionRequired,
     handleModelChange,
     customModels: [] as any[],
-    addCustomModel: (_model: any) => {},
-    updateCustomModel: (_id: string, _model: any) => {},
-    removeCustomModel: (_id: string) => {},
-    
-    getActualModelId: (modelId: string) => modelId,
-    
-    refreshCustomModels: () => {},
+    addCustomModel,
+    updateCustomModel,
+    removeCustomModel,
+    getActualModelId,
+    refreshCustomModels,
   };
 };

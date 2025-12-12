@@ -3,13 +3,14 @@
 import React, {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AgentRunLimitError, ProjectLimitError, BillingError } from '@/lib/api/errors';
 import { toast } from 'sonner';
-import { ChatInput } from '@/components/thread/chat-input/chat-input';
+import { ChatInput, ChatInputHandles } from '@/components/thread/chat-input/chat-input';
 import { useSidebar, SidebarContext } from '@/components/ui/sidebar';
 import { useAgentStream } from '@/hooks/messages';
 import { cn } from '@/lib/utils';
@@ -19,6 +20,7 @@ import { ThreadContent } from '@/components/thread/content/ThreadContent';
 import { ThreadSkeleton } from '@/components/thread/content/ThreadSkeleton';
 import { PlaybackFloatingControls } from '@/components/thread/content/PlaybackFloatingControls';
 import { usePlaybackController, useAddUserMessageMutation } from '@/hooks/messages';
+import { useMessageQueueStore } from '@/stores/message-queue-store';
 import {
   useStartAgentMutation,
   useStopAgentMutation,
@@ -46,7 +48,13 @@ import {
   useAgents,
 } from '@/hooks/agents/use-agents';
 import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
-import { useAgentSelection } from '@/stores/agent-selection-store';
+import { 
+  useSelectedAgentId, 
+  useSetSelectedAgent, 
+  useInitializeFromAgents, 
+  useGetCurrentAgent, 
+  useIsSunaAgentFn 
+} from '@/stores/agent-selection-store';
 import { useQueryClient } from '@tanstack/react-query';
 import { threadKeys } from '@/hooks/threads/keys';
 import { fileQueryKeys } from '@/hooks/files';
@@ -54,13 +62,14 @@ import { useProjectRealtime } from '@/hooks/threads';
 import { handleGoogleSlidesUpload } from './tool-views/utils/presentation-utils';
 import { useTranslations } from 'next-intl';
 import { backendApi } from '@/lib/api-client';
+import { useKortixComputerStore, useSetIsSidePanelOpen } from '@/stores/kortix-computer-store';
 
 interface ThreadComponentProps {
   projectId: string;
   threadId: string;
   compact?: boolean;
-  configuredAgentId?: string; // When set, only allow selection of this specific agent
-  isShared?: boolean; // When true, enables read-only share mode with playback controls
+  configuredAgentId?: string;
+  isShared?: boolean;
 }
 
 export function ThreadComponent({ projectId, threadId, compact = false, configuredAgentId, isShared = false }: ThreadComponentProps) {
@@ -71,36 +80,25 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   const { user } = useAuth();
   const isAuthenticated = !!user;
+  
+  const isNewThread = searchParams.get('new') === 'true';
 
-  // State
   const [isSending, setIsSending] = useState(false);
-  const [fileViewerOpen, setFileViewerOpen] = useState(false);
-  const [fileToView, setFileToView] = useState<string | null>(null);
-  const [filePathList, setFilePathList] = useState<string[] | undefined>(
-    undefined,
-  );
-  const [chatInputValue, setChatInputValue] = useState('');
   const [initialPanelOpenAttempted, setInitialPanelOpenAttempted] =
     useState(false);
-  // Use Zustand store for agent selection persistence - skip in shared mode
-  // Always call hooks unconditionally, but disable queries for unauthenticated users
-  const agentSelection = useAgentSelection();
+  const storeSelectedAgentId = useSelectedAgentId();
+  const storeSetSelectedAgent = useSetSelectedAgent();
+  const storeInitializeFromAgents = useInitializeFromAgents();
+  const storeGetCurrentAgent = useGetCurrentAgent();
+  const storeIsSunaAgentFn = useIsSunaAgentFn();
+  
   const agentsQuery = useAgents({}, { enabled: isAuthenticated && !isShared });
 
-  // Use conditional values based on isShared
-  const {
-    selectedAgentId,
-    setSelectedAgent,
-    initializeFromAgents,
-    getCurrentAgent,
-    isSunaAgent,
-  } = isShared ? {
-    selectedAgentId: undefined,
-    setSelectedAgent: () => { },
-    initializeFromAgents: () => { },
-    getCurrentAgent: () => undefined,
-    isSunaAgent: false,
-  } : agentSelection;
+  const selectedAgentId = isShared ? undefined : storeSelectedAgentId;
+  const setSelectedAgent = isShared ? (() => { }) : storeSetSelectedAgent;
+  const initializeFromAgents = isShared ? (() => { }) : storeInitializeFromAgents;
+  const getCurrentAgent = isShared ? (() => undefined) : storeGetCurrentAgent;
+  const isSunaAgent = isShared ? false : storeIsSunaAgentFn;
 
   const agents = isShared ? [] : (agentsQuery?.data?.agents || []);
   const [isSidePanelAnimating, setIsSidePanelAnimating] = useState(false);
@@ -112,12 +110,24 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     runningThreadIds: string[];
   } | null>(null);
 
-  // Refs - simplified for flex-column-reverse
   const latestMessageRef = useRef<HTMLDivElement>(null);
   const initialLayoutAppliedRef = useRef(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const lastStreamStartedRef = useRef<string | null>(null); // Track last runId we started streaming for
-  const pendingMessageRef = useRef<string | null>(null); // Store pending message to add when agent starts
+  const lastStreamStartedRef = useRef<string | null>(null);
+  const pendingMessageRef = useRef<string | null>(null);
+  const chatInputRef = useRef<ChatInputHandles>(null);
+
+  // Message queue for when agent is running - using Zustand store
+  const queueMessage = useMessageQueueStore((state) => state.queueMessage);
+  const removeQueuedMessage = useMessageQueueStore((state) => state.removeMessage);
+  const clearQueue = useMessageQueueStore((state) => state.clearQueue);
+  const allQueuedMessages = useMessageQueueStore((state) => state.queuedMessages);
+  
+  // Filter messages for this thread using useMemo to avoid infinite loop
+  const queuedMessages = useMemo(() => 
+    allQueuedMessages.filter((msg) => msg.threadId === threadId),
+    [allQueuedMessages, threadId]
+  );
 
   // Sidebar - safely use it if SidebarProvider is available (logged in users on share page will have it)
   // Use React.useContext directly which returns null if context is not available (doesn't throw)
@@ -125,7 +135,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const leftSidebarState: 'expanded' | 'collapsed' | undefined = sidebarContext?.state;
   const setLeftSidebarOpen: ((open: boolean) => void) | undefined = sidebarContext?.setOpen;
 
-  // Custom hooks
+  const hasDataLoaded = useRef(false);
+  const [optimisticPrompt, setOptimisticPrompt] = useState<string | null>(null);
+  const [showOptimisticUI, setShowOptimisticUI] = useState(false);
+  const setStorePanelOpen = useSetIsSidePanelOpen();
+  
   const {
     messages,
     setMessages,
@@ -143,7 +157,14 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     messagesQuery,
     projectQuery,
     agentRunsQuery,
-  } = useThreadData(threadId, projectId, isShared);
+  } = useThreadData(threadId, projectId, isShared, {
+    enablePolling: isNewThread && !hasDataLoaded.current,
+  });
+  
+  const threadStatus = threadQuery.data?.status;
+  const threadInitializationError = threadQuery.data?.initialization_error;
+  
+  const isThreadInitializing = false;
 
   const {
     toolCalls,
@@ -162,15 +183,43 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     handleSidePanelNavigate,
     userClosedPanelRef,
   } = useThreadToolCalls(messages, setLeftSidebarOpen, agentStatus, compact);
+  
+  if (isNewThread && !optimisticPrompt) {
+    const stored = sessionStorage.getItem('optimistic_prompt');
+    const storedThread = sessionStorage.getItem('optimistic_thread');
+    if (stored && storedThread === threadId) {
+      setOptimisticPrompt(stored);
+      setShowOptimisticUI(true);
+      if (!isMobile && !compact) {
+        setStorePanelOpen(true);
+      }
+      sessionStorage.removeItem('optimistic_prompt');
+      sessionStorage.removeItem('optimistic_thread');
+    }
+  }
+  
+  if (isNewThread && agentRunId && !hasDataLoaded.current) {
+    hasDataLoaded.current = true;
+  }
+  
+  const shouldHideOptimisticUI = isNewThread 
+    ? (agentRunId && initialLoadCompleted)
+    : ((agentRunId || messages.length > 0 || threadStatus === 'ready') && initialLoadCompleted);
+  
+  if (shouldHideOptimisticUI && showOptimisticUI) {
+    setShowOptimisticUI(false);
+  }
+  
+  const effectivePanelOpen = isSidePanelOpen || (isNewThread && showOptimisticUI);
 
-  // Memoized callback for closing side panel to prevent unnecessary re-renders
   const handleSidePanelClose = useCallback(() => {
     setIsSidePanelOpen(false);
     userClosedPanelRef.current = true;
     setAutoOpenedPanel(true);
   }, [setIsSidePanelOpen, setAutoOpenedPanel]);
 
-  // Billing hooks - always call unconditionally, but disable for unauthenticated/shared
+  const { openFileInComputer, openFileBrowser, reset: resetKortixComputerStore } = useKortixComputerStore();
+
   const billingModal = useBillingModal();
   const threadBilling = useThreadBilling(
     null,
@@ -179,10 +228,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     () => {
       billingModal.openModal();
     },
-    isAuthenticated && !isShared // Only enable for authenticated non-shared users
+    isAuthenticated && !isShared
   );
 
-  // Use conditional values based on isShared
   const {
     showModal: showBillingModal,
     creditsExhausted,
@@ -201,10 +249,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     checkBillingLimits: async () => false,
   } : threadBilling;
 
-  // Real-time project updates (for sandbox creation) - always call unconditionally
   useProjectRealtime(projectId);
-
-  // Keyboard shortcuts
   useThreadKeyboardShortcuts({
     isSidePanelOpen,
     setIsSidePanelOpen,
@@ -213,13 +258,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     userClosedPanelRef,
   });
 
-  // Mutations - always call unconditionally
   const addUserMessageMutation = useAddUserMessageMutation();
   const startAgentMutation = useStartAgentMutation();
   const stopAgentMutation = useStopAgentMutation();
   const threadAgentQuery = useThreadAgent(threadId, { enabled: isAuthenticated && !isShared });
 
-  // Use conditional values based on isShared
   const { data: threadAgentData } = isShared ? { data: undefined } : threadAgentQuery;
   const agent = threadAgentData?.agent;
 
@@ -227,25 +270,18 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     if (!isShared) {
       queryClient.invalidateQueries({ queryKey: threadKeys.agentRuns(threadId) });
       queryClient.invalidateQueries({ queryKey: threadKeys.messages(threadId) });
+      resetKortixComputerStore();
     }
-  }, [threadId, queryClient, isShared]);
+  }, [threadId, queryClient, isShared, resetKortixComputerStore]);
 
-  // Listen for sandbox-active event to invalidate file caches
   useEffect(() => {
     const handleSandboxActive = (event: Event) => {
       const customEvent = event as CustomEvent<{ sandboxId: string; projectId: string }>;
       const { sandboxId, projectId: eventProjectId } = customEvent.detail;
-
-      // Only invalidate if it's for this project
       if (eventProjectId === projectId) {
-
-        // Invalidate all file content queries
         queryClient.invalidateQueries({
           queryKey: fileQueryKeys.contents()
         });
-
-        // This will cause all file attachments to refetch with the now-active sandbox
-        // toast.success('Sandbox is ready');
       }
     };
 
@@ -257,10 +293,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     const urlParams = new URLSearchParams(window.location.search);
 
     if (urlParams.get('google_auth') === 'success') {
-      // Clean up the URL parameters first
       window.history.replaceState({}, '', window.location.pathname);
-
-      // Check if there was an intent to upload to Google Slides
       const uploadIntent = sessionStorage.getItem('google_slides_upload_intent');
       if (uploadIntent) {
         sessionStorage.removeItem('google_slides_upload_intent');
@@ -270,31 +303,25 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           const { presentation_path, sandbox_url } = uploadData;
 
           if (presentation_path && sandbox_url) {
-            // Handle upload in async function
             (async () => {
               const uploadPromise = handleGoogleSlidesUpload(
                 sandbox_url,
                 presentation_path
               );
 
-              // Show loading toast and handle upload
               const loadingToast = toast.loading('Google authentication successful! Uploading presentation...');
 
               try {
                 await uploadPromise;
-                // Success toast is now handled universally by handleGoogleSlidesUpload
               } catch (error) {
                 console.error('Upload failed:', error);
-                // Error toast is also handled universally by handleGoogleSlidesUpload
               } finally {
-                // Always dismiss loading toast
                 toast.dismiss(loadingToast);
               }
             })();
           }
         } catch (error) {
           console.error('Error processing Google Slides upload from session:', error);
-          // Error toast is handled universally by handleGoogleSlidesUpload, no need to duplicate
         }
       } else {
         toast.success('Google authentication successful!');
@@ -309,21 +336,16 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   useEffect(() => {
     if (agents.length > 0) {
-      // If configuredAgentId is provided, use it as the forced selection
-      // Otherwise, fall back to threadAgentId (existing behavior)
       const threadAgentId = threadAgentData?.agent?.agent_id;
       const agentIdToUse = configuredAgentId || threadAgentId;
 
       initializeFromAgents(agents, agentIdToUse);
-
-      // If configuredAgentId is provided, force selection and override any existing selection
       if (configuredAgentId && selectedAgentId !== configuredAgentId) {
         setSelectedAgent(configuredAgentId);
       }
     }
   }, [threadAgentData, agents, initializeFromAgents, configuredAgentId, selectedAgentId, setSelectedAgent]);
 
-  // Always call unconditionally
   const sharedSubscription = useSharedSubscription();
   const { data: subscriptionData } = isShared ? { data: undefined } : sharedSubscription;
   const subscriptionStatus: SubscriptionStatus =
@@ -334,27 +356,30 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   const handleProjectRenamed = useCallback((newName: string) => { }, []);
 
-  // Create restricted agent selection handler when configuredAgentId is provided
   const handleAgentSelect = useCallback((agentId: string | undefined) => {
-    // If configuredAgentId is set, only allow selection of that specific agent
     if (configuredAgentId) {
       if (agentId === configuredAgentId) {
         setSelectedAgent(agentId);
       }
-      // Ignore attempts to select other agents
       return;
     }
-
-    // Normal agent selection behavior
     setSelectedAgent(agentId);
   }, [configuredAgentId, setSelectedAgent]);
 
-  // scrollToBottom for flex-column-reverse layout
   const scrollToBottom = useCallback(() => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, []);
+
+  const handlePromptFill = useCallback((message: string) => {
+    chatInputRef.current?.setValue(message);
+  }, []);
+
+  const handleExpandToolPreview = useCallback(() => {
+    setIsSidePanelOpen(true);
+    userClosedPanelRef.current = false;
+  }, [setIsSidePanelOpen]);
 
   const handleNewMessageFromStream = useCallback(
     (message: UnifiedMessage) => {
@@ -373,7 +398,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
             m.message_id === message.message_id ? message : m,
           );
         } else {
-          // If this is a user message, replace any optimistic user message with temp ID
           if (message.type === 'user') {
             const optimisticIndex = prev.findIndex(
               (m) =>
@@ -382,7 +406,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
                 m.content === message.content,
             );
             if (optimisticIndex !== -1) {
-              // Replace the optimistic message with the real one
               return prev.map((m, index) =>
                 index === optimisticIndex ? message : m,
               );
@@ -396,7 +419,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         setAutoOpenedPanel(false);
       }
 
-      // Auto-scroll to bottom (top: 0 in flex-col-reverse) when new messages arrive
       setTimeout(() => {
         if (scrollContainerRef.current) {
           scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
@@ -419,12 +441,25 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           setAgentRunId(null);
           setAutoOpenedPanel(false);
 
+          // Send queued messages when agent stops (feature flag)
+          const ENABLE_MESSAGE_QUEUE = false;
+          if (ENABLE_MESSAGE_QUEUE && queuedMessages.length > 0) {
+            console.log('[ThreadComponent] Agent stopped, will send queued messages:', queuedMessages.length);
+            // Auto-send first queued message after a short delay
+            setTimeout(() => {
+              const firstMessage = queuedMessages[0];
+              if (firstMessage) {
+                removeQueuedMessage(firstMessage.id);
+                handleSubmitMessage(firstMessage.message, firstMessage.options);
+              }
+            }, 500);
+          }
+
           // No scroll needed with flex-column-reverse
           break;
         case 'connecting':
           setAgentStatus('connecting');
 
-          // Add optimistic message when agent starts connecting
           if (pendingMessageRef.current) {
             const optimisticUserMessage: UnifiedMessage = {
               message_id: `temp-${Date.now()}`,
@@ -438,9 +473,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
             };
 
             setMessages((prev) => [...prev, optimisticUserMessage]);
-            pendingMessageRef.current = null; // Clear after adding
+            pendingMessageRef.current = null;
 
-            // Auto-scroll to bottom when message is added
             setTimeout(() => {
               if (scrollContainerRef.current) {
                 scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
@@ -453,7 +487,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           break;
       }
     },
-    [setAgentStatus, setAgentRunId, setAutoOpenedPanel, threadId, setMessages],
+    [setAgentStatus, setAgentRunId, setAutoOpenedPanel, threadId, setMessages, queuedMessages, removeQueuedMessage],
   );
 
   const handleStreamError = useCallback((errorMessage: string) => {
@@ -461,7 +495,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     const isExpected =
       lower.includes('not found') || lower.includes('agent run is not running');
 
-    // Check if this is a billing error
     const isBillingError =
       lower.includes('insufficient credits') ||
       lower.includes('credit') ||
@@ -471,7 +504,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
     if (isBillingError) {
       console.error(`[PAGE] Agent stopped due to billing error: ${errorMessage}`);
-      // Create a BillingError to pass to the modal
       const billingError = new BillingError(402, {
         message: errorMessage,
       });
@@ -480,7 +512,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       return;
     }
 
-    // Downgrade log level for expected/benign cases (opening old conversations)
     if (isExpected) {
       return;
     }
@@ -488,11 +519,18 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     console.error(`[PAGE] Stream hook error: ${errorMessage}`);
     toast.error(`Stream Error: ${errorMessage}`);
 
-    // Clear pending message on error
     pendingMessageRef.current = null;
   }, [openBillingModal]);
 
   const handleStreamClose = useCallback(() => { }, []);
+
+  const streamCallbacks = useMemo(() => ({
+    onMessage: handleNewMessageFromStream,
+    onStatusChange: handleStreamStatusChange,
+    onError: handleStreamError,
+    onClose: handleStreamClose,
+    onToolCallChunk: handleStreamingToolCall,
+  }), [handleNewMessageFromStream, handleStreamStatusChange, handleStreamError, handleStreamClose, handleStreamingToolCall]);
 
   const {
     status: streamHookStatus,
@@ -503,16 +541,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     startStreaming,
     stopStreaming,
   } = useAgentStream(
-    {
-      onMessage: handleNewMessageFromStream,
-      onStatusChange: handleStreamStatusChange,
-      onError: handleStreamError,
-      onClose: handleStreamClose,
-      onToolCallChunk: (message) => {
-        // Pass the UnifiedMessage with metadata.tool_calls to handleStreamingToolCall
-        handleStreamingToolCall(message);
-      },
-    },
+    streamCallbacks,
     threadId,
     setMessages,
     threadAgentData?.agent?.agent_id,
@@ -524,9 +553,23 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       options?: { model_name?: string },
     ) => {
       if (!message.trim() || isShared || !addUserMessageMutation || !startAgentMutation) return;
+
+      // Check if agent is running - if so, queue the message instead
+      if (agentStatus === 'running' || agentStatus === 'connecting') {
+        console.log('[ThreadComponent] Agent is running, queueing message:', { message, options, agentStatus });
+        const queuedId = queueMessage(threadId, message, {
+          ...options,
+          agent_id: selectedAgentId,
+        });
+        console.log('[ThreadComponent] Queued message ID:', queuedId);
+        
+        // Clear the input - the queue panel will show the message
+        chatInputRef.current?.setValue('');
+        return;
+      }
+
       setIsSending(true);
 
-      // Store the message to add optimistically when agent starts running
       pendingMessageRef.current = message;
 
       try {
@@ -586,8 +629,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           throw new Error(`Failed to start agent: ${error?.message || error}`);
         }
 
-        // Message sent successfully - now clear the input
-        setChatInputValue('');
+        chatInputRef.current?.setValue('');
 
         const agentResult = results[1].value;
         setUserInitiatedRun(true);
@@ -600,7 +642,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         ) {
           toast.error(err instanceof Error ? err.message : 'Operation failed');
         }
-        // Keep the input value on error so user doesn't lose their message
       } finally {
         setIsSending(false);
       }
@@ -615,12 +656,14 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       setAgentRunId,
       isShared,
       selectedAgentId,
-      setChatInputValue,
+      agentStatus,
+      queueMessage,
+      queuedMessages,
     ],
   );
 
   const handleStopAgent = useCallback(async () => {
-    if (isShared) return; // Cannot stop agent in shared mode
+    if (isShared) return;
 
     setAgentStatus('idle');
 
@@ -637,20 +680,26 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   const handleOpenFileViewer = useCallback(
     (filePath?: string, filePathList?: string[]) => {
-      // Invalidate project query to ensure fresh data when opening modal
-      // The modal's refetchOnMount will handle the actual refetch
       if (projectId) {
         queryClient.invalidateQueries({
           queryKey: threadKeys.project(projectId),
           refetchType: 'active',
         });
       }
-      
-      setFileToView(filePath || null);
-      setFilePathList(filePathList);
-      setFileViewerOpen(true);
+
+      if (filePath) {
+        openFileInComputer(filePath, filePathList);
+        if (!isSidePanelOpen) {
+          toggleSidePanel();
+        }
+      } else {
+        openFileInComputer('/workspace');
+        if (!isSidePanelOpen) {
+          toggleSidePanel();
+        }
+      }
     },
-    [projectId, queryClient],
+    [projectId, queryClient, openFileInComputer, isSidePanelOpen, toggleSidePanel],
   );
 
   const toolViewAssistant = useCallback(
@@ -703,7 +752,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     [],
   );
 
-  // Playback controller for shared mode - using proper custom hook
   const playback = usePlaybackController({
     messages,
     enabled: isShared,
@@ -713,27 +761,22 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     toolCalls,
   });
 
-  // Effects
   useEffect(() => {
     if (!initialLayoutAppliedRef.current) {
       setLeftSidebarOpen?.(false);
       initialLayoutAppliedRef.current = true;
     }
   }, [setLeftSidebarOpen]);
-
+  
   useEffect(() => {
     if (initialLoadCompleted && !initialPanelOpenAttempted) {
       setInitialPanelOpenAttempted(true);
-
-      // Only auto-open on desktop, not mobile, and not in compact mode
-      if (!isMobile && !compact) {
+      if (!isMobile && !compact && !isSidePanelOpen) {
         if (toolCalls.length > 0) {
           setIsSidePanelOpen(true);
           setCurrentToolIndex(toolCalls.length - 1);
-        } else {
-          if (messages.length > 0) {
-            setIsSidePanelOpen(true);
-          }
+        } else if (messages.length > 0) {
+          setIsSidePanelOpen(true);
         }
       }
     }
@@ -746,32 +789,32 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     setCurrentToolIndex,
     isMobile,
     compact,
+    isSidePanelOpen,
   ]);
 
   useEffect(() => {
-    // Prevent duplicate streaming calls for the same runId
     if (agentRunId && lastStreamStartedRef.current === agentRunId) {
       return;
     }
 
-    // Start streaming if user initiated a run (don't wait for initialLoadCompleted for first-time users)
-    if (agentRunId && agentRunId !== currentHookRunId && userInitiatedRun) {
+    const shouldAutoStart = userInitiatedRun || isNewThread;
+
+    if (agentRunId && agentRunId !== currentHookRunId && shouldAutoStart) {
       startStreaming(agentRunId);
-      lastStreamStartedRef.current = agentRunId; // Track that we started this runId
-      setUserInitiatedRun(false); // Reset flag after starting
+      lastStreamStartedRef.current = agentRunId;
+      setUserInitiatedRun(false);
       return;
     }
 
-    // Only auto-start streaming on page load if we know the agent is currently running
     if (
       agentRunId &&
       agentRunId !== currentHookRunId &&
       initialLoadCompleted &&
-      !userInitiatedRun &&
+      !shouldAutoStart &&
       agentStatus === 'running'
     ) {
       startStreaming(agentRunId);
-      lastStreamStartedRef.current = agentRunId; // Track that we started this runId
+      lastStreamStartedRef.current = agentRunId;
     }
   }, [
     agentRunId,
@@ -780,6 +823,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     initialLoadCompleted,
     userInitiatedRun,
     agentStatus,
+    isNewThread,
   ]);
 
   useEffect(() => {
@@ -792,15 +836,20 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     ) {
       setAgentStatus('idle');
       setAgentRunId(null);
-      // Reset the stream tracking ref when stream completes
       lastStreamStartedRef.current = null;
     }
   }, [streamHookStatus, agentStatus, setAgentStatus, setAgentRunId]);
 
-  // Reset stream tracking ref when threadId changes  
   useEffect(() => {
     lastStreamStartedRef.current = null;
   }, [threadId]);
+
+  useEffect(() => {
+    if (initialLoadCompleted) {
+      sessionStorage.removeItem('optimistic_prompt');
+      sessionStorage.removeItem('optimistic_thread');
+    }
+  }, [initialLoadCompleted]);
 
   // SEO title update
   useEffect(() => {
@@ -813,7 +862,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       if (metaDescription) {
         metaDescription.setAttribute(
           'content',
-          `${projectName} - Interactive agent conversation powered by Kortix`,
+          `${projectName} - Interactive Worker conversation powered by Kortix`,
         );
       }
 
@@ -848,7 +897,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       );
       const isFreeTier = subscriptionStatus === 'no_subscription';
       if (!hasSeenUpgradeDialog && isFreeTier && !isLocalMode()) {
-        openBillingModal(); // Open without error for free tier prompt
+        openBillingModal();
       }
     }
   }, [subscriptionData, subscriptionStatus, initialLoadCompleted, openBillingModal]);
@@ -866,7 +915,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     return () => clearTimeout(timer);
   }, [isSidePanelOpen]);
 
-  // Scroll detection for show/hide scroll-to-bottom button
   useEffect(() => {
     if (!initialLoadCompleted) return;
 
@@ -881,15 +929,10 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       const clientHeight = scrollContainerRef.current.clientHeight;
       const threshold = 50;
 
-      // With flex-column-reverse, scrollTop can be NEGATIVE:
-      // - scrollTop = 0 or negative means we're at the "top" (visually the bottom/newest messages)
-      // - scrollTop becomes more negative as we scroll up (visually) from the bottom
-      // - scrollTop = -(scrollHeight - clientHeight) when fully scrolled up
-      // Show button when scrolled up enough from bottom (scrollTop is negative and less than -threshold)
       const isScrolledUp = scrollTop < -threshold;
       const hasScrollableContent = scrollHeight > clientHeight;
       const shouldShow = isScrolledUp && hasScrollableContent;
-      
+
       setShowScrollToBottom(shouldShow);
     };
 
@@ -899,18 +942,15 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       return;
     }
 
-    // Attach scroll listener
     scrollContainer.addEventListener('scroll', checkScrollPosition, {
       passive: true,
     });
 
-    // Also use ResizeObserver to check when content size changes
     const resizeObserver = new ResizeObserver(() => {
       checkScrollPosition();
     });
     resizeObserver.observe(scrollContainer);
 
-    // Check initial state with multiple timeouts to catch layout changes
     const timeout1 = setTimeout(checkScrollPosition, 100);
     const timeout2 = setTimeout(checkScrollPosition, 300);
     const timeout3 = setTimeout(checkScrollPosition, 500);
@@ -926,10 +966,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     };
   }, [messages, initialLoadCompleted]);
 
-  // Auto-scroll to bottom on initial load
   useEffect(() => {
     if (initialLoadCompleted && scrollContainerRef.current && messages.length > 0) {
-      // Small delay to ensure DOM is fully rendered
       const timeoutId = setTimeout(() => {
         if (scrollContainerRef.current) {
           scrollContainerRef.current.scrollTo({ top: 0, behavior: 'auto' });
@@ -939,8 +977,64 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }, [initialLoadCompleted, messages.length]);
 
-  if (!initialLoadCompleted || isLoading) {
-    return <ThreadSkeleton isSidePanelOpen={isSidePanelOpen} compact={compact} />;
+  const optimisticMessages: UnifiedMessage[] = useMemo(() => {
+    if (!showOptimisticUI || !optimisticPrompt) return [];
+    return [{
+      message_id: 'optimistic-user',
+      thread_id: threadId,
+      type: 'user' as const,
+      is_llm_message: true,
+      content: optimisticPrompt,
+      metadata: '{}',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }];
+  }, [showOptimisticUI, optimisticPrompt, threadId]);
+
+  const displayMessages = showOptimisticUI ? optimisticMessages : messages;
+  const displayAgentStatus = showOptimisticUI ? 'running' : agentStatus;
+  const displayStreamHookStatus = showOptimisticUI ? 'connecting' : streamHookStatus;
+  const displayStreamingText = showOptimisticUI ? '' : streamingTextContent;
+  const displayProjectName = showOptimisticUI ? 'New Conversation' : projectName;
+  
+  if (!hasDataLoaded.current && !showOptimisticUI && (!initialLoadCompleted || isLoading || isThreadInitializing)) {
+    return <ThreadSkeleton isSidePanelOpen={isSidePanelOpen} compact={compact} initializingMessage={
+      isThreadInitializing ? 'Setting up your conversation...' : undefined
+    } />;
+  }
+
+  if (threadInitializationError) {
+    return (
+      <ThreadLayout
+        threadId={threadId}
+        projectName={projectName}
+        projectId={project?.id || ''}
+        project={project}
+        sandboxId={sandboxId}
+        isSidePanelOpen={false}
+        onToggleSidePanel={() => {}}
+        onProjectRenamed={() => {}}
+        onViewFiles={() => {}}
+        toolCalls={[]}
+        messages={[]}
+        externalNavIndex={0}
+        agentStatus="idle"
+        currentToolIndex={0}
+        onSidePanelNavigate={() => {}}
+        onSidePanelClose={() => {}}
+        renderAssistantMessage={() => <></>}
+        renderToolResult={() => <></>}
+        isLoading={false}
+        isMobile={isMobile}
+        initialLoadCompleted={true}
+        variant={isShared ? 'shared' : 'default'}
+        leftSidebarState={leftSidebarState}
+      >
+        <ThreadError 
+          error={threadInitializationError || "Thread initialization failed"}
+        />
+      </ThreadLayout>
+    );
   }
 
   if (error) {
@@ -954,10 +1048,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         isSidePanelOpen={isSidePanelOpen}
         onToggleSidePanel={toggleSidePanel}
         onViewFiles={handleOpenFileViewer}
-        fileViewerOpen={fileViewerOpen}
-        setFileViewerOpen={setFileViewerOpen}
-        fileToView={fileToView}
-        filePathList={filePathList}
         toolCalls={toolCalls}
         messages={messages as ApiMessageType[]}
         externalNavIndex={externalNavIndex}
@@ -982,100 +1072,92 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       <>
         <ThreadLayout
           threadId={threadId}
-          projectName={projectName}
-          projectId={project?.id || ''}
-          project={project}
-          sandboxId={sandboxId}
-          isSidePanelOpen={isSidePanelOpen}
-          onToggleSidePanel={toggleSidePanel}
+          projectName={displayProjectName}
+          projectId={project?.id || projectId}
+          project={showOptimisticUI ? null : project}
+          sandboxId={showOptimisticUI ? null : sandboxId}
+          isSidePanelOpen={effectivePanelOpen}
+          onToggleSidePanel={showOptimisticUI ? () => {} : toggleSidePanel}
           onProjectRenamed={handleProjectRenamed}
-          onViewFiles={handleOpenFileViewer}
-          fileViewerOpen={fileViewerOpen}
-          setFileViewerOpen={setFileViewerOpen}
-          fileToView={fileToView}
-          filePathList={filePathList}
-          toolCalls={toolCalls}
-          messages={messages as ApiMessageType[]}
-          externalNavIndex={externalNavIndex}
-          agentStatus={agentStatus}
-          currentToolIndex={currentToolIndex}
-          onSidePanelNavigate={handleSidePanelNavigate}
-          onSidePanelClose={handleSidePanelClose}
+          onViewFiles={showOptimisticUI ? () => {} : handleOpenFileViewer}
+          toolCalls={showOptimisticUI ? [] : toolCalls}
+          messages={displayMessages as ApiMessageType[]}
+          externalNavIndex={showOptimisticUI ? 0 : externalNavIndex}
+          agentStatus={displayAgentStatus}
+          currentToolIndex={showOptimisticUI ? 0 : currentToolIndex}
+          onSidePanelNavigate={showOptimisticUI ? () => {} : handleSidePanelNavigate}
+          onSidePanelClose={showOptimisticUI ? () => {} : handleSidePanelClose}
           renderAssistantMessage={toolViewAssistant}
           renderToolResult={toolViewResult}
-          isLoading={!initialLoadCompleted || isLoading}
+          isLoading={showOptimisticUI ? false : (!initialLoadCompleted || isLoading)}
           isMobile={isMobile}
-          initialLoadCompleted={initialLoadCompleted}
+          initialLoadCompleted={showOptimisticUI ? true : initialLoadCompleted}
           agentName={agent && agent.name}
-          disableInitialAnimation={!initialLoadCompleted && toolCalls.length > 0}
+          disableInitialAnimation={showOptimisticUI || isNewThread || (!initialLoadCompleted && toolCalls.length > 0)}
           compact={true}
+          streamingTextContent={isShared ? '' : displayStreamingText}
+          streamingToolCall={isShared || showOptimisticUI ? undefined : streamingToolCall}
         >
-          {/* Thread Content - Scrollable */}
           <div
             ref={scrollContainerRef}
             className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col-reverse"
           >
             <div className="flex-shrink-0">
               <ThreadContent
-                messages={isShared ? playback.playbackState.visibleMessages : messages}
-                streamingTextContent={isShared ? '' : streamingTextContent}
-                streamingToolCall={isShared ? playback.playbackState.currentToolCall : streamingToolCall}
-                agentStatus={agentStatus}
-                handleToolClick={handleToolClick}
-                handleOpenFileViewer={handleOpenFileViewer}
+                messages={isShared ? playback.playbackState.visibleMessages : displayMessages}
+                streamingTextContent={isShared ? '' : displayStreamingText}
+                streamingToolCall={isShared ? playback.playbackState.currentToolCall : (showOptimisticUI ? undefined : streamingToolCall)}
+                agentStatus={displayAgentStatus}
+                handleToolClick={showOptimisticUI ? () => {} : handleToolClick}
+                handleOpenFileViewer={showOptimisticUI ? () => {} : handleOpenFileViewer}
                 readOnly={isShared}
                 visibleMessages={isShared ? playback.playbackState.visibleMessages : undefined}
                 streamingText={isShared ? playback.playbackState.streamingText : ''}
                 isStreamingText={isShared ? playback.playbackState.isStreamingText : false}
                 currentToolCall={isShared ? playback.playbackState.currentToolCall : undefined}
-                streamHookStatus={streamHookStatus}
-                sandboxId={sandboxId}
-                project={project}
+                streamHookStatus={displayStreamHookStatus}
+                sandboxId={showOptimisticUI ? null : sandboxId}
+                project={showOptimisticUI ? null : project}
                 agentName={agent && agent.name}
                 agentAvatar={undefined}
                 scrollContainerRef={scrollContainerRef}
                 isPreviewMode={true}
-                onPromptFill={!isShared ? setChatInputValue : undefined}
+                onPromptFill={!isShared ? handlePromptFill : undefined}
                 threadId={threadId}
               />
             </div>
           </div>
 
-          {/* Compact Chat Input or Playback Controls */}
           {!isShared && (
-            <div className="flex-shrink-0 border-t border-border/20  p-4">
+            <div className="flex-shrink-0 border-t border-border/20 p-4">
               <ChatInput
-                onSubmit={handleSubmitMessage}
+                ref={chatInputRef}
+                onSubmit={showOptimisticUI ? () => {} : handleSubmitMessage}
                 placeholder={t('describeWhatYouNeed')}
-                loading={isSending}
-                disabled={isSending}
+                loading={showOptimisticUI ? false : isSending}
+                disabled={showOptimisticUI || isSending}
                 isAgentRunning={
-                  agentStatus === 'running' || agentStatus === 'connecting'
+                  displayAgentStatus === 'running' || displayAgentStatus === 'connecting'
                 }
                 onStopAgent={handleStopAgent}
-                autoFocus={!isLoading}
+                autoFocus={!isLoading && !showOptimisticUI}
                 enableAdvancedConfig={false}
                 onFileBrowse={handleOpenFileViewer}
-                sandboxId={sandboxId || undefined}
+                sandboxId={showOptimisticUI ? undefined : (sandboxId || undefined)}
                 projectId={projectId}
-                messages={messages}
+                messages={displayMessages}
                 agentName={agent && agent.name}
                 selectedAgentId={selectedAgentId}
                 onAgentSelect={handleAgentSelect}
                 hideAgentSelection={!!configuredAgentId}
-                toolCalls={toolCalls}
-                toolCallIndex={currentToolIndex}
-                showToolPreview={!isSidePanelOpen && toolCalls.length > 0}
-                onExpandToolPreview={() => {
-                  setIsSidePanelOpen(true);
-                  userClosedPanelRef.current = false;
-                }}
+                toolCalls={showOptimisticUI ? [] : toolCalls}
+                toolCallIndex={showOptimisticUI ? 0 : currentToolIndex}
+                showToolPreview={!showOptimisticUI && !isSidePanelOpen && toolCalls.length > 0}
+                onExpandToolPreview={handleExpandToolPreview}
                 defaultShowSnackbar="tokens"
                 showScrollToBottomIndicator={showScrollToBottom}
                 onScrollToBottom={scrollToBottom}
                 threadId={threadId}
-                value={chatInputValue}
-                onChange={setChatInputValue}
               />
             </div>
           )}
@@ -1113,43 +1195,37 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     );
   }
 
-  // Full layout version for dedicated thread pages
-  // Prepare ChatInput component
   const chatInputElement = !isShared ? (
     <div className={cn('mx-auto', isMobile ? 'w-full' : 'max-w-3xl')}>
       <ChatInput
-        onSubmit={handleSubmitMessage}
+        ref={chatInputRef}
+        onSubmit={showOptimisticUI ? () => {} : handleSubmitMessage}
         placeholder={t('describeWhatYouNeed')}
-        loading={isSending}
-        disabled={isSending}
+        loading={showOptimisticUI ? false : isSending}
+        disabled={showOptimisticUI || isSending}
         isAgentRunning={
-          agentStatus === 'running' || agentStatus === 'connecting'
+          displayAgentStatus === 'running' || displayAgentStatus === 'connecting'
         }
         onStopAgent={handleStopAgent}
-        autoFocus={!isLoading}
+        autoFocus={!isLoading && !showOptimisticUI}
         enableAdvancedConfig={false}
         onFileBrowse={handleOpenFileViewer}
-        sandboxId={sandboxId || undefined}
+        sandboxId={showOptimisticUI ? undefined : (sandboxId || undefined)}
         projectId={projectId}
-        messages={messages}
+        messages={displayMessages}
         agentName={agent && agent.name}
         selectedAgentId={selectedAgentId}
         onAgentSelect={handleAgentSelect}
         threadId={threadId}
         hideAgentSelection={!!configuredAgentId}
-        toolCalls={toolCalls}
-        toolCallIndex={currentToolIndex}
-        showToolPreview={!isSidePanelOpen && toolCalls.length > 0}
-        onExpandToolPreview={() => {
-          setIsSidePanelOpen(true);
-          userClosedPanelRef.current = false;
-        }}
+        toolCalls={showOptimisticUI ? [] : toolCalls}
+        toolCallIndex={showOptimisticUI ? 0 : currentToolIndex}
+        showToolPreview={!showOptimisticUI && !effectivePanelOpen && toolCalls.length > 0}
+        onExpandToolPreview={handleExpandToolPreview}
         defaultShowSnackbar="tokens"
         showScrollToBottomIndicator={showScrollToBottom}
         onScrollToBottom={scrollToBottom}
         bgColor="bg-card"
-        value={chatInputValue}
-        onChange={setChatInputValue}
       />
     </div>
   ) : undefined;
@@ -1158,61 +1234,59 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     <>
       <ThreadLayout
         threadId={threadId}
-        projectName={projectName}
-        projectId={project?.id || ''}
-        project={project}
-        sandboxId={sandboxId}
-        isSidePanelOpen={isSidePanelOpen}
-        onToggleSidePanel={toggleSidePanel}
+        projectName={displayProjectName}
+        projectId={project?.id || projectId}
+        project={showOptimisticUI ? null : project}
+        sandboxId={showOptimisticUI ? null : sandboxId}
+        isSidePanelOpen={effectivePanelOpen}
+        onToggleSidePanel={showOptimisticUI ? () => {} : toggleSidePanel}
         onProjectRenamed={handleProjectRenamed}
-        onViewFiles={handleOpenFileViewer}
-        fileViewerOpen={fileViewerOpen}
-        setFileViewerOpen={setFileViewerOpen}
-        fileToView={fileToView}
-        filePathList={filePathList}
-        toolCalls={toolCalls}
-        messages={messages as ApiMessageType[]}
-        externalNavIndex={externalNavIndex}
-        agentStatus={agentStatus}
-        currentToolIndex={currentToolIndex}
-        onSidePanelNavigate={handleSidePanelNavigate}
-        onSidePanelClose={handleSidePanelClose}
+        onViewFiles={showOptimisticUI ? () => {} : handleOpenFileViewer}
+        toolCalls={showOptimisticUI ? [] : toolCalls}
+        messages={displayMessages as ApiMessageType[]}
+        externalNavIndex={showOptimisticUI ? 0 : externalNavIndex}
+        agentStatus={displayAgentStatus}
+        currentToolIndex={showOptimisticUI ? 0 : currentToolIndex}
+        onSidePanelNavigate={showOptimisticUI ? () => {} : handleSidePanelNavigate}
+        onSidePanelClose={showOptimisticUI ? () => {} : handleSidePanelClose}
         renderAssistantMessage={toolViewAssistant}
         renderToolResult={toolViewResult}
-        isLoading={!initialLoadCompleted || isLoading}
+        isLoading={showOptimisticUI ? false : (!initialLoadCompleted || isLoading)}
         isMobile={isMobile}
-        initialLoadCompleted={initialLoadCompleted}
+        initialLoadCompleted={showOptimisticUI ? true : initialLoadCompleted}
         agentName={agent && agent.name}
-        disableInitialAnimation={!initialLoadCompleted && toolCalls.length > 0}
+        disableInitialAnimation={showOptimisticUI || isNewThread || (!initialLoadCompleted && toolCalls.length > 0)}
         variant={isShared ? 'shared' : 'default'}
         chatInput={chatInputElement}
         leftSidebarState={leftSidebarState}
+        streamingTextContent={isShared ? '' : displayStreamingText}
+        streamingToolCall={isShared || showOptimisticUI ? undefined : streamingToolCall}
       >
         <ThreadContent
-          messages={isShared ? playback.playbackState.visibleMessages : messages}
-          streamingTextContent={isShared ? '' : streamingTextContent}
-          streamingToolCall={isShared ? playback.playbackState.currentToolCall : streamingToolCall}
-          agentStatus={agentStatus}
-          handleToolClick={handleToolClick}
-          handleOpenFileViewer={handleOpenFileViewer}
+          messages={isShared ? playback.playbackState.visibleMessages : displayMessages}
+          streamingTextContent={isShared ? '' : displayStreamingText}
+          streamingToolCall={isShared ? playback.playbackState.currentToolCall : (showOptimisticUI ? undefined : streamingToolCall)}
+          agentStatus={displayAgentStatus}
+          handleToolClick={showOptimisticUI ? () => {} : handleToolClick}
+          handleOpenFileViewer={showOptimisticUI ? () => {} : handleOpenFileViewer}
           readOnly={isShared}
           visibleMessages={isShared ? playback.playbackState.visibleMessages : undefined}
           streamingText={isShared ? playback.playbackState.streamingText : ''}
           isStreamingText={isShared ? playback.playbackState.isStreamingText : false}
           currentToolCall={isShared ? playback.playbackState.currentToolCall : undefined}
-          streamHookStatus={streamHookStatus}
-          sandboxId={sandboxId}
-          project={project}
+          streamHookStatus={displayStreamHookStatus}
+          sandboxId={showOptimisticUI ? null : sandboxId}
+          project={showOptimisticUI ? null : project}
           agentName={agent && agent.name}
           agentAvatar={undefined}
           scrollContainerRef={scrollContainerRef}
           threadId={threadId}
-          onPromptFill={!isShared ? setChatInputValue : undefined}
+          onPromptFill={!isShared ? handlePromptFill : undefined}
         />
 
         {isShared && (
           <PlaybackFloatingControls
-            messageCount={messages.length}
+            messageCount={displayMessages.length}
             currentMessageIndex={playback.playbackState.currentMessageIndex}
             isPlaying={playback.playbackState.isPlaying}
             isSidePanelOpen={isSidePanelOpen}

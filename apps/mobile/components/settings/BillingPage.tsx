@@ -106,7 +106,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
       // Use kortix.com for production, staging.suna.so for staging
       const baseUrl = process.env.EXPO_PUBLIC_ENV === 'staging' 
         ? 'https://staging.suna.so' 
-        : 'https://kortix.com';
+        : 'https://www.kortix.com';
       await WebBrowser.openBrowserAsync(`${baseUrl}/credits-explained`, {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
       });

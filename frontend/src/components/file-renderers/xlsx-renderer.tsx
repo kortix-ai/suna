@@ -39,6 +39,115 @@ interface XlsxRendererProps {
   isDownloading?: boolean;
 }
 
+type FileFormat = 'xlsx' | 'xls' | 'unknown';
+
+/**
+ * Detect Excel file format from magic bytes
+ */
+function detectExcelFormat(buffer: ArrayBuffer): FileFormat {
+  const view = new Uint8Array(buffer);
+  
+  // XLSX/ZIP signature: PK (0x50 0x4B 0x03 0x04)
+  if (view.length >= 4 && view[0] === 0x50 && view[1] === 0x4B && view[2] === 0x03 && view[3] === 0x04) {
+    return 'xlsx';
+  }
+  
+  // XLS/OLE signature: D0 CF 11 E0 A1 B1 1A E1
+  if (view.length >= 8 && 
+      view[0] === 0xD0 && view[1] === 0xCF && view[2] === 0x11 && view[3] === 0xE0 &&
+      view[4] === 0xA1 && view[5] === 0xB1 && view[6] === 0x1A && view[7] === 0xE1) {
+    return 'xls';
+  }
+  
+  return 'unknown';
+}
+
+interface ParsedWorkbook {
+  sheets: { headers: string[]; data: Record<string, any>[] }[];
+  sheetNames: string[];
+}
+
+/**
+ * Parse XLSX format using read-excel-file (no vulnerabilities)
+ */
+async function parseXlsxFormat(file: File): Promise<ParsedWorkbook> {
+  const readXlsxFile = (await import('read-excel-file')).default;
+  const readSheetNames = (await import('read-excel-file')).readSheetNames;
+
+  const sheetNames = await readSheetNames(file);
+  
+  const sheets = await Promise.all(
+    sheetNames.map(async (sheetName) => {
+      try {
+        const rows = await readXlsxFile(file, { sheet: sheetName });
+        
+        if (!rows || rows.length === 0) {
+          return { headers: [], data: [] };
+        }
+        
+        const headers = rows[0].map((h, idx) => 
+          h == null || h === '' ? `Column ${idx + 1}` : String(h)
+        );
+        
+        const data = rows.slice(1).map((row) => {
+          const obj: Record<string, any> = {};
+          headers.forEach((header, i) => {
+            let value = row[i];
+            if (value instanceof Date) {
+              value = value.toLocaleDateString();
+            }
+            obj[header] = value ?? '';
+          });
+          return obj;
+        });
+        
+        return { headers, data };
+      } catch (err) {
+        console.error(`[XlsxRenderer] Error parsing sheet "${sheetName}":`, err);
+        return { headers: [], data: [] };
+      }
+    })
+  );
+  
+  return { sheets, sheetNames };
+}
+
+/**
+ * Parse XLS (old Excel format) using xlsx library
+ * Note: xlsx has known vulnerabilities but is the only option for XLS files
+ */
+async function parseXlsFormat(arrayBuffer: ArrayBuffer): Promise<ParsedWorkbook> {
+  const XLSX = await import('xlsx');
+  const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+  
+  const sheetNames: string[] = workbook.SheetNames || [];
+  
+  const sheets = sheetNames.map((name) => {
+    const ws = workbook.Sheets[name];
+    const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+    
+    if (!rows || rows.length === 0) {
+      return { headers: [], data: [] };
+    }
+    
+    const headers = (rows[0] as any[]).map((h, idx) => 
+      h == null || h === '' ? `Column ${idx + 1}` : String(h)
+    );
+    
+    const data = rows.slice(1).map((row) => {
+      const obj: Record<string, any> = {};
+      headers.forEach((header, i) => {
+        obj[header] = (row as any[])[i] ?? '';
+      });
+      return obj;
+    });
+    
+    return { headers, data };
+  });
+  
+  return { sheets, sheetNames };
+}
+
 export function XlsxRenderer({
   filePath,
   fileName,
@@ -55,13 +164,14 @@ export function XlsxRenderer({
   const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' | null }>({ column: '', direction: null });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [parsed, setParsed] = useState<{ sheets: { headers: string[]; data: any[] }[]; sheetNames: string[] }>({ sheets: [], sheetNames: [] });
+  const [parsed, setParsed] = useState<ParsedWorkbook>({ sheets: [], sheetNames: [] });
 
   const xlsxPath = filePath || fileName;
   const resolvedSandboxId = sandboxId || project?.sandbox?.id;
 
   React.useEffect(() => {
     let cancelled = false;
+    
     async function load() {
       try {
         setIsLoading(true);
@@ -72,47 +182,69 @@ export function XlsxRenderer({
         setSheetIndex(0);
 
         let arrayBuffer: ArrayBuffer;
+        
         if (typeof xlsxPath === 'string' && xlsxPath.startsWith('blob:')) {
           const resp = await fetch(xlsxPath);
           if (!resp.ok) throw new Error(`Fetch failed: ${resp.status}`);
           arrayBuffer = await resp.arrayBuffer();
         } else if (resolvedSandboxId && session?.access_token) {
-          const blob = (await fetchFileContent(
-            resolvedSandboxId,
-            xlsxPath,
-            'blob',
-            session.access_token
-          )) as Blob;
-          arrayBuffer = await blob.arrayBuffer();
+          // Handle paths that start with "workspace" (without leading /)
+          let normalizedPath = xlsxPath;
+          if (xlsxPath === 'workspace' || xlsxPath.startsWith('workspace/')) {
+            normalizedPath = '/' + xlsxPath;
+          } else if (!xlsxPath.startsWith('/workspace')) {
+            normalizedPath = `/workspace/${xlsxPath.startsWith('/') ? xlsxPath.substring(1) : xlsxPath}`;
+          }
+          
+          const url = new URL(`${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${resolvedSandboxId}/files/content`);
+          url.searchParams.append('path', normalizedPath);
+          
+          const response = await fetch(url.toString(), {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Fetch failed: ${response.status}`);
+          }
+          
+          arrayBuffer = await response.arrayBuffer();
         } else {
           const resp = await fetch(xlsxPath);
           if (!resp.ok) throw new Error(`Fetch failed: ${resp.status}`);
           arrayBuffer = await resp.arrayBuffer();
         }
 
-        const XLSX = await import('xlsx');
-        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-        const sheetNames: string[] = workbook.SheetNames || [];
-        const sheets = sheetNames.map((name) => {
-          const ws = workbook.Sheets[name];
-          const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
-          if (!rows || rows.length === 0) return { headers: [], data: [] };
-          const headers = (rows[0] as string[]).map((h) => (h == null ? '' : String(h)));
-          const data = rows.slice(1).map((row) => {
-            const obj: Record<string, any> = {};
-            headers.forEach((header, i) => {
-              obj[header] = (row as any[])[i] ?? '';
-            });
-            return obj;
+        if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+          throw new Error('Empty file received');
+        }
+
+        // Detect file format
+        const format = detectExcelFormat(arrayBuffer);
+        console.log('[XlsxRenderer] Detected format:', format, 'size:', arrayBuffer.byteLength);
+
+        let result: ParsedWorkbook;
+        
+        if (format === 'xlsx') {
+          // Use read-excel-file for XLSX (modern format, no vulnerabilities)
+          const file = new File([arrayBuffer], fileName || 'spreadsheet.xlsx', { 
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
           });
-          return { headers, data };
-        });
+          result = await parseXlsxFormat(file);
+        } else if (format === 'xls') {
+          // Use xlsx library for XLS (old format, required for compatibility)
+          result = await parseXlsFormat(arrayBuffer);
+        } else {
+          throw new Error('Unknown file format. Expected XLS or XLSX file.');
+        }
 
         if (!cancelled) {
-          setParsed({ sheets, sheetNames });
+          setParsed(result);
           setIsLoading(false);
         }
       } catch (e: any) {
+        console.error('[XlsxRenderer] Parse error:', e);
         if (!cancelled) {
           setError(e?.message || 'Failed to load spreadsheet');
           setParsed({ sheets: [], sheetNames: [] });
@@ -120,9 +252,10 @@ export function XlsxRenderer({
         }
       }
     }
+    
     load();
     return () => { cancelled = true; };
-  }, [xlsxPath, resolvedSandboxId, session?.access_token]);
+  }, [xlsxPath, resolvedSandboxId, session?.access_token, fileName]);
 
   const currentSheet = parsed.sheets[sheetIndex] || { headers: [], data: [] };
 
@@ -194,7 +327,7 @@ export function XlsxRenderer({
             <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
           </div>
           <div>
-            <h3 className="text-lg font-medium text-foreground">{error ? 'Failed to load XLSX' : 'No Data'}</h3>
+            <h3 className="text-lg font-medium text-foreground">{error ? 'Failed to load spreadsheet' : 'No Data'}</h3>
             {!error && <p className="text-sm text-muted-foreground">This sheet appears to be empty.</p>}
             {error && <p className="text-xs text-muted-foreground">{error}</p>}
           </div>
@@ -210,7 +343,7 @@ export function XlsxRenderer({
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5 text-primary" />
             <div className='flex items-center gap-2'>
-              <h3 className="font-medium text-foreground">XLSX Data</h3>
+              <h3 className="font-medium text-foreground">Spreadsheet</h3>
               <p className="text-xs text-muted-foreground">
                 - {processedData.length.toLocaleString()} rows, {visibleHeaders.length} columns
               </p>

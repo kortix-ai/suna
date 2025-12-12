@@ -35,7 +35,7 @@ export function SimplePlaybackControls({
       <div className="flex items-center gap-2 rounded-full border border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 px-3 py-2 shadow-lg">
         {/* Kortix Logo */}
         <Link
-          href="https://kortix.ai"
+          href="https://www.kortix.com"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 text-sm font-medium hover:opacity-80 transition-opacity"

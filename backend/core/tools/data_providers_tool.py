@@ -14,7 +14,32 @@ from core.tools.data_providers.TwitterProvider import TwitterProvider
     icon="Database",
     color="bg-lime-100 dark:bg-lime-800/50",
     weight=140,
-    visible=True
+    visible=True,
+    usage_guide="""
+### DATA PROVIDERS
+
+**AVAILABLE PROVIDERS:**
+- linkedin: LinkedIn data
+- twitter: Twitter/X data
+- zillow: Real estate data
+- amazon: Product data
+- yahoo_finance: Financial market data
+- active_jobs: Job listings
+
+**WORKFLOW:**
+1. Use `get_data_provider_endpoints` to see available endpoints for a provider
+2. Use `execute_data_provider_call` to execute specific endpoint
+3. Process returned data
+
+**WHEN TO USE:**
+- Preferred over generic web scraping for provider-specific data
+- When you need structured, real-time data
+- For accessing APIs without manual integration
+
+**PRIORITY:**
+- If a data provider exists for your task, use it over web search/scraping
+- Data providers offer more accurate, structured data
+"""
 )
 class DataProvidersTool(Tool):
     """Tool for making requests to various data providers."""

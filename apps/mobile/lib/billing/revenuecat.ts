@@ -5,6 +5,7 @@ import Purchases, {
   CustomerInfo,
   PurchasesStoreProduct,
 } from 'react-native-purchases';
+import RevenueCatUI from 'react-native-purchases-ui';
 import { Platform } from 'react-native';
 import { API_URL, getAuthHeaders } from '@/api/config';
 
@@ -39,7 +40,8 @@ let initializationPromise: Promise<void> | null = null;
 let customerInfoListenerAdded = false;
 let lastSetEmail: string | null = null;
 let lastSetUserId: string | null = null;
-let currentInitializationParams: { userId: string; email?: string; canTrack: boolean } | null = null;
+let currentInitializationParams: { userId: string; email?: string; canTrack: boolean } | null =
+  null;
 
 async function isRevenueCatAlreadyConfigured(): Promise<boolean> {
   try {
@@ -76,7 +78,11 @@ export async function logoutRevenueCat(): Promise<void> {
   }
 }
 
-export async function setRevenueCatAttributes(email?: string, displayName?: string, phoneNumber?: string): Promise<void> {
+export async function setRevenueCatAttributes(
+  email?: string,
+  displayName?: string,
+  phoneNumber?: string
+): Promise<void> {
   try {
     if (email) {
       await Purchases.setEmail(email);
@@ -92,12 +98,18 @@ export async function setRevenueCatAttributes(email?: string, displayName?: stri
   }
 }
 
-export async function initializeRevenueCat(userId: string, email?: string, canTrack: boolean = false): Promise<void> {
+export async function initializeRevenueCat(
+  userId: string,
+  email?: string,
+  canTrack: boolean = false
+): Promise<void> {
   // Check if we're already initializing with the same parameters
-  if (currentInitializationParams && 
-      currentInitializationParams.userId === userId &&
-      currentInitializationParams.email === email &&
-      currentInitializationParams.canTrack === canTrack) {
+  if (
+    currentInitializationParams &&
+    currentInitializationParams.userId === userId &&
+    currentInitializationParams.email === email &&
+    currentInitializationParams.canTrack === canTrack
+  ) {
     // Same initialization already in progress, wait for it
     if (initializationPromise) {
       await initializationPromise;
@@ -108,7 +120,7 @@ export async function initializeRevenueCat(userId: string, email?: string, canTr
   // If already configured, just update email if needed and return
   if (isConfigured || (await isRevenueCatAlreadyConfigured())) {
     isConfigured = true;
-    
+
     // Update email if provided, tracking is enabled, and email actually changed
     if (email && canTrack && email !== lastSetEmail) {
       try {
@@ -119,7 +131,7 @@ export async function initializeRevenueCat(userId: string, email?: string, canTr
         console.warn('⚠️ Could not update email:', emailError);
       }
     }
-    
+
     // Add listener if tracking is enabled and listener hasn't been added yet
     if (canTrack && !customerInfoListenerAdded) {
       Purchases.addCustomerInfoUpdateListener((customerInfo) => {
@@ -129,7 +141,7 @@ export async function initializeRevenueCat(userId: string, email?: string, canTr
       customerInfoListenerAdded = true;
       console.log('✅ Customer info update listener added');
     }
-    
+
     // Update user ID if it changed
     if (userId !== lastSetUserId) {
       try {
@@ -147,7 +159,7 @@ export async function initializeRevenueCat(userId: string, email?: string, canTr
         console.warn('⚠️ Could not update user ID:', error);
       }
     }
-    
+
     return;
   }
 
@@ -159,87 +171,89 @@ export async function initializeRevenueCat(userId: string, email?: string, canTr
   }
 
   const apiKey = Platform.OS === 'ios' ? REVENUECAT_API_KEY_IOS : REVENUECAT_API_KEY_ANDROID;
-  
+
   if (!apiKey) {
     throw new Error('RevenueCat API key not configured');
   }
 
   // Track current initialization parameters
   currentInitializationParams = { userId, email, canTrack };
-  
+
   // Create a promise that will be shared by concurrent calls
   initializationPromise = (async () => {
-  try {
-    console.log('🚀 Initializing RevenueCat...');
-    console.log('👤 User ID:', userId);
-    console.log('📧 Email:', email || 'No email provided');
-    console.log('📊 Tracking allowed:', canTrack);
-    
-    if (__DEV__) {
-      Purchases.setLogLevel(LOG_LEVEL.DEBUG);
-    }
+    try {
+      console.log('🚀 Initializing RevenueCat...');
+      console.log('👤 User ID:', userId);
+      console.log('📧 Email:', email || 'No email provided');
+      console.log('📊 Tracking allowed:', canTrack);
 
-    Purchases.configure({ apiKey, appUserID: userId });
-    
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    if (email && canTrack) {
-      console.log('📧 Setting email for RevenueCat customer (tracking enabled):', email);
-      try {
-        await Purchases.setEmail(email);
-        console.log('✅ Email set successfully:', email);
-        lastSetEmail = email;
-      } catch (emailError) {
-        console.error('❌ Error setting email:', emailError);
+      if (__DEV__) {
+        Purchases.setLogLevel(LOG_LEVEL.DEBUG);
       }
-    } else if (!canTrack) {
-      console.log('⚠️ Tracking disabled - email not set for analytics');
-    } else {
-      console.warn('⚠️ No email provided to RevenueCat');
-    }
-    
+
+      Purchases.configure({ apiKey, appUserID: userId });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      if (email && canTrack) {
+        console.log('📧 Setting email for RevenueCat customer (tracking enabled):', email);
+        try {
+          await Purchases.setEmail(email);
+          console.log('✅ Email set successfully:', email);
+          lastSetEmail = email;
+        } catch (emailError) {
+          console.error('❌ Error setting email:', emailError);
+        }
+      } else if (!canTrack) {
+        console.log('⚠️ Tracking disabled - email not set for analytics');
+      } else {
+        console.warn('⚠️ No email provided to RevenueCat');
+      }
+
       if (canTrack && !customerInfoListenerAdded) {
-      Purchases.addCustomerInfoUpdateListener((customerInfo) => {
-        console.log('📱 Customer info updated:', customerInfo);
-        notifyBackendOfPurchase(customerInfo);
-      });
+        Purchases.addCustomerInfoUpdateListener((customerInfo) => {
+          console.log('📱 Customer info updated:', customerInfo);
+          notifyBackendOfPurchase(customerInfo);
+        });
         customerInfoListenerAdded = true;
         console.log('✅ Customer info update listener added');
       } else if (!canTrack) {
         console.log('⚠️ Analytics listener not added (tracking disabled)');
-    } else {
+      } else {
         console.log('ℹ️ Customer info listener already added');
-    }
+      }
 
-    isConfigured = true;
-    lastSetUserId = userId;
-    currentInitializationParams = null;
-    console.log('✅ RevenueCat initialized successfully');
-    console.log('🔒 SECURITY: Subscription is now locked to this account');
-  } catch (error) {
-    console.error('❌ Error initializing RevenueCat:', error);
+      isConfigured = true;
+      lastSetUserId = userId;
+      currentInitializationParams = null;
+      console.log('✅ RevenueCat initialized successfully');
+      console.log('🔒 SECURITY: Subscription is now locked to this account');
+    } catch (error) {
+      console.error('❌ Error initializing RevenueCat:', error);
       isConfigured = false;
       initializationPromise = null;
       currentInitializationParams = null;
-    throw error;
-  }
+      throw error;
+    }
   })();
 
   await initializationPromise;
   currentInitializationParams = null;
 }
 
-export async function getOfferings(forceRefresh: boolean = false): Promise<PurchasesOffering | null> {
+export async function getOfferings(
+  forceRefresh: boolean = false
+): Promise<PurchasesOffering | null> {
   try {
     if (forceRefresh) {
       console.log('🔄 Forcing fresh offerings fetch from RevenueCat...');
       try {
         const currentAppUserId = (await Purchases.getCustomerInfo()).originalAppUserId;
         console.log('🔄 Resetting SDK to clear cache...');
-        
+
         await Purchases.invalidateCustomerInfoCache();
         await Purchases.syncPurchases();
-        
+
         if (!currentAppUserId.startsWith('$RCAnonymousID:')) {
           await Purchases.logOut();
           await Purchases.logIn(currentAppUserId);
@@ -247,22 +261,28 @@ export async function getOfferings(forceRefresh: boolean = false): Promise<Purch
         } else {
           console.log('⚠️ User is anonymous, skipping logout/login cycle');
         }
-        
-        await new Promise(resolve => setTimeout(resolve, 300));
+
+        await new Promise((resolve) => setTimeout(resolve, 300));
       } catch (resetError) {
         console.warn('⚠️ Cache reset failed, continuing with getOfferings:', resetError);
       }
     }
-    
+
     const offerings = await Purchases.getOfferings();
-    
+
     if (offerings.current) {
       console.log('✅ Current offering:', offerings.current.identifier);
-      console.log('📦 Available packages:', offerings.current.availablePackages.map(p => p.identifier).join(', '));
-      console.log('📦 Available product IDs:', offerings.current.availablePackages.map(p => p.product.identifier).join(', '));
+      console.log(
+        '📦 Available packages:',
+        offerings.current.availablePackages.map((p) => p.identifier).join(', ')
+      );
+      console.log(
+        '📦 Available product IDs:',
+        offerings.current.availablePackages.map((p) => p.product.identifier).join(', ')
+      );
       return offerings.current;
     }
-    
+
     console.warn('⚠️ No current offering available');
     return null;
   } catch (error) {
@@ -271,17 +291,20 @@ export async function getOfferings(forceRefresh: boolean = false): Promise<Purch
   }
 }
 
-export async function getOfferingById(offeringId: string, forceRefresh: boolean = false): Promise<PurchasesOffering | null> {
+export async function getOfferingById(
+  offeringId: string,
+  forceRefresh: boolean = false
+): Promise<PurchasesOffering | null> {
   try {
     if (forceRefresh) {
       console.log(`🔄 Forcing fresh fetch for offering: ${offeringId}...`);
       try {
         const currentAppUserId = (await Purchases.getCustomerInfo()).originalAppUserId;
         console.log('🔄 Resetting SDK to clear cache...');
-        
+
         await Purchases.invalidateCustomerInfoCache();
         await Purchases.syncPurchases();
-        
+
         if (!currentAppUserId.startsWith('$RCAnonymousID:')) {
           await Purchases.logOut();
           await Purchases.logIn(currentAppUserId);
@@ -289,23 +312,29 @@ export async function getOfferingById(offeringId: string, forceRefresh: boolean 
         } else {
           console.log('⚠️ User is anonymous, skipping logout/login cycle');
         }
-        
-        await new Promise(resolve => setTimeout(resolve, 300));
+
+        await new Promise((resolve) => setTimeout(resolve, 300));
       } catch (resetError) {
         console.warn('⚠️ Cache reset failed, continuing with getOfferings:', resetError);
       }
     }
-    
+
     const offerings = await Purchases.getOfferings();
     const offering = offerings.all[offeringId];
-    
+
     if (offering) {
       console.log(`✅ Found offering: ${offeringId}`);
-      console.log('📦 Available packages:', offering.availablePackages.map(p => p.identifier).join(', '));
+      console.log(
+        '📦 Available packages:',
+        offering.availablePackages.map((p) => p.identifier).join(', ')
+      );
       return offering;
     }
-    
-    console.warn(`⚠️ Offering '${offeringId}' not found. Available offerings:`, Object.keys(offerings.all));
+
+    console.warn(
+      `⚠️ Offering '${offeringId}' not found. Available offerings:`,
+      Object.keys(offerings.all)
+    );
     return null;
   } catch (error) {
     console.error(`❌ Error fetching offering '${offeringId}':`, error);
@@ -314,25 +343,25 @@ export async function getOfferingById(offeringId: string, forceRefresh: boolean 
 }
 
 export async function purchasePackage(
-  pkg: PurchasesPackage, 
-  email?: string, 
+  pkg: PurchasesPackage,
+  email?: string,
   expectedUserId?: string,
   onSyncComplete?: (response: SyncResponse) => void | Promise<void>
 ): Promise<CustomerInfo> {
   try {
     console.log('💳 Purchasing package:', pkg.identifier);
-    
+
     // CRITICAL: Verify RevenueCat is linked to the correct user before purchase
     let currentCustomerInfo = await Purchases.getCustomerInfo();
     let rcUserId = currentCustomerInfo.originalAppUserId;
-    
+
     console.log('🔐 RevenueCat User ID:', rcUserId);
     console.log('🔐 Expected User ID:', expectedUserId);
-    
+
     // If RevenueCat is anonymous or mismatched, try to fix it
     const isAnonymous = rcUserId.startsWith('$RCAnonymousID:');
     const isMismatched = expectedUserId && rcUserId !== expectedUserId;
-    
+
     if ((isAnonymous || isMismatched) && expectedUserId) {
       console.log('🔄 RevenueCat session mismatch - attempting to fix...');
       try {
@@ -341,11 +370,11 @@ export async function purchasePackage(
         currentCustomerInfo = loginResult.customerInfo;
         rcUserId = currentCustomerInfo.originalAppUserId;
         console.log('✅ RevenueCat session fixed, new user ID:', rcUserId);
-        
+
         // Check if this Apple ID already has an active subscription
-    const hasActiveSubscription = 
-      Object.keys(currentCustomerInfo.entitlements.active).length > 0 ||
-      currentCustomerInfo.activeSubscriptions.length > 0;
+        const hasActiveSubscription =
+          Object.keys(currentCustomerInfo.entitlements.active).length > 0 ||
+          currentCustomerInfo.activeSubscriptions.length > 0;
 
         if (hasActiveSubscription) {
           console.log('⚠️ This Apple ID already has an active subscription on another account');
@@ -360,13 +389,15 @@ export async function purchasePackage(
           throw loginError;
         }
         console.error('❌ Failed to fix RevenueCat session:', loginError);
-        const error: any = new Error('Unable to link your account. Please restart the app and try again.');
+        const error: any = new Error(
+          'Unable to link your account. Please restart the app and try again.'
+        );
         error.code = 'SESSION_FIX_FAILED';
-      error.userCancelled = false;
-      throw error;
+        error.userCancelled = false;
+        throw error;
+      }
     }
-    }
-    
+
     if (email) {
       console.log('📧 Ensuring email is set before purchase:', email);
       try {
@@ -376,7 +407,7 @@ export async function purchasePackage(
         console.warn('⚠️ Could not set email before purchase:', emailError);
       }
     }
-    
+
     let customerInfo: CustomerInfo;
     try {
       const result = await Purchases.purchasePackage(pkg);
@@ -384,13 +415,15 @@ export async function purchasePackage(
     } catch (purchaseError: any) {
       // RevenueCat logs purchase cancellations as errors internally, but they're not real errors
       // Check for user cancellation using multiple possible indicators
-      const isUserCancelled = 
+      const isUserCancelled =
         purchaseError.userCancelled === true ||
         purchaseError.code === 'PURCHASE_CANCELLED' ||
         purchaseError.code === 'USER_CANCELLED' ||
-        purchaseError.code === 'PURCHASES_ERROR' && purchaseError.underlyingErrorMessage?.includes('cancelled') ||
+        (purchaseError.code === 'PURCHASES_ERROR' &&
+          purchaseError.underlyingErrorMessage?.includes('cancelled')) ||
         (purchaseError.message && purchaseError.message.toLowerCase().includes('cancelled')) ||
-        (purchaseError.underlyingErrorMessage && purchaseError.underlyingErrorMessage.toLowerCase().includes('cancelled'));
+        (purchaseError.underlyingErrorMessage &&
+          purchaseError.underlyingErrorMessage.toLowerCase().includes('cancelled'));
 
       if (isUserCancelled) {
         // User cancellation is expected behavior - create a clean error without stack trace issues
@@ -405,12 +438,12 @@ export async function purchasePackage(
       // Re-throw other errors as-is
       throw purchaseError;
     }
-    
+
     console.log('✅ Purchase successful');
     console.log('📊 Customer Info - Original App User ID:', customerInfo.originalAppUserId);
-    
+
     await notifyBackendOfPurchase(customerInfo, onSyncComplete);
-    
+
     return customerInfo;
   } catch (error: any) {
     // Final error handling - check again in case error was re-thrown
@@ -437,7 +470,7 @@ export async function getCustomerInfo(): Promise<CustomerInfo> {
 export function getSubscriptionInfo(customerInfo: CustomerInfo): RevenueCatSubscriptionInfo {
   const entitlements = customerInfo.entitlements.active;
   const hasActiveEntitlement = Object.keys(entitlements).length > 0;
-  
+
   if (!hasActiveEntitlement) {
     return {
       isActive: false,
@@ -448,7 +481,7 @@ export function getSubscriptionInfo(customerInfo: CustomerInfo): RevenueCatSubsc
   }
 
   const activeEntitlement = Object.values(entitlements)[0];
-  
+
   return {
     isActive: true,
     willRenew: activeEntitlement.willRenew,
@@ -460,7 +493,13 @@ export function getSubscriptionInfo(customerInfo: CustomerInfo): RevenueCatSubsc
 }
 
 export interface SyncResponse {
-  status: 'pending_webhook' | 'synced' | 'already_synced' | 'no_active_subscription' | 'unknown_product' | 'processing';
+  status:
+    | 'pending_webhook'
+    | 'synced'
+    | 'already_synced'
+    | 'no_active_subscription'
+    | 'unknown_product'
+    | 'processing';
   message?: string;
   product_id?: string;
   tier?: string;
@@ -473,9 +512,9 @@ async function notifyBackendOfPurchase(
 ): Promise<SyncResponse | null> {
   try {
     console.log('📤 Notifying backend of purchase...');
-    
+
     const headers = await getAuthHeaders();
-    
+
     const response = await fetch(`${API_URL}/billing/revenuecat/sync`, {
       method: 'POST',
       headers: {
@@ -498,7 +537,7 @@ async function notifyBackendOfPurchase(
       return null;
     }
 
-    const result = await response.json() as SyncResponse;
+    const result = (await response.json()) as SyncResponse;
     console.log('📊 Sync response:', JSON.stringify(result, null, 2));
 
     if (result.status === 'pending_webhook') {
@@ -537,7 +576,7 @@ export async function checkSubscriptionStatus(): Promise<{
   try {
     const customerInfo = await getCustomerInfo();
     const subscriptionInfo = getSubscriptionInfo(customerInfo);
-    
+
     if (!subscriptionInfo.isActive) {
       return { hasActiveSubscription: false };
     }
@@ -562,14 +601,50 @@ export async function checkSubscriptionStatus(): Promise<{
   }
 }
 
-export async function presentPaywall(): Promise<void> {
+export async function presentPaywall(
+  paywallName?: string
+): Promise<{ purchased: boolean; cancelled: boolean }> {
   try {
-    const offerings = await getOfferings(true);
-    if (!offerings) {
+    let offering: PurchasesOffering | null = null;
+
+    // If paywall name is provided, try to get that specific offering
+    if (paywallName) {
+      console.log(`📱 Fetching paywall: ${paywallName}`);
+      offering = await getOfferingById(paywallName, true);
+
+      if (!offering) {
+        console.warn(`⚠️ Paywall '${paywallName}' not found, trying current offering`);
+        offering = await getOfferings(true);
+      }
+    } else {
+      // Default to current offering
+      offering = await getOfferings(true);
+    }
+
+    if (!offering) {
       throw new Error('No offerings available to display');
     }
-    console.log('📱 Presenting paywall with offerings');
-    return;
+
+    console.log(`📱 Presenting RevenueCat paywall: ${offering.identifier}`);
+
+    // Present the paywall using RevenueCatUI
+    const result = await RevenueCatUI.presentPaywall({ offering });
+
+    const purchased = result === RevenueCatUI.PAYWALL_RESULT.PURCHASED;
+    const cancelled = result === RevenueCatUI.PAYWALL_RESULT.CANCELLED;
+
+    if (purchased) {
+      console.log('✅ User completed a purchase from paywall');
+      // Get updated customer info after purchase
+      const customerInfo = await Purchases.getCustomerInfo();
+      await notifyBackendOfPurchase(customerInfo);
+    } else if (cancelled) {
+      console.log('🚫 User cancelled the paywall');
+    } else {
+      console.log('ℹ️ Paywall was dismissed without purchase');
+    }
+
+    return { purchased, cancelled };
   } catch (error) {
     console.error('❌ Error presenting paywall:', error);
     throw error;

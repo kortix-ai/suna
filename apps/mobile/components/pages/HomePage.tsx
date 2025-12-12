@@ -1,9 +1,11 @@
 import * as React from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, View, Keyboard } from 'react-native';
-import { useColorScheme } from 'nativewind';
+import { KeyboardAvoidingView, Platform, View } from 'react-native';
+import { runOnJS } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import * as Haptics from 'expo-haptics';
 import { ChatInputSection, ChatDrawers, type ChatInputSectionRef } from '@/components/chat';
-import { QuickActionBar } from '@/components/quick-actions';
-import { BackgroundLogo, TopNav } from '@/components/home';
+import { QUICK_ACTIONS, ModeThreadListView } from '@/components/quick-actions';
+import { TopNav } from '@/components/home';
 import { useRouter } from 'expo-router';
 import { UsageDrawer } from '@/components/settings/UsageDrawer';
 import { CreditsPurchasePage } from '@/components/settings/CreditsPurchasePage';
@@ -11,109 +13,226 @@ import { useChatCommons } from '@/hooks';
 import type { UseChatReturn } from '@/hooks';
 import { usePricingModalStore } from '@/stores/billing-modal-store';
 
+const SWIPE_THRESHOLD = 50;
+
 interface HomePageProps {
   onMenuPress?: () => void;
   chat: UseChatReturn;
   isAuthenticated: boolean;
+  onOpenWorkerConfig?: (
+    workerId: string,
+    view?: 'instructions' | 'tools' | 'integrations' | 'triggers'
+  ) => void;
 }
 
 export interface HomePageRef {
   focusChatInput: () => void;
 }
 
-export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
-  onMenuPress,
-  chat,
-  isAuthenticated,
-}, ref) => {
-  const router = useRouter();
-  const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
+export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
+  ({ onMenuPress, chat, isAuthenticated, onOpenWorkerConfig: externalOpenWorkerConfig }, ref) => {
+    const router = useRouter();
+    const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
 
-  const { creditsExhausted } = usePricingModalStore();
-  const [isUsageDrawerOpen, setIsUsageDrawerOpen] = React.useState(false);
-  const [isCreditsPurchaseOpen, setIsCreditsPurchaseOpen] = React.useState(false);
+    const { creditsExhausted } = usePricingModalStore();
+    const [isUsageDrawerOpen, setIsUsageDrawerOpen] = React.useState(false);
+    const [isCreditsPurchaseOpen, setIsCreditsPurchaseOpen] = React.useState(false);
+    const [isWorkerConfigDrawerVisible, setIsWorkerConfigDrawerVisible] = React.useState(false);
+    const [workerConfigWorkerId, setWorkerConfigWorkerId] = React.useState<string | null>(null);
+    const [workerConfigInitialView, setWorkerConfigInitialView] = React.useState<
+      'instructions' | 'tools' | 'integrations' | 'triggers' | undefined
+    >(undefined);
 
-  const chatInputRef = React.useRef<ChatInputSectionRef>(null);
+    const chatInputRef = React.useRef<ChatInputSectionRef>(null);
+    const lastSwipeIndex = React.useRef(-1);
 
-  React.useImperativeHandle(ref, () => ({
-    focusChatInput: () => {
-      chatInputRef.current?.focusInput();
-    },
-  }), []);
+    // Find current selected index for swipe gestures
+    const selectedIndex = React.useMemo(() => {
+      const index = QUICK_ACTIONS.findIndex((a) => a.id === chat.selectedQuickAction);
+      return index >= 0 ? index : 0;
+    }, [chat.selectedQuickAction]);
 
-  const handleUpgradePress = React.useCallback(() => {
-    router.push({
-      pathname: '/plans',
-      params: { creditsExhausted: creditsExhausted ? 'true' : 'false' },
-    });
-  }, [router, creditsExhausted]);
+    // Switch to a specific mode index
+    const switchToMode = React.useCallback(
+      (newIndex: number) => {
+        const clampedIndex = Math.max(0, Math.min(newIndex, QUICK_ACTIONS.length - 1));
+        if (clampedIndex !== lastSwipeIndex.current) {
+          lastSwipeIndex.current = clampedIndex;
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          chat.handleQuickAction(QUICK_ACTIONS[clampedIndex].id);
+        }
+      },
+      [chat]
+    );
 
-  const handleCreditsPress = React.useCallback(() => {
-    setIsUsageDrawerOpen(true);
-  }, []);
+    // Update last swipe index when selection changes
+    React.useEffect(() => {
+      lastSwipeIndex.current = selectedIndex;
+    }, [selectedIndex]);
 
-  const handleCloseUsageDrawer = React.useCallback(() => {
-    setIsUsageDrawerOpen(false);
-  }, []);
+    // Pan gesture for swiping on the main content
+    const panGesture = Gesture.Pan()
+      .activeOffsetX([-25, 25])
+      .failOffsetY([-20, 20])
+      .onEnd((event) => {
+        const currentIndex = selectedIndex;
 
-  const handleTopUpPress = React.useCallback(() => {
-    setIsUsageDrawerOpen(false);
-    setIsCreditsPurchaseOpen(true);
-  }, []);
+        if (event.translationX < -SWIPE_THRESHOLD || event.velocityX < -500) {
+          // Swipe left - next mode
+          runOnJS(switchToMode)(currentIndex + 1);
+        } else if (event.translationX > SWIPE_THRESHOLD || event.velocityX > 500) {
+          // Swipe right - previous mode
+          runOnJS(switchToMode)(currentIndex - 1);
+        }
+      });
 
-  const handleCloseCreditsPurchase = React.useCallback(() => {
-    setIsCreditsPurchaseOpen(false);
-  }, []);
+    React.useImperativeHandle(
+      ref,
+      () => ({
+        focusChatInput: () => {
+          chatInputRef.current?.focusInput();
+        },
+      }),
+      []
+    );
 
-  const handleUpgradeFromUsage = React.useCallback(() => {
-    setIsUsageDrawerOpen(false);
-    router.push({
-      pathname: '/plans',
-      params: { creditsExhausted: creditsExhausted ? 'true' : 'false' },
-    });
-  }, [router, creditsExhausted]);
+    const handleUpgradePress = React.useCallback(() => {
+      router.push({
+        pathname: '/plans',
+        params: { creditsExhausted: creditsExhausted ? 'true' : 'false' },
+      });
+    }, [router, creditsExhausted]);
 
-  const handleThreadPressFromUsage = React.useCallback((threadId: string, _projectId: string | null) => {
-    console.log('🎯 Loading thread from UsageDrawer:', threadId);
-    chat.loadThread(threadId);
-  }, [chat]);
+    const handleCreditsPress = React.useCallback(() => {
+      setIsUsageDrawerOpen(true);
+    }, []);
 
-  // Memoized handlers for ChatInputSection to prevent re-renders
-  const handleSendMessage = React.useCallback((content: string, agentId: string, agentName: string) => {
-    chat.sendMessage(content, agentId, agentName);
-  }, [chat]);
+    const handleCloseUsageDrawer = React.useCallback(() => {
+      setIsUsageDrawerOpen(false);
+    }, []);
 
-  const handleQuickActionSelectOption = React.useCallback((optionId: string) => {
-    chat.setSelectedQuickActionOption(optionId);
-  }, [chat]);
+    const handleTopUpPress = React.useCallback(() => {
+      setIsUsageDrawerOpen(false);
+      setIsCreditsPurchaseOpen(true);
+    }, []);
 
-  const handleQuickActionSelectPrompt = React.useCallback((prompt: string) => {
-    chat.setInputValue(prompt);
-    chatInputRef.current?.focusInput();
-  }, [chat]);
+    const handleCloseCreditsPurchase = React.useCallback(() => {
+      setIsCreditsPurchaseOpen(false);
+    }, []);
 
-  return (
-    <View className="flex-1 bg-background">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        className="flex-1"
-        keyboardVerticalOffset={0}
-        enabled={false}
-      >
-        <Pressable
+    const handleUpgradeFromUsage = React.useCallback(() => {
+      setIsUsageDrawerOpen(false);
+      router.push({
+        pathname: '/plans',
+        params: { creditsExhausted: creditsExhausted ? 'true' : 'false' },
+      });
+    }, [router, creditsExhausted]);
+
+    const handleThreadPressFromUsage = React.useCallback(
+      (threadId: string, _projectId: string | null) => {
+        console.log('🎯 Loading thread from UsageDrawer:', threadId);
+        chat.loadThread(threadId);
+      },
+      [chat]
+    );
+
+    // Memoized handlers for ChatInputSection to prevent re-renders
+    const handleSendMessage = React.useCallback(
+      (content: string, agentId: string, agentName: string) => {
+        chat.sendMessage(content, agentId, agentName);
+      },
+      [chat]
+    );
+
+    const handleQuickActionSelectOption = React.useCallback(
+      (optionId: string) => {
+        chat.setSelectedQuickActionOption(optionId);
+      },
+      [chat]
+    );
+
+    const handleQuickActionSelectPrompt = React.useCallback(
+      (prompt: string) => {
+        chat.setInputValue(prompt);
+        chatInputRef.current?.focusInput();
+      },
+      [chat]
+    );
+
+    const handleQuickActionThreadPress = React.useCallback(
+      (threadId: string) => {
+        console.log('🎯 Loading thread from mode history:', threadId);
+        chat.showModeThread(threadId);
+      },
+      [chat]
+    );
+
+    // Ref to store pending worker config (to handle race condition)
+    const pendingWorkerConfigRef = React.useRef<{
+      workerId: string;
+      view?: 'instructions' | 'tools' | 'integrations' | 'triggers';
+    } | null>(null);
+
+    const handleCloseWorkerConfigDrawer = React.useCallback(() => {
+      setIsWorkerConfigDrawerVisible(false);
+      setWorkerConfigWorkerId(null);
+      setWorkerConfigInitialView(undefined);
+    }, []);
+
+    const handleOpenWorkerConfig = React.useCallback(
+      (workerId: string, view?: 'instructions' | 'tools' | 'integrations' | 'triggers') => {
+        console.log('🔧 [HomePage] Opening worker config:', workerId, view);
+        // If external handler is provided, use it to redirect to MenuPage
+        if (externalOpenWorkerConfig) {
+          externalOpenWorkerConfig(workerId, view);
+          return;
+        }
+        // Fallback: Store the pending config and open locally
+        pendingWorkerConfigRef.current = { workerId, view };
+        // Close the agent drawer - we'll open worker config in the dismiss callback
+        agentManager.closeDrawer();
+      },
+      [agentManager, externalOpenWorkerConfig]
+    );
+
+    const handleAgentDrawerDismiss = React.useCallback(() => {
+      console.log('🎭 [HomePage] AgentDrawer dismissed');
+      // Check if there's a pending worker config to open
+      if (pendingWorkerConfigRef.current) {
+        const { workerId, view } = pendingWorkerConfigRef.current;
+        pendingWorkerConfigRef.current = null;
+        console.log('🔧 [HomePage] Opening pending worker config:', workerId, view);
+        setWorkerConfigWorkerId(workerId);
+        setWorkerConfigInitialView(view);
+        setIsWorkerConfigDrawerVisible(true);
+      }
+    }, []);
+
+    return (
+      <View className="flex-1 bg-background">
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           className="flex-1"
-          onPress={Keyboard.dismiss}
-          accessible={false}
-        >
-          <View className="flex-1 relative">
+          keyboardVerticalOffset={0}
+          enabled={false}>
+          <View className="relative flex-1">
             <TopNav
               onMenuPress={onMenuPress}
               onUpgradePress={handleUpgradePress}
               onCreditsPress={handleCreditsPress}
             />
-            <View className="absolute inset-0" pointerEvents="none">
-              <BackgroundLogo />
-            </View>
+
+            {/* Swipeable content area - Always show thread list for current mode */}
+            <GestureDetector gesture={panGesture}>
+              <View className="flex-1">
+                <ModeThreadListView
+                  modeId={chat.selectedQuickAction || 'image'}
+                  onThreadPress={handleQuickActionThreadPress}
+                />
+              </View>
+            </GestureDetector>
+
+            {/* Chat Input Section - Static, not part of swipe */}
             <ChatInputSection
               ref={chatInputRef}
               value={chat.inputValue}
@@ -139,36 +258,45 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
               onQuickActionPress={chat.handleQuickAction}
               onQuickActionSelectOption={handleQuickActionSelectOption}
               onQuickActionSelectPrompt={handleQuickActionSelectPrompt}
+              onQuickActionThreadPress={handleQuickActionThreadPress}
               isAuthenticated={isAuthenticated}
               isAgentRunning={chat.isAgentRunning}
               isSendingMessage={chat.isSendingMessage}
               isTranscribing={isTranscribing}
+              showQuickActions={true}
             />
           </View>
-        </Pressable>
-        <ChatDrawers
-          isAgentDrawerVisible={agentManager.isDrawerVisible}
-          onCloseAgentDrawer={agentManager.closeDrawer}
-          isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
-          onCloseAttachmentDrawer={chat.closeAttachmentDrawer}
-          onTakePicture={chat.handleTakePicture}
-          onChooseImages={chat.handleChooseImages}
-          onChooseFiles={chat.handleChooseFiles}
-        />
-        <UsageDrawer
-          visible={isUsageDrawerOpen}
-          onClose={handleCloseUsageDrawer}
-          onUpgradePress={handleUpgradeFromUsage}
-          onTopUpPress={handleTopUpPress}
-          onThreadPress={handleThreadPressFromUsage}
-        />
-        <CreditsPurchasePage
-          visible={isCreditsPurchaseOpen}
-          onClose={handleCloseCreditsPurchase}
-        />
-      </KeyboardAvoidingView>
-    </View>
-  );
-});
+
+          <ChatDrawers
+            isAgentDrawerVisible={agentManager.isDrawerVisible}
+            onCloseAgentDrawer={agentManager.closeDrawer}
+            onOpenWorkerConfig={handleOpenWorkerConfig}
+            onAgentDrawerDismiss={handleAgentDrawerDismiss}
+            isWorkerConfigDrawerVisible={isWorkerConfigDrawerVisible}
+            workerConfigWorkerId={workerConfigWorkerId}
+            workerConfigInitialView={workerConfigInitialView}
+            onCloseWorkerConfigDrawer={handleCloseWorkerConfigDrawer}
+            isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
+            onCloseAttachmentDrawer={chat.closeAttachmentDrawer}
+            onTakePicture={chat.handleTakePicture}
+            onChooseImages={chat.handleChooseImages}
+            onChooseFiles={chat.handleChooseFiles}
+          />
+          <UsageDrawer
+            visible={isUsageDrawerOpen}
+            onClose={handleCloseUsageDrawer}
+            onUpgradePress={handleUpgradeFromUsage}
+            onTopUpPress={handleTopUpPress}
+            onThreadPress={handleThreadPressFromUsage}
+          />
+          <CreditsPurchasePage
+            visible={isCreditsPurchaseOpen}
+            onClose={handleCloseCreditsPurchase}
+          />
+        </KeyboardAvoidingView>
+      </View>
+    );
+  }
+);
 
 HomePage.displayName = 'HomePage';

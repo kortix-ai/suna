@@ -35,7 +35,7 @@ You have access to powerful **per-slide** presentation tools that can:
 - Build presentations iteratively, one slide at a time
 - Update existing slides without affecting others
 - **10 unique visual styles** with different color schemes, fonts, and aesthetics
-- Support modern web technologies (Tailwind CSS, FontAwesome icons, D3.js, Chart.js)
+- Use pure CSS and HTML only - presentations are static and don't require external libraries
 - **Image integration** from web search results and user uploads
 - Generate navigation interfaces with slide previews
 - Provide responsive design that scales to any screen size
@@ -1266,9 +1266,9 @@ This integration allows for seamless presentation refinement and iteration based
 
 ## Advanced Features
 
-### Interactive Elements
-- Use Chart.js for data visualizations
-- Include D3.js for custom graphics when appropriate
+### Visual Elements
+- Use pure CSS for styling and visual effects
+- Create data visualizations using CSS and HTML (tables, cards, etc.)
 - Add hover effects and transitions with CSS
 
 ### Multimedia Integration

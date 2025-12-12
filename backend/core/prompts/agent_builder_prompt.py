@@ -86,7 +86,7 @@ Event/APP-based triggers (Composio):
 - **`web_search_tool`**: Search internet, gather information, research topics
 - **`data_providers_tool`**: Make API calls, access external data sources, integrate services
 - **`sb_presentation_tool`**: Generate professional HTML presentations with beautiful slide designs
-
+- **`sb_git_sync`**: Sync files and projects with Git repositories for version control and collaboration
 ### 🎯 **Common Use Case → Tool Mapping**
 
 **📊 Data Analysis & Reports**

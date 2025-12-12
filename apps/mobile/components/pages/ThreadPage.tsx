@@ -10,25 +10,35 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import LottieView from 'lottie-react-native';
-import { ThreadContent, ToolCallPanel, ChatInputSection, ChatDrawers, type ToolMessagePair } from '@/components/chat';
+import {
+  ThreadContent,
+  ChatInputSection,
+  ChatDrawers,
+  type ToolMessagePair,
+} from '@/components/chat';
 import { ThreadHeader, ThreadActionsDrawer } from '@/components/threads';
-import { FileManagerScreen } from '@/components/files';
+import { KortixComputer } from '@/components/kortix-computer';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useChatCommons, type UseChatReturn, useDeleteThread, useShareThread } from '@/hooks';
 import { useThread } from '@/lib/chat';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { MessageCircle, ArrowDown, AlertCircle, X } from 'lucide-react-native';
+import { MessageCircle, ArrowDown, AlertCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
 interface ThreadPageProps {
   onMenuPress?: () => void;
   chat: UseChatReturn;
   isAuthenticated: boolean;
+  onOpenWorkerConfig?: (
+    workerId: string,
+    view?: 'instructions' | 'tools' | 'integrations' | 'triggers'
+  ) => void;
 }
 
 const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
   isRefreshing,
-  insets
+  insets,
 }: {
   isRefreshing: boolean;
   insets: { top: number };
@@ -57,31 +67,33 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
 
       width.value = withTiming(160, {
         duration: 450,
-        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94),
       });
 
       height.value = withTiming(90, {
         duration: 450,
-        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94),
       });
 
       borderTopRadius.value = withTiming(30, {
         duration: 450,
-        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94),
       });
 
       borderBottomRadius.value = withTiming(24, {
         duration: 450,
-        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94),
       });
 
-      contentTranslateY.value = withDelay(100, withTiming(20, {
-        duration: 350,
-        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
-      }));
+      contentTranslateY.value = withDelay(
+        100,
+        withTiming(20, {
+          duration: 350,
+          easing: Easing.bezier(0.25, 0.46, 0.45, 0.94),
+        })
+      );
 
       contentOpacity.value = withDelay(200, withTiming(1, { duration: 200 }));
-
     } else if (opacity.value === 1) {
       // Stop Lottie animation
       lottieRef.current?.pause();
@@ -89,34 +101,34 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
       contentOpacity.value = withTiming(0, { duration: 150 });
       contentTranslateY.value = withTiming(-20, {
         duration: 250,
-        easing: Easing.bezier(0.5, 0, 0.75, 0)
+        easing: Easing.bezier(0.5, 0, 0.75, 0),
       });
 
       setTimeout(() => {
         width.value = withTiming(126, {
           duration: 400,
-          easing: Easing.bezier(0.33, 0, 0.67, 1)
+          easing: Easing.bezier(0.33, 0, 0.67, 1),
         });
 
         borderTopRadius.value = withTiming(20, {
           duration: 400,
-          easing: Easing.bezier(0.33, 0, 0.67, 1)
+          easing: Easing.bezier(0.33, 0, 0.67, 1),
         });
 
         borderBottomRadius.value = withTiming(20, {
           duration: 400,
-          easing: Easing.bezier(0.33, 0, 0.67, 1)
+          easing: Easing.bezier(0.33, 0, 0.67, 1),
         });
 
         height.value = withTiming(37, {
           duration: 400,
-          easing: Easing.bezier(0.33, 0, 0.67, 1)
+          easing: Easing.bezier(0.33, 0, 0.67, 1),
         });
 
         setTimeout(() => {
           opacity.value = withTiming(0, {
             duration: 300,
-            easing: Easing.bezier(0.25, 0.1, 0.25, 1)
+            easing: Easing.bezier(0.25, 0.1, 0.25, 1),
           });
         }, 350);
       }, 150);
@@ -148,8 +160,7 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
             zIndex: 9999,
             elevation: 999,
           }}
-          pointerEvents="none"
-        >
+          pointerEvents="none">
           <Animated.View
             style={[
               animatedContainerStyle,
@@ -158,9 +169,8 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
                 overflow: 'hidden',
                 justifyContent: 'center',
                 alignItems: 'center',
-              }
-            ]}
-          >
+              },
+            ]}>
             <Animated.View style={contentStyle} className="flex-row items-center gap-2">
               <LottieView
                 ref={lottieRef}
@@ -186,8 +196,7 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
             zIndex: 9999,
             elevation: 999,
           }}
-          pointerEvents="none"
-        >
+          pointerEvents="none">
           <Animated.View
             style={[
               animatedContainerStyle,
@@ -196,9 +205,8 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
                 backgroundColor: '#000000',
                 justifyContent: 'center',
                 alignItems: 'center',
-              }
-            ]}
-          >
+              },
+            ]}>
             <Animated.View style={contentStyle} className="flex-row items-center gap-2">
               <LottieView
                 ref={lottieRef}
@@ -223,15 +231,57 @@ export function ThreadPage({
   onMenuPress,
   chat,
   isAuthenticated,
+  onOpenWorkerConfig: externalOpenWorkerConfig,
 }: ThreadPageProps) {
+  const [isMounted, setIsMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [isThreadActionsVisible, setIsThreadActionsVisible] = React.useState(false);
-  const [isFileManagerVisible, setIsFileManagerVisible] = React.useState(false);
-  const [selectedFilePath, setSelectedFilePath] = React.useState<string | undefined>();
+  const [selectedToolData, setSelectedToolData] = React.useState<{
+    toolMessages: ToolMessagePair[];
+    initialIndex: number;
+  } | null>(null);
+
+  // Handle upgrade press - navigate to plans page
+  const handleUpgradePress = React.useCallback(() => {
+    router.push('/plans');
+  }, [router]);
+  const [isWorkerConfigDrawerVisible, setIsWorkerConfigDrawerVisible] = React.useState(false);
+  const [workerConfigWorkerId, setWorkerConfigWorkerId] = React.useState<string | null>(null);
+  const [workerConfigInitialView, setWorkerConfigInitialView] = React.useState<
+    'instructions' | 'tools' | 'integrations' | 'triggers'
+  >('instructions');
+
+  // Use REF instead of state to avoid stale closure issues in callbacks
+  const pendingWorkerConfigRef = React.useRef<{
+    workerId: string;
+    view?: 'instructions' | 'tools' | 'integrations' | 'triggers';
+  } | null>(null);
+  const pendingWorkerConfigTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup timeout on unmount
+  React.useEffect(() => {
+    return () => {
+      if (pendingWorkerConfigTimeoutRef.current) {
+        clearTimeout(pendingWorkerConfigTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const {
+    isOpen: isKortixComputerOpen,
+    openPanel,
+    openFileInComputer,
+    openFileBrowser,
+  } = useKortixComputerStore();
 
   const deleteThreadMutation = useDeleteThread();
   const shareThreadMutation = useShareThread();
@@ -239,10 +289,13 @@ export function ThreadPage({
   const { data: fullThreadData, refetch: refetchThreadData } = useThread(chat.activeThread?.id);
 
   React.useEffect(() => {
-    if (isFileManagerVisible) {
+    if (isKortixComputerOpen) {
       refetchThreadData();
+    } else {
+      // Clear selected tool data when panel closes
+      setSelectedToolData(null);
     }
-  }, [isFileManagerVisible, refetchThreadData]);
+  }, [isKortixComputerOpen, refetchThreadData]);
 
   const messages = chat.messages || [];
   const streamingContent = chat.streamingContent || '';
@@ -320,30 +373,28 @@ export function ThreadPage({
   }, [chat]);
 
   // Memoized handlers for ThreadContent
-  const handleToolClick = React.useCallback((assistantMessageId: string | null, toolName: string) => {
-    // Tool click handler - can be extended for analytics
-  }, []);
+  const handleToolClick = React.useCallback(
+    (assistantMessageId: string | null, toolName: string) => {
+      // Tool click handler - can be extended for analytics
+    },
+    []
+  );
 
-  const handleToolPress = React.useCallback((toolMessages: ToolMessagePair[], initialIndex: number) => {
-    chat.setSelectedToolData({ toolMessages, initialIndex });
-  }, [chat]);
+  const handleToolPress = React.useCallback(
+    (toolMessages: ToolMessagePair[], initialIndex: number) => {
+      setSelectedToolData({ toolMessages, initialIndex });
+      openPanel();
+    },
+    [openPanel]
+  );
 
-  const handleFilePress = React.useCallback((filePath: string) => {
-    const normalizedPath = filePath.startsWith('/') ? filePath : `/workspace/${filePath}`;
-    setSelectedFilePath(normalizedPath);
-    setIsFileManagerVisible(true);
-  }, []);
-
-  // Memoized handlers for ToolCallPanel
-  const handleCloseToolPanel = React.useCallback(() => {
-    chat.setSelectedToolData(null);
-  }, [chat]);
-
-  // Memoized handlers for FileManagerScreen
-  const handleCloseFileManager = React.useCallback(() => {
-    setIsFileManagerVisible(false);
-    setSelectedFilePath(undefined);
-  }, []);
+  const handleFilePress = React.useCallback(
+    (filePath: string) => {
+      const normalizedPath = filePath.startsWith('/') ? filePath : `/workspace/${filePath}`;
+      openFileInComputer(normalizedPath);
+    },
+    [openFileInComputer]
+  );
 
   // Ensure thread content is loaded when ThreadPage mounts or thread changes
   const hasInitializedRef = React.useRef(false);
@@ -361,7 +412,7 @@ export function ThreadPage({
       lastThreadIdRef.current = currentThreadId;
 
       if (messages.length === 0 && !isLoading && !chat.isStreaming) {
-        chat.refreshMessages().catch(error => {
+        chat.refreshMessages().catch((error) => {
           console.error('Failed to load thread messages:', error);
           Alert.alert('Error', 'Failed to load thread messages. Please try again.');
         });
@@ -374,7 +425,7 @@ export function ThreadPage({
       <View className="flex-1">
         {isLoading ? (
           <View className="flex-1 items-center justify-center">
-            <View className="w-20 h-20 rounded-full items-center justify-center">
+            <View className="h-20 w-20 items-center justify-center rounded-full">
               <LottieView
                 source={require('@/components/animations/loading.json')}
                 style={{ width: 40, height: 40 }}
@@ -411,15 +462,14 @@ export function ThreadPage({
                 colors={['#000000']}
                 progressViewOffset={Math.max(insets.top, 16) + 80}
               />
-            }
-          >
-            <View className="w-20 h-20 rounded-full bg-muted/20 items-center justify-center mb-6">
+            }>
+            <View className="mb-6 h-20 w-20 items-center justify-center rounded-full bg-muted/20">
               <MessageCircle size={40} color={colorScheme === 'dark' ? '#666' : '#999'} />
             </View>
-            <Text className="text-foreground text-xl font-roobert-semibold text-center mb-2">
+            <Text className="mb-2 text-center font-roobert-semibold text-xl text-foreground">
               {chat.activeThread?.title || 'New Thread'}
             </Text>
-            <Text className="text-muted-foreground text-base font-roobert text-center">
+            <Text className="text-center font-roobert text-base text-muted-foreground">
               Start the conversation with a message or voice note
             </Text>
           </ScrollView>
@@ -456,36 +506,40 @@ export function ThreadPage({
                 colors={['#000000']}
                 progressViewOffset={Math.max(insets.top, 16) + 80}
               />
-            }
-          >
-            <ThreadContent
-              messages={messages}
-              streamingTextContent={streamingContent}
-              streamingToolCall={streamingToolCall}
-              agentStatus={chat.isAgentRunning ? 'running' : 'idle'}
-              streamHookStatus={chat.isStreaming ? 'streaming' : 'idle'}
-              sandboxId={chat.activeSandboxId || fullThreadData?.project?.sandbox?.id}
-              handleToolClick={handleToolClick}
-              onToolPress={handleToolPress}
-              onFilePress={handleFilePress}
-            />
+            }>
+            {isMounted && (
+              <ThreadContent
+                messages={messages}
+                streamingTextContent={streamingContent}
+                streamingToolCall={streamingToolCall}
+                agentStatus={chat.isAgentRunning ? 'running' : 'idle'}
+                streamHookStatus={chat.isStreaming ? 'streaming' : 'idle'}
+                sandboxId={chat.activeSandboxId || fullThreadData?.project?.sandbox?.id}
+                sandboxUrl={fullThreadData?.project?.sandbox?.sandbox_url}
+                handleToolClick={handleToolClick}
+                onToolPress={handleToolPress}
+                onFilePress={handleFilePress}
+                onPromptFill={chat.setInputValue}
+              />
+            )}
           </ScrollView>
         )}
       </View>
       {showScrollToBottom && hasMessages && (
         <Pressable
           onPress={scrollToBottom}
-          className="absolute right-6 bg-card border border-border rounded-full w-12 h-12 items-center justify-center active:opacity-80"
+          className="absolute right-6 h-12 w-12 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
           style={{
             bottom: 200,
-          }}
-        >
+          }}>
           <Icon as={ArrowDown} size={20} className="text-foreground" strokeWidth={2} />
         </Pressable>
       )}
 
       <ThreadHeader
-        threadTitle={fullThreadData?.project?.name || fullThreadData?.title || chat.activeThread?.title}
+        threadTitle={
+          fullThreadData?.project?.name || fullThreadData?.title || chat.activeThread?.title
+        }
         onTitleChange={async (newTitle) => {
           try {
             await chat.updateThreadTitle(newTitle);
@@ -494,6 +548,7 @@ export function ThreadPage({
           }
         }}
         onMenuPress={onMenuPress}
+        onBackPress={chat.showModeThreadList}
         onActionsPress={() => setIsThreadActionsVisible(true)}
       />
 
@@ -520,6 +575,7 @@ export function ThreadPage({
         selectedQuickAction={chat.selectedQuickAction}
         selectedQuickActionOption={chat.selectedQuickActionOption}
         onClearQuickAction={chat.clearQuickAction}
+        onQuickActionPress={chat.handleQuickAction}
         isAuthenticated={isAuthenticated}
         isAgentRunning={chat.isAgentRunning}
         isSendingMessage={chat.isSendingMessage}
@@ -529,6 +585,87 @@ export function ThreadPage({
       <ChatDrawers
         isAgentDrawerVisible={agentManager.isDrawerVisible}
         onCloseAgentDrawer={agentManager.closeDrawer}
+        onOpenWorkerConfig={(workerId, view) => {
+          console.log('🔧 [ThreadPage] Opening worker config:', {
+            workerId,
+            view,
+            isAgentDrawerVisible: agentManager.isDrawerVisible,
+          });
+
+          // If external handler is provided, use it to redirect to MenuPage
+          if (externalOpenWorkerConfig) {
+            externalOpenWorkerConfig(workerId, view);
+            return;
+          }
+
+          // Clear any existing timeout
+          if (pendingWorkerConfigTimeoutRef.current) {
+            clearTimeout(pendingWorkerConfigTimeoutRef.current);
+            pendingWorkerConfigTimeoutRef.current = null;
+          }
+
+          // Store pending config in REF (not state) to avoid stale closure issues
+          pendingWorkerConfigRef.current = { workerId, view };
+
+          // If AgentDrawer is visible, close it and wait for dismiss
+          if (agentManager.isDrawerVisible) {
+            console.log('🔧 [ThreadPage] AgentDrawer visible, closing first');
+            agentManager.closeDrawer();
+
+            // Fallback: if onDismiss doesn't fire within 500ms, open anyway
+            pendingWorkerConfigTimeoutRef.current = setTimeout(() => {
+              console.log('⏰ [ThreadPage] Fallback timeout - opening WorkerConfigDrawer');
+              const pending = pendingWorkerConfigRef.current;
+              if (pending) {
+                pendingWorkerConfigRef.current = null;
+                setWorkerConfigWorkerId(pending.workerId);
+                setWorkerConfigInitialView(pending.view || 'instructions');
+                setIsWorkerConfigDrawerVisible(true);
+              }
+              pendingWorkerConfigTimeoutRef.current = null;
+            }, 500);
+          } else {
+            // AgentDrawer is not visible, open immediately
+            console.log('✅ [ThreadPage] AgentDrawer not visible, opening immediately');
+            pendingWorkerConfigRef.current = null;
+            setWorkerConfigWorkerId(workerId);
+            setWorkerConfigInitialView(view || 'instructions');
+            setIsWorkerConfigDrawerVisible(true);
+          }
+        }}
+        onAgentDrawerDismiss={() => {
+          console.log('🎭 [ThreadPage] AgentDrawer dismissed');
+
+          // Clear fallback timeout since dismiss fired
+          if (pendingWorkerConfigTimeoutRef.current) {
+            clearTimeout(pendingWorkerConfigTimeoutRef.current);
+            pendingWorkerConfigTimeoutRef.current = null;
+          }
+
+          // Check REF (not state) for pending config
+          const pending = pendingWorkerConfigRef.current;
+          if (pending) {
+            console.log('🎭 [ThreadPage] Opening pending WorkerConfigDrawer');
+            pendingWorkerConfigRef.current = null;
+            setWorkerConfigWorkerId(pending.workerId);
+            setWorkerConfigInitialView(pending.view || 'instructions');
+            // Small delay to ensure AgentDrawer animation is complete
+            setTimeout(() => {
+              setIsWorkerConfigDrawerVisible(true);
+            }, 100);
+          }
+        }}
+        isWorkerConfigDrawerVisible={isWorkerConfigDrawerVisible}
+        workerConfigWorkerId={workerConfigWorkerId}
+        workerConfigInitialView={workerConfigInitialView}
+        onCloseWorkerConfigDrawer={() => {
+          setIsWorkerConfigDrawerVisible(false);
+          setWorkerConfigWorkerId(null);
+        }}
+        onWorkerUpdated={() => {
+          // Refresh agent data if needed
+        }}
+        onUpgradePress={handleUpgradePress}
         isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
         onCloseAttachmentDrawer={chat.closeAttachmentDrawer}
         onTakePicture={chat.handleTakePicture}
@@ -551,7 +688,7 @@ export function ThreadPage({
         }}
         onFiles={() => {
           setIsThreadActionsVisible(false);
-          setIsFileManagerVisible(true);
+          openFileBrowser();
         }}
         onDelete={() => {
           if (!chat.activeThread?.id) return;
@@ -591,66 +728,34 @@ export function ThreadPage({
         }}
       />
 
-      <ToolCallPanel
-        visible={!!chat.selectedToolData}
-        onClose={handleCloseToolPanel}
-        toolMessages={chat.selectedToolData?.toolMessages || []}
-        initialIndex={chat.selectedToolData?.initialIndex || 0}
-        project={fullThreadData?.project ? {
-          id: fullThreadData.project.id,
-          name: fullThreadData.project.name,
-          sandbox: fullThreadData.project.sandbox
-        } : undefined}
-      />
-
-      <Modal
-        visible={isFileManagerVisible}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setIsFileManagerVisible(false)}
-      >
-        {(chat.activeSandboxId || fullThreadData?.project?.sandbox?.id) ? (
-          <FileManagerScreen
-            key={`${chat.activeSandboxId}-${chat.isStreaming}`}
-            sandboxId={chat.activeSandboxId || fullThreadData?.project?.sandbox?.id || ''}
-            sandboxUrl={fullThreadData?.project?.sandbox?.sandbox_url}
-            initialFilePath={selectedFilePath}
-            isStreaming={chat.isStreaming}
-            onClose={handleCloseFileManager}
-          />
-        ) : (
-          <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#f8f8f8' }}>
-            <View style={{ paddingTop: insets.top, paddingHorizontal: 16 }}>
-              <View className="flex-row items-center justify-between py-4">
-                <Text className="text-2xl font-roobert-semibold">Files</Text>
-                <Pressable onPress={() => setIsFileManagerVisible(false)} className="p-2">
-                  <Icon
-                    as={X}
-                    size={24}
-                    color={isDark ? '#f8f8f8' : '#121215'}
-                    strokeWidth={2}
-                  />
-                </Pressable>
-              </View>
-            </View>
-            <View className="flex-1 items-center justify-center p-8">
-              <Icon
-                as={AlertCircle}
-                size={48}
-                color={isDark ? 'rgba(248, 248, 248, 0.3)' : 'rgba(18, 18, 21, 0.3)'}
-                strokeWidth={1.5}
-                className="mb-4"
-              />
-              <Text className="text-base font-roobert-medium text-center mb-2">
-                No Sandbox Available
-              </Text>
-              <Text className="text-sm text-muted-foreground text-center">
-                This thread doesn't have a sandbox environment. Files are only available for threads with sandboxes.
-              </Text>
-            </View>
-          </View>
-        )}
-      </Modal>
+      {isKortixComputerOpen && (
+        <KortixComputer
+          toolMessages={selectedToolData?.toolMessages || []}
+          currentIndex={selectedToolData?.initialIndex || 0}
+          onNavigate={(newIndex) => {
+            if (selectedToolData) {
+              setSelectedToolData({ ...selectedToolData, initialIndex: newIndex });
+            }
+          }}
+          messages={messages}
+          agentStatus={chat.isAgentRunning ? 'running' : 'idle'}
+          project={
+            fullThreadData?.project
+              ? {
+                  id: fullThreadData.project.id,
+                  name: fullThreadData.project.name,
+                  sandbox: fullThreadData.project.sandbox,
+                }
+              : undefined
+          }
+          isLoading={isLoading}
+          agentName={agentManager.selectedAgent?.name}
+          onFileClick={handleFilePress}
+          onPromptFill={chat.setInputValue}
+          streamingText={streamingContent}
+          sandboxId={chat.activeSandboxId || fullThreadData?.project?.sandbox?.id}
+        />
+      )}
       <DynamicIslandRefresh isRefreshing={isRefreshing} insets={insets} />
     </View>
   );

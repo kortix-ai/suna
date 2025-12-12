@@ -19,9 +19,14 @@ import * as Linking from 'expo-linking';
 import React, { useEffect, useState } from 'react';
 import { useColorScheme } from 'nativewind';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { Platform } from 'react-native';
+import { Platform, LogBox } from 'react-native';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import { supabase } from '@/api/supabase';
+
+// Suppress known warning from react-native-markdown-display library
+LogBox.ignoreLogs([
+  'A props object containing a "key" prop is being spread into JSX',
+]);
 
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,
@@ -97,8 +102,10 @@ export default function RootLayout() {
         hostname: parsedUrl.hostname,
         path: parsedUrl.path,
         queryParams: parsedUrl.queryParams,
+        scheme: parsedUrl.scheme,
       });
 
+      // Handle custom scheme: kortix://auth/callback
       if (parsedUrl.hostname === 'auth' && parsedUrl.path === 'callback') {
         console.log('📧 Auth callback received, processing...');
 
@@ -334,6 +341,7 @@ export default function RootLayout() {
                                   }}
                                 />
                                 <Stack.Screen name="trigger-detail" />
+                                <Stack.Screen name="worker-config" />
                               </Stack>
                             </AuthProtection>
                             <PortalHost />

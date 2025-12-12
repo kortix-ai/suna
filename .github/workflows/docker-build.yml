@@ -79,9 +79,40 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             set -a && source .env && set +a
-            docker compose down
+            
+            # Show disk usage before cleanup
+            echo "=== Disk usage before cleanup ==="
+            df -h / | tail -1
+            docker system df || true
+            
+            # Stop and remove containers, networks, and orphaned containers
+            echo "=== Stopping and removing containers ==="
+            docker compose down --remove-orphans || true
+            # Force remove any remaining stopped containers
+            docker compose rm -f || true
+            # Remove containers by name if they still exist (fallback)
+            docker rm -f backend-api-1 backend-worker-1 backend-redis-1 2>/dev/null || true
+            
+            # Clean up unused Docker resources before building
+            echo "=== Cleaning up old images and build cache ==="
+            docker image prune -af --filter "until=24h" || true
+            docker builder prune -af --filter "until=24h" || true
+            
             docker compose build
             docker compose up -d
+            
+            # Clean up after deployment - remove unused images and build cache
+            echo "=== Final cleanup ==="
+            docker image prune -af || true
+            docker builder prune -af || true
+            docker image prune -f || true
+            # Remove unused volumes (only those not attached to any container)
+            docker volume prune -f || true
+            
+            # Show disk usage after cleanup
+            echo "=== Disk usage after cleanup ==="
+            df -h / | tail -1
+            docker system df || true
 
       # - name: Deploy to staging [legacy]
       #   if: steps.get_tag_name.outputs.environment == 'staging'

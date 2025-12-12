@@ -395,7 +395,7 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
       } else if (error.message?.includes('Access denied')) {
         toast.error('You do not have permission to install this agent');
       } else {
-        toast.error(error.message || 'Failed to install agent. Please try again.');
+        toast.error(error.message || 'Failed to install Worker. Please try again.');
       }
     } finally {
       setInstallingItemId(null);

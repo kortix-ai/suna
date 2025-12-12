@@ -1,6 +1,6 @@
 /**
  * Utility Functions
- * 
+ *
  * General-purpose utility functions and helpers
  */
 
@@ -13,7 +13,6 @@ export * from './search';
 export * from './theme';
 export * from './fonts';
 export * from './icon-mapping';
-export * from './markdown-styles';
 
 // Parsing & formatting
 export * from './message-grouping';
@@ -30,6 +29,7 @@ export * from './tool-data-extractor';
 export * from './thread-utils';
 export * from './trigger-utils';
 export * from './model-provider';
+export * from './error-handler';
 
 // Type definitions
 export * from './auth-types';

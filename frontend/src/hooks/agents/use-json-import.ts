@@ -83,7 +83,7 @@ export const useImportAgentFromJson = () => {
           throw new AgentCountLimitError(error.response.status, errorDetail);
         }
         
-        const message = error.response?.data?.detail || error.message || 'Failed to import agent';
+        const message = error.response?.data?.detail || error.message || 'Failed to import Worker';
         throw new Error(message);
       }
     },

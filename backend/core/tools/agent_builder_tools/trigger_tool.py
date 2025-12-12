@@ -20,7 +20,31 @@ from core.composio_integration.composio_trigger_service import ComposioTriggerSe
     icon="Zap",
     color="bg-yellow-100 dark:bg-yellow-800/50",
     weight=160,
-    visible=True
+    visible=True,
+    usage_guide="""
+### TRIGGER & AUTOMATION MANAGEMENT
+
+**CAPABILITIES:**
+- create_agent_scheduled_trigger() - Set up cron-based automation
+- list_agent_scheduled_triggers() - View configured triggers
+- toggle_agent_scheduled_trigger() - Enable/disable triggers
+- delete_agent_scheduled_trigger() - Remove triggers
+
+**CRON SCHEDULE EXAMPLES:**
+- "0 9 * * *" - Daily at 9 AM
+- "0 */6 * * *" - Every 6 hours
+- "0 0 * * 1" - Weekly on Monday
+- "0 0 1 * *" - Monthly on 1st
+
+**TRIGGER TYPES:**
+- "agent" - Direct agent execution
+- Custom prompts for specific automation tasks
+
+**BEST PRACTICES:**
+- Use clear, descriptive trigger names
+- Test with appropriate schedules
+- Document what each trigger does
+"""
 )
 class TriggerTool(AgentBuilderBaseTool):
     def __init__(self, thread_manager: ThreadManager, db_connection, agent_id: str):
@@ -101,6 +125,10 @@ class TriggerTool(AgentBuilderBaseTool):
                     "agent_prompt": {
                         "type": "string",
                         "description": "Prompt to send to the agent when triggered. Can include variables like {{variable_name}} that will be replaced when users install the template. For example: 'Monitor {{company_name}} brand across all platforms...'"
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "Model to use for the scheduled execution. Options: 'kortix/basic' (default, free tier) or 'kortix/power' (requires paid subscription). If not specified, defaults to 'kortix/basic'."
                     }
                 },
                 "required": ["name", "cron_expression", "agent_prompt"]
@@ -112,7 +140,8 @@ class TriggerTool(AgentBuilderBaseTool):
         name: str,
         cron_expression: str,
         agent_prompt: str,
-        description: Optional[str] = None
+        description: Optional[str] = None,
+        model: Optional[str] = None
     ) -> ToolResult:
         try:
             if not agent_prompt:
@@ -124,10 +153,10 @@ class TriggerTool(AgentBuilderBaseTool):
             trigger_config = {
                 "cron_expression": cron_expression,
                 "provider_id": "schedule",
-                "agent_prompt": agent_prompt
+                "agent_prompt": agent_prompt,
+                "model": model or "kortix/basic"
             }
             
-            # Add variables to config if any were found
             if variables:
                 trigger_config["trigger_variables"] = variables
                 logger.debug(f"Found variables in trigger prompt: {variables}")
@@ -145,6 +174,7 @@ class TriggerTool(AgentBuilderBaseTool):
                 
                 result_message = f"Scheduled trigger '{name}' created successfully!\n\n"
                 result_message += f"**Schedule**: {cron_expression}\n"
+                result_message += f"**Model**: {trigger_config['model']}\n"
                 result_message += f"**Type**: Agent execution\n"
                 result_message += f"**Prompt**: {agent_prompt}\n"
                 if variables:
@@ -164,6 +194,7 @@ class TriggerTool(AgentBuilderBaseTool):
                         "name": trigger.name,
                         "description": trigger.description,
                         "cron_expression": cron_expression,
+                        "model": trigger_config['model'],
                         "is_active": trigger.is_active,
                         "variables": variables if variables else []
                     }
@@ -213,6 +244,7 @@ class TriggerTool(AgentBuilderBaseTool):
                     "description": trigger.description,
                     "cron_expression": trigger.config.get("cron_expression"),
                     "agent_prompt": trigger.config.get("agent_prompt"),
+                    "model": trigger.config.get("model", "kortix/basic"),
                     "is_active": trigger.is_active
                 }
                 
@@ -412,7 +444,8 @@ class TriggerTool(AgentBuilderBaseTool):
                     "trigger_config": {"type": "object", "description": "Trigger configuration object per trigger schema", "additionalProperties": True},
                     "name": {"type": "string", "description": "Optional friendly name for the trigger"},
                     "agent_prompt": {"type": "string", "description": "Prompt to pass to the agent when triggered. Can include variables like {{variable_name}} that will be replaced when users install the template. For example: 'New email received for {{company_name}}...'"},
-                    "connected_account_id": {"type": "string", "description": "Connected account id; if omitted we try to derive from profile"}
+                    "connected_account_id": {"type": "string", "description": "Connected account id; if omitted we try to derive from profile"},
+                    "model": {"type": "string", "description": "Model to use for the event execution. Options: 'kortix/basic' (default, free tier) or 'kortix/power' (requires paid subscription). If not specified, defaults to 'kortix/basic'."}
                 },
                 "required": ["slug", "profile_id", "agent_prompt"]
             }
@@ -425,7 +458,8 @@ class TriggerTool(AgentBuilderBaseTool):
         agent_prompt: str,
         trigger_config: Optional[Dict[str, Any]] = None,
         name: Optional[str] = None,
-        connected_account_id: Optional[str] = None
+        connected_account_id: Optional[str] = None,
+        model: Optional[str] = None
     ) -> ToolResult:
         try:
             if not agent_prompt:
@@ -559,10 +593,10 @@ class TriggerTool(AgentBuilderBaseTool):
                 "trigger_slug": slug,
                 "qualified_name": qualified_name,
                 "profile_id": profile_id,
-                "agent_prompt": agent_prompt
+                "agent_prompt": agent_prompt,
+                "model": model or "kortix/basic"
             }
             
-            # Add variables to config if any were found
             if variables:
                 suna_config["trigger_variables"] = variables
                 logger.debug(f"Found variables in event trigger prompt: {variables}")
@@ -588,6 +622,7 @@ class TriggerTool(AgentBuilderBaseTool):
                 logger.warning(f"Failed to sync triggers to version config: {e}")
 
             message = f"Event trigger '{trigger.name}' created successfully.\n"
+            message += f"**Model**: {suna_config['model']}\n"
             message += "Agent execution configured."
             if variables:
                 message += f"\n**Template Variables Detected**: {', '.join(['{{' + v + '}}' for v in variables])}\n"
@@ -598,6 +633,7 @@ class TriggerTool(AgentBuilderBaseTool):
                 "trigger": {
                     "provider": "composio",
                     "slug": slug,
+                    "model": suna_config['model'],
                     "is_active": trigger.is_active,
                     "variables": variables if variables else []
                 }

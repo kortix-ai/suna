@@ -6,13 +6,13 @@ export async function generateMetadata({ params }): Promise<Metadata> {
   const { threadId } = await params;
   const fallbackMetaData = {
     title: 'Shared Conversation | Kortix',
-    description: 'Replay this Agent conversation on Korti',
+    description: 'Replay this Worker conversation on Kortix',
     alternates: {
       canonical: `${process.env.NEXT_PUBLIC_URL}/share/${threadId}`,
     },
     openGraph: {
       title: 'Shared Conversation | Kortix',
-      description: 'Replay this Agent conversation on Kortix',
+      description: 'Replay this Worker conversation on Kortix',
       images: [`${process.env.NEXT_PUBLIC_URL}/share-page/og-fallback.png`],
     },
   };

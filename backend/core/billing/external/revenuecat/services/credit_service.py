@@ -55,7 +55,6 @@ class CreditService:
         if result_data and result_data.get('success'):
             await SubscriptionRepository.update_tier_only(client, app_user_id, tier_name)
             
-            # Invalidate account state cache to ensure UI reflects updated credits immediately
             try:
                 from core.billing.shared.cache_utils import invalidate_account_state_cache
                 await invalidate_account_state_cache(app_user_id)

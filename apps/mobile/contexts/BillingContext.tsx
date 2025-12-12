@@ -1,6 +1,6 @@
 /**
  * Billing Context
- * 
+ *
  * Global billing state management
  * Combines subscription, credit balance, and billing status
  */
@@ -27,23 +27,23 @@ export interface BillingContextType {
   subscriptionData: SubscriptionInfo | null;
   creditBalance: CreditBalance | null;
   billingStatus: BillingStatus | null;
-  
+
   // Loading states
   isLoading: boolean;
   subscriptionLoading: boolean;
   balanceLoading: boolean;
   statusLoading: boolean;
-  
+
   // Errors
   error: Error | null;
-  
+
   // Actions
   refetchAll: () => void;
   refetchSubscription: () => void;
   refetchBalance: () => void;
   refetchStatus: () => void;
   checkBillingStatus: () => Promise<boolean>;
-  
+
   // Computed states
   hasActiveSubscription: boolean;
   hasFreeTier: boolean;
@@ -72,13 +72,13 @@ export function BillingProvider({ children }: BillingProviderProps) {
   const prevAuthRef = React.useRef<boolean | null>(null);
   React.useEffect(() => {
     if (authLoading) return;
-    
+
     const wasAuthenticated = prevAuthRef.current;
     const justLoggedIn = wasAuthenticated === false && isAuthenticated === true;
     const justLoggedOut = wasAuthenticated === true && isAuthenticated === false;
-    
+
     prevAuthRef.current = isAuthenticated;
-    
+
     if (justLoggedOut) {
       // User logged out - clear all billing data
       console.log('🚫 User logged out - clearing billing cache');
@@ -97,7 +97,7 @@ export function BillingProvider({ children }: BillingProviderProps) {
 
   // Fetch all billing data (only when authenticated AND not loading)
   const shouldFetchBilling = isAuthenticated === true && !authLoading;
-  
+
   const {
     data: subscriptionData,
     isLoading: subscriptionLoading,
@@ -133,26 +133,33 @@ export function BillingProvider({ children }: BillingProviderProps) {
   // 2. We should be fetching but don't have data yet (initial fetch)
   // 3. Any query is actively loading
   const needsInitialFetch = shouldFetchBilling && subscriptionData === undefined;
-  const isLoading = authLoading || needsInitialFetch || subscriptionLoading || balanceLoading || statusLoading;
+  const isLoading =
+    authLoading || needsInitialFetch || subscriptionLoading || balanceLoading || statusLoading;
 
   // Debug logging for billing state
   React.useEffect(() => {
+    const tierKey = subscriptionData?.tier_key || subscriptionData?.subscription?.tier_key;
     console.log('💰 Billing state:', {
       authLoading,
       shouldFetchBilling,
       subscriptionData: subscriptionData !== undefined ? 'has data' : 'undefined',
+      tierKey,
+      tierName: subscriptionData?.tier?.name,
       subscriptionLoading,
       needsInitialFetch,
       isLoading,
-      hasActiveSubscription: subscriptionData?.tier?.name !== 'none' && !!subscriptionData?.tier
     });
-  }, [authLoading, shouldFetchBilling, subscriptionData, subscriptionLoading, needsInitialFetch, isLoading]);
+  }, [
+    authLoading,
+    shouldFetchBilling,
+    subscriptionData,
+    subscriptionLoading,
+    needsInitialFetch,
+    isLoading,
+  ]);
 
   // Combine errors (first error encountered)
-  const error =
-    (subscriptionError ||
-      balanceError ||
-      statusError) as Error | null;
+  const error = (subscriptionError || balanceError || statusError) as Error | null;
 
   // Refetch all billing data
   const refetchAll = useCallback(() => {
@@ -163,7 +170,7 @@ export function BillingProvider({ children }: BillingProviderProps) {
   // Check billing status and return whether user can proceed
   const checkBillingStatus = useCallback(async (): Promise<boolean> => {
     console.log('💳 Checking billing status...');
-    
+
     if (!isAuthenticated) {
       console.log('❌ User not authenticated');
       return false;
@@ -172,7 +179,7 @@ export function BillingProvider({ children }: BillingProviderProps) {
     try {
       // Refetch latest status
       const { data } = await refetchStatus();
-      
+
       if (data?.can_run) {
         console.log('✅ Billing check passed');
         return true;
@@ -187,15 +194,13 @@ export function BillingProvider({ children }: BillingProviderProps) {
   }, [isAuthenticated, refetchStatus]);
 
   // Computed states for easier access
-  const hasActiveSubscription = Boolean(
-    subscriptionData?.tier && 
-    subscriptionData.tier.name !== 'none'
-  );
+  // Check tier_key for subscription status (matches frontend logic)
+  const tierKey = subscriptionData?.tier_key || subscriptionData?.subscription?.tier_key;
 
-  const hasFreeTier = Boolean(
-    subscriptionData?.tier && 
-    subscriptionData.tier.name === 'free'
-  );
+  const hasActiveSubscription = Boolean(tierKey && tierKey !== 'none' && tierKey !== 'free');
+
+  // Free tier = tier_key is 'free', 'none', or not set
+  const hasFreeTier = Boolean(!tierKey || tierKey === 'free' || tierKey === 'none');
 
   const needsSubscription = !hasActiveSubscription;
 
@@ -221,18 +226,14 @@ export function BillingProvider({ children }: BillingProviderProps) {
     refetchBalance,
     refetchStatus,
     checkBillingStatus,
-    
+
     // Computed states
     hasActiveSubscription,
     hasFreeTier,
     needsSubscription,
   };
 
-  return (
-    <BillingContext.Provider value={value}>
-      {children}
-    </BillingContext.Provider>
-  );
+  return <BillingContext.Provider value={value}>{children}</BillingContext.Provider>;
 }
 
 // ============================================================================
@@ -270,4 +271,3 @@ export function useSubscriptionTier(): string {
 
   return subscriptionData.tier.name;
 }
-

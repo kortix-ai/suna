@@ -1,10 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import { Mic, Square, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
     Tooltip,
     TooltipContent,
-    TooltipProvider,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useTranscription } from '@/hooks/transcription/use-transcription';
@@ -16,10 +15,10 @@ interface VoiceRecorderProps {
 
 const MAX_RECORDING_TIME = 15 * 60 * 1000; // 15 minutes in milliseconds
 
-export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
+export const VoiceRecorder: React.FC<VoiceRecorderProps> = memo(function VoiceRecorder({
     onTranscription,
     disabled = false,
-}) => {
+}) {
     const [state, setState] = useState<'idle' | 'recording' | 'processing'>('idle');
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const chunksRef = useRef<Blob[]>([]);
@@ -161,32 +160,30 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     };
 
     return (
-        <TooltipProvider>
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleClick}
-                        onContextMenu={handleRightClick}
-                        disabled={disabled || state === 'processing'}
-                        className={`h-8 px-2 py-2 bg-transparent border-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-2 transition-colors ${getButtonClass()}`}
-                    >
-                        {getIcon()}
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                    <p>
-                        {state === 'recording'
-                            ? 'Click to stop recording'
-                            : state === 'processing'
-                                ? 'Processing...'
-                                : 'Record voice message'
-                        }
-                    </p>
-                </TooltipContent>
-            </Tooltip>
-        </TooltipProvider>
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleClick}
+                    onContextMenu={handleRightClick}
+                    disabled={disabled || state === 'processing'}
+                    className={`h-10 px-2 py-2 bg-transparent border-[1.5px] border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-2 transition-colors ${getButtonClass()}`}
+                >
+                    {getIcon()}
+                </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+                <p>
+                    {state === 'recording'
+                        ? 'Click to stop recording'
+                        : state === 'processing'
+                            ? 'Processing...'
+                            : 'Record voice message'
+                    }
+                </p>
+            </TooltipContent>
+        </Tooltip>
     );
-}; 
+}); 

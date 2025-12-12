@@ -47,7 +47,12 @@ export function parsePresentationSlidePath(filePath: string | null): {
     return { isValid: false, presentationName: null, slideNumber: null };
   }
   
-  const match = filePath.match(/^presentations\/([^\/]+)\/slide_(\d+)\.html$/i);
+  // Match patterns like:
+  // - presentations/[name]/slide_01.html
+  // - /workspace/presentations/[name]/slide_01.html
+  // - ./presentations/[name]/slide_01.html
+  // - any/path/presentations/[name]/slide_01.html
+  const match = filePath.match(/presentations\/([^\/]+)\/slide_(\d+)\.html$/i);
   if (match) {
     return {
       isValid: true,

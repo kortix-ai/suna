@@ -23,33 +23,43 @@ def extract_agent_config(agent_data: Dict[str, Any], version_data: Optional[Dict
 
 
 def _extract_suna_agent_config(agent_data: Dict[str, Any], version_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Extract config for Suna agents - always use central config with user customizations."""
+    """Extract config for Suna agents - always use central config with user customizations.
+    
+    Uses cached static config from runtime_cache instead of reading SUNA_CONFIG directly.
+    Always overrides name from SUNA_CONFIG regardless of what's in the database.
+    """
+    from core.runtime_cache import get_static_suna_config, load_static_suna_config
     from core.suna_config import SUNA_CONFIG
     
     agent_id = agent_data.get('agent_id', 'Unknown')
     logger.debug(f"Using Suna central config for agent {agent_id}")
     
-    # Start with central Suna config
+    # Get cached static config (or load it if not cached)
+    static_config = get_static_suna_config()
+    if not static_config:
+        static_config = load_static_suna_config()
+    
+    # Start with cached static config, but always override name from SUNA_CONFIG
     config = {
         'agent_id': agent_data['agent_id'],
-        'name': SUNA_CONFIG['name'],
+        'name': SUNA_CONFIG['name'],  # Always override name from SUNA_CONFIG
         'description': SUNA_CONFIG['description'],
-        'system_prompt': SUNA_CONFIG['system_prompt'],
-        'model': SUNA_CONFIG['model'],
-        'agentpress_tools': _extract_agentpress_tools_for_run(SUNA_CONFIG['agentpress_tools']),
+        'system_prompt': static_config['system_prompt'],  # From cached config
+        'model': static_config['model'],  # From cached config
+        'agentpress_tools': static_config['agentpress_tools'],  # From cached config
         'is_default': True,
         'is_suna_default': True,
-        'centrally_managed': True,
+        'centrally_managed': static_config.get('centrally_managed', True),
         'account_id': agent_data.get('account_id'),
         'current_version_id': agent_data.get('current_version_id'),
         'version_name': version_data.get('version_name', 'v1') if version_data else 'v1',
-        'restrictions': {
+        'restrictions': static_config.get('restrictions', {
             'system_prompt_editable': False,
             'tools_editable': False,
             'name_editable': False,
             'description_editable': False,
             'mcps_editable': True
-        }
+        })
     }
     
     if version_data:
@@ -202,6 +212,7 @@ def _get_default_agentpress_tools() -> Dict[str, bool]:
     return {
         "sb_shell_tool": True,
         "sb_files_tool": True,
+        
         "sb_expose_tool": True,
         "web_search_tool": True,
         "image_search_tool": True,
@@ -210,6 +221,7 @@ def _get_default_agentpress_tools() -> Dict[str, bool]:
         "sb_presentation_tool": True,
         "browser_tool": True,
         "data_providers_tool": True,
+        "sb_git_sync": True,
         "people_search_tool": False,
         "agent_config_tool": True,
         "mcp_search_tool": True,

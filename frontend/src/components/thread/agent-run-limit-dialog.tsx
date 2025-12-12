@@ -62,7 +62,7 @@ const RunningThreadItem: React.FC<RunningThreadItemProps> = ({
       onThreadStopped();
     } catch (error) {
       console.error('Failed to stop agent:', error);
-      toast.error('Failed to stop agent');
+      toast.error('Failed to stop Worker');
     }
   };
 

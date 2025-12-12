@@ -13,7 +13,10 @@ import uuid
 import asyncio
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional, AsyncGenerator, Tuple, Union, Callable, Literal
+from typing import List, Dict, Any, Optional, AsyncGenerator, Tuple, Union, Callable, Literal, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.jit.config import JITConfig
 from dataclasses import dataclass
 from core.utils.logger import logger
 from core.utils.config import config as global_config
@@ -36,7 +39,7 @@ from langfuse.client import StatefulTraceClient
 from core.services.langfuse import langfuse
 from core.utils.json_helpers import (
     ensure_dict, ensure_list, safe_json_parse, 
-    to_json_string, format_for_yield
+    to_json_string, to_json_string_fast, format_for_yield
 )
 from core.agentpress.xml_tool_parser import strip_xml_tool_calls
 
@@ -105,7 +108,7 @@ class ProcessorConfig:
 class ResponseProcessor:
     """Processes LLM responses, extracting and executing tool calls."""
     
-    def __init__(self, tool_registry: ToolRegistry, add_message_callback: Callable, trace: Optional[StatefulTraceClient] = None, agent_config: Optional[dict] = None):
+    def __init__(self, tool_registry: ToolRegistry, add_message_callback: Callable, trace: Optional[StatefulTraceClient] = None, agent_config: Optional[dict] = None, jit_config: Optional['JITConfig'] = None, thread_manager=None, project_id: Optional[str] = None):
         """Initialize the ResponseProcessor.
         
         Args:
@@ -113,6 +116,9 @@ class ResponseProcessor:
             add_message_callback: Callback function to add messages to the thread.
                 MUST return the full saved message object (dict) or None.
             agent_config: Optional agent configuration with version information
+            jit_config: Optional JIT configuration for tool activation control
+            thread_manager: ThreadManager instance for JIT tool activation
+            project_id: Project ID for JIT tool activation
         """
         self.tool_registry = tool_registry
         self.add_message = add_message_callback
@@ -122,6 +128,9 @@ class ResponseProcessor:
             self.trace = langfuse.trace(name="anonymous:response_processor")
             
         self.agent_config = agent_config
+        self.jit_config = jit_config
+        self.thread_manager = thread_manager
+        self.project_id = project_id
 
     def _serialize_model_response(self, model_response) -> Dict[str, Any]:
         """Convert a LiteLLM ModelResponse object to a JSON-serializable dictionary.
@@ -170,6 +179,221 @@ class ResponseProcessor:
             # Ultimate fallback: convert to string
             return {"raw_response": str(model_response), "serialization_error": str(e)}
 
+    def _transform_execute_tool_call(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform execute_tool calls to appear as real tool calls for frontend UI components."""
+        try:
+            function_info = tool_call.get('function', {})
+            function_name = function_info.get('name', '')
+            
+            # Only transform execute_tool calls
+            if function_name != 'execute_tool':
+                return tool_call
+            
+            # Parse arguments to extract real tool info
+            arguments_str = function_info.get('arguments', '{}')
+            if isinstance(arguments_str, str):
+                import json
+                try:
+                    arguments = json.loads(arguments_str)
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse execute_tool arguments: {arguments_str}")
+                    return tool_call
+            else:
+                arguments = arguments_str
+            
+            # Extract real tool name and args
+            action = arguments.get('action')
+            tool_name = arguments.get('tool_name')
+            filter_val = arguments.get('filter')
+            real_args = arguments.get('args', {})
+            
+            if action == 'call' and tool_name:
+                # Transform to appear as real tool call
+                transformed_tool_call = tool_call.copy()
+                transformed_tool_call['function'] = {
+                    'name': tool_name,
+                    'arguments': json.dumps(real_args) if isinstance(real_args, dict) else str(real_args)
+                }
+                logger.debug(f"🎭 [TRANSFORM] execute_tool -> {tool_name} for frontend display")
+                return transformed_tool_call
+                
+        except Exception as e:
+            logger.warning(f"Error transforming execute_tool call: {e}")
+        
+        return tool_call
+
+    def _transform_xml_execute_tool_call(self, xml_tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform execute_tool XML calls to appear as real tool calls for frontend UI components."""
+        try:
+            function_name = xml_tool_call.get("function_name", "")
+            
+            # Only transform execute_tool calls
+            if function_name != 'execute_tool':
+                return xml_tool_call
+            
+            arguments = xml_tool_call.get("arguments", {})
+            action = arguments.get('action')
+            tool_name = arguments.get('tool_name')
+            filter_val = arguments.get('filter')
+            real_args = arguments.get('args', {})
+            
+            if action == 'call' and tool_name:
+                # Transform to appear as real tool call
+                transformed_xml_tc = xml_tool_call.copy()
+                transformed_xml_tc['function_name'] = tool_name
+                transformed_xml_tc['arguments'] = real_args
+                logger.debug(f"🎭 [TRANSFORM XML] execute_tool -> {tool_name} for frontend display")
+                return transformed_xml_tc
+                
+        except Exception as e:
+            logger.warning(f"Error transforming XML execute_tool call: {e}")
+        
+        return xml_tool_call
+
+    def _transform_streaming_execute_tool_call(self, unified_tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            function_name = unified_tool_call.get("function_name", "")
+            
+            if function_name == 'execute_mcp_tool':
+                arguments = unified_tool_call.get("arguments", {})
+                
+                if isinstance(arguments, str):
+                    try:
+                        import json
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        return unified_tool_call
+                
+                tool_name = arguments.get('tool_name')
+                real_args = arguments.get('args', {})
+                
+                if tool_name:
+                    transformed_tc = unified_tool_call.copy()
+                    transformed_tc['function_name'] = tool_name
+                    transformed_tc['arguments'] = real_args
+                    logger.info(f"🎭 [STREAM TRANSFORM] execute_mcp_tool -> {tool_name} (tool_call_id: {unified_tool_call.get('tool_call_id')})")
+                    return transformed_tc
+                
+                return unified_tool_call
+            
+            elif function_name == 'discover_mcp_tools':
+                arguments = unified_tool_call.get("arguments", {})
+                
+                if isinstance(arguments, str):
+                    try:
+                        import json
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        return unified_tool_call
+                
+                filter_val = arguments.get('filter', '')
+                
+                transformed_tc = unified_tool_call.copy()
+                if ',' in filter_val:
+                    transformed_tc['_display_hint'] = f"Discovering schemas"
+                else:
+                    transformed_tc['_display_hint'] = f"Discovering schemas"
+                transformed_tc['_app_filter'] = filter_val
+                logger.debug(f"🔍 [STREAM TRANSFORM] Added discovery display hint: {transformed_tc['_display_hint']}")
+                return transformed_tc
+            
+            elif function_name == 'execute_tool':
+                arguments = unified_tool_call.get("arguments", {})
+                
+                if isinstance(arguments, str):
+                    try:
+                        import json
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        return unified_tool_call
+                
+                action = arguments.get('action')
+                tool_name = arguments.get('tool_name')
+                filter_val = arguments.get('filter')
+                real_args = arguments.get('args', {})
+                
+                if action == 'call' and tool_name:
+                    transformed_tc = unified_tool_call.copy()
+                    transformed_tc['function_name'] = tool_name
+                    transformed_tc['arguments'] = real_args
+                    logger.info(f"🎭 [STREAM TRANSFORM] execute_tool(call) -> {tool_name} (tool_call_id: {unified_tool_call.get('tool_call_id')})")
+                    return transformed_tc
+                elif action == 'discover' and filter_val:
+                    transformed_tc = unified_tool_call.copy()
+                    if ',' in filter_val:
+                        tool_count = len([t.strip() for t in filter_val.split(',')])
+                        transformed_tc['_display_hint'] = f"Discovering schemas"
+                    else:
+                        app_name = filter_val.split()[0].title() if filter_val else "MCP"
+                        transformed_tc['_display_hint'] = f"Discovering schemas"
+                    transformed_tc['_app_filter'] = filter_val
+                    logger.debug(f"🔍 [STREAM TRANSFORM] Added discovery display hint: {transformed_tc['_display_hint']}")
+                    return transformed_tc
+                
+                return unified_tool_call
+            
+            return unified_tool_call
+                
+        except Exception as e:
+            logger.warning(f"Error transforming streaming execute_tool call: {e}")
+        
+        return unified_tool_call
+
+    def _transform_buffer_execute_tool_call(self, buffer_entry: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            function_info = buffer_entry.get('function', {})
+            function_name = function_info.get('name', '')
+
+            if function_name == 'execute_mcp_tool':
+                arguments_str = function_info.get('arguments', '{}')
+                try:
+                    import json
+                    arguments = json.loads(arguments_str)
+                except json.JSONDecodeError:
+                    logger.debug(f"🔍 [BUFFER TRANSFORM] Incomplete JSON, skipping: {arguments_str}")
+                    return buffer_entry
+                
+                tool_name = arguments.get('tool_name')
+                real_args = arguments.get('args', {})
+                
+                if tool_name:
+                    transformed_entry = buffer_entry.copy()
+                    transformed_entry['function'] = {
+                        'name': tool_name,
+                        'arguments': json.dumps(real_args) if isinstance(real_args, dict) else str(real_args)
+                    }
+                    logger.info(f"🎭 [BUFFER TRANSFORM] execute_mcp_tool -> {tool_name} in raw buffer")
+                    return transformed_entry
+                
+                return buffer_entry
+            
+            elif function_name == 'discover_mcp_tools':
+                arguments_str = function_info.get('arguments', '{}')
+                try:
+                    import json
+                    arguments = json.loads(arguments_str)
+                except json.JSONDecodeError:
+                    logger.debug(f"🔍 [BUFFER TRANSFORM] Incomplete JSON, skipping: {arguments_str}")
+                    return buffer_entry
+                
+                filter_val = arguments.get('filter', '')
+                
+                transformed_entry = buffer_entry.copy()
+                if ',' in filter_val:
+                    tool_count = len([t.strip() for t in filter_val.split(',')])
+                    transformed_entry['_display_hint'] = f"Processing {tool_count} MCP tool schemas"
+                else:
+                    app_name = filter_val.split()[0].title() if filter_val else "MCP"
+                    transformed_entry['_display_hint'] = f"Processing {app_name} schemas"
+                transformed_entry['_app_filter'] = filter_val
+                logger.debug(f"🔍 [BUFFER TRANSFORM] Added discovery metadata for {filter_val}")
+                return transformed_entry
+
+        except Exception as e:
+            logger.warning(f"Error transforming buffer execute_tool call: {e}")
+        
+        return buffer_entry
+
     async def _add_message_with_agent_info(
         self,
         thread_id: str,
@@ -178,7 +402,6 @@ class ResponseProcessor:
         is_llm_message: bool = False,
         metadata: Optional[Dict[str, Any]] = None
     ):
-        """Helper to add a message with agent version information if available."""
         agent_id = None
         agent_version_id = None
         
@@ -272,16 +495,27 @@ class ResponseProcessor:
         llm_response_id = str(uuid.uuid4())
         logger.info(f"🔵 LLM CALL #{auto_continue_count + 1} starting - llm_response_id: {llm_response_id}")
 
+        # Track background DB tasks for cleanup
+        background_db_tasks = []
+        
         try:
-            # --- Save and Yield Start Events ---
+            # --- Yield Start Events (DB saves in background for zero latency) ---
             if auto_continue_count == 0:
                 start_content = {"status_type": "thread_run_start"}
-                start_msg_obj = await self.add_message(
-                    thread_id=thread_id, type="status", content=start_content, 
-                    is_llm_message=False, metadata={"thread_run_id": thread_run_id}
-                )
-                if start_msg_obj: 
-                    yield format_for_yield(start_msg_obj)
+                # Yield immediately, save to DB in background (non-blocking)
+                now_start = datetime.now(timezone.utc).isoformat()
+                yield {
+                    "message_id": None, "thread_id": thread_id, "type": "status",
+                    "is_llm_message": False,
+                    "content": to_json_string(start_content),
+                    "metadata": to_json_string({"thread_run_id": thread_run_id}),
+                    "created_at": now_start, "updated_at": now_start
+                }
+                # Fire-and-forget DB save
+                background_db_tasks.append(asyncio.create_task(
+                    self.add_message(thread_id=thread_id, type="status", content=start_content, 
+                                   is_llm_message=False, metadata={"thread_run_id": thread_run_id})
+                ))
 
             llm_start_content = {
                 "llm_response_id": llm_response_id,
@@ -289,16 +523,21 @@ class ResponseProcessor:
                 "model": llm_model,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
-            llm_start_msg_obj = await self.add_message(
-                thread_id=thread_id, type="llm_response_start", content=llm_start_content, 
-                is_llm_message=False, metadata={
-                    "thread_run_id": thread_run_id,
-                    "llm_response_id": llm_response_id
-                }
-            )
-            if llm_start_msg_obj: 
-                yield format_for_yield(llm_start_msg_obj)
-                logger.info(f"✅ Saved llm_response_start for call #{auto_continue_count + 1}")
+            # Yield immediately, save to DB in background (non-blocking)
+            now_llm_start = datetime.now(timezone.utc).isoformat()
+            yield {
+                "message_id": None, "thread_id": thread_id, "type": "llm_response_start",
+                "is_llm_message": False,
+                "content": to_json_string(llm_start_content),
+                "metadata": to_json_string({"thread_run_id": thread_run_id, "llm_response_id": llm_response_id}),
+                "created_at": now_llm_start, "updated_at": now_llm_start
+            }
+            # Fire-and-forget DB save
+            background_db_tasks.append(asyncio.create_task(
+                self.add_message(thread_id=thread_id, type="llm_response_start", content=llm_start_content, 
+                               is_llm_message=False, metadata={"thread_run_id": thread_run_id, "llm_response_id": llm_response_id})
+            ))
+            logger.debug(f"Yielded llm_response_start for call #{auto_continue_count + 1} (DB save in background)")
             # --- End Start Events ---
 
             __sequence = continuous_state.get('sequence', 0)    # get the sequence from the previous auto-continue cycle
@@ -318,6 +557,11 @@ class ResponseProcessor:
                 logger.info(f"📁 Saving raw stream output to: {debug_file}")
             
             chunk_count = 0
+            
+            # Pre-build metadata and timestamp for content chunks (HOT PATH optimization)
+            # This avoids json.dumps() and datetime.now() calls per chunk
+            _chunk_metadata_cached = to_json_string_fast({"stream_status": "chunk", "thread_run_id": thread_run_id})
+            _stream_start_time = datetime.now(timezone.utc).isoformat()
             
             async for chunk in llm_response:
                 # Check for cancellation before processing each chunk
@@ -425,27 +669,24 @@ class ResponseProcessor:
                         # logger.debug(f"About to concatenate reasoning_content (type={type(reasoning_content)}) to accumulated_content (type={type(accumulated_content)})")
                         accumulated_content += reasoning_content
 
-                    # Process content chunk
+                    # Process content chunk - HOT PATH, optimized for minimum latency
                     if delta and hasattr(delta, 'content') and delta.content:
                         chunk_content = delta.content
-                        # logger.debug(f"Processing chunk_content: type={type(chunk_content)}, value={chunk_content}")
                         if isinstance(chunk_content, list):
                             chunk_content = ''.join(str(item) for item in chunk_content)
-                        # print(chunk_content, end='', flush=True)
-                        # logger.debug(f"About to concatenate chunk_content (type={type(chunk_content)}) to accumulated_content (type={type(accumulated_content)})")
                         accumulated_content += chunk_content
-                        # logger.debug(f"About to concatenate chunk_content (type={type(chunk_content)}) to current_xml_content (type={type(current_xml_content)})")
                         current_xml_content += chunk_content
 
-                        # Yield ONLY content chunk (don't save)
-                        now_chunk = datetime.now(timezone.utc).isoformat()
+                        # Yield content chunk IMMEDIATELY - no datetime call, use pre-built metadata
+                        # This is the hot path - every microsecond counts!
                         yield {
                             "sequence": __sequence,
                             "message_id": None, "thread_id": thread_id, "type": "assistant",
                             "is_llm_message": True,
-                            "content": to_json_string({"role": "assistant", "content": chunk_content}),
-                            "metadata": to_json_string({"stream_status": "chunk", "thread_run_id": thread_run_id}),
-                            "created_at": now_chunk, "updated_at": now_chunk
+                            "content": to_json_string_fast({"role": "assistant", "content": chunk_content}),
+                            "metadata": _chunk_metadata_cached,  # Pre-built, no serialization per chunk
+                            "created_at": _stream_start_time,  # Reuse start time, no datetime.now() per chunk
+                            "updated_at": _stream_start_time
                         }
                         __sequence += 1
 
@@ -522,6 +763,10 @@ class ResponseProcessor:
                             
                             # Check if tool call is complete
                             has_complete_tool_call = is_tool_call_complete(tool_calls_buffer.get(idx))
+                            
+                            # CRITICAL FIX: Transform execute_tool calls in buffer immediately when complete
+                            if has_complete_tool_call:
+                                tool_calls_buffer[idx] = self._transform_buffer_execute_tool_call(tool_calls_buffer[idx])
 
                             if has_complete_tool_call and config.execute_tools and config.execute_on_stream and idx not in executed_native_tool_indices:
                                 # Mark this index as executed to prevent duplicate executions
@@ -568,11 +813,17 @@ class ResponseProcessor:
                             
                             # Yield single unified streaming chunk if we have any tool calls
                             if unified_tool_calls:
+                                # CRITICAL FIX: Transform execute_tool calls for frontend display during streaming
+                                transformed_unified_tool_calls = []
+                                for tc in unified_tool_calls:
+                                    transformed_tc = self._transform_streaming_execute_tool_call(tc)
+                                    transformed_unified_tool_calls.append(transformed_tc)
+                                
                                 now_tool_chunk = datetime.now(timezone.utc).isoformat()
                                 assistant_metadata = {
                                     "thread_run_id": thread_run_id,
                                     "stream_status": "tool_call_chunk",
-                                    "tool_calls": unified_tool_calls
+                                    "tool_calls": transformed_unified_tool_calls
                                 }
                                 
                                 yield {
@@ -775,17 +1026,27 @@ class ResponseProcessor:
                 # Add native tool calls
                 if config.native_tool_calling and complete_native_tool_calls:
                     for tc in complete_native_tool_calls:
-                        unified_tool_calls.append(convert_to_unified_tool_call_format(tc))
+                        # Transform execute_tool calls to appear as real tool calls for frontend
+                        transformed_tc = self._transform_execute_tool_call(tc)
+                        unified_tc = convert_to_unified_tool_call_format(transformed_tc)
+                        # Apply streaming transformation as well for consistency
+                        final_tc = self._transform_streaming_execute_tool_call(unified_tc)
+                        unified_tool_calls.append(final_tc)
                 
                 # Add XML tool calls
                 if config.xml_tool_calling and xml_tool_calls_with_ids:
                     for xml_tc in xml_tool_calls_with_ids:
-                        unified_tool_calls.append({
-                            "tool_call_id": xml_tc.get("tool_call_id"),
-                            "function_name": xml_tc.get("function_name"),
-                            "arguments": xml_tc.get("arguments"),
+                        # Transform execute_tool calls for XML as well  
+                        transformed_xml_tc = self._transform_xml_execute_tool_call(xml_tc)
+                        unified_xml_tc = {
+                            "tool_call_id": transformed_xml_tc.get("tool_call_id"),
+                            "function_name": transformed_xml_tc.get("function_name"),
+                            "arguments": transformed_xml_tc.get("arguments"),
                             "source": "xml"
-                        })
+                        }
+                        # Apply streaming transformation for consistency
+                        final_xml_tc = self._transform_streaming_execute_tool_call(unified_xml_tc)
+                        unified_tool_calls.append(final_xml_tc)
                 
                 if unified_tool_calls:
                     assistant_metadata["tool_calls"] = unified_tool_calls
@@ -1116,6 +1377,13 @@ class ResponseProcessor:
             
             # Phase 3: Resource Cleanup - Cancel pending tasks and close generator
             try:
+                # Wait for background DB tasks (fire-and-forget saves) to complete
+                if 'background_db_tasks' in locals() and background_db_tasks:
+                    try:
+                        await asyncio.gather(*background_db_tasks, return_exceptions=True)
+                    except Exception as bg_err:
+                        logger.debug(f"Background DB tasks cleanup error (non-fatal): {bg_err}")
+                
                 # Cancel all pending tool execution tasks when stopping
                 if pending_tool_executions:
                     logger.info(f"Cancelling {len(pending_tool_executions)} pending tool executions due to stop/cancellation")
@@ -1208,6 +1476,43 @@ class ResponseProcessor:
                     )
             elif llm_response_end_saved:
                 logger.debug(f"✅ Billing already handled for call #{auto_continue_count + 1} (llm_response_end was saved earlier)")
+            
+            # Cleanup orphaned tool calls if run was cancelled
+            if cancellation_event and cancellation_event.is_set() and last_assistant_message_object:
+                try:
+                    # Check if the last assistant message has tool_calls
+                    message_content = last_assistant_message_object.get('content', {})
+                    tool_calls = (message_content.get('tool_calls') or []) if isinstance(message_content, dict) else []
+                    if not isinstance(tool_calls, list):
+                        tool_calls = []
+                    
+                    if tool_calls:
+                        # Check if tool results were saved for these tool calls
+                        tool_call_ids = [tc.get('id') for tc in tool_calls if isinstance(tc, dict) and tc.get('id')]
+                        
+                        # Tool results are in tool_results_map (if not yet saved) or already saved to DB
+                        # If we're in cancellation, tool results likely weren't saved yet
+                        # Check if tool_results_map exists in local scope
+                        results_saved = 'tool_results_map' in locals() and bool(tool_results_map)
+                        
+                        if tool_call_ids and not results_saved:
+                            logger.warning(f"🧹 Cancellation detected with {len(tool_call_ids)} unanswered tool_calls - cleaning up message {last_assistant_message_object.get('message_id')}")
+                            
+                            # Remove tool_calls from the message
+                            updated_content = message_content.copy() if isinstance(message_content, dict) else {}
+                            updated_content.pop('tool_calls', None)
+                            
+                            # Update in database
+                            from core.services.supabase import DBConnection
+                            db = DBConnection()
+                            client = await db.client
+                            await client.table('messages').update({
+                                'content': updated_content
+                            }).eq('message_id', last_assistant_message_object['message_id']).execute()
+                            
+                            logger.info(f"✅ Removed {len(tool_call_ids)} orphaned tool_calls from message {last_assistant_message_object['message_id']}: {tool_call_ids}")
+                except Exception as cleanup_e:
+                    logger.error(f"Error cleaning up orphaned tool calls in finally block: {str(cleanup_e)}", exc_info=True)
             
             if should_auto_continue:
                 continuous_state['accumulated_content'] = accumulated_content
@@ -1533,44 +1838,93 @@ class ResponseProcessor:
             # Get available functions from tool registry
             logger.debug(f"🔍 Looking up tool function: {function_name}")
             available_functions = self.tool_registry.get_available_functions()
-            # logger.debug(f"📋 Available functions: {list(available_functions.keys())}")
 
-            # Look up the function by name
             tool_fn = available_functions.get(function_name)
             if not tool_fn:
-                logger.error(f"❌ Tool function '{function_name}' not found in registry")
-                # logger.error(f"❌ Available functions: {list(available_functions.keys())}")
-                span.end(status_message="tool_not_found", level="ERROR")
-                return ToolResult(success=False, output=f"Tool function '{function_name}' not found. Available: {list(available_functions.keys())}")
+                mcp_patterns = ['TWITTER_', 'GMAIL_', 'SLACK_', 'GITHUB_', 'LINEAR_', 
+                               'NOTION_', 'GOOGLESHEETS_', 'COMPOSIO_']
+                is_mcp_tool = any(pattern in function_name for pattern in mcp_patterns)
+                
+                if is_mcp_tool:
+                    logger.info(f"🔀 [AUTO REDIRECT] Redirecting MCP tool '{function_name}' through execute_mcp_tool wrapper")
+                    execute_mcp_tool_fn = available_functions.get('execute_mcp_tool')
+                    if execute_mcp_tool_fn:
+                        try:
+                            result = await execute_mcp_tool_fn(
+                                tool_name=function_name, 
+                                args=arguments if isinstance(arguments, dict) else {}
+                            )
+                            logger.info(f"✅ [AUTO REDIRECT] Successfully executed {function_name} via execute_mcp_tool wrapper")
+                            return result
+                        except Exception as e:
+                            logger.error(f"❌ [AUTO REDIRECT] Failed to redirect {function_name}: {e}")
+                            return ToolResult(
+                                success=False,
+                                output=f"Failed to execute MCP tool {function_name}: {str(e)}"
+                            )
+                    else:
+                        logger.error(f"❌ [AUTO REDIRECT] execute_mcp_tool not found in registry for redirection")
+                        return ToolResult(
+                            success=False, 
+                            output=f"Tool '{function_name}' is an external MCP integration but execute_mcp_tool wrapper not available."
+                        )
+                
+                logger.warning(f"⚠️  Native tool function '{function_name}' not found - attempting JIT auto-activation")
+                activation_success = await self._spark_auto_activate(function_name)
+                
+                if activation_success:
+                    # Debug: Check registry state
+                    logger.debug(f"🔍 [JIT AUTO] Registry has {len(self.tool_registry.tools)} tools registered")
+                    logger.debug(f"🔍 [JIT AUTO] Looking for '{function_name}' in registry tools: {list(self.tool_registry.tools.keys())}")
+                    
+                    # Force cache invalidation
+                    self.tool_registry.invalidate_function_cache()
+                    logger.debug(f"🔄 [JIT AUTO] Invalidated function cache after activation")
+                    
+                    # Re-fetch available functions after activation
+                    available_functions = self.tool_registry.get_available_functions()
+                    logger.debug(f"📊 [JIT AUTO] get_available_functions returned {len(available_functions)} functions: {list(available_functions.keys())}")
+                    
+                    tool_fn = available_functions.get(function_name)
+                    
+                    if tool_fn:
+                        logger.info(f"✅ [JIT AUTO] Tool '{function_name}' auto-activated successfully")
+                        logger.debug(f"📊 [JIT AUTO] Function cache now has {len(available_functions)} functions")
+                    else:
+                        logger.error(f"❌ [JIT AUTO] Tool '{function_name}' activation succeeded but function still not found")
+                        logger.error(f"📊 [JIT AUTO] Available functions: {list(available_functions.keys())}")
+                        logger.error(f"🔍 [JIT AUTO] Direct registry lookup: {function_name in self.tool_registry.tools}")
+                        span.end(status_message="tool_activation_failed", level="ERROR")
+                        return ToolResult(success=False, output=f"Tool '{function_name}' could not be activated properly.")
+                else:
+                    logger.error(f"❌ Tool function '{function_name}' not found and auto-activation failed")
+                    span.end(status_message="tool_not_found", level="ERROR")
+                    return ToolResult(
+                        success=False, 
+                        output=f"Tool '{function_name}' not found. Available: {list(available_functions.keys())}"
+                    )
 
             logger.debug(f"✅ Found tool function for '{function_name}'")
-            # logger.debug(f"🔧 Tool function type: {type(tool_fn)}")
 
-            # Handle arguments - ensure proper parsing
-            # If tool_call has raw_arguments, use that for better error messages
             raw_args_for_logging = tool_call.get("raw_arguments", arguments) if isinstance(tool_call.get("raw_arguments"), str) else arguments
             
             if isinstance(arguments, str):
                 logger.debug(f"🔄 Parsing string arguments for {function_name}")
                 logger.debug(f"📝 Raw arguments string: {raw_args_for_logging[:200]}...")
                 
-                # Try parsing with safe_json_parse first
                 parsed_args = None
                 try:
                     parsed_args = safe_json_parse(arguments)
                     if isinstance(parsed_args, dict):
-                        # Log argument types to verify they're preserved correctly
                         arg_types = {k: type(v).__name__ for k, v in parsed_args.items()}
                         logger.debug(f"✅ Parsed arguments as dict successfully. Types: {arg_types}")
                         logger.debug(f"📋 Parsed arguments: {parsed_args}")
                         result = await tool_fn(**parsed_args)
                     else:
                         logger.warning(f"⚠️ Parsed arguments is not a dict (type: {type(parsed_args)}), trying direct JSON parse")
-                        # Try direct JSON parse
                         try:
                             parsed_args = json.loads(arguments)
                             if isinstance(parsed_args, dict):
-                                # Log argument types to verify they're preserved correctly
                                 arg_types = {k: type(v).__name__ for k, v in parsed_args.items()}
                                 logger.debug(f"✅ Direct JSON parse succeeded. Types: {arg_types}")
                                 logger.debug(f"📋 Parsed arguments: {parsed_args}")
@@ -1623,30 +1977,96 @@ class ResponseProcessor:
             logger.error(f"❌ Full traceback:", exc_info=True)
             span.end(status_message="critical_error", output=str(e), level="ERROR")
             return ToolResult(success=False, output=f"Critical error executing tool: {str(e)}")
+    
+    async def _spark_auto_activate(self, function_name: str) -> bool:
+        from core.jit import JITLoader
+        from core.jit.function_map import get_tool_for_function
+        from core.jit.result_types import ActivationSuccess, ActivationError
+        
+        thread_manager = self.thread_manager
+        project_id = self.project_id
+        
+        if not thread_manager:
+            logger.warning(f"⚡ [JIT AUTO] thread_manager not directly available, attempting fallback extraction")
+            for tool_info in self.tool_registry.tools.values():
+                instance = tool_info.get('instance')
+                if instance and hasattr(instance, 'thread_manager'):
+                    thread_manager = instance.thread_manager
+                    if hasattr(thread_manager, 'project_id'):
+                        project_id = thread_manager.project_id
+                    break
+            
+            if not thread_manager:
+                logger.error(f"⚡ [JIT AUTO] No thread_manager available for activation")
+                return False
+        
+        tool_name = get_tool_for_function(function_name)
+        if tool_name:
+            logger.info(f"⚡ [JIT AUTO] Auto-activating regular tool '{tool_name}' for function '{function_name}'")
+            
+            result = await JITLoader.activate_tool(
+                tool_name, 
+                thread_manager, 
+                project_id,
+                jit_config=self.jit_config
+            )
+            
+            if isinstance(result, ActivationSuccess):
+                logger.info(f"✅ [JIT AUTO] {result}")
+                return True
+            else:
+                logger.error(f"❌ [JIT AUTO] Regular tool activation failed: {result.to_user_message()}")
+
+        # CRITICAL: MCP tools should NOT be auto-activated into main registry
+        # They must use the isolated MCP registry via execute_tool wrapper
+        mcp_patterns = ['TWITTER_', 'GMAIL_', 'SLACK_', 'GITHUB_', 'LINEAR_', 
+                       'NOTION_', 'GOOGLESHEETS_', 'COMPOSIO_']
+        is_mcp_tool = any(pattern in function_name for pattern in mcp_patterns)
+        
+        if is_mcp_tool:
+            logger.info(f"🔒 [ARCH PROTECTION] Blocked MCP tool '{function_name}' from main registry - must use execute_tool wrapper")
+            return False
+        
+        # Only try MCP auto-activation for non-MCP tools (edge cases)
+        return await self._try_mcp_auto_activation(function_name, thread_manager, project_id)
+    
+    async def _try_mcp_auto_activation(self, function_name: str, thread_manager, project_id: str) -> bool:
+        from core.jit import JITLoader
+        from core.jit.result_types import ActivationSuccess
+        
+        mcp_loader = getattr(thread_manager, 'mcp_loader', None)
+        
+        if not mcp_loader:
+            return False
+        
+        # Check if tool is available (async for dynamic registry)
+        if not await mcp_loader.is_tool_available(function_name):
+            return False
+        
+        logger.info(f"⚡ [JIT MCP AUTO] Auto-activating MCP tool '{function_name}'")
+        
+        result = await JITLoader.activate_mcp_tool(
+            function_name,
+            thread_manager,
+            project_id,
+            jit_config=self.jit_config
+        )
+        
+        if isinstance(result, ActivationSuccess):
+            logger.info(f"✅ [JIT MCP AUTO] {result}")
+            return True
+        else:
+            logger.warning(f"❌ [JIT MCP AUTO] {result.to_user_message()}")
+            return False
 
     async def _execute_tools(
         self,
         tool_calls: List[Dict[str, Any]],
         execution_strategy: ToolExecutionStrategy = "sequential"
     ) -> List[Tuple[Dict[str, Any], ToolResult]]:
-        """Execute tool calls with the specified strategy.
-
-        This is the main entry point for tool execution. It dispatches to the appropriate
-        execution method based on the provided strategy.
-
-        Args:
-            tool_calls: List of tool calls to execute
-            execution_strategy: Strategy for executing tools:
-                - "sequential": Execute tools one after another, waiting for each to complete
-                - "parallel": Execute all tools simultaneously for better performance
-
-        Returns:
-            List of tuples containing the original tool call and its result
-        """
         logger.debug(f"🎯 MAIN EXECUTE_TOOLS: Executing {len(tool_calls)} tools with strategy: {execution_strategy}")
         logger.debug(f"📋 Tool calls received: {tool_calls}")
 
-        # Validate tool_calls structure
         if not isinstance(tool_calls, list):
             logger.error(f"❌ tool_calls must be a list, got {type(tool_calls)}: {tool_calls}")
             return []
@@ -1679,17 +2099,6 @@ class ResponseProcessor:
             raise
 
     async def _execute_tools_sequentially(self, tool_calls: List[Dict[str, Any]]) -> List[Tuple[Dict[str, Any], ToolResult]]:
-        """Execute tool calls sequentially and return results.
-
-        This method executes tool calls one after another, waiting for each tool to complete
-        before starting the next one. This is useful when tools have dependencies on each other.
-
-        Args:
-            tool_calls: List of tool calls to execute
-
-        Returns:
-            List of tuples containing the original tool call and its result
-        """
         if not tool_calls:
             logger.debug("🚫 No tool calls to execute sequentially")
             return []
@@ -1950,18 +2359,31 @@ class ResponseProcessor:
                 logger.debug(f"Adding tool result for tool_call_id={tool_call['id']} with role=tool")
                 self.trace.event(name="adding_tool_result_for_tool_call_id", level="DEFAULT", status_message=(f"Adding tool result for tool_call_id={tool_call['id']} with role=tool"))
                 
-                # Create structured result for frontend (pure result only - output, success, error)
                 structured_result = self._format_tool_result(tool_call, result, for_llm=False)
                 
-                # Add function_name directly to metadata (not in result)
                 metadata["function_name"] = function_name
                 
-                # Add structured result to metadata for frontend (only output, success, error)
                 metadata["result"] = structured_result
                 metadata["return_format"] = "native"
                 
+                is_internal = False
+                if isinstance(result.output, str):
+                    try:
+                        import json
+                        output_dict = json.loads(result.output)
+                        if isinstance(output_dict, dict) and output_dict.get('_internal'):
+                            is_internal = True
+                            logger.debug(f"🔒 [INTERNAL] Tool result from '{function_name}' marked as internal (hidden from UI)")
+                    except:
+                        pass
+                
+                # Mark as internal in metadata so frontend can hide it
+                if is_internal:
+                    metadata["internal"] = True
+                    metadata["hidden_from_user"] = True
+                
                 # Add as a tool message to the conversation history
-                # This makes the result visible to the LLM in the next turn
+                # This makes the result visible to the LLM in the next turn (but can be hidden from UI)
                 message_obj = await self.add_message(
                     thread_id=thread_id,
                     type="tool",  # Special type for tool responses

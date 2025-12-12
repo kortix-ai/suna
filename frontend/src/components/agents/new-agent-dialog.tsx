@@ -62,7 +62,7 @@ export function NewAgentDialogLegacy({ open, onOpenChange, onSuccess }: NewAgent
         if (error instanceof AgentCountLimitError) {
           onOpenChange(false);
         } else {
-          toast.error(error instanceof Error ? error.message : 'Failed to create agent');
+          toast.error(error instanceof Error ? error.message : 'Failed to create Worker');
         }
       }
     });
@@ -157,7 +157,7 @@ export function NewAgentDialogLegacy({ open, onOpenChange, onSuccess }: NewAgent
             ) : (
               <>
                 <Plus className="h-4 w-4" />
-                Create Agent
+                Create Worker
               </>
             )}
           </AlertDialogAction>

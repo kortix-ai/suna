@@ -221,7 +221,7 @@ PODS:
     - ExpoModulesCore
   - ExpoBlur (15.0.7):
     - ExpoModulesCore
-  - ExpoClipboard (8.0.7):
+  - ExpoClipboard (8.0.8):
     - ExpoModulesCore
   - ExpoCrypto (15.0.7):
     - ExpoModulesCore
@@ -269,6 +269,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - ExpoSharing (14.0.8):
+    - ExpoModulesCore
   - ExpoSplashScreen (31.0.11):
     - ExpoModulesCore
   - ExpoSystemUI (6.0.8):
@@ -1623,6 +1625,8 @@ PODS:
     - React-RCTFBReactNativeSpec
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
+  - react-native-context-menu-view (1.21.0):
+    - React
   - react-native-safe-area-context (5.6.2):
     - hermes-engine
     - RCTRequired
@@ -2111,6 +2115,28 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - RNCPicker (2.11.1):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - RNGestureHandler (2.28.0):
     - hermes-engine
     - RCTRequired
@@ -2133,6 +2159,31 @@ PODS:
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
+    - Yoga
+  - RNLiveMarkdown (0.1.317):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-FabricComponents
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-rendererconsistency
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - RNWorklets
     - Yoga
   - RNPaywalls (9.6.7):
     - PurchasesHybridCommonUI (= 17.19.1)
@@ -2330,7 +2381,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - RNWorklets (0.5.1):
+  - RNWorklets (0.6.0):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -2352,9 +2403,9 @@ PODS:
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
-    - RNWorklets/worklets (= 0.5.1)
+    - RNWorklets/worklets (= 0.6.0)
     - Yoga
-  - RNWorklets/worklets (0.5.1):
+  - RNWorklets/worklets (0.6.0):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -2376,9 +2427,9 @@ PODS:
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
-    - RNWorklets/worklets/apple (= 0.5.1)
+    - RNWorklets/worklets/apple (= 0.6.0)
     - Yoga
-  - RNWorklets/worklets/apple (0.5.1):
+  - RNWorklets/worklets/apple (0.6.0):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -2389,28 +2440,6 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-hermes
-    - React-ImageManager
-    - React-jsi
-    - React-NativeModulesApple
-    - React-RCTFabric
-    - React-renderercss
-    - React-rendererdebug
-    - React-utils
-    - ReactCodegen
-    - ReactCommon/turbomodule/bridging
-    - ReactCommon/turbomodule/core
-    - ReactNativeDependencies
-    - Yoga
-  - SelectableText (2.1.0):
-    - hermes-engine
-    - RCTRequired
-    - RCTTypeSafety
-    - React-Core
-    - React-Core-prebuilt
-    - React-debug
-    - React-Fabric
-    - React-featureflags
-    - React-graphics
     - React-ImageManager
     - React-jsi
     - React-NativeModulesApple
@@ -2456,6 +2485,7 @@ DEPENDENCIES:
   - ExpoLinearGradient (from `../node_modules/expo-linear-gradient/ios`)
   - ExpoLinking (from `../node_modules/expo-linking/ios`)
   - ExpoModulesCore (from `../node_modules/expo-modules-core`)
+  - ExpoSharing (from `../node_modules/expo-sharing/ios`)
   - ExpoSplashScreen (from `../node_modules/expo-splash-screen/ios`)
   - ExpoSystemUI (from `../node_modules/expo-system-ui/ios`)
   - ExpoTrackingTransparency (from `../node_modules/expo-tracking-transparency/ios`)
@@ -2501,6 +2531,7 @@ DEPENDENCIES:
   - React-logger (from `../node_modules/react-native/ReactCommon/logger`)
   - React-Mapbuffer (from `../node_modules/react-native/ReactCommon`)
   - React-microtasksnativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
+  - react-native-context-menu-view (from `../node_modules/react-native-context-menu-view`)
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
   - react-native-webview (from `../node_modules/react-native-webview`)
   - React-NativeModulesApple (from `../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
@@ -2536,7 +2567,9 @@ DEPENDENCIES:
   - ReactNativeDependencies (from `../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec`)
   - "RNCAsyncStorage (from `../node_modules/@react-native-async-storage/async-storage`)"
   - "RNCMaskedView (from `../node_modules/@react-native-masked-view/masked-view`)"
+  - "RNCPicker (from `../node_modules/@react-native-picker/picker`)"
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
+  - "RNLiveMarkdown (from `../node_modules/@expensify/react-native-live-markdown`)"
   - RNPaywalls (from `../node_modules/react-native-purchases-ui`)
   - RNPurchases (from `../node_modules/react-native-purchases`)
   - RNReanimated (from `../node_modules/react-native-reanimated`)
@@ -2545,7 +2578,6 @@ DEPENDENCIES:
   - RNSVG (from `../node_modules/react-native-svg`)
   - RNVectorIcons (from `../node_modules/react-native-vector-icons`)
   - RNWorklets (from `../node_modules/react-native-worklets`)
-  - "SelectableText (from `../node_modules/@rob117/react-native-selectable-text`)"
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
 SPEC REPOS:
@@ -2618,6 +2650,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-linking/ios"
   ExpoModulesCore:
     :path: "../node_modules/expo-modules-core"
+  ExpoSharing:
+    :path: "../node_modules/expo-sharing/ios"
   ExpoSplashScreen:
     :path: "../node_modules/expo-splash-screen/ios"
   ExpoSystemUI:
@@ -2707,6 +2741,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon"
   React-microtasksnativemodule:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/microtasks"
+  react-native-context-menu-view:
+    :path: "../node_modules/react-native-context-menu-view"
   react-native-safe-area-context:
     :path: "../node_modules/react-native-safe-area-context"
   react-native-webview:
@@ -2777,8 +2813,12 @@ EXTERNAL SOURCES:
     :path: "../node_modules/@react-native-async-storage/async-storage"
   RNCMaskedView:
     :path: "../node_modules/@react-native-masked-view/masked-view"
+  RNCPicker:
+    :path: "../node_modules/@react-native-picker/picker"
   RNGestureHandler:
     :path: "../node_modules/react-native-gesture-handler"
+  RNLiveMarkdown:
+    :path: "../node_modules/@expensify/react-native-live-markdown"
   RNPaywalls:
     :path: "../node_modules/react-native-purchases-ui"
   RNPurchases:
@@ -2795,8 +2835,6 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-vector-icons"
   RNWorklets:
     :path: "../node_modules/react-native-worklets"
-  SelectableText:
-    :path: "../node_modules/@rob117/react-native-selectable-text"
   Yoga:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
@@ -2818,7 +2856,7 @@ SPEC CHECKSUMS:
   ExpoAsset: d839c8eae8124470332408427327e8f88beb2dfd
   ExpoAudio: a435784a5da9c27649d5c585b47c65ee4e25ff2a
   ExpoBlur: 2dd8f64aa31f5d405652c21d3deb2d2588b1852f
-  ExpoClipboard: af650d14765f19c60ce2a1eaf9dfe6445eff7365
+  ExpoClipboard: b36b287d8356887844bb08ed5c84b5979bb4dd1e
   ExpoCrypto: c1fbce112d1b6b79652bbe380b4fd4cc91676595
   ExpoDevice: 148accb4071873d19fba80a2506c58ffa433d620
   ExpoDocumentPicker: 2200eefc2817f19315fa18f0147e0b80ece86926
@@ -2831,6 +2869,7 @@ SPEC CHECKSUMS:
   ExpoLinearGradient: a464898cb95153125e3b81894fd479bcb1c7dd27
   ExpoLinking: 77455aa013e9b6a3601de03ecfab09858ee1b031
   ExpoModulesCore: 9460546192590b0ed13493d9b01bed256d3440b0
+  ExpoSharing: 0d983394ed4a80334bab5a0d5384f75710feb7e8
   ExpoSplashScreen: 268b2f128dc04284c21010540a6c4dd9f95003e3
   ExpoSystemUI: 2761aa6875849af83286364811d46e8ed8ea64c7
   ExpoTrackingTransparency: f9ad2b1955c71085aa9208ed180721301614bac9
@@ -2879,6 +2918,7 @@ SPEC CHECKSUMS:
   React-logger: 50fdb9a8236da90c0b1072da5c32ee03aeb5bf28
   React-Mapbuffer: 0164bc6ba0866e6314d86851620e6f1f95a1b4fb
   React-microtasksnativemodule: f5972fb404f7c363ff34b2292e72a716956c590c
+  react-native-context-menu-view: da39a4612c1294d651907162529cfba8421e9b89
   react-native-safe-area-context: c5d42c4294aa175415947e23c2ac956253abfc7d
   react-native-webview: 6b41d44f853c7f8dd8b685d8d289fe33349e4e1b
   React-NativeModulesApple: 8969913947d5b576de4ed371a939455a8daf28aa
@@ -2916,7 +2956,9 @@ SPEC CHECKSUMS:
   RevenueCatUI: 625b2b2f4ee8c052d2e9939c2b906cdaecded253
   RNCAsyncStorage: c8407cc394627a3a4cf56b457d594bfa822b6ab8
   RNCMaskedView: ee2fc4739eb35be50bcf4f95daca19f316b5d50c
+  RNCPicker: e77543f719cf823e13dcf8080336d633101b098e
   RNGestureHandler: c3831b3b1b5014c6afab7fff7e4171394a3419ab
+  RNLiveMarkdown: 110f267fb6d1eb0d6185d94bc5f547cb86d692af
   RNPaywalls: d9f17bc5cab8555a7c0b395f5c0bdc3256b42c2a
   RNPurchases: 5f3cd4fea5ef2b3914c925b2201dd5cecd31922f
   RNReanimated: 2a5413dfcf429c7c9ce3f0030e3b7a010c2f9565
@@ -2924,8 +2966,7 @@ SPEC CHECKSUMS:
   RNSoundLevel: a48da8668fbde4f792c0bea948e27ab793bee7e1
   RNSVG: ac3047fdd9c0ebac9d0b731a352bddf216af6242
   RNVectorIcons: 1db72384402bc567e995855056b8c5d7a9888780
-  RNWorklets: 76fce72926e28e304afb44f0da23b2d24f2c1fa0
-  SelectableText: 027d256340fbca04e5b5b95904f75302459a88de
+  RNWorklets: e2f21d10699f21634e4b9583c10e3596e6d3b353
   Yoga: 65431d43277b661ebc7289c6c5d82f64ce42cfe0
 
 PODFILE CHECKSUM: 19257a90c1108320bf652a885989f1815b4fa281

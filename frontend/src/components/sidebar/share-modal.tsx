@@ -9,7 +9,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Copy, Link, Link2Off, Check, Globe, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { useThreadQuery, useUpdateThreadMutation } from "@/hooks/threads/use-threads";
-import { useUpdateProject } from "@/hooks/threads/use-project";
 import type { JSX } from "react"
 import { Skeleton } from "../ui/skeleton"
 
@@ -69,7 +68,6 @@ export function ShareModal({ isOpen, onClose, threadId, projectId }: ShareModalP
   }, [isOpen])
 
   const updateThreadMutation = useUpdateThreadMutation()
-  const updateProjectMutation = useUpdateProject()
 
   const { data: threadData, isLoading: isChecking } = useThreadQuery(threadId || "")
 
@@ -123,12 +121,7 @@ export function ShareModal({ isOpen, onClose, threadId, projectId }: ShareModalP
   }
 
   const updatePublicStatus = async (isPublic: boolean) => {
-    if (!threadId || !projectId) return
-
-    await updateProjectMutation.mutateAsync({
-      projectId,
-      data: { is_public: isPublic },
-    })
+    if (!threadId) return
     await updateThreadMutation.mutateAsync({
       threadId,
       data: { is_public: isPublic },

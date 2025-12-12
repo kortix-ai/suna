@@ -4,7 +4,7 @@ import { CircleDashed, Maximize2 } from 'lucide-react';
 import { getToolIcon, getUserFriendlyToolName } from '@/components/thread/utils';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { ToolCallInput } from '@/components/thread/tool-call-side-panel';
+import { ToolCallInput } from '@/components/thread/kortix-computer';
 
 // Re-export for use in chat-snack.tsx
 export type { ToolCallInput };
@@ -105,43 +105,53 @@ export const FloatingToolPreview: React.FC<FloatingToolPreviewProps> = ({
               <div className="flex-shrink-0">
                 <motion.div
                   layoutId="tool-icon"
-                  className={cn(
-                    "w-10 h-10 rounded-2xl flex items-center justify-center",
-                    isStreaming
-                      ? "bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800"
-                      : isSuccess
-                        ? "bg-green-50 dark:bg-green-900/20 border border-green-300 dark:border-green-800"
-                        : "bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
-                  )}
+                  className="w-10 h-10 rounded-2xl flex items-center justify-center bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20"
                   style={{ opacity: isExpanding ? 0 : 1 }}
                 >
                   {isStreaming ? (
-                    <CircleDashed className="h-5 w-5 text-blue-500 dark:text-blue-400 animate-spin" style={{ opacity: isExpanding ? 0 : 1 }} />
+                    <CircleDashed className="h-5 w-5 text-zinc-500 dark:text-zinc-400 animate-spin" style={{ opacity: isExpanding ? 0 : 1 }} />
                   ) : (
-                    <CurrentToolIcon className="h-5 w-5 text-foreground" style={{ opacity: isExpanding ? 0 : 1 }} />
+                    <CurrentToolIcon className="h-5 w-5 text-zinc-500 dark:text-zinc-400" style={{ opacity: isExpanding ? 0 : 1 }} />
                   )}
                 </motion.div>
               </div>
 
               <div className="flex-1 min-w-0" style={{ opacity: isExpanding ? 0 : 1 }}>
-                <motion.div layoutId="tool-title" className="flex items-center gap-2 mb-1">
+                <motion.div layoutId="tool-title" className="flex items-center gap-2 mb-[4px]">
                   <h4 className="text-sm font-medium text-foreground truncate">
                     {getUserFriendlyToolName(toolName)}
                   </h4>
                 </motion.div>
 
-                <motion.div layoutId="tool-status" className="flex items-center gap-2">
+                <motion.div 
+                  layoutId="tool-status" 
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full",
+                    isStreaming
+                      ? "bg-blue-500/10"
+                      : isSuccess
+                        ? "bg-green-500/10"
+                        : "bg-red-500/10"
+                  )}
+                >
                   <div className={cn(
-                    "w-2 h-2 rounded-full",
+                    "w-1.5 h-1.5 rounded-full",
                     isStreaming
                       ? "bg-blue-500 animate-pulse"
                       : isSuccess
-                        ? "bg-green-500"
+                        ? "bg-green-500 animate-pulse"
                         : "bg-red-500"
                   )} />
-                  <span className="text-xs text-muted-foreground truncate">
+                  <span className={cn(
+                    "text-xs font-medium",
+                    isStreaming
+                      ? "text-blue-500"
+                      : isSuccess
+                        ? "text-green-500"
+                        : "text-red-500"
+                  )}>
                     {isStreaming
-                      ? `${agentName || 'Suna'} is working...`
+                      ? `${agentName || 'Kortix'} is working...`
                       : isSuccess
                         ? "Success"
                         : "Failed"

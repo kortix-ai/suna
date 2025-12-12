@@ -1,7 +1,7 @@
 # ============================================================================
-# SUNA DOCKER COMPOSE - LOCAL DEVELOPMENT
+# KORTIX SUPER WORKER DOCKER COMPOSE - LOCAL DEVELOPMENT
 # ============================================================================
-# This Docker Compose file runs Suna services (Backend, Worker, Frontend, Redis)
+# This Docker Compose file runs Kortix Super Worker services (Backend, Worker, Frontend, Redis)
 #
 # ⚠️  IMPORTANT LIMITATION - LOCAL SUPABASE:
 # Currently, local Supabase (via `npx supabase start`) is NOT supported with
@@ -20,8 +20,8 @@
 #   docker compose logs -f        # View all logs
 #
 # Access:
-#   - Suna Frontend:     http://localhost:3000
-#   - Suna Backend API:  http://localhost:8000
+#   - Kortix Super Worker Frontend:     http://localhost:3000
+#   - Kortix Super Worker Backend API:  http://localhost:8000
 # ============================================================================
 
 services:

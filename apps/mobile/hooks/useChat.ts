@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Alert, Keyboard } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
+import * as Haptics from 'expo-haptics';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import type { UnifiedMessage } from '@/api/types';
@@ -25,6 +26,7 @@ import {
   validateFileSize,
 } from '@/lib/files';
 import { transcribeAudio, validateAudioFile } from '@/lib/chat/transcription';
+import { detectModeFromContent } from '@/lib/chat/modeDetection';
 import { useAgentStream } from './useAgentStream';
 import { useAgent } from '@/contexts/AgentContext';
 import { useAvailableModels } from '@/lib/models';
@@ -39,6 +41,18 @@ export interface Attachment {
   isUploading?: boolean;
   uploadProgress?: number;
   uploadError?: string;
+}
+
+// Per-mode state for instant tab-like switching
+interface ModeState {
+  threadId: string | undefined;
+  messages: UnifiedMessage[];
+  agentRunId: string | null;
+  sandboxId: string | undefined;
+  viewState: 'thread-list' | 'thread';
+  inputValue: string;
+  attachments: Attachment[];
+  selectedOption: string | null;
 }
 
 export interface UseChatReturn {
@@ -92,6 +106,11 @@ export interface UseChatReturn {
   clearQuickAction: () => void;
   getPlaceholder: () => string;
   
+  // Mode view state
+  modeViewState: 'thread-list' | 'thread';
+  showModeThreadList: () => void;
+  showModeThread: (threadId: string) => void;
+  
   isAttachmentDrawerVisible: boolean;
   openAttachmentDrawer: () => void;
   closeAttachmentDrawer: () => void;
@@ -118,12 +137,16 @@ export function useChat(): UseChatReturn {
     initialIndex: number;
   } | null>(null);
   const [isAttachmentDrawerVisible, setIsAttachmentDrawerVisible] = useState(false);
-  const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>(null);
+  const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>('image');
   const [selectedQuickActionOption, setSelectedQuickActionOption] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [modeViewState, setModeViewState] = useState<'thread-list' | 'thread'>('thread-list');
   const [isNewThreadOptimistic, setIsNewThreadOptimistic] = useState(false);
   const [activeSandboxId, setActiveSandboxId] = useState<string | undefined>(undefined);
   const [userInitiatedRun, setUserInitiatedRun] = useState(false);
+  
+  // Per-mode full state: keeps entire mode state in memory for instant switching (like browser tabs)
+  const [modeStates, setModeStates] = useState<Record<string, ModeState>>({});;
 
   const { selectModel } = useAgent();
   const { data: threadsData = [] } = useThreads();
@@ -540,6 +563,15 @@ export function useChat(): UseChatReturn {
     setMessages([]);
     
     setActiveThreadId(threadId);
+    setModeViewState('thread');
+    
+    // Sync the selected mode with the thread's mode metadata
+    const thread = threadsData.find((t: any) => t.thread_id === threadId);
+    if (thread?.metadata?.mode) {
+      console.log('[useChat] Syncing mode from thread metadata:', thread.metadata.mode);
+      setSelectedQuickAction(thread.metadata.mode);
+      setSelectedQuickActionOption(null);
+    }
     
     // Refetch active runs to check if there's a running agent for this thread
     console.log('🔍 [useChat] Checking for active agent runs...');
@@ -558,7 +590,7 @@ export function useChat(): UseChatReturn {
     }).catch(error => {
       console.error('❌ [useChat] Failed to refetch active runs:', error);
     });
-  }, [stopStreaming, refetchActiveRuns]);
+  }, [stopStreaming, refetchActiveRuns, threadsData]);
 
   const startNewChat = useCallback(() => {
     console.log('[useChat] Starting new chat');
@@ -662,11 +694,33 @@ export function useChat(): UseChatReturn {
         console.log('🚀 [useChat] Starting agent with accessible model:', currentModel);
         
         try {
+          // Detect mode from content (auto-detect overrides selected tab if content suggests different mode)
+          const detectedMode = detectModeFromContent(content);
+          const effectiveMode = detectedMode || selectedQuickAction;
+          
+          // Visually switch the tab if mode was auto-detected and is different from current
+          if (detectedMode && detectedMode !== selectedQuickAction) {
+            console.log('[useChat] 🎯 Auto-switching tab:', selectedQuickAction, '→', detectedMode);
+            // Trigger haptic feedback to match manual tab switching experience
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            setSelectedQuickAction(detectedMode);
+            setSelectedQuickActionOption(null); // Clear any selected option when switching modes
+          }
+          
+          // Build thread metadata with the effective mode
+          const threadMetadata: Record<string, any> = {};
+          if (effectiveMode) {
+            threadMetadata.mode = effectiveMode;
+            console.log('[useChat] Setting thread mode:', effectiveMode, 
+              detectedMode ? '(auto-detected from content)' : '(from selected tab)');
+          }
+          
           const createResult = await unifiedAgentStartMutation.mutateAsync({
             prompt: messageWithContext,
             agentId: agentId,
             modelName: currentModel,
             files: formDataFiles as any,
+            threadMetadata: Object.keys(threadMetadata).length > 0 ? threadMetadata : undefined,
           });
           
           currentThreadId = createResult.thread_id;
@@ -969,10 +1023,121 @@ export function useChat(): UseChatReturn {
   }, [addAttachment]);
 
   const handleQuickAction = useCallback((actionId: string) => {
+    console.log('[useChat] 🔄 Switching mode:', selectedQuickAction, '→', actionId);
+    
+    // Don't do anything if switching to the same mode
+    if (actionId === selectedQuickAction) {
+      return;
+    }
+    
+    // Save current mode's FULL state before switching (like saving a browser tab)
+    if (selectedQuickAction) {
+      console.log('[useChat] 💾 Saving full state for mode:', selectedQuickAction, {
+        threadId: activeThreadId,
+        messagesCount: messages.length,
+        agentRunId,
+        viewState: modeViewState,
+      });
+      setModeStates(prev => ({
+        ...prev,
+        [selectedQuickAction]: {
+          threadId: activeThreadId,
+          messages: messages,
+          agentRunId: agentRunId,
+          sandboxId: activeSandboxId,
+          viewState: modeViewState,
+          inputValue: inputValue,
+          attachments: attachments,
+          selectedOption: selectedQuickActionOption,
+        },
+      }));
+    }
+    
+    // Switch to the new mode
     setSelectedQuickAction(actionId);
-    // Reset selected option when changing quick action
-    setSelectedQuickActionOption(null);
-  }, []);
+    
+    // Check if the target mode has saved state (instant restore like browser tab)
+    const savedState = modeStates[actionId];
+    if (savedState && (savedState.threadId || savedState.messages.length > 0)) {
+      console.log('[useChat] ⚡ Instant restore for mode:', actionId, {
+        threadId: savedState.threadId,
+        messagesCount: savedState.messages.length,
+        agentRunId: savedState.agentRunId,
+        viewState: savedState.viewState,
+      });
+      
+      // Instantly restore all state - no reloading!
+      setActiveThreadId(savedState.threadId);
+      setMessages(savedState.messages);
+      setAgentRunId(savedState.agentRunId);
+      setActiveSandboxId(savedState.sandboxId);
+      setModeViewState(savedState.viewState);
+      setInputValue(savedState.inputValue);
+      setAttachments(savedState.attachments);
+      setSelectedQuickActionOption(savedState.selectedOption);
+      
+      // If there was a running agent, reconnect to stream (quick operation)
+      if (savedState.agentRunId && savedState.threadId) {
+        console.log('[useChat] 🔌 Reconnecting to stream:', savedState.agentRunId);
+        lastStreamStartedRef.current = null; // Allow stream to restart
+        startStreaming(savedState.agentRunId);
+      }
+    } else {
+      // No saved state - show fresh thread list for new mode
+      console.log('[useChat] 📋 Fresh mode, showing thread list:', actionId);
+      // Stop current streaming (agent keeps running on server)
+      stopStreaming();
+      setAgentRunId(null);
+      setActiveThreadId(undefined);
+      setMessages([]);
+      setSelectedToolData(null);
+      setInputValue('');
+      setAttachments([]);
+      setSelectedQuickActionOption(null);
+      setModeViewState('thread-list');
+    }
+  }, [
+    selectedQuickAction, 
+    activeThreadId, 
+    messages, 
+    agentRunId, 
+    activeSandboxId, 
+    modeViewState, 
+    inputValue, 
+    attachments, 
+    selectedQuickActionOption,
+    modeStates, 
+    stopStreaming, 
+    startStreaming,
+  ]);
+
+  // Show the thread list for current mode
+  const showModeThreadList = useCallback(() => {
+    console.log('[useChat] 📋 Going back to thread list for mode:', selectedQuickAction);
+    setModeViewState('thread-list');
+    
+    // Clear the saved state for current mode when user explicitly goes back
+    if (selectedQuickAction) {
+      setModeStates(prev => {
+        const updated = { ...prev };
+        delete updated[selectedQuickAction];
+        return updated;
+      });
+    }
+    
+    // Clear active thread when going to list view
+    setActiveThreadId(undefined);
+    setMessages([]);
+    setAgentRunId(null);
+    stopStreaming();
+  }, [stopStreaming, selectedQuickAction]);
+
+  // Open a specific thread (used from thread list)
+  const showModeThread = useCallback((threadId: string) => {
+    console.log('[useChat] Opening thread from list:', threadId);
+    loadThread(threadId);
+    setModeViewState('thread');
+  }, [loadThread]);
 
   const clearQuickAction = useCallback(() => {
     setSelectedQuickAction(null);
@@ -1091,6 +1256,11 @@ export function useChat(): UseChatReturn {
     setSelectedQuickActionOption,
     clearQuickAction,
     getPlaceholder,
+    
+    // Mode view state
+    modeViewState,
+    showModeThreadList,
+    showModeThread,
     
     isAttachmentDrawerVisible,
     openAttachmentDrawer,

@@ -77,7 +77,7 @@ export const JsonImportDialog: React.FC<JsonImportDialogProps> = ({
       {
         onSuccess: (result) => {
           setAnalysis(result);
-          setInstanceName(result.agent_info?.name || 'Imported Agent');
+          setInstanceName(result.agent_info?.name || 'Imported Worker');
 
           if (result.requires_setup) {
             const steps: SetupStep[] = [];
@@ -246,7 +246,7 @@ export const JsonImportDialog: React.FC<JsonImportDialogProps> = ({
   const renderPasteStep = () => (
     <div className="space-y-6 min-w-0">
       <div className="space-y-2">
-        <Label htmlFor="json-content">Agent JSON</Label>
+        <Label htmlFor="json-content">Worker JSON</Label>
         <Textarea
           id="json-content"
           placeholder="Paste your exported agent JSON here..."
@@ -347,7 +347,7 @@ export const JsonImportDialog: React.FC<JsonImportDialogProps> = ({
               ) : (
                 <>
                   <FileJson className="h-4 w-4" />
-                  Import Agent
+                  Import Worker
                 </>
               )}
             </Button>
@@ -369,7 +369,7 @@ export const JsonImportDialog: React.FC<JsonImportDialogProps> = ({
     <div className="flex flex-col items-center justify-center py-12 space-y-4">
       <Loader2 className="h-8 w-8 animate-spin text-primary" />
       <div className="text-center">
-        <h3 className="font-semibold">Importing Agent</h3>
+        <h3 className="font-semibold">Importing Worker</h3>
         <p className="text-sm text-muted-foreground">
           Creating your agent with the configured credentials...
         </p>
@@ -383,7 +383,7 @@ export const JsonImportDialog: React.FC<JsonImportDialogProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileJson className="h-5 w-5" />
-            Import Agent from JSON
+            Import Worker from JSON
           </DialogTitle>
         </DialogHeader>
         {analysis && !analysis.requires_setup && step === 'paste' && (
@@ -416,7 +416,7 @@ export const JsonImportDialog: React.FC<JsonImportDialogProps> = ({
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              Failed to import agent. Please try again or check your credential configurations.
+              Failed to import Worker. Please try again or check your credential configurations.
             </AlertDescription>
           </Alert>
         )}

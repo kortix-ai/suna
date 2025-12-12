@@ -40,14 +40,14 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 
 // Helper to render model labels with special styling for Kortix modes
 const ModelLabel = ({ label, className }: { label: string; className?: string }) => {
-    if (label === 'Kortix POWER Mode') {
+    if (label === 'Kortix Advanced Mode') {
         return (
             <span className={cn("flex items-center gap-2 flex-wrap", className)}>
                 <span className="font-medium">Kortix</span>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 dark:bg-primary/15 rounded-full flex-shrink-0">
                     <KortixLogo size={12} variant="symbol" />
                     <span className="text-[11px] font-semibold tracking-wide uppercase text-primary whitespace-nowrap">
-                        Power
+                        Advanced
                     </span>
                 </span>
             </span>
@@ -105,7 +105,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     const { openPricingModal } = usePricingModalStore();
     const [isMobile, setIsMobile] = useState(false);
     const [mobileSection, setMobileSection] = useState<'main' | 'agents'>('main');
-    
+
     const tierKey = accountStateSelectors.tierKey(accountState);
     const isFreeTier = tierKey && (
       tierKey === 'free' ||
@@ -117,7 +117,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
         const checkMobile = () => {
             setIsMobile(window.innerWidth < 640);
         };
-        
+
         checkMobile();
         window.addEventListener('resize', checkMobile);
         return () => window.removeEventListener('resize', checkMobile);
@@ -155,10 +155,10 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     const sunaAgent = useMemo(() => {
         return agents.find(a => a.metadata?.is_suna_default === true);
     }, [agents]);
-    
+
     const placeholderSunaAgent = useMemo(() => ({
         agent_id: undefined,
-        name: 'Suna',
+        name: 'Kortix',
         metadata: { is_suna_default: true }
     }), []);
 
@@ -226,7 +226,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
 
     const renderAgentIcon = useCallback((agent: any, size: number = 32) => {
         if (!agent && (isLoading || sunaAgent)) {
-            return <AgentAvatar isSunaDefault={true} agentName="Suna" size={size} className="flex-shrink-0 !border-0" />;
+            return <AgentAvatar isSunaDefault={true} agentName="Kortix" size={size} className="flex-shrink-0 !border-0" />;
         }
         return <AgentAvatar agent={agent} agentId={agent?.agent_id} size={size} className="flex-shrink-0 !border-0" />;
     }, [isLoading, sunaAgent]);
@@ -267,7 +267,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                     onClick={() => handleAgentClick(agent.agent_id)}
                                 >
                                     <div className={cn(
-                                        "flex items-center justify-center bg-card border-[1.5px] border-border flex-shrink-0",
+                                        "flex items-center justify-center bg-transparent border-[1.5px] border-border flex-shrink-0",
                                         compact ? "w-8 h-8" : "w-10 h-10 sm:w-8 sm:h-8"
                                     )} style={{ borderRadius: '10.4px' }}>
                                         {renderAgentIcon(agent, compact ? 32 : (isMobile ? 40 : 32))}
@@ -292,7 +292,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                 size="sm"
                                 variant="ghost"
                                 className={cn(
-                                    "w-full text-sm text-muted-foreground hover:text-foreground rounded-xl sm:rounded-2xl hover:bg-muted/60",
+                                    "w-full text-sm text-muted-foreground hover:text-foreground rounded-2xl hover:bg-muted/60",
                                     compact ? "h-8" : "h-10 sm:h-8"
                                 )}
                                 onClick={handleLoadMore}
@@ -337,8 +337,8 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                 <div className={cn(
                     "flex items-center justify-center border-[1.5px] flex-shrink-0 transition-colors",
                     compact ? "w-8 h-8" : "w-10 h-10 sm:w-8 sm:h-8",
-                    isFreeTier 
-                        ? "bg-primary/10 border-primary/30" 
+                    isFreeTier
+                        ? "bg-primary/10 border-primary/30"
                         : "bg-card border-border"
                 )} style={{ borderRadius: '10.4px' }}>
                     {isFreeTier ? (
@@ -376,16 +376,16 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
 
     const ModeToggle = useCallback(({ compact = false }: { compact?: boolean }) => {
         const basicModel = modelOptions.find(m => m.id === 'kortix/basic' || m.label === 'Kortix Basic');
-        const powerModel = modelOptions.find(m => m.id === 'kortix/power' || m.label === 'Kortix POWER Mode');
-        
+        const powerModel = modelOptions.find(m => m.id === 'kortix/power' || m.label === 'Kortix Advanced Mode');
+
         const canAccessPower = powerModel ? canAccessModel(powerModel.id) : false;
         const isPowerSelected = powerModel && selectedModel === powerModel.id;
         const isBasicSelected = basicModel && selectedModel === basicModel.id;
-        
+
         return (
             <div className={cn(
                 "flex items-center gap-1.5 p-1 bg-muted/50 rounded-xl",
-                compact ? "mx-1" : ""
+                compact ? "" : ""
             )}>
                 {/* Basic Mode */}
                 <button
@@ -397,8 +397,8 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     className={cn(
                         "flex-1 flex items-center justify-center gap-1.5 rounded-lg transition-all",
                         compact ? "px-3 py-1.5" : "px-4 py-2",
-                        isBasicSelected 
-                            ? "bg-background shadow-sm text-foreground" 
+                        isBasicSelected
+                            ? "bg-background shadow-sm text-foreground"
                             : "text-muted-foreground hover:text-foreground"
                     )}
                 >
@@ -407,8 +407,8 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                         compact ? "text-xs" : "text-sm"
                     )}>Basic</span>
                 </button>
-                
-                {/* Power Mode */}
+
+                {/* Advanced Mode */}
                 <button
                     onClick={() => {
                         if (powerModel) {
@@ -416,9 +416,9 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                 onModelChange(powerModel.id);
                             } else {
                                 setIsOpen(false);
-                                usePricingModalStore.getState().openPricingModal({ 
-                                    isAlert: true, 
-                                    alertTitle: 'Upgrade to access Kortix Power mode'
+                                usePricingModalStore.getState().openPricingModal({
+                                    isAlert: true,
+                                    alertTitle: 'Upgrade to access Kortix Advanced mode'
                                 });
                             }
                         }
@@ -426,19 +426,19 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     className={cn(
                         "flex-1 flex items-center justify-center gap-1.5 rounded-lg transition-all",
                         compact ? "px-3 py-1.5" : "px-4 py-2",
-                        isPowerSelected 
-                            ? "bg-background shadow-sm" 
-                            : canAccessPower 
+                        isPowerSelected
+                            ? "bg-background shadow-sm"
+                            : canAccessPower
                                 ? "text-muted-foreground hover:text-foreground"
                                 : "text-muted-foreground/50"
                     )}
                 >
                     <KortixLogo size={compact ? 10 : 12} variant="symbol" />
                     <span className={cn(
-                        "font-semibold tracking-wide uppercase",
-                        compact ? "text-[10px]" : "text-xs",
+                        "font-medium",
+                        compact ? "text-xs" : "text-sm",
                         isPowerSelected ? "text-primary" : canAccessPower ? "text-muted-foreground" : "text-muted-foreground/50"
-                    )}>Power</span>
+                    )}>Advanced</span>
                     {!canAccessPower && (
                         <Lock className={cn(
                             "text-muted-foreground/50",
@@ -456,42 +456,40 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                 <div className="mb-2 sm:mb-3">
                     <span className="text-xs font-medium text-muted-foreground">Worker Settings</span>
                 </div>
-                <div className="flex justify-between items-center gap-2">
+                <div className="flex items-center gap-2">
                     {[
                         { action: 'instructions' as const, icon: Plug, label: 'Instructions' },
                         { action: 'knowledge' as const, icon: Brain, label: 'Knowledge' },
                         { action: 'integrations' as const, icon: LibraryBig, label: 'Integrations' },
                         { action: 'triggers' as const, icon: Zap, label: 'Triggers' },
                     ].map(({ action, icon: Icon, label }) => (
-                        <TooltipProvider key={action}>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className={cn(
-                                            "flex-1 p-0 cursor-pointer hover:bg-muted/60 border-[1.5px] border-border rounded-xl sm:rounded-2xl",
-                                            compact ? "h-8" : "h-11 sm:h-8"
-                                        )}
-                                        onClick={() => {
-                                            setIsOpen(false);
-                                            if (action === 'integrations') {
-                                                setIntegrationsOpen(true);
-                                            } else {
-                                                handleQuickAction(action as any);
-                                            }
-                                        }}
-                                    >
-                                        <Icon className={cn(
-                                            compact ? "h-4 w-4" : "h-5 w-5 sm:h-4 sm:w-4"
-                                        )} />
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom" className="text-xs">
-                                    {label}
-                                </TooltipContent>
-                            </Tooltip>
-                        </TooltipProvider>
+                        <Tooltip key={action}>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className={cn(
+                                        "flex-1 p-0 cursor-pointer hover:bg-muted/60 border-[1.5px] border-border rounded-2xl",
+                                        compact ? "h-8" : "h-11 sm:h-8"
+                                    )}
+                                    onClick={() => {
+                                        setIsOpen(false);
+                                        if (action === 'integrations') {
+                                            setIntegrationsOpen(true);
+                                        } else {
+                                            handleQuickAction(action as any);
+                                        }
+                                    }}
+                                >
+                                    <Icon className={cn(
+                                        compact ? "h-4 w-4" : "h-5 w-5 sm:h-4 sm:w-4"
+                                    )} />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="text-xs">
+                                {label}
+                            </TooltipContent>
+                        </Tooltip>
                     ))}
                 </div>
             </div>
@@ -505,15 +503,15 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                 <div className="flex flex-col h-full">
                     {/* Header */}
                     <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-                        <button 
+                        <button
                             onClick={() => setMobileSection('main')}
-                            className="p-2 -ml-2 hover:bg-muted/50 rounded-xl transition-colors"
+                            className="p-2 -ml-2 hover:bg-muted/50 rounded-2xl transition-colors"
                         >
                             <ChevronLeft className="h-5 w-5 text-muted-foreground" />
                         </button>
                         <span className="text-base font-semibold">Select Worker</span>
                     </div>
-                    
+
                     {/* Search */}
                     <div className="px-4 py-3">
                         <div className="relative">
@@ -528,7 +526,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                             />
                         </div>
                     </div>
-                    
+
                     {/* List */}
                     <div className="flex-1 overflow-hidden">
                         <div className="px-4 pb-2">
@@ -540,7 +538,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                 </div>
             );
         }
-        
+
         // Main section
         return (
             <div className="flex flex-col">
@@ -548,7 +546,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                 <div className="flex justify-center pt-3 pb-2">
                     <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
                 </div>
-                
+
                 {/* Agent selector */}
                 {onAgentSelect && (
                     <>
@@ -558,28 +556,28 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                         <div className="px-4 pb-2">
                             <button
                                 onClick={() => setMobileSection('agents')}
-                                className="w-full flex items-center gap-3 p-3 rounded-xl border border-border bg-card hover:bg-muted/50 active:bg-muted/70 transition-colors"
+                                className="w-full flex items-center gap-3 p-3 rounded-2xl border border-border bg-card hover:bg-muted/50 active:bg-muted/70 transition-colors"
                             >
                                 <div className="flex items-center justify-center w-10 h-10 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
                                     {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent, 40)}
                                 </div>
                                 <span className="flex-1 truncate text-base font-medium text-left min-w-0">
-                                    {displayAgent?.name || 'Suna'}
+                                    {displayAgent?.name || 'Kortix'}
                                 </span>
                                 <ChevronDown className="h-5 w-5 text-muted-foreground rotate-[-90deg] flex-shrink-0" />
                             </button>
                         </div>
                     </>
                 )}
-                
+
                 {/* Mode toggle */}
-                <div className="px-4 pt-2 pb-1">
+                <div className="px-3 pt-2 pb-1">
                     <span className="text-xs font-medium text-muted-foreground">Mode</span>
                 </div>
                 <div className="px-3 pb-3">
                     <ModeToggle compact={false} />
                 </div>
-                
+
                 {/* Worker settings */}
                 {onAgentSelect && (selectedAgentId || displayAgent?.agent_id) && (
                     <div className="py-3">
@@ -595,15 +593,15 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
         <Button
             variant="ghost"
             size="sm"
-            className="h-8 px-2 bg-transparent border-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5"
+            className="h-10 px-2 bg-transparent border-[1.5px] border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5"
             aria-label="Config menu"
             onClick={() => setIsOpen(true)}
         >
             {onAgentSelect ? (
                 <div className="flex items-center gap-2 min-w-0 max-w-[180px]">
-                    {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent)}
+                    {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent, 24)}
                     <span className="truncate text-sm font-medium">
-                        {displayAgent?.name || 'Suna'}
+                        {displayAgent?.name || 'Kortix'}
                     </span>
                     <ChevronDown size={12} className="opacity-60 flex-shrink-0" />
                 </div>
@@ -621,10 +619,17 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
             {/* Mobile: Use Sheet */}
             {isMobile ? (
                 <>
-                    {TriggerButton}
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            {TriggerButton}
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                            <p>Worker settings</p>
+                        </TooltipContent>
+                    </Tooltip>
                     <Sheet open={isOpen} onOpenChange={setIsOpen}>
-                        <SheetContent 
-                            side="bottom" 
+                        <SheetContent
+                            side="bottom"
                             className={cn(
                                 "rounded-t-2xl px-0 pb-8",
                                 mobileSection === 'main' ? "max-h-[70vh]" : "h-[85vh]"
@@ -642,64 +647,73 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
             ) : (
                 /* Desktop: Use Dropdown */
                 <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
-                    <DropdownMenuTrigger asChild>
-                        {TriggerButton}
-                    </DropdownMenuTrigger>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <DropdownMenuTrigger asChild>
+                                {TriggerButton}
+                            </DropdownMenuTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                            <p>Worker settings</p>
+                        </TooltipContent>
+                    </Tooltip>
 
                     <DropdownMenuContent align="end" className="w-[320px] px-0 py-3 border-[1.5px] border-border rounded-2xl" sideOffset={6}>
-                        {/* Agents Submenu */}
-                        {onAgentSelect && (
-                            <>
-                                <div className="px-3 pb-1">
-                                    <span className="text-xs font-medium text-muted-foreground">Worker</span>
-                                </div>
-                                <div className="px-2 pb-2">
-                                    <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
-                                        <DropdownMenuSub>
-                                            <DropdownMenuSubTrigger className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 hover:bg-transparent focus:bg-transparent data-[state=open]:bg-transparent w-full">
-                                                <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
-                                                    {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent)}
-                                                </div>
-                                                <span className="flex-1 truncate font-medium text-left">{displayAgent?.name || 'Suna'}</span>
-                                            </DropdownMenuSubTrigger>
-                                            <DropdownMenuPortal>
-                                                <DropdownMenuSubContent className="w-[320px] px-0 py-3 border-[1.5px] border-border rounded-2xl max-h-[500px] overflow-hidden" sideOffset={8}>
-                                                    <div className="mb-3 px-3">
-                                                        <div className="relative">
-                                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-muted-foreground pointer-events-none" />
-                                                            <input
-                                                                ref={searchInputRef}
-                                                                type="text"
-                                                                placeholder="Search workers..."
-                                                                value={searchQuery}
-                                                                onChange={(e) => setSearchQuery(e.target.value)}
-                                                                onKeyDown={handleSearchInputKeyDown}
-                                                                className="w-full h-11 pl-10 pr-4 rounded-2xl text-sm font-medium bg-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-                                                            />
+                        <TooltipProvider>
+                            {/* Agents Submenu */}
+                            {onAgentSelect && (
+                                <>
+                                    <div className="px-3 pb-1">
+                                        <span className="text-xs font-medium text-muted-foreground">Worker</span>
+                                    </div>
+                                    <div className="px-2 pb-2">
+                                        <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
+                                            <DropdownMenuSub>
+                                                <DropdownMenuSubTrigger className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 hover:bg-transparent focus:bg-transparent data-[state=open]:bg-transparent w-full">
+                                                    <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
+                                                        {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent)}
+                                                    </div>
+                                                    <span className="flex-1 truncate font-medium text-left">{displayAgent?.name || 'Kortix'}</span>
+                                                </DropdownMenuSubTrigger>
+                                                <DropdownMenuPortal>
+                                                    <DropdownMenuSubContent className="w-[320px] px-0 py-3 border-[1.5px] border-border rounded-2xl max-h-[500px] overflow-hidden" sideOffset={8}>
+                                                        <div className="mb-3 px-3">
+                                                            <div className="relative">
+                                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-muted-foreground pointer-events-none" />
+                                                                <input
+                                                                    ref={searchInputRef}
+                                                                    type="text"
+                                                                    placeholder="Search workers..."
+                                                                    value={searchQuery}
+                                                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                                                    onKeyDown={handleSearchInputKeyDown}
+                                                                    className="w-full h-11 pl-10 pr-4 rounded-2xl text-sm font-medium bg-border focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                                                />
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                    <div className="flex items-center justify-between mb-3 px-3">
-                                                        <span className="text-xs font-medium text-muted-foreground">My Workers</span>
-                                                    </div>
-                                                    <AgentsList compact={true} />
-                                                    <CreateWorkerButton compact={true} />
-                                                </DropdownMenuSubContent>
-                                            </DropdownMenuPortal>
-                                        </DropdownMenuSub>
-                                    </SpotlightCard>
-                                </div>
-                            </>
-                        )}
+                                                        <div className="flex items-center justify-between mb-3 px-3">
+                                                            <span className="text-xs font-medium text-muted-foreground">My Workers</span>
+                                                        </div>
+                                                        <AgentsList compact={true} />
+                                                        <CreateWorkerButton compact={true} />
+                                                    </DropdownMenuSubContent>
+                                                </DropdownMenuPortal>
+                                            </DropdownMenuSub>
+                                        </SpotlightCard>
+                                    </div>
+                                </>
+                            )}
 
-                        {/* Mode Toggle */}
-                        <div className="px-3 pt-2 pb-1">
-                            <span className="text-xs font-medium text-muted-foreground">Mode</span>
-                        </div>
-                        <div className="pb-2">
-                            <ModeToggle compact={true} />
-                        </div>
-                        <div className="h-px bg-border/50 -mx-3 my-2" />
-                        <WorkerSettingsButtons compact={true} />
+                            {/* Mode Toggle */}
+                            <div className="px-3 pt-2 pb-1">
+                                <span className="text-xs font-medium text-muted-foreground">Mode</span>
+                            </div>
+                            <div className="px-3 pb-2">
+                                <ModeToggle compact={true} />
+                            </div>
+                            <div className="h-px bg-border/50 -mx-3 my-2" />
+                            <WorkerSettingsButtons compact={true} />
+                        </TooltipProvider>
                     </DropdownMenuContent>
                 </DropdownMenu>
             )}
@@ -743,39 +757,37 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
 
 const GuestMenu: React.FC<UnifiedConfigMenuProps> = memo(function GuestMenu() {
     return (
-        <TooltipProvider>
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <span className="inline-flex">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 px-2 bg-border border-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5 cursor-not-allowed opacity-80 pointer-events-none"
-                            disabled
-                        >
-                            <div className="flex items-center gap-2 min-w-0 max-w-[180px]">
-                                <div className="flex-shrink-0">
-                                    <KortixLogo size={20} />
-                                </div>
-                                <span className="truncate text-sm font-medium">Suna</span>
-                                <ChevronDown size={12} className="opacity-60 flex-shrink-0" />
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <span className="inline-block">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-10 px-2 sm:px-3 py-2 bg-transparent border-[1.5px] border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1 sm:gap-1.5 cursor-pointer transition-all duration-200 flex-shrink-0 animate-in fade-in-0 zoom-in-95"
+                        disabled
+                    >
+                        <div className="flex items-center gap-2 min-w-0 max-w-[180px]">
+                            <div className="flex-shrink-0">
+                                <KortixLogo size={20} />
                             </div>
-                        </Button>
-                    </span>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                    <p>Log in to change agent</p>
-                </TooltipContent>
-            </Tooltip>
-        </TooltipProvider>
+                            <span className="truncate text-sm font-medium">Kortix</span>
+                            <ChevronDown size={12} className="opacity-60 flex-shrink-0" />
+                        </div>
+                    </Button>
+                </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+                <p>Log in to change agent</p>
+            </TooltipContent>
+        </Tooltip>
     );
 });
 
-export const UnifiedConfigMenu: React.FC<UnifiedConfigMenuProps> = (props) => {
+export const UnifiedConfigMenu: React.FC<UnifiedConfigMenuProps> = memo(function UnifiedConfigMenu(props) {
     if (props.isLoggedIn) {
         return <LoggedInMenu {...props} />;
     }
     return <GuestMenu {...props} />;
-};
+});
 
 export default UnifiedConfigMenu;

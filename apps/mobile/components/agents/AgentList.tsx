@@ -1,6 +1,6 @@
 /**
  * Agent List Component - Unified agent list using SelectableListItem
- * 
+ *
  * Features:
  * - Consistent agent selection UI
  * - Configurable compact/normal layout
@@ -55,6 +55,7 @@ export function AgentList({
           showChevron={showChevron}
           onPress={() => onAgentPress?.(agent)}
           accessibilityLabel={`Select ${agent.name} worker`}
+          isActive
         />
       )}
     />

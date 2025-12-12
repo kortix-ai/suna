@@ -2,14 +2,31 @@ import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Bot, CheckCircle2, AlertCircle, Settings, Calendar, Clock } from 'lucide-react-native';
+import { Bot, Settings, Calendar, Clock } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractAgentData } from './_utils';
+import { ToolViewCard, StatusBadge, LoadingState, JsonViewer } from '../shared';
+import { getToolMetadata } from '../tool-metadata';
 
-export function AgentToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
+// Utility functions
+function formatTimestamp(isoString?: string): string {
+  if (!isoString) return '';
+  try {
+    const date = new Date(isoString);
+    return isNaN(date.getTime()) ? 'Invalid date' : date.toLocaleString();
+  } catch (e) {
+    return 'Invalid date';
+  }
+}
+
+export function AgentToolView({ toolCall, toolResult, isStreaming = false, assistantTimestamp, toolTimestamp }: ToolViewProps) {
   if (!toolCall) {
     return null;
   }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolMetadata = getToolMetadata(name, toolCall.arguments);
+  const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : true;
 
   const data = extractAgentData(toolCall, toolResult);
 
@@ -21,110 +38,143 @@ export function AgentToolView({ toolCall, toolResult, isStreaming = false }: Too
 
   if (isStreaming) {
     return (
-      <View className="flex-1 items-center justify-center py-12 px-6">
-        <View className="bg-primary/10 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
-          <Icon as={Bot} size={40} className="text-primary animate-pulse" />
+      <ToolViewCard
+        header={{
+          icon: toolMetadata.icon,
+          iconColor: toolMetadata.iconColor,
+          iconBgColor: toolMetadata.iconBgColor,
+          subtitle: toolMetadata.subtitle.toUpperCase(),
+          title: toolMetadata.title,
+          isSuccess: actualIsSuccess,
+          isStreaming: true,
+          rightContent: <StatusBadge variant="streaming" label="Processing" />,
+        }}
+      >
+        <View className="flex-1 w-full">
+          <LoadingState
+            icon={toolMetadata.icon}
+            iconColor={toolMetadata.iconColor}
+            bgColor={toolMetadata.iconBgColor}
+            title={
+              isCreate ? 'Creating Agent' : isUpdate ? 'Updating Agent' : isTrigger ? 'Managing Trigger' : 'Processing'
+            }
+            showProgress={false}
+          />
         </View>
-        <Text className="text-xl font-roobert-semibold text-foreground mb-2">
-          {isCreate ? 'Creating Agent' : isUpdate ? 'Updating Agent' : isTrigger ? 'Managing Trigger' : 'Processing'}
-        </Text>
-      </View>
+      </ToolViewCard>
     );
   }
 
   return (
-    <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 gap-6">
-        {data.message && (
-          <View className="bg-muted/50 rounded-xl p-4 border border-border">
-            <Text className="text-sm font-roobert text-foreground">
-              {data.message}
-            </Text>
-          </View>
-        )}
-
-        {data.agent_id && (
-          <View className="bg-card border border-border rounded-xl p-4 gap-2">
-            <View className="flex-row items-center gap-2">
-              <Icon as={Bot} size={14} className="text-muted-foreground" />
-              <Text className="text-xs font-roobert-medium text-muted-foreground">
-                Agent ID
-              </Text>
-            </View>
-            <Text className="text-sm font-roobert-mono text-foreground" selectable>
+    <ToolViewCard
+      header={{
+        icon: toolMetadata.icon,
+        iconColor: toolMetadata.iconColor,
+        iconBgColor: toolMetadata.iconBgColor,
+        subtitle: toolMetadata.subtitle.toUpperCase(),
+        title: toolMetadata.title,
+        isSuccess: actualIsSuccess,
+        isStreaming: false,
+        rightContent: (
+          <StatusBadge
+            variant={actualIsSuccess ? 'success' : 'error'}
+            label={actualIsSuccess ? 'Success' : 'Failed'}
+          />
+        ),
+      }}
+      footer={
+        <View className="flex-row items-center justify-between w-full">
+          {data.agent_id && (
+            <Text className="text-xs text-muted-foreground flex-1 font-roobert-mono" numberOfLines={1}>
               {data.agent_id}
             </Text>
-          </View>
-        )}
-
-        {data.config && (
-          <View className="gap-2">
-            <View className="flex-row items-center gap-2">
-              <Icon as={Settings} size={14} className="text-muted-foreground" />
-              <Text className="text-sm font-roobert-medium text-foreground/70">
-                Configuration
+          )}
+          {(toolTimestamp || assistantTimestamp) && (
+            <Text className="text-xs text-muted-foreground ml-2">
+              {toolTimestamp ? formatTimestamp(toolTimestamp) : assistantTimestamp ? formatTimestamp(assistantTimestamp) : ''}
+            </Text>
+          )}
+        </View>
+      }
+    >
+      <ScrollView className="flex-1 w-full" showsVerticalScrollIndicator={false}>
+        <View className="px-4 py-4 gap-6">
+          {data.message && (
+            <View className="bg-muted/50 rounded-xl p-4 border border-border">
+              <Text className="text-sm font-roobert text-foreground">
+                {data.message}
               </Text>
             </View>
-            <View className="bg-zinc-900 dark:bg-zinc-950 rounded-xl overflow-hidden border border-zinc-700 dark:border-zinc-800">
-              <View className="bg-zinc-800 dark:bg-zinc-900 px-3 py-2 border-b border-zinc-700 dark:border-zinc-800">
-                <Text className="text-xs font-roobert-medium text-zinc-300">JSON</Text>
+          )}
+
+          {data.agent_id && (
+            <View className="bg-card border border-border rounded-xl p-4 gap-2">
+              <View className="flex-row items-center gap-2">
+                <Icon as={Bot} size={14} className="text-muted-foreground" />
+                <Text className="text-xs font-roobert-medium text-muted-foreground">
+                  Agent ID
+                </Text>
               </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View className="p-3">
-                  <Text
-                    className="text-xs font-roobert-mono text-zinc-300 leading-5"
-                    selectable
-                  >
-                    {JSON.stringify(data.config, null, 2)}
+              <Text className="text-sm font-roobert-mono text-foreground" selectable>
+                {data.agent_id}
+              </Text>
+            </View>
+          )}
+
+          {data.config && (
+            <View className="gap-2">
+              <View className="flex-row items-center gap-2">
+                <Icon as={Settings} size={14} className="text-muted-foreground" />
+                <Text className="text-sm font-roobert-medium text-foreground/70">
+                  Configuration
+                </Text>
+              </View>
+              <JsonViewer data={data.config} title="CONFIG" defaultExpanded={false} />
+            </View>
+          )}
+
+          {data.trigger && (
+            <View className="bg-card border border-border rounded-xl p-4 gap-3">
+              <View className="flex-row items-center gap-2">
+                <Icon as={Calendar} size={16} className="text-primary" />
+                <Text className="text-base font-roobert-semibold text-foreground">
+                  {data.trigger.name || 'Trigger'}
+                </Text>
+              </View>
+              {data.trigger.schedule && (
+                <View className="bg-muted/20 p-2 rounded">
+                  <Text className="text-xs font-roobert-mono text-muted-foreground">
+                    {data.trigger.schedule}
                   </Text>
                 </View>
-              </ScrollView>
+              )}
             </View>
-          </View>
-        )}
+          )}
 
-        {data.trigger && (
-          <View className="bg-card border border-border rounded-xl p-4 gap-3">
-            <View className="flex-row items-center gap-2">
-              <Icon as={Calendar} size={16} className="text-primary" />
-              <Text className="text-base font-roobert-semibold text-foreground">
-                {data.trigger.name || 'Trigger'}
+          {data.triggers && data.triggers.length > 0 && (
+            <View className="gap-3">
+              <Text className="text-sm font-roobert-medium text-foreground/70">
+                Triggers ({data.triggers.length})
               </Text>
+              {data.triggers.map((trigger: any, idx: number) => (
+                <View key={idx} className="bg-card border border-border rounded-xl p-3 gap-2">
+                  <Text className="text-sm font-roobert-semibold text-foreground">
+                    {trigger.name || `Trigger ${idx + 1}`}
+                  </Text>
+                  {trigger.schedule && (
+                    <View className="flex-row items-center gap-2 bg-muted/20 p-2 rounded">
+                      <Icon as={Clock} size={12} className="text-muted-foreground" />
+                      <Text className="text-xs font-roobert-mono text-muted-foreground flex-1">
+                        {trigger.schedule}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              ))}
             </View>
-            {data.trigger.schedule && (
-              <View className="bg-muted/20 p-2 rounded">
-                <Text className="text-xs font-roobert-mono text-muted-foreground">
-                  {data.trigger.schedule}
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
-
-        {data.triggers && data.triggers.length > 0 && (
-          <View className="gap-3">
-            <Text className="text-sm font-roobert-medium text-foreground/70">
-              Triggers ({data.triggers.length})
-            </Text>
-            {data.triggers.map((trigger: any, idx: number) => (
-              <View key={idx} className="bg-card border border-border rounded-xl p-3 gap-2">
-                <Text className="text-sm font-roobert-semibold text-foreground">
-                  {trigger.name || `Trigger ${idx + 1}`}
-                </Text>
-                {trigger.schedule && (
-                  <View className="flex-row items-center gap-2 bg-muted/20 p-2 rounded">
-                    <Icon as={Clock} size={12} className="text-muted-foreground" />
-                    <Text className="text-xs font-roobert-mono text-muted-foreground flex-1">
-                      {trigger.schedule}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            ))}
-          </View>
-        )}
-      </View>
-    </ScrollView>
+          )}
+        </View>
+      </ScrollView>
+    </ToolViewCard>
   );
 }
-

@@ -23,6 +23,10 @@ import {
 interface CsvRendererProps {
     content: string;
     className?: string;
+    /** Compact mode for inline previews - hides search, pagination, column controls */
+    compact?: boolean;
+    /** Fixed container height for compact mode */
+    containerHeight?: number;
 }
 
 type SortDirection = 'asc' | 'desc' | null;
@@ -60,7 +64,9 @@ function parseCSV(content: string) {
 
 export function CsvRenderer({
     content,
-    className
+    className,
+    compact = false,
+    containerHeight = 300,
 }: CsvRendererProps) {
     const [searchTerm, setSearchTerm] = useState('');
     const [sortConfig, setSortConfig] = useState<SortConfig>({ column: '', direction: null });
@@ -140,19 +146,39 @@ export function CsvRenderer({
     if (isEmpty) {
         return (
             <div className={cn('w-full h-full flex items-center justify-center', className)}>
-                <div className="text-center space-y-4">
-                    <div className="w-16 h-16 mx-auto rounded-full bg-muted flex items-center justify-center">
-                        <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
+                {compact ? (
+                    <div className="text-muted-foreground text-sm">No data</div>
+                ) : (
+                    <div className="text-center space-y-4">
+                        <div className="w-16 h-16 mx-auto rounded-full bg-muted flex items-center justify-center">
+                            <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-medium text-foreground">No Data</h3>
+                            <p className="text-sm text-muted-foreground">This CSV file appears to be empty or invalid.</p>
+                        </div>
                     </div>
-                    <div>
-                        <h3 className="text-lg font-medium text-foreground">No Data</h3>
-                        <p className="text-sm text-muted-foreground">This CSV file appears to be empty or invalid.</p>
-                    </div>
-                </div>
+                )}
             </div>
         );
     }
 
+    // Compact mode: minimal UI for inline previews
+    if (compact) {
+        return (
+            <div className={cn('w-full h-full', className)}>
+                <CsvTable
+                    headers={visibleHeaders}
+                    data={processedData}
+                    sortConfig={sortConfig}
+                    onSort={handleSort}
+                    containerHeight={containerHeight}
+                />
+            </div>
+        );
+    }
+
+    // Full mode: with search, pagination, column controls
     return (
         <div className={cn('w-full h-full flex flex-col bg-background', className)}>
             <div className="flex-shrink-0 border-b bg-muted/30 p-4 space-y-3">

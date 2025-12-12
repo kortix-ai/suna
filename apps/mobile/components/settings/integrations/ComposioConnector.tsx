@@ -1,5 +1,14 @@
 import * as React from 'react';
-import { View, ScrollView, Pressable, ActivityIndicator, TextInput, Alert } from 'react-native';
+import {
+  View,
+  ScrollView,
+  Pressable,
+  ActivityIndicator,
+  TextInput,
+  Alert,
+  Switch,
+} from 'react-native';
+import { BottomSheetFlatList, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
@@ -9,6 +18,7 @@ import {
   Plus,
   Check,
   X,
+  Settings,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
@@ -20,15 +30,8 @@ import {
   type ComposioApp,
   type ComposioProfile,
 } from '@/hooks/useComposio';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring
-} from 'react-native-reanimated';
 import * as WebBrowser from 'expo-web-browser';
 import { ToolkitIcon } from './ToolkitIcon';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface ComposioConnectorProps {
   app: ComposioApp;
@@ -47,18 +50,18 @@ interface ComposioConnectorContentProps {
   mode?: 'full' | 'profile-only';
   agentId?: string;
   noPadding?: boolean;
+  isSaving?: boolean;
+  useBottomSheetFlatList?: boolean;
 }
 
 enum Step {
   ProfileSelect = 'profile-select',
   ProfileCreate = 'profile-create',
   Connecting = 'connecting',
-  Success = 'success'
+  Success = 'success',
 }
 
-const CUSTOM_OAUTH_REQUIRED_APPS = [
-  'zendesk',
-];
+const CUSTOM_OAUTH_REQUIRED_APPS = ['zendesk'];
 
 export function ComposioConnectorContent({
   app,
@@ -67,7 +70,9 @@ export function ComposioConnectorContent({
   onNavigateToTools,
   mode = 'full',
   agentId,
-  noPadding = false
+  noPadding = false,
+  isSaving = false,
+  useBottomSheetFlatList = false,
 }: ComposioConnectorContentProps) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
@@ -78,32 +83,118 @@ export function ComposioConnectorContent({
   const [createdProfileId, setCreatedProfileId] = React.useState<string | null>(null);
   const [selectedProfile, setSelectedProfile] = React.useState<ComposioProfile | null>(null);
   const [redirectUrl, setRedirectUrl] = React.useState<string | null>(null);
-  const [selectedConnectionType, setSelectedConnectionType] = React.useState<'existing' | 'new' | null>(null);
+  const [selectedConnectionType, setSelectedConnectionType] = React.useState<
+    'existing' | 'new' | null
+  >(null);
 
   const [initiationFields, setInitiationFields] = React.useState<Record<string, string>>({});
-  const [initiationFieldsErrors, setInitiationFieldsErrors] = React.useState<Record<string, string>>({});
+  const [initiationFieldsErrors, setInitiationFieldsErrors] = React.useState<
+    Record<string, string>
+  >({});
 
   const [useCustomAuth, setUseCustomAuth] = React.useState(false);
   const [customAuthConfig, setCustomAuthConfig] = React.useState<Record<string, string>>({});
-  const [customAuthConfigErrors, setCustomAuthConfigErrors] = React.useState<Record<string, string>>({});
+  const [customAuthConfigErrors, setCustomAuthConfigErrors] = React.useState<
+    Record<string, string>
+  >({});
 
   const { mutate: createProfile, isPending: isCreating } = useCreateComposioProfile();
   const { data: profiles, isLoading: isLoadingProfiles } = useComposioProfiles();
 
-  const { data: toolkitDetails, isLoading: isLoadingToolkitDetails } = useComposioToolkitDetails(app.slug);
+  const { data: toolkitDetails, isLoading: isLoadingToolkitDetails } = useComposioToolkitDetails(
+    app.slug
+  );
 
   const { data: nameAvailability, isLoading: isCheckingName } = useCheckProfileNameAvailability(
     app.slug,
     profileName,
     {
       enabled: currentStep === Step.ProfileCreate && profileName.length > 0,
-      debounceMs: 500
+      debounceMs: 500,
     }
   );
 
-  const existingProfiles = profiles?.filter((p: ComposioProfile) =>
-    p.toolkit_slug === app.slug && p.is_connected
-  ) || [];
+  const existingProfiles =
+    profiles?.filter((p: ComposioProfile) => p.toolkit_slug === app.slug && p.is_connected) || [];
+
+  const handleInitiationFieldChange = React.useCallback(
+    (fieldName: string, value: string) => {
+      setInitiationFields((prev) => ({ ...prev, [fieldName]: value }));
+      if (initiationFieldsErrors[fieldName]) {
+        setInitiationFieldsErrors((prev) => ({ ...prev, [fieldName]: '' }));
+      }
+    },
+    [initiationFieldsErrors]
+  );
+
+  const validateInitiationFields = React.useCallback((): boolean => {
+    const newErrors: Record<string, string> = {};
+    const initiationRequirements = toolkitDetails?.toolkit.connected_account_initiation_fields;
+
+    if (initiationRequirements?.required) {
+      for (const field of initiationRequirements.required) {
+        if (field.required) {
+          const value = initiationFields[field.name];
+          const isEmpty = !value || value.trim() === '';
+
+          if (field.type?.toLowerCase() === 'boolean') {
+            continue;
+          }
+
+          if (
+            (field.type?.toLowerCase() === 'number' || field.type?.toLowerCase() === 'double') &&
+            value
+          ) {
+            if (isNaN(Number(value))) {
+              newErrors[field.name] = `${field.displayName} must be a valid number`;
+              continue;
+            }
+          }
+
+          if (isEmpty) {
+            newErrors[field.name] = `${field.displayName} is required`;
+          }
+        }
+      }
+    }
+
+    setInitiationFieldsErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  }, [toolkitDetails, initiationFields]);
+
+  const handleCustomAuthFieldChange = React.useCallback(
+    (fieldName: string, value: string) => {
+      setCustomAuthConfig((prev) => ({ ...prev, [fieldName]: value }));
+      if (customAuthConfigErrors[fieldName]) {
+        setCustomAuthConfigErrors((prev) => ({ ...prev, [fieldName]: '' }));
+      }
+    },
+    [customAuthConfigErrors]
+  );
+
+  const validateCustomAuthFields = React.useCallback((): boolean => {
+    if (!useCustomAuth) return true;
+
+    const newErrors: Record<string, string> = {};
+    const authConfigDetails = toolkitDetails?.toolkit.auth_config_details?.[0];
+    const authConfigFields = authConfigDetails?.fields?.auth_config_creation;
+
+    if (authConfigFields?.required) {
+      for (const field of authConfigFields.required) {
+        if (field.required) {
+          const value = customAuthConfig[field.name];
+          const isEmpty = !value || value.trim() === '';
+
+          if (isEmpty) {
+            newErrors[field.name] = `${field.displayName} is required`;
+          }
+        }
+      }
+    }
+
+    setCustomAuthConfigErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  }, [useCustomAuth, toolkitDetails, customAuthConfig]);
 
   React.useEffect(() => {
     const requiresCustomAuth = CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug);
@@ -125,7 +216,9 @@ export function ComposioConnectorContent({
     if (selectedConnectionType === 'new') {
       setCurrentStep(Step.ProfileCreate);
     } else if (selectedConnectionType === 'existing' && selectedProfileId) {
-      const profile = existingProfiles.find((p: ComposioProfile) => p.profile_id === selectedProfileId);
+      const profile = existingProfiles.find(
+        (p: ComposioProfile) => p.profile_id === selectedProfileId
+      );
       if (profile) {
         setSelectedProfile(profile);
         setCreatedProfileId(profile.profile_id);
@@ -136,7 +229,16 @@ export function ComposioConnectorContent({
         }
       }
     }
-  }, [selectedConnectionType, selectedProfileId, existingProfiles, mode, agentId, onComplete, app, onNavigateToTools]);
+  }, [
+    selectedConnectionType,
+    selectedProfileId,
+    existingProfiles,
+    mode,
+    agentId,
+    onComplete,
+    app,
+    onNavigateToTools,
+  ]);
 
   const handleCreateProfile = () => {
     if (!profileName.trim()) {
@@ -149,51 +251,65 @@ export function ComposioConnectorContent({
       return;
     }
 
+    if (!validateCustomAuthFields()) {
+      Alert.alert('Error', 'Please fill in all required OAuth configuration fields');
+      return;
+    }
+
+    if (!validateInitiationFields()) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+
     console.log('🚀 Creating profile:', profileName, 'for app:', app.slug);
 
-    createProfile({
-      toolkit_slug: app.slug,
-      profile_name: profileName,
-      initiation_fields: Object.keys(initiationFields).length > 0 ? initiationFields : undefined,
-      custom_auth_config: useCustomAuth && Object.keys(customAuthConfig).length > 0 ? customAuthConfig : undefined,
-      use_custom_auth: useCustomAuth,
-    }, {
-      onSuccess: (response) => {
-        console.log('✅ Profile created successfully:', response);
-        setCreatedProfileId(response.profile_id);
-
-        if (response.redirect_url) {
-          console.log('🌐 Opening OAuth redirect:', response.redirect_url);
-          setRedirectUrl(response.redirect_url);
-          setCurrentStep(Step.Connecting);
-
-          // Open browser for OAuth authentication
-          WebBrowser.openBrowserAsync(response.redirect_url, {
-            presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-            showTitle: true,
-            controlsColor: '#000000',
-            dismissButtonStyle: 'close',
-          }).then((result) => {
-            console.log('🔄 WebBrowser result:', result);
-
-            if (result.type === 'dismiss' || result.type === 'cancel') {
-              // User closed browser, assume auth completed
-              handleAuthComplete();
-            }
-          });
-        } else {
-          // No OAuth required, direct success
-          setCurrentStep(Step.Success);
-          setTimeout(() => {
-            onComplete(response.profile_id, app.name, app.slug);
-          }, 1500);
-        }
+    createProfile(
+      {
+        toolkit_slug: app.slug,
+        profile_name: profileName,
+        initiation_fields: Object.keys(initiationFields).length > 0 ? initiationFields : undefined,
+        custom_auth_config:
+          useCustomAuth && Object.keys(customAuthConfig).length > 0 ? customAuthConfig : undefined,
+        use_custom_auth: useCustomAuth,
       },
-      onError: (error: any) => {
-        console.error('❌ Profile creation failed:', error);
-        Alert.alert('Error', error.message || 'Failed to create profile');
+      {
+        onSuccess: (response) => {
+          console.log('✅ Profile created successfully:', response);
+          setCreatedProfileId(response.profile_id);
+
+          if (response.redirect_url) {
+            console.log('🌐 Opening OAuth redirect:', response.redirect_url);
+            setRedirectUrl(response.redirect_url);
+            setCurrentStep(Step.Connecting);
+
+            // Open browser for OAuth authentication
+            WebBrowser.openBrowserAsync(response.redirect_url, {
+              presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+              showTitle: true,
+              controlsColor: '#000000',
+              dismissButtonStyle: 'close',
+            }).then((result) => {
+              console.log('🔄 WebBrowser result:', result);
+
+              if (result.type === 'dismiss' || result.type === 'cancel') {
+                // User closed browser, assume auth completed
+                handleAuthComplete();
+              }
+            });
+          } else {
+            // No OAuth required, direct success
+            setCurrentStep(Step.Success);
+            setTimeout(() => {
+              onComplete(response.profile_id, app.name, app.slug);
+            }, 1500);
+          }
+        },
+        onError: (error: any) => {
+          console.error('❌ Profile creation failed:', error);
+          Alert.alert('Error', error.message || 'Failed to create profile');
+        },
       }
-    });
+    );
   };
 
   const handleAuthComplete = () => {
@@ -238,87 +354,256 @@ export function ComposioConnectorContent({
     }
   };
 
+  // Prepare list data
+  const listData = React.useMemo(() => {
+    const items: Array<ComposioProfile | { type: 'new' }> = [...existingProfiles];
+    items.push({ type: 'new' } as any);
+    return items;
+  }, [existingProfiles]);
+
   if (currentStep === Step.ProfileSelect) {
-    return (
-      <View className={noPadding ? "pb-6" : "pb-6"}>
-        {/* Header with back button, title, and description */}
-        <View className="flex-row items-center mb-4">
-          {onBack && (
-            <Pressable
-              onPress={onBack}
-              className="flex-row items-center active:opacity-70"
-            >
-              <ArrowLeft
-                size={20}
-                color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
-              />
-            </Pressable>
-          )}
-          <View className="flex-1 ml-3">
+    // When using BottomSheetFlatList, render with fixed header and footer
+    if (useBottomSheetFlatList) {
+      return (
+        <View style={{ flex: 1 }}>
+          {/* Fixed header */}
+          <View
+            style={{
+              paddingHorizontal: 24,
+              paddingTop: 16,
+              paddingBottom: 16,
+              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+            }}>
             <Text
               style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-              className="text-xl font-roobert-semibold"
-            >
+              className="mb-1 font-roobert-semibold text-xl">
               {app.name}
             </Text>
             <Text
-              style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-              className="text-sm font-roobert"
-            >
-              {existingProfiles.length > 0 ? t('integrations.connector.selectConnection') : t('integrations.connector.createFirstConnection')}
+              style={{
+                color:
+                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
+              }}
+              className="font-roobert text-sm">
+              {existingProfiles.length > 0
+                ? t('integrations.connector.selectConnection')
+                : t('integrations.connector.createFirstConnection')}
+            </Text>
+          </View>
+
+          {/* Scrollable list */}
+          <BottomSheetFlatList
+            data={listData}
+            style={{ flex: 1 }}
+            keyExtractor={(item: any, index: number) =>
+              item.type === 'new' ? 'new-connection' : item.profile_id || `profile-${index}`
+            }
+            renderItem={({ item }: { item: any }) => {
+              if (item.type === 'new') {
+                return (
+                  <View style={{ paddingHorizontal: 24, paddingBottom: 8 }}>
+                    <Pressable
+                      onPress={() => {
+                        setSelectedConnectionType('new');
+                        setSelectedProfileId('new');
+                      }}
+                      className={`flex-row items-center rounded-2xl p-4 active:opacity-80 ${
+                        selectedConnectionType === 'new' ? 'bg-primary/10' : 'bg-muted/5'
+                      }`}>
+                      <View
+                        className={`h-10 w-10 items-center justify-center rounded-xl ${
+                          selectedConnectionType === 'new' ? 'bg-primary' : 'bg-muted/30'
+                        }`}>
+                        <Icon
+                          as={Plus}
+                          size={20}
+                          className={
+                            selectedConnectionType === 'new'
+                              ? 'text-primary-foreground'
+                              : 'text-muted-foreground'
+                          }
+                          strokeWidth={2.5}
+                        />
+                      </View>
+                      <View className="ml-3 flex-1">
+                        <Text className="font-roobert-semibold text-base text-foreground">
+                          {t('integrations.connector.createNewConnection')}
+                        </Text>
+                      </View>
+                      {selectedConnectionType === 'new' && (
+                        <View className="h-5 w-5 items-center justify-center rounded-full bg-primary">
+                          <Icon
+                            as={Check}
+                            size={14}
+                            className="text-primary-foreground"
+                            strokeWidth={3}
+                          />
+                        </View>
+                      )}
+                    </Pressable>
+                  </View>
+                );
+              }
+
+              return (
+                <View style={{ paddingHorizontal: 24, paddingBottom: 8 }}>
+                  <ProfileListItem
+                    profile={item}
+                    isSelected={
+                      selectedProfileId === item.profile_id && selectedConnectionType === 'existing'
+                    }
+                    onPress={() => {
+                      setSelectedConnectionType('existing');
+                      setSelectedProfileId(item.profile_id);
+                    }}
+                  />
+                </View>
+              );
+            }}
+            contentContainerStyle={{ paddingTop: 8, paddingBottom: 16, flexGrow: 1 }}
+            showsVerticalScrollIndicator={false}
+          />
+
+          {/* Fixed footer button */}
+          <View
+            style={{
+              paddingHorizontal: 24,
+              paddingTop: 16,
+              paddingBottom: 24,
+              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+            }}>
+            <ContinueButton
+              onPress={handleMainAction}
+              disabled={
+                isSaving ||
+                !selectedConnectionType ||
+                (selectedConnectionType === 'existing' && !selectedProfileId)
+              }
+              isLoading={isSaving}
+              label={
+                isSaving
+                  ? t('integrations.connector.connecting')
+                  : selectedConnectionType === 'new'
+                    ? t('integrations.connector.continue')
+                    : selectedConnectionType === 'existing' && selectedProfileId
+                      ? t('integrations.connector.continue')
+                      : t('integrations.connector.selectAnOption')
+              }
+            />
+          </View>
+        </View>
+      );
+    }
+
+    // Regular scrollable view (for non-BottomSheet usage)
+    return (
+      <View className="mb-4 flex-1" style={{ flex: 1, position: 'relative' }}>
+        {/* Header with back button, title, and description */}
+        <View className="mb-4 flex-row items-center">
+          {onBack && (
+            <Pressable onPress={onBack} className="flex-row items-center active:opacity-70">
+              <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+            </Pressable>
+          )}
+          <View className="ml-3 flex-1">
+            <Text
+              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+              className="font-roobert-semibold text-xl">
+              {app.name}
+            </Text>
+            <Text
+              style={{
+                color:
+                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
+              }}
+              className="font-roobert text-sm">
+              {existingProfiles.length > 0
+                ? t('integrations.connector.selectConnection')
+                : t('integrations.connector.createFirstConnection')}
             </Text>
           </View>
         </View>
 
-        <View className={noPadding ? "" : "px-0"}>
+        <View className={noPadding ? 'mb-4 flex-1' : 'mb-4 flex-1 px-0'}>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <View className="space-y-3">
+              {existingProfiles.map((profile: ComposioProfile) => (
+                <ProfileListItem
+                  key={profile.profile_id}
+                  profile={profile}
+                  isSelected={
+                    selectedProfileId === profile.profile_id &&
+                    selectedConnectionType === 'existing'
+                  }
+                  onPress={() => {
+                    setSelectedConnectionType('existing');
+                    setSelectedProfileId(profile.profile_id);
+                  }}
+                />
+              ))}
 
-          <View className="space-y-3 mb-8">
-            {existingProfiles.map((profile: ComposioProfile) => (
-              <ProfileListItem
-                key={profile.profile_id}
-                profile={profile}
-                isSelected={selectedProfileId === profile.profile_id && selectedConnectionType === 'existing'}
+              <Pressable
                 onPress={() => {
-                  setSelectedConnectionType('existing');
-                  setSelectedProfileId(profile.profile_id);
+                  setSelectedConnectionType('new');
+                  setSelectedProfileId('new');
                 }}
-              />
-            ))}
-
-            <Pressable
-              onPress={() => {
-                setSelectedConnectionType('new');
-                setSelectedProfileId('new');
-              }}
-              className={`flex-row items-center p-4 rounded-3xl active:opacity-80 ${selectedConnectionType === 'new'
-                ? 'bg-primary/10'
-                : 'bg-muted/5'
-                }`}
-            >
-              <View className={`w-10 h-10 rounded-xl items-center justify-center ${selectedConnectionType === 'new' ? 'bg-primary' : 'bg-muted/30'
+                className={`flex-row items-center rounded-3xl p-4 active:opacity-80 ${
+                  selectedConnectionType === 'new' ? 'bg-primary/10' : 'bg-muted/5'
                 }`}>
-                <Icon as={Plus} size={20} className={selectedConnectionType === 'new' ? 'text-primary-foreground' : 'text-muted-foreground'} strokeWidth={2.5} />
-              </View>
-              <View className="flex-1 ml-3">
-                <Text className="text-base font-roobert-semibold text-foreground">
-                  {t('integrations.connector.createNewConnection')}
-                </Text>
-              </View>
-              {selectedConnectionType === 'new' && (
-                <View className="w-5 h-5 rounded-full bg-primary items-center justify-center">
-                  <Icon as={Check} size={14} className="text-primary-foreground" strokeWidth={3} />
+                <View
+                  className={`h-10 w-10 items-center justify-center rounded-xl ${
+                    selectedConnectionType === 'new' ? 'bg-primary' : 'bg-muted/30'
+                  }`}>
+                  <Icon
+                    as={Plus}
+                    size={20}
+                    className={
+                      selectedConnectionType === 'new'
+                        ? 'text-primary-foreground'
+                        : 'text-muted-foreground'
+                    }
+                    strokeWidth={2.5}
+                  />
                 </View>
-              )}
-            </Pressable>
-          </View>
+                <View className="ml-3 flex-1">
+                  <Text className="font-roobert-semibold text-base text-foreground">
+                    {t('integrations.connector.createNewConnection')}
+                  </Text>
+                </View>
+                {selectedConnectionType === 'new' && (
+                  <View className="h-5 w-5 items-center justify-center rounded-full bg-primary">
+                    <Icon
+                      as={Check}
+                      size={14}
+                      className="text-primary-foreground"
+                      strokeWidth={3}
+                    />
+                  </View>
+                )}
+              </Pressable>
+            </View>
+          </ScrollView>
+        </View>
 
+        {/* Sticky button at bottom */}
+        <View>
           <ContinueButton
             onPress={handleMainAction}
-            disabled={!selectedConnectionType || (selectedConnectionType === 'existing' && !selectedProfileId)}
-            label={selectedConnectionType === 'new' ? t('integrations.connector.continue') :
-              selectedConnectionType === 'existing' && selectedProfileId ?
-                t('integrations.connector.continue') :
-                t('integrations.connector.selectAnOption')}
+            disabled={
+              isSaving ||
+              !selectedConnectionType ||
+              (selectedConnectionType === 'existing' && !selectedProfileId)
+            }
+            isLoading={isSaving}
+            label={
+              isSaving
+                ? t('integrations.connector.connecting')
+                : selectedConnectionType === 'new'
+                  ? t('integrations.connector.continue')
+                  : selectedConnectionType === 'existing' && selectedProfileId
+                    ? t('integrations.connector.continue')
+                    : t('integrations.connector.selectAnOption')
+            }
           />
         </View>
       </View>
@@ -326,94 +611,328 @@ export function ComposioConnectorContent({
   }
 
   if (currentStep === Step.ProfileCreate) {
-    return (
-      <View className={noPadding ? "pb-6" : "pb-6"}>
-        {/* Header with back button, title, and description */}
-        <View className="flex-row items-center mb-4">
-          <Pressable
-            onPress={handleBack}
-            className="flex-row items-center active:opacity-70"
-          >
-            <ArrowLeft
-              size={20}
-              color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
+    // Content for profile creation form
+    const profileCreateContent = (
+      <>
+        <View className="mb-8">
+          <Text className="mb-3 font-roobert-medium text-sm uppercase tracking-wider text-muted-foreground">
+            {t('integrations.connector.profileName')}
+          </Text>
+          <View className="relative">
+            <TextInput
+              value={profileName}
+              onChangeText={setProfileName}
+              placeholder={t('integrations.connector.profileNamePlaceholder', { app: app.name })}
+              className={`rounded-2xl bg-muted/5 px-4 py-4 pr-12 font-roobert text-base text-foreground ${
+                nameAvailability && !nameAvailability.available
+                  ? 'border-2 border-red-500/50'
+                  : nameAvailability && nameAvailability.available && profileName.length > 0
+                    ? 'border border-border/40'
+                    : 'border border-border/40'
+              }`}
+              placeholderTextColor="rgba(156, 163, 175, 0.5)"
+              autoFocus
             />
-          </Pressable>
-          <View className="flex-1 ml-3">
+            <View className="absolute right-4 top-1/2 -translate-y-1/2">
+              {isCheckingName && profileName.length > 0 && (
+                <ActivityIndicator size="small" color="#999" />
+              )}
+              {!isCheckingName &&
+                nameAvailability &&
+                profileName.length > 0 &&
+                (nameAvailability.available ? (
+                  <View className="h-6 w-6 items-center justify-center rounded-full bg-green-500/10">
+                    <Icon as={Check} size={16} className="text-green-600" strokeWidth={2.5} />
+                  </View>
+                ) : (
+                  <View className="h-6 w-6 items-center justify-center rounded-full bg-red-500/10">
+                    <Icon as={X} size={16} className="text-red-600" strokeWidth={2.5} />
+                  </View>
+                ))}
+            </View>
+          </View>
+
+          {nameAvailability && !nameAvailability.available && (
+            <View className="mt-3">
+              <Text className="mb-2 font-roobert text-sm text-red-600">
+                {t('integrations.connector.nameAlreadyTaken')}
+              </Text>
+              {nameAvailability.suggestions.length > 0 && (
+                <View className="flex-row flex-wrap gap-2">
+                  {nameAvailability.suggestions.map((suggestion: string) => (
+                    <Pressable
+                      key={suggestion}
+                      onPress={() => setProfileName(suggestion)}
+                      className="rounded-full border border-border/40 bg-muted/10 px-3 py-1.5 active:opacity-70">
+                      <Text className="font-roobert-medium text-xs text-foreground">
+                        {suggestion}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+
+        {/* Initiation Fields */}
+        {!isLoadingToolkitDetails &&
+          toolkitDetails?.toolkit.connected_account_initiation_fields?.required?.length > 0 && (
+            <View className="mb-8">
+              <View className="mb-4 flex-row items-center">
+                <Icon as={Settings} size={14} className="mr-1.5 text-muted-foreground" />
+                <Text className="font-roobert-medium text-sm text-foreground">
+                  Connection Details
+                </Text>
+              </View>
+              <View className="space-y-4">
+                {toolkitDetails.toolkit.connected_account_initiation_fields.required.map(
+                  (field: any) => {
+                    const fieldType = field.type?.toLowerCase() || 'string';
+                    const isBoolean = fieldType === 'boolean';
+                    const isNumber = fieldType === 'number' || fieldType === 'double';
+
+                    return (
+                      <View key={field.name} className="space-y-1">
+                        <Text className="font-roobert-medium text-xs text-foreground">
+                          {field.displayName}
+                          {field.required && <Text className="ml-1 text-red-500">*</Text>}
+                        </Text>
+
+                        {isBoolean ? (
+                          <View className="flex-row items-center">
+                            <Switch
+                              value={initiationFields[field.name] === 'true'}
+                              onValueChange={(checked) =>
+                                handleInitiationFieldChange(field.name, checked ? 'true' : 'false')
+                              }
+                              trackColor={{
+                                false: '#e5e7eb',
+                                true: '#3b82f6',
+                              }}
+                              thumbColor="#ffffff"
+                            />
+                            <Text className="ml-3 font-roobert text-xs text-muted-foreground">
+                              {field.description || 'Enable'}
+                            </Text>
+                          </View>
+                        ) : (
+                          <>
+                            <TextInput
+                              value={initiationFields[field.name] || ''}
+                              onChangeText={(value) =>
+                                handleInitiationFieldChange(field.name, value)
+                              }
+                              placeholder={
+                                field.default ||
+                                field.description ||
+                                `Enter ${field.displayName.toLowerCase()}`
+                              }
+                              className={`rounded-2xl border bg-muted/5 px-4 py-4 font-roobert text-base text-foreground ${
+                                initiationFieldsErrors[field.name]
+                                  ? 'border-red-500/50'
+                                  : 'border-border/40'
+                              }`}
+                              placeholderTextColor="rgba(156, 163, 175, 0.5)"
+                              secureTextEntry={fieldType === 'password'}
+                              keyboardType={
+                                fieldType === 'email'
+                                  ? 'email-address'
+                                  : fieldType === 'url'
+                                    ? 'url'
+                                    : isNumber
+                                      ? 'numeric'
+                                      : 'default'
+                              }
+                            />
+                            {field.description && (
+                              <Text className="mt-1 font-roobert text-[10px] text-muted-foreground">
+                                {field.description}
+                              </Text>
+                            )}
+                          </>
+                        )}
+
+                        {initiationFieldsErrors[field.name] && (
+                          <Text className="font-roobert text-[10px] text-red-600">
+                            {initiationFieldsErrors[field.name]}
+                          </Text>
+                        )}
+                      </View>
+                    );
+                  }
+                )}
+              </View>
+            </View>
+          )}
+
+        {/* Custom Auth Config Fields */}
+        {useCustomAuth &&
+          !isLoadingToolkitDetails &&
+          toolkitDetails?.toolkit.auth_config_details?.[0]?.fields?.auth_config_creation?.required
+            ?.length > 0 && (
+            <View className="mb-8">
+              <View className="mb-4 flex-row items-center">
+                <Icon as={Settings} size={14} className="mr-1.5 text-muted-foreground" />
+                <Text className="font-roobert-medium text-sm text-foreground">
+                  OAuth Configuration
+                </Text>
+              </View>
+              <View className="space-y-4">
+                {toolkitDetails.toolkit.auth_config_details[0].fields.auth_config_creation.required.map(
+                  (field: any) => {
+                    const fieldType = field.type?.toLowerCase() || 'string';
+                    const isNumber = fieldType === 'number' || fieldType === 'double';
+
+                    return (
+                      <View key={field.name} className="space-y-1">
+                        <Text className="font-roobert-medium text-xs text-foreground">
+                          {field.displayName}
+                          {field.required && <Text className="ml-1 text-red-500">*</Text>}
+                        </Text>
+                        <TextInput
+                          value={customAuthConfig[field.name] || ''}
+                          onChangeText={(value) => handleCustomAuthFieldChange(field.name, value)}
+                          placeholder={
+                            field.default ||
+                            field.description ||
+                            `Enter ${field.displayName.toLowerCase()}`
+                          }
+                          className={`rounded-2xl border bg-muted/5 px-4 py-4 font-roobert text-base text-foreground ${
+                            customAuthConfigErrors[field.name]
+                              ? 'border-red-500/50'
+                              : 'border-border/40'
+                          }`}
+                          placeholderTextColor="rgba(156, 163, 175, 0.5)"
+                          secureTextEntry={fieldType === 'password'}
+                          keyboardType={
+                            fieldType === 'email'
+                              ? 'email-address'
+                              : fieldType === 'url'
+                                ? 'url'
+                                : isNumber
+                                  ? 'numeric'
+                                  : 'default'
+                          }
+                        />
+                        {field.description && (
+                          <Text className="mt-1 font-roobert text-[10px] text-muted-foreground">
+                            {field.description}
+                          </Text>
+                        )}
+                        {customAuthConfigErrors[field.name] && (
+                          <Text className="font-roobert text-[10px] text-red-600">
+                            {customAuthConfigErrors[field.name]}
+                          </Text>
+                        )}
+                      </View>
+                    );
+                  }
+                )}
+              </View>
+            </View>
+          )}
+
+        {isLoadingToolkitDetails && (
+          <View className="mb-8">
+            <ActivityIndicator size="small" color="#999" />
+          </View>
+        )}
+      </>
+    );
+
+    // When using BottomSheetFlatList, use proper drawer layout
+    if (useBottomSheetFlatList) {
+      return (
+        <View style={{ flex: 1 }}>
+          {/* Fixed Header */}
+          <View
+            style={{
+              paddingHorizontal: 24,
+              paddingTop: 16,
+              paddingBottom: 16,
+              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+            }}>
             <Text
               style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-              className="text-xl font-roobert-semibold"
-            >
+              className="mb-1 font-roobert-semibold text-xl">
               {app.name}
             </Text>
             <Text
-              style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-              className="text-sm font-roobert"
-            >
+              style={{
+                color:
+                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
+              }}
+              className="font-roobert text-sm">
+              {t('integrations.connector.chooseNameForConnection')}
+            </Text>
+          </View>
+
+          {/* Scrollable Content */}
+          <BottomSheetScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 16 }}
+            showsVerticalScrollIndicator={false}>
+            {profileCreateContent}
+          </BottomSheetScrollView>
+
+          {/* Fixed Footer Button */}
+          <View
+            style={{
+              paddingHorizontal: 24,
+              paddingTop: 16,
+              paddingBottom: 24,
+              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+            }}>
+            <ContinueButton
+              onPress={handleCreateProfile}
+              disabled={
+                isCreating ||
+                isLoadingToolkitDetails ||
+                !profileName.trim() ||
+                isCheckingName ||
+                (nameAvailability && !nameAvailability.available)
+              }
+              isLoading={isCreating}
+              label={
+                isCreating
+                  ? t('integrations.connector.creating')
+                  : t('integrations.connector.continue')
+              }
+              rounded="2xl"
+            />
+          </View>
+        </View>
+      );
+    }
+
+    // Regular layout (non-drawer)
+    return (
+      <View className="mb-4">
+        {/* Header with back button, title, and description */}
+        <View className="mb-4 flex-row items-center">
+          <Pressable onPress={handleBack} className="flex-row items-center active:opacity-70">
+            <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+          </Pressable>
+          <View className="ml-3 flex-1">
+            <Text
+              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+              className="font-roobert-semibold text-xl">
+              {app.name}
+            </Text>
+            <Text
+              style={{
+                color:
+                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
+              }}
+              className="font-roobert text-sm">
               {t('integrations.connector.chooseNameForConnection')}
             </Text>
           </View>
         </View>
 
-        <View className={noPadding ? "" : "px-0"}>
-
-          <View className="mb-8">
-            <Text className="text-sm font-roobert-medium text-muted-foreground mb-3 uppercase tracking-wider">
-              {t('integrations.connector.profileName')}
-            </Text>
-            <View className="relative">
-              <TextInput
-                value={profileName}
-                onChangeText={setProfileName}
-                placeholder={t('integrations.connector.profileNamePlaceholder', { app: app.name })}
-                className={`bg-muted/5 rounded-2xl px-4 py-4 text-base font-roobert text-foreground pr-12 ${nameAvailability && !nameAvailability.available ? 'border-2 border-red-500/50' :
-                  nameAvailability && nameAvailability.available && profileName.length > 0 ? 'border border-border/40' :
-                    'border border-border/40'
-                  }`}
-                placeholderTextColor="rgba(156, 163, 175, 0.5)"
-                autoFocus
-              />
-              <View className="absolute right-4 top-1/2 -translate-y-1/2">
-                {isCheckingName && profileName.length > 0 && (
-                  <ActivityIndicator size="small" color="#999" />
-                )}
-                {!isCheckingName && nameAvailability && profileName.length > 0 && (
-                  nameAvailability.available ? (
-                    <View className="w-6 h-6 rounded-full bg-green-500/10 items-center justify-center">
-                      <Icon as={Check} size={16} className="text-green-600" strokeWidth={2.5} />
-                    </View>
-                  ) : (
-                    <View className="w-6 h-6 rounded-full bg-red-500/10 items-center justify-center">
-                      <Icon as={X} size={16} className="text-red-600" strokeWidth={2.5} />
-                    </View>
-                  )
-                )}
-              </View>
-            </View>
-
-            {nameAvailability && !nameAvailability.available && (
-              <View className="mt-3">
-                <Text className="text-sm font-roobert text-red-600 mb-2">
-                  {t('integrations.connector.nameAlreadyTaken')}
-                </Text>
-                {nameAvailability.suggestions.length > 0 && (
-                  <View className="flex-row flex-wrap gap-2">
-                    {nameAvailability.suggestions.map((suggestion: string) => (
-                      <Pressable
-                        key={suggestion}
-                        onPress={() => setProfileName(suggestion)}
-                        className="px-3 py-1.5 bg-muted/10 border border-border/40 rounded-full active:opacity-70"
-                      >
-                        <Text className="text-xs font-roobert-medium text-foreground">
-                          {suggestion}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                )}
-              </View>
-            )}
-          </View>
+        <View className={noPadding ? '' : 'px-0'}>
+          {profileCreateContent}
 
           <ContinueButton
             onPress={handleCreateProfile}
@@ -425,7 +944,11 @@ export function ComposioConnectorContent({
               (nameAvailability && !nameAvailability.available)
             }
             isLoading={isCreating}
-            label={isCreating ? t('integrations.connector.creating') : t('integrations.connector.continue')}
+            label={
+              isCreating
+                ? t('integrations.connector.creating')
+                : t('integrations.connector.continue')
+            }
             rounded="2xl"
           />
         </View>
@@ -434,40 +957,71 @@ export function ComposioConnectorContent({
   }
 
   if (currentStep === Step.Connecting) {
-    return (
-      <View className={noPadding ? "pb-6" : "pb-6"}>
-        <View className="items-center pt-12 pb-12">
-          <View className="w-20 h-20 rounded-2xl bg-muted/5 border border-border/40 items-center justify-center mb-6">
-            <Icon as={ExternalLink} size={40} className="text-foreground" strokeWidth={2} />
-          </View>
-          <Text className="text-2xl font-roobert-bold text-foreground mb-2 text-center">
-            {t('integrations.connector.completeInBrowser')}
-          </Text>
-          <Text className="text-base font-roobert text-muted-foreground text-center mb-8 px-8 leading-relaxed">
-            {t('integrations.connector.authenticateInstructions')}
-          </Text>
+    const connectingContent = (
+      <View
+        className="items-center pb-12 pt-12"
+        style={{ paddingHorizontal: useBottomSheetFlatList ? 24 : 0 }}>
+        <View className="mb-6 h-20 w-20 items-center justify-center rounded-2xl border border-border/40 bg-muted/5">
+          <Icon as={ExternalLink} size={40} className="text-foreground" strokeWidth={2} />
+        </View>
+        <Text className="mb-2 text-center font-roobert-bold text-2xl text-foreground">
+          {t('integrations.connector.completeInBrowser')}
+        </Text>
+        <Text className="mb-8 px-8 text-center font-roobert text-base leading-relaxed text-muted-foreground">
+          {t('integrations.connector.authenticateInstructions')}
+        </Text>
 
-          {redirectUrl && (
-            <Pressable
-              onPress={() => redirectUrl && WebBrowser.openBrowserAsync(redirectUrl)}
-              className="mb-6 active:opacity-70"
-            >
-              <Text className="text-sm font-roobert-medium text-foreground underline">
-                {t('integrations.connector.reopenBrowser')}
+        {redirectUrl && (
+          <Pressable
+            onPress={() => redirectUrl && WebBrowser.openBrowserAsync(redirectUrl)}
+            className="mb-6 active:opacity-70">
+            <Text className="font-roobert-medium text-sm text-foreground underline">
+              {t('integrations.connector.reopenBrowser')}
+            </Text>
+          </Pressable>
+        )}
+      </View>
+    );
+
+    if (useBottomSheetFlatList) {
+      return (
+        <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, justifyContent: 'center' }}>{connectingContent}</View>
+
+          {/* Fixed Footer Button */}
+          <View
+            style={{
+              paddingHorizontal: 24,
+              paddingTop: 16,
+              paddingBottom: 24,
+              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+            }}>
+            <ContinueButton
+              onPress={handleAuthComplete}
+              label={t('integrations.connector.completedAuthentication')}
+            />
+            <Pressable onPress={handleBack} className="mt-4 items-center py-2 active:opacity-70">
+              <Text className="font-roobert text-sm text-muted-foreground">
+                {t('integrations.connector.goBack')}
               </Text>
             </Pressable>
-          )}
+          </View>
+        </View>
+      );
+    }
 
+    return (
+      <View className="mb-4">
+        {connectingContent}
+
+        <View style={{ paddingHorizontal: noPadding ? 0 : 24 }}>
           <ContinueButton
             onPress={handleAuthComplete}
             label={t('integrations.connector.completedAuthentication')}
           />
 
-          <Pressable
-            onPress={handleBack}
-            className="py-2 mt-4 active:opacity-70"
-          >
-            <Text className="text-sm font-roobert text-muted-foreground">
+          <Pressable onPress={handleBack} className="mt-4 py-2 active:opacity-70">
+            <Text className="font-roobert text-sm text-muted-foreground">
               {t('integrations.connector.goBack')}
             </Text>
           </Pressable>
@@ -477,21 +1031,27 @@ export function ComposioConnectorContent({
   }
 
   if (currentStep === Step.Success) {
-    return (
-      <View className={noPadding ? "pb-6" : "pb-6"}>
-        <View className="items-center pt-16 pb-12">
-          <View className="w-20 h-20 rounded-full bg-green-500/10 items-center justify-center mb-6">
-            <Icon as={CheckCircle2} size={44} className="text-green-600" strokeWidth={2} />
-          </View>
-          <Text className="text-2xl font-roobert-bold text-foreground mb-2">
-            {t('integrations.connector.allSet')}
-          </Text>
-          <Text className="text-base font-roobert text-muted-foreground text-center px-8">
-            {t('integrations.connector.connectionReady', { app: app.name })}
-          </Text>
+    const successContent = (
+      <View
+        className="items-center pb-12 pt-16"
+        style={{ paddingHorizontal: useBottomSheetFlatList ? 24 : 0 }}>
+        <View className="mb-6 h-20 w-20 items-center justify-center rounded-full bg-green-500/10">
+          <Icon as={CheckCircle2} size={44} className="text-green-600" strokeWidth={2} />
         </View>
+        <Text className="mb-2 font-roobert-bold text-2xl text-foreground">
+          {t('integrations.connector.allSet')}
+        </Text>
+        <Text className="px-8 text-center font-roobert text-base text-muted-foreground">
+          {t('integrations.connector.connectionReady', { app: app.name })}
+        </Text>
       </View>
     );
+
+    if (useBottomSheetFlatList) {
+      return <View style={{ flex: 1, justifyContent: 'center' }}>{successContent}</View>;
+    }
+
+    return <View className="mb-4">{successContent}</View>;
   }
 
   return null;
@@ -503,7 +1063,7 @@ export function ComposioConnector({
   onClose,
   onComplete,
   mode = 'full',
-  agentId
+  agentId,
 }: ComposioConnectorProps) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
@@ -514,21 +1074,14 @@ export function ComposioConnector({
     <View className="flex-1">
       <View className="px-6 pt-6">
         {/* Header with back button */}
-        <View className="flex-row items-center mb-4">
-          <Pressable
-            onPress={onClose}
-            className="flex-row items-center active:opacity-70"
-          >
-            <ArrowLeft
-              size={20}
-              color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
-            />
+        <View className="mb-4 flex-row items-center">
+          <Pressable onPress={onClose} className="flex-row items-center active:opacity-70">
+            <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
           </Pressable>
-          <View className="flex-1 ml-3">
+          <View className="ml-3 flex-1">
             <Text
               style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-              className="text-xl font-roobert-semibold"
-            >
+              className="font-roobert-semibold text-xl">
               {t('integrations.connector.connectTo', { app: app.name })}
             </Text>
           </View>
@@ -559,48 +1112,27 @@ interface ContinueButtonProps {
   rounded?: 'full' | '2xl';
 }
 
-const ContinueButton = React.memo(({
-  onPress,
-  disabled = false,
-  label,
-  isLoading = false,
-}: ContinueButtonProps) => {
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = React.useCallback(() => {
-    if (!disabled) {
-      scale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
-    }
-  }, [scale, disabled]);
-
-  const handlePressOut = React.useCallback(() => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  }, [scale]);
-
-  return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={animatedStyle}
-      disabled={disabled}
-      className={`w-full py-4 items-center rounded-full ${disabled ? 'bg-muted/20' : 'bg-foreground'
-        }`}
-    >
-      <View className="flex-row items-center gap-2">
-        {isLoading && <ActivityIndicator size="small" color="#fff" />}
-        <Text className={`text-base font-roobert-semibold ${disabled ? 'text-muted-foreground' : 'text-background'
-          }`}>
-          {label}
-        </Text>
-      </View>
-    </AnimatedPressable>
-  );
-});
+const ContinueButton = React.memo(
+  ({
+    onPress,
+    disabled = false,
+    label,
+    isLoading = false,
+    rounded = 'full',
+  }: ContinueButtonProps) => {
+    return (
+      <Pressable
+        onPress={onPress}
+        disabled={disabled}
+        className={`flex-row items-center justify-center gap-2 rounded-xl p-4 ${
+          disabled ? 'bg-primary/50 opacity-50' : 'bg-primary active:opacity-80'
+        }`}>
+        {isLoading ? <ActivityIndicator size="small" color="#FFFFFF" /> : null}
+        <Text className="font-roobert-semibold text-base text-primary-foreground">{label}</Text>
+      </Pressable>
+    );
+  }
+);
 
 interface ProfileListItemProps {
   profile: ComposioProfile;
@@ -612,22 +1144,27 @@ const ProfileListItem = React.memo(({ profile, isSelected, onPress }: ProfileLis
   return (
     <Pressable
       onPress={onPress}
-      className={`flex-row items-center p-4 rounded-3xl active:opacity-80 mb-2 ${isSelected
-        ? 'bg-primary/10'
-        : 'bg-muted/5'
-        }`}
-    >
-      <View className={`w-10 h-10 rounded-xl items-center justify-center ${isSelected ? 'bg-primary' : 'bg-muted/30'
+      className={`mb-2 flex-row items-center rounded-2xl p-4 active:opacity-80 ${
+        isSelected ? 'bg-primary/10' : 'bg-muted/5'
+      }`}>
+      <View
+        className={`h-10 w-10 items-center justify-center rounded-xl ${
+          isSelected ? 'bg-primary' : 'bg-muted/30'
         }`}>
-        <Icon as={CheckCircle2} size={20} className={isSelected ? 'text-primary-foreground' : 'text-muted-foreground'} strokeWidth={2.5} />
+        <Icon
+          as={CheckCircle2}
+          size={20}
+          className={isSelected ? 'text-primary-foreground' : 'text-muted-foreground'}
+          strokeWidth={2.5}
+        />
       </View>
-      <View className="flex-1 ml-3">
-        <Text className="text-base font-roobert-semibold text-foreground">
+      <View className="ml-3 flex-1">
+        <Text className="font-roobert-semibold text-base text-foreground">
           {profile.profile_name}
         </Text>
       </View>
       {isSelected && (
-        <View className="w-5 h-5 rounded-full bg-primary items-center justify-center">
+        <View className="h-5 w-5 items-center justify-center rounded-full bg-primary">
           <Icon as={Check} size={14} className="text-primary-foreground" strokeWidth={3} />
         </View>
       )}

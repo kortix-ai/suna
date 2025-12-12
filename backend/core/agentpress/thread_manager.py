@@ -4,7 +4,10 @@ Simplified conversation thread management system for AgentPress.
 
 import asyncio
 import json
-from typing import List, Dict, Any, Optional, Type, Union, AsyncGenerator, Literal, cast
+from typing import List, Dict, Any, Optional, Type, Union, AsyncGenerator, Literal, cast, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.jit.config import JITConfig
 from core.services.llm import make_llm_api_call, LLMError
 from core.agentpress.prompt_caching import apply_anthropic_caching_strategy, validate_cache_blocks
 from core.agentpress.tool import Tool
@@ -24,26 +27,40 @@ import litellm
 ToolChoice = Literal["auto", "required", "none"]
 
 class ThreadManager:
-    """Manages conversation threads with LLM models and tool execution."""
-
-    def __init__(self, trace: Optional[StatefulTraceClient] = None, agent_config: Optional[dict] = None):
+    def __init__(self, trace: Optional[StatefulTraceClient] = None, agent_config: Optional[dict] = None, 
+                 project_id: Optional[str] = None, thread_id: Optional[str] = None, account_id: Optional[str] = None,
+                 jit_config: Optional['JITConfig'] = None):
         self.db = DBConnection()
         self.tool_registry = ToolRegistry()
+        
+        self.project_id = project_id
+        self.thread_id = thread_id
+        self.account_id = account_id
         
         self.trace = trace
         if not self.trace:
             self.trace = langfuse.trace(name="anonymous:thread_manager")
             
         self.agent_config = agent_config
+        
+        self.jit_config = jit_config
+        
         self.response_processor = ResponseProcessor(
             tool_registry=self.tool_registry,
             add_message_callback=self.add_message,
             trace=self.trace,
-            agent_config=self.agent_config
+            agent_config=self.agent_config,
+            jit_config=self.jit_config,
+            thread_manager=self,
+            project_id=self.project_id
         )
+        
+        self._memory_context: Optional[Dict[str, Any]] = None
+
+    def set_memory_context(self, memory_context: Optional[Dict[str, Any]]):
+        self._memory_context = memory_context
 
     def add_tool(self, tool_class: Type[Tool], function_names: Optional[List[str]] = None, **kwargs):
-        """Add a tool to the ThreadManager."""
         self.tool_registry.register_tool(tool_class, function_names, **kwargs)
 
     async def create_thread(
@@ -53,8 +70,6 @@ class ThreadManager:
         is_public: bool = False,
         metadata: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Create a new thread in the database."""
-        # logger.debug(f"Creating new thread (account_id: {account_id}, project_id: {project_id})")
         client = await self.db.client
 
         thread_data = {'is_public': is_public, 'metadata': metadata or {}}
@@ -85,8 +100,6 @@ class ThreadManager:
         agent_id: Optional[str] = None,
         agent_version_id: Optional[str] = None
     ):
-        """Add a message to the thread in the database."""
-        # logger.debug(f"Adding message of type '{type}' to thread {thread_id}")
         client = await self.db.client
 
         data_to_insert = {
@@ -182,51 +195,91 @@ class ThreadManager:
         except Exception as e:
             logger.error(f"Error handling billing: {str(e)}", exc_info=True)
 
-    async def get_llm_messages(self, thread_id: str) -> List[Dict[str, Any]]:
-        """Get all messages for a thread."""
-        logger.debug(f"Getting messages for thread {thread_id}")
+    def _validate_tool_calls_in_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        tool_calls = message.get('tool_calls') or []
+        if not tool_calls or not isinstance(tool_calls, list):
+            return message
+        
+        valid_tool_calls = []
+        for tc in tool_calls:
+            if not isinstance(tc, dict):
+                continue
+            
+            func_data = tc.get('function', {})
+            args = func_data.get('arguments', '')
+            
+            if isinstance(args, str):
+                try:
+                    parsed = json.loads(args)
+                    if isinstance(parsed, dict):
+                        valid_tool_calls.append(tc)
+                    else:
+                        logger.warning(f"Removing tool call {tc.get('id')}: arguments not a dict")
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Removing tool call {tc.get('id')}: invalid JSON - {str(e)[:50]}")
+            elif isinstance(args, dict):
+                valid_tool_calls.append(tc)
+            else:
+                logger.warning(f"Removing tool call {tc.get('id')}: unexpected arguments type {type(args)}")
+        
+        if len(valid_tool_calls) != len(tool_calls):
+            logger.warning(f"Filtered {len(tool_calls) - len(valid_tool_calls)} invalid tool calls from message")
+            message = message.copy()
+            if valid_tool_calls:
+                message['tool_calls'] = valid_tool_calls
+            else:
+                del message['tool_calls']
+        
+        return message
+
+    async def get_llm_messages(self, thread_id: str, lightweight: bool = False) -> List[Dict[str, Any]]:
+        """
+        Get messages for a thread.
+        
+        Args:
+            thread_id: Thread ID to get messages for
+            lightweight: If True, fetch only recent messages with minimal payload (for bootstrap)
+        """
+        logger.debug(f"Getting messages for thread {thread_id} (lightweight={lightweight})")
         client = await self.db.client
 
         try:
             all_messages = []
-            batch_size = 1000
-            offset = 0
             
-            while True:
-                result = await client.table('messages').select('message_id, type, content, metadata').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').range(offset, offset + batch_size - 1).execute()
+            if lightweight:
+                result = await client.table('messages').select('message_id, type, content').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').limit(100).execute()
                 
-                if not result.data:
-                    break
+                if result.data:
+                    all_messages = result.data
+            else:
+                batch_size = 1000
+                offset = 0
+                
+                while True:
+                    result = await client.table('messages').select('message_id, type, content, metadata').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').range(offset, offset + batch_size - 1).execute()
                     
-                all_messages.extend(result.data)
-                if len(result.data) < batch_size:
-                    break
-                offset += batch_size
+                    if not result.data:
+                        break
+                        
+                    all_messages.extend(result.data)
+                    if len(result.data) < batch_size:
+                        break
+                    offset += batch_size
 
             if not all_messages:
                 return []
 
             messages = []
             for item in all_messages:
-                # Check if this message has a compressed version in metadata
                 content = item['content']
                 metadata = item.get('metadata', {})
                 is_compressed = False
                 
-                # If compressed, use compressed_content for LLM instead of full content
-                if isinstance(metadata, dict) and metadata.get('compressed'):
+                if not lightweight and isinstance(metadata, dict) and metadata.get('compressed'):
                     compressed_content = metadata.get('compressed_content')
                     if compressed_content:
-                        # New format: compressed_content is a full message dict
-                        if isinstance(compressed_content, dict):
-                            compressed_content['message_id'] = item['message_id']
-                            messages.append(compressed_content)
-                            continue  # Skip regular parsing below
-                        else:
-                            # Legacy format: compressed_content is a plain string
-                            content = compressed_content
-                            is_compressed = True
-                        # logger.debug(f"Using compressed content for message {item['message_id']}")
+                        content = compressed_content
+                        is_compressed = True
                 
                 # Parse content and add message_id
                 if isinstance(content, str):
@@ -243,33 +296,29 @@ class ThreadManager:
                         
                         messages.append(parsed_item)
                     except json.JSONDecodeError:
-                        # If compressed (legacy string format), assume user role (not ideal but backwards compat)
+                        # If compressed, content is a plain string (not JSON) - this is expected
                         if is_compressed:
-                            logger.warning(f"Using legacy compressed format for message {item['message_id']} - assuming user role")
                             messages.append({
                                 'role': 'user',
                                 'content': content,
                                 'message_id': item['message_id']
                             })
                         else:
-                            logger.error(f"Failed to parse message: {content[:100] if content else 'empty'}")
+                            logger.error(f"Failed to parse message: {content[:100]}")
                 elif isinstance(content, dict):
-                    # Content is already a dict (e.g., from JSON/JSONB column type)
                     content['message_id'] = item['message_id']
                     
-                    # Skip empty user messages (defensive filter for legacy data)
                     if content.get('role') == 'user':
                         msg_content = content.get('content', '')
                         if isinstance(msg_content, str) and not msg_content.strip():
                             logger.warning(f"Skipping empty user message {item['message_id']} from LLM context")
                             continue
                     
-                    # Tool messages: content field is already a JSON string from success_response
-                    # No conversion needed - it's already in the correct format for Bedrock
+                    if content.get('role') == 'assistant' and content.get('tool_calls'):
+                        content = self._validate_tool_calls_in_message(content)
                     
                     messages.append(content)
                 else:
-                    # Fallback for other types
                     logger.warning(f"Unexpected content type: {type(content)}, attempting to use as-is")
                     messages.append({
                         'role': 'user',
@@ -538,14 +587,17 @@ class ThreadManager:
                             await client.table('threads').update({'metadata': metadata}).eq('thread_id', thread_id).execute()
                 except Exception as e:
                     logger.debug(f"Failed to check cache_needs_rebuild flag: {e}")
+
+            messages_with_context = messages
+            if self._memory_context and len(messages) > 0:
+                messages_with_context = [self._memory_context] + messages
+                logger.debug(f"Injected memory context as first message (preserves prompt caching)")
             
-            # Apply caching
             cache_start = time.time()
-            if ENABLE_PROMPT_CACHING and len(messages) > 2:
-                # Skip caching for first message (minimal context)
+            if ENABLE_PROMPT_CACHING and len(messages_with_context) > 2:
                 prepared_messages = await apply_anthropic_caching_strategy(
                     system_prompt, 
-                    messages, 
+                    messages_with_context, 
                     llm_model,
                     thread_id=thread_id,
                     force_recalc=force_rebuild
@@ -553,9 +605,9 @@ class ThreadManager:
                 prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
                 logger.debug(f"⏱️ [TIMING] Prompt caching: {(time.time() - cache_start) * 1000:.1f}ms")
             else:
-                if ENABLE_PROMPT_CACHING and len(messages) <= 2:
-                    logger.debug(f"First message: Skipping caching and validation ({len(messages)} messages)")
-                prepared_messages = [system_prompt] + messages
+                if ENABLE_PROMPT_CACHING and len(messages_with_context) <= 2:
+                    logger.debug(f"First message: Skipping caching and validation ({len(messages_with_context)} messages)")
+                prepared_messages = [system_prompt] + messages_with_context
 
             # Get tool schemas for LLM API call (after compression)
             schema_start = time.time()

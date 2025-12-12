@@ -1,0 +1,142 @@
+diff --git a/node_modules/@expensify/react-native-live-markdown/android/src/main/java/com/expensify/livemarkdown/MarkdownFormatter.java b/node_modules/@expensify/react-native-live-markdown/android/src/main/java/com/expensify/livemarkdown/MarkdownFormatter.java
+index ffd3220..e617083 100644
+--- a/node_modules/@expensify/react-native-live-markdown/android/src/main/java/com/expensify/livemarkdown/MarkdownFormatter.java
++++ b/node_modules/@expensify/react-native-live-markdown/android/src/main/java/com/expensify/livemarkdown/MarkdownFormatter.java
+@@ -88,6 +88,22 @@ public class MarkdownFormatter {
+         break;
+       case "syntax":
+         setSpan(ssb, new MarkdownForegroundColorSpan(markdownStyle.getSyntaxColor()), start, end);
++        // Hide syntax markers by applying tiny font size
++        String syntaxText = ssb.subSequence(start, end).toString();
++        boolean shouldHideSyntax = syntaxText.contains("#") ||
++                                   syntaxText.contains("*") ||
++                                   syntaxText.contains("_") ||
++                                   syntaxText.contains("~") ||
++                                   syntaxText.contains("[") ||
++                                   syntaxText.contains("]") ||
++                                   syntaxText.contains("(") ||
++                                   syntaxText.contains(")") ||
++                                   syntaxText.startsWith("http") ||
++                                   syntaxText.contains("://");
++        float syntaxFontSize = markdownStyle.getSyntaxFontSize();
++        if (shouldHideSyntax && syntaxFontSize > 0) {
++          setSpan(ssb, new MarkdownFontSizeSpan(syntaxFontSize), start, end);
++        }
+         break;
+       case "link":
+         setSpan(ssb, new MarkdownUnderlineSpan(), start, end);
+diff --git a/node_modules/@expensify/react-native-live-markdown/android/src/main/java/com/expensify/livemarkdown/MarkdownStyle.java b/node_modules/@expensify/react-native-live-markdown/android/src/main/java/com/expensify/livemarkdown/MarkdownStyle.java
+index 34e9c63..8840f82 100644
+--- a/node_modules/@expensify/react-native-live-markdown/android/src/main/java/com/expensify/livemarkdown/MarkdownStyle.java
++++ b/node_modules/@expensify/react-native-live-markdown/android/src/main/java/com/expensify/livemarkdown/MarkdownStyle.java
+@@ -16,6 +16,8 @@ public class MarkdownStyle {
+   @ColorInt
+   private final int mSyntaxColor;
+ 
++  private final float mSyntaxFontSize;
++
+   @ColorInt
+   private final int mLinkColor;
+ 
+@@ -85,6 +87,7 @@ public class MarkdownStyle {
+     float screenDensity = context.getResources().getDisplayMetrics().density;
+ 
+     mSyntaxColor = parseColor(map, "syntax", "color", context);
++    mSyntaxFontSize = parseFloat(map, "syntax", "fontSize");
+     mLinkColor = parseColor(map, "link", "color", context);
+     mH1FontSize = parseFloat(map, "h1", "fontSize");
+     mEmojiFontSize = parseFloat(map, "emoji", "fontSize");
+@@ -144,6 +147,10 @@ public class MarkdownStyle {
+     return mSyntaxColor;
+   }
+ 
++  public float getSyntaxFontSize() {
++    return mSyntaxFontSize;
++  }
++
+   @ColorInt
+   public int getLinkColor() {
+     return mLinkColor;
+diff --git a/node_modules/@expensify/react-native-live-markdown/apple/MarkdownFormatter.mm b/node_modules/@expensify/react-native-live-markdown/apple/MarkdownFormatter.mm
+index 350653c..8339bd1 100644
+--- a/node_modules/@expensify/react-native-live-markdown/apple/MarkdownFormatter.mm
++++ b/node_modules/@expensify/react-native-live-markdown/apple/MarkdownFormatter.mm
+@@ -85,6 +85,23 @@
+ 
+   if (type == "syntax") {
+     [attributedString addAttribute:NSForegroundColorAttributeName value:markdownStyle.syntaxColor range:range];
++    // Hide syntax markers (headings #, bold **, italic *, strikethrough ~~, links)
++    NSString *syntaxText = [attributedString.string substringWithRange:range];
++    BOOL shouldHideSyntax = ([syntaxText rangeOfString:@"#"].location != NSNotFound ||
++                             [syntaxText rangeOfString:@"*"].location != NSNotFound ||
++                             [syntaxText rangeOfString:@"_"].location != NSNotFound ||
++                             [syntaxText rangeOfString:@"~"].location != NSNotFound ||
++                             [syntaxText rangeOfString:@"["].location != NSNotFound ||
++                             [syntaxText rangeOfString:@"]"].location != NSNotFound ||
++                             [syntaxText rangeOfString:@"("].location != NSNotFound ||
++                             [syntaxText rangeOfString:@")"].location != NSNotFound ||
++                             [syntaxText rangeOfString:@"http"].location != NSNotFound ||
++                             [syntaxText rangeOfString:@"://"].location != NSNotFound);
++    if (shouldHideSyntax && markdownStyle.syntaxFontSize > 0) {
++      // Apply tiny font to collapse width of syntax markers
++      UIFont *tinyFont = [UIFont systemFontOfSize:markdownStyle.syntaxFontSize];
++      [attributedString addAttribute:NSFontAttributeName value:tinyFont range:range];
++    }
+   } else if (type == "strikethrough") {
+     [attributedString addAttribute:NSStrikethroughStyleAttributeName value:[NSNumber numberWithInteger:NSUnderlineStyleSingle] range:range];
+   } else if (type == "code") {
+diff --git a/node_modules/@expensify/react-native-live-markdown/apple/RCTMarkdownStyle.h b/node_modules/@expensify/react-native-live-markdown/apple/RCTMarkdownStyle.h
+index f57fa41..22bd2a4 100644
+--- a/node_modules/@expensify/react-native-live-markdown/apple/RCTMarkdownStyle.h
++++ b/node_modules/@expensify/react-native-live-markdown/apple/RCTMarkdownStyle.h
+@@ -7,8 +7,11 @@ NS_ASSUME_NONNULL_BEGIN
+ @interface RCTMarkdownStyle : NSObject
+ 
+ @property (nonatomic) UIColor *syntaxColor;
++@property (nonatomic) CGFloat syntaxFontSize;
+ @property (nonatomic) UIColor *linkColor;
+ @property (nonatomic) CGFloat h1FontSize;
++@property (nonatomic) CGFloat h1MarginLeft;
++@property (nonatomic) CGFloat h1PaddingLeft;
+ @property (nonatomic) CGFloat emojiFontSize;
+ @property (nonatomic) NSString *emojiFontFamily;
+ @property (nonatomic) UIColor *blockquoteBorderColor;
+diff --git a/node_modules/@expensify/react-native-live-markdown/apple/RCTMarkdownStyle.mm b/node_modules/@expensify/react-native-live-markdown/apple/RCTMarkdownStyle.mm
+index 4598d94..583a8bc 100644
+--- a/node_modules/@expensify/react-native-live-markdown/apple/RCTMarkdownStyle.mm
++++ b/node_modules/@expensify/react-native-live-markdown/apple/RCTMarkdownStyle.mm
+@@ -8,10 +8,13 @@
+ {
+   if (self = [super init]) {
+     _syntaxColor = RCTUIColorFromSharedColor(style.syntax.color);
++    _syntaxFontSize = style.syntax.fontSize;
+ 
+     _linkColor = RCTUIColorFromSharedColor(style.link.color);
+ 
+     _h1FontSize = style.h1.fontSize;
++    _h1MarginLeft = style.h1.marginLeft;
++    _h1PaddingLeft = style.h1.paddingLeft;
+ 
+     _emojiFontSize = style.emoji.fontSize;
+     _emojiFontFamily = RCTNSStringFromString(style.emoji.fontFamily);
+diff --git a/node_modules/@expensify/react-native-live-markdown/src/MarkdownTextInputDecoratorViewNativeComponent.ts b/node_modules/@expensify/react-native-live-markdown/src/MarkdownTextInputDecoratorViewNativeComponent.ts
+index 4d1c3f4..57b1416 100644
+--- a/node_modules/@expensify/react-native-live-markdown/src/MarkdownTextInputDecoratorViewNativeComponent.ts
++++ b/node_modules/@expensify/react-native-live-markdown/src/MarkdownTextInputDecoratorViewNativeComponent.ts
+@@ -20,6 +20,7 @@ interface CodeBlockStyle {
+ interface MarkdownStyle {
+   syntax: {
+     color: ColorValue;
++    fontSize: Float;
+   };
+   emoji: {
+     fontSize: Float;
+@@ -30,6 +31,8 @@ interface MarkdownStyle {
+   };
+   h1: {
+     fontSize: Float;
++    marginLeft: Float;
++    paddingLeft: Float;
+   };
+   blockquote: {
+     borderColor: ColorValue;

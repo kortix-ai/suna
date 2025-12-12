@@ -15,6 +15,8 @@ from mcp.client.streamable_http import streamablehttp_client
 
 from core.utils.logger import logger
 from core.credentials import EncryptionService
+from core.utils.config import config as app_config, EnvMode
+from core.tools.utils.mcp_tool_executor import is_safe_url
 
 
 class MCPException(Exception):
@@ -345,6 +347,20 @@ class MCPService:
         if not url:
             raise CustomMCPError("URL is required for HTTP MCP connections")
         
+        # Validate URL safety (only block private URLs in non-local environments)
+        if app_config.ENV_MODE != EnvMode.LOCAL:
+            is_safe, error_msg = is_safe_url(url)
+            if not is_safe:
+                return CustomMCPConnectionResult(
+                    success=False,
+                    qualified_name="",
+                    display_name="",
+                    tools=[],
+                    config=config,
+                    url=url,
+                    message=f"Private/local MCP servers are not allowed in production: {error_msg}"
+                )
+        
         try:
             async with streamablehttp_client(url) as (read_stream, write_stream, _):
                 async with ClientSession(read_stream, write_stream) as session:
@@ -385,6 +401,20 @@ class MCPService:
         url = config.get("url")
         if not url:
             raise CustomMCPError("URL is required for SSE MCP connections")
+        
+        # Validate URL safety (only block private URLs in non-local environments)
+        if app_config.ENV_MODE != EnvMode.LOCAL:
+            is_safe, error_msg = is_safe_url(url)
+            if not is_safe:
+                return CustomMCPConnectionResult(
+                    success=False,
+                    qualified_name="",
+                    display_name="",
+                    tools=[],
+                    config=config,
+                    url=url,
+                    message=f"Private/local MCP servers are not allowed in production: {error_msg}"
+                )
         
         try:
             async with sse_client(url) as (read_stream, write_stream):

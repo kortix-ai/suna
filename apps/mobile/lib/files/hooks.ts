@@ -33,6 +33,44 @@ function transformApiFile(apiFile: ApiFileInfo): SandboxFile {
 }
 
 // ============================================================================
+// API Types for Version History
+// ============================================================================
+
+export interface FileVersion {
+  commit: string;
+  author_name: string;
+  author_email: string;
+  date: string;
+  message: string;
+}
+
+export interface FileHistoryResponse {
+  path: string;
+  versions: FileVersion[];
+}
+
+export interface CommitInfo {
+  commit: string;
+  message: string;
+  date: string;
+  author_name: string;
+  author_email: string;
+  files_in_commit: Array<{
+    path: string;
+    status: string;
+    old_path?: string;
+    revert_effect?: string;
+  }>;
+  revert_files: Array<{
+    path: string;
+    status: string;
+    old_path?: string;
+    revert_effect?: string;
+  }>;
+  path_affected_on_revert?: boolean;
+}
+
+// ============================================================================
 // Query Keys
 // ============================================================================
 
@@ -40,6 +78,9 @@ export const fileKeys = {
   all: ['files'] as const,
   sandboxFiles: (sandboxId: string, path: string) => [...fileKeys.all, 'sandbox', sandboxId, path] as const,
   sandboxFile: (sandboxId: string, path: string) => [...fileKeys.all, 'sandbox', sandboxId, 'file', path] as const,
+  fileHistory: (sandboxId: string, path: string) => [...fileKeys.all, 'sandbox', sandboxId, 'history', path] as const,
+  fileAtCommit: (sandboxId: string, path: string, commit: string) => [...fileKeys.all, 'sandbox', sandboxId, 'file', path, commit] as const,
+  filesAtCommit: (sandboxId: string, path: string, commit: string) => [...fileKeys.all, 'sandbox', sandboxId, 'tree', path, commit] as const,
 };
 
 // ============================================================================
@@ -124,6 +165,171 @@ export function useSandboxImageBlob(
     staleTime: 10 * 60 * 1000,
     ...options,
   });
+}
+
+// ============================================================================
+// Version History Hooks
+// ============================================================================
+
+/**
+ * Hook to fetch file/workspace version history (git commits)
+ */
+export function useFileHistory(
+  sandboxId: string | undefined,
+  path: string = '/workspace',
+  options?: Omit<UseQueryOptions<FileVersion[], Error>, 'queryKey' | 'queryFn'>
+) {
+  return useQuery({
+    queryKey: fileKeys.fileHistory(sandboxId || '', path),
+    queryFn: async () => {
+      if (!sandboxId) throw new Error('Sandbox ID required');
+
+      const token = await getAuthToken();
+      const res = await fetch(
+        `${API_URL}/sandboxes/${sandboxId}/files/history?path=${encodeURIComponent(path)}&limit=100`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!res.ok) throw new Error(`Failed to fetch file history: ${res.status}`);
+      const data: FileHistoryResponse = await res.json();
+      return data.versions || [];
+    },
+    enabled: !!sandboxId,
+    staleTime: 30 * 1000, // 30 seconds
+    ...options,
+  });
+}
+
+/**
+ * Hook to fetch file content at a specific commit
+ */
+export function useFileContentAtCommit(
+  sandboxId: string | undefined,
+  filePath: string | undefined,
+  commit: string | undefined,
+  options?: Omit<UseQueryOptions<Blob, Error>, 'queryKey' | 'queryFn'>
+) {
+  return useQuery({
+    queryKey: fileKeys.fileAtCommit(sandboxId || '', filePath || '', commit || ''),
+    queryFn: async () => {
+      if (!sandboxId || !filePath || !commit) throw new Error('Missing required parameters');
+
+      const normalizedPath = filePath.startsWith('/workspace')
+        ? filePath
+        : `/workspace/${filePath.replace(/^\//, '')}`;
+
+      const token = await getAuthToken();
+      const res = await fetch(
+        `${API_URL}/sandboxes/${sandboxId}/files/content-by-hash?path=${encodeURIComponent(normalizedPath)}&commit=${encodeURIComponent(commit)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!res.ok) throw new Error(`Failed to fetch file at commit: ${res.status}`);
+      return res.blob();
+    },
+    enabled: !!sandboxId && !!filePath && !!commit,
+    staleTime: Infinity, // Historical content doesn't change
+    ...options,
+  });
+}
+
+/**
+ * Hook to fetch directory tree at a specific commit
+ */
+export function useFilesAtCommit(
+  sandboxId: string | undefined,
+  path: string = '/workspace',
+  commit: string | undefined,
+  options?: Omit<UseQueryOptions<SandboxFile[], Error>, 'queryKey' | 'queryFn'>
+) {
+  return useQuery({
+    queryKey: fileKeys.filesAtCommit(sandboxId || '', path, commit || ''),
+    queryFn: async () => {
+      if (!sandboxId || !commit) throw new Error('Missing required parameters');
+
+      const token = await getAuthToken();
+      const res = await fetch(
+        `${API_URL}/sandboxes/${sandboxId}/files/tree?path=${encodeURIComponent(path)}&commit=${encodeURIComponent(commit)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!res.ok) throw new Error(`Failed to fetch files at commit: ${res.status}`);
+      const data = await res.json();
+      return (data.files || []).map(transformApiFile);
+    },
+    enabled: !!sandboxId && !!commit,
+    staleTime: Infinity, // Historical content doesn't change
+    ...options,
+  });
+}
+
+/**
+ * Mutation hook to revert files to a specific commit
+ */
+export function useRevertToCommit(
+  options?: UseMutationOptions<
+    { success: boolean; message: string },
+    Error,
+    { sandboxId: string; commit: string; paths?: string[] }
+  >
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ sandboxId, commit, paths }) => {
+      const token = await getAuthToken();
+      const body: { commit: string; paths?: string[] } = { commit };
+      if (paths && paths.length > 0) {
+        body.paths = paths;
+      }
+
+      const res = await fetch(`${API_URL}/sandboxes/${sandboxId}/files/revert`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || 'Revert failed');
+      }
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      // Invalidate file queries after revert
+      queryClient.invalidateQueries({
+        queryKey: ['files', 'sandbox', variables.sandboxId],
+        exact: false,
+        refetchType: 'all',
+      });
+    },
+    ...options,
+  });
+}
+
+/**
+ * Fetch commit info (files changed in commit)
+ */
+export async function fetchCommitInfo(
+  sandboxId: string,
+  commit: string,
+  filePath?: string
+): Promise<CommitInfo> {
+  const token = await getAuthToken();
+  let url = `${API_URL}/sandboxes/${sandboxId}/files/commit-info?commit=${encodeURIComponent(commit)}`;
+  if (filePath) {
+    url += `&path=${encodeURIComponent(filePath)}`;
+  }
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || 'Failed to fetch commit info');
+  }
+  return res.json();
 }
 
 // ============================================================================

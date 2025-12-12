@@ -114,7 +114,7 @@ export function AgentEditorDialog({
 
     const handleSave = () => {
         if (!name.trim()) {
-            toast.error('Agent name is required');
+            toast.error('Worker name is required');
             return;
         }
 
@@ -131,7 +131,7 @@ export function AgentEditorDialog({
 
     const handleAutoGenerate = () => {
         if (!name.trim()) {
-            toast.error('Agent name is required for auto-generation');
+            toast.error('Worker name is required for auto-generation');
             return;
         }
 
@@ -162,7 +162,7 @@ export function AgentEditorDialog({
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="max-w-5xl max-h-[85vh] flex flex-col p-0">
                 <DialogHeader className="px-6 pt-6 pb-4 shrink-0">
-                    <DialogTitle>Edit Agent</DialogTitle>
+                    <DialogTitle>Edit Worker</DialogTitle>
                 </DialogHeader>
 
                 <div className="flex-1 min-h-0 overflow-auto px-6 pb-4">
@@ -176,7 +176,7 @@ export function AgentEditorDialog({
                                         iconName={iconName}
                                         iconColor={iconColor}
                                         backgroundColor={backgroundColor}
-                                        agentName={name || 'Agent'}
+                                        agentName={name || 'Worker'}
                                         size={120}
                                         className="border-[1.5px] shadow-md"
                                     />
@@ -184,7 +184,7 @@ export function AgentEditorDialog({
                                 <Input
                                     value={name}
                                     onChange={(e) => setName(e.target.value)}
-                                    placeholder="Agent name"
+                                    placeholder="Worker name"
                                     maxLength={50}
                                     className="text-center font-semibold text-lg h-auto py-2"
                                 />

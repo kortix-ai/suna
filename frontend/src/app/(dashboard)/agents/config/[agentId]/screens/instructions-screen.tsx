@@ -30,7 +30,7 @@ export function InstructionsScreen({ agentId }: InstructionsScreenProps) {
         if (!isEditable) {
             if (isSunaAgent) {
                 toast.error("System prompt cannot be edited", {
-                    description: "Suna's system prompt is managed centrally.",
+                    description: "Kortix's system prompt is managed centrally.",
                 });
             }
             return;
@@ -71,7 +71,7 @@ export function InstructionsScreen({ agentId }: InstructionsScreenProps) {
                         value={systemPrompt}
                         onSave={handleSave}
                         disabled={!isEditable}
-                        placeholder="Define how your agent should behave..."
+                        placeholder="Define how your Worker should behave..."
                         className="h-full"
                     />
                 </div>

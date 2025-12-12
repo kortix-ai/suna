@@ -61,7 +61,7 @@ export function CsvRenderer({ content }: CsvRendererProps) {
   if (rows.length === 0) {
     return (
       <View className="items-center justify-center py-12">
-        <Text className="text-sm font-roobert text-muted-foreground">
+        <Text className="text-sm font-roobert text-primary opacity-50">
           No data to display
         </Text>
       </View>
@@ -79,30 +79,30 @@ export function CsvRenderer({ content }: CsvRendererProps) {
       <ScrollView showsVerticalScrollIndicator={true} style={{ maxHeight: 400 }}>
         <View className="p-4">
           <View className="border border-border rounded-xl overflow-hidden">
-            <View className="bg-muted/30 border-b-2 border-border flex-row">
+            <View className="bg-card border-b-2 border-border flex-row">
               {headers.map((header, index) => (
-                <View 
-                  key={index} 
-                  className="px-3 py-2 border-r border-border/50 min-w-[120px]"
+                <View
+                  key={index}
+                  className="px-3 py-2 border-r border-border min-w-[120px]"
                 >
-                  <Text className="text-xs font-roobert-semibold text-foreground">
+                  <Text className="text-xs font-roobert-semibold text-primary">
                     {header || '-'}
                   </Text>
                 </View>
               ))}
             </View>
-            
+
             {displayRows.map((row, rowIndex) => (
-              <View 
-                key={rowIndex} 
-                className={`flex-row ${rowIndex % 2 === 0 ? 'bg-background' : 'bg-muted/10'}`}
+              <View
+                key={rowIndex}
+                className={`flex-row ${rowIndex % 2 === 0 ? 'bg-background' : 'bg-card'}`}
               >
                 {headers.map((_, cellIndex) => (
-                  <View 
-                    key={cellIndex} 
-                    className="px-3 py-2 border-r border-b border-border/30 min-w-[120px]"
+                  <View
+                    key={cellIndex}
+                    className="px-3 py-2 border-r border-b border-border min-w-[120px]"
                   >
-                    <Text className="text-xs font-roobert text-foreground/80">
+                    <Text className="text-xs font-roobert text-primary">
                       {row[cellIndex] || '-'}
                     </Text>
                   </View>
@@ -110,10 +110,10 @@ export function CsvRenderer({ content }: CsvRendererProps) {
               </View>
             ))}
           </View>
-          
+
           {hasMore && (
             <View className="mt-3 items-center">
-              <Text className="text-xs font-roobert text-muted-foreground">
+              <Text className="text-xs font-roobert text-primary opacity-50">
                 Showing {displayRows.length} of {dataRows.length} rows
               </Text>
             </View>

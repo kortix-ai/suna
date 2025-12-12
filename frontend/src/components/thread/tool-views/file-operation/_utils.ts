@@ -398,6 +398,7 @@ export const isFileType = {
   html: (fileExtension: string): boolean => fileExtension === 'html' || fileExtension === 'htm',
   csv: (fileExtension: string): boolean => fileExtension === 'csv',
   xlsx: (fileExtension: string): boolean => fileExtension === 'xlsx' || fileExtension === 'xls',
+  pptx: (fileExtension: string): boolean => fileExtension === 'pptx' || fileExtension === 'ppt',
 };
 
 export const hasLanguageHighlighting = (language: string): boolean => {

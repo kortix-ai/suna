@@ -24,7 +24,7 @@ class GoogleDocsService:
     def __init__(self, oauth_token_service: OAuthTokenService):
         self.client_id = os.getenv("GOOGLE_CLIENT_ID")
         self.client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
-        self.redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/google/callback")
+        self.redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/v1/google/callback")
         
         if not self.client_id or not self.client_secret:
             logger.warning("Google OAuth credentials not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.")

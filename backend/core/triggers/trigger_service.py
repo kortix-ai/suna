@@ -31,6 +31,7 @@ class TriggerResult:
     agent_prompt: Optional[str] = None
     execution_variables: Dict[str, Any] = field(default_factory=dict)
     error_message: Optional[str] = None
+    model: Optional[str] = None
 
 
 @dataclass

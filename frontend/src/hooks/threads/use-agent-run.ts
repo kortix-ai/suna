@@ -9,7 +9,18 @@ export const useAgentRunsQuery = (threadId: string, options?) => {
     queryKey: threadKeys.agentRuns(threadId),
     queryFn: () => getAgentRuns(threadId),
     enabled: !!threadId,
-    retry: 1,
+    retry: (failureCount, error: any) => {
+      if (error?.status === 404 && failureCount < 5) {
+        return true;
+      }
+      return failureCount < 1;
+    },
+    retryDelay: (attemptIndex, error: any) => {
+      if (error?.status === 404) {
+        return Math.min(500 * (attemptIndex + 1), 2000);
+      }
+      return 1000;
+    },
     ...options,
   });
 };

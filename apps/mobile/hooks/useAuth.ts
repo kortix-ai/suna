@@ -42,6 +42,7 @@ export function useAuth() {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const initializedUserIdRef = useRef<string | null>(null);
   const initializedCanTrackRef = useRef<boolean | null>(null);
+  const oauthSessionActiveRef = useRef<boolean>(false);
 
   // Initialize session once on mount
   useEffect(() => {
@@ -288,80 +289,123 @@ export function useAuth() {
 
       console.log('🌐 Opening OAuth URL in browser');
       
-      // Open OAuth URL in in-app browser
-      const result = await WebBrowser.openAuthSessionAsync(
-        data.url,
-        redirectTo
-      );
+      // Prevent multiple simultaneous OAuth sessions
+      if (oauthSessionActiveRef.current) {
+        console.warn('⚠️ OAuth session already in progress, waiting...');
+        setAuthState((prev) => ({ ...prev, isLoading: false }));
+        return { success: false, error: { message: 'An authentication session is already in progress' } };
+      }
 
-      console.log('📊 WebBrowser result:', result);
-
-      if (result.type === 'success' && result.url) {
-        const url = result.url;
-        console.log('✅ OAuth redirect received:', url);
+      try {
+        oauthSessionActiveRef.current = true;
         
-        // Check for access_token in URL fragment (implicit flow)
-        if (url.includes('access_token=')) {
-          console.log('✅ Access token found in URL, setting session');
+        // Ensure any previous auth session is completed before opening a new one
+        // This is especially important on Android
+        await WebBrowser.maybeCompleteAuthSession();
+        
+        // Small delay to ensure cleanup completes
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Open OAuth URL in in-app browser
+        const result = await WebBrowser.openAuthSessionAsync(
+          data.url,
+          redirectTo
+        );
+
+        console.log('📊 WebBrowser result:', result);
+
+        if (result.type === 'success' && result.url) {
+          const url = result.url;
+          console.log('✅ OAuth redirect received:', url);
           
-          // Extract tokens from URL fragment
-          const hashParams = new URLSearchParams(url.split('#')[1] || '');
-          const accessToken = hashParams.get('access_token');
-          const refreshToken = hashParams.get('refresh_token');
+          // Check for access_token in URL fragment (implicit flow)
+          if (url.includes('access_token=')) {
+            console.log('✅ Access token found in URL, setting session');
+            
+            // Extract tokens from URL fragment
+            const hashParams = new URLSearchParams(url.split('#')[1] || '');
+            const accessToken = hashParams.get('access_token');
+            const refreshToken = hashParams.get('refresh_token');
+            
+            if (accessToken && refreshToken) {
+              // Set the session with the tokens
+              const { data: sessionData, error: sessionError } = 
+                await supabase.auth.setSession({
+                  access_token: accessToken,
+                  refresh_token: refreshToken,
+                });
+
+              if (sessionError) {
+                console.error('❌ Session error:', sessionError.message);
+                setError({ message: sessionError.message });
+                setAuthState((prev) => ({ ...prev, isLoading: false }));
+                oauthSessionActiveRef.current = false;
+                return { success: false, error: sessionError };
+              }
+
+              console.log('✅ OAuth sign in successful');
+              setAuthState((prev) => ({ ...prev, isLoading: false }));
+              oauthSessionActiveRef.current = false;
+              return { success: true, data: sessionData };
+            }
+          }
           
-          if (accessToken && refreshToken) {
-            // Set the session with the tokens
+          // Check for code in query params (PKCE flow)
+          const urlObj = new URL(url);
+          const code = urlObj.searchParams.get('code');
+          
+          if (code) {
+            console.log('✅ OAuth code received, exchanging for session');
+            
             const { data: sessionData, error: sessionError } = 
-              await supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: refreshToken,
-              });
+              await supabase.auth.exchangeCodeForSession(code);
 
             if (sessionError) {
-              console.error('❌ Session error:', sessionError.message);
+              console.error('❌ Session exchange error:', sessionError.message);
               setError({ message: sessionError.message });
               setAuthState((prev) => ({ ...prev, isLoading: false }));
+              oauthSessionActiveRef.current = false;
               return { success: false, error: sessionError };
             }
 
             console.log('✅ OAuth sign in successful');
             setAuthState((prev) => ({ ...prev, isLoading: false }));
+            oauthSessionActiveRef.current = false;
             return { success: true, data: sessionData };
           }
-        }
-        
-        // Check for code in query params (PKCE flow)
-        const urlObj = new URL(url);
-        const code = urlObj.searchParams.get('code');
-        
-        if (code) {
-          console.log('✅ OAuth code received, exchanging for session');
-          
-          const { data: sessionData, error: sessionError } = 
-            await supabase.auth.exchangeCodeForSession(code);
-
-          if (sessionError) {
-            console.error('❌ Session exchange error:', sessionError.message);
-            setError({ message: sessionError.message });
-            setAuthState((prev) => ({ ...prev, isLoading: false }));
-            return { success: false, error: sessionError };
-          }
-
-          console.log('✅ OAuth sign in successful');
+        } else if (result.type === 'cancel') {
+          console.log('⚠️ OAuth cancelled by user');
           setAuthState((prev) => ({ ...prev, isLoading: false }));
-          return { success: true, data: sessionData };
+          oauthSessionActiveRef.current = false;
+          return { success: false, error: { message: 'Sign in cancelled' } };
         }
-      } else if (result.type === 'cancel') {
-        console.log('⚠️ OAuth cancelled by user');
-        setAuthState((prev) => ({ ...prev, isLoading: false }));
-        return { success: false, error: { message: 'Sign in cancelled' } };
-      }
 
-      console.log('❌ OAuth failed - no tokens found');
-      setAuthState((prev) => ({ ...prev, isLoading: false }));
-      return { success: false, error: { message: 'Authentication failed' } };
+        console.log('❌ OAuth failed - no tokens found');
+        setAuthState((prev) => ({ ...prev, isLoading: false }));
+        oauthSessionActiveRef.current = false;
+        return { success: false, error: { message: 'Authentication failed' } };
+      } catch (sessionErr: any) {
+        // Reset session flag on error within try block
+        oauthSessionActiveRef.current = false;
+        throw sessionErr;
+      }
     } catch (err: any) {
       console.error('❌ OAuth exception:', err);
+      
+      // Reset session flag on error
+      oauthSessionActiveRef.current = false;
+      
+      // Handle specific WebBrowser auth session error
+      if (err.message?.includes('invalid state') || err.message?.includes('redirect handler')) {
+        console.warn('⚠️ WebBrowser auth session conflict, attempting cleanup...');
+        try {
+          await WebBrowser.maybeCompleteAuthSession();
+          await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (cleanupError) {
+          console.warn('⚠️ Cleanup attempt failed:', cleanupError);
+        }
+      }
+      
       const error = { message: err.message || 'An unexpected error occurred' };
       setError(error);
       setAuthState((prev) => ({ ...prev, isLoading: false }));
@@ -372,7 +416,7 @@ export function useAuth() {
   /**
    * Sign in with magic link (passwordless)
    * Auto-creates account if it doesn't exist
-   * Goes directly to mobile deep link - no frontend redirect needed
+   * Uses kortix:// deep link - works when app is installed
    */
   const signInWithMagicLink = useCallback(async ({ email, acceptedTerms }: { email: string; acceptedTerms?: boolean }) => {
     try {
@@ -380,7 +424,7 @@ export function useAuth() {
       setError(null);
       setAuthState((prev) => ({ ...prev, isLoading: true }));
 
-      // Build deep link URL directly - no frontend redirect needed for mobile
+      // Build deep link URL directly
       const params = new URLSearchParams();
       if (acceptedTerms) {
         params.set('terms_accepted', 'true');
@@ -388,7 +432,7 @@ export function useAuth() {
       
       const emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
 
-      console.log('📱 Mobile magic link redirect URL:', emailRedirectTo);
+      console.log('📱 Magic link redirect URL:', emailRedirectTo);
 
       const { error: magicLinkError, data } = await supabase.auth.signInWithOtp({
         email: email.trim().toLowerCase(),

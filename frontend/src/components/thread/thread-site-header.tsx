@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from "@/components/ui/button"
-import { FolderOpen, Upload, Monitor, Copy, Check } from "lucide-react"
+import { FolderOpen, Upload, PanelRightOpen, PanelRightClose, Copy, Check } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { toast } from "sonner"
 import {
@@ -27,6 +27,7 @@ interface ThreadSiteHeaderProps {
   projectName: string;
   onViewFiles: () => void;
   onToggleSidePanel: () => void;
+  isSidePanelOpen?: boolean;
   onProjectRenamed?: (newName: string) => void;
   isMobileView?: boolean;
   variant?: 'default' | 'shared';
@@ -38,6 +39,7 @@ export function SiteHeader({
   projectName,
   onViewFiles,
   onToggleSidePanel,
+  isSidePanelOpen = false,
   onProjectRenamed,
   isMobileView,
   variant = 'default',
@@ -230,11 +232,15 @@ export function SiteHeader({
                   onClick={onToggleSidePanel}
                   className="h-9 w-9 cursor-pointer"
                 >
-                  <Monitor className="h-4 w-4" />
+                  {isSidePanelOpen ? (
+                    <PanelRightClose className="h-4 w-4" />
+                  ) : (
+                    <PanelRightOpen className="h-4 w-4" />
+                  )}
                 </Button>
               </TooltipTrigger>
               <TooltipContent side={isMobile ? "bottom" : "bottom"}>
-                <p>Toggle Computer Preview (CMD+I)</p>
+                <p>{isSidePanelOpen ? 'Close' : 'Open'} Kortix Computer (CMD+I)</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>

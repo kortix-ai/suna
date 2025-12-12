@@ -366,13 +366,27 @@ class AgentLoader:
         )
     
     def _row_to_agent_data(self, row: Dict[str, Any]) -> AgentData:
-        """Convert database row to AgentData."""
+        """Convert database row to AgentData.
+        
+        For Suna agents, always overrides name and description from SUNA_CONFIG
+        regardless of what's stored in the database.
+        """
         metadata = row.get('metadata', {}) or {}
+        is_suna_default = metadata.get('is_suna_default', False)
+        
+        # For Suna agents, always use name from SUNA_CONFIG (never DB value)
+        if is_suna_default:
+            from core.suna_config import SUNA_CONFIG
+            name = SUNA_CONFIG['name']
+            description = SUNA_CONFIG.get('description')
+        else:
+            name = row['name']
+            description = row.get('description')
         
         return AgentData(
             agent_id=row['agent_id'],
-            name=row['name'],
-            description=row.get('description'),
+            name=name,
+            description=description,
             account_id=row['account_id'],
             is_default=row.get('is_default', False),
             is_public=row.get('is_public', False),
@@ -385,7 +399,7 @@ class AgentLoader:
             current_version_id=row.get('current_version_id'),
             version_count=row.get('version_count', 1),
             metadata=metadata,
-            is_suna_default=metadata.get('is_suna_default', False),
+            is_suna_default=is_suna_default,
             config_loaded=False
         )
     
@@ -404,16 +418,22 @@ class AgentLoader:
         
         Static parts (prompt, model, tools) = instant from memory
         User MCPs = check cache first, then DB if miss
+        Always overrides name from SUNA_CONFIG regardless of DB value.
         """
         import time
         t_start = time.time()
         
         # 1. Load static config from memory (instant, no DB)
         from core.runtime_cache import get_static_suna_config, load_static_suna_config
+        from core.suna_config import SUNA_CONFIG
+        
         static_config = get_static_suna_config()
         if not static_config:
             static_config = load_static_suna_config()
         
+        # Always override name from SUNA_CONFIG (never use DB value)
+        agent.name = SUNA_CONFIG['name']
+        agent.description = SUNA_CONFIG.get('description')
         agent.system_prompt = static_config['system_prompt']
         agent.model = static_config['model']
         agent.agentpress_tools = static_config['agentpress_tools']

@@ -228,7 +228,10 @@ export function constructImageUrl(filePath: string, project?: { sandbox?: { sand
   
   if (sandboxId) {
     let normalizedPath = cleanPath;
-    if (!normalizedPath.startsWith('/workspace')) {
+    // Handle paths that start with "workspace" (without leading /)
+    if (normalizedPath === 'workspace' || normalizedPath.startsWith('workspace/')) {
+      normalizedPath = '/' + normalizedPath;
+    } else if (!normalizedPath.startsWith('/workspace')) {
       normalizedPath = `/workspace/${normalizedPath.startsWith('/') ? normalizedPath.substring(1) : normalizedPath}`;
     }
     
@@ -240,7 +243,10 @@ export function constructImageUrl(filePath: string, project?: { sandbox?: { sand
   if (project?.sandbox?.sandbox_url) {
     const sandboxUrl = project.sandbox.sandbox_url.replace(/\/$/, '');
     let normalizedPath = cleanPath;
-    if (!normalizedPath.startsWith('/workspace')) {
+    // Handle paths that start with "workspace" (without leading /)
+    if (normalizedPath === 'workspace' || normalizedPath.startsWith('workspace/')) {
+      normalizedPath = '/' + normalizedPath;
+    } else if (!normalizedPath.startsWith('/workspace')) {
       normalizedPath = `/workspace/${normalizedPath.startsWith('/') ? normalizedPath.substring(1) : normalizedPath}`;
     }
     

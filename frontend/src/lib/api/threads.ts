@@ -2,12 +2,18 @@ import { createClient } from '@/lib/supabase/client';
 import { handleApiError } from '../error-handler';
 import { backendApi } from '../api-client';
 
+export type ThreadStatus = 'pending' | 'initializing' | 'ready' | 'error';
+
 export type Thread = {
   thread_id: string;
   project_id?: string | null;
   is_public?: boolean;
   created_at: string;
   updated_at: string;
+  status?: ThreadStatus;
+  initialization_error?: string | null;
+  initialization_started_at?: string | null;
+  initialization_completed_at?: string | null;
   [key: string]: any;
 };
 
@@ -308,17 +314,19 @@ export const getThread = async (threadId: string): Promise<Thread> => {
     });
 
     if (response.error) {
-      handleApiError(response.error, { operation: 'load thread', resource: `thread ${threadId}` });
-      throw new Error(response.error.message || 'Failed to fetch thread');
+      const error = new Error(response.error.message || 'Failed to fetch thread');
+      (error as any).status = response.error.status;
+      throw error;
     }
 
     if (!response.data) {
-      throw new Error('Thread not found');
+      const error = new Error('Thread not found');
+      (error as any).status = 404;
+      throw error;
     }
 
     return response.data;
   } catch (error) {
-    handleApiError(error, { operation: 'load thread', resource: `thread ${threadId}` });
     throw error;
   }
 };
@@ -420,7 +428,6 @@ export const getMessages = async (threadId: string): Promise<Message[]> => {
 
     const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 
-    // Build headers with optional auth token
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
@@ -429,13 +436,8 @@ export const getMessages = async (threadId: string): Promise<Message[]> => {
       headers['Authorization'] = `Bearer ${session.access_token}`;
     }
 
-    // Check if debug mode is enabled via URL query param
     const useOptimized = shouldUseOptimizedMessages();
 
-    // Use backend API endpoint with auth handling
-    // Backend handles batching internally and returns all messages
-    // optimized=false returns full messages (all types, all fields) for debugging
-    // optimized=true returns optimized messages (filtered types, minimal fields) for production
     const response = await fetch(
       `${API_URL}/threads/${threadId}/messages?order=asc&optimized=${useOptimized}`,
       {
@@ -446,22 +448,14 @@ export const getMessages = async (threadId: string): Promise<Message[]> => {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Unknown error');
-      console.error('Error fetching messages:', errorText);
-      handleApiError(new Error(errorText), { operation: 'load messages', resource: `messages for thread ${threadId}` });
-      throw new Error(`Error getting messages: ${errorText}`);
+      const error = new Error(`Error getting messages: ${errorText}`);
+      (error as any).status = response.status;
+      throw error;
     }
 
     const data = await response.json();
-    const allMessages = data.messages || [];
-
-    // Backend now filters message types, so no need to filter here
-    // Backend returns: user, tool, assistant
-    // Backend excludes: status, cost, summary, browser_state, image_context, system, llm_response_end
-
-    return allMessages;
+    return data.messages || [];
   } catch (error) {
-    console.error('Failed to get messages:', error);
-    handleApiError(error, { operation: 'load messages', resource: `messages for thread ${threadId}` });
     throw error;
   }
 };

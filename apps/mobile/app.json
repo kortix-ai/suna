@@ -21,7 +21,10 @@
       "bundleIdentifier": "com.kortix.app",
       "usesAppleSignIn": true,
       "infoPlist": {
-        "NSUserTrackingUsageDescription": "This app uses analytics to improve your experience and understand how features are used. Your data helps us make the app better for everyone."
+        "NSCameraUsageDescription": "Kortix needs camera access to let you capture photos and attach them to your saved conversations with the AI Worker. For example, you can photograph a document, whiteboard, or product for analysis and receive insights that are stored in your conversation history.",
+        "NSPhotoLibraryUsageDescription": "Kortix needs access to your photo library so you can select and share images in your saved conversations with the AI Worker. For example, you can attach screenshots, documents, or images for review—all stored in your personalized conversation history.",
+        "NSMicrophoneUsageDescription": "Kortix needs microphone access to enable voice input for your conversations. For example, you can speak your messages instead of typing, and the app will transcribe your speech to text for your AI Worker conversations.",
+        "NSUserTrackingUsageDescription": "Kortix uses analytics to improve your experience and understand how features are used. For example, we track which AI features are most helpful so we can make the app better for everyone."
       }
     },
     "android": {
@@ -31,6 +34,33 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.kortix.app",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "kortix.com",
+              "pathPrefix": "/auth/callback"
+            },
+            {
+              "scheme": "https",
+              "host": "www.kortix.com",
+              "pathPrefix": "/auth/callback"
+            },
+            {
+              "scheme": "https",
+              "host": "staging.suna.so",
+              "pathPrefix": "/auth/callback"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
@@ -47,15 +77,23 @@
       "expo-router",
       "expo-notifications",
       [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Kortix needs camera access to let you capture photos and attach them to your saved conversations with the AI Worker. For example, you can photograph a document, whiteboard, or product for analysis and receive insights that are stored in your conversation history.",
+          "photosPermission": "Kortix needs access to your photo library so you can select and share images in your saved conversations with the AI Worker. For example, you can attach screenshots, documents, or images for review—all stored in your personalized conversation history.",
+          "microphonePermission": "Kortix needs microphone access to record videos with audio. For example, you can record a video to share with the AI Worker for analysis and save it to your conversation history."
+        }
+      ],
+      [
         "expo-audio",
         {
-          "microphonePermission": "Allow $(PRODUCT_NAME) to record audio for transcription."
+          "microphonePermission": "Kortix needs microphone access to enable voice input for your conversations. For example, you can speak your messages instead of typing, and the app will transcribe your speech to text for your AI Worker conversations."
         }
       ],
       [
         "expo-tracking-transparency",
         {
-          "userTrackingPermission": "This app uses analytics to improve your experience and understand how features are used. Your data helps us make the app better for everyone."
+          "userTrackingPermission": "Kortix uses analytics to improve your experience and understand how features are used. For example, we track which AI features are most helpful so we can make the app better for everyone."
         }
       ],
       [

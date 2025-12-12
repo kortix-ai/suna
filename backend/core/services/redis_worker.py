@@ -1,71 +1,48 @@
-"""
-Worker-optimized Redis connection management.
-
-This module provides Redis connection management specifically optimized for
-Dramatiq worker processes that handle high-throughput agent runs.
-
-Key differences from redis.py:
-- Higher connection pool size (optimized for worker load)
-- Concurrency limiting via semaphore
-- Batch operation support
-- Optimized for pubsub + publish patterns
-"""
 import redis.asyncio as redis_lib
 import os
+import time as _time
 from dotenv import load_dotenv
 import asyncio
 from core.utils.logger import logger
 from typing import List, Any, Optional
 from core.utils.retry import retry
 
-# Import get_redis_config from base redis module to share config
 from core.services.redis import get_redis_config
 
-# Redis client and connection pool
 client: Optional[redis_lib.Redis] = None
 pool: Optional[redis_lib.ConnectionPool] = None
 _initialized = False
 _init_lock = asyncio.Lock()
 
-# Concurrency limiting for Redis operations
-# Limits concurrent operations to prevent connection pool exhaustion
 _operation_semaphore: Optional[asyncio.Semaphore] = None
 
-# Constants
-REDIS_KEY_TTL = 3600 * 24  # 24 hour TTL as safety mechanism
+REDIS_KEY_TTL = 3600 * 24
 
-# Worker-specific defaults
-# KEY INSIGHT: Semaphore prevents exhaustion, pool size just needs to be >= semaphore limit
-# 
-# Why limits?
-# - Semaphore: Prevents concurrent operation explosion (ESSENTIAL - this solves the problem!)
-# - Pool size: Prevents connection waste, ensures efficient reuse (nice to have)
-#
-# Defaults are conservative - adjust based on actual load:
-DEFAULT_MAX_CONCURRENT_OPS = 100  # Semaphore limit (prevents exhaustion - THIS IS THE KEY!)
-DEFAULT_MAX_CONNECTIONS = DEFAULT_MAX_CONCURRENT_OPS + 50  # Generous: 100 + 50 overhead = 150
+DEFAULT_MAX_CONCURRENT_OPS = 100
+DEFAULT_MAX_CONNECTIONS = DEFAULT_MAX_CONCURRENT_OPS + 50
 
-
-# get_redis_config is imported above from core.services.redis
+_circuit_breaker = {
+    "failures": 0,
+    "last_failure": 0.0,
+    "state": "closed",
+}
+CIRCUIT_BREAKER_THRESHOLD = 5
+CIRCUIT_BREAKER_TIMEOUT = 30.0
 
 
 def initialize():
-    """Initialize Redis connection pool optimized for worker processes."""
     global client, pool, _operation_semaphore
 
     load_dotenv()
     config = get_redis_config()
     
-    # Worker-optimized connection pool settings
-    # Pool size should match semaphore limit + overhead (pubsub, etc.)
     max_concurrent_ops = int(os.getenv("REDIS_WORKER_MAX_CONCURRENT_OPS", str(DEFAULT_MAX_CONCURRENT_OPS)))
-    # Calculate pool size: semaphore limit + overhead for pubsub connections
     default_pool_size = max_concurrent_ops + 20
     max_connections = int(os.getenv("REDIS_WORKER_MAX_CONNECTIONS", str(default_pool_size)))
     
-    socket_timeout = 15.0
-    connect_timeout = 10.0
-    retry_on_timeout = not (os.getenv("REDIS_RETRY_ON_TIMEOUT", "True").lower() != "true")
+    socket_timeout = 5.0
+    connect_timeout = 3.0
+    retry_on_timeout = os.getenv("REDIS_RETRY_ON_TIMEOUT", "false").lower() == "true"
 
     auth_info = f"user={config['username']} " if config['username'] else ""
     logger.info(
@@ -74,7 +51,6 @@ def initialize():
         f"{max_concurrent_ops} concurrent operations"
     )
 
-    # Create connection pool optimized for high-throughput worker operations
     pool_kwargs = {
         "host": config["host"],
         "port": config["port"],
@@ -94,14 +70,12 @@ def initialize():
     pool = redis_lib.ConnectionPool(**pool_kwargs)
     client = redis_lib.Redis(connection_pool=pool)
     
-    # Initialize semaphore for concurrency limiting
     _operation_semaphore = asyncio.Semaphore(max_concurrent_ops)
 
     return client
 
 
 async def initialize_async():
-    """Initialize Redis connection asynchronously."""
     global client, _initialized
 
     async with _init_lock:
@@ -127,7 +101,6 @@ async def initialize_async():
 
 
 async def close():
-    """Close Redis connection and connection pool."""
     global client, pool, _initialized, _operation_semaphore
     if client:
         try:
@@ -155,25 +128,89 @@ async def close():
 
 
 async def get_client():
-    """Get the Redis client, initializing if necessary."""
     global client, _initialized
     if client is None or not _initialized:
         await retry(lambda: initialize_async())
     return client
 
 
-async def _with_concurrency_limit(coro):
-    """Execute a Redis operation with concurrency limiting."""
+def _check_circuit_breaker() -> bool:
+    global _circuit_breaker
+    now = _time.time()
+    
+    if _circuit_breaker["state"] == "closed":
+        return True
+    
+    if _circuit_breaker["state"] == "open":
+        if now - _circuit_breaker["last_failure"] > CIRCUIT_BREAKER_TIMEOUT:
+            _circuit_breaker["state"] = "half-open"
+            logger.info("🔌 Redis circuit breaker: half-open (testing)")
+            return True
+        return False
+    
+    return True
+
+
+def _record_success():
+    global _circuit_breaker
+    if _circuit_breaker["state"] == "half-open":
+        _circuit_breaker["state"] = "closed"
+        _circuit_breaker["failures"] = 0
+        logger.info("✅ Redis circuit breaker: closed (healthy)")
+
+
+def _record_failure():
+    global _circuit_breaker
+    _circuit_breaker["failures"] += 1
+    _circuit_breaker["last_failure"] = _time.time()
+    
+    if _circuit_breaker["failures"] >= CIRCUIT_BREAKER_THRESHOLD:
+        if _circuit_breaker["state"] != "open":
+            _circuit_breaker["state"] = "open"
+            logger.warning(f"🔴 Redis circuit breaker: OPEN (failures={_circuit_breaker['failures']})")
+
+
+class RedisCircuitOpenError(Exception):
+    pass
+
+
+def is_redis_healthy() -> bool:
+    return _circuit_breaker["state"] != "open"
+
+
+def get_circuit_breaker_state() -> dict:
+    return {
+        "state": _circuit_breaker["state"],
+        "failures": _circuit_breaker["failures"],
+        "threshold": CIRCUIT_BREAKER_THRESHOLD,
+        "timeout": CIRCUIT_BREAKER_TIMEOUT,
+    }
+
+
+async def _with_concurrency_limit(coro, allow_circuit_break: bool = True):
+    if allow_circuit_break and not _check_circuit_breaker():
+        raise RedisCircuitOpenError("Redis circuit breaker is open")
+    
     if _operation_semaphore is None:
-        # Fallback if semaphore not initialized
-        return await coro
+        try:
+            result = await coro
+            _record_success()
+            return result
+        except Exception:
+            _record_failure()
+            raise
+    
     async with _operation_semaphore:
-        return await coro
+        try:
+            result = await coro
+            _record_success()
+            return result
+        except Exception:
+            _record_failure()
+            raise
 
 
-# Basic Redis operations with concurrency limiting
 async def set(key: str, value: str, ex: int = None, nx: bool = False):
-    """Set a Redis key."""
     async def _op():
         redis_client = await get_client()
         return await redis_client.set(key, value, ex=ex, nx=nx)
@@ -181,7 +218,6 @@ async def set(key: str, value: str, ex: int = None, nx: bool = False):
 
 
 async def get(key: str, default: str = None):
-    """Get a Redis key."""
     async def _op():
         redis_client = await get_client()
         result = await redis_client.get(key)
@@ -190,7 +226,6 @@ async def get(key: str, default: str = None):
 
 
 async def delete(key: str):
-    """Delete a Redis key."""
     async def _op():
         redis_client = await get_client()
         return await redis_client.delete(key)
@@ -198,7 +233,6 @@ async def delete(key: str):
 
 
 async def publish(channel: str, message: str):
-    """Publish a message to a Redis channel with concurrency limiting."""
     async def _op():
         redis_client = await get_client()
         return await redis_client.publish(channel, message)
@@ -206,14 +240,11 @@ async def publish(channel: str, message: str):
 
 
 async def create_pubsub():
-    """Create a Redis pubsub object."""
     redis_client = await get_client()
     return redis_client.pubsub()
 
 
-# List operations
 async def rpush(key: str, *values: Any):
-    """Append one or more values to a list with concurrency limiting."""
     async def _op():
         redis_client = await get_client()
         return await redis_client.rpush(key, *values)
@@ -221,7 +252,6 @@ async def rpush(key: str, *values: Any):
 
 
 async def lrange(key: str, start: int, end: int) -> List[str]:
-    """Get a range of elements from a list."""
     async def _op():
         redis_client = await get_client()
         return await redis_client.lrange(key, start, end)
@@ -229,7 +259,6 @@ async def lrange(key: str, start: int, end: int) -> List[str]:
 
 
 async def keys(pattern: str) -> List[str]:
-    """Get keys matching a pattern."""
     async def _op():
         redis_client = await get_client()
         return await redis_client.keys(pattern)
@@ -237,7 +266,6 @@ async def keys(pattern: str) -> List[str]:
 
 
 async def expire(key: str, seconds: int):
-    """Set expiration on a key."""
     async def _op():
         redis_client = await get_client()
         return await redis_client.expire(key, seconds)
@@ -245,7 +273,6 @@ async def expire(key: str, seconds: int):
 
 
 async def batch_publish(channel: str, messages: List[str]):
-    """Publish multiple messages efficiently using pipeline."""
     async def _op():
         redis_client = await get_client()
         async with redis_client.pipeline() as pipe:
@@ -256,7 +283,6 @@ async def batch_publish(channel: str, messages: List[str]):
 
 
 async def batch_rpush(key: str, values: List[str]):
-    """Push multiple values efficiently using pipeline."""
     async def _op():
         redis_client = await get_client()
         async with redis_client.pipeline() as pipe:
@@ -267,7 +293,6 @@ async def batch_rpush(key: str, values: List[str]):
 
 
 async def get_connection_info():
-    """Get diagnostic information about Redis connections."""
     try:
         redis_client = await get_client()
         
@@ -304,3 +329,40 @@ async def get_connection_info():
         logger.error(f"Error getting WORKER Redis connection info: {e}")
         return {"error": str(e)}
 
+async def xadd(stream_key: str, fields: dict, maxlen: int = None, approximate: bool = True) -> str:
+    async def _op():
+        redis_client = await get_client()
+        kwargs = {}
+        if maxlen is not None:
+            kwargs['maxlen'] = maxlen
+            kwargs['approximate'] = approximate
+        return await redis_client.xadd(stream_key, fields, **kwargs)
+    return await _with_concurrency_limit(_op())
+
+
+async def xread(streams: dict, count: int = None, block: int = None) -> list:
+    async def _op():
+        redis_client = await get_client()
+        return await redis_client.xread(streams, count=count, block=block)
+    return await _with_concurrency_limit(_op())
+
+
+async def xrange(stream_key: str, start: str = '-', end: str = '+', count: int = None) -> list:
+    async def _op():
+        redis_client = await get_client()
+        return await redis_client.xrange(stream_key, start, end, count=count)
+    return await _with_concurrency_limit(_op())
+
+
+async def xlen(stream_key: str) -> int:
+    async def _op():
+        redis_client = await get_client()
+        return await redis_client.xlen(stream_key)
+    return await _with_concurrency_limit(_op())
+
+
+async def xtrim(stream_key: str, maxlen: int, approximate: bool = True) -> int:
+    async def _op():
+        redis_client = await get_client()
+        return await redis_client.xtrim(stream_key, maxlen=maxlen, approximate=approximate)
+    return await _with_concurrency_limit(_op())

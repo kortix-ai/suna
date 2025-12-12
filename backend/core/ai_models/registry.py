@@ -8,7 +8,7 @@ from core.utils.logger import logger
 SHOULD_USE_ANTHROPIC = config.ENV_MODE == EnvMode.LOCAL and bool(config.ANTHROPIC_API_KEY)
 
 # Actual model IDs for LiteLLM
-_BASIC_MODEL_ID = "anthropic/claude-sonnet-4-5-20250929" if SHOULD_USE_ANTHROPIC else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh"
+_BASIC_MODEL_ID = "anthropic/claude-haiku-4-5-20251001" if SHOULD_USE_ANTHROPIC else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48"
 _POWER_MODEL_ID = "anthropic/claude-sonnet-4-5-20250929" if SHOULD_USE_ANTHROPIC else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh"
 
 # Default model IDs (these are aliases that resolve to actual IDs)
@@ -28,13 +28,13 @@ class ModelRegistry:
     
     # KORTIX BASIC & POWER – Same underlying model, different configs
     def _initialize_models(self):
-        # Kortix Basic
+        # Kortix Basic - uses HAIKU 4.5 under the hood
         self.register(Model(
             id="kortix/basic",
             name="Kortix Basic",
             provider=ModelProvider.ANTHROPIC,
             aliases=["kortix-basic", "Kortix Basic"],
-            context_window=1_000_000,
+            context_window=200_000,
             capabilities=[
                 ModelCapability.CHAT,
                 ModelCapability.FUNCTION_CALLING,
@@ -53,7 +53,7 @@ class ModelRegistry:
             enabled=True,
             config=ModelConfig(
                 extra_headers={
-                    "anthropic-beta": "context-1m-2025-08-07,fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
+                    "anthropic-beta": "fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
                 },
             )
         ))
@@ -396,15 +396,19 @@ class ModelRegistry:
         Resolves kortix/basic and kortix/power to actual provider model IDs.
         """
         # Map kortix model IDs to actual LiteLLM model IDs
-        if model_id in ("kortix/basic", "kortix/power"):
-            return _BASIC_MODEL_ID  # Both use the same underlying model
+        if model_id == "kortix/basic":
+            return _BASIC_MODEL_ID  # Uses HAIKU 4.5
+        elif model_id == "kortix/power":
+            return _POWER_MODEL_ID  # Uses Sonnet 4.5
         
         # For other models, check if it's an alias and resolve
         model = self.get(model_id)
         if model:
             # Check if this model's ID needs resolution
-            if model.id in ("kortix/basic", "kortix/power"):
+            if model.id == "kortix/basic":
                 return _BASIC_MODEL_ID
+            elif model.id == "kortix/power":
+                return _POWER_MODEL_ID
             return model.id
         
         # Return as-is if not found (let LiteLLM handle it)
@@ -421,7 +425,13 @@ class ModelRegistry:
         Returns:
             The registry model ID (e.g. 'kortix/basic') or the input if not found
         """
-        # Check if this is the Bedrock ARN that maps to kortix models
+        # Check if this matches _BASIC_MODEL_ID (HAIKU) or _POWER_MODEL_ID (Sonnet)
+        if litellm_model_id == _BASIC_MODEL_ID:
+            return "kortix/basic"
+        if litellm_model_id == _POWER_MODEL_ID:
+            return "kortix/power"
+        
+        # Check if this is a Bedrock ARN that maps to kortix models
         # Strip common prefixes for comparison
         normalized_id = litellm_model_id
         for prefix in ['bedrock/converse/', 'bedrock/', 'converse/']:
@@ -429,20 +439,27 @@ class ModelRegistry:
                 normalized_id = normalized_id[len(prefix):]
                 break
         
-        # Check if this matches _BASIC_MODEL_ID (also normalize it)
+        # Normalize _BASIC_MODEL_ID for comparison
         basic_model_normalized = _BASIC_MODEL_ID
         for prefix in ['bedrock/converse/', 'bedrock/', 'converse/']:
             if basic_model_normalized.startswith(prefix):
                 basic_model_normalized = basic_model_normalized[len(prefix):]
                 break
         
+        # Normalize _POWER_MODEL_ID for comparison
+        power_model_normalized = _POWER_MODEL_ID
+        for prefix in ['bedrock/converse/', 'bedrock/', 'converse/']:
+            if power_model_normalized.startswith(prefix):
+                power_model_normalized = power_model_normalized[len(prefix):]
+                break
+        
         # If the normalized ID matches the basic model ARN, return kortix/basic
-        if normalized_id == basic_model_normalized or litellm_model_id == _BASIC_MODEL_ID:
+        if normalized_id == basic_model_normalized:
             return "kortix/basic"
         
-        # Also check if the full ID matches
-        if litellm_model_id == _BASIC_MODEL_ID:
-            return "kortix/basic"
+        # If the normalized ID matches the power model ARN, return kortix/power
+        if normalized_id == power_model_normalized:
+            return "kortix/power"
         
         # Check if this model exists directly in registry
         if self.get(litellm_model_id):

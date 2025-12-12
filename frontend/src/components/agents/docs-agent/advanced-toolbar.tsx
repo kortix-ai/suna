@@ -32,7 +32,7 @@ import {
   TableProperties, Columns, Rows, Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Editor } from '@tiptap/react';
+import { useEditorState, type Editor } from '@tiptap/react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { HexColorPicker } from 'react-colorful';
@@ -56,6 +56,131 @@ export function AdvancedToolbar({
   const [showFindReplace, setShowFindReplace] = useState(false);
   const [findText, setFindText] = useState('');
   const [replaceText, setReplaceText] = useState('');
+
+  // Use Tiptap's proper state hooks for reactive state management
+  const canUndo = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      if (!editor) return false;
+      return editor.can().undo();
+    },
+  });
+
+  const canRedo = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      if (!editor) return false;
+      return editor.can().redo();
+    },
+  });
+
+  const isBold = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      if (!editor) return false;
+      return editor.isActive('bold');
+    },
+  });
+
+  const isItalic = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      if (!editor) return false;
+      return editor.isActive('italic');
+    },
+  });
+
+  const isUnderline = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      if (!editor) return false;
+      return editor.isActive('underline');
+    },
+  });
+
+  const isStrike = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      if (!editor) return false;
+      return editor.isActive('strike');
+    },
+  });
+
+  const isSuperscript = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      if (!editor) return false;
+      return editor.isActive('superscript');
+    },
+  });
+
+  const isSubscript = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      if (!editor) return false;
+      return editor.isActive('subscript');
+    },
+  });
+
+  const isBulletList = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      if (!editor) return false;
+      return editor.isActive('bulletList');
+    },
+  });
+
+  const isOrderedList = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      if (!editor) return false;
+      return editor.isActive('orderedList');
+    },
+  });
+
+  const isTaskList = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      if (!editor) return false;
+      return editor.isActive('taskList');
+    },
+  });
+
+  const isBlockquote = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      if (!editor) return false;
+      return editor.isActive('blockquote');
+    },
+  });
+
+  const isCodeBlock = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      if (!editor) return false;
+      return editor.isActive('codeBlock');
+    },
+  });
+
+  const textAlign = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      if (!editor) return 'left';
+      if (editor.isActive({ textAlign: 'left' })) return 'left';
+      if (editor.isActive({ textAlign: 'center' })) return 'center';
+      if (editor.isActive({ textAlign: 'right' })) return 'right';
+      if (editor.isActive({ textAlign: 'justify' })) return 'justify';
+      return 'left';
+    },
+  });
+
+  const isTable = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      if (!editor) return false;
+      return editor.isActive('table');
+    },
+  });
 
   const ToolbarButton = ({ 
     onClick, 
@@ -215,18 +340,23 @@ export function AdvancedToolbar({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
-              <DropdownMenuSeparator />
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
                   <Download className="mr-2 h-4 w-4" />
-                  Export as
+                  Export
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent>
-                  <DropdownMenuItem onClick={() => onExport?.('docx')}>
-                    Word Document
+                  <DropdownMenuItem onClick={() => onExport?.('pdf')}>
+                    PDF
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onExport?.('txt')}>
-                    Plain Text
+                  <DropdownMenuItem onClick={() => onExport?.('docx')}>
+                    Word
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onExport?.('html')}>
+                    HTML
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onExport?.('markdown')}>
+                    Markdown
                   </DropdownMenuItem>
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
@@ -265,13 +395,13 @@ export function AdvancedToolbar({
         <div className="flex items-center gap-1">
           <ToolbarButton
             onClick={() => editor.chain().focus().undo().run()}
-            disabled={!editor.can().undo()}
+            disabled={!canUndo}
             icon={Undo}
             title="Undo (Cmd+Z)"
           />
           <ToolbarButton
             onClick={() => editor.chain().focus().redo().run()}
-            disabled={!editor.can().redo()}
+            disabled={!canRedo}
             icon={Redo}
             title="Redo (Cmd+Shift+Z)"
           />
@@ -324,37 +454,37 @@ export function AdvancedToolbar({
         <div className="flex items-center gap-1">
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleBold().run()}
-            isActive={editor.isActive('bold')}
+            isActive={isBold}
             icon={Bold}
             title="Bold (Cmd+B)"
           />
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleItalic().run()}
-            isActive={editor.isActive('italic')}
+            isActive={isItalic}
             icon={Italic}
             title="Italic (Cmd+I)"
           />
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleUnderline().run()}
-            isActive={editor.isActive('underline')}
+            isActive={isUnderline}
             icon={UnderlineIcon}
             title="Underline (Cmd+U)"
           />
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleStrike().run()}
-            isActive={editor.isActive('strike')}
+            isActive={isStrike}
             icon={Strikethrough}
             title="Strikethrough"
           />
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleSuperscript().run()}
-            isActive={editor.isActive('superscript')}
+            isActive={isSuperscript}
             icon={Superscript}
             title="Superscript"
           />
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleSubscript().run()}
-            isActive={editor.isActive('subscript')}
+            isActive={isSubscript}
             icon={Subscript}
             title="Subscript"
           />
@@ -409,25 +539,25 @@ export function AdvancedToolbar({
         <div className="flex items-center gap-1">
           <ToolbarButton
             onClick={() => editor.chain().focus().setTextAlign('left').run()}
-            isActive={editor.isActive({ textAlign: 'left' })}
+            isActive={textAlign === 'left'}
             icon={AlignLeft}
             title="Align Left"
           />
           <ToolbarButton
             onClick={() => editor.chain().focus().setTextAlign('center').run()}
-            isActive={editor.isActive({ textAlign: 'center' })}
+            isActive={textAlign === 'center'}
             icon={AlignCenter}
             title="Align Center"
           />
           <ToolbarButton
             onClick={() => editor.chain().focus().setTextAlign('right').run()}
-            isActive={editor.isActive({ textAlign: 'right' })}
+            isActive={textAlign === 'right'}
             icon={AlignRight}
             title="Align Right"
           />
           <ToolbarButton
             onClick={() => editor.chain().focus().setTextAlign('justify').run()}
-            isActive={editor.isActive({ textAlign: 'justify' })}
+            isActive={textAlign === 'justify'}
             icon={AlignJustify}
             title="Justify"
           />
@@ -460,19 +590,19 @@ export function AdvancedToolbar({
         <div className="flex items-center gap-1">
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleBulletList().run()}
-            isActive={editor.isActive('bulletList')}
+            isActive={isBulletList}
             icon={List}
             title="Bullet List"
           />
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleOrderedList().run()}
-            isActive={editor.isActive('orderedList')}
+            isActive={isOrderedList}
             icon={ListOrdered}
             title="Numbered List"
           />
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleTaskList().run()}
-            isActive={editor.isActive('taskList')}
+            isActive={isTaskList}
             icon={ListTodo}
             title="Task List"
           />
@@ -491,13 +621,13 @@ export function AdvancedToolbar({
         <div className="flex items-center gap-1">
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleBlockquote().run()}
-            isActive={editor.isActive('blockquote')}
+            isActive={isBlockquote}
             icon={Quote}
             title="Quote"
           />
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-            isActive={editor.isActive('codeBlock')}
+            isActive={isCodeBlock}
             icon={Code}
             title="Code Block"
           />
@@ -543,7 +673,7 @@ export function AdvancedToolbar({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        {editor.isActive('table') && (
+        {isTable && (
           <>
             <Separator orientation="vertical" className="h-6 mx-1" />
             <DropdownMenu>

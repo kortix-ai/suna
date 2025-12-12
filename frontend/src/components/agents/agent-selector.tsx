@@ -29,7 +29,7 @@ interface AgentSelectorProps {
 export const AgentSelector: React.FC<AgentSelectorProps> = ({
   selectedAgentId,
   onAgentSelect,
-  placeholder = "Choose an agent",
+  placeholder = "Choose a Worker",
   className,
   disabled = false,
   showCreateOption = true,

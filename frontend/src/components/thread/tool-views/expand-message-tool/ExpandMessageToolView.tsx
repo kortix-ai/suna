@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import Markdown from 'react-markdown';
+import { UnifiedMarkdown } from '@/components/markdown';
 
 export function ExpandMessageToolView({
   toolCall,
@@ -88,7 +88,7 @@ export function ExpandMessageToolView({
   };
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
+    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
@@ -147,9 +147,7 @@ export function ExpandMessageToolView({
             {/* Expanded Message Content - Simple display */}
             {message ? (
               <div className="bg-muted/30 rounded-lg p-4 border border-border overflow-hidden">
-                <div className="prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 break-words overflow-wrap-anywhere [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_code]:break-words">
-                  <Markdown>{message}</Markdown>
-                </div>
+                <UnifiedMarkdown content={message} />
               </div>
             ) : !isStreaming ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">

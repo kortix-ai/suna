@@ -1,11 +1,11 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { useLanguage } from '@/contexts';
-import { AudioLines, CornerDownLeft, Paperclip, X, Image, Presentation, Table2, FileText, Users, Search, Loader2, Square } from 'lucide-react-native';
+import { AudioLines, CornerDownLeft, Paperclip, X, Loader2 } from 'lucide-react-native';
 import { StopIcon } from '@/components/ui/StopIcon';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Keyboard, Pressable, ScrollView, TextInput, View, ViewStyle, type ViewProps, type NativeSyntheticEvent, type TextInputContentSizeChangeEventData } from 'react-native';
+import { Keyboard, Pressable, ScrollView, TextInput, View, ViewStyle, type ViewProps, type NativeSyntheticEvent, type TextInputContentSizeChangeEventData, type TextInputSelectionChangeEventData } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -17,6 +17,7 @@ import type { Attachment } from '@/hooks/useChat';
 import { AgentSelector } from '../agents/AgentSelector';
 import { AudioWaveform } from '../attachments/AudioWaveform';
 import type { Agent } from '@/api/types';
+import { MarkdownToolbar, insertMarkdownFormat, type MarkdownFormat } from './MarkdownToolbar';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
@@ -62,15 +63,6 @@ const formatDuration = (seconds: number): string => {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
-// Quick action icon mapping - defined outside component
-const QUICK_ACTION_ICONS: Record<string, typeof Image> = {
-  image: Image,
-  slides: Presentation,
-  data: Table2,
-  docs: FileText,
-  people: Users,
-  research: Search,
-};
 
 /**
  * ChatInput Component
@@ -118,6 +110,8 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   // State
   const [contentHeight, setContentHeight] = React.useState(0);
+  const [isFocused, setIsFocused] = React.useState(false);
+  const [selection, setSelection] = React.useState({ start: 0, end: 0 });
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
 
@@ -128,8 +122,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   // Allow input to be editable during streaming - only disable when sending or transcribing
   const isDisabled = isSendingMessage || isTranscribing;
 
-  // Get quick action icon
-  const QuickActionIcon = selectedQuickAction ? QUICK_ACTION_ICONS[selectedQuickAction] : null;
 
   // Memoized placeholder
   const effectivePlaceholder = React.useMemo(
@@ -269,12 +261,12 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
       onCancelRecording?.();
       return;
     }
-    
+
     if (!onSendAudio) {
       console.error('❌ onSendAudio handler is not provided');
       return;
     }
-    
+
     try {
       console.log('📤 ChatInput: Calling onSendAudio handler');
       await onSendAudio();
@@ -302,11 +294,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     }
   }, [isAgentRunning, isRecording, hasContent, isAuthenticated, t, onStopAgentRun, handleSendAudioMessage, handleSendMessage, onAudioRecord]);
 
-  // Clear quick action handler
-  const handleClearQuickAction = React.useCallback(() => {
-    onClearQuickAction?.();
-  }, [onClearQuickAction]);
-
   // Content size change handler - debounced via ref comparison
   const handleContentSizeChange = React.useCallback(
     (e: NativeSyntheticEvent<TextInputContentSizeChangeEventData>) => {
@@ -318,6 +305,48 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
       }
     },
     []
+  );
+
+  // Selection change handler to track cursor position
+  const handleSelectionChange = React.useCallback(
+    (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+      setSelection(e.nativeEvent.selection);
+    },
+    []
+  );
+
+  // Focus/blur handlers
+  const handleFocus = React.useCallback(() => {
+    if (!isAuthenticated) {
+      textInputRef.current?.blur();
+      return;
+    }
+    setIsFocused(true);
+  }, [isAuthenticated]);
+
+  const handleBlur = React.useCallback(() => {
+    // Delay hiding toolbar to allow button press to register
+    setTimeout(() => setIsFocused(false), 150);
+  }, []);
+
+  // Markdown format handler
+  const handleMarkdownFormat = React.useCallback(
+    (format: MarkdownFormat, extra?: string) => {
+      const currentText = value || '';
+      const { newText, newCursorPosition, newSelectionEnd } = insertMarkdownFormat(
+        currentText,
+        selection.start,
+        selection.end,
+        format,
+        extra
+      );
+      onChangeText?.(newText);
+      // Update selection
+      setSelection({ start: newCursorPosition, end: newSelectionEnd });
+      // Refocus the input
+      textInputRef.current?.focus();
+    },
+    [value, selection, onChangeText]
   );
 
   // Memoized container style
@@ -334,7 +363,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   // Determine button icon
   const ButtonIcon = React.useMemo(() => {
-    if (isAgentRunning) return Square;
+    if (isAgentRunning) return StopIcon;
     if (hasContent) return CornerDownLeft;
     return AudioLines;
   }, [isAgentRunning, hasContent]);
@@ -377,9 +406,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
             onAttachPressIn={handleAttachPressIn}
             onAttachPressOut={handleAttachPressOut}
             onAttachPress={onAttachPress}
-            selectedQuickAction={selectedQuickAction}
-            QuickActionIcon={QuickActionIcon}
-            onClearQuickAction={handleClearQuickAction}
             onAgentPress={onAgentPress}
             sendAnimatedStyle={sendAnimatedStyle}
             rotationAnimatedStyle={rotationAnimatedStyle}
@@ -393,7 +419,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
             buttonIconSize={buttonIconSize}
             buttonIconClass={buttonIconClass}
             isAuthenticated={isAuthenticated}
-            t={t}
           />
         )}
       </View>
@@ -477,9 +502,6 @@ interface NormalModeProps {
   onAttachPressIn: () => void;
   onAttachPressOut: () => void;
   onAttachPress?: () => void;
-  selectedQuickAction?: string | null;
-  QuickActionIcon: typeof Image | null;
-  onClearQuickAction: () => void;
   onAgentPress?: () => void;
   sendAnimatedStyle: any;
   rotationAnimatedStyle: any;
@@ -489,11 +511,10 @@ interface NormalModeProps {
   isSendingMessage: boolean;
   isTranscribing: boolean;
   isAgentRunning: boolean;
-  ButtonIcon: typeof Square | typeof CornerDownLeft | typeof AudioLines;
+  ButtonIcon: React.ComponentType<any>;
   buttonIconSize: number;
   buttonIconClass: string;
   isAuthenticated: boolean;
-  t: (key: string) => string;
 }
 
 const NormalMode = React.memo(({
@@ -509,9 +530,6 @@ const NormalMode = React.memo(({
   onAttachPressIn,
   onAttachPressOut,
   onAttachPress,
-  selectedQuickAction,
-  QuickActionIcon,
-  onClearQuickAction,
   onAgentPress,
   sendAnimatedStyle,
   rotationAnimatedStyle,
@@ -525,7 +543,6 @@ const NormalMode = React.memo(({
   buttonIconSize,
   buttonIconClass,
   isAuthenticated,
-  t,
 }: NormalModeProps) => (
   <>
     <View className="flex-1 mb-12">
@@ -572,22 +589,12 @@ const NormalMode = React.memo(({
         >
           <Icon as={Paperclip} size={16} className="text-foreground" />
         </AnimatedPressable>
-
-        {selectedQuickAction && QuickActionIcon && (
-          <Pressable
-            onPress={onClearQuickAction}
-            className="bg-primary/5 rounded-full flex-row items-center h-10 px-3 active:opacity-70"
-          >
-            <Icon as={QuickActionIcon} size={16} className="text-primary mr-1.5" strokeWidth={2} />
-            <Icon as={X} size={14} className="text-primary" strokeWidth={2} />
-          </Pressable>
-        )}
       </View>
 
       <View className="flex-row items-center gap-2">
-        <AgentSelector 
-          onPress={onAgentPress} 
-          compact={false} 
+        <AgentSelector
+          onPress={onAgentPress}
+          compact={false}
         />
 
         <AnimatedPressable
@@ -603,7 +610,11 @@ const NormalMode = React.memo(({
               <Icon as={Loader2} size={16} className="text-primary-foreground" strokeWidth={2} />
             </AnimatedView>
           ) : (
-            <Icon as={ButtonIcon} size={buttonIconSize} className={buttonIconClass} strokeWidth={2} />
+            ButtonIcon === StopIcon ? (
+              <StopIcon size={buttonIconSize} className={buttonIconClass} />
+            ) : (
+              <Icon as={ButtonIcon as any} size={buttonIconSize} className={buttonIconClass} strokeWidth={2} />
+            )
           )}
         </AnimatedPressable>
       </View>

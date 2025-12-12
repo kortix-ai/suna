@@ -1,0 +1,68 @@
+name: TestFlight Builds
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to build'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - ios
+          - android
+          - all
+
+permissions:
+  contents: read
+
+jobs:
+  build-testflight:
+    name: Build TestFlight
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Setup EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        working-directory: apps/mobile
+        run: npm install
+
+      - name: Build iOS TestFlight
+        if: github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all'
+        working-directory: apps/mobile
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: https://heprlhlltebrxydgtsjs.supabase.co
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlcHJsaGxsdGVicnh5ZGd0c2pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxODcxNjQsImV4cCI6MjA2MDc2MzE2NH0.YRo1iZw06YSxqBhotBnD1d5jZxw7hHwswe1wKp8VpfA
+          EXPO_PUBLIC_BACKEND_URL: https://staging-api.suna.so/v1
+          EXPO_PUBLIC_USE_REVENUECAT: 'true'
+          EXPO_PUBLIC_REVENUECAT_IOS_API_KEY: appl_UpcFYduOZYUgSqKPNvtzgXkPCeh
+          EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY: incoming
+        run: |
+          eas build --profile testflight --platform ios --auto-submit --non-interactive --no-wait
+
+      - name: Build Android TestFlight
+        if: github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all'
+        working-directory: apps/mobile
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: https://heprlhlltebrxydgtsjs.supabase.co
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlcHJsaGxsdGVicnh5ZGd0c2pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxODcxNjQsImV4cCI6MjA2MDc2MzE2NH0.YRo1iZw06YSxqBhotBnD1d5jZxw7hHwswe1wKp8VpfA
+          EXPO_PUBLIC_BACKEND_URL: https://staging-api.suna.so/v1
+          EXPO_PUBLIC_USE_REVENUECAT: 'true'
+          EXPO_PUBLIC_REVENUECAT_IOS_API_KEY: appl_UpcFYduOZYUgSqKPNvtzgXkPCeh
+          EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY: incoming
+        run: |
+          eas build --profile testflight --platform android --auto-submit --non-interactive --no-wait

@@ -76,7 +76,7 @@ export const useExportAgent = () => {
     },
     onError: (error: any) => {
       console.error('Export error:', error);
-      toast.error(error?.message || "Failed to export agent");
+      toast.error(error?.message || "Failed to export Worker");
     },
   });
 };
@@ -120,7 +120,7 @@ export const useImportAgent = () => {
     },
     onError: (error: any) => {
       console.error('Import error:', error);
-      toast.error(error?.message || "Failed to import agent");
+      toast.error(error?.message || "Failed to import Worker");
     },
   });
 };

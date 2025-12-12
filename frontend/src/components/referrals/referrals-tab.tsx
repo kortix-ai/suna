@@ -14,7 +14,7 @@ export function ReferralsTab() {
   const { data: stats, isLoading: statsLoading } = useReferralStats();
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 min-w-0 max-w-full overflow-x-hidden">
+    <div className="p-4 sm:p-6 space-y-6 overflow-y-auto max-h-[85vh] sm:max-h-none">
       {/* Header */}
       <div className="flex flex-col items-center text-center mb-4 sm:mb-6">
         <div className="mb-2 sm:mb-4 p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-muted/50">

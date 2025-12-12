@@ -105,10 +105,10 @@ export function ShowCaseSection() {
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
                 <div className="text-center mb-8 sm:mb-12 md:mb-16">
-                    <h1 className="text-2xl sm:text-3xl md:text-[43px] font-medium leading-tight mb-3 sm:mb-4">
+                    <h1 className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium tracking-tighter text-balance text-center mb-3 sm:mb-4">
                         {t('title')}
                     </h1>
-                    <h2 className="text-sm sm:text-base md:text-lg max-w-3xl mx-auto block text-muted-foreground font-normal px-2">
+                    <h2 className="text-[15px] max-w-3xl mx-auto block text-muted-foreground font-normal px-2">
                         {t('subtitle')}
                     </h2>
                 </div>
@@ -134,7 +134,7 @@ export function ShowCaseSection() {
                                         />
 
                                         {/* Title */}
-                                        <h3 className="text-xl sm:text-2xl md:text-[32px] font-semibold leading-tight">
+                                        <h3 className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium tracking-tighter text-balance">
                                             {worker.title}
                                         </h3>
 
@@ -174,18 +174,18 @@ export function ShowCaseSection() {
                                 <div className="relative">
                                     <Card className="overflow-hidden transition-all duration-300 !p-0 h-full !rounded-[16px] sm:!rounded-[24px] flex flex-col !border-0 !gap-0">
                                         {/* Computer header */}
-                                        <div className="bg-black text-white px-3 sm:px-4 flex items-center justify-between flex-shrink-0 h-[50px] sm:h-[65px]">
+                                        <div className="bg-background text-foreground px-3 sm:px-4 flex items-center justify-between flex-shrink-0 h-[50px] sm:h-[65px]">
                                             <div className="flex items-center gap-2">
-                                                <KortixLogo size={14} className="invert sm:hidden" />
-                                                <KortixLogo size={16} className="invert hidden sm:block" />
+                                                <KortixLogo size={14} className="sm:hidden opacity-50" />
+                                                <KortixLogo size={14} className="hidden sm:block opacity-50" />
                                                 <span className="text-base sm:text-xl font-medium">
                                                     {t('kortixComputer')}
                                                 </span>
                                             </div>
-                                            <div className="flex items-center gap-1.5">
+                                            <Badge variant="outline" className="flex items-center gap-1.5 px-2 py-0.5 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400">
                                                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                                                <span className="text-[10px] sm:text-xs text-green-500 font-medium">{t('running')}</span>
-                                            </div>
+                                                <span className="text-[10px] sm:text-xs font-medium">{t('running')}</span>
+                                            </Badge>
                                         </div>
 
                                         {/* Preview Image */}
@@ -195,13 +195,16 @@ export function ShowCaseSection() {
                                                 alt={worker.imageAlt}
                                                 fill
                                                 className="object-cover"
+                                                quality={100}
                                                 priority={worker.id === workers[0].id}
+                                                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                                                unoptimized={true}
                                             />
                                         </div>
 
                                         {/* Footer with file type */}
-                                        <div className="bg-black text-white px-3 sm:px-4 flex items-center flex-shrink-0 h-[50px] sm:h-[71px]">
-                                            <Badge variant="outline" className="text-[10px] sm:text-xs font-mono gap-1 sm:gap-1.5 border-white/20 text-white">
+                                        <div className="bg-background text-foreground px-3 sm:px-4 flex items-center flex-shrink-0 h-[50px] sm:h-[71px]">
+                                            <Badge variant="outline" className="text-[10px] sm:text-xs font-mono gap-1 sm:gap-1.5">
                                                 <svg
                                                     className="w-2.5 h-2.5 sm:w-3 sm:h-3"
                                                     viewBox="0 0 16 16"

@@ -144,7 +144,7 @@ export const useCreateAgent = () => {
         return; // Billing error was handled (pricing modal opened)
       }
       console.error('Error creating agent:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to create agent');
+      toast.error(error instanceof Error ? error.message : 'Failed to create Worker');
     },
   });
 };
@@ -226,7 +226,7 @@ export const useDeleteAgent = () => {
           queryClient.setQueryData(queryKey, data);
         });
       }
-      toast.error('Failed to delete agent. Please try again.');
+      toast.error('Failed to delete Worker. Please try again.');
     },
     onSuccess: (_, agentId) => {
       // Remove the individual agent query

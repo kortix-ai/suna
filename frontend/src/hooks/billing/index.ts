@@ -52,6 +52,9 @@ export { useThreadBilling } from './use-thread-billing';
 // Billing modal state
 export { useBillingModal } from './use-billing-modal';
 
+// Download restriction for free tier
+export { useDownloadRestriction } from './use-download-restriction';
+
 // Credit & Thread Usage analytics
 export { useCreditUsage } from './use-credit-usage';
 export { useThreadUsage } from './use-thread-usage';

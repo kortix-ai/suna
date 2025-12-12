@@ -2,6 +2,7 @@ import httpx
 import tempfile
 from pathlib import Path
 from typing import Optional
+from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
@@ -99,7 +100,12 @@ async def convert_and_upload_to_google_docs(
             
             filename = "document.docx" 
             content_disposition = convert_response.headers.get("Content-Disposition", "")
-            if "filename=" in content_disposition:
+            if "filename*=UTF-8''" in content_disposition:
+                # RFC5987 format: filename*=UTF-8''encoded_name
+                encoded_name = content_disposition.split("filename*=UTF-8''")[1].split(';')[0]
+                filename = unquote(encoded_name)
+            elif 'filename="' in content_disposition:
+                # Legacy format: filename="name"
                 filename = content_disposition.split('filename="')[1].split('"')[0]
         
         logger.info(f"DOCX conversion successful: {filename}")

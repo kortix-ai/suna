@@ -1,58 +1,33 @@
-import React, { useState, useEffect } from 'react';
-
-const TEXTS = ["Thinking", "Planning", "Strategising", "Analyzing", "Processing"];
-const TYPE_DELAY = 100;
-const ERASE_DELAY = 50;
-const PAUSE_DELAY = 1000;
+import React from 'react';
 
 export const AgentLoader = () => {
-  const [displayText, setDisplayText] = useState("");
-
-  useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
-    let currentTextIndex = 0;
-    let currentCharIndex = 0;
-
-    const type = () => {
-      const currentText = TEXTS[currentTextIndex];
-      if (currentCharIndex < currentText.length) {
-        setDisplayText(currentText.slice(0, currentCharIndex + 1));
-        currentCharIndex++;
-        timeoutId = setTimeout(type, TYPE_DELAY);
-      } else {
-        timeoutId = setTimeout(() => {
-          currentCharIndex = currentText.length;
-          erase();
-        }, PAUSE_DELAY);
-      }
-    };
-
-    const erase = () => {
-      const currentText = TEXTS[currentTextIndex];
-      if (currentCharIndex > 0) {
-        currentCharIndex--;
-        setDisplayText(currentText.slice(0, currentCharIndex));
-        timeoutId = setTimeout(erase, ERASE_DELAY);
-      } else {
-        currentTextIndex = (currentTextIndex + 1) % TEXTS.length;
-        currentCharIndex = 0;
-        timeoutId = setTimeout(type, TYPE_DELAY);
-      }
-    };
-
-    type();
-
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, []);
-
   return (
     <div className="flex py-2 items-center w-full">
-      <span className="text-xs text-muted-foreground whitespace-nowrap">
-        {displayText}
-        <span className="animate-pulse">|</span>
+      <span className="text-sm text-muted-foreground whitespace-nowrap animate-shimmer-text">
+        Thinking
       </span>
+      <style jsx>{`
+        .animate-shimmer-text {
+          font-size: 14px;
+          background: linear-gradient(
+            90deg,
+            currentColor 0%,
+            currentColor 40%,
+            rgba(128, 128, 128, 0.5) 50%,
+            currentColor 60%,
+            currentColor 100%
+          );
+          background-size: 200% 100%;
+          -webkit-background-clip: text;
+          background-clip: text;
+          -webkit-text-fill-color: transparent;
+          animation: textShimmer 2s ease-in-out infinite;
+        }
+        @keyframes textShimmer {
+          0% { background-position: 100% 0; }
+          100% { background-position: -100% 0; }
+        }
+      `}</style>
     </div>
   );
 };

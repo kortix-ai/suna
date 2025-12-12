@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import {
     Dialog,
     DialogContent,
@@ -28,8 +29,18 @@ import {
     Smartphone,
     AppWindow,
     Users,
+    Key,
+    Camera,
+    Loader2,
+    Upload,
+    Brain,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { isLocalMode, isProductionMode } from '@/lib/config';
@@ -79,14 +90,16 @@ import {
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 import { getPlanName, getPlanIcon } from '../billing/plan-utils';
 import { TierBadge } from '../billing/tier-badge';
-import { siteConfig } from '@/lib/home';
+import { siteConfig } from '@/lib/site-config';
 import ThreadUsage from '@/components/billing/thread-usage';
 import { formatCredits } from '@/lib/utils/credit-formatter';
 import { LanguageSwitcher } from './language-switcher';
 import { useTranslations } from 'next-intl';
 import { ReferralsTab } from '@/components/referrals/referrals-tab';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { MemorySettings } from '@/components/memory/MemorySettings';
 
-type TabId = 'general' | 'plan' | 'billing' | 'usage' | 'env-manager' | 'knowledge-base' | 'integrations' | 'referrals';
+type TabId = 'general' | 'plan' | 'billing' | 'usage' | 'memory' | 'env-manager' | 'knowledge-base' | 'integrations' | 'api-keys' | 'referrals';
 
 interface Tab {
     id: TabId;
@@ -108,6 +121,7 @@ export function UserSettingsModal({
     defaultTab = 'general',
     returnUrl = typeof window !== 'undefined' ? window?.location?.href || '/' : '/',
 }: UserSettingsModalProps) {
+    const router = useRouter();
     const isMobile = useIsMobile();
     const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
     const [showPlanModal, setShowPlanModal] = useState(false);
@@ -118,9 +132,11 @@ export function UserSettingsModal({
         { id: 'plan', label: 'Plan', icon: Zap },
         { id: 'billing', label: 'Billing', icon: CreditCard },
         { id: 'usage', label: 'Usage', icon: TrendingDown },
+        { id: 'memory', label: 'Memory', icon: Brain },
         ...(!isProduction ? [{ id: 'referrals' as TabId, label: 'Referrals', icon: Users }] : []),
         { id: 'knowledge-base', label: 'Knowledge Base', icon: FileText },
         { id: 'integrations', label: 'Integrations', icon: Plug },
+        { id: 'api-keys', label: 'API Keys', icon: Key },
         ...(isLocal ? [{ id: 'env-manager' as TabId, label: 'Env Manager', icon: KeyRound }] : []),
     ];
     
@@ -132,9 +148,15 @@ export function UserSettingsModal({
         if (tabId === 'plan') {
             setShowPlanModal(true);
         } else if (tabId === 'knowledge-base') {
-            window.open('/knowledge', '_blank');
+            // Close modal first for instant feel, then navigate
+            onOpenChange(false);
+            router.push('/knowledge');
         } else if (tabId === 'integrations') {
-            window.open('/settings/credentials', '_blank');
+            onOpenChange(false);
+            router.push('/settings/credentials');
+        } else if (tabId === 'api-keys') {
+            onOpenChange(false);
+            router.push('/settings/api-keys');
         } else {
             setActiveTab(tabId);
         }
@@ -204,10 +226,9 @@ export function UserSettingsModal({
                                 {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
                                 {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} onOpenPlanModal={() => setShowPlanModal(true)} isActive={activeTab === 'billing'} />}
                                 {activeTab === 'usage' && <UsageTab />}
+                                {activeTab === 'memory' && <MemorySettings />}
                                 {activeTab === 'referrals' && <ReferralsTab />}
                                 {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
-                                {activeTab === 'knowledge-base' && <KnowledgeBaseTab />}
-                                {activeTab === 'integrations' && <IntegrationsTab />}
                             </div>
                         </div>
                     </div>
@@ -258,10 +279,9 @@ export function UserSettingsModal({
                             {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
                             {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} onOpenPlanModal={() => setShowPlanModal(true)} isActive={activeTab === 'billing'} />}
                             {activeTab === 'usage' && <UsageTab />}
+                            {activeTab === 'memory' && <MemorySettings />}
                             {activeTab === 'referrals' && <ReferralsTab />}
                             {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
-                            {activeTab === 'knowledge-base' && <KnowledgeBaseTab />}
-                            {activeTab === 'integrations' && <IntegrationsTab />}
                         </div>
                     </div>
                 )}
@@ -283,12 +303,17 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     const tCommon = useTranslations('common');
     const [userName, setUserName] = useState('');
     const [userEmail, setUserEmail] = useState('');
+    const [avatarUrl, setAvatarUrl] = useState('');
+    const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+    const [avatarFile, setAvatarFile] = useState<File | null>(null);
+    const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [showCancelDialog, setShowCancelDialog] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [deletionType, setDeletionType] = useState<'grace-period' | 'immediate'>('grace-period');
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const supabase = createClient();
     const queryClient = useQueryClient();
 
@@ -304,6 +329,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
             if (data.user) {
                 setUserName(data.user.user_metadata?.name || data.user.email?.split('@')[0] || '');
                 setUserEmail(data.user.email || '');
+                setAvatarUrl(data.user.user_metadata?.avatar_url || '');
             }
             setIsLoading(false);
         };
@@ -311,14 +337,103 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
         fetchUserData();
     }, []);
 
+    const getInitials = (name: string) => {
+        return name
+            .split(' ')
+            .map(part => part[0])
+            .join('')
+            .toUpperCase()
+            .slice(0, 2) || 'U';
+    };
+
+    const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            // Validate file type
+            if (!file.type.startsWith('image/')) {
+                toast.error(t('profilePicture.invalidType'));
+                return;
+            }
+            // Validate file size (max 5MB)
+            if (file.size > 5 * 1024 * 1024) {
+                toast.error(t('profilePicture.tooLarge'));
+                return;
+            }
+            setAvatarFile(file);
+            const previewUrl = URL.createObjectURL(file);
+            setAvatarPreview(previewUrl);
+        }
+    };
+
+    const uploadAvatar = async (userId: string): Promise<string | null> => {
+        if (!avatarFile) return avatarUrl;
+
+        setIsUploadingAvatar(true);
+        try {
+            const fileExt = avatarFile.name.split('.').pop();
+            const fileName = `${userId}-${Date.now()}.${fileExt}`;
+
+            // Upload to Supabase Storage
+            const { error: uploadError } = await supabase.storage
+                .from('avatars')
+                .upload(fileName, avatarFile, {
+                    cacheControl: '3600',
+                    upsert: true,
+                });
+
+            if (uploadError) {
+                console.error('Upload error:', uploadError);
+                throw uploadError;
+            }
+
+            // Get public URL
+            const { data: { publicUrl } } = supabase.storage
+                .from('avatars')
+                .getPublicUrl(fileName);
+
+            return publicUrl;
+        } catch (error) {
+            console.error('Avatar upload failed:', error);
+            toast.error(t('profilePicture.uploadFailed'));
+            return null;
+        } finally {
+            setIsUploadingAvatar(false);
+        }
+    };
+
     const handleSave = async () => {
         setIsSaving(true);
         try {
+            const { data: userData } = await supabase.auth.getUser();
+            const userId = userData.user?.id;
+            
+            if (!userId) throw new Error('User not found');
+
+            // Upload avatar if a new one was selected
+            let newAvatarUrl = avatarUrl;
+            if (avatarFile) {
+                const uploadedUrl = await uploadAvatar(userId);
+                if (uploadedUrl) {
+                    newAvatarUrl = uploadedUrl;
+                }
+            }
+
             const { data, error } = await supabase.auth.updateUser({
-                data: { name: userName }
+                data: { 
+                    name: userName,
+                    avatar_url: newAvatarUrl,
+                }
             });
 
             if (error) throw error;
+
+            // Clean up preview URL
+            if (avatarPreview) {
+                URL.revokeObjectURL(avatarPreview);
+                setAvatarPreview(null);
+            }
+            setAvatarFile(null);
+            setAvatarUrl(newAvatarUrl);
 
             toast.success(t('profileUpdated'));
 
@@ -371,7 +486,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     }
 
     return (
-        <div className="p-4 sm:p-6 space-y-5 sm:space-y-6 min-w-0 max-w-full overflow-x-hidden">
+        <div className="p-4 sm:p-6 pb-12 sm:pb-6 space-y-5 sm:space-y-6 min-w-0 max-w-full overflow-x-hidden">
             <div>
                 <h3 className="text-lg font-semibold mb-1">{t('title')}</h3>
                 <p className="text-sm text-muted-foreground">
@@ -380,6 +495,58 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="space-y-4">
+                {/* Profile Picture Section */}
+                <div className="space-y-3">
+                    <Label>{t('profilePicture.title')}</Label>
+                    <div className="flex items-center gap-4">
+                        <div className="relative group">
+                            <Avatar className="h-16 w-16 border-2 border-border">
+                                <AvatarImage 
+                                    src={avatarPreview || avatarUrl} 
+                                    alt={userName} 
+                                />
+                                <AvatarFallback className="text-base bg-muted">
+                                    {getInitials(userName)}
+                                </AvatarFallback>
+                            </Avatar>
+                            <button
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={isUploadingAvatar}
+                                className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                            >
+                                {isUploadingAvatar ? (
+                                    <Loader2 className="h-5 w-5 text-white animate-spin" />
+                                ) : (
+                                    <Camera className="h-5 w-5 text-white" />
+                                )}
+                            </button>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*"
+                                onChange={handleAvatarChange}
+                                className="hidden"
+                            />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={isUploadingAvatar}
+                                className="w-full sm:w-auto"
+                            >
+                                <Upload className="h-4 w-4 mr-1.5" />
+                                {t('profilePicture.upload')}
+                            </Button>
+                            <p className="text-xs text-muted-foreground">
+                                {t('profilePicture.hint')}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
                 <div className="space-y-2">
                     <Label htmlFor="name">{t('name')}</Label>
                     <Input
@@ -393,18 +560,22 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
 
                 <div className="space-y-2">
                     <Label htmlFor="email">{t('email')}</Label>
-                    <Input
-                        id="email"
-                        value={userEmail}
-                        disabled
-                        className="bg-muted/50 cursor-not-allowed shadow-none"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                        {t('emailCannotChange')}
-                    </p>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Input
+                                id="email"
+                                value={userEmail}
+                                disabled
+                                className="bg-muted/50 cursor-not-allowed shadow-none"
+                            />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            {t('emailCannotChange')}
+                        </TooltipContent>
+                    </Tooltip>
                 </div>
 
-                <div className="space-y-2 pt-4">
+                <div className="space-y-2">
                     <LanguageSwitcher />
                 </div>
             </div>
@@ -481,9 +652,9 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                             setDeletionType('grace-period');
                         }
                     }}>
-                        <DialogContent className="max-w-md">
+                        <DialogContent className="max-w-md max-h-[90vh] sm:max-h-[85vh] overflow-y-auto p-4 sm:p-6">
                             <DialogHeader>
-                                <DialogTitle>{t('deleteAccount.dialogTitle')}</DialogTitle>
+                                <DialogTitle className="text-base sm:text-lg">{t('deleteAccount.dialogTitle')}</DialogTitle>
                             </DialogHeader>
                             <div className="space-y-4">
                                 <Alert className={cn(
@@ -493,11 +664,11 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                         : "border-amber-500/30 bg-amber-500/5"
                                 )}>
                                     <AlertTriangle className={cn(
-                                        "h-4 w-4",
+                                        "h-4 w-4 flex-shrink-0",
                                         deletionType === 'immediate' ? "text-red-600" : "text-amber-600"
                                     )} />
                                     <AlertDescription>
-                                        <strong className="text-foreground">
+                                        <strong className="text-foreground text-sm sm:text-base">
                                             {deletionType === 'immediate' 
                                                 ? t('deleteAccount.warningImmediate')
                                                 : t('deleteAccount.warningGracePeriod')}
@@ -509,7 +680,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                     <p className="text-sm font-medium mb-2">
                                         {t('deleteAccount.whenDelete')}
                                     </p>
-                                    <ul className="text-sm text-muted-foreground space-y-1.5 pl-5 list-disc">
+                                    <ul className="text-xs sm:text-sm text-muted-foreground space-y-1.5 pl-4 sm:pl-5 list-disc">
                                         <li>{t('deleteAccount.agentsDeleted')}</li>
                                         <li>{t('deleteAccount.threadsDeleted')}</li>
                                         <li>{t('deleteAccount.credentialsRemoved')}</li>
@@ -522,26 +693,26 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                 </div>
 
                                 <div className="space-y-3">
-                                    <Label>{t('deleteAccount.chooseDeletionType')}</Label>
+                                    <Label className="text-sm">{t('deleteAccount.chooseDeletionType')}</Label>
                                     <RadioGroup value={deletionType} onValueChange={(value) => setDeletionType(value as 'grace-period' | 'immediate')}>
-                                        <div className="flex items-start space-x-2 space-y-0 rounded-md border p-4">
-                                            <RadioGroupItem value="grace-period" id="grace-period" className="mt-0.5" />
-                                            <div className="space-y-1 flex-1">
-                                                <Label htmlFor="grace-period" className="font-medium cursor-pointer">
+                                        <div className="flex items-start gap-2 sm:gap-3 rounded-md border p-3 sm:p-4">
+                                            <RadioGroupItem value="grace-period" id="grace-period" className="mt-0.5 flex-shrink-0" />
+                                            <div className="space-y-1 flex-1 min-w-0">
+                                                <Label htmlFor="grace-period" className="font-medium cursor-pointer text-sm sm:text-base block">
                                                     {t('deleteAccount.gracePeriodOption')}
                                                 </Label>
-                                                <p className="text-sm text-muted-foreground">
+                                                <p className="text-xs sm:text-sm text-muted-foreground">
                                                     {t('deleteAccount.gracePeriodDescription')}
                                                 </p>
                                             </div>
                                         </div>
-                                        <div className="flex items-start space-x-2 space-y-0 rounded-md border border-red-500/30 p-4">
-                                            <RadioGroupItem value="immediate" id="immediate" className="mt-0.5" />
-                                            <div className="space-y-1 flex-1">
-                                                <Label htmlFor="immediate" className="font-medium cursor-pointer text-red-600">
+                                        <div className="flex items-start gap-2 sm:gap-3 rounded-md border border-red-500/30 p-3 sm:p-4">
+                                            <RadioGroupItem value="immediate" id="immediate" className="mt-0.5 flex-shrink-0" />
+                                            <div className="space-y-1 flex-1 min-w-0">
+                                                <Label htmlFor="immediate" className="font-medium cursor-pointer text-sm sm:text-base text-red-600 block">
                                                     {t('deleteAccount.immediateOption')}
                                                 </Label>
-                                                <p className="text-sm text-muted-foreground">
+                                                <p className="text-xs sm:text-sm text-muted-foreground">
                                                     {t('deleteAccount.immediateDescription')}
                                                 </p>
                                             </div>
@@ -550,7 +721,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                 </div>
                                 
                                 <div className="space-y-2">
-                                    <Label htmlFor="delete-confirm">
+                                    <Label htmlFor="delete-confirm" className="text-sm">
                                         {t('deleteAccount.confirmText')}
                                     </Label>
                                     <Input
@@ -558,12 +729,12 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                         value={deleteConfirmText}
                                         onChange={(e) => setDeleteConfirmText(e.target.value)}
                                         placeholder={t('deleteAccount.confirmPlaceholder')}
-                                        className="shadow-none"
+                                        className="shadow-none text-sm sm:text-base"
                                         autoComplete="off"
                                     />
                                 </div>
                                 
-                                <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+                                <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-2">
                                     <Button variant="outline" onClick={() => {
                                         setShowDeleteDialog(false);
                                         setDeleteConfirmText('');
@@ -590,15 +761,15 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                     </Dialog>
 
                     <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
-                        <AlertDialogContent className="max-w-md">
+                        <AlertDialogContent className="max-w-md p-4 sm:p-6">
                             <AlertDialogHeader>
-                                <AlertDialogTitle>{t('deleteAccount.cancelDeletionTitle')}</AlertDialogTitle>
+                                <AlertDialogTitle className="text-base sm:text-lg">{t('deleteAccount.cancelDeletionTitle')}</AlertDialogTitle>
                             </AlertDialogHeader>
                             <div className="space-y-4">
-                                <p className="text-sm text-muted-foreground">
+                                <p className="text-xs sm:text-sm text-muted-foreground">
                                     {t('deleteAccount.cancelDeletionDescription')}
                                 </p>
-                                <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+                                <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-2">
                                     <Button variant="outline" onClick={() => setShowCancelDialog(false)} className="w-full sm:w-auto">
                                         {tCommon('back')}
                                     </Button>
@@ -1167,38 +1338,4 @@ function EnvManagerTab() {
     );
 }
 
-function KnowledgeBaseTab() {
-    useEffect(() => {
-        window.open('/knowledge', '_blank');
-    }, []);
-    
-    return (
-        <div className="p-4 sm:p-6 space-y-4 min-w-0 max-w-full overflow-x-hidden">
-            <div className="text-center py-8">
-                <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-semibold mb-2">Opening Knowledge Base</h3>
-                <p className="text-sm text-muted-foreground">
-                    Redirecting to Knowledge Base page...
-                </p>
-            </div>
-        </div>
-    );
-}
 
-function IntegrationsTab() {
-    useEffect(() => {
-        window.open('/settings/credentials', '_blank');
-    }, []);
-    
-    return (
-        <div className="p-4 sm:p-6 space-y-4 min-w-0 max-w-full overflow-x-hidden">
-            <div className="text-center py-8">
-                <Plug className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-semibold mb-2">Opening Integrations</h3>
-                <p className="text-sm text-muted-foreground">
-                    Redirecting to Integrations page...
-                </p>
-            </div>
-        </div>
-    );
-}

@@ -19,7 +19,65 @@ import time
     icon="Search",
     color="bg-green-100 dark:bg-green-800/50",
     weight=30,
-    visible=True
+    visible=True,
+    usage_guide="""
+### WEB SEARCH & CONTENT EXTRACTION
+
+**WEB SEARCH CAPABILITIES:**
+- Search the web for up-to-date information with direct question answering
+- **BATCH SEARCHING:** Execute multiple queries concurrently for faster research - provide an array of queries to search multiple topics simultaneously
+- Retrieve relevant images related to search queries
+- Get comprehensive search results with titles, URLs, and snippets
+- Find recent news, articles, and information beyond training data
+- Scrape webpage content for detailed information extraction when needed
+
+**RESEARCH BEST PRACTICES:**
+1. **Multi-source approach for thorough research:**
+   - Start with web-search using BATCH MODE (multiple queries concurrently) to find direct answers, images, and relevant URLs efficiently
+   - ALWAYS use `web_search(query=["query1", "query2", "query3"])` format when researching multiple aspects of a topic
+   - Only use scrape-webpage when you need detailed content not available in search results
+   - Only use browser tools when scrape-webpage fails or interaction is needed
+
+2. **Research Workflow:**
+   - **MANDATORY**: Use web-search in BATCH MODE with multiple queries for direct answers and URLs
+   - **CRITICAL**: When researching any topic with multiple dimensions, ALWAYS use batch mode
+   - **CORRECT FORMAT**: `web_search(query=["topic overview", "use cases", "pricing"], num_results=5)`
+   - **WRONG FORMAT**: Never use `query='["topic overview", "use cases"]'` (JSON string)
+   - Example: `web_search(query=["topic overview", "use cases", "pricing", "user demographics"], num_results=5)` runs all searches in parallel
+   - Only if you need specific details not found in search results: use scrape-webpage on specific URLs
+   - Only if scrape-webpage fails or interaction required: use browser automation tools
+
+**WEB SEARCH BEST PRACTICES:**
+- **BATCH SEARCHING FOR EFFICIENCY:** Use batch mode by providing an array of queries to execute multiple searches concurrently
+- **CRITICAL FORMAT REQUIREMENTS:**
+  * Single query: `web_search(query="Tesla news", num_results=5)`
+  * Batch queries: `web_search(query=["Tesla news", "Tesla stock", "Tesla products"], num_results=5)`
+  * The query parameter MUST be a native array, NOT a JSON string
+  * num_results MUST be an integer, NOT a string
+- **WHEN TO USE BATCH MODE:** Researching multiple related topics, gathering comprehensive information, parallel searches
+- **WHEN TO USE SINGLE QUERY MODE:** Simple focused searches, follow-up searches, iterative refinement
+- Use specific, targeted questions to get direct answers
+- Include key terms and contextual information in search queries
+- Filter search results by date when freshness is important
+- Review the direct answer, images, and search results
+- Analyze multiple search results to cross-validate information
+
+**CONTENT EXTRACTION DECISION TREE:**
+1. ALWAYS start with web-search using BATCH MODE to get direct answers and search results
+2. Only use scrape-webpage when you need complete article text beyond search snippets, structured data from specific pages, or lengthy documentation
+3. Never use scrape-webpage when web-search already answers the query or only basic facts are needed
+4. Only use browser tools if scrape-webpage fails or interaction is required
+
+**DATA FRESHNESS:**
+- Always check publication dates of search results
+- Prioritize recent sources for time-sensitive information
+- Use date filters to ensure information relevance
+- Provide timestamp context when sharing web search information
+- Specify date ranges when searching for time-sensitive topics
+
+**TIME CONTEXT FOR RESEARCH:**
+- CRITICAL: When searching for latest news or time-sensitive information, ALWAYS use the current date/time values provided at runtime as reference points
+"""
 )
 class SandboxWebSearchTool(SandboxToolsBase):
     """Tool for performing web searches using Tavily API and web scraping using Firecrawl."""
@@ -45,7 +103,7 @@ class SandboxWebSearchTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Search the web for up-to-date information using the Tavily API. This tool supports both single and batch queries for efficient research. You can search for multiple topics simultaneously by providing an array of queries, which executes searches concurrently for faster results. Use batch mode when researching multiple related topics, gathering comprehensive information, or performing parallel searches. Results include titles, URLs, publication dates, direct answers, and images. Use this tool for discovering relevant web pages before potentially crawling them for complete content.",
+            "description": "Search the web for up-to-date information using the Tavily API. IMPORTANT: For batch searches, pass query as a native array like [\"query1\", \"query2\"], NOT as a JSON string. For num_results, pass an integer like 5, NOT a string like \"5\". This tool supports both single and batch queries for efficient research. You can search for multiple topics simultaneously by providing an array of queries, which executes searches concurrently for faster results. Use batch mode when researching multiple related topics, gathering comprehensive information, or performing parallel searches. Results include titles, URLs, publication dates, direct answers, and images.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -53,21 +111,21 @@ class SandboxWebSearchTool(SandboxToolsBase):
                         "oneOf": [
                             {
                                 "type": "string",
-                                "description": "A single search query to find relevant web pages. Be specific and include key terms to improve search accuracy. For best results, use natural language questions or keyword combinations that precisely describe what you're looking for."
+                                "description": "A single search query to find relevant web pages. Be specific and include key terms to improve search accuracy. For best results, use natural language questions or keyword combinations that precisely describe what you're looking for. Example: \"Tesla latest news 2025\""
                             },
                             {
                                 "type": "array",
                                 "items": {
                                     "type": "string"
                                 },
-                                "description": "Multiple search queries to execute concurrently. Use this for batch searching when you need to research multiple related topics simultaneously. Each query will be processed in parallel for faster results. Example: [\"topic overview\", \"use cases\", \"user demographics\"]"
+                                "description": "Multiple search queries to execute concurrently. CRITICAL: Pass as a native array like [\"query1\", \"query2\", \"query3\"], NOT as a JSON string. Use this for batch searching when you need to research multiple related topics simultaneously. Each query will be processed in parallel for faster results. Example: [\"Tesla news\", \"Tesla stock price\", \"Tesla products\"]"
                             }
                         ],
-                        "description": "Either a single search query (string) or multiple queries (array of strings) to execute concurrently. Use batch mode (array) for faster research when investigating multiple aspects of a topic."
+                        "description": "Either a single search query (string) or multiple queries (NATIVE array of strings, NOT JSON string) to execute concurrently. For batch mode, use: query=[\"query1\", \"query2\"], NOT query='[\"query1\", \"query2\"]'"
                     },
                     "num_results": {
                         "type": "integer",
-                        "description": "The number of search results to return per query. Increase for more comprehensive research or decrease for focused, high-relevance results. Applies to each query when using batch mode.",
+                        "description": "The number of search results to return per query (1-50). MUST be a native integer like 5, NOT a string like \"5\". Increase for more comprehensive research or decrease for focused, high-relevance results. Applies to each query when using batch mode.",
                         "default": 5
                     }
                 },
@@ -102,11 +160,17 @@ class SandboxWebSearchTool(SandboxToolsBase):
             else:
                 num_results = 10
 
-            # Determine if this is a batch query or single query
+            if isinstance(query, str) and query.strip().startswith('['):
+                try:
+                    parsed_query = json.loads(query)
+                    if isinstance(parsed_query, list):
+                        query = parsed_query
+                except (json.JSONDecodeError, ValueError):
+                    pass
+            
             is_batch = isinstance(query, list)
             
             if is_batch:
-                # Batch mode: process multiple queries concurrently
                 if not query or len(query) == 0:
                     return self.fail_response("At least one search query is required in the batch.")
                 

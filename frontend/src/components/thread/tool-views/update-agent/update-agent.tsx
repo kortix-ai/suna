@@ -81,12 +81,12 @@ export function UpdateAgentToolView({
   const displayIconBackground = agent?.icon_background || icon_background;
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
+    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20">
-              <RefreshCw className="w-5 h-5 text-blue-500 dark:text-blue-400" />
+            <div className="relative p-2 rounded-lg border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700">
+              <RefreshCw className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
             <div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
@@ -269,7 +269,7 @@ export function UpdateAgentToolView({
           <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg m-4">
             <p className="text-sm text-red-800 dark:text-red-200 flex items-center gap-2">
               <AlertTriangle className="h-4 w-4" />
-              Failed to update agent. Please try again.
+              Failed to update Worker. Please try again.
             </p>
           </div>
         )}

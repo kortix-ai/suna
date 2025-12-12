@@ -1,14 +1,13 @@
 'use client';
-import { siteConfig } from '@/lib/home';
+import { siteConfig } from '@/lib/site-config';
 import { AnimatedBg } from '@/components/ui/animated-bg';
 import { useIsMobile } from '@/hooks/utils';
-import { useState, useEffect, useRef, FormEvent, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import { AgentRunLimitError, BillingError } from '@/lib/api/errors';
-import { useInitiateAgentMutation } from '@/hooks/dashboard/use-initiate-agent';
-import { useThreadQuery } from '@/hooks/threads/use-threads';
+import { AgentRunLimitError, BillingError, ProjectLimitError, ThreadLimitError } from '@/lib/api/errors';
+import { optimisticAgentStart } from '@/lib/api/agents';
 import {
     Dialog,
     DialogContent,
@@ -17,23 +16,19 @@ import {
     DialogTitle,
     DialogOverlay,
 } from '@/components/ui/dialog';
-import { isLocalMode, config, isStagingMode } from '@/lib/config';
+import { isLocalMode } from '@/lib/config';
 import { toast } from 'sonner';
 import { ChatInput, ChatInputHandles } from '@/components/thread/chat-input/chat-input';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { agentKeys } from '@/hooks/agents/keys';
 import { getAgents } from '@/hooks/agents/utils';
 import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { useAgentSelection } from '@/stores/agent-selection-store';
 import { useTranslations } from 'next-intl';
+import { usePricingModalStore } from '@/stores/pricing-modal-store';
 
-// Lazy load components only needed when dialogs are open
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
-const GitHubSignIn = lazy(() => import('@/components/GithubSignIn'));
-const PlanSelectionModal = lazy(() => 
-    import('@/components/billing/pricing').then(mod => ({ default: mod.PlanSelectionModal }))
-);
 const AgentRunLimitDialog = lazy(() => 
     import('@/components/thread/agent-run-limit-dialog').then(mod => ({ default: mod.AgentRunLimitDialog }))
 );
@@ -41,24 +36,21 @@ const SunaModesPanel = lazy(() =>
     import('@/components/dashboard/suna-modes-panel').then(mod => ({ default: mod.SunaModesPanel }))
 );
 
-// Custom dialog overlay with blur effect
 const BlurredDialogOverlay = () => (
     <DialogOverlay className="bg-background/40 backdrop-blur-md" />
 );
 
-// Constant for localStorage key to ensure consistency
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
-
-
 
 export function HeroSection() {
     const t = useTranslations('suna');
+    const tBilling = useTranslations('billing');
     const { hero } = siteConfig;
     const isMobile = useIsMobile();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [inputValue, setInputValue] = useState('');
+    const [memoryEnabled, setMemoryEnabled] = useState(true);
 
-    // Use centralized agent selection hook with persistence
     const {
         selectedAgentId,
         setSelectedAgent,
@@ -66,7 +58,6 @@ export function HeroSection() {
         getCurrentAgent
     } = useAgentSelection();
 
-    // Use centralized Suna modes persistence hook
     const {
         selectedMode,
         selectedCharts,
@@ -79,10 +70,8 @@ export function HeroSection() {
     } = useSunaModePersistence();
     const router = useRouter();
     const { user, isLoading } = useAuth();
-    const [showPaymentModal, setShowPaymentModal] = useState(false);
-    const initiateAgentMutation = useInitiateAgentMutation();
-    const [initiatedThreadId, setInitiatedThreadId] = useState<string | null>(null);
-    const threadQuery = useThreadQuery(initiatedThreadId || '');
+    const pricingModalStore = usePricingModalStore();
+    const queryClient = useQueryClient();
     const chatInputRef = useRef<ChatInputHandles>(null);
     const [showAgentLimitDialog, setShowAgentLimitDialog] = useState(false);
     const [agentLimitData, setAgentLimitData] = useState<{
@@ -90,7 +79,9 @@ export function HeroSection() {
         runningThreadIds: string[];
     } | null>(null);
 
-    // Fetch agents for selection
+    const prefetchedRouteRef = useRef<string | null>(null);
+    const prefetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
     const { data: agentsResponse } = useQuery({
         queryKey: agentKeys.list({
             limit: 100,
@@ -109,21 +100,17 @@ export function HeroSection() {
 
     const agents = agentsResponse?.agents || [];
 
-    // Initialize agent selection from agents list
     useEffect(() => {
         if (agents.length > 0) {
             initializeFromAgents(agents, undefined, setSelectedAgent);
         }
     }, [agents, initializeFromAgents, setSelectedAgent]);
 
-    // Determine if selected agent is Suna default
-    // For unauthenticated users, assume Suna is the default
     const selectedAgent = selectedAgentId
         ? agents.find(agent => agent.agent_id === selectedAgentId)
         : null;
     const isSunaAgent = !user || selectedAgent?.metadata?.is_suna_default || false;
 
-    // Auth dialog state
     const [authDialogOpen, setAuthDialogOpen] = useState(false);
 
     useEffect(() => {
@@ -140,87 +127,157 @@ export function HeroSection() {
     }, [user, isLoading, authDialogOpen, router]);
 
     useEffect(() => {
-        if (threadQuery.data && initiatedThreadId) {
-            const thread = threadQuery.data;
-            if (thread.project_id) {
-                router.push(`/projects/${thread.project_id}/thread/${initiatedThreadId}`);
-            } else {
-                router.push(`/agents/${initiatedThreadId}`);
-            }
-            setInitiatedThreadId(null);
-        }
-    }, [threadQuery.data, initiatedThreadId, router]);
+        const dummyProjectId = 'prefetch-project';
+        const dummyThreadId = 'prefetch-thread';
+        const routeToPrefetch = `/projects/${dummyProjectId}/thread/${dummyThreadId}`;
+        router.prefetch(routeToPrefetch);
+        prefetchedRouteRef.current = routeToPrefetch;
+    }, [router]);
 
-    // Handle ChatInput submission
+
+    useEffect(() => {
+        if (inputValue.trim() && !isSubmitting) {
+            if (prefetchTimeoutRef.current) {
+                clearTimeout(prefetchTimeoutRef.current);
+            }
+
+            prefetchTimeoutRef.current = setTimeout(() => {
+                const dummyProjectId = 'prefetch-project';
+                const dummyThreadId = 'prefetch-thread';
+                const routeToPrefetch = `/projects/${dummyProjectId}/thread/${dummyThreadId}`;
+                
+                if (prefetchedRouteRef.current !== routeToPrefetch) {
+                    router.prefetch(routeToPrefetch);
+                    prefetchedRouteRef.current = routeToPrefetch;
+                }
+            }, 300);
+        }
+
+        return () => {
+            if (prefetchTimeoutRef.current) {
+                clearTimeout(prefetchTimeoutRef.current);
+            }
+        };
+    }, [inputValue, isSubmitting, router]);
+
     const handleChatInputSubmit = async (
         message: string,
         options?: { model_name?: string; enable_thinking?: boolean }
     ) => {
         if ((!message.trim() && !chatInputRef.current?.getPendingFiles().length) || isSubmitting) return;
-
-        // If user is not logged in, save prompt and show auth dialog
         if (!user && !isLoading) {
             localStorage.setItem(PENDING_PROMPT_KEY, message.trim());
             setAuthDialogOpen(true);
             return;
         }
 
-        // User is logged in, create the agent with files like dashboard does
         setIsSubmitting(true);
         try {
             const files = chatInputRef.current?.getPendingFiles() || [];
             localStorage.removeItem(PENDING_PROMPT_KEY);
-
-            const formData = new FormData();
-            formData.append('prompt', message);
-
-            // Add selected agent if one is chosen
-            if (selectedAgentId) {
-                formData.append('agent_id', selectedAgentId);
-            }
-
-            // Add files if any
-            files.forEach((file) => {
+            
+            const normalizedFiles = files.map((file) => {
                 const normalizedName = normalizeFilenameToNFC(file.name);
-                formData.append('files', file, normalizedName);
+                return new File([file], normalizedName, { type: file.type });
             });
-
-            if (options?.model_name) formData.append('model_name', options.model_name);
-            formData.append('enable_thinking', String(options?.enable_thinking ?? false));
-            formData.append('reasoning_effort', 'low');
-            formData.append('stream', 'true');
-            formData.append('enable_context_manager', 'false');
-
-            const result = await initiateAgentMutation.mutateAsync(formData);
-
-            if (result.thread_id) {
-                setInitiatedThreadId(result.thread_id);
-            } else {
-                throw new Error('Agent initiation did not return a thread_id.');
-            }
-
+            
+            const threadId = crypto.randomUUID();
+            const projectId = crypto.randomUUID();
+            const trimmedMessage = message.trim();
+            
             chatInputRef.current?.clearPendingFiles();
             setInputValue('');
-        } catch (error: any) {
-            if (error instanceof BillingError) {
-                setShowPaymentModal(true);
-            } else if (error instanceof AgentRunLimitError) {
-                const { running_thread_ids, running_count } = error.detail;
-
-                setAgentLimitData({
-                    runningCount: running_count,
-                    runningThreadIds: running_thread_ids,
-                });
-                setShowAgentLimitDialog(true);
-            } else {
-                const isConnectionError =
-                    error instanceof TypeError &&
-                    error.message.includes('Failed to fetch');
-                if (!isLocalMode() || isConnectionError) {
-                    toast.error(
-                        error.message || 'Failed to create agent. Please try again.',
-                    );
+            
+            sessionStorage.setItem('optimistic_prompt', trimmedMessage);
+            sessionStorage.setItem('optimistic_thread', threadId);
+            
+            router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
+            
+            optimisticAgentStart({
+                thread_id: threadId,
+                project_id: projectId,
+                prompt: trimmedMessage,
+                files: normalizedFiles.length > 0 ? normalizedFiles : undefined,
+                model_name: options?.model_name,
+                agent_id: selectedAgentId || undefined,
+                memory_enabled: true,
+            }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['threads', 'list'] });
+                queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });
+            }).catch((error) => {
+                console.error('Background agent start failed:', error);
+                
+                if (error instanceof BillingError || error?.status === 402) {
+                    const errorMessage = error.detail?.message?.toLowerCase() || error.message?.toLowerCase() || '';
+                    const originalMessage = error.detail?.message || error.message || '';
+                    const isCreditsExhausted = 
+                        errorMessage.includes('credit') ||
+                        errorMessage.includes('balance') ||
+                        errorMessage.includes('insufficient') ||
+                        errorMessage.includes('out of credits') ||
+                        errorMessage.includes('no credits');
+                    
+                    const balanceMatch = originalMessage.match(/balance is (-?\d+)\s*credits/i);
+                    const balance = balanceMatch ? balanceMatch[1] : null;
+                    
+                    const alertTitle = isCreditsExhausted 
+                        ? 'You ran out of credits'
+                        : 'Pick the plan that works for you';
+                    
+                    const alertSubtitle = balance 
+                        ? `Your current balance is ${balance} credits. Upgrade your plan to continue.`
+                        : isCreditsExhausted 
+                            ? 'Upgrade your plan to get more credits and continue using the AI assistant.'
+                            : undefined;
+                    
+                    router.replace('/');
+                    pricingModalStore.openPricingModal({ 
+                        isAlert: true,
+                        alertTitle,
+                        alertSubtitle
+                    });
+                    return;
                 }
+                
+                if (error instanceof AgentRunLimitError) {
+                    const { running_thread_ids, running_count } = error.detail;
+                    router.replace('/');
+                    setAgentLimitData({
+                        runningCount: running_count,
+                        runningThreadIds: running_thread_ids,
+                    });
+                    setShowAgentLimitDialog(true);
+                    return;
+                }
+                
+                if (error instanceof ProjectLimitError) {
+                    router.replace('/');
+                    pricingModalStore.openPricingModal({ 
+                        isAlert: true,
+                        alertTitle: `${tBilling('reachedLimit')} ${tBilling('projectLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
+                    });
+                    return;
+                }
+                
+                if (error instanceof ThreadLimitError) {
+                    router.replace('/');
+                    pricingModalStore.openPricingModal({ 
+                        isAlert: true,
+                        alertTitle: `${tBilling('reachedLimit')} ${tBilling('threadLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
+                    });
+                    return;
+                }
+                
+                toast.error('Failed to start conversation');
+            });
+        } catch (error: any) {
+            const isConnectionError =
+                error instanceof TypeError &&
+                error.message.includes('Failed to fetch');
+            if (!isLocalMode() || isConnectionError) {
+                toast.error(
+                    error.message || 'Failed to create Worker. Please try again.',
+                );
             }
         } finally {
             setIsSubmitting(false);
@@ -229,17 +286,7 @@ export function HeroSection() {
 
     return (
         <section id="hero" className="w-full relative overflow-hidden">
-            {/* Lazy load payment modal - only needed on interaction */}
-            {showPaymentModal && (
-                <Suspense fallback={null}>
-                    <PlanSelectionModal
-                        open={showPaymentModal}
-                        onOpenChange={setShowPaymentModal}
-                    />
-                </Suspense>
-            )}
             <div className="relative flex flex-col items-center w-full px-4 sm:px-6 pb-8 sm:pb-10">
-                {/* Animated background */}
                 <AnimatedBg
                     variant="hero"
                     sizeMultiplier={isMobile ? 0.7 : 1}
@@ -303,12 +350,12 @@ export function HeroSection() {
                                     selectedCharts={selectedCharts}
                                     selectedOutputFormat={selectedOutputFormat}
                                     selectedTemplate={selectedTemplate}
+                                    memoryEnabled={memoryEnabled}
+                                    onMemoryToggle={setMemoryEnabled}
                                 />
                             </div>
                         </div>
                     </div>
-
-                    {/* Modes Panel - Below chat input, visible for Suna agent */}
                     {isSunaAgent && (
                         <div className="w-full max-w-3xl mx-auto mt-4 px-4 sm:px-0">
                             <Suspense fallback={<div className="h-24 animate-pulse bg-muted/10 rounded-lg" />}>
@@ -333,7 +380,6 @@ export function HeroSection() {
 
             </div>
 
-            {/* Auth Dialog */}
             <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
                 <BlurredDialogOverlay />
                 <DialogContent className="sm:max-w-md rounded-xl bg-background border border-border">
@@ -342,29 +388,18 @@ export function HeroSection() {
                             <DialogTitle className="text-xl font-medium">
                                 Sign in to continue
                             </DialogTitle>
-                            {/* <button 
-                onClick={() => setAuthDialogOpen(false)}
-                className="rounded-full p-1 hover:bg-muted transition-colors"
-              >
-                <X className="h-4 w-4 text-muted-foreground" />
-              </button> */}
                         </div>
                         <DialogDescription className="text-muted-foreground">
                             Sign in or create an account to talk with Kortix
                         </DialogDescription>
                     </DialogHeader>
 
-                    {/* OAuth Sign In */}
                     <div className="w-full space-y-3 mt-8">
                         <Suspense fallback={<div className="h-12 bg-muted/20 rounded-full animate-pulse" />}>
                             <GoogleSignIn returnUrl="/dashboard" />
                         </Suspense>
-                        <Suspense fallback={<div className="h-12 bg-muted/20 rounded-full animate-pulse" />}>
-                            <GitHubSignIn returnUrl="/dashboard" />
-                        </Suspense>
                     </div>
 
-                    {/* Divider */}
                     <div className="relative my-2">
                         <div className="absolute inset-0 flex items-center">
                             <div className="w-full border-t border-border"></div>
@@ -376,7 +411,6 @@ export function HeroSection() {
                         </div>
                     </div>
 
-                    {/* Sign in options */}
                     <div className="space-y-3">
                         <Link
                             href={`/auth?returnUrl=${encodeURIComponent('/dashboard')}`}
@@ -415,7 +449,7 @@ export function HeroSection() {
                         onOpenChange={setShowAgentLimitDialog}
                         runningCount={agentLimitData.runningCount}
                         runningThreadIds={agentLimitData.runningThreadIds}
-                        projectId={undefined} // Hero section doesn't have a specific project context
+                        projectId={undefined}
                     />
                 </Suspense>
             )}

@@ -18,6 +18,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useImageContent } from '@/hooks/files';
+import { useDownloadRestriction } from '@/hooks/billing';
 
 function SafeImage({ src, alt, filePath, className, sandboxId, project }: { 
   src: string; 
@@ -29,6 +30,11 @@ function SafeImage({ src, alt, filePath, className, sandboxId, project }: {
 }) {
   const [isZoomed, setIsZoomed] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
+  
+  // Download restriction for free tier users
+  const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
+    featureName: 'images',
+  });
   
   // Use our robust retry hook instead of custom fetch
   const {
@@ -65,6 +71,10 @@ function SafeImage({ src, alt, filePath, className, sandboxId, project }: {
 
   const handleDownload = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isDownloadRestricted) {
+      openUpgradeModal();
+      return;
+    }
     if (!finalImageUrl) return;
 
     const link = document.createElement('a');
@@ -258,11 +268,11 @@ export function SeeImageToolView({
 
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
+    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20 rounded-xl transition-colors border border-blue-200/50 dark:border-blue-800/30 text-blue-500 dark:text-blue-400">
+            <div className="relative p-2 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60 dark:shadow-zinc-950/20 rounded-xl transition-colors border border-zinc-200/50 dark:border-zinc-800/30 text-zinc-500 dark:text-zinc-400">
               {isClearTool ? (
                 <Trash2 className="w-5 h-5" />
               ) : (

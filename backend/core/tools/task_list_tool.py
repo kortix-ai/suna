@@ -28,9 +28,46 @@ class Task(BaseModel):
     icon="CheckSquare",
     color="bg-amber-100 dark:bg-amber-800/50",
     is_core=True,
+    usage_guide="""
+### TASK MANAGEMENT SYSTEM
+
+**WHEN TO CREATE TASK LISTS:**
+- **ALWAYS create for:** Research requests, content creation, multi-step processes, projects requiring planning
+- **Skip for:** Simple questions, quick one-step tasks
+
+**TASK CREATION RULES:**
+1. Create sections in lifecycle order: Research & Setup → Planning → Implementation → Verification → Completion
+2. Each task should be specific, actionable, and have clear completion criteria
+3. **EXECUTION ORDER:** Tasks must be created in the exact order they will be executed
+4. **PHASE-LEVEL TASKS:** For workflows like presentations, create PHASE-level tasks, not step-level tasks
+
+**CRITICAL EXECUTION ORDER RULES:**
+1. **SEQUENTIAL EXECUTION:** Execute tasks in exact order they appear
+2. **ONE TASK AT A TIME:** Never execute multiple tasks simultaneously
+3. **COMPLETE BEFORE MOVING:** Finish current task completely before starting next
+4. **NO SKIPPING:** Do not skip tasks or jump ahead
+5. **BATCH OPERATIONS WITHIN TASKS:** Use batch mode for searches within a single task
+
+**MULTI-STEP TASK EXECUTION - NO INTERRUPTIONS:**
+- Once a multi-step task starts, it MUST run all steps to completion
+- NEVER ask "should I proceed?" or "do you want me to continue?" during execution
+- The user approved by starting the task - no permission needed between steps
+- Only pause if there's an actual blocking error
+
+**TASK UPDATE EFFICIENCY:**
+- ALWAYS batch task status updates in a single call
+- Complete current task(s) AND start next task in SAME update call
+- Example: `update_tasks([{id: "task1", status: "completed"}, {id: "task2", status: "in_progress"}])`
+
+**COMPLETION SIGNAL:**
+- Once ALL tasks are marked complete, MUST call either 'complete' or 'ask' tool immediately
+- NO additional commands after completion
+- Failure to signal completion is a critical error
+""",
     weight=5,
     visible=True
 )
+
 class TaskListTool(SandboxToolsBase):
     """Task management system for organizing and tracking tasks. It contains the action plan for the agent to follow.
     

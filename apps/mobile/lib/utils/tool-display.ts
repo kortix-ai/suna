@@ -26,10 +26,15 @@ import {
   Presentation,
   ImageIcon,
   Pencil,
+  HammerIcon,
 } from 'lucide-react-native';
 
 export const getToolIcon = (toolName: string): LucideIcon => {
   switch (toolName?.toLowerCase()) {
+    case 'initialize-tools':
+    case 'initialize_tools':
+      return HammerIcon;
+
     case 'browser-navigate-to':
     case 'browser-act':
     case 'browser-extract-content':
@@ -182,8 +187,14 @@ export const getToolIcon = (toolName: string): LucideIcon => {
         return Search;
     
     case 'create-slide':
+    case 'create_slide':
       return Presentation;
-
+    case 'load-template-design':
+    case 'load_template_design':
+      return Presentation;
+    case 'validate-slide':
+    case 'validate_slide':
+      return Presentation;
 
     default:
       if (toolName?.startsWith('mcp_')) {
@@ -342,6 +353,13 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['create_slide', 'Creating Slide'],
 
   ['designer-create-or-edit', 'Designing'],
+
+  ['create-slide', 'Creating Slide'],
+  ['create_slide', 'Creating Slide'],
+  ['load-template-design', 'Loading Template Design'],
+  ['load_template_design', 'Loading Template Design'],
+  ['validate-slide', 'Validating Slide'],
+  ['validate_slide', 'Validating Slide'],
 ]);
 
 function formatMCPToolName(serverName: string, toolName: string): string {

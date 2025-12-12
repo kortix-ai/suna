@@ -1,5 +1,5 @@
 import { MetadataRoute } from 'next';
-import { siteConfig } from '@/lib/home';
+import { siteConfig } from '@/lib/site-config';
 import { locales } from '@/i18n/config';
 
 // Marketing pages that support locale routing for SEO

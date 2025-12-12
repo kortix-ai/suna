@@ -5,21 +5,40 @@ import { Icon } from '@/components/ui/icon';
 import {
     FileText,
     Presentation,
-    CheckCircle2,
-    AlertCircle,
-    Loader2,
     Download,
-    Info,
     Layers
 } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractExportData } from './_utils';
+import { ToolViewCard, StatusBadge, LoadingState } from '../shared';
+import { getToolMetadata } from '../tool-metadata';
+
+// Utility functions
+function formatTimestamp(isoString?: string): string {
+  if (!isoString) return '';
+  try {
+    const date = new Date(isoString);
+    return isNaN(date.getTime()) ? 'Invalid date' : date.toLocaleString();
+  } catch (e) {
+    return 'Invalid date';
+  }
+}
 
 export function ExportToolView({
     toolCall,
     toolResult,
-    isStreaming = false
+    isStreaming = false,
+    assistantTimestamp,
+    toolTimestamp,
 }: ToolViewProps) {
+    if (!toolCall) {
+      return null;
+    }
+
+    const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+    const toolMetadata = getToolMetadata(name, toolCall.arguments);
+    const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : true;
+
     const {
         presentationName,
         filePath,
@@ -37,32 +56,73 @@ export function ExportToolView({
 
     if (isStreaming) {
         return (
-            <View className="flex-1 items-center justify-center py-12 px-6">
-                <View className="bg-blue-500/10 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
-                    <Icon as={FormatIcon} size={40} className="text-blue-500 animate-pulse" />
-                </View>
-                <Text className="text-xl font-roobert-semibold text-foreground mb-2">
-                    Exporting to {formatLabel}
-                </Text>
-                {presentationName && (
-                    <Text className="text-sm font-roobert text-muted-foreground text-center">
-                        {presentationName}
-                    </Text>
-                )}
-            </View>
+            <ToolViewCard
+              header={{
+                icon: toolMetadata.icon,
+                iconColor: toolMetadata.iconColor,
+                iconBgColor: toolMetadata.iconBgColor,
+                subtitle: toolMetadata.subtitle.toUpperCase(),
+                title: toolMetadata.title,
+                isSuccess: actualIsSuccess,
+                isStreaming: true,
+                rightContent: <StatusBadge variant="streaming" label="Exporting" />,
+              }}
+            >
+              <View className="flex-1 w-full">
+                <LoadingState
+                  icon={toolMetadata.icon}
+                  iconColor={toolMetadata.iconColor}
+                  bgColor={toolMetadata.iconBgColor}
+                  title={`Exporting to ${formatLabel}`}
+                  filePath={presentationName || undefined}
+                  showProgress={false}
+                />
+              </View>
+            </ToolViewCard>
         );
     }
 
     return (
-        <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-            <View className="px-6 gap-6">
+        <ToolViewCard
+          header={{
+            icon: toolMetadata.icon,
+            iconColor: toolMetadata.iconColor,
+            iconBgColor: toolMetadata.iconBgColor,
+            subtitle: toolMetadata.subtitle.toUpperCase(),
+            title: toolMetadata.title,
+            isSuccess: actualIsSuccess,
+            isStreaming: false,
+            rightContent: (
+              <StatusBadge
+                variant={actualIsSuccess ? 'success' : 'error'}
+                label={actualIsSuccess ? `Exported ${formatLabel}` : 'Failed'}
+              />
+            ),
+          }}
+          footer={
+            <View className="flex-row items-center justify-between w-full">
+              {presentationName && (
+                <Text className="text-xs text-muted-foreground flex-1" numberOfLines={1}>
+                  {presentationName}
+                </Text>
+              )}
+              {(toolTimestamp || assistantTimestamp) && (
+                <Text className="text-xs text-muted-foreground ml-2">
+                  {toolTimestamp ? formatTimestamp(toolTimestamp) : assistantTimestamp ? formatTimestamp(assistantTimestamp) : ''}
+                </Text>
+              )}
+            </View>
+          }
+        >
+          <ScrollView className="flex-1 w-full" showsVerticalScrollIndicator={false}>
+            <View className="px-4 py-4 gap-6">
                 {/* Success/Error Status */}
                 <View className="pt-3 items-center">
-                    <View className={`${success ? 'bg-blue-500/10' : 'bg-red-500/10'} rounded-2xl items-center justify-center mb-4`} style={{ width: 64, height: 64 }}>
+                    <View className={`${success ? 'bg-primary/10' : 'bg-destructive/10'} rounded-2xl items-center justify-center mb-4`} style={{ width: 64, height: 64 }}>
                         <Icon
-                            as={success ? CheckCircle2 : AlertCircle}
+                            as={FormatIcon}
                             size={32}
-                            className={success ? 'text-blue-600' : 'text-red-600'}
+                            className={success ? 'text-primary' : 'text-destructive'}
                         />
                     </View>
                     <Text className="text-base font-roobert-medium text-foreground mb-1">
@@ -147,8 +207,8 @@ export function ExportToolView({
                         </View>
                     </View>
                 )}
-
             </View>
-        </ScrollView>
+          </ScrollView>
+        </ToolViewCard>
     );
 }

@@ -5,7 +5,7 @@ import { useLanguage } from '@/contexts';
 import * as React from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MessageCircleMore, TextAlignStart } from 'lucide-react-native';
+import { MessageCircleMore, TextAlignStart, ChevronLeft } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -20,6 +20,7 @@ interface ThreadHeaderProps {
   onTitleChange?: (newTitle: string) => void;
   onMenuPress?: () => void;
   onActionsPress?: () => void;
+  onBackPress?: () => void;
   isLoading?: boolean;
 }
 
@@ -28,6 +29,7 @@ export function ThreadHeader({
   onTitleChange,
   onMenuPress,
   onActionsPress,
+  onBackPress,
   isLoading = false,
 }: ThreadHeaderProps) {
   const { t } = useLanguage();
@@ -62,8 +64,13 @@ export function ThreadHeader({
     onMenuPress?.();
   };
 
+  const handleBackPress = () => {
+    console.log('🎯 Back button pressed (Thread View)');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onBackPress?.();
+  };
+
   const handleTitlePress = () => {
-    if (isGuestMode) return;
     console.log('🎯 Thread title tapped');
     setIsEditingTitle(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -117,14 +124,19 @@ export function ThreadHeader({
           onPressOut={() => {
             menuScale.value = withSpring(1, { damping: 15, stiffness: 400 });
           }}
-          onPress={handleMenuPress}
+          onPress={onBackPress ? handleBackPress : handleMenuPress}
           style={menuAnimatedStyle}
           className="w-8 h-8 items-center justify-center rounded-full"
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel="Open menu"
+          accessibilityLabel={onBackPress ? t('threadHeader.goBack') : t('threadHeader.openMenu')}
         >
-          <Icon as={TextAlignStart} size={20} className="text-foreground" strokeWidth={2} />
+          <Icon
+            as={onBackPress ? ChevronLeft : TextAlignStart}
+            size={onBackPress ? 24 : 20}
+            className="text-foreground"
+            strokeWidth={2}
+          />
         </AnimatedPressable>
         <View className="flex-1 flex-row items-center">
           {isEditingTitle ? (
@@ -135,7 +147,7 @@ export function ThreadHeader({
               onBlur={handleTitleBlur}
               onSubmitEditing={handleTitleBlur}
               className="flex-1 text-xl font-roobert-medium text-foreground tracking-tight"
-              placeholder="Enter title"
+              placeholder={t('threadHeader.enterTitle')}
               placeholderTextColor="rgb(156 163 175)"
               selectTextOnFocus
               maxLength={50}
@@ -155,7 +167,7 @@ export function ThreadHeader({
                 numberOfLines={1}
                 ellipsizeMode="tail"
               >
-                {threadTitle && threadTitle.trim() ? threadTitle : 'Untitled'}
+                {threadTitle && threadTitle.trim() ? threadTitle : t('threadHeader.untitled')}
               </Text>
             </Pressable>
           )}
@@ -179,7 +191,7 @@ export function ThreadHeader({
           className="w-8 h-8 items-center justify-center rounded-full"
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel="Thread actions"
+          accessibilityLabel={t('threadHeader.threadActions')}
         >
           <Icon as={MessageCircleMore} size={20} className="text-foreground" strokeWidth={2} />
         </AnimatedPressable>

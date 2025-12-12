@@ -38,7 +38,7 @@ export const ContextUsageIndicator = ({
   const circumference = 2 * Math.PI * radius
   const strokeDashoffset = circumference - (percentage / 100) * circumference
 
-  const getNeutralStroke = (pct: number) => (pct < 75 ? "var(--color-muted-foreground)" : "var(--color-foreground)")
+  const getNeutralStroke = (pct: number) => (pct < 75 ? "var(--color-muted-foreground)" : "var(--foreground)")
   const strokeColor = getNeutralStroke(percentage)
 
   const size = (radius + strokeWidth) * 2
@@ -66,7 +66,7 @@ export const ContextUsageIndicator = ({
                 stroke="currentColor"
                 strokeWidth={strokeWidth}
                 className="stroke-current opacity-50"
-                style={{ stroke: "var(--color-border)" }}
+                style={{ stroke: "var(--foreground)" }}
               />
 
               {/* progress circle: neutral grayscale only */}

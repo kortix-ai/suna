@@ -24,9 +24,9 @@ from datetime import datetime, timezone
 litellm.modify_params = True
 litellm.drop_params = True
 
-# CRITICAL: Disable all LiteLLM internal retries to prevent infinite loops on 400 errors
-# We handle retries at our own layer (auto-continue) with proper error checking
-litellm.num_retries = 0
+# Configure LiteLLM retries for transient errors (rate limits, server errors)
+# Note: 400 Bad Request errors are handled separately and should not retry
+litellm.num_retries = 3
 
 # Enable additional debug logging
 # import logging
@@ -162,7 +162,7 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
     # EXCEPTION: ContextWindowExceededError is a special case where fallback to larger context models is appropriate
     provider_router = Router(
         model_list=model_list,
-        num_retries=0,  # CRITICAL: Disable all router-level retries to prevent infinite loops
+        num_retries=3,  # Retry transient errors (rate limits, server errors)
         fallbacks=fallbacks,
         context_window_fallbacks=context_window_fallbacks,  # Handle context window exceeded errors
         # Only use fallbacks for rate limits (429) and server errors (5xx), NOT client errors (4xx)

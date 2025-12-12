@@ -13,7 +13,36 @@ from core.utils.config import config
     icon="Bot",
     color="bg-purple-100 dark:bg-purple-800/50",
     weight=190,
-    visible=True
+    visible=True,
+    usage_guide="""
+### AGENT CREATION & MANAGEMENT
+
+**CAPABILITIES:**
+- Create new AI agents with custom configurations
+- Set agent name, description, system prompts, icons
+- Configure tool access for each agent
+- Set up scheduled triggers for automation
+- Add integrations (GitHub, Slack, Gmail, etc.)
+
+**CRITICAL RULES:**
+- ALWAYS ask permission before creating agents
+- Clarify requirements with 3-5 questions first
+- Explain capabilities to users
+- Test configurations after setup
+
+**AGENT CUSTOMIZATION:**
+- Icons: 100+ options available
+- Tools: Configure specific toolsets
+- Prompts: Define expertise and personality
+- Triggers: Scheduled automation
+
+**INTEGRATION WORKFLOW:**
+1. Search for integration: search_mcp_servers_for_agent()
+2. Create profile: create_credential_profile_for_agent()
+3. User authenticates via link (MANDATORY!)
+4. Discover tools: discover_mcp_tools_for_agent()
+5. Configure: configure_agent_integration()
+"""
 )
 class AgentCreationTool(Tool):
     def __init__(self, thread_manager: ThreadManager, db_connection, account_id: str):

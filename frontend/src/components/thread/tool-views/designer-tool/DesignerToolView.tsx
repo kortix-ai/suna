@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/tooltip';
 import { Toggle } from '@/components/ui/toggle';
 import { useImageContent } from '@/hooks/files';
+import { useDownloadRestriction } from '@/hooks/billing';
 
 interface DesignElement {
   id: string;
@@ -136,6 +137,11 @@ export function DesignerToolView({
   // Track processed paths to avoid duplicates - hooks must be unconditional
   const processedPathsRef = useRef<Set<string>>(new Set());
   const lastProcessedPath = useRef<string>('');
+  
+  // Download restriction for free tier users
+  const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
+    featureName: 'designs',
+  });
   
   const gridSize = 20;
   const artboardPadding = 50;
@@ -382,6 +388,10 @@ export function DesignerToolView({
   };
 
   const handleDownload = () => {
+    if (isDownloadRestricted) {
+      openUpgradeModal();
+      return;
+    }
     const element = elements.find(el => el.id === selectedElement);
     if (element?.directUrl || element?.filePath) {
       const link = document.createElement('a');
@@ -402,7 +412,7 @@ export function DesignerToolView({
   };
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
+    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-16 border-b p-3 px-4">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-3">

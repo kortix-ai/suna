@@ -34,6 +34,8 @@ import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { FileItem } from './FileItem';
 import { FileBreadcrumb } from './FileBreadcrumb';
 import { FileViewer } from './FileViewer';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { EmptyState } from '@/components/shared/EmptyState';
 
 import {
   useSandboxFiles,
@@ -88,6 +90,7 @@ interface FileManagerScreenProps {
 export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFilePath, isStreaming = false }: FileManagerScreenProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const { t } = useLanguage();
 
   // Navigation state
   const [currentPath, setCurrentPath] = useState(() => {
@@ -183,12 +186,12 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
   // Handle file long press (delete)
   const handleFileLongPress = (file: SandboxFile) => {
     Alert.alert(
-      'Delete File',
-      `Are you sure you want to delete ${file.name}?`,
+      t('files.deleteFile'),
+      t('files.deleteFileConfirm', { name: file.name }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('files.cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('files.delete'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -198,7 +201,7 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
               });
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             } catch (error) {
-              Alert.alert('Error', 'Failed to delete file');
+              Alert.alert(t('common.error'), t('files.errorDeleteFile'));
             }
           },
         },
@@ -230,7 +233,7 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
-      Alert.alert('Error', 'Failed to upload file');
+      Alert.alert(t('common.error'), t('files.errorUploadFile'));
     }
   };
 
@@ -258,7 +261,7 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
-      Alert.alert('Error', 'Failed to upload image');
+      Alert.alert(t('common.error'), t('files.errorUploadImage'));
     }
   };
 
@@ -277,7 +280,7 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
       setNewFolderName('');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
-      Alert.alert('Error', 'Failed to create folder');
+      Alert.alert(t('common.error'), t('files.errorCreateFolder'));
     }
   };
 
@@ -307,7 +310,7 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
             style={{ color: isDark ? '#f8f8f8' : '#121215' }}
             className="text-2xl font-roobert-semibold"
           >
-            Files
+            {t('files.title')}
           </Text>
 
           <View className="flex-row items-center gap-1">
@@ -378,7 +381,7 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
               className="text-sm mt-4 font-roobert"
               style={{ color: isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
             >
-              Loading files...
+              {t('files.loadingFiles')}
             </Text>
           </View>
         ) : error ? (
@@ -400,13 +403,13 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
               className="text-lg font-roobert-semibold text-center mb-2"
               style={{ color: isDark ? '#f8f8f8' : '#121215' }}
             >
-              Failed to load files
+              {t('files.failedToLoad')}
             </Text>
             <Text
               className="text-sm text-center mb-6 font-roobert"
               style={{ color: isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
             >
-              {error?.message || 'An error occurred while loading files'}
+              {error?.message || t('files.errorOccurred')}
             </Text>
             <Pressable
               onPress={() => refetch()}
@@ -417,37 +420,17 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
                 className="text-sm font-roobert-medium"
                 style={{ color: isDark ? '#121215' : '#f8f8f8' }}
               >
-                Retry
+                {t('files.retry')}
               </Text>
             </Pressable>
           </View>
         ) : !files || files.length === 0 ? (
           <View className="flex-1 items-center justify-center p-8">
-            <View
-              className="w-20 h-20 rounded-2xl items-center justify-center mb-4"
-              style={{
-                backgroundColor: isDark ? 'rgba(248, 248, 248, 0.05)' : 'rgba(18, 18, 21, 0.03)'
-              }}
-            >
-              <Icon
-                as={Coffee}
-                size={36}
-                color={isDark ? 'rgba(248, 248, 248, 0.3)' : 'rgba(18, 18, 21, 0.3)'}
-                strokeWidth={1.5}
-              />
-            </View>
-            <Text
-              className="text-base font-roobert-semibold text-center mb-2"
-              style={{ color: isDark ? '#f8f8f8' : '#121215' }}
-            >
-              This folder is empty
-            </Text>
-            <Text
-              className="text-sm text-center font-roobert"
-              style={{ color: isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
-            >
-              Upload files or create folders to get started
-            </Text>
+            <EmptyState
+              icon={Coffee}
+              title={t('files.folderEmpty')}
+              description={t('files.uploadOrCreate')}
+            />
           </View>
         ) : (
           <ScrollView
@@ -503,13 +486,13 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
               style={{ color: isDark ? '#f8f8f8' : '#121215' }}
               className="text-xl font-roobert-semibold mb-4"
             >
-              Create Folder
+              {t('files.createFolder')}
             </Text>
 
             <TextInput
               value={newFolderName}
               onChangeText={setNewFolderName}
-              placeholder="Folder name"
+              placeholder={t('files.folderName')}
               placeholderTextColor={isDark ? 'rgba(248, 248, 248, 0.3)' : 'rgba(18, 18, 21, 0.4)'}
               autoFocus
               className="px-4 py-3.5 rounded-xl border mb-6 font-roobert"
@@ -535,7 +518,7 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
                   style={{ color: isDark ? '#f8f8f8' : '#121215' }}
                   className="text-center font-roobert-medium"
                 >
-                  Cancel
+                  {t('files.cancel')}
                 </Text>
               </Pressable>
 
@@ -558,7 +541,7 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
                       : (isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'),
                   }}
                 >
-                  Create
+                  {t('files.create')}
                 </Text>
               </Pressable>
             </View>

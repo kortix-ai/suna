@@ -5,7 +5,13 @@ import { useLanguage } from '@/contexts';
 import { useAgent } from '@/contexts/AgentContext';
 import { useAdvancedFeatures } from '@/hooks';
 import { useBillingContext } from '@/contexts/BillingContext';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetView } from '@gorhom/bottom-sheet';
+import BottomSheet, {
+  BottomSheetBackdrop,
+  BottomSheetScrollView,
+  BottomSheetView,
+  BottomSheetModal,
+  BottomSheetFlatList,
+} from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 import {
@@ -21,7 +27,12 @@ import {
   ArrowLeft,
   Crown,
   DollarSign,
-  Plug
+  Plug,
+  Brain,
+  Wrench,
+  Server,
+  Sparkles,
+  Lock,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
@@ -31,16 +42,22 @@ import Animated, {
   withTiming,
   useSharedValue,
   FadeIn,
-  FadeOut
+  FadeOut,
 } from 'react-native-reanimated';
+import { useRouter } from 'expo-router';
 import { AgentAvatar } from './AgentAvatar';
 import { ModelAvatar } from '@/components/models/ModelAvatar';
+import { ModelToggle } from '@/components/models/ModelToggle';
 import { SelectableListItem } from '@/components/shared/SelectableListItem';
 import { EntityList } from '@/components/shared/EntityList';
 import { useSearch } from '@/lib/utils/search';
 import { useAvailableModels } from '@/lib/models';
 import type { Agent, Model } from '@/api/types';
-import { AppBubble, IntegrationsPage, IntegrationsPageContent } from '@/components/settings/IntegrationsPage';
+import {
+  AppBubble,
+  IntegrationsPage,
+  IntegrationsPageContent,
+} from '@/components/settings/IntegrationsPage';
 import { ComposioAppsContent } from '@/components/settings/integrations/ComposioAppsList';
 import { ComposioAppDetailContent } from '@/components/settings/integrations/ComposioAppDetail';
 import { ComposioConnectorContent } from '@/components/settings/integrations/ComposioConnector';
@@ -54,137 +71,163 @@ interface AgentDrawerProps {
   visible: boolean;
   onClose: () => void;
   onCreateAgent?: () => void;
+  onOpenWorkerConfig?: (
+    workerId: string,
+    view?: 'instructions' | 'tools' | 'integrations' | 'triggers'
+  ) => void;
+  onDismiss?: () => void;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-type ViewState = 'main' | 'agents' | 'models' | 'integrations' | 'composio' | 'composio-detail' | 'composio-connector' | 'composio-tools' | 'customMcp' | 'customMcp-tools';
-
+type ViewState =
+  | 'main'
+  | 'agents'
+  | 'integrations'
+  | 'composio'
+  | 'composio-detail'
+  | 'composio-connector'
+  | 'composio-tools'
+  | 'customMcp'
+  | 'customMcp-tools';
 
 function BackButton({ onPress }: { onPress: () => void }) {
   const { colorScheme } = useColorScheme();
 
   return (
-    <Pressable
-      onPress={onPress}
-      className="flex-row items-center active:opacity-70"
-    >
-      <ArrowLeft
-        size={20}
-        color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
-      />
+    <Pressable onPress={onPress} className="flex-row items-center active:opacity-70">
+      <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
     </Pressable>
   );
 }
 
-
 export function AgentDrawer({
   visible,
   onClose,
-  onCreateAgent
+  onCreateAgent,
+  onOpenWorkerConfig,
+  onDismiss,
 }: AgentDrawerProps) {
-  const bottomSheetRef = React.useRef<BottomSheet>(null);
+  const bottomSheetRef = React.useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
   const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
+  const router = useRouter();
 
   const agentContext = useAgent();
-  const { agents, selectedAgentId, selectedModelId, selectAgent, selectModel, isLoading, loadAgents } = agentContext;
+  const {
+    agents,
+    selectedAgentId,
+    selectedModelId,
+    selectAgent,
+    selectModel,
+    isLoading,
+    loadAgents,
+  } = agentContext;
 
   const { data: modelsData, isLoading: modelsLoading } = useAvailableModels();
 
-  const { hasActiveSubscription, subscriptionData } = useBillingContext();
+  const { hasActiveSubscription, subscriptionData, hasFreeTier } = useBillingContext();
 
   const models = modelsData?.models || [];
-  const selectedAgent = agents.find(a => a.agent_id === selectedAgentId);
+  const selectedAgent = agents.find((a) => a.agent_id === selectedAgentId);
 
   const isOpeningRef = React.useRef(false);
   const timeoutRef = React.useRef<number | null>(null);
 
   const selectedModel = React.useMemo(() => {
     if (selectedModelId) {
-      const model = models.find(m => m.id === selectedModelId);
+      const model = models.find((m) => m.id === selectedModelId);
       if (model) return model;
     }
-    return models.find(m => m.id === selectedAgent?.model) || models.find(m => m.recommended);
+    return models.find((m) => m.id === selectedAgent?.model) || models.find((m) => m.recommended);
   }, [selectedModelId, models, selectedAgent]);
 
   const [currentView, setCurrentView] = React.useState<ViewState>('main');
   const [selectedComposioApp, setSelectedComposioApp] = React.useState<any>(null);
   const [selectedComposioProfile, setSelectedComposioProfile] = React.useState<any>(null);
-  const [customMcpConfig, setCustomMcpConfig] = React.useState<{ serverName: string; url: string; tools: any[] } | null>(null);
+  const [customMcpConfig, setCustomMcpConfig] = React.useState<{
+    serverName: string;
+    url: string;
+    tools: any[];
+  } | null>(null);
 
-  const searchableAgents = React.useMemo(() =>
-    agents.map(agent => ({ ...agent, id: agent.agent_id })),
+  const searchableAgents = React.useMemo(
+    () => agents.map((agent) => ({ ...agent, id: agent.agent_id })),
     [agents]
   );
-  const { query: agentQuery, results: agentResults, clearSearch: clearAgentSearch, updateQuery: updateAgentQuery } = useSearch(searchableAgents, ['name', 'description']);
-  const processedAgentResults = React.useMemo(() =>
-    agentResults.map(result => ({ ...result, agent_id: result.id })),
+  const {
+    query: agentQuery,
+    results: agentResults,
+    clearSearch: clearAgentSearch,
+    updateQuery: updateAgentQuery,
+  } = useSearch(searchableAgents, ['name', 'description']);
+  const processedAgentResults = React.useMemo(
+    () => agentResults.map((result) => ({ ...result, agent_id: result.id })),
     [agentResults]
   );
 
-  const searchableModels = React.useMemo(() =>
-    models.map(model => ({ ...model, name: model.display_name })),
-    [models]
-  );
-  const { query: modelQuery, results: modelResults, clearSearch: clearModelSearch, updateQuery: updateModelQuery } = useSearch(searchableModels, ['display_name', 'short_name']);
-
-  const { freeModels, premiumModels } = React.useMemo(() => {
-    const resultsToUse = modelQuery ? modelResults : models;
-    
-    // Filter out OpenAI models when showing Kortix models
-    const hasKortixModels = resultsToUse.some(m => 
-      m.id === 'kortix/basic' || m.id === 'kortix/power' || 
-      m.id === 'kortix-basic' || m.id === 'kortix-power' ||
-      m.id.includes('claude-haiku-4-5') || m.id.includes('claude-sonnet-4-5')
-    );
-    
-    const filteredModels = hasKortixModels 
-      ? resultsToUse.filter(m => {
-          // Keep Kortix models
-          if (m.id === 'kortix/basic' || m.id === 'kortix/power' || 
-              m.id === 'kortix-basic' || m.id === 'kortix-power' ||
-              m.id.includes('claude-haiku-4-5') || m.id.includes('claude-sonnet-4-5')) {
-            return true;
-          }
-          // Filter out OpenAI models when Kortix is available
-          if (m.id.includes('openai') || m.id.includes('gpt')) {
-            return false;
-          }
-          return true;
-        })
-      : resultsToUse;
-    
-    const free = filteredModels.filter(m => !m.requires_subscription).sort((a, b) => (b.priority || 0) - (a.priority || 0));
-    const premium = filteredModels.filter(m => m.requires_subscription).sort((a, b) => (b.priority || 0) - (a.priority || 0));
-    return { freeModels: free, premiumModels: premium };
-  }, [models, modelQuery, modelResults]);
-
   // Check if user can access a model
-  const canAccessModel = React.useCallback((model: Model) => {
-    // If model doesn't require subscription, it's accessible
-    if (!model.requires_subscription) return true;
-    // Otherwise, check if user has active subscription
-    return hasActiveSubscription;
-  }, [hasActiveSubscription]);
+  const canAccessModel = React.useCallback(
+    (model: Model) => {
+      // If model doesn't require subscription, it's accessible
+      if (!model.requires_subscription) return true;
+      // Model requires subscription - user must have PAID subscription (not free tier)
+      return hasActiveSubscription && !hasFreeTier;
+    },
+    [hasActiveSubscription, hasFreeTier]
+  );
+
+  // Handle model change from the toggle
+  const handleModelChange = React.useCallback(
+    (modelId: string) => {
+      console.log('🎯 Model Changed via Toggle:', modelId);
+      if (selectModel) {
+        selectModel(modelId);
+      }
+    },
+    [selectModel]
+  );
+
+  // Handle upgrade required - navigate to plans page
+  const handleUpgradeRequired = React.useCallback(() => {
+    console.log('🔒 Upgrade required - navigating to plans');
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    onClose?.();
+    // Small delay to allow drawer to close before navigation
+    setTimeout(() => {
+      router.push('/plans');
+    }, 100);
+  }, [onClose, router]);
 
   // Track actual drawer state changes
-  const handleSheetChange = React.useCallback((index: number) => {
-    console.log('🎭 [AgentDrawer] Sheet index changed:', index, '| Resetting guard');
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-    if (index === -1) {
-      // Drawer fully closed - reset guard immediately
-      console.log('🎭 [AgentDrawer] Drawer closed - guard reset');
-      isOpeningRef.current = false;
-    } else if (index >= 0) {
-      // Drawer opened successfully - can safely reset guard
-      console.log('🎭 [AgentDrawer] Drawer opened - guard reset');
-      isOpeningRef.current = false;
-    }
-  }, []);
+  const handleSheetChange = React.useCallback(
+    (index: number) => {
+      console.log('🎭 [AgentDrawer] Sheet index changed:', index, '| Resetting guard');
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      if (index === -1) {
+        // Drawer fully closed - reset guard immediately
+        console.log('🎭 [AgentDrawer] Drawer closed - guard reset');
+        isOpeningRef.current = false;
+        onClose?.();
+      } else if (index >= 0) {
+        // Drawer opened successfully - can safely reset guard
+        console.log('🎭 [AgentDrawer] Drawer opened - guard reset');
+        isOpeningRef.current = false;
+      }
+    },
+    [onClose]
+  );
+
+  // Handle dismiss
+  const handleDismiss = React.useCallback(() => {
+    console.log('🎭 [AgentDrawer] Sheet dismissed');
+    isOpeningRef.current = false;
+    onClose?.();
+    onDismiss?.();
+  }, [onClose, onDismiss]);
 
   // Handle visibility changes
   React.useEffect(() => {
@@ -208,17 +251,16 @@ export function AgentDrawer({
       loadAgents();
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      bottomSheetRef.current?.snapToIndex(0);
+      bottomSheetRef.current?.present();
       setCurrentView('main'); // Reset to main view when opening
     } else if (!visible) {
       console.log('❌ [AgentDrawer] Closing drawer');
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      bottomSheetRef.current?.close();
+      bottomSheetRef.current?.dismiss();
       // Clear searches when closing
       clearAgentSearch();
-      clearModelSearch();
     }
-  }, [visible, clearAgentSearch, clearModelSearch, loadAgents, handleSheetChange]);
+  }, [visible, clearAgentSearch, loadAgents, handleSheetChange]);
 
   // Navigation functions
   const navigateToView = React.useCallback((view: ViewState) => {
@@ -226,43 +268,14 @@ export function AgentDrawer({
     setCurrentView(view);
   }, []);
 
-  const handleAgentPress = React.useCallback(async (agent: Agent) => {
-    console.log('🤖 Agent Selected:', agent.name);
-    await selectAgent(agent.agent_id);
-    navigateToView('main');
-  }, [selectAgent, navigateToView]);
-
-  const handleModelPress = React.useCallback((model: Model) => {
-    console.log('🎯 Model Selected:', model.display_name);
-
-    // Check if user can access this model
-    if (!canAccessModel(model)) {
-      console.log('🔒 Model requires subscription');
-      Alert.alert(
-        'Premium Model',
-        `${model.display_name} requires an active subscription. Upgrade to access premium models with enhanced capabilities.`,
-        [
-          { text: 'Maybe Later', style: 'cancel' },
-          {
-            text: 'Upgrade Now',
-            onPress: () => {
-              // TODO: Navigate to billing screen
-              console.log('Navigate to billing');
-            }
-          }
-        ]
-      );
-      return;
-    }
-
-    // Store selected model in context - will be used when starting agent
-    if (selectModel) {
-      selectModel(model.id);
-    } else {
-      console.error('selectModel function not available in context');
-    }
-    navigateToView('main');
-  }, [navigateToView, canAccessModel, selectModel]);
+  const handleAgentPress = React.useCallback(
+    async (agent: Agent) => {
+      console.log('🤖 Agent Selected:', agent.name);
+      await selectAgent(agent.agent_id);
+      navigateToView('main');
+    },
+    [selectAgent, navigateToView]
+  );
 
   const integrationsScale = useSharedValue(1);
 
@@ -274,6 +287,12 @@ export function AgentDrawer({
     console.log('🔌 Integrations pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
+    // Block free tier users from accessing integrations
+    if (hasFreeTier) {
+      handleUpgradeRequired();
+      return;
+    }
+
     if (!selectedAgent) {
       Alert.alert(
         'No Agent Selected',
@@ -284,7 +303,7 @@ export function AgentDrawer({
     }
 
     setCurrentView('integrations');
-  }, [selectedAgent]);
+  }, [selectedAgent, hasFreeTier, handleUpgradeRequired]);
 
   const handleIntegrationsPressIn = React.useCallback(() => {
     integrationsScale.value = withTiming(0.95, { duration: 100 });
@@ -310,22 +329,35 @@ export function AgentDrawer({
   const renderMainView = () => (
     <View>
       <View className="pb-3" style={{ overflow: 'visible' }}>
-        <View className="flex-row items-center justify-between mb-3">
+        <View className="mb-3 flex-row items-center justify-between">
           <Text
-            style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
-            className="text-sm font-roobert-medium"
-          >
+            style={{
+              color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)',
+            }}
+            className="font-roobert-medium text-sm">
             {t('agents.myWorkers')}
           </Text>
           {onCreateAgent && (
             <Pressable
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                onCreateAgent();
+                if (hasFreeTier) {
+                  handleUpgradeRequired();
+                } else {
+                  onCreateAgent();
+                }
               }}
-              className="active:opacity-70"
-            >
-              <Plus size={18} color={colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'} />
+              className="active:opacity-70">
+              {hasFreeTier ? (
+                <Sparkles size={18} color={colorScheme === 'dark' ? '#22c55e' : '#16a34a'} />
+              ) : (
+                <Plus
+                  size={18}
+                  color={
+                    colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'
+                  }
+                />
+              )}
             </Pressable>
           )}
         </View>
@@ -340,11 +372,13 @@ export function AgentDrawer({
             onPress={() => navigateToView('agents')}
           />
         ) : (
-          <View className="py-4 items-center">
+          <View className="items-center py-4">
             <Text
-              style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-              className="text-sm font-roobert"
-            >
+              style={{
+                color:
+                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
+              }}
+              className="font-roobert text-sm">
               {isLoading ? t('loading.threads') : 'No worker selected'}
             </Text>
           </View>
@@ -354,38 +388,41 @@ export function AgentDrawer({
       {/* Divider */}
       <View
         style={{ backgroundColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0' }}
-        className="h-px w-full my-3"
+        className="my-3 h-px w-full"
       />
 
-      {/* Models Section */}
+      {/* Mode Section - Simple Toggle */}
       <View className="pb-3">
-        <View className="flex-row items-center justify-between mb-3">
+        <View className="mb-3 flex-row items-center justify-between">
           <Text
-            style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
-            className="text-sm font-roobert-medium"
-          >
-            {t('models.selectModel')}
+            style={{
+              color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)',
+            }}
+            className="font-roobert-medium text-sm">
+            {t('models.mode', 'Mode')}
           </Text>
         </View>
 
-        {/* Selected Model - Clickable */}
-        {selectedModel ? (
-          <SelectableListItem
-            avatar={<ModelAvatar model={selectedModel} size={48} />}
-            title={selectedModel.display_name}
-            subtitle={selectedModel.short_name}
-            showChevron
-            onPress={() => navigateToView('models')}
-          />
-        ) : (
-          <View className="py-4 items-center">
+        {/* Model Toggle - Basic/Advanced switcher */}
+        {modelsLoading ? (
+          <View className="items-center py-4">
             <Text
-              style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-              className="text-sm font-roobert"
-            >
-              {modelsLoading ? 'Loading models...' : 'No model selected'}
+              style={{
+                color:
+                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
+              }}
+              className="font-roobert text-sm">
+              Loading...
             </Text>
           </View>
+        ) : (
+          <ModelToggle
+            models={models}
+            selectedModelId={selectedModelId}
+            onModelChange={handleModelChange}
+            canAccessModel={canAccessModel}
+            onUpgradeRequired={handleUpgradeRequired}
+          />
         )}
       </View>
 
@@ -395,79 +432,131 @@ export function AgentDrawer({
             style={[
               integrationsAnimatedStyle,
               {
-                borderColor: colorScheme === 'dark' ? '#454444' : '#c2c2c2',
-                borderWidth: 1,
-                borderOpacity: 0.5,
-              }
+                borderColor: hasFreeTier
+                  ? colorScheme === 'dark'
+                    ? '#22c55e'
+                    : '#16a34a'
+                  : colorScheme === 'dark'
+                    ? '#454444'
+                    : '#c2c2c2',
+                borderWidth: hasFreeTier ? 1.5 : 1,
+                backgroundColor: hasFreeTier
+                  ? colorScheme === 'dark'
+                    ? 'rgba(34, 197, 94, 0.1)'
+                    : 'rgba(22, 163, 74, 0.1)'
+                  : 'transparent',
+              },
             ]}
-            className="flex-1 h-16 flex-row gap-2 mt-4 rounded-2xl items-center justify-center"
+            className="mt-4 h-16 flex-1 flex-row items-center justify-center gap-2 rounded-2xl"
             onPress={handleIntegrationsPress}
             onPressIn={handleIntegrationsPressIn}
-            onPressOut={handleIntegrationsPressOut}
-          >
-            <AppBubble />
-            <Text className="font-roobert-medium" style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}>
+            onPressOut={handleIntegrationsPressOut}>
+            {hasFreeTier ? (
+              <Lock size={18} color={colorScheme === 'dark' ? '#22c55e' : '#16a34a'} />
+            ) : (
+              <AppBubble />
+            )}
+            <Text
+              className="font-roobert-medium"
+              style={{
+                color: hasFreeTier
+                  ? colorScheme === 'dark'
+                    ? '#22c55e'
+                    : '#16a34a'
+                  : colorScheme === 'dark'
+                    ? '#f8f8f8'
+                    : '#121215',
+              }}>
               {t('integrations.connectApps')}
             </Text>
           </AnimatedPressable>
           <View
             style={{ backgroundColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0' }}
-            className="h-px w-full my-3"
+            className="my-3 h-px w-full"
           />
         </>
       )}
       {advancedFeaturesEnabled && (
         <>
           <View className="pb-2">
-            <View className="flex-row items-center justify-between mb-2.5">
+            <View className="mb-2.5 flex-row items-center justify-between">
               <Text
-                style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
-                className="text-sm font-roobert-medium"
-              >
+                style={{
+                  color:
+                    colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)',
+                }}
+                className="font-roobert-medium text-sm">
                 Worker Settings
               </Text>
             </View>
-            <View className="flex-row gap-1.5 opacity-75">
+            <View className="flex-row gap-2">
               <Pressable
                 style={{
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
                   borderWidth: 1.5,
+                  minHeight: 56,
                 }}
-                className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
-                onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-              >
-                <Briefcase size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                className="flex-1 items-center justify-center rounded-2xl active:opacity-70"
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  if (selectedAgentId && onOpenWorkerConfig) {
+                    onOpenWorkerConfig(selectedAgentId, 'instructions');
+                    onClose?.();
+                  }
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                <Brain size={18} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>
               <Pressable
                 style={{
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
                   borderWidth: 1.5,
+                  minHeight: 56,
                 }}
-                className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
-                onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-              >
-                <FileText size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                className="flex-1 items-center justify-center rounded-2xl active:opacity-70"
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  if (selectedAgentId && onOpenWorkerConfig) {
+                    onOpenWorkerConfig(selectedAgentId, 'tools');
+                    onClose?.();
+                  }
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                <Wrench size={18} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>
               <Pressable
                 style={{
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
                   borderWidth: 1.5,
+                  minHeight: 56,
                 }}
-                className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
-                onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-              >
-                <BookOpen size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                className="flex-1 items-center justify-center rounded-2xl active:opacity-70"
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  if (selectedAgentId && onOpenWorkerConfig) {
+                    onOpenWorkerConfig(selectedAgentId, 'integrations');
+                    onClose?.();
+                  }
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                <Server size={18} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>
-
               <Pressable
                 style={{
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
                   borderWidth: 1.5,
+                  minHeight: 56,
                 }}
-                className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
-                onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-              >
-                <Zap size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                className="flex-1 items-center justify-center rounded-2xl active:opacity-70"
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  if (selectedAgentId && onOpenWorkerConfig) {
+                    onOpenWorkerConfig(selectedAgentId, 'triggers');
+                    onClose?.();
+                  }
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                <Zap size={18} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>
             </View>
           </View>
@@ -478,19 +567,19 @@ export function AgentDrawer({
 
   const renderAgentsView = () => (
     <ScrollView showsVerticalScrollIndicator={false}>
-      <View className="flex-row items-center mb-4">
+      <View className="mb-4 flex-row items-center">
         <BackButton onPress={() => navigateToView('main')} />
-        <View className="flex-1 ml-3">
+        <View className="ml-3 flex-1">
           <Text
             style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-            className="text-xl font-roobert-semibold"
-          >
+            className="font-roobert-semibold text-xl">
             {t('agents.selectAgent')}
           </Text>
           <Text
-            style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-            className="text-sm font-roobert"
-          >
+            style={{
+              color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
+            }}
+            className="font-roobert text-sm">
             {t('agents.chooseAgent')}
           </Text>
         </View>
@@ -507,22 +596,35 @@ export function AgentDrawer({
       </View>
 
       {/* Workers List */}
-      <View className="flex-row items-center justify-between mb-3">
+      <View className="mb-3 flex-row items-center justify-between">
         <Text
-          style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
-          className="text-sm font-roobert-medium"
-        >
+          style={{
+            color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)',
+          }}
+          className="font-roobert-medium text-sm">
           {t('agents.myWorkers')}
         </Text>
         {onCreateAgent && (
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              onCreateAgent();
+              if (hasFreeTier) {
+                handleUpgradeRequired();
+              } else {
+                onCreateAgent();
+              }
             }}
-            className="active:opacity-70"
-          >
-            <Plus size={18} color={colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'} />
+            className="active:opacity-70">
+            {hasFreeTier ? (
+              <Sparkles size={18} color={colorScheme === 'dark' ? '#22c55e' : '#16a34a'} />
+            ) : (
+              <Plus
+                size={18}
+                color={
+                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'
+                }
+              />
+            )}
           </Pressable>
         )}
       </View>
@@ -549,285 +651,16 @@ export function AgentDrawer({
     </ScrollView>
   );
 
-  // Render models view content
-  const renderModelsView = () => {
-    return (
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header with back button */}
-        <View className="flex-row items-center mb-4">
-          <BackButton onPress={() => navigateToView('main')} />
-          <View className="flex-1 ml-3">
-            <Text
-              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-              className="text-xl font-roobert-semibold"
-            >
-              {t('models.selectModel')}
-            </Text>
-            <Text
-              style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-              className="text-sm font-roobert"
-            >
-              Choose an AI model
-            </Text>
-          </View>
-        </View>
-
-        {/* Search Bar */}
-        <View className="mb-4">
-          <SearchBar
-            value={modelQuery}
-            onChangeText={updateModelQuery}
-            placeholder="Search models..."
-            onClear={clearModelSearch}
-          />
-        </View>
-
-        {modelsLoading ? (
-          <View className="py-8 items-center">
-            <Text
-              style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-              className="text-sm font-roobert"
-            >
-              Loading models...
-            </Text>
-          </View>
-        ) : (
-          <>
-            {freeModels.length > 0 && (
-              <View className="mb-4">
-                <Text
-                  style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
-                  className="text-xs font-roobert-medium mb-3 uppercase tracking-wide"
-                >
-                  Available Models
-                </Text>
-                <EntityList
-                  entities={freeModels}
-                  isLoading={false}
-                  gap={3}
-                  renderItem={(model) => {
-                    const isPower = model.id === 'kortix/power' || model.id === 'kortix-power' || model.id.includes('claude-sonnet-4-5');
-                    const isBasic = model.id === 'kortix/basic' || model.id === 'kortix-basic' || model.id.includes('claude-haiku-4-5');
-                    
-                    return (
-                      <SelectableListItem
-                        key={model.id}
-                        avatar={<ModelAvatar model={model} size={48} />}
-                        title={
-                          <View className="flex-row items-center gap-2">
-                            <Text
-                              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-                              className="font-roobert-medium"
-                            >
-                              {model.display_name}
-                            </Text>
-                            {isPower && (
-                              <Text
-                                style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-                                className="text-xs font-roobert-medium"
-                              >
-                                Power
-                              </Text>
-                            )}
-                            {isBasic && (
-                              <Text
-                                style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-                                className="text-xs font-roobert-medium"
-                              >
-                                Basic
-                              </Text>
-                            )}
-                          </View>
-                        }
-                        subtitle={model.short_name}
-                        isSelected={model.id === selectedModel?.id}
-                        onPress={() => handleModelPress(model)}
-                        accessibilityLabel={`Select ${model.display_name} model`}
-                      />
-                    );
-                  }}
-                />
-              </View>
-            )}
-
-            {/* Premium Models Section */}
-            {premiumModels.length > 0 && (
-              <View>
-                <View className="flex-row items-center mb-3">
-                  <Crown size={14} color={colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'} />
-                  <Text
-                    style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
-                    className="text-xs font-roobert-medium ml-1.5 uppercase tracking-wide"
-                  >
-                    {hasActiveSubscription ? 'Premium Models' : 'Additional Models'}
-                  </Text>
-                </View>
-
-                {/* Show max 3 premium models if user doesn't have subscription */}
-                {!hasActiveSubscription ? (
-                  <>
-                    <EntityList
-                      entities={premiumModels.slice(0, 3)}
-                      isLoading={false}
-                      gap={3}
-                      renderItem={(model) => {
-                        const isPower = model.id === 'kortix/power' || model.id === 'kortix-power' || model.id.includes('claude-sonnet-4-5');
-                        const isBasic = model.id === 'kortix/basic' || model.id === 'kortix-basic' || model.id.includes('claude-haiku-4-5');
-                        
-                        return (
-                          <View key={model.id} style={{ opacity: canAccessModel(model) ? 1 : 0.7 }}>
-                            <SelectableListItem
-                              avatar={<ModelAvatar model={model} size={48} />}
-                              title={
-                                <View className="flex-row items-center gap-2">
-                                  <Text
-                                    style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-                                    className="font-roobert-medium"
-                                  >
-                                    {model.display_name}
-                                  </Text>
-                                  {isPower && (
-                                    <Text
-                                      style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-                                      className="text-xs font-roobert-medium"
-                                    >
-                                      Power
-                                    </Text>
-                                  )}
-                                  {isBasic && (
-                                    <Text
-                                      style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-                                      className="text-xs font-roobert-medium"
-                                    >
-                                      Basic
-                                    </Text>
-                                  )}
-                                </View>
-                              }
-                              subtitle={model.short_name}
-                              isSelected={model.id === selectedModel?.id}
-                              onPress={() => handleModelPress(model)}
-                              accessibilityLabel={`Select ${model.display_name} model`}
-                            />
-                          </View>
-                        );
-                      }}
-                    />
-
-                    {/* Upgrade CTA */}
-                    <View
-                      style={{
-                        backgroundColor: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.05)' : 'rgba(18, 18, 21, 0.03)',
-                        borderColor: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
-                      }}
-                      className="mt-4 p-4 rounded-2xl border"
-                    >
-                      <View className="flex-row items-start mb-2">
-                        <Crown size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-                        <Text
-                          style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-                          className="text-sm font-roobert-semibold ml-2 flex-1"
-                        >
-                          Unlock all models + higher limits
-                        </Text>
-                      </View>
-                      <Pressable
-                        onPress={() => {
-                          // TODO: Navigate to billing
-                          console.log('Navigate to billing');
-                        }}
-                        style={{
-                          backgroundColor: colorScheme === 'dark' ? '#f8f8f8' : '#121215',
-                        }}
-                        className="py-2.5 rounded-xl items-center active:opacity-80"
-                      >
-                        <Text
-                          style={{ color: colorScheme === 'dark' ? '#121215' : '#f8f8f8' }}
-                          className="text-sm font-roobert-semibold"
-                        >
-                          Upgrade now
-                        </Text>
-                      </Pressable>
-                    </View>
-                  </>
-                ) : (
-                  <EntityList
-                    entities={premiumModels}
-                    isLoading={false}
-                    gap={3}
-                    renderItem={(model) => {
-                      const isPower = model.id === 'kortix/power' || model.id === 'kortix-power' || model.id.includes('claude-sonnet-4-5');
-                      const isBasic = model.id === 'kortix/basic' || model.id === 'kortix-basic' || model.id.includes('claude-haiku-4-5');
-                      
-                      return (
-                        <SelectableListItem
-                          key={model.id}
-                          avatar={<ModelAvatar model={model} size={48} />}
-                          title={
-                            <View className="flex-row items-center gap-2">
-                              <Text
-                                style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-                                className="font-roobert-medium"
-                              >
-                                {model.display_name}
-                              </Text>
-                              {isPower && (
-                                <Text
-                                  style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-                                  className="text-xs font-roobert-medium"
-                                >
-                                  Power
-                                </Text>
-                              )}
-                              {isBasic && (
-                                <Text
-                                  style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-                                  className="text-xs font-roobert-medium"
-                                >
-                                  Basic
-                                </Text>
-                              )}
-                            </View>
-                          }
-                          subtitle={model.short_name}
-                          isSelected={model.id === selectedModel?.id}
-                          onPress={() => handleModelPress(model)}
-                          accessibilityLabel={`Select ${model.display_name} model`}
-                        />
-                      );
-                    }}
-                  />
-                )}
-              </View>
-            )}
-            {freeModels.length === 0 && premiumModels.length === 0 && (
-              <View className="py-8 items-center">
-                <Text
-                  style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-                  className="text-sm font-roobert"
-                >
-                  {modelQuery ? 'No models match your search' : 'No models available'}
-                </Text>
-              </View>
-            )}
-          </>
-        )}
-      </ScrollView>
-    );
-  };
-
   return (
-    <BottomSheet
+    <BottomSheetModal
       ref={bottomSheetRef}
-      index={-1}
       snapPoints={['90%']}
       enablePanDownToClose
+      onDismiss={handleDismiss}
       onChange={handleSheetChange}
       backdropComponent={renderBackdrop}
       backgroundStyle={{
-        backgroundColor: colorScheme === 'dark'
-          ? '#161618'
-          : '#FFFFFF',
+        backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
@@ -836,151 +669,163 @@ export function AgentDrawer({
         width: 36,
         height: 5,
         borderRadius: 3,
-      }}
-    >
-      <BottomSheetScrollView
-        contentContainerStyle={{
-          paddingHorizontal: 24,
-          paddingTop: 24,
-          paddingBottom: 32,
-        }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Dynamic content based on current view */}
-        {currentView === 'main' && (
-          <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
-            {renderMainView()}
-          </Animated.View>
-        )}
+      }}>
+      {/* Use BottomSheetFlatList directly for composio, composio-detail, and composio-connector views */}
+      {['composio', 'composio-detail', 'composio-connector'].includes(currentView) ? (
+        currentView === 'composio' ? (
+          <ComposioAppsContent
+            onBack={() => setCurrentView('integrations')}
+            onAppSelect={(app) => {
+              setSelectedComposioApp(app);
+              setCurrentView('composio-detail');
+            }}
+            noPadding={true}
+            useBottomSheetFlatList={true}
+          />
+        ) : currentView === 'composio-detail' && selectedComposioApp ? (
+          <ComposioAppDetailContent
+            app={selectedComposioApp}
+            onBack={() => setCurrentView('composio')}
+            onComplete={() => setCurrentView('integrations')}
+            onNavigateToConnector={(app) => {
+              setSelectedComposioApp(app);
+              setCurrentView('composio-connector');
+            }}
+            onNavigateToTools={(app, profile) => {
+              setSelectedComposioApp(app);
+              setSelectedComposioProfile(profile);
+              setCurrentView('composio-tools');
+            }}
+            noPadding={true}
+            useBottomSheetFlatList={true}
+          />
+        ) : currentView === 'composio-connector' && selectedComposioApp && selectedAgent ? (
+          <ComposioConnectorContent
+            app={selectedComposioApp}
+            onBack={() => setCurrentView('composio-detail')}
+            onComplete={(profileId, appName, appSlug) => {
+              console.log('✅ Composio connector completed');
+              setCurrentView('integrations');
+            }}
+            onNavigateToTools={(app, profile) => {
+              setSelectedComposioApp(app);
+              setSelectedComposioProfile(profile);
+              setCurrentView('composio-tools');
+            }}
+            mode="full"
+            agentId={selectedAgent.agent_id}
+            noPadding={true}
+            useBottomSheetFlatList={true}
+          />
+        ) : null
+      ) : ['composio-tools', 'customMcp-tools'].includes(currentView) ? (
+        <BottomSheetView
+          style={{
+            paddingHorizontal: 24,
+            paddingTop: 24,
+            paddingBottom: 32,
+            flex: 1,
+          }}>
+          {currentView === 'composio-tools' &&
+            selectedComposioApp &&
+            selectedComposioProfile &&
+            selectedAgent && (
+              <Animated.View
+                entering={FadeIn.duration(300)}
+                exiting={FadeOut.duration(200)}
+                style={{ flex: 1 }}>
+                <ComposioToolsContent
+                  app={selectedComposioApp}
+                  profile={selectedComposioProfile}
+                  agentId={selectedAgent.agent_id}
+                  onBack={() => setCurrentView('composio-detail')}
+                  onComplete={() => {
+                    console.log('✅ Composio tools configured');
+                    setCurrentView('integrations');
+                  }}
+                  noPadding={true}
+                />
+              </Animated.View>
+            )}
 
-        {currentView === 'agents' && (
-          <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
-            {renderAgentsView()}
-          </Animated.View>
-        )}
+          {currentView === 'customMcp-tools' && customMcpConfig && (
+            <Animated.View
+              entering={FadeIn.duration(300)}
+              exiting={FadeOut.duration(200)}
+              style={{ flex: 1 }}>
+              <CustomMcpToolsContent
+                serverName={customMcpConfig.serverName}
+                url={customMcpConfig.url}
+                tools={customMcpConfig.tools}
+                onBack={() => setCurrentView('customMcp')}
+                onComplete={(enabledTools) => {
+                  console.log('✅ Custom MCP tools configured:', enabledTools);
+                  Alert.alert(
+                    t('integrations.customMcp.toolsConfigured'),
+                    t('integrations.customMcp.toolsConfiguredMessage', {
+                      count: enabledTools.length,
+                    })
+                  );
+                  setCurrentView('integrations');
+                }}
+                noPadding={true}
+              />
+            </Animated.View>
+          )}
+        </BottomSheetView>
+      ) : (
+        <BottomSheetScrollView
+          contentContainerStyle={{
+            paddingHorizontal: 24,
+            paddingTop: 24,
+            paddingBottom: 48,
+          }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled">
+          {/* Dynamic content based on current view */}
+          {currentView === 'main' && (
+            <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
+              {renderMainView()}
+            </Animated.View>
+          )}
 
-        {currentView === 'models' && (
-          <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
-            {renderModelsView()}
-          </Animated.View>
-        )}
+          {currentView === 'agents' && (
+            <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
+              {renderAgentsView()}
+            </Animated.View>
+          )}
 
-        {currentView === 'integrations' && (
-          <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
-            <IntegrationsPageContent
-              onBack={() => setCurrentView('main')}
-              noPadding={true}
-              onNavigate={(view) => setCurrentView(view as ViewState)}
-            />
-          </Animated.View>
-        )}
+          {currentView === 'integrations' && (
+            <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
+              <IntegrationsPageContent
+                onBack={() => setCurrentView('main')}
+                noPadding={true}
+                onNavigate={(view) => setCurrentView(view as ViewState)}
+                onUpgradePress={handleUpgradeRequired}
+              />
+            </Animated.View>
+          )}
 
-        {currentView === 'composio' && (
-          <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
-            <ComposioAppsContent
-              onBack={() => setCurrentView('integrations')}
-              onAppSelect={(app) => {
-                setSelectedComposioApp(app);
-                setCurrentView('composio-detail');
-              }}
-              noPadding={true}
-            />
-          </Animated.View>
-        )}
-
-        {currentView === 'composio-detail' && selectedComposioApp && (
-          <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
-            <ComposioAppDetailContent
-              app={selectedComposioApp}
-              onBack={() => setCurrentView('composio')}
-              onComplete={() => setCurrentView('integrations')}
-              onNavigateToConnector={(app) => {
-                setSelectedComposioApp(app);
-                setCurrentView('composio-connector');
-              }}
-              onNavigateToTools={(app, profile) => {
-                setSelectedComposioApp(app);
-                setSelectedComposioProfile(profile);
-                setCurrentView('composio-tools');
-              }}
-              noPadding={true}
-            />
-          </Animated.View>
-        )}
-
-        {currentView === 'composio-connector' && selectedComposioApp && selectedAgent && (
-          <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
-            <ComposioConnectorContent
-              app={selectedComposioApp}
-              onBack={() => setCurrentView('composio-detail')}
-              onComplete={(profileId, appName, appSlug) => {
-                console.log('✅ Composio connector completed');
-                setCurrentView('integrations');
-              }}
-              onNavigateToTools={(app, profile) => {
-                setSelectedComposioApp(app);
-                setSelectedComposioProfile(profile);
-                setCurrentView('composio-tools');
-              }}
-              mode="full"
-              agentId={selectedAgent.agent_id}
-              noPadding={true}
-            />
-          </Animated.View>
-        )}
-
-        {currentView === 'composio-tools' && selectedComposioApp && selectedComposioProfile && selectedAgent && (
-          <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
-            <ComposioToolsContent
-              app={selectedComposioApp}
-              profile={selectedComposioProfile}
-              agentId={selectedAgent.agent_id}
-              onBack={() => setCurrentView('composio-connector')}
-              onComplete={() => {
-                console.log('✅ Composio tools configured');
-                setCurrentView('integrations');
-              }}
-              noPadding={true}
-            />
-          </Animated.View>
-        )}
-
-        {currentView === 'customMcp' && (
-          <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
-            <CustomMcpContent
-              onBack={() => setCurrentView('integrations')}
-              noPadding={true}
-              onSave={(config) => {
-                console.log('Custom MCP config:', config);
-                // Store the config and navigate to tools selector
-                setCustomMcpConfig({
-                  serverName: config.serverName,
-                  url: config.url,
-                  tools: config.tools || []
-                });
-                setCurrentView('customMcp-tools');
-              }}
-            />
-          </Animated.View>
-        )}
-
-        {currentView === 'customMcp-tools' && customMcpConfig && (
-          <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
-            <CustomMcpToolsContent
-              serverName={customMcpConfig.serverName}
-              url={customMcpConfig.url}
-              tools={customMcpConfig.tools}
-              onBack={() => setCurrentView('customMcp')}
-              onComplete={(enabledTools) => {
-                console.log('✅ Custom MCP tools configured:', enabledTools);
-                Alert.alert(t('integrations.customMcp.toolsConfigured'), t('integrations.customMcp.toolsConfiguredMessage', { count: enabledTools.length }));
-                setCurrentView('integrations');
-              }}
-              noPadding={true}
-            />
-          </Animated.View>
-        )}
-      </BottomSheetScrollView>
-    </BottomSheet>
+          {currentView === 'customMcp' && (
+            <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
+              <CustomMcpContent
+                onBack={() => setCurrentView('integrations')}
+                noPadding={true}
+                onSave={(config) => {
+                  console.log('Custom MCP config:', config);
+                  // Store the config and navigate to tools selector
+                  setCustomMcpConfig({
+                    serverName: config.serverName,
+                    url: config.url,
+                    tools: config.tools || [],
+                  });
+                  setCurrentView('customMcp-tools');
+                }}
+              />
+            </Animated.View>
+          )}
+        </BottomSheetScrollView>
+      )}
+    </BottomSheetModal>
   );
 }

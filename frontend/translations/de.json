@@ -46,6 +46,14 @@
     "general": {
       "title": "Profileinstellungen",
       "description": "Verwalte deine Kontoinformationen",
+      "profilePicture": {
+        "title": "Profilbild",
+        "upload": "Avatar hochladen",
+        "hint": "JPG, PNG oder GIF. Max 5MB.",
+        "invalidType": "Bitte wähle eine Bilddatei",
+        "tooLarge": "Bild muss kleiner als 5MB sein",
+        "uploadFailed": "Profilbild konnte nicht hochgeladen werden"
+      },
       "name": "Name",
       "email": "E-Mail",
       "namePlaceholder": "Gib deinen Namen ein",
@@ -70,7 +78,7 @@
         "dialogTitle": "Konto löschen",
         "warning": "Diese Aktion kann nach 30 Tagen nicht rückgängig gemacht werden",
         "whenDelete": "Wenn du dein Konto löschst:",
-        "agentsDeleted": "Alle deine Agenten und Agent-Versionen werden gelöscht",
+        "agentsDeleted": "Alle deine Worker und Worker-Versionen werden gelöscht",
         "threadsDeleted": "Alle deine Threads und Unterhaltungen werden gelöscht",
         "credentialsRemoved": "Alle deine Anmeldedaten und Integrationen werden entfernt",
         "subscriptionCancelled": "Dein Abonnement wird gekündigt",
@@ -180,6 +188,41 @@
     "integrations": {
       "opening": "Integrationen werden geöffnet",
       "redirecting": "Weiterleitung zur Integrations-Seite..."
+    },
+    "memory": {
+      "title": "KI-Gedächtnis",
+      "description": "Kontext über Gespräche hinweg automatisch merken",
+      "enabled": "Aktiviert",
+      "disabled": "Deaktiviert",
+      "notAvailable": "Gedächtnis ist in Ihrem aktuellen Plan nicht verfügbar. Upgraden Sie auf Plus oder höher, um automatisches Gedächtnis zu aktivieren.",
+      "usage": "Gedächtnis-Nutzung",
+      "available": "{count} Erinnerungen verfügbar",
+      "noLimit": "Unbegrenzt",
+      "yourMemories": "Ihre Erinnerungen",
+      "yourMemoriesDescription": "Sehen und verwalten Sie, was die KI über Sie merkt",
+      "clearAll": "Alle löschen",
+      "deleteAllTitle": "Alle Erinnerungen löschen?",
+      "deleteAllDescription": "Dies wird alle {count} Erinnerungen dauerhaft löschen. Die KI wird sich nicht mehr an Informationen aus früheren Gesprächen erinnern. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "deleteAllButton": "Alle Erinnerungen löschen",
+      "noMemoriesYet": "Noch keine Erinnerungen",
+      "noMemoriesDescription": "Starten Sie ein Gespräch und die KI wird sich automatisch wichtige Informationen über Sie merken",
+      "searchMemories": "Erinnerungen durchsuchen...",
+      "filterByType": "Nach Typ filtern",
+      "allTypes": "Alle Typen",
+      "personalFacts": "Persönliche Fakten",
+      "preferences": "Präferenzen",
+      "context": "Kontext",
+      "conversations": "Gespräche",
+      "noMatchingMemories": "Keine passenden Erinnerungen",
+      "adjustFilters": "Versuchen Sie, Ihre Filter oder Suchanfrage anzupassen",
+      "loadMore": "Mehr laden",
+      "loading": "Erinnerungen werden geladen...",
+      "memoryTypes": {
+        "fact": "Fakt",
+        "preference": "Präferenz",
+        "context": "Kontext",
+        "conversation_summary": "Gespräch"
+      }
     }
   },
   "triggers": {
@@ -188,12 +231,12 @@
     "search": "Suchen",
     "scheduledTrigger": "Geplanter Trigger",
     "eventBasedTrigger": "Ereignisbasierter Trigger",
-    "chooseAgent": "Agent auswählen",
+    "chooseAgent": "Worker auswählen",
     "schedule": "Zeitplan",
-    "agentInstructions": "Agent-Anweisungen",
-    "agentInstructionsDescription": "Benutzerdefinierter Prompt für den Agenten",
-    "assignedAgent": "Zugewiesener Agent",
-    "unknownAgent": "Unbekannter Agent",
+    "agentInstructions": "Worker-Anweisungen",
+    "agentInstructionsDescription": "Benutzerdefinierter Prompt für den Worker",
+    "assignedAgent": "Zugewiesener Worker",
+    "unknownAgent": "Unbekannter Worker",
     "technicalDetails": "Technische Details",
     "type": "Typ",
     "provider": "Anbieter",
@@ -223,8 +266,8 @@
     "createScheduledTask": "Geplante Aufgabe erstellen",
     "editAppBasedTask": "App-basierte Aufgabe bearbeiten",
     "createAppBasedTask": "App-basierte Aufgabe erstellen",
-    "updateAgentForTask": "Agent für diese Aufgabe aktualisieren",
-    "selectAgentForTask": "Wähle zuerst den Agenten aus, der diese Aufgabe bearbeiten soll",
+    "updateAgentForTask": "Worker für diese Aufgabe aktualisieren",
+    "selectAgentForTask": "Wähle zuerst den Worker aus, der diese Aufgabe bearbeiten soll",
     "createNew": "Neu erstellen",
     "notConfigured": "Nicht konfiguriert",
     "every15Minutes": "Alle 15 Minuten",
@@ -237,14 +280,16 @@
   },
   "sidebar": {
     "referAndEarn": "Empfehlen",
+    "referralShareTitle": "Freunde empfehlen",
+    "referralShareSubtitle": "Erhalte 400 Credits",
     "new": "Neu",
     "upgrade": "Upgrade",
     "chats": "Chats",
-    "agents": "Agenten",
+    "agents": "Worker",
     "workers": "Worker",
     "triggers": "Trigger",
     "newChat": "Neuer Chat",
-    "newAgent": "Neuer Agent",
+    "newAgent": "Neuer Worker",
     "settings": "Einstellungen",
     "logout": "Abmelden",
     "openMenu": "Menü öffnen",
@@ -304,9 +349,42 @@
     "customWorkers": "Benutzerdefinierte Worker",
     "scheduledTriggers": "Geplante Trigger",
     "appTriggers": "App-Trigger",
-    "limitsExceeded": "Du hast dein Chat-Limit erreicht ({current}/{limit}). Upgraden deinen Plan, um mehr Chats zu erstellen.",
-    "agentInitiatedSuccessfully": "Agent erfolgreich gestartet",
-    "aiAssistantReady": "Dein KI-Assistent ist bereit zu helfen"
+    "limitsExceeded": "Du hast dein Chat-Limit erreicht. Upgraden deinen Plan, um mehr Chats zu erstellen.",
+    "agentInitiatedSuccessfully": "Worker erfolgreich gestartet",
+    "aiAssistantReady": "Dein KI-Assistent ist bereit zu helfen",
+    "greetings": {
+      "morning": [
+        "Guten Morgen! Was steht heute an?",
+        "Moin moin! Was bauen wir heute?",
+        "Morgen! Bereit durchzustarten?"
+      ],
+      "afternoon": [
+        "Guten Tag! Wie kann ich helfen?",
+        "Na, wie läuft's? Was gibt's zu tun?"
+      ],
+      "evening": [
+        "Guten Abend! Nachtschicht?",
+        "Abend! Woran arbeiten wir heute?",
+        "Guten Abend! Lass uns loslegen."
+      ],
+      "random": [
+        "Schön, dass du da bist!",
+        "Ahoi! Was kann Kortix für dich tun?",
+        "Was möchtest du erledigen?",
+        "Lass uns was Geniales bauen",
+        "Bin startklar!",
+        "Was liegt an?",
+        "Zu Diensten! Was ist die Mission?",
+        "Auf geht's! Was zaubern wir?",
+        "Welche Herausforderung wartet?",
+        "Dein Wunsch ist mir Befehl",
+        "Was steht auf dem Plan?",
+        "Anschnallen! Wohin geht die Reise?",
+        "Ein neuer Tag, ein neues Projekt",
+        "Was beschäftigt dich?",
+        "Los geht's!"
+      ]
+    }
   },
   "thread": {
     "integrations": "Integrationen",
@@ -331,7 +409,7 @@
     "instructions": "Anweisungen",
     "knowledge": "Wissen",
     "triggers": "Trigger",
-    "agents": "Agenten",
+    "agents": "Worker",
     "superWorker": "Super Worker",
     "searchWorkers": "Worker suchen...",
     "myWorkers": "Meine Worker",
@@ -352,12 +430,17 @@
     "feedbackSubmitFailed": "Feedback konnte nicht übermittelt werden"
   },
   "agents": {
-    "title": "Agenten",
-    "create": "Agent erstellen",
-    "edit": "Agent bearbeiten",
-    "delete": "Agent löschen",
+    "title": "Worker",
+    "create": "Worker erstellen",
+    "createNewWorker": "Neuen Worker erstellen",
+    "edit": "Worker bearbeiten",
+    "delete": "Worker löschen",
     "name": "Name",
-    "description": "Beschreibung"
+    "description": "Beschreibung",
+    "model": "Modell",
+    "systemPrompt": "System-Prompt",
+    "systemPromptPlaceholder": "Definiere, wie sich dein Worker verhalten soll...",
+    "customizeIcon": "Klicke, um das Worker-Icon anzupassen"
   },
   "threads": {
     "title": "Threads",
@@ -401,7 +484,7 @@
         "aiModelUsage": {
           "title": "KI-Modellnutzung",
           "description": "Der Haupttreiber des Credit-Verbrauchs",
-          "content": "Verschiedene KI-Modelle haben unterschiedliche Kosten basierend auf ihren Fähigkeiten und der Token-Nutzung. Credits werden für Eingabe-Tokens (deine Prompts und Kontext), Ausgabe-Tokens (Agent-Antworten) verbraucht und variieren je nach Modell-Tier (Claude, GPT usw.)."
+          "content": "Verschiedene KI-Modelle haben unterschiedliche Kosten basierend auf ihren Fähigkeiten und der Token-Nutzung. Credits werden für Eingabe-Tokens (deine Prompts und Kontext), Ausgabe-Tokens (Worker-Antworten) verbraucht und variieren je nach Modell-Tier (Claude, GPT usw.)."
         },
         "pricingModel": {
           "title": "Preismodell",
@@ -467,6 +550,9 @@
     "downgradePending": "Downgrade ausstehend",
     "downgrade": "Herabstufen",
     "switchToLegacyYearly": "Zu Legacy-Jahresplan wechseln",
+    "confirmDowngradeTitle": "Bist du sicher, dass du herabstufen möchtest?",
+    "confirmDowngradeDescription": "Du wechselst zum {planName}-Plan. Diese Änderung wird am Ende deines aktuellen Abrechnungszeitraums wirksam.",
+    "confirmDowngrade": "Ja, Herabstufen",
     "pickPlan": "Wähle den Plan, der zu dir passt.",
     "reachedLimit": "Du hast deine Limits erreicht.",
     "projectLimit": "Projektlimit ({current}/{limit})",
@@ -661,26 +747,26 @@
   "agentRunLimit": {
     "gotIt": "Verstanden",
     "parallelRunsLimitReached": "Limit für parallele Ausführungen erreicht",
-    "parallelRunsLimitDescription": "Du hast die maximale Anzahl paralleler Agenten-Ausführungen erreicht.",
+    "parallelRunsLimitDescription": "Du hast die maximale Anzahl paralleler Worker-Ausführungen erreicht.",
     "needMoreParallelRuns": "Mehr parallele Ausführungen benötigt?",
-    "upgradeDescription": "Upgraden deinen Plan, um mehrere Agenten gleichzeitig auszuführen und deine Produktivität zu steigern.",
+    "upgradeDescription": "Upgraden deinen Plan, um mehrere Worker gleichzeitig auszuführen und deine Produktivität zu steigern.",
     "upgradePlan": "Plan upgraden",
     "currentlyRunningAgents": "Aktuell laufende Agenten",
     "loadingThreads": "Threads werden geladen...",
-    "foundRunningAgents": "{count} laufende Agenten gefunden, aber Thread-Details konnten nicht geladen werden.",
+    "foundRunningAgents": "{count} laufende Worker gefunden, aber Thread-Details konnten nicht geladen werden.",
     "threadIds": "Thread-IDs: {ids}",
     "moreRunning": "+{count} weitere laufen",
     "whatCanYouDo": "Was kannst du tun?",
-    "stopAgentsHint": "Klicke auf die Stopp-Schaltfläche, um laufende Agenten zu stoppen",
-    "waitForCompletion": "Warte, bis ein Agent automatisch abgeschlossen ist",
+    "stopAgentsHint": "Klicke auf die Stopp-Schaltfläche, um laufende Worker zu stoppen",
+    "waitForCompletion": "Warte, bis ein Worker automatisch abgeschlossen ist",
     "upgradeYourPlan": "Upgraden deinen Plan",
     "forMoreParallelRuns": "für mehr parallele Ausführungen",
-    "stopAgent": "Agent stoppen",
-    "stopThisAgent": "Diesen Agenten stoppen",
+    "stopAgent": "Worker stoppen",
+    "stopThisAgent": "Diesen Worker stoppen",
     "openThread": "Thread öffnen",
-    "agentStoppedSuccessfully": "Agent erfolgreich gestoppt",
-    "failedToStopAgent": "Agent konnte nicht gestoppt werden",
-    "upgradeToRunMore": "Upgraden, um mehr Agenten parallel auszuführen"
+    "agentStoppedSuccessfully": "Worker erfolgreich gestoppt",
+    "failedToStopAgent": "Worker konnte nicht gestoppt werden",
+    "upgradeToRunMore": "Upgraden, um mehr Worker parallel auszuführen"
   },
   "errors": {
     "generic": "Ein Fehler ist aufgetreten",
@@ -689,8 +775,7 @@
     "notFound": "Nicht gefunden"
   },
   "home": {
-    "title": "Willkommen",
-    "subtitle": "Loslegen"
+    "heroPlaceholder": "Beschreibe die Aufgabe, die dein Worker erledigen soll..."
   },
   "showcase": {
     "title": "Kortix: Dein autonomer KI-Worker",
@@ -774,7 +859,31 @@
   "languages": {
     "en": "English",
     "de": "Deutsch",
-    "it": "Italiano"
+    "it": "Italiano",
+    "zh": "中文",
+    "ja": "日本語",
+    "pt": "Português",
+    "fr": "Français",
+    "es": "Español"
+  },
+  "notifications": {
+    "title": "Benachrichtigungen",
+    "description": "Verwalte, wie du Benachrichtigungen erhältst",
+    "preferences": "Benachrichtigungseinstellungen",
+    "channels": "Benachrichtigungskanäle",
+    "emailNotifications": "E-Mail-Benachrichtigungen",
+    "emailDescription": "Benachrichtigungen per E-Mail erhalten",
+    "pushNotifications": "Push-Benachrichtigungen",
+    "pushDescription": "Push-Benachrichtigungen auf deinem Gerät erhalten",
+    "inAppNotifications": "In-App-Benachrichtigungen",
+    "inAppDescription": "Benachrichtigungen in der App sehen",
+    "deviceTokens": "Registrierte Geräte",
+    "noDevices": "Keine Geräte registriert",
+    "settingsUpdated": "Benachrichtigungseinstellungen erfolgreich aktualisiert",
+    "settingsFailed": "Benachrichtigungseinstellungen konnten nicht aktualisiert werden",
+    "enableAll": "Alle aktivieren",
+    "disableAll": "Alle deaktivieren",
+    "saveChanges": "Änderungen speichern"
   },
   "suna": {
     "samplePrompts": "Beispiel-Prompts",

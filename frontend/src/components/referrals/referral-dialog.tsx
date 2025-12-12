@@ -13,6 +13,7 @@ import { ReferralCodeSection } from './referral-code-section';
 import { ReferralStatsCards } from './referral-stats-cards';
 import { ReferralEmailInvitation } from './referral-email-invitation';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { Handshake } from 'lucide-react';
 
 interface ReferralDialogProps {
   open?: boolean;
@@ -34,28 +35,30 @@ export function ReferralDialog({ open: controlledOpen, onOpenChange: controlledO
         <div className="p-4 sm:p-6 overflow-y-auto max-h-[85vh] sm:max-h-none">
           {/* Logo & Header */}
           <div className="flex flex-col items-center text-center mb-3 sm:mb-5">
-            <div className="mb-2 p-2 rounded-xl bg-muted/50">
-              <KortixLogo size={24} variant="symbol" className="sm:hidden" />
-              <KortixLogo size={32} variant="symbol" className="hidden sm:block" />
+            <div className="mb-6">
+              <KortixLogo size={24} variant="symbol" />
             </div>
             <DialogTitle className="text-base sm:text-xl font-semibold text-foreground">
               {t('title')}
             </DialogTitle>
             <p className="text-xs sm:text-sm text-muted-foreground mt-1 sm:mt-2 px-2">
-              {t('description')} <span className="font-semibold text-foreground">{t('creditsPerReferral')}</span>
+              {t('description')}
             </p>
           </div>
 
           {/* Credit Info */}
-          <div className="bg-muted/30 rounded-lg sm:rounded-xl p-3 sm:p-4 mb-3 sm:mb-5">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex-1">
-                <p className="text-xs text-muted-foreground mb-1">{t('youEarn')}</p>
-                <p className="text-lg sm:text-xl font-semibold">{t('creditsPerReferral')}</p>
+          <div className="bg-muted/30 rounded-lg sm:rounded-xl p-6 mb-3 sm:mb-5 border border-border/50">
+            <div className="flex items-center justify-between gap-4 sm:gap-6">
+              <div className="flex-1 flex flex-col items-start">
+                <p className="text-xs sm:text-sm text-muted-foreground mb-2">{t('youEarn')}</p>
+                <p className="text-xl sm:text-2xl font-semibold text-foreground">{t('creditsPerReferral')}</p>
               </div>
-              <div className="flex-1 text-right">
-                <p className="text-xs text-muted-foreground mb-1">{t('friendGets')}</p>
-                <p className="text-lg sm:text-xl font-semibold">{t('creditsPerReferral')}</p>
+              <div className="flex-shrink-0">
+                <Handshake className="h-5 w-5 sm:h-6 sm:w-6 text-muted-foreground" />
+              </div>
+              <div className="flex-1 flex flex-col items-end">
+                <p className="text-xs sm:text-sm text-muted-foreground mb-2">{t('friendGets')}</p>
+                <p className="text-xl sm:text-2xl font-semibold text-foreground">{t('creditsPerReferral')}</p>
               </div>
             </div>
           </div>

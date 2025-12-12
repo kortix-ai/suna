@@ -11,12 +11,8 @@ import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/ui';
 import { AlertCircle, FileText } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
-import Markdown from 'react-native-markdown-display';
-import { markdownStyles, markdownStylesDark } from '@/lib/utils/markdown-styles';
-// @ts-ignore - no types available
-import SyntaxHighlighter from 'react-native-syntax-highlighter';
-// @ts-ignore - no types available  
-import { atomOneDark, atomOneLight } from 'react-syntax-highlighter/dist/esm/styles/hljs';
+import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
+import { autoLinkUrls } from '@/lib/utils/url-autolink';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -64,7 +60,7 @@ export enum FilePreviewType {
 // Helper to get file preview type
 export function getFilePreviewType(filename: string): FilePreviewType {
   const ext = filename.split('.').pop()?.toLowerCase() || '';
-  
+
   const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'heif', 'tiff'];
   const documentExtensions = ['pdf'];
   const markdownExtensions = ['md', 'markdown', 'mdx'];
@@ -82,7 +78,7 @@ export function getFilePreviewType(filename: string): FilePreviewType {
   ];
   const textExtensions = ['txt', 'log', 'md', 'rtf', 'tex'];
   const binaryExtensions = ['zip', 'tar', 'gz', 'rar', '7z', 'exe', 'dmg', 'pkg', 'deb', 'rpm'];
-  
+
   if (imageExtensions.includes(ext)) return FilePreviewType.IMAGE;
   if (documentExtensions.includes(ext)) return FilePreviewType.PDF;
   if (markdownExtensions.includes(ext)) return FilePreviewType.MARKDOWN;
@@ -93,14 +89,14 @@ export function getFilePreviewType(filename: string): FilePreviewType {
   if (codeExtensions.includes(ext)) return FilePreviewType.CODE;
   if (textExtensions.includes(ext)) return FilePreviewType.TEXT;
   if (binaryExtensions.includes(ext)) return FilePreviewType.BINARY;
-  
+
   return FilePreviewType.OTHER;
 }
 
 // Helper to get language for syntax highlighting
 export function getLanguageFromFilename(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() || '';
-  
+
   const languageMap: Record<string, string> = {
     'js': 'javascript',
     'jsx': 'javascript',
@@ -143,7 +139,7 @@ export function getLanguageFromFilename(filename: string): string {
     'lua': 'lua',
     'perl': 'perl',
   };
-  
+
   return languageMap[ext] || 'text';
 }
 
@@ -178,7 +174,7 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
   }
 
   return (
-    <ScrollView 
+    <ScrollView
       className="flex-1"
       contentContainerStyle={{ padding: 16 }}
       showsVerticalScrollIndicator={false}
@@ -215,7 +211,7 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
               const aspectRatio = width / height;
               const maxWidth = SCREEN_WIDTH - 32;
               const calculatedHeight = maxWidth / aspectRatio;
-              
+
               setImageSize({
                 width: maxWidth,
                 height: calculatedHeight,
@@ -241,14 +237,14 @@ function MarkdownPreview({ content }: { content: string }) {
   const isDark = colorScheme === 'dark';
 
   return (
-    <ScrollView 
+    <ScrollView
       className="flex-1 px-4 py-4"
       showsVerticalScrollIndicator={true}
       style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
     >
-      <Markdown style={isDark ? markdownStylesDark : markdownStyles}>
-        {content}
-      </Markdown>
+      <SelectableMarkdownText isDark={isDark}>
+        {autoLinkUrls(content)}
+      </SelectableMarkdownText>
     </ScrollView>
   );
 }
@@ -270,8 +266,12 @@ function JsonPreview({ content }: { content: string }) {
     }
   }, [content]);
 
+  const lines = useMemo(() => formattedJson.split('\n'), [formattedJson]);
+  const textColor = isDark ? '#eeffff' : '#24292e';
+  const bgColor = isDark ? '#1e1e1e' : '#ffffff';
+
   return (
-    <ScrollView 
+    <ScrollView
       className="flex-1"
       showsVerticalScrollIndicator={true}
       style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
@@ -279,31 +279,37 @@ function JsonPreview({ content }: { content: string }) {
       <View className="px-4 py-3 border-b" style={{
         borderBottomColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
       }}>
-        <Text 
+        <Text
           className="text-xs font-roobert-medium"
-          style={{ 
+          style={{
             color: isDark ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
           }}
         >
           JSON
         </Text>
       </View>
-      <View className="px-2 py-2">
-        <SyntaxHighlighter
-          language="json"
-          style={isDark ? atomOneDark : atomOneLight}
-          customStyle={{
-            backgroundColor: 'transparent',
-            padding: 12,
-            margin: 0,
-            fontSize: 13,
-            lineHeight: 20,
-          }}
-          highlighter="hljs"
-        >
-          {formattedJson}
-        </SyntaxHighlighter>
-      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ backgroundColor: bgColor }}
+      >
+        <View style={{ padding: 12 }}>
+          {lines.map((line, idx) => (
+            <Text
+              key={idx}
+              style={{
+                fontSize: 13,
+                fontFamily: 'monospace',
+                color: textColor,
+                lineHeight: 20,
+              }}
+              selectable
+            >
+              {line || ' '}
+            </Text>
+          ))}
+        </View>
+      </ScrollView>
     </ScrollView>
   );
 }
@@ -316,8 +322,12 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
   const isDark = colorScheme === 'dark';
   const language = getLanguageFromFilename(fileName);
 
+  const lines = useMemo(() => content.split('\n'), [content]);
+  const textColor = isDark ? '#eeffff' : '#24292e';
+  const bgColor = isDark ? '#1e1e1e' : '#ffffff';
+
   return (
-    <ScrollView 
+    <ScrollView
       className="flex-1"
       showsVerticalScrollIndicator={true}
       style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
@@ -325,43 +335,49 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
       <View className="px-4 py-3 border-b" style={{
         borderBottomColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
       }}>
-        <Text 
+        <Text
           className="text-xs font-roobert-medium"
-          style={{ 
+          style={{
             color: isDark ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
           }}
         >
           {language.toUpperCase()}
         </Text>
       </View>
-      <View className="px-2 py-2">
-        <SyntaxHighlighter
-          language={language}
-          style={isDark ? atomOneDark : atomOneLight}
-          customStyle={{
-            backgroundColor: 'transparent',
-            padding: 12,
-            margin: 0,
-            fontSize: 13,
-            lineHeight: 20,
-          }}
-          highlighter="hljs"
-        >
-          {content}
-        </SyntaxHighlighter>
-      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ backgroundColor: bgColor }}
+      >
+        <View style={{ padding: 12 }}>
+          {lines.map((line, idx) => (
+            <Text
+              key={idx}
+              style={{
+                fontSize: 13,
+                fontFamily: 'monospace',
+                color: textColor,
+                lineHeight: 20,
+              }}
+              selectable
+            >
+              {line || ' '}
+            </Text>
+          ))}
+        </View>
+      </ScrollView>
     </ScrollView>
   );
 }
 /**
  * HTML Preview Component with Daytona iframe
  */
-function HtmlPreview({ 
-  content, 
-  filePath, 
-  sandboxUrl 
-}: { 
-  content: string; 
+function HtmlPreview({
+  content,
+  filePath,
+  sandboxUrl
+}: {
+  content: string;
   filePath?: string;
   sandboxUrl?: string;
 }) {
@@ -370,7 +386,7 @@ function HtmlPreview({
 
   // If we have sandbox URL and file path, use Daytona iframe to preview
   const htmlPreviewUrl = constructHtmlPreviewUrl(sandboxUrl, filePath);
-  
+
   if (htmlPreviewUrl) {
     return (
       <View className="flex-1">
@@ -384,7 +400,7 @@ function HtmlPreview({
           renderLoading={() => (
             <View className="flex-1 items-center justify-center">
               <KortixLoader size="large" />
-              <Text 
+              <Text
                 className="text-sm mt-4 font-roobert"
                 style={{ color: isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
               >
@@ -396,7 +412,7 @@ function HtmlPreview({
       </View>
     );
   }
-  
+
   // Fallback: Show as text if no sandbox URL available
   return <TextPreview content={content} />;
 }
@@ -409,7 +425,7 @@ function TextPreview({ content }: { content: string }) {
   const isDark = colorScheme === 'dark';
 
   return (
-    <ScrollView 
+    <ScrollView
       className="flex-1 px-4 py-4"
       showsVerticalScrollIndicator={true}
       style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
@@ -442,13 +458,13 @@ function CsvPreview({ content }: { content: string }) {
   const dataRows = rows.slice(1);
 
   return (
-    <ScrollView 
+    <ScrollView
       horizontal
       showsHorizontalScrollIndicator={true}
       className="flex-1"
       style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
     >
-      <ScrollView 
+      <ScrollView
         showsVerticalScrollIndicator={true}
         className="px-4 py-4"
         style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
@@ -460,8 +476,8 @@ function CsvPreview({ content }: { content: string }) {
           }}
         >
           {headers.map((header, index) => (
-            <View 
-              key={index} 
+            <View
+              key={index}
               style={{ width: 120, marginRight: 12 }}
             >
               <Text
@@ -479,16 +495,16 @@ function CsvPreview({ content }: { content: string }) {
         {dataRows.slice(0, 100).map((row, rowIndex) => {
           const cells = row.split(',').map(c => c.trim());
           return (
-            <View 
-              key={rowIndex} 
+            <View
+              key={rowIndex}
               className="flex-row py-2 border-b"
               style={{
                 borderBottomColor: isDark ? 'rgba(248, 248, 248, 0.05)' : 'rgba(18, 18, 21, 0.05)',
               }}
             >
               {cells.map((cell, cellIndex) => (
-                <View 
-                  key={cellIndex} 
+                <View
+                  key={cellIndex}
                   style={{ width: 120, marginRight: 12 }}
                 >
                   <Text
@@ -550,13 +566,13 @@ function FallbackPreview({ fileName, previewType }: { fileName: string; previewT
 /**
  * Main File Preview Component
  */
-export function FilePreview({ 
-  content, 
-  fileName, 
-  previewType, 
-  blobUrl, 
+export function FilePreview({
+  content,
+  fileName,
+  previewType,
+  blobUrl,
   filePath,
-  sandboxUrl 
+  sandboxUrl
 }: FilePreviewProps) {
   // For images, we need the blob URL
   if (previewType === FilePreviewType.IMAGE) {
@@ -571,22 +587,22 @@ export function FilePreview({
   switch (previewType) {
     case FilePreviewType.MARKDOWN:
       return <MarkdownPreview content={content} />;
-    
+
     case FilePreviewType.HTML:
       return <HtmlPreview content={content} filePath={filePath} sandboxUrl={sandboxUrl} />;
-    
+
     case FilePreviewType.JSON:
       return <JsonPreview content={content} />;
-    
+
     case FilePreviewType.CODE:
       return <CodePreview content={content} fileName={fileName} />;
-    
+
     case FilePreviewType.TEXT:
       return <TextPreview content={content} />;
-    
+
     case FilePreviewType.CSV:
       return <CsvPreview content={content} />;
-    
+
     case FilePreviewType.PDF:
     case FilePreviewType.XLSX:
     case FilePreviewType.BINARY:

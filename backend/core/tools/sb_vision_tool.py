@@ -17,7 +17,7 @@ from reportlab.graphics import renderPM
 import tempfile
 import requests
 from core.utils.config import config
-
+from core.utils.logger import logger
 # Add common image MIME types if mimetypes module is limited
 mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/jpeg", ".jpg")
@@ -41,7 +41,43 @@ DEFAULT_PNG_COMPRESS_LEVEL = 6
     icon="Eye",
     color="bg-pink-100 dark:bg-pink-800/50",
     weight=40,
-    visible=True
+    visible=True,
+    usage_guide="""
+### VISUAL INPUT & IMAGE CONTEXT MANAGEMENT
+
+**CRITICAL: You MUST use the 'load_image' tool to see image files. There is NO other way to access visual information.**
+
+**HOW TO LOAD IMAGES:**
+- Provide the relative path to the image in the `/workspace` directory
+- Example: `load_image(file_path="docs/diagram.png")`
+- ALWAYS use this tool when visual information from a file is necessary
+- Supported formats: JPG, PNG, GIF, WEBP, and other common image formats
+- Maximum file size: 10 MB
+
+**IMAGE CONTEXT MANAGEMENT - HARD LIMIT:**
+- **Maximum 3 images can be loaded in context at any time**
+- Images consume significant context tokens (1000+ tokens per image)
+- You MUST manage image context intelligently
+
+**WHEN TO KEEP IMAGES LOADED:**
+- User wants to recreate, reproduce, or rebuild what's in the image
+- Writing code based on image content (UI from screenshots, diagrams, wireframes)
+- Editing, modifying, or iterating on the image content
+- Task requires ACTIVE VISUAL REFERENCE
+- In the middle of a multi-step task involving the image
+
+**WHEN TO CLEAR IMAGES (use clear_images_from_context tool):**
+- Task is complete and images no longer needed
+- User moves to different topic unrelated to images
+- You only needed to extract information/text from images (already done)
+- Reached the 3-image limit and need to load new images
+
+**CRITICAL WARNINGS:**
+- HARD LIMIT: Cannot load more than 3 images at any time
+- Clearing too early while working on image-based tasks = incomplete/failed work
+- Keep images loaded during active work, clear when done
+- Image files remain in sandbox - clearing only removes from conversation context
+"""
 )
 class SandboxVisionTool(SandboxToolsBase):
     """Tool for allowing the agent to 'see' images within the sandbox."""
@@ -418,10 +454,10 @@ Images remain in the sandbox and can be loaded again anytime. SVG files are auto
             # Check current image count in context (enforce 3-image limit)
             current_image_count = await self._count_images_in_context()
             if current_image_count >= 3:
-                return self.fail_response(
-                    f"Cannot load image '{cleaned_path}': Maximum limit of 3 images in context reached. "
-                    f"You currently have {current_image_count} images loaded. Use a tool to clear old images first."
-                )
+                # Auto-clear all images to make room for new ones
+                cleared = await self._clear_all_images()
+                logger.info(f"[LoadImage] Auto-cleared {cleared} image(s) to make room (was {current_image_count}/3)")
+                current_image_count = 0
             
             # Add the image to the thread as an image_context message with multi-modal content
             # This allows the LLM to actually "see" the image
@@ -446,11 +482,11 @@ Images remain in the sandbox and can be loaded again anytime. SVG files are auto
                 }
             )
             
-            print(f"[LoadImage] Added image to context. Current count: {current_image_count + 1}/3")
+            logger.info(f"[LoadImage] Added '{cleaned_path}' to context")
             
             # Return structured output
             result_data = {
-                "message": f"Successfully loaded image '{cleaned_path}' into context (reduced from {original_size/1024:.1f}KB to {len(compressed_bytes)/1024:.1f}KB). Image {current_image_count + 1}/3 in context.",
+                "message": f"Successfully loaded image '{cleaned_path}' into context (reduced from {original_size/1024:.1f}KB to {len(compressed_bytes)/1024:.1f}KB).",
                 "file_path": cleaned_path,
                 "image_url": public_url
             }
@@ -463,70 +499,24 @@ Images remain in the sandbox and can be loaded again anytime. SVG files are auto
     async def _count_images_in_context(self) -> int:
         """Count how many image_context messages are currently in the conversation."""
         try:
-            messages = await self.thread_manager.get_messages(thread_id=self.thread_id)
+            client = await self.db.client
+            result = await client.table('messages').select('message_id').eq('thread_id', self.thread_id).eq('type', 'image_context').execute()
             
-            # Count messages with type "image_context"
-            image_count = sum(1 for msg in messages if msg.get("type") == "image_context")
-            
-            return image_count
+            return len(result.data) if result.data else 0
         except Exception as e:
             print(f"[LoadImage] Error counting images in context: {e}")
             return 0
     
-    async def _clear_images_from_context(self) -> int:
+    async def _clear_all_images(self) -> int:
         """Remove all image_context messages from the thread."""
         try:
-            messages = await self.thread_manager.get_messages(thread_id=self.thread_id)
-            
-            # Delete messages with type "image_context"
-            deleted_count = 0
-            for msg in messages:
-                if msg.get("type") == "image_context":
-                    await self.thread_manager.delete_message(
-                        thread_id=self.thread_id,
-                        message_id=msg["message_id"]
-                    )
-                    deleted_count += 1
-            
-            return deleted_count
+            client = await self.db.client
+            result = await client.table('messages').delete().eq('thread_id', self.thread_id).eq('type', 'image_context').execute()
+            return len(result.data) if result.data else 0
         except Exception as e:
-            print(f"[LoadImage] Error clearing images from context: {e}")
+            print(f"[LoadImage] Error clearing images: {e}")
             return 0
 
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "clear_images_from_context",
-            "description": """Removes all images from conversation context to free up slots for new images.
-
-⚠️ HARD LIMIT: Maximum 3 images allowed in context at any time.
-
-Call this when you need to load new images but have reached the limit.""",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    })
-    async def clear_images_from_context(self) -> ToolResult:
-        """Removes all image_context messages from the current thread."""
-        try:
-            await self._ensure_sandbox()
-            
-            deleted_count = await self._clear_images_from_context()
-            
-            if deleted_count > 0:
-                return self.success_response(
-                    f"Successfully cleared {deleted_count} image(s) from conversation context. "
-                    f"You can now load up to 3 new images."
-                )
-            else:
-                return self.success_response("No images found in conversation context to clear.")
-                
-        except Exception as e:
-            return self.fail_response(f"Failed to clear images from context: {str(e)}")
- 
     # @openapi_schema({
     #     "type": "function",
     #     "function": {

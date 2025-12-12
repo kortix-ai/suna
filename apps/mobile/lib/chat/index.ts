@@ -13,6 +13,7 @@
 export * from './api';
 export * from './hooks';
 export * from './transcription';
+export * from './modeDetection';
 
 // Named exports for convenience
 export { chatKeys } from './hooks';

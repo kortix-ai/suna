@@ -428,19 +428,14 @@ export function AttachmentGroup({
             return (
                 <div className={cn("flex flex-wrap gap-3", className)}>
                     {visibleFilesWithMeta.map((item, index) => {
-                        const isHtml = item.path.match(/\.(html|htm)$/i) !== null;
-                        // In inline mode (chat input), don't expand CSV/TSV files - they should show as compact attachments
-                        const isPreviewable = item.path.match(/\.(html|htm|md|markdown)$/i) !== null;
+                        // In inline mode (chat input), ALL files should show as compact attachments
+                        // No preview expansion - keep it simple and consistent
+                        const isPreviewable = false;
 
                         return (
                             <div
                                 key={index}
-                                className={cn(
-                                    "relative group",
-                                    isPreviewable ? "w-full" : "h-[54px]",
-                                    item.wrapperClassName
-                                )}
-                                style={isPreviewable ? { gridColumn: '1 / -1' } : undefined}
+                                className="relative group"
                             >
                                 <FileAttachment
                                     filepath={item.path}
@@ -448,17 +443,8 @@ export function AttachmentGroup({
                                     sandboxId={sandboxId}
                                     showPreview={showPreviews}
                                     localPreviewUrl={getLocalPreviewUrl(item.file)}
-                                    collapsed={false} // Show previews like in CompleteToolView
+                                    collapsed={true} // Collapse all files in inline layout - show as compact attachments
                                     alignRight={alignRight} // Pass alignRight prop
-                                    className={cn(
-                                        isPreviewable ? "min-h-[240px] max-h-[400px] overflow-auto" : ""
-                                    )}
-                                    customStyle={
-                                        isPreviewable ? {
-                                            gridColumn: '1 / -1',
-                                            width: '100%'
-                                        } : undefined
-                                    }
                                 />
                                 {onRemove && (
                                     <div

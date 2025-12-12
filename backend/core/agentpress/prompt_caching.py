@@ -458,10 +458,9 @@ async def apply_anthropic_caching_strategy(
             # This prevents leaving large portions uncached
             # Use 1.8x multiplier to balance cache efficiency and stability
             if optimal_chunk_size > cache_threshold_tokens * 1.8:
-                # Use optimal size, cap at 15% of context window to leave room for new messages
                 max_chunk_size = int(context_window_tokens * 0.15)
                 adjusted_threshold = min(optimal_chunk_size, max_chunk_size)
-                logger.info(f"🔄 Redistributing cache blocks: {total_conversation_tokens} tokens across {max_conversation_blocks} blocks (~{adjusted_threshold} tokens/block)")
+                logger.info(f"🔄 Redistributing cache blocks: {total_conversation_tokens} tokens across {max_conversation_blocks} blocks (~{adjusted_threshold} tokens/block), max chunk size: {max_chunk_size} tokens")
                 logger.debug(f"   Previous threshold: {cache_threshold_tokens} tokens, new: {adjusted_threshold} tokens")
                 cache_threshold_tokens = adjusted_threshold
                 
@@ -526,7 +525,9 @@ def group_messages_by_tool_calls_for_caching(messages: List[Dict[str, Any]]) -> 
         """Extract tool_call IDs from an assistant message."""
         if msg.get('role') != 'assistant':
             return []
-        tool_calls = msg.get('tool_calls', [])
+        tool_calls = msg.get('tool_calls') or []
+        if not isinstance(tool_calls, list):
+            return []
         return [tc.get('id') for tc in tool_calls if isinstance(tc, dict) and tc.get('id')]
     
     def get_tool_call_id(msg: Dict[str, Any]) -> Optional[str]:

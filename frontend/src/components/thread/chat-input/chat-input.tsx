@@ -18,11 +18,11 @@ import { handleFiles, FileUploadHandler } from './file-upload-handler';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { ArrowUp, X, Image as ImageIcon, Presentation, BarChart3, FileText, Search, Users, Code2, Sparkles, Brain as BrainIcon, MessageSquare, CornerDownLeft, Plug, Lock } from 'lucide-react';
+import { X, Image as ImageIcon, Presentation, BarChart3, FileText, Search, Users, Code2, Sparkles, Brain as BrainIcon, MessageSquare, CornerDownLeft, Plug, Lock } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { VoiceRecorder } from './voice-recorder';
 import { useTheme } from 'next-themes';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { UnifiedConfigMenu } from './unified-config-menu';
 import { AttachmentGroup } from '../attachment-group';
 import { cn } from '@/lib/utils';
@@ -31,7 +31,8 @@ import { useFileDelete } from '@/hooks/files';
 import { useQueryClient } from '@tanstack/react-query';
 import { ToolCallInput } from './floating-tool-preview';
 import { ChatSnack } from './chat-snack';
-import { Brain, Zap, Database, ArrowDown, Wrench } from 'lucide-react';
+import { Brain, Zap, Database, ArrowDown, ArrowUp, Wrench, Clock, Send } from 'lucide-react';
+import { useMessageQueueStore } from '@/stores/message-queue-store';
 import { useComposioToolkitIcon } from '@/hooks/composio/use-composio';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -41,33 +42,586 @@ import { useAccountState, accountStateSelectors } from '@/hooks/billing';
 import { isStagingMode, isLocalMode } from '@/lib/config';
 import { PlanSelectionModal } from '@/components/billing/pricing';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
-import { ContextUsageIndicator } from '../ContextUsageIndicator';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
+import { MemoryToggle } from './memory-toggle';
 
 import posthog from 'posthog-js';
 
-// Helper function to get the icon for each mode
-const getModeIcon = (mode: string) => {
-  const iconClass = "w-4 h-4";
-  switch (mode) {
-    case 'research':
-      return <Search className={iconClass} />;
-    case 'people':
-      return <Users className={iconClass} />;
-    case 'code':
-      return <Code2 className={iconClass} />;
-    case 'docs':
-      return <FileText className={iconClass} />;
-    case 'data':
-      return <BarChart3 className={iconClass} />;
-    case 'slides':
-      return <Presentation className={iconClass} />;
-    case 'image':
-      return <ImageIcon className={iconClass} />;
-    default:
-      return null;
+// ============================================================================
+// ISOLATED TEXTAREA - Manages its own state to prevent parent re-renders
+// ============================================================================
+
+interface IsolatedTextareaProps {
+  initialValue?: string;
+  placeholder: string;
+  disabled: boolean;
+  isDraggingOver: boolean;
+  onSubmit: () => void;
+  onPaste: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void;
+  hasFiles: boolean;
+  loading: boolean;
+  isAgentRunning: boolean;
+  isUploading: boolean;
+  valueRef: React.MutableRefObject<string>;
+  onHasContentChange: (hasContent: boolean) => void;
+}
+
+const IsolatedTextarea = memo(forwardRef<HTMLTextAreaElement, IsolatedTextareaProps>(function IsolatedTextarea({
+  initialValue = '',
+  placeholder,
+  disabled,
+  isDraggingOver,
+  onSubmit,
+  onPaste,
+  hasFiles,
+  loading,
+  isAgentRunning,
+  isUploading,
+  valueRef,
+  onHasContentChange,
+}, ref) {
+  const [value, setValue] = useState(initialValue);
+  const internalRef = useRef<HTMLTextAreaElement>(null);
+  const prevHasContent = useRef(false);
+  
+  // Use the forwarded ref or internal ref
+  useImperativeHandle(ref, () => internalRef.current!, []);
+  
+  // Keep parent's valueRef in sync
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value, valueRef]);
+  
+  // Notify parent when hasContent changes (but not on every keystroke)
+  useEffect(() => {
+    const hasContent = value.trim().length > 0;
+    if (hasContent !== prevHasContent.current) {
+      prevHasContent.current = hasContent;
+      onHasContentChange(hasContent);
+    }
+  }, [value, onHasContentChange]);
+
+  // Auto-resize textarea
+  const adjustHeight = useCallback(() => {
+    const el = internalRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.maxHeight = '200px';
+    el.style.overflowY = el.scrollHeight > 200 ? 'auto' : 'hidden';
+    const newHeight = Math.min(el.scrollHeight, 200);
+    el.style.height = `${newHeight}px`;
+  }, []);
+
+  useEffect(() => {
+    adjustHeight();
+  }, [value, adjustHeight]);
+
+  useEffect(() => {
+    window.addEventListener('resize', adjustHeight);
+    return () => window.removeEventListener('resize', adjustHeight);
+  }, [adjustHeight]);
+
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setValue(e.target.value);
+  }, []);
+
+  // Detect if we're on a mobile device
+  const isMobile = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
+           (window.innerWidth <= 768 && 'ontouchstart' in window);
+  }, []);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // On mobile, allow Enter to create a new line instead of submitting
+    if (isMobile && e.key === 'Enter' && !e.shiftKey) {
+      // Allow default behavior (new line) on mobile
+      return;
+    }
+    
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      const hasContent = value.trim().length > 0;
+      if (
+        (hasContent || hasFiles) &&
+        !loading &&
+        (!disabled || isAgentRunning) &&
+        !isUploading
+      ) {
+        onSubmit();
+      }
+    }
+  }, [value, hasFiles, loading, disabled, isAgentRunning, isUploading, onSubmit, isMobile]);
+
+  // Expose methods to clear/set value from parent
+  useEffect(() => {
+    const textarea = internalRef.current;
+    if (textarea) {
+      (textarea as any).clearValue = () => setValue('');
+      (textarea as any).appendValue = (text: string) => {
+        setValue(prev => prev ? `${prev} ${text}` : text);
+      };
+    }
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-1 px-2">
+      <Textarea
+        ref={internalRef}
+        value={value}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        onPaste={onPaste}
+        placeholder={placeholder}
+        className={cn(
+          'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 min-h-[100px] sm:min-h-[72px] max-h-[200px] overflow-y-auto resize-none rounded-[24px]',
+          // Use 16px on mobile to prevent zoom, 15px on desktop
+          isMobile ? '!text-[16px]' : '!text-[15px]',
+          isDraggingOver ? 'opacity-40' : '',
+        )}
+        disabled={disabled && !isAgentRunning}
+        rows={1}
+      />
+    </div>
+  );
+}));
+
+// ============================================================================
+// MEMOIZED SUB-COMPONENTS (to prevent re-renders on typing)
+// ============================================================================
+
+// Integrations dropdown - isolated from typing state
+interface IntegrationsDropdownProps {
+  isLoggedIn: boolean;
+  loading: boolean;
+  disabled: boolean;
+  isAgentRunning: boolean;
+  isFreeTier: boolean;
+  quickIntegrations: Array<{ id: string; name: string; slug: string }>;
+  integrationIcons: Record<string, string | undefined>;
+  onOpenRegistry: (slug: string | null) => void;
+  onOpenPlanModal: () => void;
+}
+
+// Rotating integration logos carousel with smooth transitions
+const IntegrationLogosCarousel = memo(function IntegrationLogosCarousel({ 
+  enabled 
+}: { enabled: boolean }) {
+  const popularIntegrations = useMemo(() => [
+    'googledrive',
+    'gmail',
+    'googlecalendar',
+    'slack',
+    'notion',
+    'github',
+    'linear',
+    'airtable',
+    'asana',
+    'trello',
+    'salesforce',
+    'hubspot',
+  ], []);
+
+  const [displayIndex, setDisplayIndex] = useState(0);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const transitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isTransitioningRef = useRef(false);
+  const popularIntegrationsRef = useRef(popularIntegrations);
+
+  // Keep ref in sync
+  useEffect(() => {
+    popularIntegrationsRef.current = popularIntegrations;
+  }, [popularIntegrations]);
+
+  // Calculate indices for current and next logos
+  const currentSlug = popularIntegrations[displayIndex];
+  const nextIndex = (displayIndex + 1) % popularIntegrations.length;
+  const nextSlug = popularIntegrations[nextIndex];
+  
+  // Preload current and next icons for smooth transitions
+  const { data: currentIconData } = useComposioToolkitIcon(currentSlug, { enabled });
+  const { data: nextIconData } = useComposioToolkitIcon(nextSlug, { enabled });
+
+  // Sync ref with state for isTransitioning
+  useEffect(() => {
+    isTransitioningRef.current = isTransitioning;
+  }, [isTransitioning]);
+
+  // Transition to next logo - using ref to avoid dependency issues
+  const transitionToNextRef = useRef(() => {
+    if (isTransitioningRef.current) {
+      return;
+    }
+
+    // Proceed with transition even if next image is still loading
+    // The image will appear when it loads
+    setIsTransitioning(true);
+    isTransitioningRef.current = true;
+    
+    // After fade transition completes, update index
+    transitionTimeoutRef.current = setTimeout(() => {
+      setDisplayIndex((prev) => {
+        const nextIdx = (prev + 1) % popularIntegrationsRef.current.length;
+        return nextIdx;
+      });
+      setIsTransitioning(false);
+      isTransitioningRef.current = false;
+    }, 500); // Match CSS transition duration
+  });
+
+  // Carousel rotation logic - runs continuously
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+    
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+    
+    // Start interval that runs every second
+    intervalRef.current = setInterval(() => {
+      transitionToNextRef.current();
+    }, 1000);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      if (transitionTimeoutRef.current) {
+        clearTimeout(transitionTimeoutRef.current);
+        transitionTimeoutRef.current = null;
+      }
+    };
+  }, [enabled]);
+
+  if (!enabled) {
+    return <Plug className="h-3 w-3" />;
   }
-};
+
+  if (!currentIconData?.icon_url) {
+    return <Plug className="h-3 w-3 animate-pulse" />;
+  }
+
+  const currentUrl = currentIconData.icon_url;
+  const nextUrl = nextIconData?.icon_url;
+
+  return (
+    <div className="relative h-3 w-3 overflow-hidden">
+      {/* Current logo - fading out during transition */}
+      <img
+        key={`current-${currentSlug}`}
+        src={currentUrl}
+        alt={currentSlug}
+        className={`absolute inset-0 h-3 w-3 object-contain transition-opacity duration-500 ease-in-out ${
+          isTransitioning ? 'opacity-0' : 'opacity-100'
+        }`}
+        style={{
+          willChange: 'opacity',
+          backfaceVisibility: 'hidden',
+          transform: 'translateZ(0)', // Force GPU acceleration
+        }}
+      />
+      
+      {/* Next logo - fading in during transition */}
+      {nextUrl && (
+        <img
+          key={`next-${nextSlug}`}
+          src={nextUrl}
+          alt={nextSlug}
+          className={`absolute inset-0 h-3 w-3 object-contain transition-opacity duration-500 ease-in-out ${
+            isTransitioning ? 'opacity-100' : 'opacity-0'
+          }`}
+          style={{
+            willChange: 'opacity',
+            backfaceVisibility: 'hidden',
+            transform: 'translateZ(0)', // Force GPU acceleration
+          }}
+        />
+      )}
+    </div>
+  );
+});
+
+const IntegrationsDropdown = memo(function IntegrationsDropdown({
+  isLoggedIn,
+  loading,
+  disabled,
+  isAgentRunning,
+  isFreeTier,
+  quickIntegrations,
+  integrationIcons,
+  onOpenRegistry,
+  onOpenPlanModal,
+}: IntegrationsDropdownProps) {
+  if (!isLoggedIn) return null;
+
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <div className="relative">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-10 w-10 p-0 bg-transparent border-[1.5px] border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
+                disabled={loading || (disabled && !isAgentRunning)}
+              >
+                <IntegrationLogosCarousel enabled={isLoggedIn && !loading && !(disabled && !isAgentRunning)} />
+              </Button>
+              {isFreeTier && !isLocalMode() && (
+                <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center z-10 pointer-events-none">
+                  <Lock className="h-2.5 w-2.5 text-primary-foreground" strokeWidth={2.5} />
+                </div>
+              )}
+            </div>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <p>Integrations</p>
+        </TooltipContent>
+      </Tooltip>
+          <DropdownMenuContent align="start" className="w-[320px] px-0 py-3 border-[1.5px] border-border rounded-2xl" sideOffset={6}>
+            <div className="px-3 mb-3">
+              <span className="text-xs font-medium text-muted-foreground pl-1">Integrations</span>
+            </div>
+            <div className="space-y-0.5 px-2 relative">
+              {quickIntegrations.map((integration) => (
+                <SpotlightCard 
+                  key={integration.id} 
+                  className={cn(
+                    "transition-colors bg-transparent",
+                    isFreeTier && !isLocalMode() ? "cursor-not-allowed" : "cursor-pointer"
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "flex items-center gap-3 text-sm px-1 py-1 relative",
+                      isFreeTier && !isLocalMode() && "blur-[3px] opacity-70"
+                    )}
+                    onClick={() => {
+                      if (!isFreeTier || isLocalMode()) {
+                        onOpenRegistry(integration.slug);
+                      }
+                    }}
+                  >
+                    <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
+                      {integrationIcons[integration.id] ? (
+                        <img
+                          src={integrationIcons[integration.id]}
+                          alt={integration.name}
+                          className="h-4 w-4"
+                        />
+                      ) : (
+                        <div className="h-4 w-4 bg-muted rounded" />
+                      )}
+                    </div>
+                    <span className="flex-1 truncate font-medium">{integration.name}</span>
+                    <span className="text-xs text-muted-foreground">Connect</span>
+                  </div>
+                </SpotlightCard>
+              ))}
+              <SpotlightCard 
+                className={cn(
+                  "transition-colors bg-transparent",
+                  isFreeTier && !isLocalMode() ? "cursor-not-allowed" : "cursor-pointer"
+                )}
+              >
+                <div
+                  className={cn(
+                    "flex items-center gap-3 text-sm cursor-pointer px-1 py-1 min-h-[40px] relative",
+                    isFreeTier && !isLocalMode() && "blur-[3px] opacity-70"
+                  )}
+                  onClick={() => {
+                    if (!isFreeTier || isLocalMode()) {
+                      onOpenRegistry(null);
+                    }
+                  }}
+                >
+                  <span className="text-muted-foreground font-medium">+ See all integrations</span>
+                </div>
+              </SpotlightCard>
+              
+              {isFreeTier && !isLocalMode() && (
+                <div className="absolute inset-0 z-10 pointer-events-none">
+                  <div className="absolute inset-0 bg-background/60 backdrop-blur-sm rounded-lg" />
+                  <div className="relative h-full flex flex-col items-center justify-center px-6 py-5 gap-4">
+                    <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 border border-primary/20">
+                      <Lock className="h-5 w-5 text-primary" strokeWidth={2} />
+                    </div>
+                    <div className="text-center space-y-1">
+                      <p className="text-sm font-semibold text-foreground">Unlock Integrations</p>
+                      <p className="text-xs text-muted-foreground max-w-[200px]">
+                        Connect Google Drive, Slack, Notion, and 100+ apps
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onOpenRegistry(null)}
+                      className="h-8 px-4 text-xs font-medium shadow-md hover:shadow-lg transition-all pointer-events-auto"
+                    >
+                      Explore
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </DropdownMenuContent>
+    </DropdownMenu>
+  );
+});
+
+// Mode button - isolated from typing state
+interface ModeButtonProps {
+  selectedMode: string | null | undefined;
+  isModeDismissing: boolean;
+  onDeselect: () => void;
+}
+
+const ModeButton = memo(function ModeButton({
+  selectedMode,
+  isModeDismissing,
+  onDeselect,
+}: ModeButtonProps) {
+  if (!selectedMode && !isModeDismissing) return null;
+
+  const getModeIcon = (mode: string) => {
+    const iconClass = "w-4 h-4";
+    switch (mode) {
+      case 'research':
+        return <Search className={iconClass} />;
+      case 'people':
+        return <Users className={iconClass} />;
+      case 'code':
+        return <Code2 className={iconClass} />;
+      case 'docs':
+        return <FileText className={iconClass} />;
+      case 'data':
+        return <BarChart3 className={iconClass} />;
+      case 'slides':
+        return <Presentation className={iconClass} />;
+      case 'image':
+        return <ImageIcon className={iconClass} />;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!isModeDismissing) {
+          onDeselect();
+        }
+      }}
+      className={cn(
+        "h-10 px-2 sm:px-3 py-2 bg-transparent border border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1 sm:gap-1.5 cursor-pointer transition-all duration-200 flex-shrink-0",
+        !isModeDismissing && "animate-in fade-in-0 zoom-in-95",
+        isModeDismissing && "animate-out fade-out-0 zoom-out-95"
+      )}
+    >
+      {selectedMode && getModeIcon(selectedMode)}
+      <span className="hidden sm:inline text-sm">{selectedMode?.charAt(0).toUpperCase()}{selectedMode?.slice(1)}</span>
+      <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+    </Button>
+  );
+});
+
+// Kortix agent modes switcher - isolated from typing state
+interface SunaAgentModeSwitcherProps {
+  enabled: boolean;
+  isSunaAgent: boolean;
+  sunaAgentModes: 'adaptive' | 'autonomous' | 'chat';
+  onModeChange: (mode: 'adaptive' | 'autonomous' | 'chat') => void;
+}
+
+const SunaAgentModeSwitcher = memo(function SunaAgentModeSwitcher({
+  enabled,
+  isSunaAgent,
+  sunaAgentModes,
+  onModeChange,
+}: SunaAgentModeSwitcherProps) {
+  if (!enabled || !(isStagingMode() || isLocalMode()) || !isSunaAgent) return null;
+
+  return (
+    <div className="flex items-center gap-1 p-0.5 bg-muted/50 rounded-lg">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={() => onModeChange('adaptive')}
+            className={cn(
+              "p-1.5 rounded-md transition-all duration-200 cursor-pointer",
+              sunaAgentModes === 'adaptive'
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+            )}
+          >
+            <Sparkles className="w-4 h-4" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          <div className="space-y-1">
+            <p className="font-medium text-white">Adaptive</p>
+            <p className="text-xs text-gray-200">Quick responses with smart context switching</p>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={() => onModeChange('autonomous')}
+            className={cn(
+              "p-1.5 rounded-md transition-all duration-200 cursor-pointer",
+              sunaAgentModes === 'autonomous'
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+            )}
+          >
+            <BrainIcon className="w-4 h-4" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          <div className="space-y-1">
+            <p className="font-medium text-white">Autonomous</p>
+            <p className="text-xs text-gray-200">Deep work mode for multi-step problem solving</p>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={() => onModeChange('chat')}
+            className={cn(
+              "p-1.5 rounded-md transition-all duration-200 cursor-pointer",
+              sunaAgentModes === 'chat'
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+            )}
+          >
+            <MessageSquare className="w-4 h-4" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          <div className="space-y-1">
+            <p className="font-medium text-white">Chat</p>
+            <p className="text-xs text-gray-200">Simple back-and-forth conversation</p>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  );
+});
 
 // Memoized submit button to prevent re-rendering entire controls on every keystroke
 interface SubmitButtonProps {
@@ -101,37 +655,52 @@ const SubmitButton = memo(function SubmitButton({
     (disabled && !isAgentRunning) ||
     isUploading;
 
+  // Message queue feature flag
+  const ENABLE_MESSAGE_QUEUE = false;
+  // When agent is running and user has typed something, show queue button
+  const showAddToQueue = ENABLE_MESSAGE_QUEUE && isAgentRunning && (hasContent || hasFiles);
+  const buttonAction = showAddToQueue ? onSubmit : (isAgentRunning && onStopAgent ? onStopAgent : onSubmit);
+
   return (
     <div className="relative">
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="submit"
-              onClick={isAgentRunning && onStopAgent ? onStopAgent : onSubmit}
-              size="sm"
-              className={cn(
-                "w-8 h-8 flex-shrink-0 self-end rounded-xl relative z-10",
-                (loading || isUploading) && "opacity-100 [&[disabled]]:opacity-100"
-              )}
-              disabled={isDisabled}
-            >
-              {((loading || isUploading) && !isAgentRunning) ? (
-                <KortixLoader size="small" customSize={20} variant={buttonLoaderVariant} />
-              ) : isAgentRunning ? (
-                <div className="min-h-[14px] min-w-[14px] w-[14px] h-[14px] rounded-sm bg-current" />
-              ) : (
-                <CornerDownLeft className="h-5 w-5" />
-              )}
-            </Button>
-          </TooltipTrigger>
-          {isUploading && (
-            <TooltipContent side="top">
-              <p>Uploading {pendingFilesCount} file{pendingFilesCount !== 1 ? 's' : ''}...</p>
-            </TooltipContent>
-          )}
-        </Tooltip>
-      </TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="submit"
+            onClick={buttonAction}
+            size="sm"
+            className={cn(
+              "flex-shrink-0 self-end border-[1.5px] border-border rounded-2xl relative z-10 transition-all duration-200",
+              showAddToQueue ? "h-10 px-3" : "w-10 h-10",
+              (loading || isUploading) && "opacity-100 [&[disabled]]:opacity-100"
+            )}
+            disabled={isDisabled}
+          >
+            {((loading || isUploading) && !isAgentRunning) ? (
+              <KortixLoader size="small" customSize={20} variant={buttonLoaderVariant} />
+            ) : showAddToQueue ? (
+              <MessageSquare className="h-4 w-4" />
+            ) : isAgentRunning ? (
+              <div className="min-h-[14px] min-w-[14px] w-[14px] h-[14px] rounded-sm bg-current" />
+            ) : (
+              <CornerDownLeft className="h-5 w-5" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        {isUploading ? (
+          <TooltipContent side="top">
+            <p>Uploading {pendingFilesCount} file{pendingFilesCount !== 1 ? 's' : ''}...</p>
+          </TooltipContent>
+        ) : showAddToQueue ? (
+          <TooltipContent side="top">
+            <p>Add to queue</p>
+          </TooltipContent>
+        ) : isAgentRunning ? (
+          <TooltipContent side="top">
+            <p>Stop agent</p>
+          </TooltipContent>
+        ) : null}
+      </Tooltip>
     </div>
   );
 });
@@ -141,6 +710,8 @@ export type SubscriptionStatus = 'no_subscription' | 'active';
 export interface ChatInputHandles {
   getPendingFiles: () => File[];
   clearPendingFiles: () => void;
+  setValue: (value: string) => void;
+  getValue: () => string;
 }
 
 export interface ChatInputProps {
@@ -187,6 +758,8 @@ export interface ChatInputProps {
   selectedTemplate?: string | null;
   threadId?: string | null;
   projectId?: string;
+  memoryEnabled?: boolean;
+  onMemoryToggle?: (enabled: boolean) => void;
 }
 
 export interface UploadedFile {
@@ -239,41 +812,39 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       selectedTemplate = null,
       threadId = null,
       projectId,
+      memoryEnabled,
+      onMemoryToggle,
     },
     ref,
   ) => {
-    // Use local state by default for better performance (avoids parent re-renders on every keystroke)
-    // Only use controlled value if explicitly provided
-    const isControlled =
-      controlledValue !== undefined && controlledOnChange !== undefined;
-
-    const [localValue, setLocalValue] = useState('');
-
-    // For controlled mode, sync local value with controlled value when it changes externally
-    // (e.g., when clearing after submit) - only run when controlledValue changes, not localValue
-    const prevControlledValue = useRef(controlledValue);
-    useEffect(() => {
-      if (isControlled && controlledValue !== prevControlledValue.current) {
-        prevControlledValue.current = controlledValue;
-        if (controlledValue !== localValue) {
-          setLocalValue(controlledValue);
-        }
-      }
-    }, [isControlled, controlledValue]); // Removed localValue from deps to prevent unnecessary runs
-
-    const value = localValue;
-
+    // =========================================================================
+    // STATE MANAGEMENT - Optimized to prevent re-renders on typing
+    // =========================================================================
+    
+    // Ref to access current value - textarea manages its own state
+    const valueRef = useRef('');
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    
+    // hasContent state - only changes when empty/non-empty state changes (not every keystroke)
+    const [hasContent, setHasContent] = useState(false);
+    
+    // File state
     const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+    const uploadedFilesRef = useRef(uploadedFiles);
+    uploadedFilesRef.current = uploadedFiles;
+    
     const [pendingFiles, setPendingFiles] = useState<File[]>([]);
     const [isUploading, setIsUploading] = useState(false);
     const [isDraggingOver, setIsDraggingOver] = useState(false);
     const [hasSubmitted, setHasSubmitted] = useState(false);
+    const [isSendingFiles, setIsSendingFiles] = useState(false);
 
-    // Derived booleans for submit button - only change when empty/non-empty state changes
-    // This prevents re-rendering entire controls on every keystroke
-    const hasContent = value.trim().length > 0;
+    // Derived values
     const hasFiles = uploadedFiles.length > 0;
     const pendingFilesCount = pendingFiles.length;
+    
+    // Controlled mode support
+    const isControlled = controlledValue !== undefined && controlledOnChange !== undefined;
 
     const [registryDialogOpen, setRegistryDialogOpen] = useState(false);
     const [selectedIntegration, setSelectedIntegration] = useState<string | null>(null);
@@ -283,7 +854,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const [agentConfigDialog, setAgentConfigDialog] = useState<{ open: boolean; tab: 'instructions' | 'knowledge' | 'triggers' | 'tools' | 'integrations' }>({ open: false, tab: 'instructions' });
     const [mounted, setMounted] = useState(false);
     const [animatedPlaceholder, setAnimatedPlaceholder] = useState('');
-    const [isModeDismissing, setIsModeDismissing] = useState(false);    // Suna Agent Modes feature flag
+    const [isModeDismissing, setIsModeDismissing] = useState(false);    // Kortix Agent Modes feature flag
     const ENABLE_SUNA_AGENT_MODES = false;
     const [sunaAgentModes, setSunaAgentModes] = useState<'adaptive' | 'autonomous' | 'chat'>('adaptive');
 
@@ -409,25 +980,34 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       }
     }, [subscriptionData, showSnackbar, defaultShowSnackbar, shouldShowUsage, subscriptionStatus, showToLowCreditUsers, userDismissedUsage]);
 
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const { data: agentsResponse, isLoading: isLoadingAgents } = useAgents({}, { enabled: isLoggedIn });
     const agents = agentsResponse?.agents || [];
 
-    // Check if selected agent is Suna based on agent data
-    // While loading, default to Suna (assume Suna is the default agent)
+    // Check if selected agent is Kortix based on agent data
+    // While loading, default to Kortix (assume Kortix is the default agent)
     const selectedAgent = agents.find(agent => agent.agent_id === selectedAgentId);
     const sunaAgent = agents.find(agent => agent.metadata?.is_suna_default === true);
     const isSunaAgent = isLoadingAgents 
-        ? true // Show Suna modes while loading
+        ? true // Show Kortix modes while loading
         : (selectedAgent?.metadata?.is_suna_default || (!selectedAgentId && sunaAgent !== undefined) || false);
 
     const { initializeFromAgents } = useAgentSelection();
     useImperativeHandle(ref, () => ({
       getPendingFiles: () => pendingFiles,
       clearPendingFiles: () => setPendingFiles([]),
-    }));
+      setValue: (newValue: string) => {
+        // Use the textarea's custom method if available
+        const textarea = textareaRef.current as any;
+        if (textarea?.clearValue) {
+          textarea.clearValue();
+          if (newValue) textarea.appendValue(newValue);
+        }
+        valueRef.current = newValue;
+      },
+      getValue: () => valueRef.current,
+    }), [pendingFiles]);
 
     useEffect(() => {
       if (agents.length > 0 && !onAgentSelect) {
@@ -441,7 +1021,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
 
     // Typewriter effect for placeholder
     useEffect(() => {
-      if (!mounted || value || !animatePlaceholder) {
+      if (!mounted || hasContent || !animatePlaceholder) {
         setAnimatedPlaceholder(placeholder);
         return;
       }
@@ -459,7 +1039,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       }, 50); // 50ms per character
 
       return () => clearInterval(typingInterval);
-    }, [mounted, placeholder, value, animatePlaceholder]);
+    }, [mounted, placeholder, hasContent, animatePlaceholder]);
 
     // Reset mode dismissing state when selectedMode changes
     useEffect(() => {
@@ -506,28 +1086,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       }, 200); // Match animation duration
     }, [onModeDeselect]);
 
-    // Auto-resize textarea - stable callback that doesn't change
-    const adjustTextareaHeight = useCallback(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.style.height = 'auto';
-      el.style.maxHeight = '200px';
-      el.style.overflowY = el.scrollHeight > 200 ? 'auto' : 'hidden';
-      const newHeight = Math.min(el.scrollHeight, 200);
-      el.style.height = `${newHeight}px`;
-    }, []);
-
-    // Set up resize listener once
-    useEffect(() => {
-      window.addEventListener('resize', adjustTextareaHeight);
-      return () => window.removeEventListener('resize', adjustTextareaHeight);
-    }, [adjustTextareaHeight]);
-
-    // Adjust height when value changes (without re-adding listeners)
-    useEffect(() => {
-      adjustTextareaHeight();
-    }, [value, adjustTextareaHeight]);
-
+    // Auto-focus textarea on mount
     useEffect(() => {
       if (autoFocus && textareaRef.current) {
         textareaRef.current.focus();
@@ -545,8 +1104,18 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       
       // Only clear when agent actually starts (false → true transition)
       if (isAgentRunning && !wasRunning) {
-        setLocalValue('');
+        // Clear the isolated textarea
+        const textarea = textareaRef.current as any;
+        if (textarea?.clearValue) {
+          textarea.clearValue();
+        }
+        valueRef.current = '';
+        setHasContent(false);
         setHasSubmitted(false);
+        
+        // Clear files when agent starts running
+        setUploadedFiles([]);
+        setIsSendingFiles(false);
         
         // Notify parent in controlled mode
         if (isControlled && controlledOnChange) {
@@ -555,17 +1124,32 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       }
     }, [isAgentRunning, isControlled, controlledOnChange]);
 
+    // Reset sending state if loading becomes false without agent starting (submission failure)
+    useEffect(() => {
+      if (!loading && !isAgentRunning && isSendingFiles) {
+        // If loading stopped but agent didn't start, reset sending state
+        // This allows user to retry or remove files
+        setIsSendingFiles(false);
+      }
+    }, [loading, isAgentRunning, isSendingFiles]);
+
     const handleSubmit = useCallback(async (e: React.FormEvent) => {
       e.preventDefault();
+      // Use refs to get current values without adding them to deps
+      const currentValue = valueRef.current;
+      const currentUploadedFiles = uploadedFilesRef.current;
+      
       if (
-        (!value.trim() && uploadedFiles.length === 0) ||
+        (!currentValue.trim() && currentUploadedFiles.length === 0) ||
         loading ||
         (disabled && !isAgentRunning) ||
         isUploading // Prevent submission while files are uploading
       )
         return;
 
-      if (isAgentRunning && onStopAgent) {
+      // Only stop agent if there's no content (empty input)
+      // If there's content, onSubmit will queue the message (handled in ThreadComponent)
+      if (isAgentRunning && !currentValue.trim() && currentUploadedFiles.length === 0 && onStopAgent) {
         onStopAgent();
         return;
       }
@@ -573,10 +1157,15 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       // Mark as submitted to disable input immediately
       setHasSubmitted(true);
 
-      let message = value;
+      // Mark files as being sent (show loading spinner)
+      if (currentUploadedFiles.length > 0) {
+        setIsSendingFiles(true);
+      }
 
-      if (uploadedFiles.length > 0) {
-        const fileInfo = uploadedFiles
+      let message = currentValue;
+
+      if (currentUploadedFiles.length > 0) {
+        const fileInfo = currentUploadedFiles
           .map((file) => `[Uploaded File: ${file.path}]`)
           .join('\n');
         message = message ? `${message}\n\n${fileInfo}` : fileInfo;
@@ -603,37 +1192,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         model_name: baseModelName && baseModelName.trim() ? baseModelName.trim() : undefined,
       });
 
-      // TODO: Clear input after agent stream connects
-      // For now, keep the text visible until stream starts
+      // Keep files visible with loading spinner - they'll be cleared when agent starts running
+    }, [loading, disabled, isAgentRunning, isUploading, onStopAgent, generateDataOptionsMarkdown, generateSlidesTemplateMarkdown, getActualModelId, selectedModel, onSubmit, selectedAgentId]);
 
-      setUploadedFiles([]);
-    }, [value, uploadedFiles, loading, disabled, isAgentRunning, isUploading, onStopAgent, generateDataOptionsMarkdown, generateSlidesTemplateMarkdown, getActualModelId, selectedModel, onSubmit, selectedAgentId, isControlled, controlledOnChange]);
-
-    const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const newValue = e.target.value;
-      // Always update local state immediately for responsive typing
-      setLocalValue(newValue);
-
-      // Only notify parent if in controlled mode (but this won't cause lag since we update local state first)
-      if (isControlled && controlledOnChange) {
-        controlledOnChange(newValue);
-      }
-    }, [isControlled, controlledOnChange]);
-
-    const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-        e.preventDefault();
-        if (
-          (hasContent || hasFiles) &&
-          !loading &&
-          (!disabled || isAgentRunning) &&
-          !isUploading // Prevent submission while files are uploading
-        ) {
-          handleSubmit(e as unknown as React.FormEvent);
-        }
-      }
-    }, [hasContent, hasFiles, loading, disabled, isAgentRunning, isUploading, handleSubmit]);
-
+    // Handle paste for image files
     const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       if (!e.clipboardData) return;
       const items = Array.from(e.clipboardData.items);
@@ -660,16 +1222,18 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     }, [sandboxId, projectId, messages, queryClient]);
 
     const handleTranscription = useCallback((transcribedText: string) => {
-      const newValue = localValue ? `${localValue} ${transcribedText}` : transcribedText;
-
-      // Update local state
-      setLocalValue(newValue);
-
+      // Use the textarea's appendValue method
+      const textarea = textareaRef.current as any;
+      if (textarea?.appendValue) {
+        textarea.appendValue(transcribedText);
+      }
+      
       // Notify parent in controlled mode
       if (isControlled && controlledOnChange) {
+        const newValue = valueRef.current ? `${valueRef.current} ${transcribedText}` : transcribedText;
         controlledOnChange(newValue);
       }
-    }, [localValue, isControlled, controlledOnChange]);
+    }, [isControlled, controlledOnChange]);
 
     const removeUploadedFile = useCallback(async (index: number) => {
       const fileToRemove = uploadedFiles[index];
@@ -741,305 +1305,221 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       );
     }, [mounted, isLoggedIn, hideAgentSelection, selectedAgentId, onAgentSelect, selectedModel, handleModelChange, modelOptions, subscriptionStatus, canAccessModel, refreshCustomModels]);
 
+    // Stable callback for submit from textarea
+    const handleTextareaSubmit = useCallback(() => {
+      handleSubmit({ preventDefault: () => {} } as React.FormEvent);
+    }, [handleSubmit]);
+
+    // Stable callback for hasContent changes - only called when empty/non-empty state changes
+    const handleHasContentChange = useCallback((newHasContent: boolean) => {
+      setHasContent(newHasContent);
+      // Notify parent in controlled mode
+      if (isControlled && controlledOnChange) {
+        controlledOnChange(valueRef.current);
+      }
+    }, [isControlled, controlledOnChange]);
+
+    // Isolated textarea that manages its own state - prevents parent re-renders on typing
     const renderTextArea = useMemo(() => (
-      <div className="flex flex-col gap-1 px-2">
-        <Textarea
-          ref={textareaRef}
-          value={value}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          placeholder={animatedPlaceholder}
-          className={cn(
-            'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 !text-[15px] min-h-[100px] sm:min-h-[72px] max-h-[200px] overflow-y-auto resize-none',
-            isDraggingOver ? 'opacity-40' : '',
-          )}
-          disabled={disabled && !isAgentRunning}
-          rows={1}
-        />
-      </div>
-    ), [value, handleChange, handleKeyDown, handlePaste, animatedPlaceholder, isDraggingOver, disabled, isAgentRunning]);
+      <IsolatedTextarea
+        ref={textareaRef}
+        placeholder={animatedPlaceholder}
+        disabled={disabled}
+        isDraggingOver={isDraggingOver}
+        onSubmit={handleTextareaSubmit}
+        onPaste={handlePaste}
+        hasFiles={hasFiles}
+        loading={loading}
+        isAgentRunning={isAgentRunning}
+        isUploading={isUploading}
+        valueRef={valueRef}
+        onHasContentChange={handleHasContentChange}
+      />
+    ), [animatedPlaceholder, disabled, isDraggingOver, handleTextareaSubmit, handlePaste, hasFiles, loading, isAgentRunning, isUploading, handleHasContentChange]);
 
-    const renderControls = useMemo(() => (
-      <div className="flex items-center justify-between mt-0 mb-1 px-2 gap-2">
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-shrink overflow-visible">
-          {!hideAttachments && (
-            <FileUploadHandler
-              ref={fileInputRef}
-              loading={loading}
-              disabled={disabled}
-              isAgentRunning={isAgentRunning}
-              isUploading={isUploading}
-              sandboxId={sandboxId}
-              projectId={projectId}
-              setPendingFiles={setPendingFiles}
-              setUploadedFiles={setUploadedFiles}
-              setIsUploading={setIsUploading}
-              messages={messages}
-              isLoggedIn={isLoggedIn}
-            />
-          )}
+    // Stable callbacks for opening dialogs - don't need to be in deps
+    const handleOpenRegistry = useCallback((slug: string | null) => {
+      setSelectedIntegration(slug);
+      setRegistryDialogOpen(true);
+    }, []);
 
-          {isLoggedIn && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <div className="relative">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
-                          disabled={loading || (disabled && !isAgentRunning)}
-                        >
-                          <Plug className="h-4 w-4" />
-                        </Button>
-                        {isFreeTier && !isLocalMode() && (
-                          <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center z-10 pointer-events-none">
-                            <Lock className="h-2.5 w-2.5 text-primary-foreground" strokeWidth={2.5} />
-                          </div>
-                        )}
-                      </div>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-[320px] px-0 py-3 border-[1.5px] border-border rounded-2xl" sideOffset={6}>
-                      <div className="px-3 mb-3">
-                        <span className="text-xs font-medium text-muted-foreground pl-1">Integrations</span>
-                      </div>
-                      <div className="space-y-0.5 px-2 relative">
-                        {quickIntegrations.map((integration) => (
-                          <SpotlightCard 
-                            key={integration.id} 
-                            className={cn(
-                              "transition-colors bg-transparent",
-                              isFreeTier && !isLocalMode() ? "cursor-not-allowed" : "cursor-pointer"
-                            )}
-                          >
-                            <div
-                              className={cn(
-                                "flex items-center gap-3 text-sm px-1 py-1 relative",
-                                isFreeTier && !isLocalMode() && "blur-[3px] opacity-70"
-                              )}
-                              onClick={() => {
-                                if (!isFreeTier || isLocalMode()) {
-                                  setSelectedIntegration(integration.slug);
-                                  setRegistryDialogOpen(true);
-                                }
-                              }}
-                            >
-                              <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
-                                {integrationIcons[integration.id as keyof typeof integrationIcons] ? (
-                                  <img
-                                    src={integrationIcons[integration.id as keyof typeof integrationIcons]}
-                                    alt={integration.name}
-                                    className="h-4 w-4"
-                                  />
-                                ) : (
-                                  <div className="h-4 w-4 bg-muted rounded" />
-                                )}
-                              </div>
-                              <span className="flex-1 truncate font-medium">{integration.name}</span>
-                              <span className="text-xs text-muted-foreground">Connect</span>
-                            </div>
-                          </SpotlightCard>
-                        ))}
-                        <SpotlightCard 
-                          className={cn(
-                            "transition-colors bg-transparent",
-                            isFreeTier && !isLocalMode() ? "cursor-not-allowed" : "cursor-pointer"
-                          )}
-                        >
-                          <div
-                            className={cn(
-                              "flex items-center gap-3 text-sm cursor-pointer px-1 py-1 min-h-[40px] relative",
-                              isFreeTier && !isLocalMode() && "blur-[3px] opacity-70"
-                            )}
-                            onClick={() => {
-                              if (!isFreeTier || isLocalMode()) {
-                                setSelectedIntegration(null);
-                                setRegistryDialogOpen(true);
-                              }
-                            }}
-                          >
-                            <span className="text-muted-foreground font-medium">+ See all integrations</span>
-                          </div>
-                        </SpotlightCard>
-                        
-                        {isFreeTier && !isLocalMode() && (
-                          <div className="absolute inset-0 z-10 pointer-events-none">
-                            {/* Subtle backdrop blur */}
-                            <div className="absolute inset-0 bg-background/60 backdrop-blur-sm rounded-lg" />
-                            
-                            {/* Content overlay - proper flex column layout */}
-                            <div className="relative h-full flex flex-col items-center justify-center px-6 py-5 gap-4">
-                              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 border border-primary/20">
-                                <Lock className="h-5 w-5 text-primary" strokeWidth={2} />
-                              </div>
-                              <div className="text-center space-y-1">
-                                <p className="text-sm font-semibold text-foreground">Unlock Integrations</p>
-                                <p className="text-xs text-muted-foreground max-w-[200px]">
-                                  Connect Google Drive, Slack, Notion, and 100+ apps
-                                </p>
-                              </div>
-                              
-                              {/* Explore button - opens registry dialog */}
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  setSelectedIntegration(null);
-                                  setRegistryDialogOpen(true);
-                                }}
-                                className="h-8 px-4 text-xs font-medium shadow-md hover:shadow-lg transition-all pointer-events-auto"
-                              >
-                                Explore
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  <p>Connect integrations</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
+    const handleOpenPlanModal = useCallback(() => {
+      setPlanSelectionModalOpen(true);
+    }, []);
 
-          {/* Agent Mode Switcher - Only for Suna */}
-          {ENABLE_SUNA_AGENT_MODES && (isStagingMode() || isLocalMode()) && isSunaAgent && (
-            <TooltipProvider>
-              <div className="flex items-center gap-1 p-0.5 bg-muted/50 rounded-lg">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={() => setSunaAgentModes('adaptive')}
-                      className={cn(
-                        "p-1.5 rounded-md transition-all duration-200 cursor-pointer",
-                        sunaAgentModes === 'adaptive'
-                          ? "bg-background text-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground hover:bg-background/50"
-                      )}
-                    >
-                      <Sparkles className="w-4 h-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    <div className="space-y-1">
-                      <p className="font-medium text-white">Adaptive</p>
-                      <p className="text-xs text-gray-200">Quick responses with smart context switching</p>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={() => setSunaAgentModes('autonomous')}
-                      className={cn(
-                        "p-1.5 rounded-md transition-all duration-200 cursor-pointer",
-                        sunaAgentModes === 'autonomous'
-                          ? "bg-background text-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground hover:bg-background/50"
-                      )}
-                    >
-                      <BrainIcon className="w-4 h-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    <div className="space-y-1">
-                      <p className="font-medium text-white">Autonomous</p>
-                      <p className="text-xs text-gray-200">Deep work mode for multi-step problem solving</p>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={() => setSunaAgentModes('chat')}
-                      className={cn(
-                        "p-1.5 rounded-md transition-all duration-200 cursor-pointer",
-                        sunaAgentModes === 'chat'
-                          ? "bg-background text-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground hover:bg-background/50"
-                      )}
-                    >
-                      <MessageSquare className="w-4 h-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    <div className="space-y-1">
-                      <p className="font-medium text-white">Chat</p>
-                      <p className="text-xs text-gray-200">Simple back-and-forth conversation</p>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            </TooltipProvider>
-          )}
-
-          {(selectedMode || isModeDismissing) && onModeDeselect && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (!isModeDismissing) {
-                  handleModeDeselect();
-                }
-              }}
-              className={cn(
-                "h-8 px-2 sm:px-3 py-2 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1 sm:gap-1.5 cursor-pointer transition-all duration-200 flex-shrink-0",
-                !isModeDismissing && "animate-in fade-in-0 zoom-in-95",
-                isModeDismissing && "animate-out fade-out-0 zoom-out-95"
-              )}
-            >
-              {selectedMode && getModeIcon(selectedMode)}
-              <span className="hidden sm:inline text-sm">{selectedMode?.charAt(0).toUpperCase()}{selectedMode?.slice(1)}</span>
-              <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            </Button>
-          )}
-        </div>
-
-        <div className='flex items-center gap-2 flex-shrink-0'>
-          {renderConfigDropdown}
-          <PlanSelectionModal
-            open={planModalOpen}
-            onOpenChange={setPlanSelectionModalOpen}
-            returnUrl={typeof window !== 'undefined' ? window.location.href : '/'}
-          />
-
-          {isLoggedIn && <VoiceRecorder
-            onTranscription={handleTranscription}
-            disabled={loading || (disabled && !isAgentRunning)}
-          />}
-
-          <SubmitButton
-            hasContent={hasContent}
-            hasFiles={hasFiles}
-            isAgentRunning={isAgentRunning}
+    // Controls are split into left and right to minimize re-renders
+    // Memoized to prevent recreation on every keystroke
+    const leftControls = useMemo(() => (
+      <div className="flex items-center gap-2 min-w-0 flex-shrink overflow-visible">
+        {!hideAttachments && (
+          <FileUploadHandler
+            ref={fileInputRef}
             loading={loading}
             disabled={disabled}
+            isAgentRunning={isAgentRunning}
             isUploading={isUploading}
-            onStopAgent={onStopAgent}
-            onSubmit={handleSubmit}
-            buttonLoaderVariant={buttonLoaderVariant}
-            pendingFilesCount={pendingFilesCount}
+            sandboxId={sandboxId}
+            projectId={projectId}
+            setPendingFiles={setPendingFiles}
+            setUploadedFiles={setUploadedFiles}
+            setIsUploading={setIsUploading}
+            messages={messages}
+            isLoggedIn={isLoggedIn}
           />
-        </div>
+        )}
+
+        <IntegrationsDropdown
+          isLoggedIn={isLoggedIn}
+          loading={loading}
+          disabled={disabled}
+          isAgentRunning={isAgentRunning}
+          isFreeTier={isFreeTier ?? false}
+          quickIntegrations={quickIntegrations}
+          integrationIcons={integrationIcons}
+          onOpenRegistry={handleOpenRegistry}
+          onOpenPlanModal={handleOpenPlanModal}
+        />
+
+        {/* {isLoggedIn && !threadId && (
+          <MemoryToggle
+            disabled={loading || (disabled && !isAgentRunning)}
+            memoryEnabled={memoryEnabled}
+            onMemoryToggle={onMemoryToggle}
+          />
+        )} */}
+
+        <SunaAgentModeSwitcher
+          enabled={ENABLE_SUNA_AGENT_MODES}
+          isSunaAgent={isSunaAgent}
+          sunaAgentModes={sunaAgentModes}
+          onModeChange={setSunaAgentModes}
+        />
+
+        {onModeDeselect && (
+          <ModeButton
+            selectedMode={selectedMode}
+            isModeDismissing={isModeDismissing}
+            onDeselect={handleModeDeselect}
+          />
+        )}
       </div>
-    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, projectId, messages, isLoggedIn, renderConfigDropdown, planModalOpen, setPlanSelectionModalOpen, handleTranscription, onStopAgent, handleSubmit, hasContent, hasFiles, selectedMode, onModeDeselect, handleModeDeselect, isModeDismissing, isSunaAgent, sunaAgentModes, pendingFilesCount, googleDriveIcon, slackIcon, notionIcon, buttonLoaderVariant, isFreeTier, subscriptionData]);
+    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, projectId, messages, isLoggedIn, isFreeTier, quickIntegrations, integrationIcons, handleOpenRegistry, handleOpenPlanModal, threadId, memoryEnabled, onMemoryToggle, isSunaAgent, sunaAgentModes, onModeDeselect, selectedMode, isModeDismissing, handleModeDeselect]);
+
+    const rightControls = useMemo(() => (
+      <div className='flex items-center gap-2 flex-shrink-0'>
+        {renderConfigDropdown}
+
+        {isLoggedIn && <VoiceRecorder
+          onTranscription={handleTranscription}
+          disabled={loading || (disabled && !isAgentRunning)}
+        />}
+
+        <SubmitButton
+          hasContent={hasContent}
+          hasFiles={hasFiles}
+          isAgentRunning={isAgentRunning}
+          loading={loading}
+          disabled={disabled}
+          isUploading={isUploading}
+          onStopAgent={onStopAgent}
+          onSubmit={handleSubmit}
+          buttonLoaderVariant={buttonLoaderVariant}
+          pendingFilesCount={pendingFilesCount}
+        />
+      </div>
+    ), [renderConfigDropdown, isLoggedIn, handleTranscription, loading, disabled, isAgentRunning, hasContent, hasFiles, isUploading, onStopAgent, handleSubmit, buttonLoaderVariant, pendingFilesCount]);
+
+    const renderControls = useMemo(() => (
+      <div className="flex items-center justify-between mt-0 mb-1 px-2 gap-1.5">
+        {leftControls}
+        {rightControls}
+      </div>
+    ), [leftControls, rightControls]);
 
     const isSnackVisible = showToolPreview || !!showSnackbar || (isFreeTier && subscriptionData && !isLocalMode());
 
+    // Message Queue - get from store
+    const allQueuedMessages = useMessageQueueStore((state) => state.queuedMessages);
+    const removeQueuedMessage = useMessageQueueStore((state) => state.removeMessage);
+    const moveUpQueuedMessage = useMessageQueueStore((state) => state.moveUp);
+    const queuedMessages = React.useMemo(() => 
+      threadId ? allQueuedMessages.filter((msg) => msg.threadId === threadId) : [],
+      [allQueuedMessages, threadId]
+    );
+    // Message queue feature flag
+    const ENABLE_MESSAGE_QUEUE = false;
+    const hasQueuedMessages = ENABLE_MESSAGE_QUEUE && queuedMessages.length > 0;
+
+    // Send now handler - stops agent and sends message immediately
+    const handleSendNow = React.useCallback((msg: typeof queuedMessages[0]) => {
+      if (onStopAgent) {
+        onStopAgent();
+      }
+      removeQueuedMessage(msg.id);
+      // Small delay to let agent stop
+      setTimeout(() => {
+        onSubmit(msg.message, msg.options);
+      }, 100);
+    }, [onStopAgent, removeQueuedMessage, onSubmit]);
+
     return (
-      <div className="mx-auto w-full max-w-4xl relative">
-        <div className="relative">
-          <ChatSnack
+      <TooltipProvider>
+        <div className="mx-auto w-full max-w-4xl relative">
+          {/* Message Queue - grows out of chat input */}
+          {hasQueuedMessages && (
+            <div className="absolute bottom-full left-[10%] right-[10%] mb-0 z-20">
+              <div className="bg-muted/80 backdrop-blur-sm border border-border/50 border-b-0 rounded-t-lg overflow-hidden">
+                {queuedMessages.map((msg, i) => (
+                  <div
+                    key={msg.id}
+                    className="px-3 py-1.5 flex items-center gap-2 border-b border-border/30 last:border-b-0 group"
+                  >
+                    <Clock className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                    <span className="flex-1 text-xs text-foreground/80 truncate">{msg.message}</span>
+                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => handleSendNow(msg)}
+                            className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                          >
+                            <Send className="w-3 h-3" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">Send now</TooltipContent>
+                      </Tooltip>
+                      {i > 0 && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => threadId && moveUpQueuedMessage(msg.id, threadId)}
+                              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                            >
+                              <ArrowUp className="w-3 h-3" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs">Move up</TooltipContent>
+                        </Tooltip>
+                      )}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => removeQueuedMessage(msg.id)}
+                            className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">Remove</TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="relative">
+            <ChatSnack
             toolCalls={toolCalls}
             toolCallIndex={toolCallIndex}
             onExpandToolPreview={onExpandToolPreview}
@@ -1085,22 +1565,30 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             }}
           >
             <div className="w-full text-sm flex flex-col justify-between items-start rounded-lg">
-              <CardContent className={`w-full p-1.5 pb-2 ${bgColor} border rounded-3xl`}>
+              <CardContent className={`w-full p-1.5 pb-2 ${bgColor} border rounded-[24px]`}>
                 {(uploadedFiles.length > 0 || isUploading) && (
                   <div className="relative">
                     <AttachmentGroup
                       files={uploadedFiles || []}
                       sandboxId={sandboxId}
-                      onRemove={removeUploadedFile}
+                      onRemove={isSendingFiles ? undefined : removeUploadedFile}
                       layout="inline"
                       maxHeight="216px"
                       showPreviews={true}
                     />
-                    {isUploading && pendingFiles.length > 0 && (
-                      <div className="absolute inset-0 bg-background/50 backdrop-blur-sm rounded-xl flex items-center justify-center">
+                    {(isUploading && pendingFiles.length > 0) && (
+                      <div className="absolute inset-0 bg-background/50 backdrop-blur-sm rounded-xl flex items-center justify-center z-10">
                         <div className="flex items-center gap-2 bg-background/90 px-3 py-2 rounded-lg border border-border">
                           <KortixLoader size="small" customSize={16} variant="auto" />
                           <span className="text-sm">Uploading {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''}...</span>
+                        </div>
+                      </div>
+                    )}
+                    {isSendingFiles && !isUploading && (
+                      <div className="absolute inset-0 bg-background/50 backdrop-blur-sm rounded-xl flex items-center justify-center z-10">
+                        <div className="flex items-center gap-2 bg-background/90 px-3 py-2 rounded-lg border border-border">
+                          <KortixLoader size="small" customSize={16} variant="auto" />
+                          <span className="text-sm">Sending {uploadedFiles.length} file{uploadedFiles.length !== 1 ? 's' : ''}...</span>
                         </div>
                       </div>
                     )}
@@ -1120,7 +1608,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                 <div className="flex items-center justify-between gap-1 overflow-x-auto scrollbar-none relative">
                   <button
                     onClick={() => setAgentConfigDialog({ open: true, tab: 'integrations' })}
-                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
                   >
                     <div className="flex items-center -space-x-0.5">
                       {quickIntegrations.every(int => integrationIcons[int.id as keyof typeof integrationIcons]) ? (
@@ -1150,21 +1638,21 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                   </button>
                   <button
                     onClick={() => setAgentConfigDialog({ open: true, tab: 'tools' })}
-                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
                   >
                     <Wrench className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="text-xs font-medium">Tools</span>
                   </button>
                   <button
                     onClick={() => setAgentConfigDialog({ open: true, tab: 'instructions' })}
-                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
                   >
                     <Brain className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="text-xs font-medium">Instructions</span>
                   </button>
                   <button
                     onClick={() => setAgentConfigDialog({ open: true, tab: 'knowledge' })}
-                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
                   >
                     <Database className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="text-xs font-medium">Knowledge</span>
@@ -1172,7 +1660,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
 
                   <button
                     onClick={() => setAgentConfigDialog({ open: true, tab: 'triggers' })}
-                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
                   >
                     <Zap className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="text-xs font-medium">Triggers</span>
@@ -1217,8 +1705,9 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
               onAgentChange={onAgentSelect}
             />
           )}
+          </div>
         </div>
-      </div>
+      </TooltipProvider>
     );
   },
 ));
