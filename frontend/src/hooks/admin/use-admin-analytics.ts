@@ -8,26 +8,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 export interface AnalyticsSummary {
   total_users: number;
   total_threads: number;
-  total_messages: number;
-  active_users_today: number;
   active_users_week: number;
   new_signups_today: number;
   new_signups_week: number;
-  new_subscriptions_today: number;
-  new_subscriptions_week: number;
-  conversion_rate_today: number;
   conversion_rate_week: number;
-  avg_messages_per_thread: number;
   avg_threads_per_user: number;
-}
-
-export interface DailyStats {
-  date: string;
-  signups: number;
-  subscriptions: number;
-  threads_created: number;
-  active_users: number;
-  conversion_rate: number;
 }
 
 export interface ThreadAnalytics {
@@ -148,20 +133,6 @@ export function useAnalyticsSummary() {
       return response.data;
     },
     staleTime: 60000, // 1 minute
-  });
-}
-
-export function useDailyStats(days: number = 30) {
-  return useQuery({
-    queryKey: ['admin', 'analytics', 'daily', days],
-    queryFn: async (): Promise<DailyStats[]> => {
-      const response = await backendApi.get(`/admin/analytics/daily?days=${days}`);
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-    staleTime: 300000, // 5 minutes
   });
 }
 
@@ -311,9 +282,6 @@ export function useRefreshAnalytics() {
     },
     refreshSummary: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'summary'] });
-    },
-    refreshDaily: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'daily'] });
     },
     refreshThreads: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'threads'] });
