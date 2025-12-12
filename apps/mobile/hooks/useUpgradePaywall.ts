@@ -15,9 +15,9 @@ import * as Haptics from 'expo-haptics';
 import Purchases from 'react-native-purchases';
 import { shouldUseRevenueCat, isRevenueCatConfigured } from '@/lib/billing/provider';
 import { presentPaywall } from '@/lib/billing/revenuecat';
-import { invalidateAccountState } from '@/lib/billing/hooks';
+import { invalidateAccountState, accountStateKeys } from '@/lib/billing/hooks';
 import { useSubscription } from '@/lib/billing';
-import { useAuthContext } from '@/contexts';
+import { useAuthContext, useBillingContext } from '@/contexts';
 
 /**
  * Debug helper to log all available offerings from RevenueCat
@@ -111,6 +111,7 @@ export interface UpgradePaywallResult {
 export function useUpgradePaywall(): UpgradePaywallResult {
   const queryClient = useQueryClient();
   const { user } = useAuthContext();
+  const { refetchAll: refetchAllBilling } = useBillingContext();
   const { data: subscriptionData, refetch: refetchSubscription } = useSubscription({
     enabled: !!user,
   });
@@ -143,9 +144,52 @@ export function useUpgradePaywall(): UpgradePaywallResult {
         console.log('✅ Purchase completed from paywall');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-        // Invalidate cache and refetch subscription data
-        invalidateAccountState(queryClient);
-        await refetchSubscription();
+        // Force immediate refetch of all billing data
+        // Remove queries from cache to force fresh fetch
+        queryClient.removeQueries({ queryKey: accountStateKeys.all });
+
+        // Wait a moment for backend to process the purchase
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        // Force refetch all billing queries with retry logic
+        const refetchWithRetry = async (retries = 3) => {
+          for (let i = 0; i < retries; i++) {
+            try {
+              // Force refetch by removing cache and fetching fresh
+              const results = await Promise.all([
+                refetchSubscription(),
+                queryClient.refetchQueries({
+                  queryKey: accountStateKeys.all,
+                  type: 'active', // Only refetch active queries
+                }),
+              ]);
+
+              // Check if subscription data was updated
+              const updatedData = queryClient.getQueryData(accountStateKeys.state());
+              if (updatedData) {
+                const tierKey = (updatedData as any)?.subscription?.tier_key;
+                console.log(`🔄 Billing data refreshed after purchase (tier: ${tierKey})`);
+                break;
+              }
+
+              // If not updated and we have retries left, wait and try again
+              if (i < retries - 1) {
+                console.log(`⏳ Waiting for backend sync, retry ${i + 1}/${retries}...`);
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+              }
+            } catch (error) {
+              console.warn('⚠️ Error refetching billing data:', error);
+              if (i < retries - 1) {
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+              }
+            }
+          }
+        };
+
+        await refetchWithRetry();
+
+        // Also trigger BillingContext refetch to update all components
+        refetchAllBilling();
       } else if (result.cancelled) {
         console.log('🚫 User cancelled paywall');
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -159,7 +203,7 @@ export function useUpgradePaywall(): UpgradePaywallResult {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return { purchased: false, cancelled: true };
     }
-  }, [useRevenueCat, queryClient, refetchSubscription, tierKey]);
+  }, [useRevenueCat, queryClient, refetchSubscription, refetchAllBilling, tierKey]);
 
   return {
     useNativePaywall: useRevenueCat,
