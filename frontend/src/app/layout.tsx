@@ -244,9 +244,6 @@ export default function RootLayout({
                 <Suspense fallback={null}>
                   <PlanSelectionModal />
                 </Suspense>
-                <Suspense fallback={null}>
-                  <AnnouncementDialog />
-                </Suspense>
               </ReactQueryProvider>
               </PresenceProvider>
             </AuthProvider>

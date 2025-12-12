@@ -66,7 +66,7 @@ export const useAnnouncementStore = create<AnnouncementStore>()(
       },
     }),
     {
-      name: 'announcement-store-v1',
+      name: 'announcement-store-v2',
       partialize: (state) => ({ dismissedAnnouncements: state.dismissedAnnouncements }),
     }
   )
