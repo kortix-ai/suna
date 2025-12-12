@@ -209,7 +209,7 @@ export default function ExplorerResultPage() {
 
     setContentStates(prev => ({ ...prev, [cell.id]: { html: '', isStreaming: true, isComplete: false } }));
 
-    const es = new EventSource(`${apiUrl}/api/explore/content/${cell.id}?${params.toString()}`);
+    const es = new EventSource(`${apiUrl}/v1/explore/content/${cell.id}?${params.toString()}`);
     contentSourcesRef.current.set(cell.id, es);
 
     es.onmessage = (event) => {
@@ -240,7 +240,7 @@ export default function ExplorerResultPage() {
     const processedIds = new Set<string>();
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-    const es = new EventSource(`${apiUrl}/api/explore/${encodeURIComponent(result)}`);
+    const es = new EventSource(`${apiUrl}/v1/explore/${encodeURIComponent(result)}`);
     eventSourceRef.current = es;
     let accumulatedXML = '';
 
