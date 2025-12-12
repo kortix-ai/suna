@@ -25,9 +25,30 @@ export function markdownParser(input: string) {
     url?: string;
   }> = [];
 
+  // Code blocks: ```...``` - style the entire block
+  const codeBlockRegex = /```[\w]*\n[\s\S]*?```/g;
+  let match;
+  while ((match = codeBlockRegex.exec(input)) !== null) {
+    // Mark entire code block with 'pre' style
+    ranges.push({ start: match.index, length: match[0].length, type: 'pre' });
+  }
+
+  // Horizontal separators: ---, ***, ___
+  const separatorRegex = /^(-{3,}|\*{3,}|_{3,})$/gm;
+  while ((match = separatorRegex.exec(input)) !== null) {
+    // Style separator lines
+    ranges.push({ start: match.index, length: match[1].length, type: 'syntax' });
+  }
+
+  // Table detection: lines with | ... |
+  const tableRegex = /^\|.*\|$/gm;
+  while ((match = tableRegex.exec(input)) !== null) {
+    // Dim table markup slightly
+    ranges.push({ start: match.index, length: match[0].length, type: 'code' });
+  }
+
   // Bold: **text** or __text__
   const boldRegex = /(\*\*|__)(.*?)\1/g;
-  let match;
   while ((match = boldRegex.exec(input)) !== null) {
     ranges.push({ start: match.index, length: match[1].length, type: 'syntax' });
     ranges.push({ start: match.index + match[1].length, length: match[2].length, type: 'bold' });
