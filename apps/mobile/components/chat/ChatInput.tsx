@@ -28,12 +28,6 @@ const SPRING_CONFIG = { damping: 15, stiffness: 400 };
 // Android hit slop for better touch targets
 const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 10, bottom: 10, left: 10, right: 10 } : undefined;
 
-// #region agent log
-const debugLog = (location: string, message: string, data: any, hypothesisId: string) => {
-  fetch('http://127.0.0.1:7242/ingest/75c4e084-f8e3-4454-ac60-13feff134172',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location,message,data,timestamp:Date.now(),sessionId:'debug-session',hypothesisId})}).catch(()=>{});
-};
-// #endregion
-
 export interface ChatInputRef {
   focus: () => void;
 }
@@ -591,9 +585,6 @@ const NormalMode = React.memo(({
         {/* Use TouchableOpacity on Android - AnimatedPressable blocks touches */}
         <TouchableOpacity
           onPress={() => {
-            // #region agent log
-            debugLog('ChatInput.tsx:attachPress', 'ATTACH BUTTON PRESSED', { isAuthenticated, isDisabled }, 'H8');
-            // #endregion
             if (!isAuthenticated) {
               console.warn('⚠️ User not authenticated - cannot attach');
               return;
@@ -619,9 +610,6 @@ const NormalMode = React.memo(({
         {/* Use TouchableOpacity on Android - AnimatedPressable blocks touches */}
         <TouchableOpacity
           onPress={() => {
-            // #region agent log
-            debugLog('ChatInput.tsx:sendPress', 'SEND/MIC BUTTON PRESSED', { isSendingMessage, isTranscribing, isAgentRunning }, 'H8');
-            // #endregion
             onButtonPress();
           }}
           disabled={isSendingMessage || isTranscribing}

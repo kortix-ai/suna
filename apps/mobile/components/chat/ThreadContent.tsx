@@ -1,7 +1,16 @@
 import React, { useMemo, useCallback } from 'react';
 import { View, Pressable, Linking, Text as RNText, TextInput, Platform } from 'react-native';
-import ContextMenu from 'react-native-context-menu-view';
 import * as Clipboard from 'expo-clipboard';
+
+// Only import ContextMenu on native platforms (iOS/Android)
+let ContextMenu: React.ComponentType<any> | null = null;
+if (Platform.OS !== 'web') {
+  try {
+    ContextMenu = require('react-native-context-menu-view').default;
+  } catch (e) {
+    console.warn('react-native-context-menu-view not available');
+  }
+}
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import type { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/api/types';
@@ -917,36 +926,62 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                         borderRadius: 24,
                         borderBottomRightRadius: 8,
                       }}>
-                      <ContextMenu
-                        actions={[{ title: 'Copy', systemIcon: 'doc.on.doc' }]}
-                        onPress={async (e) => {
-                          if (e.nativeEvent.index === 0) {
-                            await Clipboard.setStringAsync(cleanContent);
-                          }
-                        }}
-                        dropdownMenuMode={false}
-                        borderTopLeftRadius={24}
-                        borderTopRightRadius={24}
-                        borderBottomLeftRadius={24}
-                        borderBottomRightRadius={8}>
-                        <View
-                          className="bg-card px-4 py-3"
-                          style={{
-                            borderRadius: 24,
-                            borderBottomRightRadius: 8,
-                            overflow: 'hidden',
-                          }}>
-                          <RNText
-                            selectable
+                      {ContextMenu ? (
+                        <ContextMenu
+                          actions={[{ title: 'Copy', systemIcon: 'doc.on.doc' }]}
+                          onPress={async (e: any) => {
+                            if (e.nativeEvent.index === 0) {
+                              await Clipboard.setStringAsync(cleanContent);
+                            }
+                          }}
+                          dropdownMenuMode={false}
+                          borderTopLeftRadius={24}
+                          borderTopRightRadius={24}
+                          borderBottomLeftRadius={24}
+                          borderBottomRightRadius={8}>
+                          <View
+                            className="bg-card px-4 py-3"
                             style={{
-                              fontSize: 16,
-                              lineHeight: 24,
-                              color: isDark ? '#fafafa' : '#18181b',
+                              borderRadius: 24,
+                              borderBottomRightRadius: 8,
+                              overflow: 'hidden',
                             }}>
-                            {cleanContent}
-                          </RNText>
-                        </View>
-                      </ContextMenu>
+                            <RNText
+                              selectable
+                              style={{
+                                fontSize: 16,
+                                lineHeight: 24,
+                                color: isDark ? '#fafafa' : '#18181b',
+                              }}>
+                              {cleanContent}
+                            </RNText>
+                          </View>
+                        </ContextMenu>
+                      ) : (
+                        <Pressable
+                          onLongPress={async () => {
+                            await Clipboard.setStringAsync(cleanContent);
+                          }}
+                          delayLongPress={500}>
+                          <View
+                            className="bg-card px-4 py-3"
+                            style={{
+                              borderRadius: 24,
+                              borderBottomRightRadius: 8,
+                              overflow: 'hidden',
+                            }}>
+                            <RNText
+                              selectable
+                              style={{
+                                fontSize: 16,
+                                lineHeight: 24,
+                                color: isDark ? '#fafafa' : '#18181b',
+                              }}>
+                              {cleanContent}
+                            </RNText>
+                          </View>
+                        </Pressable>
+                      )}
                     </View>
                   </View>
                 )}

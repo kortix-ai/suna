@@ -12,12 +12,6 @@ import { useColorScheme } from 'nativewind';
 import { formatCredits } from '@/lib/utils/credit-formatter';
 import { useLanguage } from '@/contexts';
 
-// #region agent log
-const debugLog = (location: string, message: string, data: any, hypothesisId: string) => {
-  fetch('http://127.0.0.1:7242/ingest/75c4e084-f8e3-4454-ac60-13feff134172',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location,message,data,timestamp:Date.now(),sessionId:'debug-session',hypothesisId})}).catch(()=>{});
-};
-// #endregion
-
 // NOTE: On Android, AnimatedPressable blocks touches - use TouchableOpacity instead
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -78,9 +72,6 @@ export function TopNav({
   }));
 
   const handleMenuPress = () => {
-    // #region agent log
-    debugLog('TopNav.tsx:menuPress', 'MENU BUTTON onPress FIRED', { hasHandler: !!onMenuPress }, 'H4');
-    // #endregion
     console.log('🎯 Menu panel pressed');
     console.log('📱 Opening menu drawer');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -88,18 +79,12 @@ export function TopNav({
   };
 
   const handleUpgradePress = () => {
-    // #region agent log
-    debugLog('TopNav.tsx:upgradePress', 'UPGRADE BUTTON onPress FIRED', {}, 'H4');
-    // #endregion
     console.log('🎯 Upgrade button pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onUpgradePress?.();
   };
 
   const handleCreditsPress = () => {
-    // #region agent log
-    debugLog('TopNav.tsx:creditsPress', 'CREDITS BUTTON onPress FIRED', {}, 'H4');
-    // #endregion
     console.log('🎯 Credits button pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     refetchCredits();

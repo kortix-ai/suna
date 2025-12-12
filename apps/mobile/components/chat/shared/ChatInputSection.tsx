@@ -10,12 +10,6 @@ import { useLanguage } from '@/contexts';
 import type { Agent } from '@/api/types';
 import type { Attachment } from '@/hooks/useChat';
 
-// #region agent log
-const debugLog = (location: string, message: string, data: any, hypothesisId: string) => {
-  fetch('http://127.0.0.1:7242/ingest/75c4e084-f8e3-4454-ac60-13feff134172',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location,message,data,timestamp:Date.now(),sessionId:'debug-session',hypothesisId})}).catch(()=>{});
-};
-// #endregion
-
 export interface ChatInputSectionProps {
   // Chat input props
   value: string;
