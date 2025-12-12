@@ -30,15 +30,16 @@ import Animated, {
   withSpring
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import { FullScreenPresentationViewer } from './tool-views/presentation-tool/FullScreenPresentationViewer';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 /**
  * Helper to check if a filepath is a presentation attachment
- * Matches: presentations/[name]/slide_XX.html
+ * Matches: presentations/[name]/slide_XX.html (with or without /workspace/ prefix)
  */
 function isPresentationAttachment(filepath: string): boolean {
-  const presentationPattern = /^presentations\/([^\/]+)\/(slide_\d+\.html|metadata\.json)$/i;
+  const presentationPattern = /presentations\/([^\/]+)\/(slide_\d+\.html|metadata\.json)$/i;
   return presentationPattern.test(filepath);
 }
 
@@ -53,8 +54,9 @@ function parsePresentationSlidePath(filePath: string | null): {
   if (!filePath) {
     return { isValid: false, presentationName: null, slideNumber: null };
   }
-  
-  const match = filePath.match(/^presentations\/([^\/]+)\/slide_(\d+)\.html$/i);
+
+  // Match presentations/[name]/slide_XX.html anywhere in the path (handles /workspace/ prefix)
+  const match = filePath.match(/presentations\/([^\/]+)\/slide_(\d+)\.html$/i);
   if (match) {
     return {
       isValid: true,
@@ -62,15 +64,17 @@ function parsePresentationSlidePath(filePath: string | null): {
       slideNumber: parseInt(match[2], 10)
     };
   }
-  
+
   return { isValid: false, presentationName: null, slideNumber: null };
 }
 
 /**
  * Construct HTML preview URL from sandbox URL
+ * Handles paths with or without /workspace/ prefix
  */
 function constructHtmlPreviewUrl(sandboxUrl: string, filePath: string): string {
-  const processedPath = filePath.replace(/^\/workspace\//, '');
+  // Remove /workspace/ prefix if present, and any leading slashes
+  const processedPath = filePath.replace(/^\/workspace\//, '').replace(/^\/+/, '');
   const pathSegments = processedPath.split('/').map(segment => encodeURIComponent(segment));
   const encodedPath = pathSegments.join('/');
   return `${sandboxUrl}/${encodedPath}`;
@@ -137,7 +141,7 @@ export function FileAttachmentRenderer({
 
   // Check if this is a presentation attachment - render with PresentationSlideCard
   const presentationParsed = useMemo(() => parsePresentationSlidePath(filePath), [filePath]);
-  
+
   if (presentationParsed.isValid && sandboxUrl && presentationParsed.presentationName && presentationParsed.slideNumber) {
     return (
       <PresentationAttachment
@@ -151,8 +155,10 @@ export function FileAttachmentRenderer({
   }
 
   // Check if this is an HTML file that should use iframe preview (when sandboxUrl is available)
+  // BUT: exclude presentation slides - they should be handled by PresentationAttachment above
   const isHtmlFile = file.extension === 'html' || file.extension === 'htm';
-  if (isHtmlFile && sandboxUrl && showPreview) {
+  const isPresentationSlide = isPresentationAttachment(filePath);
+  if (isHtmlFile && sandboxUrl && showPreview && !isPresentationSlide) {
     return (
       <HtmlPreviewAttachment
         file={file}
@@ -420,6 +426,10 @@ function DocumentAttachment({
   const isPreviewable = useMemo(() => {
     if (!showPreview || !file.extension) return false;
     const ext = file.extension.toLowerCase();
+    // Don't preview presentation slides - they should use PresentationAttachment instead
+    if ((ext === 'html' || ext === 'htm') && isPresentationAttachment(file.path)) {
+      return false;
+    }
     const result = ['md', 'markdown', 'html', 'htm', 'txt', 'json', 'csv'].includes(ext);
     return result;
   }, [showPreview, file.extension, file.path]);
@@ -681,6 +691,7 @@ function PresentationAttachment({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [containerWidth, setContainerWidth] = useState(0);
+  const [fullScreenVisible, setFullScreenVisible] = useState(false);
 
   const slidePreviewUrl = useMemo(() => {
     const url = constructHtmlPreviewUrl(sandboxUrl, filePath);
@@ -689,10 +700,13 @@ function PresentationAttachment({
 
   const handlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (onPress) {
-      onPress(filePath);
-    }
+    // Open the presentation viewer instead of passing to parent's file handler
+    setFullScreenVisible(true);
   };
+
+  const handleFullScreenClose = useCallback(() => {
+    setFullScreenVisible(false);
+  }, []);
 
   const handleLayout = useCallback((event: LayoutChangeEvent) => {
     const { width } = event.nativeEvent.layout;
@@ -771,7 +785,7 @@ function PresentationAttachment({
                 javaScriptEnabled={true}
                 domStorageEnabled={true}
                 injectedJavaScript={injectedJS}
-                onMessage={() => {}}
+                onMessage={() => { }}
               />
             </View>
           )}
@@ -825,6 +839,15 @@ function PresentationAttachment({
           </Text>
         </Pressable>
       </View>
+
+      {/* Full Screen Presentation Viewer */}
+      <FullScreenPresentationViewer
+        visible={fullScreenVisible}
+        onClose={handleFullScreenClose}
+        presentationName={presentationName}
+        sandboxUrl={sandboxUrl}
+        initialSlide={slideNumber}
+      />
     </View>
   );
 }
