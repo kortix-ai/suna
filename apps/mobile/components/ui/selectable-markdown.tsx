@@ -6,7 +6,7 @@
  * native solution using @expensify/react-native-live-markdown.
  */
 
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   StyleSheet,
   TextStyle,
@@ -20,7 +20,6 @@ import {
   Keyboard,
 } from 'react-native';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
-import Markdown from 'react-native-markdown-display';
 import {
   markdownParser,
   lightMarkdownStyle,
@@ -55,27 +54,6 @@ function hasCodeBlocks(text: string): boolean {
   return /```[\s\S]*?```/.test(text);
 }
 
-/**
- * Handle link press by opening in browser
- */
-async function handleLinkPress(url: string) {
-  console.log('[Link] Opening URL:', url);
-  try {
-    let cleanUrl = url.trim();
-    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
-      cleanUrl = 'https://' + cleanUrl;
-    }
-    const canOpen = await Linking.canOpenURL(cleanUrl);
-    if (canOpen) {
-      await Linking.openURL(cleanUrl);
-    } else {
-      Alert.alert('Error', `Cannot open: ${cleanUrl}`);
-    }
-  } catch (error) {
-    console.error('[Link] Error:', error);
-    Alert.alert('Error', 'Failed to open link');
-  }
-}
 
 /**
  * Render a code block with copy button
@@ -183,13 +161,6 @@ function hasSeparator(text: string): boolean {
 }
 
 /**
- * Check if a line contains a markdown link
- */
-function lineHasLink(line: string): boolean {
-  return /\[([^\]]+)\]\(([^\)]+)\)/.test(line);
-}
-
-/**
  * Check if a line is a separator
  */
 function isSeparatorLine(line: string): boolean {
@@ -197,17 +168,16 @@ function isSeparatorLine(line: string): boolean {
 }
 
 /**
- * Split text into blocks - separators, lines with links, lines without
- * This minimizes the amount rendered with non-selectable markdown
+ * Split text into blocks - only by separators
+ * Don't split by links - let the markdown renderer handle them naturally
  */
 function splitIntoBlocks(
   text: string
-): Array<{ type: 'separator' | 'links' | 'text'; content: string }> {
+): Array<{ type: 'separator' | 'text'; content: string }> {
   const lines = text.split('\n');
-  const blocks: Array<{ type: 'separator' | 'links' | 'text'; content: string }> = [];
+  const blocks: Array<{ type: 'separator' | 'text'; content: string }> = [];
 
   let currentBlock: string[] = [];
-  let currentHasLinks = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -217,7 +187,7 @@ function splitIntoBlocks(
       // Flush current block
       if (currentBlock.length > 0) {
         blocks.push({
-          type: currentHasLinks ? 'links' : 'text',
+          type: 'text',
           content: currentBlock.join('\n'),
         });
         currentBlock = [];
@@ -230,26 +200,12 @@ function splitIntoBlocks(
       continue;
     }
 
-    const thisLineHasLink = lineHasLink(line);
-
-    if (currentBlock.length === 0) {
-      currentBlock.push(line);
-      currentHasLinks = thisLineHasLink;
-    } else if (thisLineHasLink === currentHasLinks) {
-      currentBlock.push(line);
-    } else {
-      blocks.push({
-        type: currentHasLinks ? 'links' : 'text',
-        content: currentBlock.join('\n'),
-      });
-      currentBlock = [line];
-      currentHasLinks = thisLineHasLink;
-    }
+    currentBlock.push(line);
   }
 
   if (currentBlock.length > 0) {
     blocks.push({
-      type: currentHasLinks ? 'links' : 'text',
+      type: 'text',
       content: currentBlock.join('\n'),
     });
   }
@@ -273,39 +229,8 @@ function Separator({ isDark }: { isDark: boolean }) {
 }
 
 /**
- * Markdown styles for react-native-markdown-display
- */
-const getMarkdownDisplayStyles = (isDark: boolean) => ({
-  body: {
-    color: isDark ? '#fafafa' : '#18181b',
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  link: {
-    color: isDark ? '#60a5fa' : '#2563eb',
-    textDecorationLine: 'underline' as const,
-  },
-  heading1: { fontSize: 28, fontWeight: '700' as const, color: isDark ? '#fafafa' : '#18181b' },
-  heading2: { fontSize: 24, fontWeight: '700' as const, color: isDark ? '#fafafa' : '#18181b' },
-  heading3: { fontSize: 20, fontWeight: '700' as const, color: isDark ? '#fafafa' : '#18181b' },
-  heading4: { fontSize: 18, fontWeight: '600' as const, color: isDark ? '#fafafa' : '#18181b' },
-  strong: { fontWeight: '700' as const },
-  em: { fontStyle: 'italic' as const },
-  code_inline: {
-    fontFamily: 'monospace',
-    backgroundColor: isDark ? '#374151' : '#e5e7eb',
-    color: isDark ? '#fafafa' : '#18181b',
-  },
-  bullet_list: { marginVertical: 0 },
-  ordered_list: { marginVertical: 0 },
-  list_item: { marginVertical: 0 },
-  paragraph: { marginVertical: 0 },
-});
-
-/**
- * Hybrid approach:
- * - Lines WITHOUT links → MarkdownTextInput (selectable)
- * - Lines WITH links → react-native-markdown-display (clickable)
+ * Render markdown - simplified approach without splitting by links
+ * Uses MarkdownTextInput for selectable text, handles links with onLinkPress
  */
 function MarkdownWithLinkHandling({
   text,
@@ -319,18 +244,16 @@ function MarkdownWithLinkHandling({
   needsSpacing?: boolean;
 }) {
   const blocks = useMemo(() => splitIntoBlocks(text), [text]);
-  const markdownStyles = useMemo(() => getMarkdownDisplayStyles(isDark), [isDark]);
 
-  // If no blocks have links or separators, just use selectable MarkdownTextInput
-  const hasAnyLinks = blocks.some((b) => b.type === 'links');
+  // If no separators, just render as single MarkdownTextInput
   const hasAnySeparators = blocks.some((b) => b.type === 'separator');
 
-  if (!hasAnyLinks && !hasAnySeparators) {
+  if (!hasAnySeparators) {
     return (
       <View style={needsSpacing && styles.partSpacing} pointerEvents="box-none">
         <MarkdownTextInput
           value={text}
-          onChangeText={() => {}}
+          onChangeText={() => { }}
           parser={markdownParser}
           markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
           style={[styles.base, isDark ? styles.darkText : styles.lightText, style]}
@@ -346,37 +269,20 @@ function MarkdownWithLinkHandling({
     );
   }
 
-  // Hybrid: each block uses appropriate component
+  // Render blocks with separators
   return (
     <View style={needsSpacing && styles.partSpacing}>
       {blocks.map((block, idx) => {
         if (!block.content.trim() && block.type !== 'separator') return null;
 
         if (block.type === 'separator') {
-          // Separator → custom component
           return <Separator key={`sep-${idx}`} isDark={isDark} />;
-        } else if (block.type === 'links') {
-          // Lines with links → react-native-markdown-display (clickable)
-          return (
-            <View key={`md-${idx}`} style={{ marginVertical: 0 }}>
-              <Markdown
-                style={markdownStyles}
-                onLinkPress={(url) => {
-                  console.log('[Link] Clicked:', url);
-                  handleLinkPress(url);
-                  return false;
-                }}>
-                {block.content}
-              </Markdown>
-            </View>
-          );
         } else {
-          // Lines without links → MarkdownTextInput (selectable)
           return (
             <View key={`txt-${idx}`} pointerEvents="box-none">
               <MarkdownTextInput
                 value={block.content}
-                onChangeText={() => {}}
+                onChangeText={() => { }}
                 parser={markdownParser}
                 markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
                 style={[styles.base, isDark ? styles.darkText : styles.lightText, style]}
