@@ -706,17 +706,21 @@ export function insertMarkdownFormat(
     if (hasSelection) {
       const needsNewlineBefore = currentLineBeforeSelection.length > 0;
       const prefix = needsNewlineBefore ? '\n```\n' : '```\n';
-      const suffix = '\n```';
+      const suffix = '\n```\n\n';
       const newText = beforeSelection + prefix + selectedText + suffix + afterSelection;
       const newCursorPosition = selectionStart + prefix.length + selectedText.length + suffix.length;
       return { newText, newCursorPosition, newSelectionEnd: newCursorPosition };
     } else {
       if (currentLineBeforeSelection.length === 0) {
-        const newText = beforeSelection + '```\n\n```' + afterSelection;
-        return { newText, newCursorPosition: selectionStart + 4, newSelectionEnd: selectionStart + 4 };
+        const block = '```\n\n```\n\n';
+        const newText = beforeSelection + block + afterSelection;
+        // Cursor after the entire block (after the newlines)
+        return { newText, newCursorPosition: selectionStart + block.length, newSelectionEnd: selectionStart + block.length };
       } else {
-        const newText = beforeSelection + '\n```\n\n```' + afterSelection;
-        return { newText, newCursorPosition: selectionStart + 5, newSelectionEnd: selectionStart + 5 };
+        const block = '\n```\n\n```\n\n';
+        const newText = beforeSelection + block + afterSelection;
+        // Cursor after the entire block (after the newlines)
+        return { newText, newCursorPosition: selectionStart + block.length, newSelectionEnd: selectionStart + block.length };
       }
     }
   }
@@ -824,11 +828,11 @@ export function insertMarkdownFormat(
 
     case 'horizontal-rule':
       if (currentLineBeforeSelection.length === 0) {
-        insertion = '---\n';
-        cursorOffset = 4;
+        insertion = '---\n\n';
+        cursorOffset = insertion.length; // After the separator and empty line
       } else {
-        insertion = '\n---\n';
-        cursorOffset = 5;
+        insertion = '\n---\n\n';
+        cursorOffset = insertion.length; // After the separator and empty line
       }
       break;
 
@@ -837,11 +841,11 @@ export function insertMarkdownFormat(
 | -------- | -------- |
 | Cell 1   | Cell 2   |`;
       if (currentLineBeforeSelection.length === 0) {
-        insertion = tableTemplate;
-        cursorOffset = 2;
+        insertion = tableTemplate + '\n\n';
+        cursorOffset = insertion.length; // After table and empty line
       } else {
-        insertion = '\n' + tableTemplate;
-        cursorOffset = 3;
+        insertion = '\n' + tableTemplate + '\n\n';
+        cursorOffset = insertion.length; // After table and empty line
       }
       break;
 

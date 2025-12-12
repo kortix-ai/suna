@@ -143,19 +143,18 @@ function parseMarkdownParts(text: string): ContentPart[] {
     const markdownContent = markdownLines.join('\n');
     const trimmedContent = markdownContent.trim();
 
-    if (trimmedContent) {
-      // Calculate the actual start offset accounting for leading whitespace trim
-      const leadingWhitespace = markdownContent.length - markdownContent.trimStart().length;
-      const actualStartOffset = markdownStartOffset + leadingWhitespace;
-      const actualEndOffset = actualStartOffset + trimmedContent.length;
+    // Always include markdown parts, even if empty, so users can type after special elements
+    // Calculate the actual start offset accounting for leading whitespace trim
+    const leadingWhitespace = markdownContent.length - markdownContent.trimStart().length;
+    const actualStartOffset = markdownStartOffset + leadingWhitespace;
+    const actualEndOffset = actualStartOffset + trimmedContent.length;
 
-      parts.push({
-        type: 'markdown',
-        content: trimmedContent,
-        startIndex: actualStartOffset,
-        endIndex: actualEndOffset,
-      });
-    }
+    parts.push({
+      type: 'markdown',
+      content: trimmedContent,
+      startIndex: actualStartOffset,
+      endIndex: actualEndOffset,
+    });
   }
 
   return parts.length > 0 ? parts : [{ type: 'markdown', content: text, startIndex: 0, endIndex: text.length }];
@@ -520,7 +519,10 @@ export function HybridMarkdownEditor({
   // Track which markdown part is currently focused for selection mapping
   const [focusedPartIndex, setFocusedPartIndex] = useState<number | null>(null);
 
-  // ALWAYS show rich components with custom rendering
+  // Track which part is actively being typed in (starts on first keystroke, not focus)
+  const [typingPartIndex, setTypingPartIndex] = useState<number | null>(null);
+
+  // Parse parts
   const parts = useMemo(() => {
     const parsed = parseMarkdownParts(value);
     return parsed;
@@ -553,7 +555,17 @@ export function HybridMarkdownEditor({
     const part = parts[partIndex];
     if (!part) return;
 
-    // Reconstruct the full document with the edited part
+    // For markdown parts, directly replace content in original text to preserve spacing
+    if (part.type === 'markdown' && !newLanguage) {
+      // Calculate the actual content boundaries
+      const before = value.substring(0, part.startIndex);
+      const after = value.substring(part.endIndex);
+      const newText = before + newContent + after;
+      onChange(newText);
+      return;
+    }
+
+    // For other types (codeblock, table), reconstruct with proper spacing
     const newParts = parts.map((p, i) => {
       if (i === partIndex) {
         if (p.type === 'codeblock') {
@@ -579,7 +591,7 @@ export function HybridMarkdownEditor({
     });
 
     onChange(newParts.join('\n\n'));
-  }, [parts, onChange]);
+  }, [parts, onChange, value]);
 
   // Handle deleting a part
   const handlePartDelete = useCallback((partIndex: number) => {
@@ -605,9 +617,11 @@ export function HybridMarkdownEditor({
     handlePartEdit(partIndex, newContent);
   }, [handlePartEdit]);
 
-  // If no special blocks, just use simple markdown editor with direct ref
+  // Determine if we should use simple or complex rendering
   const hasNoSpecialBlocks = parts.length === 1 && parts[0].type === 'markdown';
+  const isEditMode = editable && isEditing;
 
+  // Simple case: no special blocks - use single input
   if (hasNoSpecialBlocks) {
     return (
       <View style={styles.container}>
@@ -637,19 +651,14 @@ export function HybridMarkdownEditor({
     );
   }
 
-  // ALWAYS show rich custom components
-  const isEditMode = editable && isEditing;
-  console.log('[HybridMarkdown] Showing custom components, isEditMode:', isEditMode);
-
+  // PREVIEW mode: show rich custom components
   return (
     <View style={styles.container}>
       {parts.length === 0 && <Text className="text-primary">No parts parsed</Text>}
       {parts.map((part, index) => {
-        console.log('[HybridMarkdown] Rendering part', index, '- type:', part.type);
         const needsSpacing = index > 0 && part.content.trim().length > 0;
 
         if (part.type === 'codeblock') {
-          console.log('[HybridMarkdown] Rendering codeblock, editable:', isEditMode);
           return (
             <View key={`part-${index}`} style={needsSpacing && styles.partSpacing}>
               <CodeBlock
@@ -665,7 +674,6 @@ export function HybridMarkdownEditor({
         }
 
         if (part.type === 'table') {
-          console.log('[HybridMarkdown] Rendering table, editable:', isEditMode);
           return (
             <View key={`part-${index}`} style={needsSpacing && styles.partSpacing}>
               <SimpleTable
@@ -680,7 +688,6 @@ export function HybridMarkdownEditor({
         }
 
         if (part.type === 'separator') {
-          console.log('[HybridMarkdown] Rendering separator, editable:', isEditMode);
           return (
             <View key={`part-${index}`} style={needsSpacing && styles.partSpacing}>
               <Separator
@@ -692,20 +699,38 @@ export function HybridMarkdownEditor({
         }
 
         // Markdown part - editable in edit mode
-        if (!part.content.trim()) {
-          console.log('[HybridMarkdown] Skipping empty markdown part');
+        // Allow empty parts in edit mode so users can type after special elements
+        const isEmpty = !part.content.trim();
+        if (isEmpty && !isEditMode) {
           return null;
         }
+
+        const handleLocalChange = (text: string) => {
+          if (!isEditMode) return;
+          handleMarkdownEdit(index, text);
+        };
+
+        // Use stable key, but change it when switching between edit/preview to force reset
+        const inputKey = isEditMode
+          ? `markdown-${index}-edit`
+          : `markdown-${index}-preview`;
 
         return (
           <View key={`part-${index}`} style={needsSpacing && styles.partSpacing}>
             <MarkdownTextInput
-              value={part.content}
-              onChangeText={isEditMode ? (text) => handleMarkdownEdit(index, text) : () => { }}
+              key={inputKey}
+              value={isEditMode ? undefined : part.content}
+              defaultValue={isEditMode ? part.content : undefined}
+              onChangeText={handleLocalChange}
               onSelectionChange={isEditMode ? (e) => {
                 handlePartSelectionChange(index, e.nativeEvent.selection);
               } : undefined}
-              onFocus={() => setFocusedPartIndex(index)}
+              onFocus={() => {
+                setFocusedPartIndex(index);
+              }}
+              onBlur={() => {
+                // Nothing needed here anymore
+              }}
               parser={markdownParser}
               markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
               multiline
@@ -718,10 +743,11 @@ export function HybridMarkdownEditor({
                 styles.previewMarkdown,
                 {
                   color: isDark ? '#fafafa' : '#18181b',
+                  minHeight: isEmpty && isEditMode ? 40 : undefined,
                 },
               ]}
               textAlignVertical="top"
-              placeholder={isEditMode ? "Type markdown here..." : ""}
+              placeholder={isEmpty && isEditMode ? "Type here..." : isEditMode ? "Type markdown here..." : ""}
               placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
             />
           </View>
