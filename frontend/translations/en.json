@@ -1139,6 +1139,28 @@
         "9": "Research the competitive landscape of AI-powered cybersecurity solutions"
       }
     }
+  },
+  "announcements": {
+    "memories": {
+      "title": "Introducing Memories",
+      "description": "Kortix now remembers your preferences and context across all conversations",
+      "features": {
+        "personalized": {
+          "title": "Personalized Experience",
+          "description": "Adapts to your working style over time"
+        },
+        "retention": {
+          "title": "Context Retention",
+          "description": "Important details remembered across chats"
+        },
+        "control": {
+          "title": "You're in Control",
+          "description": "Toggle off or clear memories anytime"
+        }
+      },
+      "manageButton": "Manage Memories",
+      "dismissButton": "Got it"
+    }
   }
 }
 

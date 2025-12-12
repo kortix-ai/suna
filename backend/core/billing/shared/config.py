@@ -70,9 +70,9 @@ TIERS: Dict[str, Tier] = {
         scheduled_triggers_limit=0,
         app_triggers_limit=0,
         memory_config={
-            'enabled': False,
-            'max_memories': 0,
-            'retrieval_limit': 0
+            'enabled': True,
+            'max_memories': 10,
+            'retrieval_limit': 2
         },
         daily_credit_config={
             'enabled': True,

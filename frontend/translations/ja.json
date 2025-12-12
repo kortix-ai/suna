@@ -1131,5 +1131,27 @@
         "9": "AI搭載サイバーセキュリティソリューションの競争環境を調査"
       }
     }
+  },
+  "announcements": {
+    "memories": {
+      "title": "メモリーのご紹介",
+      "description": "Kortixがすべての会話であなたの好みとコンテキストを記憶するようになりました",
+      "features": {
+        "personalized": {
+          "title": "パーソナライズされた体験",
+          "description": "時間とともにあなたの作業スタイルに適応します"
+        },
+        "retention": {
+          "title": "コンテキストの保持",
+          "description": "重要な詳細がチャット間で記憶されます"
+        },
+        "control": {
+          "title": "あなたがコントロール",
+          "description": "いつでもオフにしたりクリアできます"
+        }
+      },
+      "manageButton": "メモリーを管理",
+      "dismissButton": "了解"
+    }
   }
 }
