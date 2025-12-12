@@ -597,11 +597,6 @@ export const MarkdownToolbar = React.memo(({ onFormat, isVisible, text = '', sel
             label="Link"
           />
           <ToolButton
-            icon={Image}
-            onPress={() => onFormat('image')}
-            label="Image"
-          />
-          <ToolButton
             icon={Table}
             onPress={() => onFormat('table')}
             label="Table"
