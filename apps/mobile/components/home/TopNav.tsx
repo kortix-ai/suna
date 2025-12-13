@@ -113,6 +113,7 @@ export function TopNav({
       </AnimatedPressable>
 
       <View className="absolute right-6 flex-row items-center gap-2">
+        {/* Upgrade button - Always visible on main screen */}
         <AnimatedPressable
           onPressIn={() => {
             rightUpgradeScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });

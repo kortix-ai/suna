@@ -10,12 +10,13 @@
  */
 
 import { useCallback } from 'react';
+import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import Purchases from 'react-native-purchases';
 import { shouldUseRevenueCat, isRevenueCatConfigured } from '@/lib/billing/provider';
 import { presentPaywall } from '@/lib/billing/revenuecat';
-import { invalidateAccountState, accountStateKeys } from '@/lib/billing/hooks';
+import { invalidateAccountState, accountStateKeys, useAccountState } from '@/lib/billing/hooks';
 import { useSubscription } from '@/lib/billing';
 import { useAuthContext, useBillingContext } from '@/contexts';
 
@@ -115,11 +116,30 @@ export function useUpgradePaywall(): UpgradePaywallResult {
   const { data: subscriptionData, refetch: refetchSubscription } = useSubscription({
     enabled: !!user,
   });
+  // Also get account state directly to ensure we use backend data, not RevenueCat
+  const { data: accountState } = useAccountState({
+    enabled: !!user,
+  });
 
   const useRevenueCat = shouldUseRevenueCat() && isRevenueCatConfigured();
 
-  // Get current tier key from subscription data
-  const tierKey = subscriptionData?.tier_key || subscriptionData?.subscription?.tier_key;
+  // Get current tier key from backend account-state (source of truth), not RevenueCat
+  // This ensures we show the correct upgrade option even if RevenueCat hasn't synced yet
+  const tierKey =
+    accountState?.subscription?.tier_key ||
+    subscriptionData?.tier_key ||
+    subscriptionData?.subscription?.tier_key;
+
+  // Debug logging to help troubleshoot tier detection
+  React.useEffect(() => {
+    console.log('🔍 [UPGRADE_PAYWALL] Tier detection:', {
+      accountStateTier: accountState?.subscription?.tier_key,
+      subscriptionDataTier: subscriptionData?.tier_key,
+      subscriptionTier: subscriptionData?.subscription?.tier_key,
+      finalTierKey: tierKey,
+      paywallToShow: getPaywallForTier(tierKey),
+    });
+  }, [accountState?.subscription?.tier_key, subscriptionData?.tier_key, tierKey]);
 
   // Determine which paywall to show based on tier
   const currentPaywallName = getPaywallForTier(tierKey);
