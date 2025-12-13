@@ -609,8 +609,15 @@ export async function presentPaywall(
       offering = await getOfferingById(paywallName, true);
 
       if (!offering) {
-        console.warn(`⚠️ Paywall '${paywallName}' not found, trying current offering`);
-        offering = await getOfferings(true);
+        // Log available offerings to help debug
+        const allOfferings = await Purchases.getOfferings();
+        const availableOfferingIds = Object.keys(allOfferings.all);
+        console.error(`❌ Paywall '${paywallName}' not found in RevenueCat!`);
+        console.log(`📦 Available offerings: ${availableOfferingIds.join(', ') || 'none'}`);
+        console.log(`📦 Current offering: ${allOfferings.current?.identifier || 'none'}`);
+
+        // Throw error instead of falling back - the paywall names must match RevenueCat
+        throw new Error(`Paywall '${paywallName}' not found. Available: ${availableOfferingIds.join(', ')}`);
       }
     } else {
       // Default to current offering
