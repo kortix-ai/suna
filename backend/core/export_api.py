@@ -5,23 +5,22 @@ This module provides endpoints for exporting content from the mobile/web app
 to various formats (PDF, DOCX, HTML, Markdown).
 """
 
-import tempfile
-import asyncio
 from pathlib import Path
 from io import BytesIO
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from urllib.parse import quote
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 
 try:
-    from playwright.async_api import async_playwright
+    from weasyprint import HTML, CSS
 except ImportError:
-    playwright_available = False
+    weasyprint_available = False
 else:
-    playwright_available = True
+    weasyprint_available = True
 
 try:
     from docx import Document
@@ -229,21 +228,27 @@ def preprocess_html(html: str) -> str:
 
 
 @router.post("/pdf")
-async def export_to_pdf(request: ExportRequest):
+async def export_to_pdf(
+    request: ExportRequest,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
     """
-    Export HTML content to PDF using Playwright
+    Export HTML content to PDF using WeasyPrint
     
+    Requires authentication.
     Returns the PDF file directly for download.
     """
-    if not playwright_available:
+    if not weasyprint_available:
         raise HTTPException(
             status_code=503,
-            detail="PDF export is not available. Playwright is not installed."
+            detail="PDF export is not available. WeasyPrint is not installed."
         )
     
     try:
         content = request.content
         file_name = sanitize_filename(request.fileName)
+        
+        print(f"[PDF Export] User: {user_id}, File: {file_name}, Content length: {len(content)}")
         
         # Preprocess HTML
         preprocessed_html = preprocess_html(content)
@@ -261,42 +266,23 @@ async def export_to_pdf(request: ExportRequest):
 </body>
 </html>"""
         
-        # Use Playwright to generate PDF
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-            )
-            
-            try:
-                page = await browser.new_page()
-                
-                # Set content and wait for fonts/images to load
-                await page.set_content(full_html, wait_until='networkidle')
-                
-                # Generate PDF
-                pdf_bytes = await page.pdf(
-                    format='A4',
-                    margin={'top': '20mm', 'bottom': '20mm', 'left': '20mm', 'right': '20mm'},
-                    print_background=True,
-                    prefer_css_page_size=True,
-                )
-                
-                # Return PDF file
-                encoded_filename = quote(f"{file_name}.pdf", safe="")
-                return Response(
-                    content=pdf_bytes,
-                    media_type="application/pdf",
-                    headers={
-                        "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
-                    }
-                )
-                
-            finally:
-                await browser.close()
+        # Generate PDF with WeasyPrint
+        pdf_bytes = HTML(string=full_html).write_pdf()
+        
+        # Return PDF file
+        encoded_filename = quote(f"{file_name}.pdf", safe="")
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
+            }
+        )
                 
     except Exception as e:
         print(f"❌ PDF export error: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate PDF: {str(e)}"
@@ -304,10 +290,14 @@ async def export_to_pdf(request: ExportRequest):
 
 
 @router.post("/docx")
-async def export_to_docx(request: ExportRequest):
+async def export_to_docx(
+    request: ExportRequest,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
     """
     Export HTML content to DOCX format
     
+    Requires authentication.
     Returns the DOCX file directly for download.
     """
     if not docx_available or not beautifulsoup_available:
@@ -319,6 +309,8 @@ async def export_to_docx(request: ExportRequest):
     try:
         content = request.content
         file_name = sanitize_filename(request.fileName)
+        
+        print(f"[DOCX Export] User: {user_id}, File: {file_name}, Content length: {len(content)}")
         
         # Create DOCX document
         doc = Document()
@@ -465,6 +457,6 @@ async def export_health_check():
     return {
         "status": "healthy",
         "service": "export-api",
-        "pdf_available": playwright_available,
+        "pdf_available": weasyprint_available,
         "docx_available": docx_available and beautifulsoup_available,
     }

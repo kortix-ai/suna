@@ -76,43 +76,94 @@ export function FileDownloadButton({
   ];
 
   /**
-   * Convert markdown to HTML (simple conversion)
+   * Convert markdown to HTML (enhanced conversion)
    */
   const convertMarkdownToHtml = (markdown: string): string => {
-    // Basic markdown to HTML conversion
-    // For production, you might want to use a library like marked or markdown-it
+    if (!markdown) return '<p></p>';
+
     let html = markdown;
 
-    // Headers
-    html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
-    html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
-    html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+    // Process code blocks first (to protect them from other replacements)
+    const codeBlocks: string[] = [];
+    html = html.replace(/```([\s\S]*?)```/g, (match, code) => {
+      const index = codeBlocks.length;
+      codeBlocks.push(`<pre><code>${code.trim()}</code></pre>`);
+      return `___CODEBLOCK_${index}___`;
+    });
 
-    // Bold
+    // Inline code
+    const inlineCodes: string[] = [];
+    html = html.replace(/`([^`]+)`/g, (match, code) => {
+      const index = inlineCodes.length;
+      inlineCodes.push(`<code>${code}</code>`);
+      return `___INLINECODE_${index}___`;
+    });
+
+    // Headers (process from h6 to h1 to avoid conflicts)
+    html = html.replace(/^###### (.+)$/gim, '<h6>$1</h6>');
+    html = html.replace(/^##### (.+)$/gim, '<h5>$1</h5>');
+    html = html.replace(/^#### (.+)$/gim, '<h4>$1</h4>');
+    html = html.replace(/^### (.+)$/gim, '<h3>$1</h3>');
+    html = html.replace(/^## (.+)$/gim, '<h2>$1</h2>');
+    html = html.replace(/^# (.+)$/gim, '<h1>$1</h1>');
+
+    // Horizontal rules
+    html = html.replace(/^---$/gim, '<hr>');
+    html = html.replace(/^\*\*\*$/gim, '<hr>');
+
+    // Lists (unordered)
+    html = html.replace(/^\* (.+)$/gim, '<li>$1</li>');
+    html = html.replace(/^- (.+)$/gim, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+
+    // Lists (ordered)
+    html = html.replace(/^\d+\. (.+)$/gim, '<li>$1</li>');
+
+    // Blockquotes
+    html = html.replace(/^> (.+)$/gim, '<blockquote>$1</blockquote>');
+
+    // Bold (** or __)
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
 
-    // Italic
-    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-    html = html.replace(/_(.+?)_/g, '<em>$1</em>');
+    // Italic (* or _)
+    html = html.replace(/\*([^\*]+)\*/g, '<em>$1</em>');
+    html = html.replace(/_([^_]+)_/g, '<em>$1</em>');
 
     // Links
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
 
-    // Code blocks
-    html = html.replace(/```([^`]+)```/g, '<pre><code>$1</code></pre>');
+    // Images
+    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
 
-    // Inline code
-    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    // Restore code blocks
+    codeBlocks.forEach((block, index) => {
+      html = html.replace(`___CODEBLOCK_${index}___`, block);
+    });
 
-    // Line breaks
-    html = html.replace(/\n\n/g, '</p><p>');
-    html = html.replace(/\n/g, '<br>');
+    // Restore inline code
+    inlineCodes.forEach((code, index) => {
+      html = html.replace(`___INLINECODE_${index}___`, code);
+    });
 
-    // Wrap in paragraphs
-    html = `<p>${html}</p>`;
+    // Paragraphs (split by double newlines)
+    const lines = html.split('\n\n');
+    html = lines
+      .map((line) => {
+        line = line.trim();
+        // Don't wrap if already wrapped in block elements
+        if (line.startsWith('<h') || line.startsWith('<ul') || line.startsWith('<ol') ||
+          line.startsWith('<pre') || line.startsWith('<blockquote') || line.startsWith('<hr')) {
+          return line;
+        }
+        // Replace single newlines with <br> tags
+        line = line.replace(/\n/g, '<br>');
+        return line ? `<p>${line}</p>` : '';
+      })
+      .filter(Boolean)
+      .join('\n');
 
-    return html;
+    return html || '<p></p>';
   };
 
   /**
@@ -199,8 +250,21 @@ ${content}
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Export failed' }));
-        throw new Error(errorData.error || `Export failed with status ${response.status}`);
+        const errorText = await response.text();
+        console.error(`[FileDownloadButton] ${format.toUpperCase()} API error response:`, errorText);
+
+        let errorMessage = `Export failed with status ${response.status}`;
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.detail || errorData.error || errorMessage;
+        } catch {
+          // If not JSON, use the text as error message
+          if (errorText.length < 200) {
+            errorMessage = errorText;
+          }
+        }
+
+        throw new Error(errorMessage);
       }
 
       // Get the blob and save to file
@@ -275,6 +339,9 @@ ${content}
         case 'pdf': {
           // Call API for PDF conversion
           const htmlContent = isMarkdown ? convertMarkdownToHtml(content) : content;
+          console.log('[FileDownloadButton] PDF export - HTML length:', htmlContent.length);
+          console.log('[FileDownloadButton] PDF export - HTML preview:', htmlContent.substring(0, 200));
+
           const convertedUri = await callExportAPI(htmlContent, baseFileName, 'pdf');
 
           if (!convertedUri) {
@@ -293,6 +360,9 @@ ${content}
         case 'docx': {
           // Call API for DOCX conversion
           const htmlContent = isMarkdown ? convertMarkdownToHtml(content) : content;
+          console.log('[FileDownloadButton] DOCX export - HTML length:', htmlContent.length);
+          console.log('[FileDownloadButton] DOCX export - HTML preview:', htmlContent.substring(0, 200));
+
           const convertedUri = await callExportAPI(htmlContent, baseFileName, 'docx');
 
           if (!convertedUri) {
