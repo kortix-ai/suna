@@ -415,41 +415,34 @@ export async function exportDocument({ content, fileName, format }: DocumentExpo
   try {
     switch (format) {
       case 'pdf': {
-        console.log('[Document Export] Opening print dialog for PDF...');
+        console.log('[Document Export] Sending to PDF API...');
         
-        const printWindow = window.open('', '_blank', 'width=800,height=600');
-        if (!printWindow) {
-          toast.error('Popup blocked. Please allow popups for PDF export.');
-          return;
+        const toastId = toast.loading('Exporting to PDF...');
+        
+        try {
+          const response = await fetch('/api/export/pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: htmlContent, fileName: safeFileName }),
+          });
+
+          console.log('[Document Export] PDF API response status:', response.status);
+
+          if (!response.ok) {
+            const err = await response.json().catch(() => ({ error: 'Export failed' }));
+            console.error('[Document Export] PDF API error:', err);
+            throw new Error(err.error || `Error ${response.status}`);
+          }
+
+          const blob = await response.blob();
+          console.log('[Document Export] PDF blob size:', blob.size, 'bytes');
+          
+          saveAs(blob, `${safeFileName}.pdf`);
+          toast.success('PDF exported', { id: toastId });
+        } catch (error) {
+          console.error('[Document Export] PDF export error:', error);
+          toast.error(`PDF export failed: ${error instanceof Error ? error.message : 'Unknown error'}`, { id: toastId });
         }
-
-        const pdfHtml = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>${safeFileName}</title>
-  <style>
-    @page { size: A4; margin: 20mm; }
-    @media print {
-      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    }
-    ${DOCUMENT_STYLES}
-  </style>
-</head>
-<body>
-  ${htmlContent}
-<script>
-  window.onload = function() {
-    setTimeout(function() { window.print(); }, 200);
-    window.onafterprint = function() { window.close(); };
-  };
-</script>
-</body>
-</html>`;
-
-        printWindow.document.write(pdfHtml);
-        printWindow.document.close();
-        toast.success('Print dialog opened — select "Save as PDF"');
         break;
       }
 

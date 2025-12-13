@@ -188,6 +188,41 @@
     "integrations": {
       "opening": "Abrindo Integrações",
       "redirecting": "Redirecionando para a página de Integrações..."
+    },
+    "memory": {
+      "title": "Memória de IA",
+      "description": "Lembre automaticamente o contexto entre as conversas",
+      "enabled": "Ativada",
+      "disabled": "Desativada",
+      "notAvailable": "A memória não está disponível no seu plano atual. Atualize para Plus ou superior para ativar a memória automática.",
+      "usage": "Uso da Memória",
+      "available": "{count} memórias disponíveis",
+      "noLimit": "Ilimitado",
+      "yourMemories": "Suas Memórias",
+      "yourMemoriesDescription": "Veja e gerencie o que a IA se lembra sobre você",
+      "clearAll": "Limpar Tudo",
+      "deleteAllTitle": "Excluir todas as memórias?",
+      "deleteAllDescription": "Isso excluirá permanentemente todas as {count} memórias. A IA não se lembrará mais de informações de conversas anteriores. Esta ação não pode ser desfeita.",
+      "deleteAllButton": "Excluir Todas as Memórias",
+      "noMemoriesYet": "Ainda não há memórias",
+      "noMemoriesDescription": "Inicie uma conversa e a IA lembrará automaticamente informações importantes sobre você",
+      "searchMemories": "Pesquisar memórias...",
+      "filterByType": "Filtrar por tipo",
+      "allTypes": "Todos os Tipos",
+      "personalFacts": "Fatos Pessoais",
+      "preferences": "Preferências",
+      "context": "Contexto",
+      "conversations": "Conversas",
+      "noMatchingMemories": "Nenhuma memória correspondente",
+      "adjustFilters": "Tente ajustar seus filtros ou consulta de pesquisa",
+      "loadMore": "Carregar Mais",
+      "loading": "Carregando memórias...",
+      "memoryTypes": {
+        "fact": "Fato",
+        "preference": "Preferência",
+        "context": "Contexto",
+        "conversation_summary": "Conversa"
+      }
     }
   },
   "triggers": {
@@ -1095,6 +1130,28 @@
         "8": "Estudar estratégias de preços de empresas bem-sucedidas de caixas de assinatura D2C",
         "9": "Pesquisar o panorama competitivo de soluções de cibersegurança alimentadas por IA"
       }
+    }
+  },
+  "announcements": {
+    "memories": {
+      "title": "Apresentando Memórias",
+      "description": "Kortix agora lembra suas preferências e contexto em todas as conversas",
+      "features": {
+        "personalized": {
+          "title": "Experiência Personalizada",
+          "description": "Adapta-se ao seu estilo de trabalho ao longo do tempo"
+        },
+        "retention": {
+          "title": "Retenção de Contexto",
+          "description": "Detalhes importantes lembrados entre conversas"
+        },
+        "control": {
+          "title": "Você Está no Controle",
+          "description": "Desative ou limpe a qualquer momento"
+        }
+      },
+      "manageButton": "Gerenciar Memórias",
+      "dismissButton": "Entendi"
     }
   }
 }

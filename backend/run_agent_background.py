@@ -37,6 +37,8 @@ else:
 
 dramatiq.set_broker(redis_broker)
 
+from core.memory import background_jobs as memory_jobs
+
 warm_up_tools_cache()
 logger.info("✅ Worker process ready, tool cache warmed")
 
@@ -699,6 +701,21 @@ async def run_agent_background(
         await _cleanup_redis_response_stream(agent_run_id)
         await _cleanup_redis_instance_key(agent_run_id, instance_id)
         await _cleanup_redis_run_lock(agent_run_id)
+
+        if final_status == "completed" and account_id:
+            try:
+                from core.memory.background_jobs import extract_memories_from_conversation
+                messages_result = await client.table('messages').select('message_id').eq('thread_id', thread_id).order('created_at', desc=False).execute()
+                if messages_result.data:
+                    message_ids = [m['message_id'] for m in messages_result.data]
+                    extract_memories_from_conversation.send(
+                        thread_id=thread_id,
+                        account_id=account_id,
+                        message_ids=message_ids
+                    )
+                    logger.debug(f"Queued memory extraction for thread {thread_id}")
+            except Exception as mem_error:
+                logger.warning(f"Failed to queue memory extraction: {mem_error}")
 
         try:
             await asyncio.wait_for(asyncio.gather(*pending_redis_operations), timeout=30.0)

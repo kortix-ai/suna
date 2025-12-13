@@ -436,11 +436,15 @@ class AgentRunner:
             
             logger.debug(f"⚡ [PROMPT_CHECK] ENABLE_MINIMAL={config.ENABLE_MINIMAL_PROMPT}, ENABLE_BOOTSTRAP={config.ENABLE_BOOTSTRAP_MODE}, enrichment_complete={self.enrichment_complete}")
             
+            memory_context = None
             if config.ENABLE_MINIMAL_PROMPT and config.ENABLE_BOOTSTRAP_MODE and not self.enrichment_complete:
-                system_message = await PromptManager.build_minimal_prompt(
+                system_message, memory_context = await PromptManager.build_minimal_prompt(
                     self.config.agent_config,
                     tool_registry=self.thread_manager.tool_registry,
-                    mcp_loader=getattr(self.thread_manager, 'mcp_loader', None)
+                    mcp_loader=getattr(self.thread_manager, 'mcp_loader', None),
+                    user_id=self.account_id,
+                    thread_id=self.config.thread_id,
+                    client=self.client
                 )
                 logger.info(f"⏱️ [TIMING] build_minimal_prompt() in {(time.time() - prompt_start) * 1000:.1f}ms ({len(str(system_message.get('content', '')))} chars) [BOOTSTRAP MODE]")
             else:
@@ -448,7 +452,7 @@ class AgentRunner:
                     logger.info("⚡ [PROMPT] Using FULL prompt (enrichment complete)")
                 else:
                     logger.warning(f"⚠️ [PROMPT] Using FULL prompt despite incomplete enrichment (flags: minimal={config.ENABLE_MINIMAL_PROMPT}, bootstrap={config.ENABLE_BOOTSTRAP_MODE})")
-                system_message = await PromptManager.build_system_prompt(
+                system_message, memory_context = await PromptManager.build_system_prompt(
                     self.config.model_name, self.config.agent_config, 
                     self.config.thread_id, 
                     getattr(self, 'mcp_wrapper_instance', None), self.client,
@@ -458,6 +462,9 @@ class AgentRunner:
                     mcp_loader=getattr(self.thread_manager, 'mcp_loader', None)
                 )
                 logger.info(f"⏱️ [TIMING] build_system_prompt() in {(time.time() - prompt_start) * 1000:.1f}ms ({len(str(system_message.get('content', '')))} chars)")
+            
+            if memory_context:
+                self.thread_manager.set_memory_context(memory_context)
             
             logger.debug(f"model_name received: {self.config.model_name}")
             iteration_count = 0
@@ -477,7 +484,7 @@ class AgentRunner:
                 elif self.turn_number > 1 and config.ENABLE_MINIMAL_PROMPT and self.enrichment_complete:
                     logger.info(f"⏱️ Turn {self.turn_number}: Enrichment complete, upgrading to full prompt")
                     prompt_upgrade_start = time.time()
-                    system_message = await PromptManager.build_system_prompt(
+                    system_message, new_memory_context = await PromptManager.build_system_prompt(
                         self.config.model_name, self.config.agent_config, 
                         self.config.thread_id, 
                         mcp_wrapper_instance, self.client,
