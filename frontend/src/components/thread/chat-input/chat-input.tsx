@@ -920,6 +920,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           if (newValue) textarea.appendValue(newValue);
         }
         valueRef.current = newValue;
+        // Keep hasContent state in sync with the actual value
+        setHasContent(newValue.trim().length > 0);
       },
       getValue: () => valueRef.current,
     }), [pendingFiles]);
@@ -1008,36 +1010,26 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       }
     }, [autoFocus]);
 
-    // Track previous isAgentRunning value to detect actual transitions
+    // Track previous isAgentRunning value to detect when agent starts
+    // Used only for clearing files, NOT for clearing text input
+    // Text input clearing is handled explicitly in handleSubmit to avoid race conditions
     const prevIsAgentRunning = useRef(isAgentRunning);
     
-    // Clear input only when agent STARTS running (transitions from false to true)
-    // This prevents clearing when agent stops or when component re-renders
+    // Clear files when agent STARTS running (transitions from false to true)
+    // Note: We do NOT clear text here - that's handled explicitly after successful submit
+    // This prevents the bug where input would sometimes clear when agent stops
     useEffect(() => {
       const wasRunning = prevIsAgentRunning.current;
       prevIsAgentRunning.current = isAgentRunning;
       
-      // Only clear when agent actually starts (false → true transition)
+      // Only clear files when agent actually starts (false → true transition)
       if (isAgentRunning && !wasRunning) {
-        // Clear the isolated textarea
-        const textarea = textareaRef.current as any;
-        if (textarea?.clearValue) {
-          textarea.clearValue();
-        }
-        valueRef.current = '';
-        setHasContent(false);
-        setHasSubmitted(false);
-        
         // Clear files when agent starts running
         setUploadedFiles([]);
         setIsSendingFiles(false);
-        
-        // Notify parent in controlled mode
-        if (isControlled && controlledOnChange) {
-          controlledOnChange('');
-        }
+        setHasSubmitted(false);
       }
-    }, [isAgentRunning, isControlled, controlledOnChange]);
+    }, [isAgentRunning]);
 
     // Reset sending state if loading becomes false without agent starting (submission failure)
     useEffect(() => {

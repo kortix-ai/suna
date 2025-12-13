@@ -17,8 +17,10 @@ from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 
 try:
     from weasyprint import HTML, CSS
-except ImportError:
+except (ImportError, OSError) as e:
     weasyprint_available = False
+    print(f"[WARNING] WeasyPrint not available: {e}")
+    print("[INFO] To fix on macOS, run: export DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix)/lib:$DYLD_FALLBACK_LIBRARY_PATH")
 else:
     weasyprint_available = True
 
@@ -312,8 +314,14 @@ async def export_to_docx(
         
         print(f"[DOCX Export] User: {user_id}, File: {file_name}, Content length: {len(content)}")
         
-        # Create DOCX document
+        # Create DOCX document with clean black/white styling
         doc = Document()
+        
+        # Set default font to clean black/white theme
+        style = doc.styles['Normal']
+        style.font.name = 'Calibri'
+        style.font.size = Pt(11)
+        style.font.color.rgb = RGBColor(26, 26, 26)  # #1a1a1a - dark gray/black
         
         # Parse HTML with BeautifulSoup
         soup = BeautifulSoup(content, 'html.parser')
@@ -360,7 +368,10 @@ def process_html_element(element, doc, parent_paragraph=None):
             
     elif element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
         level = int(element.name[1])
-        doc.add_heading(element.get_text(), level)
+        heading = doc.add_heading(element.get_text(), level)
+        # Ensure heading is black
+        for run in heading.runs:
+            run.font.color.rgb = RGBColor(17, 17, 17)  # #111 - dark black for headings
         
     elif element.name == 'ul':
         for li in element.find_all('li', recursive=False):
@@ -379,12 +390,14 @@ def process_html_element(element, doc, parent_paragraph=None):
         p.paragraph_format.left_indent = Inches(0.5)
         run = p.add_run(element.get_text())
         run.font.italic = True
+        run.font.color.rgb = RGBColor(85, 85, 85)  # #555 - gray for blockquotes
         
     elif element.name == 'pre':
         p = doc.add_paragraph()
         run = p.add_run(element.get_text())
         run.font.name = 'Courier New'
         run.font.size = Pt(10)
+        run.font.color.rgb = RGBColor(26, 26, 26)  # Black for code blocks
         
     elif element.name == 'table':
         process_table_element(element, doc)
@@ -414,10 +427,11 @@ def process_inline_element(element, paragraph):
         run = paragraph.add_run(element.get_text())
         run.font.name = 'Courier New'
         run.font.size = Pt(10)
+        run.font.color.rgb = RGBColor(26, 26, 26)  # Black for inline code
         
     elif element.name == 'a':
         run = paragraph.add_run(element.get_text())
-        run.font.color.rgb = RGBColor(0, 0, 255)
+        run.font.color.rgb = RGBColor(26, 26, 26)  # Black instead of blue
         run.underline = True
         
     else:
@@ -449,6 +463,7 @@ def process_table_element(table_element, doc):
                     for paragraph in table_cell.paragraphs:
                         for run in paragraph.runs:
                             run.bold = True
+                            run.font.color.rgb = RGBColor(17, 17, 17)  # Black for table headers
 
 
 @router.get("/health")
