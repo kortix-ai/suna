@@ -1,6 +1,6 @@
 /**
  * Billing Page Component
- * 
+ *
  * Matches web's "Billing Status – Manage your credits and subscription" design
  */
 
@@ -18,6 +18,9 @@ import {
   useSubscriptionCommitment,
   useScheduledChanges,
   billingKeys,
+  presentCustomerInfo,
+  shouldUseRevenueCat,
+  isRevenueCatConfigured,
 } from '@/lib/billing';
 import { useAuthContext } from '@/contexts';
 import { useLanguage } from '@/contexts';
@@ -40,6 +43,7 @@ import {
   CreditCard,
   AlertCircle,
   ArrowRight,
+  Settings,
 } from 'lucide-react-native';
 import { formatCredits } from '@/lib/utils/credit-formatter';
 import { ScheduledDowngradeCard } from '@/components/billing/ScheduledDowngradeCard';
@@ -104,8 +108,8 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       // Use kortix.com for production, staging.suna.so for staging
-      const baseUrl = process.env.EXPO_PUBLIC_ENV === 'staging' 
-        ? 'https://staging.suna.so' 
+      const baseUrl = process.env.EXPO_PUBLIC_ENV === 'staging'
+        ? 'https://staging.suna.so'
         : 'https://www.kortix.com';
       await WebBrowser.openBrowserAsync(`${baseUrl}/credits-explained`, {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
@@ -118,6 +122,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
   const creditsButtonScale = useSharedValue(1);
   const creditsLinkScale = useSharedValue(1);
   const changePlanButtonScale = useSharedValue(1);
+  const customerInfoButtonScale = useSharedValue(1);
 
   const creditsButtonStyle = useAnimatedStyle(() => ({
     transform: [{ scale: creditsButtonScale.value }],
@@ -131,10 +136,28 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
     transform: [{ scale: changePlanButtonScale.value }],
   }));
 
+  const customerInfoButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: customerInfoButtonScale.value }],
+  }));
+
   const handleChangePlan = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onChangePlan?.();
   }, [onChangePlan]);
+
+  const handleCustomerInfo = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await presentCustomerInfo();
+      // Refresh billing data after user returns from customer info portal
+      handleSubscriptionUpdate();
+    } catch (error) {
+      console.error('Error presenting customer info portal:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+  }, [handleSubscriptionUpdate]);
+
+  const useRevenueCat = shouldUseRevenueCat() && isRevenueCatConfigured();
 
   if (!visible) return null;
 
@@ -180,14 +203,14 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
   const monthlyCredits = credits?.monthly || 0;
   const extraCredits = credits?.extra || 0;
   const dailyRefreshInfo = credits?.daily_refresh;
-  
+
   // Calculate refresh time for daily credits
   const getDailyRefreshTime = (): string | null => {
     if (!dailyRefreshInfo?.enabled) return null;
-    
+
     let hours: number;
     let seconds: number | undefined;
-    
+
     if (dailyRefreshInfo.seconds_until_refresh) {
       seconds = dailyRefreshInfo.seconds_until_refresh;
       hours = Math.ceil(seconds / 3600);
@@ -201,7 +224,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
       console.log('⚠️ No refresh info available:', dailyRefreshInfo);
       return null; // No refresh info available
     }
-    
+
     // Debug logging
     console.log('🕐 Daily refresh calculation:', {
       seconds_until_refresh: dailyRefreshInfo.seconds_until_refresh,
@@ -209,17 +232,17 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
       calculatedSeconds: seconds,
       calculatedHours: hours,
     });
-    
+
     // Handle edge cases
     if (hours <= 0 || isNaN(hours)) {
       console.log('⚠️ Invalid hours:', hours);
       return null; // Invalid or past refresh time
     }
-    
+
     if (hours === 1) {
       return t('billing.refreshIn1Hour', 'Refresh in 1 hour');
     }
-    
+
     // Show actual hours
     return `Refresh in ${hours}h`;
   };
@@ -237,7 +260,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
   // Calculate next billing date - matches frontend formatDateFlexible
   const getNextBillingDate = (): string | null => {
     if (!accountState?.subscription?.current_period_end) return null;
-    
+
     const formatDateFlexible = (dateValue: string | number): string => {
       if (typeof dateValue === 'number') {
         // Unix timestamp in seconds - convert to milliseconds
@@ -254,12 +277,12 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
         day: 'numeric',
       });
     };
-    
+
     return formatDateFlexible(accountState.subscription.current_period_end);
   };
 
   const nextBillingDate = getNextBillingDate();
-  
+
   const dailyRefreshTime = getDailyRefreshTime();
   const monthlyRefreshTime = getMonthlyRefreshTime();
   const hasCommitment = commitmentData?.has_commitment;
@@ -420,9 +443,9 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
                   <Text className="text-sm text-muted-foreground">
                     {t('billing.currentPlan', 'Current Plan')}
                   </Text>
-                  <PricingTierBadge 
-                    planName={accountState?.subscription?.tier_display_name || accountState?.subscription?.tier_key || 'Basic'} 
-                    size="lg" 
+                  <PricingTierBadge
+                    planName={accountState?.subscription?.tier_display_name || accountState?.subscription?.tier_key || 'Basic'}
+                    size="lg"
                   />
                 </View>
 
@@ -529,6 +552,26 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
                   <Icon as={ShoppingCart} size={18} className="text-primary-foreground" strokeWidth={2} />
                   <Text className="text-sm font-roobert-semibold text-primary-foreground">
                     {t('billing.getAdditionalCredits', 'Get Additional Credits')}
+                  </Text>
+                </AnimatedPressable>
+              )}
+
+              {/* RevenueCat Customer Info Portal */}
+              {useRevenueCat && (
+                <AnimatedPressable
+                  onPress={handleCustomerInfo}
+                  onPressIn={() => {
+                    customerInfoButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
+                  }}
+                  onPressOut={() => {
+                    customerInfoButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+                  }}
+                  style={customerInfoButtonStyle}
+                  className="w-full h-12 bg-card border border-border rounded-2xl items-center justify-center flex-row gap-2"
+                >
+                  <Icon as={Settings} size={18} className="text-foreground" strokeWidth={2} />
+                  <Text className="text-sm font-roobert-semibold text-foreground">
+                    {t('billing.customerInfo', 'Customer Info')}
                   </Text>
                 </AnimatedPressable>
               )}

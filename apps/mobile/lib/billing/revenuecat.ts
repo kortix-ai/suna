@@ -657,3 +657,23 @@ export async function presentPaywall(
     throw error;
   }
 }
+
+/**
+ * Present RevenueCat Customer Info Portal
+ *
+ * Shows the native RevenueCat customer info screen where users can:
+ * - View subscription details
+ * - Manage payment methods
+ * - View purchase history
+ * - Restore purchases
+ */
+export async function presentCustomerInfo(): Promise<void> {
+  try {
+    console.log('📱 Presenting RevenueCat customer info portal...');
+    await RevenueCatUI.presentCustomerCenter();
+    console.log('✅ Customer info portal dismissed');
+  } catch (error) {
+    console.error('❌ Error presenting customer info portal:', error);
+    throw error;
+  }
+}
