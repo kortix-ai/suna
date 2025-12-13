@@ -463,6 +463,19 @@ export async function getCustomerInfo(): Promise<CustomerInfo> {
   }
 }
 
+/**
+ * Check if RevenueCat is actually initialized and ready to use
+ * This is more reliable than just checking for API keys
+ */
+export async function isRevenueCatInitialized(): Promise<boolean> {
+  try {
+    await Purchases.getCustomerInfo();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function getSubscriptionInfo(customerInfo: CustomerInfo): RevenueCatSubscriptionInfo {
   const entitlements = customerInfo.entitlements.active;
   const hasActiveEntitlement = Object.keys(entitlements).length > 0;

@@ -4,8 +4,8 @@
  * Matches web's "Billing Status – Manage your credits and subscription" design
  */
 
-import React, { useState, useCallback } from 'react';
-import { View, ScrollView, Pressable } from 'react-native';
+import React, { useState, useCallback, useEffect } from 'react';
+import { View, ScrollView, Pressable, Platform } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -21,6 +21,8 @@ import {
   presentCustomerInfo,
   shouldUseRevenueCat,
   isRevenueCatConfigured,
+  isRevenueCatInitialized,
+  initializeRevenueCat,
 } from '@/lib/billing';
 import { useAuthContext } from '@/contexts';
 import { useLanguage } from '@/contexts';
@@ -148,6 +150,19 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
   const handleCustomerInfo = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
+      // Ensure RevenueCat is initialized before presenting customer info
+      if (user && shouldUseRevenueCat() && isRevenueCatConfigured()) {
+        const initialized = await isRevenueCatInitialized();
+        if (!initialized) {
+          console.log('🔄 RevenueCat not initialized, initializing now...');
+          try {
+            await initializeRevenueCat(user.id, user.email || undefined, true);
+          } catch (initError) {
+            console.warn('⚠️ RevenueCat initialization warning:', initError);
+          }
+        }
+      }
+
       await presentCustomerInfo();
       // Refresh billing data after user returns from customer info portal
       handleSubscriptionUpdate();
@@ -155,9 +170,26 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
       console.error('Error presenting customer info portal:', error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
-  }, [handleSubscriptionUpdate]);
+  }, [user, handleSubscriptionUpdate]);
 
+  // Show button if RevenueCat should be used and is configured
+  // We'll handle initialization when the button is clicked if needed
   const useRevenueCat = shouldUseRevenueCat() && isRevenueCatConfigured();
+
+  // Debug logging to help diagnose button visibility
+  useEffect(() => {
+    if (visible) {
+      console.log('🔍 [BillingPage] RevenueCat button visibility check:', {
+        shouldUseRevenueCat: shouldUseRevenueCat(),
+        isRevenueCatConfigured: isRevenueCatConfigured(),
+        useRevenueCat,
+        platform: Platform.OS,
+        hasIosKey: !!process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY,
+        hasAndroidKey: !!process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY,
+        useRevenueCatEnv: process.env.EXPO_PUBLIC_USE_REVENUECAT,
+      });
+    }
+  }, [visible, useRevenueCat]);
 
   if (!visible) return null;
 
