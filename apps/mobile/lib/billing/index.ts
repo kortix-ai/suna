@@ -86,6 +86,7 @@ export {
   checkSubscriptionStatus,
   presentPaywall,
   presentCustomerInfo,
+  isRevenueCatInitialized,
 } from './revenuecat';
 export type { RevenueCatProduct } from './revenuecat';
 
