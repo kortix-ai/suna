@@ -188,6 +188,41 @@
     "integrations": {
       "opening": "統合を開いています",
       "redirecting": "統合ページにリダイレクト中..."
+    },
+    "memory": {
+      "title": "AIメモリ",
+      "description": "会話を通じてコンテキストを自動的に記憶します",
+      "enabled": "有効",
+      "disabled": "無効",
+      "notAvailable": "現在のプランではメモリは利用できません。自動メモリを有効にするには、Plus以上にアップグレードしてください。",
+      "usage": "メモリ使用量",
+      "available": "{count}件の記憶が利用可能",
+      "noLimit": "無制限",
+      "yourMemories": "あなたの記憶",
+      "yourMemoriesDescription": "AIがあなたについて記憶していることを表示・管理する",
+      "clearAll": "すべてクリア",
+      "deleteAllTitle": "すべての記憶を削除しますか？",
+      "deleteAllDescription": "これにより、{count}件の記憶がすべて完全に削除されます。AIは過去の会話からの情報を記憶しなくなります。この操作は元に戻せません。",
+      "deleteAllButton": "すべての記憶を削除",
+      "noMemoriesYet": "まだ記憶がありません",
+      "noMemoriesDescription": "会話を始めると、AIはあなたについての重要な情報を自動的に記憶します",
+      "searchMemories": "記憶を検索...",
+      "filterByType": "タイプでフィルタ",
+      "allTypes": "すべてのタイプ",
+      "personalFacts": "個人的な事実",
+      "preferences": "好み",
+      "context": "コンテキスト",
+      "conversations": "会話",
+      "noMatchingMemories": "一致する記憶がありません",
+      "adjustFilters": "フィルタや検索クエリを調整してみてください",
+      "loadMore": "もっと読み込む",
+      "loading": "記憶を読み込み中...",
+      "memoryTypes": {
+        "fact": "事実",
+        "preference": "好み",
+        "context": "コンテキスト",
+        "conversation_summary": "会話"
+      }
     }
   },
   "triggers": {
@@ -1095,6 +1130,28 @@
         "8": "成功したD2Cサブスクリプションボックス企業の価格戦略を研究",
         "9": "AI搭載サイバーセキュリティソリューションの競争環境を調査"
       }
+    }
+  },
+  "announcements": {
+    "memories": {
+      "title": "メモリーのご紹介",
+      "description": "Kortixがすべての会話であなたの好みとコンテキストを記憶するようになりました",
+      "features": {
+        "personalized": {
+          "title": "パーソナライズされた体験",
+          "description": "時間とともにあなたの作業スタイルに適応します"
+        },
+        "retention": {
+          "title": "コンテキストの保持",
+          "description": "重要な詳細がチャット間で記憶されます"
+        },
+        "control": {
+          "title": "あなたがコントロール",
+          "description": "いつでもオフにしたりクリアできます"
+        }
+      },
+      "manageButton": "メモリーを管理",
+      "dismissButton": "了解"
     }
   }
 }

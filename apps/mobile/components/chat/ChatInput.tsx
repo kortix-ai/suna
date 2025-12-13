@@ -5,7 +5,7 @@ import { AudioLines, CornerDownLeft, Paperclip, X, Loader2 } from 'lucide-react-
 import { StopIcon } from '@/components/ui/StopIcon';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Keyboard, Pressable, ScrollView, TextInput, View, ViewStyle, type ViewProps, type NativeSyntheticEvent, type TextInputContentSizeChangeEventData } from 'react-native';
+import { Keyboard, Pressable, ScrollView, TextInput, View, ViewStyle, Platform, TouchableOpacity, type ViewProps, type NativeSyntheticEvent, type TextInputContentSizeChangeEventData, type TextInputSelectionChangeEventData } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -17,12 +17,16 @@ import type { Attachment } from '@/hooks/useChat';
 import { AgentSelector } from '../agents/AgentSelector';
 import { AudioWaveform } from '../attachments/AudioWaveform';
 import type { Agent } from '@/api/types';
+import { MarkdownToolbar, insertMarkdownFormat, type MarkdownFormat } from './MarkdownToolbar';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
 
 // Spring config - defined once outside component
 const SPRING_CONFIG = { damping: 15, stiffness: 400 };
+
+// Android hit slop for better touch targets
+const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 10, bottom: 10, left: 10, right: 10 } : undefined;
 
 export interface ChatInputRef {
   focus: () => void;
@@ -109,6 +113,8 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   // State
   const [contentHeight, setContentHeight] = React.useState(0);
+  const [isFocused, setIsFocused] = React.useState(false);
+  const [selection, setSelection] = React.useState({ start: 0, end: 0 });
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
 
@@ -304,6 +310,48 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     []
   );
 
+  // Selection change handler to track cursor position
+  const handleSelectionChange = React.useCallback(
+    (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+      setSelection(e.nativeEvent.selection);
+    },
+    []
+  );
+
+  // Focus/blur handlers
+  const handleFocus = React.useCallback(() => {
+    if (!isAuthenticated) {
+      textInputRef.current?.blur();
+      return;
+    }
+    setIsFocused(true);
+  }, [isAuthenticated]);
+
+  const handleBlur = React.useCallback(() => {
+    // Delay hiding toolbar to allow button press to register
+    setTimeout(() => setIsFocused(false), 150);
+  }, []);
+
+  // Markdown format handler
+  const handleMarkdownFormat = React.useCallback(
+    (format: MarkdownFormat, extra?: string) => {
+      const currentText = value || '';
+      const { newText, newCursorPosition, newSelectionEnd } = insertMarkdownFormat(
+        currentText,
+        selection.start,
+        selection.end,
+        format,
+        extra
+      );
+      onChangeText?.(newText);
+      // Update selection
+      setSelection({ start: newCursorPosition, end: newSelectionEnd });
+      // Refocus the input
+      textInputRef.current?.focus();
+    },
+    [value, selection, onChangeText]
+  );
+
   // Memoized container style
   const containerStyle = React.useMemo(
     () => ({ height: dynamicHeight, ...(style as ViewStyle) }),
@@ -330,10 +378,11 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     <View
       className="relative rounded-[30px] overflow-hidden bg-card border border-border"
       style={containerStyle}
+      collapsable={false}
       {...props}
     >
       <View className="absolute inset-0" />
-      <View className="p-4 flex-1">
+      <View className="p-4 flex-1" collapsable={false}>
         {isRecording ? (
           <RecordingMode
             audioLevels={audioLevels}
@@ -425,6 +474,7 @@ const RecordingMode = React.memo(({
         onPress={onCancelRecording}
         className="bg-primary/5 rounded-full items-center justify-center"
         style={[{ width: 40, height: 40 }, cancelAnimatedStyle]}
+        hitSlop={ANDROID_HIT_SLOP}
       >
         <Icon as={X} size={16} className="text-foreground" strokeWidth={2} />
       </AnimatedPressable>
@@ -434,6 +484,7 @@ const RecordingMode = React.memo(({
         onPress={onSendAudio}
         className="bg-primary rounded-full items-center justify-center"
         style={[{ width: 40, height: 40 }, stopAnimatedStyle]}
+        hitSlop={ANDROID_HIT_SLOP}
       >
         <Icon as={CornerDownLeft} size={16} className="text-primary-foreground" strokeWidth={2} />
       </AnimatedPressable>
@@ -504,6 +555,7 @@ const NormalMode = React.memo(({
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled={true}
       >
         <TextInput
           ref={textInputRef}
@@ -522,15 +574,16 @@ const NormalMode = React.memo(({
           onContentSizeChange={handleContentSizeChange}
           className="text-foreground text-base"
           style={textInputStyle}
+          textAlignVertical="top"
+          underlineColorAndroid="transparent"
         />
       </ScrollView>
     </View>
 
     <View className="absolute bottom-4 left-4 right-4 flex-row items-center justify-between">
       <View className="flex-row items-center gap-2">
-        <AnimatedPressable
-          onPressIn={onAttachPressIn}
-          onPressOut={onAttachPressOut}
+        {/* Use TouchableOpacity on Android - AnimatedPressable blocks touches */}
+        <TouchableOpacity
           onPress={() => {
             if (!isAuthenticated) {
               console.warn('⚠️ User not authenticated - cannot attach');
@@ -539,11 +592,13 @@ const NormalMode = React.memo(({
             onAttachPress?.();
           }}
           disabled={isDisabled}
-          className="border border-border rounded-[18px] w-10 h-10 items-center justify-center"
-          style={attachButtonStyle}
+          style={{ width: 40, height: 40, borderWidth: 1, borderRadius: 18, alignItems: 'center', justifyContent: 'center', opacity: isDisabled ? 0.4 : 1 }}
+          className="border-border"
+          hitSlop={ANDROID_HIT_SLOP}
+          activeOpacity={0.7}
         >
           <Icon as={Paperclip} size={16} className="text-foreground" />
-        </AnimatedPressable>
+        </TouchableOpacity>
       </View>
 
       <View className="flex-row items-center gap-2">
@@ -552,13 +607,16 @@ const NormalMode = React.memo(({
           compact={false}
         />
 
-        <AnimatedPressable
-          onPressIn={onSendPressIn}
-          onPressOut={onSendPressOut}
-          onPress={onButtonPress}
+        {/* Use TouchableOpacity on Android - AnimatedPressable blocks touches */}
+        <TouchableOpacity
+          onPress={() => {
+            onButtonPress();
+          }}
           disabled={isSendingMessage || isTranscribing}
-          className={`rounded-[18px] items-center justify-center ${isAgentRunning ? 'bg-foreground' : 'bg-primary'}`}
-          style={[{ width: 40, height: 40 }, sendAnimatedStyle]}
+          style={{ width: 40, height: 40, borderRadius: 18, alignItems: 'center', justifyContent: 'center' }}
+          className={isAgentRunning ? 'bg-foreground' : 'bg-primary'}
+          hitSlop={ANDROID_HIT_SLOP}
+          activeOpacity={0.7}
         >
           {isSendingMessage || isTranscribing ? (
             <AnimatedView style={rotationAnimatedStyle}>
@@ -571,7 +629,7 @@ const NormalMode = React.memo(({
               <Icon as={ButtonIcon as any} size={buttonIconSize} className={buttonIconClass} strokeWidth={2} />
             )
           )}
-        </AnimatedPressable>
+        </TouchableOpacity>
       </View>
     </View>
   </>

@@ -28,15 +28,6 @@ router = APIRouter(prefix="/admin/analytics", tags=["admin-analytics"])
 # MODELS
 # ============================================================================
 
-class DailyStats(BaseModel):
-    date: str
-    signups: int
-    subscriptions: int
-    threads_created: int
-    active_users: int
-    conversion_rate: float
-
-
 class ThreadAnalytics(BaseModel):
     thread_id: str
     project_id: Optional[str] = None
@@ -66,16 +57,10 @@ class RetentionData(BaseModel):
 class AnalyticsSummary(BaseModel):
     total_users: int
     total_threads: int
-    total_messages: int
-    active_users_today: int
     active_users_week: int
     new_signups_today: int
     new_signups_week: int
-    new_subscriptions_today: int
-    new_subscriptions_week: int
-    conversion_rate_today: float
     conversion_rate_week: float
-    avg_messages_per_thread: float
     avg_threads_per_user: float
 
 
@@ -165,45 +150,32 @@ async def get_analytics_summary(
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_start = today_start - timedelta(days=7)
         
-        # Run all queries in parallel for better latency
+        # Run only necessary queries in parallel
         (
             total_users_result,
             total_threads_result,
-            total_messages_result,
-            active_today_result,
             active_week_result,
             signups_today_result,
             signups_week_result,
-            subs_today_result,
             subs_week_result,
         ) = await asyncio.gather(
-            client.schema('basejump').from_('accounts').select('*', count='exact').execute(),
-            client.from_('threads').select('*', count='exact').execute(),
-            client.from_('messages').select('*', count='exact').execute(),
-            client.from_('threads').select('account_id').gte('updated_at', today_start.isoformat()).execute(),
+            client.schema('basejump').from_('accounts').select('id', count='exact').limit(1).execute(),
+            client.from_('threads').select('thread_id', count='exact').limit(1).execute(),
             client.from_('threads').select('account_id').gte('updated_at', week_start.isoformat()).execute(),
-            client.schema('basejump').from_('accounts').select('*', count='exact').gte('created_at', today_start.isoformat()).execute(),
-            client.schema('basejump').from_('accounts').select('*', count='exact').gte('created_at', week_start.isoformat()).execute(),
-            client.schema('basejump').from_('billing_subscriptions').select('*', count='exact').gte('created', today_start.isoformat()).eq('status', 'active').execute(),
-            client.schema('basejump').from_('billing_subscriptions').select('*', count='exact').gte('created', week_start.isoformat()).eq('status', 'active').execute(),
+            client.schema('basejump').from_('accounts').select('id', count='exact').gte('created_at', today_start.isoformat()).limit(1).execute(),
+            client.schema('basejump').from_('accounts').select('id', count='exact').gte('created_at', week_start.isoformat()).limit(1).execute(),
+            client.schema('basejump').from_('billing_subscriptions').select('id', count='exact').gte('created', week_start.isoformat()).eq('status', 'active').limit(1).execute(),
         )
         
         total_users = total_users_result.count or 0
         total_threads = total_threads_result.count or 0
-        total_messages = total_messages_result.count or 0
-        active_users_today = len(set(t['account_id'] for t in active_today_result.data or [] if t.get('account_id')))
         active_users_week = len(set(t['account_id'] for t in active_week_result.data or [] if t.get('account_id')))
         new_signups_today = signups_today_result.count or 0
         new_signups_week = signups_week_result.count or 0
-        new_subscriptions_today = subs_today_result.count or 0
         new_subscriptions_week = subs_week_result.count or 0
         
-        # Conversion rates
-        conversion_rate_today = (new_subscriptions_today / new_signups_today * 100) if new_signups_today > 0 else 0
+        # Conversion rate
         conversion_rate_week = (new_subscriptions_week / new_signups_week * 100) if new_signups_week > 0 else 0
-        
-        # Average messages per thread
-        avg_messages_per_thread = (total_messages / total_threads) if total_threads > 0 else 0
         
         # Average threads per user
         avg_threads_per_user = (total_threads / total_users) if total_users > 0 else 0
@@ -211,105 +183,16 @@ async def get_analytics_summary(
         return AnalyticsSummary(
             total_users=total_users,
             total_threads=total_threads,
-            total_messages=total_messages,
-            active_users_today=active_users_today,
             active_users_week=active_users_week,
             new_signups_today=new_signups_today,
             new_signups_week=new_signups_week,
-            new_subscriptions_today=new_subscriptions_today,
-            new_subscriptions_week=new_subscriptions_week,
-            conversion_rate_today=round(conversion_rate_today, 2),
             conversion_rate_week=round(conversion_rate_week, 2),
-            avg_messages_per_thread=round(avg_messages_per_thread, 2),
             avg_threads_per_user=round(avg_threads_per_user, 2)
         )
         
     except Exception as e:
         logger.error(f"Failed to get analytics summary: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve analytics summary")
-
-
-@router.get("/daily")
-async def get_daily_stats(
-    days: int = Query(30, ge=1, le=90, description="Number of days to fetch"),
-    admin: dict = Depends(require_admin)
-) -> List[DailyStats]:
-    """Get daily statistics for the past N days."""
-    try:
-        db = DBConnection()
-        client = await db.client
-        
-        now = datetime.now(timezone.utc)
-        start_date = (now - timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        # Get signups by day
-        signups_result = await client.schema('basejump').from_('accounts').select(
-            'created_at'
-        ).gte('created_at', start_date.isoformat()).execute()
-        
-        # Get subscriptions by day
-        subs_result = await client.schema('basejump').from_('billing_subscriptions').select(
-            'created'
-        ).gte('created', start_date.isoformat()).eq('status', 'active').execute()
-        
-        # Get threads by day
-        threads_result = await client.from_('threads').select(
-            'created_at, account_id'
-        ).gte('created_at', start_date.isoformat()).execute()
-        
-        # Aggregate by day
-        daily_data = {}
-        for i in range(days):
-            date = (now - timedelta(days=i)).strftime('%Y-%m-%d')
-            daily_data[date] = {
-                'signups': 0,
-                'subscriptions': 0,
-                'threads_created': 0,
-                'active_users': set()
-            }
-        
-        # Count signups by day
-        for signup in signups_result.data or []:
-            date = signup['created_at'][:10]
-            if date in daily_data:
-                daily_data[date]['signups'] += 1
-        
-        # Count subscriptions by day
-        for sub in subs_result.data or []:
-            date = sub['created'][:10]
-            if date in daily_data:
-                daily_data[date]['subscriptions'] += 1
-        
-        # Count threads and active users by day
-        for thread in threads_result.data or []:
-            date = thread['created_at'][:10]
-            if date in daily_data:
-                daily_data[date]['threads_created'] += 1
-                if thread.get('account_id'):
-                    daily_data[date]['active_users'].add(thread['account_id'])
-        
-        # Convert to list
-        result = []
-        for date in sorted(daily_data.keys(), reverse=True):
-            data = daily_data[date]
-            signups = data['signups']
-            subs = data['subscriptions']
-            conversion = (subs / signups * 100) if signups > 0 else 0
-            
-            result.append(DailyStats(
-                date=date,
-                signups=signups,
-                subscriptions=subs,
-                threads_created=data['threads_created'],
-                active_users=len(data['active_users']),
-                conversion_rate=round(conversion, 2)
-            ))
-        
-        return result
-        
-    except Exception as e:
-        logger.error(f"Failed to get daily stats: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve daily statistics")
 
 
 @router.get("/threads/browse")
@@ -416,43 +299,94 @@ async def _browse_threads_filtered(
     date_from: Optional[str], date_to: Optional[str],
     sort_by: str, sort_order: str
 ) -> PaginatedResponse[ThreadAnalytics]:
-    """Filtered path: fetch threads in date range, filter by message count/email/category."""
+    """Filtered path: fetch threads with optional category/date filtering using JOINs."""
     
-    # Get threads within date range (limited scope)
-    threads_query = client.from_('threads').select(
-        'thread_id, project_id, account_id, is_public, created_at, updated_at, user_message_count, total_message_count'
-    )
-    if date_from:
-        threads_query = threads_query.gte('created_at', date_from)
-    if date_to:
-        threads_query = threads_query.lte('created_at', date_to)
+    # When filtering by category, use database function for efficient JOIN with pagination
+    # This fetches only the records we need (e.g., 15) instead of 1000
+    if category:
+        # Build date parameters for RPC
+        date_from_param = None
+        date_to_param = None
+        
+        if date_from:
+            date_from_param = f"{date_from}T00:00:00Z" if 'T' not in date_from else date_from
+        if date_to:
+            date_to_param = f"{date_to}T23:59:59.999999Z" if 'T' not in date_to else date_to
+        
+        # Calculate offset for pagination
+        offset = (params.page - 1) * params.page_size
+        
+        # Get total count first for pagination
+        count_params = {
+            'p_category': category,
+            'p_date_from': date_from_param,
+            'p_date_to': date_to_param,
+            'p_min_messages': min_messages,
+            'p_max_messages': max_messages
+        }
+        count_result = await client.rpc('get_threads_by_category_count', count_params).execute()
+        total_count = count_result.data if isinstance(count_result.data, int) else 0
+        
+        # Get only the page of threads we need
+        rpc_params = {
+            'p_category': category,
+            'p_date_from': date_from_param,
+            'p_date_to': date_to_param,
+            'p_min_messages': min_messages,
+            'p_max_messages': max_messages,
+            'p_sort_by': sort_by,
+            'p_sort_order': sort_order,
+            'p_limit': params.page_size,
+            'p_offset': offset
+        }
+        
+        result = await client.rpc('get_threads_by_category', rpc_params).execute()
+        page_threads = result.data or []
+        
+        logger.debug(f"Category filter via RPC: category={category}, page={params.page}, fetched {len(page_threads)} of {total_count} total")
+        
+        # Enrich threads with project/user data and return directly
+        enriched_threads = await _enrich_threads(client, page_threads)
+        
+        # Handle email search if specified (filter enriched results)
+        if search_email and enriched_threads:
+            search_lower = search_email.lower()
+            enriched_threads = [
+                t for t in enriched_threads
+                if t.user_email and search_lower in t.user_email.lower()
+            ]
+            # Adjust total count for email filter (approximate)
+            total_count = len(enriched_threads) if len(enriched_threads) < params.page_size else total_count
+        
+        return await PaginationService.paginate_with_total_count(
+            items=enriched_threads, total_count=total_count, params=params
+        )
     
-    if sort_by == 'created_at':
-        threads_query = threads_query.order('created_at', desc=(sort_order == 'desc'))
-    elif sort_by == 'updated_at':
-        threads_query = threads_query.order('updated_at', desc=(sort_order == 'desc'))
-    
-    # Limit to reasonable number for filtering
-    threads_query = threads_query.limit(1000)
-    threads_result = await threads_query.execute()
-    all_threads = threads_result.data or []
+    else:
+        # No category filter - simple thread query
+        threads_query = client.from_('threads').select(
+            'thread_id, project_id, account_id, is_public, created_at, updated_at, user_message_count, total_message_count'
+        )
+        if date_from:
+            threads_query = threads_query.gte('created_at', date_from)
+        if date_to:
+            threads_query = threads_query.lte('created_at', date_to)
+        
+        if sort_by == 'created_at':
+            threads_query = threads_query.order('created_at', desc=(sort_order == 'desc'))
+        elif sort_by == 'updated_at':
+            threads_query = threads_query.order('updated_at', desc=(sort_order == 'desc'))
+        
+        threads_query = threads_query.limit(1000)
+        threads_result = await threads_query.execute()
+        all_threads = threads_result.data or []
     
     if not all_threads:
         return await PaginationService.paginate_with_total_count(
             items=[], total_count=0, params=params
         )
     
-    # Filter by category if specified (fetch project categories first)
-    project_categories = {}
-    if category:
-        project_ids = list(set(t['project_id'] for t in all_threads if t.get('project_id')))
-        if project_ids:
-            projects_result = await client.from_('projects').select(
-                'project_id, category'
-            ).in_('project_id', project_ids).execute()
-            project_categories = {p['project_id']: p.get('category', 'Other') for p in projects_result.data or []}
-    
-    # Filter by message count and category
+    # Filter by message count only (category already filtered via JOIN)
     filtered_threads = []
     for thread in all_threads:
         user_msg_count = thread.get('user_message_count') or 0
@@ -461,12 +395,6 @@ async def _browse_threads_filtered(
             continue
         if max_messages is not None and user_msg_count > max_messages:
             continue
-        
-        # Filter by category
-        if category:
-            thread_category = project_categories.get(thread.get('project_id'), 'Other')
-            if thread_category != category:
-                continue
         
         filtered_threads.append(thread)
     

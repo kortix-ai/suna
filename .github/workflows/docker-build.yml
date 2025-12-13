@@ -79,9 +79,27 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             set -a && source .env && set +a
-            docker compose down
+            
+            echo "=== Pre-deployment disk usage ==="
+            df -h / | tail -1
+            
+            # Clean up old images to save space
+            echo "=== Cleaning up old images ==="
+            docker image prune -af --filter "until=24h" || true
+            
+            # Build and deploy - Docker Compose handles orchestration
+            echo "=== Building and deploying services ==="
             docker compose build
-            docker compose up -d
+            docker compose up -d --remove-orphans
+            
+            # Quick cleanup
+            echo "=== Post-deployment cleanup ==="
+            docker image prune -af --filter "until=1h" || true
+            docker builder prune -af --keep-storage=2GB || true
+            
+            echo "=== Deployment complete ==="
+            docker compose ps
+            df -h / | tail -1
 
       # - name: Deploy to staging [legacy]
       #   if: steps.get_tag_name.outputs.environment == 'staging'

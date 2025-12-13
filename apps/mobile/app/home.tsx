@@ -11,6 +11,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { Agent } from '@/api/types';
 import type { Conversation } from '@/components/menu/types';
 import { FeedbackDrawer } from '@/components/chat/tool-views/complete-tool/FeedbackDrawer';
+import { useFeedbackDrawerStore } from '@/stores/feedback-drawer-store';
 
 export default function AppScreen() {
   const { colorScheme } = useColorScheme();
@@ -20,6 +21,7 @@ export default function AppScreen() {
   const { threadId } = useLocalSearchParams<{ threadId?: string }>();
   const chat = useChat();
   const pageNav = usePageNavigation();
+  const { isOpen: isFeedbackDrawerOpen } = useFeedbackDrawerStore();
   const homePageRef = React.useRef<HomePageRef>(null);
 
   // Worker config drawer state for MenuPage
@@ -175,7 +177,7 @@ export default function AppScreen() {
           />
         )}
       </Drawer>
-      <FeedbackDrawer />
+      {isFeedbackDrawerOpen && <FeedbackDrawer />}
     </>
   );
 }

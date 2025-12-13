@@ -188,6 +188,41 @@
     "integrations": {
       "opening": "Integrationen werden geöffnet",
       "redirecting": "Weiterleitung zur Integrations-Seite..."
+    },
+    "memory": {
+      "title": "KI-Gedächtnis",
+      "description": "Kontext über Gespräche hinweg automatisch merken",
+      "enabled": "Aktiviert",
+      "disabled": "Deaktiviert",
+      "notAvailable": "Gedächtnis ist in Ihrem aktuellen Plan nicht verfügbar. Upgraden Sie auf Plus oder höher, um automatisches Gedächtnis zu aktivieren.",
+      "usage": "Gedächtnis-Nutzung",
+      "available": "{count} Erinnerungen verfügbar",
+      "noLimit": "Unbegrenzt",
+      "yourMemories": "Ihre Erinnerungen",
+      "yourMemoriesDescription": "Sehen und verwalten Sie, was die KI über Sie merkt",
+      "clearAll": "Alle löschen",
+      "deleteAllTitle": "Alle Erinnerungen löschen?",
+      "deleteAllDescription": "Dies wird alle {count} Erinnerungen dauerhaft löschen. Die KI wird sich nicht mehr an Informationen aus früheren Gesprächen erinnern. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "deleteAllButton": "Alle Erinnerungen löschen",
+      "noMemoriesYet": "Noch keine Erinnerungen",
+      "noMemoriesDescription": "Starten Sie ein Gespräch und die KI wird sich automatisch wichtige Informationen über Sie merken",
+      "searchMemories": "Erinnerungen durchsuchen...",
+      "filterByType": "Nach Typ filtern",
+      "allTypes": "Alle Typen",
+      "personalFacts": "Persönliche Fakten",
+      "preferences": "Präferenzen",
+      "context": "Kontext",
+      "conversations": "Gespräche",
+      "noMatchingMemories": "Keine passenden Erinnerungen",
+      "adjustFilters": "Versuchen Sie, Ihre Filter oder Suchanfrage anzupassen",
+      "loadMore": "Mehr laden",
+      "loading": "Erinnerungen werden geladen...",
+      "memoryTypes": {
+        "fact": "Fakt",
+        "preference": "Präferenz",
+        "context": "Kontext",
+        "conversation_summary": "Gespräch"
+      }
     }
   },
   "triggers": {
@@ -1006,6 +1041,28 @@
         "8": "Studiere Preisstrategien erfolgreicher D2C-Abonnementbox-Unternehmen",
         "9": "Recherchiere das Wettbewerbsumfeld KI-gestützter Cybersicherheitslösungen"
       }
+    }
+  },
+  "announcements": {
+    "memories": {
+      "title": "Wir stellen Erinnerungen vor",
+      "description": "Kortix merkt sich jetzt Ihre Präferenzen und den Kontext über alle Gespräche hinweg",
+      "features": {
+        "personalized": {
+          "title": "Personalisierte Erfahrung",
+          "description": "Passt sich im Laufe der Zeit an Ihren Arbeitsstil an"
+        },
+        "retention": {
+          "title": "Kontexterhaltung",
+          "description": "Wichtige Details werden zwischen Chats gespeichert"
+        },
+        "control": {
+          "title": "Sie haben die Kontrolle",
+          "description": "Jederzeit deaktivieren oder löschen"
+        }
+      },
+      "manageButton": "Erinnerungen verwalten",
+      "dismissButton": "Verstanden"
     }
   }
 }

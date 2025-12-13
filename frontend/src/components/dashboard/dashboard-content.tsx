@@ -64,6 +64,59 @@ const CreditsDisplay = lazy(() =>
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
+// Text component with letter-by-letter hover lift effect (staircase/wave effect)
+function LetterLiftText({ 
+  children, 
+  className 
+}: { 
+  children: React.ReactNode; 
+  className?: string;
+}) {
+  const text = String(children);
+  const [hoveredIndex, setHoveredIndex] = React.useState<number | null>(null);
+
+  // Calculate lift amount based on distance from hovered letter
+  const getLiftAmount = (index: number, hoveredIndex: number | null): number => {
+    if (hoveredIndex === null) return 0;
+    
+    const distance = Math.abs(index - hoveredIndex);
+    
+    // Staircase effect: closer letters lift more, further letters lift less
+    // Broader effect with more lift - affects up to 6 letters away
+    if (distance === 0) return -6; // Hovered letter
+    if (distance === 1) return -5; // Adjacent letters
+    if (distance === 2) return -4; // Two letters away
+    if (distance === 3) return -3; // Three letters away
+    if (distance === 4) return -2; // Four letters away
+    if (distance === 5) return -1.5; // Five letters away
+    if (distance === 6) return -0.5; // Six letters away
+    return 0; // Further letters don't lift
+  };
+
+  return (
+    <p className={className}>
+      {text.split('').map((letter, index) => {
+        const liftAmount = getLiftAmount(index, hoveredIndex);
+        
+        return (
+          <span
+            key={index}
+            onMouseEnter={() => setHoveredIndex(index)}
+            onMouseLeave={() => setHoveredIndex(null)}
+            style={{
+              display: 'inline-block',
+              transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+              transform: `translateY(${liftAmount}px)`,
+              cursor: 'default',
+            }}
+          >
+            {letter === ' ' ? '\u00A0' : letter}
+          </span>
+        );
+      })}
+    </p>
+  );
+}
 
 export function DashboardContent() {
   const t = useTranslations('dashboard');
@@ -73,6 +126,7 @@ export function DashboardContent() {
   const [inputValue, setInputValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfigDialog, setShowConfigDialog] = useState(false);
+  const [memoryEnabled, setMemoryEnabled] = useState(true);
   const [configAgentId, setConfigAgentId] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [autoSubmit, setAutoSubmit] = useState(false);
@@ -339,18 +393,13 @@ export function DashboardContent() {
       localStorage.removeItem(PENDING_PROMPT_KEY);
 
       const formData = new FormData();
-      
-      // Always append prompt - it's required for new threads
-      // The message should never be empty due to validation above, but ensure we always send it
       const trimmedMessage = message.trim();
       if (!trimmedMessage && files.length === 0) {
         setIsSubmitting(false);
         throw new Error('Prompt is required when starting a new Worker');
       }
-      // Always append prompt (even if empty, backend will validate)
       formData.append('prompt', trimmedMessage || message);
 
-      // Add selected agent if one is chosen
       if (selectedAgentId) {
         formData.append('agent_id', selectedAgentId);
       }
@@ -363,10 +412,9 @@ export function DashboardContent() {
       if (options?.model_name && options.model_name.trim()) {
         formData.append('model_name', options.model_name.trim());
       }
-      formData.append('stream', 'true'); // Always stream for better UX
+      formData.append('stream', 'true');
       formData.append('enable_context_manager', String(options?.enable_context_manager ?? false));
 
-      // Debug logging
       console.log('[Dashboard] Starting agent with:', {
         prompt: message.substring(0, 100),
         promptLength: message.length,
@@ -393,6 +441,10 @@ export function DashboardContent() {
         files: files,
         model_name: options?.model_name,
         agent_id: selectedAgentId || undefined,
+        memory_enabled: true,
+      }).then(() => {
+        queryClient.invalidateQueries({ queryKey: ['threads', 'list'] });
+        queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });
       }).catch((error) => {
         console.error('Background agent start failed:', error);
         
@@ -638,11 +690,11 @@ export function DashboardContent() {
                   <div className="px-4 py-6 sm:py-8">
                     <div className="w-full max-w-3xl mx-auto flex flex-col items-center space-y-5 sm:space-y-6 md:space-y-8">
                       <div className="flex flex-col items-center text-center w-full">
-                        <p
+                        <LetterLiftText
                           className="tracking-tight text-2xl sm:text-2xl md:text-3xl font-normal text-foreground/90"
                         >
                           {greeting || t('whatWouldYouLike')}
-                        </p>
+                        </LetterLiftText>
                       </div>
 
                       <div className="w-full flex flex-col items-center">
@@ -667,6 +719,8 @@ export function DashboardContent() {
                           selectedCharts={selectedCharts}
                           selectedOutputFormat={selectedOutputFormat}
                           selectedTemplate={selectedTemplate}
+                          memoryEnabled={memoryEnabled}
+                          onMemoryToggle={setMemoryEnabled}
                         />
 
                         {alertType === 'daily_refresh' && (
