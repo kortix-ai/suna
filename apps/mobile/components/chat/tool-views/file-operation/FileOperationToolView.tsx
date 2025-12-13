@@ -15,7 +15,6 @@ import {
   FileDiff,
   Plus,
   Minus,
-  Download,
 } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import {
@@ -36,13 +35,11 @@ import {
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { CsvRenderer } from './CsvRenderer';
 import { XlsxRenderer } from './XlsxRenderer';
-import { ToolViewCard, TabSwitcher, StatusBadge, LoadingState, CodeRenderer } from '../shared';
+import { ToolViewCard, TabSwitcher, StatusBadge, LoadingState, CodeRenderer, FileDownloadButton } from '../shared';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
 import { PresentationSlideCard } from '../presentation-tool/PresentationSlideCard';
 
 // Helper functions for presentation slide detection
@@ -98,7 +95,6 @@ export function FileOperationToolView({
 }: ToolViewProps) {
   const { openFileInComputer } = useKortixComputerStore();
   const [isCopyingContent, setIsCopyingContent] = useState(false);
-  const [isSavingFile, setIsSavingFile] = useState(false);
   const [activeTab, setActiveTab] = useState<'code' | 'preview' | 'changes'>('preview');
   const sourceScrollRef = useRef<ScrollView>(null);
   const previewScrollRef = useRef<ScrollView>(null);
@@ -370,23 +366,6 @@ export function FileOperationToolView({
     setTimeout(() => setIsCopyingContent(false), 500);
   };
 
-  const handleSaveFile = async () => {
-    if (!fileContent || !fileName) return;
-    setIsSavingFile(true);
-    try {
-      const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
-      await FileSystem.writeAsStringAsync(fileUri, fileContent);
-
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(fileUri);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
-    } catch (err) {
-      console.error('Failed to save file: ', err);
-    }
-    setTimeout(() => setIsSavingFile(false), 500);
-  };
 
   const renderDiffView = () => {
     if (!oldStr || !newStr) {
@@ -804,17 +783,11 @@ export function FileOperationToolView({
           </View>
           <View className="flex-row items-center gap-2">
             {fileContent && !isPresentationSlide && (
-              <Pressable
-                onPress={handleSaveFile}
-                disabled={isSavingFile}
-                className="h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
-              >
-                <Icon
-                  as={isSavingFile ? Check : Download}
-                  size={17}
-                  className="text-primary"
-                />
-              </Pressable>
+              <FileDownloadButton
+                content={fileContent}
+                fileName={fileName || 'file.txt'}
+                disabled={isStreaming}
+              />
             )}
             {fileContent && !isPresentationSlide && (
               <Pressable

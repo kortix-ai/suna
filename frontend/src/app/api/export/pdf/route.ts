@@ -1,25 +1,11 @@
-import { toast } from 'sonner';
-import { saveAs } from 'file-saver';
-import TurndownService from 'turndown';
-import { gfm } from 'turndown-plugin-gfm';
-
-export type ExportFormat = 'pdf' | 'docx' | 'html' | 'markdown';
-
-export interface DocumentExportOptions {
-  content: string;
-  fileName: string;
-  format: ExportFormat;
-}
+import { NextRequest, NextResponse } from 'next/server';
 
 /**
- * Professional document styles for PDF and HTML export
- * Designed to match UnifiedMarkdown rendering and sync with Word export styles
- * 
- * Typography: System fonts for web, proper heading hierarchy
- * Colors: Dark gray text (#1a1a1a), subtle borders (#e0e0e0)
- * Spacing: Consistent margins matching app rendering
+ * Professional PDF document styles
+ * Designed to match UnifiedMarkdown rendering and DOCX export
+ * Optimized for print/PDF output
  */
-const DOCUMENT_STYLES = `
+const PDF_STYLES = `
   /* ═══════════════════════════════════════════════════════════════
      BASE RESET & DOCUMENT STYLES
      ═══════════════════════════════════════════════════════════════ */
@@ -31,65 +17,63 @@ const DOCUMENT_STYLES = `
   
   body { 
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    font-size: 16px;
-    line-height: 1.65;
+    font-size: 11pt;
+    line-height: 1.6;
     color: #1a1a1a;
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 48px 24px;
+    padding: 0;
+    margin: 0;
     background: #fff;
   }
 
   /* ═══════════════════════════════════════════════════════════════
      HEADINGS - Clean hierarchy matching UnifiedMarkdown
-     H1: Large with bottom border (like web version)
-     H2-H6: Decreasing sizes with proper margins
      ═══════════════════════════════════════════════════════════════ */
   h1, h2, h3, h4, h5, h6 {
     font-weight: 600;
     line-height: 1.3;
     color: #111;
     letter-spacing: -0.02em;
+    page-break-after: avoid;
   }
   
   h1 { 
-    font-size: 2em; 
-    margin: 1.5em 0 0.75em 0;
-    padding-bottom: 0.4em;
-    border-bottom: 1px solid #e0e0e0;
+    font-size: 18pt; 
+    margin: 24pt 0 12pt 0;
+    padding-bottom: 6pt;
+    border-bottom: 1pt solid #e0e0e0;
   }
   h1:first-child { margin-top: 0; }
   
   h2 { 
-    font-size: 1.5em; 
-    margin: 1.5em 0 0.6em 0;
+    font-size: 15pt; 
+    margin: 20pt 0 10pt 0;
   }
   h2:first-child { margin-top: 0; }
   
   h3 { 
-    font-size: 1.25em; 
-    margin: 1.25em 0 0.5em 0;
+    font-size: 13pt; 
+    margin: 16pt 0 8pt 0;
   }
   h3:first-child { margin-top: 0; }
   
   h4 { 
-    font-size: 1.1em; 
-    margin: 1.1em 0 0.4em 0;
+    font-size: 11pt; 
+    margin: 14pt 0 6pt 0;
   }
   h4:first-child { margin-top: 0; }
   
   h5 { 
-    font-size: 1em; 
-    margin: 1em 0 0.3em 0;
+    font-size: 11pt; 
+    margin: 12pt 0 4pt 0;
   }
   h5:first-child { margin-top: 0; }
   
   h6 { 
-    font-size: 0.9em; 
-    margin: 1em 0 0.3em 0;
+    font-size: 10pt; 
+    margin: 12pt 0 4pt 0;
     color: #555;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.5pt;
   }
   h6:first-child { margin-top: 0; }
 
@@ -97,8 +81,8 @@ const DOCUMENT_STYLES = `
      PARAGRAPHS & TEXT
      ═══════════════════════════════════════════════════════════════ */
   p { 
-    margin: 1em 0; 
-    line-height: 1.7;
+    margin: 8pt 0; 
+    line-height: 1.65;
   }
   p:first-child { margin-top: 0; }
   p:last-child { margin-bottom: 0; }
@@ -118,47 +102,43 @@ const DOCUMENT_STYLES = `
   a { 
     color: #0066cc; 
     text-decoration: underline;
-    text-decoration-color: rgba(0, 102, 204, 0.4);
-    text-underline-offset: 2px;
-  }
-  a:hover { 
-    text-decoration-color: rgba(0, 102, 204, 0.8);
   }
 
   /* ═══════════════════════════════════════════════════════════════
      LISTS - Proper indentation and spacing
      ═══════════════════════════════════════════════════════════════ */
   ul, ol { 
-    margin: 1em 0; 
-    padding-left: 2em; 
+    margin: 10pt 0; 
+    padding-left: 28pt; 
   }
   ul:first-child, ol:first-child { margin-top: 0; }
   ul:last-child, ol:last-child { margin-bottom: 0; }
   
   li { 
-    margin: 0.4em 0; 
-    line-height: 1.6;
+    margin: 4pt 0; 
+    line-height: 1.5;
+    padding-left: 4pt;
   }
   
   /* Nested lists */
   li > ul, li > ol { 
-    margin: 0.4em 0; 
+    margin: 4pt 0; 
   }
 
   /* ═══════════════════════════════════════════════════════════════
      BLOCKQUOTES - Left border with muted styling
      ═══════════════════════════════════════════════════════════════ */
   blockquote { 
-    margin: 1.5em 0;
-    padding: 0.75em 1em;
-    border-left: 4px solid #e0e0e0;
+    margin: 12pt 0;
+    padding: 8pt 12pt;
+    border-left: 3pt solid #e0e0e0;
     background: #fafafa;
     color: #555;
     font-style: italic;
-    border-radius: 0 4px 4px 0;
+    border-radius: 0 4pt 4pt 0;
   }
   blockquote p { 
-    margin: 0.5em 0; 
+    margin: 4pt 0; 
   }
   blockquote p:first-child { margin-top: 0; }
   blockquote p:last-child { margin-bottom: 0; }
@@ -169,24 +149,25 @@ const DOCUMENT_STYLES = `
      ═══════════════════════════════════════════════════════════════ */
   /* Inline code */
   code {
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', Consolas, 'Courier New', monospace;
-    font-size: 0.9em;
+    font-family: 'Courier New', Consolas, 'Lucida Console', monospace;
+    font-size: 10pt;
     background: #f4f4f5;
-    padding: 0.15em 0.4em;
-    border-radius: 4px;
+    padding: 2pt 4pt;
+    border-radius: 2pt;
     color: #1a1a1a;
   }
   
   /* Code blocks */
   pre {
-    margin: 1.5em 0;
-    padding: 1em;
+    margin: 12pt 0;
+    padding: 12pt;
     background: #f4f4f5;
-    border: 1px solid #e4e4e7;
-    border-radius: 8px;
+    border: 1pt solid #e4e4e7;
+    border-radius: 4pt;
     overflow-x: auto;
-    font-size: 0.9em;
+    font-size: 9.5pt;
     line-height: 1.5;
+    page-break-inside: avoid;
   }
   pre:first-child { margin-top: 0; }
   
@@ -203,9 +184,10 @@ const DOCUMENT_STYLES = `
      ═══════════════════════════════════════════════════════════════ */
   table { 
     width: 100%;
-    margin: 1.5em 0;
+    margin: 14pt 0;
     border-collapse: collapse; 
-    font-size: 0.95em;
+    font-size: 10.5pt;
+    page-break-inside: avoid;
   }
   table:first-child { margin-top: 0; }
   
@@ -214,20 +196,20 @@ const DOCUMENT_STYLES = `
   }
   
   th { 
-    padding: 0.75em 1em;
-    border: 1px solid #e0e0e0;
+    padding: 8pt 10pt;
+    border: 1pt solid #d0d0d0;
     text-align: left;
     font-weight: 600;
-    font-size: 0.85em;
+    font-size: 10pt;
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.3pt;
     color: #333;
     background: #f8f9fa;
   }
   
   td { 
-    padding: 0.75em 1em;
-    border: 1px solid #e0e0e0;
+    padding: 8pt 10pt;
+    border: 1pt solid #d0d0d0;
     text-align: left;
     vertical-align: top;
   }
@@ -241,8 +223,8 @@ const DOCUMENT_STYLES = `
      ═══════════════════════════════════════════════════════════════ */
   hr {
     border: none;
-    border-top: 2px solid #e0e0e0;
-    margin: 2em 0;
+    border-top: 1pt solid #e0e0e0;
+    margin: 20pt 0;
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -252,8 +234,8 @@ const DOCUMENT_STYLES = `
     max-width: 100%;
     height: auto;
     display: block;
-    margin: 1.5em 0;
-    border-radius: 4px;
+    margin: 12pt 0;
+    page-break-inside: avoid;
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -268,43 +250,42 @@ const DOCUMENT_STYLES = `
   li.task-list-item { 
     display: flex; 
     align-items: flex-start; 
-    gap: 0.5em;
+    gap: 8pt;
     padding-left: 0;
   }
   
   li.task-list-item input { 
-    margin-top: 0.35em; 
+    margin-top: 4pt; 
   }
 
   /* ═══════════════════════════════════════════════════════════════
      DEFINITION LISTS
      ═══════════════════════════════════════════════════════════════ */
   dl {
-    margin: 1em 0;
+    margin: 10pt 0;
   }
   
   dt {
     font-weight: 600;
-    margin-top: 1em;
+    margin-top: 8pt;
   }
   dt:first-child { margin-top: 0; }
   
   dd {
-    margin-left: 1.5em;
-    margin-bottom: 0.5em;
+    margin-left: 24pt;
+    margin-bottom: 4pt;
   }
 
   /* ═══════════════════════════════════════════════════════════════
      KEYBOARD SHORTCUTS
      ═══════════════════════════════════════════════════════════════ */
   kbd {
-    font-family: 'SF Mono', Monaco, Consolas, 'Courier New', monospace;
-    font-size: 0.85em;
+    font-family: 'Courier New', Consolas, monospace;
+    font-size: 9pt;
     background: #f4f4f5;
-    border: 1px solid #d0d0d0;
-    border-radius: 3px;
-    padding: 0.1em 0.4em;
-    box-shadow: 0 1px 0 #d0d0d0;
+    border: 1pt solid #d0d0d0;
+    border-radius: 2pt;
+    padding: 1pt 4pt;
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -312,22 +293,23 @@ const DOCUMENT_STYLES = `
      ═══════════════════════════════════════════════════════════════ */
   mark {
     background-color: #fef08a;
-    padding: 0 0.2em;
-    border-radius: 2px;
+    padding: 0 2pt;
+    border-radius: 1pt;
   }
 
   /* ═══════════════════════════════════════════════════════════════
      FIGURE & FIGCAPTION
      ═══════════════════════════════════════════════════════════════ */
   figure {
-    margin: 1.5em 0;
+    margin: 14pt 0;
+    page-break-inside: avoid;
   }
   
   figcaption {
-    font-size: 0.9em;
+    font-size: 10pt;
     color: #666;
     text-align: center;
-    margin-top: 0.5em;
+    margin-top: 6pt;
     font-style: italic;
   }
 
@@ -336,9 +318,9 @@ const DOCUMENT_STYLES = `
      ═══════════════════════════════════════════════════════════════ */
   @media print {
     body { 
-      max-width: none; 
-      padding: 0;
       font-size: 11pt;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
     pre { 
       white-space: pre-wrap; 
@@ -354,190 +336,134 @@ const DOCUMENT_STYLES = `
     img {
       page-break-inside: avoid;
     }
+    tr {
+      page-break-inside: avoid;
+    }
+  }
+
+  @page {
+    size: A4;
+    margin: 20mm;
   }
 `;
 
 /**
- * Ensure content is valid HTML
+ * Preprocess HTML for better PDF compatibility
  */
-function normalizeHtmlContent(content: string): string {
-  if (typeof content !== 'string' || !content.trim()) return '<p></p>';
-  
-  // If it looks like HTML, return as-is
-  if (content.includes('<')) return content;
-  
-  // Otherwise wrap plain text in paragraphs
-  return content
-    .split('\n')
-    .map(line => line.trim() ? `<p>${line}</p>` : '')
-    .filter(Boolean)
-    .join('\n');
+function preprocessHtmlForPdf(html: string): string {
+  if (!html || typeof html !== 'string') {
+    return '<p></p>';
+  }
+
+  let processed = html;
+
+  // Remove script/style tags
+  processed = processed.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+  processed = processed.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+
+  // Convert HTML entities to Unicode
+  processed = processed
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&mdash;/g, String.fromCharCode(0x2014))
+    .replace(/&ndash;/g, String.fromCharCode(0x2013))
+    .replace(/&hellip;/g, String.fromCharCode(0x2026))
+    .replace(/&lsquo;/g, String.fromCharCode(0x2018))
+    .replace(/&rsquo;/g, String.fromCharCode(0x2019))
+    .replace(/&ldquo;/g, String.fromCharCode(0x201C))
+    .replace(/&rdquo;/g, String.fromCharCode(0x201D));
+
+  // Clean up empty paragraphs
+  processed = processed.replace(/<p>\s*<\/p>/g, '');
+
+  // Convert br tags to proper format
+  processed = processed.replace(/<br\s*\/?>/gi, '<br/>');
+
+  // Clean up multiple consecutive line breaks
+  processed = processed.replace(/(<br\s*\/?>\s*){3,}/gi, '<br/><br/>');
+
+  return processed.trim();
 }
 
-/**
- * Sanitize filename for safe file system use
- */
-function sanitizeFileName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9-_. ]/g, '').trim() || 'document';
-}
+export async function POST(request: NextRequest) {
+  try {
+    const { content, fileName } = await request.json();
 
-/**
- * Create a complete, standalone HTML document
- */
-function createHtmlDocument(content: string, title: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
+    console.log('[PDF Export] Input HTML length:', content?.length || 0);
+    console.log('[PDF Export] File name:', fileName);
+
+    if (!content || !fileName) {
+      return NextResponse.json(
+        { error: 'Content and fileName are required' },
+        { status: 400 }
+      );
+    }
+
+    // Preprocess HTML
+    const preprocessedHtml = preprocessHtmlForPdf(content);
+
+    const pdfHtml = `<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
-  <style>${DOCUMENT_STYLES}</style>
+  <meta charset="utf-8">
+  <title>${fileName}</title>
+  <style>${PDF_STYLES}</style>
 </head>
 <body>
-${content}
+${preprocessedHtml}
 </body>
 </html>`;
-}
 
-/**
- * Export document to various formats
- */
-export async function exportDocument({ content, fileName, format }: DocumentExportOptions): Promise<void> {
-  const htmlContent = normalizeHtmlContent(content);
-  const safeFileName = sanitizeFileName(fileName);
+    // Use puppeteer for PDF generation
+    const puppeteer = await import('puppeteer');
+    
+    console.log('[PDF Export] Launching puppeteer...');
+    
+    const browser = await puppeteer.default.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    });
 
-  // Debug logging
-  console.log(`[Document Export] Format: ${format}`);
-  console.log(`[Document Export] File name: ${safeFileName}`);
-  console.log(`[Document Export] Content length: ${content?.length || 0}`);
-  console.log(`[Document Export] HTML content preview:`, htmlContent.substring(0, 300));
+    try {
+      const page = await browser.newPage();
+      
+      // Set content and wait for fonts/images to load
+      await page.setContent(pdfHtml, {
+        waitUntil: ['networkidle0', 'load'],
+      });
 
-  try {
-    switch (format) {
-      case 'pdf': {
-        console.log('[Document Export] Sending to PDF API...');
-        
-        const toastId = toast.loading('Exporting to PDF...');
-        
-        try {
-          const response = await fetch('/api/export/pdf', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: htmlContent, fileName: safeFileName }),
-          });
+      // Generate PDF with proper settings
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        margin: {
+          top: '20mm',
+          bottom: '20mm',
+          left: '20mm',
+          right: '20mm',
+        },
+        printBackground: true,
+        preferCSSPageSize: true,
+      });
 
-          console.log('[Document Export] PDF API response status:', response.status);
+      console.log('[PDF Export] Generated PDF size:', pdfBuffer.length, 'bytes');
 
-          if (!response.ok) {
-            const err = await response.json().catch(() => ({ error: 'Export failed' }));
-            console.error('[Document Export] PDF API error:', err);
-            throw new Error(err.error || `Error ${response.status}`);
-          }
-
-          const blob = await response.blob();
-          console.log('[Document Export] PDF blob size:', blob.size, 'bytes');
-          
-          saveAs(blob, `${safeFileName}.pdf`);
-          toast.success('PDF exported', { id: toastId });
-        } catch (error) {
-          console.error('[Document Export] PDF export error:', error);
-          toast.error(`PDF export failed: ${error instanceof Error ? error.message : 'Unknown error'}`, { id: toastId });
-        }
-        break;
-      }
-
-      case 'docx': {
-        console.log('[Document Export] Sending to DOCX API...');
-        
-        const toastId = toast.loading('Exporting to Word...');
-        
-        try {
-          const response = await fetch('/api/export/docx', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: htmlContent, fileName: safeFileName }),
-          });
-
-          console.log('[Document Export] DOCX API response status:', response.status);
-
-          if (!response.ok) {
-            const err = await response.json().catch(() => ({ error: 'Export failed' }));
-            console.error('[Document Export] DOCX API error:', err);
-            throw new Error(err.error || `Error ${response.status}`);
-          }
-
-          const blob = await response.blob();
-          console.log('[Document Export] DOCX blob size:', blob.size, 'bytes');
-          
-          saveAs(blob, `${safeFileName}.docx`);
-          toast.success('Word document exported', { id: toastId });
-        } catch (error) {
-          console.error('[Document Export] DOCX export error:', error);
-          toast.error(`Word export failed: ${error instanceof Error ? error.message : 'Unknown error'}`, { id: toastId });
-        }
-        break;
-      }
-
-      case 'html': {
-        console.log('[Document Export] Creating HTML file...');
-        
-        const fullHtml = createHtmlDocument(htmlContent, safeFileName);
-        const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
-        
-        console.log('[Document Export] HTML blob size:', blob.size, 'bytes');
-        
-        saveAs(blob, `${safeFileName}.html`);
-        toast.success('HTML exported');
-        break;
-      }
-
-      case 'markdown': {
-        console.log('[Document Export] Converting to Markdown...');
-        
-        const turndown = new TurndownService({
-          headingStyle: 'atx',
-          hr: '---',
-          bulletListMarker: '-',
-          codeBlockStyle: 'fenced',
-          fence: '```',
-          emDelimiter: '*',
-          strongDelimiter: '**',
-          linkStyle: 'inlined',
-        });
-        
-        turndown.use(gfm);
-        
-        // Preserve code block languages
-        turndown.addRule('fencedCodeBlock', {
-          filter: (node) => 
-            node.nodeName === 'PRE' && 
-            node.firstChild?.nodeName === 'CODE',
-          replacement: (_content, node) => {
-            const codeEl = node.firstChild as HTMLElement;
-            const langMatch = (codeEl.getAttribute('class') || '').match(/language-(\w+)/);
-            const lang = langMatch ? langMatch[1] : '';
-            const code = codeEl.textContent || '';
-            return `\n\`\`\`${lang}\n${code}\n\`\`\`\n`;
-          },
-        });
-        
-        let md = turndown.turndown(htmlContent);
-        md = md.replace(/\n{3,}/g, '\n\n').trim();
-        
-        console.log('[Document Export] Markdown length:', md.length);
-        
-        const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
-        saveAs(blob, `${safeFileName}.md`);
-        toast.success('Markdown exported');
-        break;
-      }
-
-      default:
-        console.error('[Document Export] Unknown format:', format);
-        toast.error(`Unknown format: ${format}`);
+      return new NextResponse(pdfBuffer, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="${fileName}.pdf"`,
+        },
+      });
+    } finally {
+      await browser.close();
     }
   } catch (error) {
-    console.error(`[Document Export] Error (${format}):`, error);
-    toast.error(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error('[PDF Export] Error:', error);
+    return NextResponse.json(
+      { 
+        error: 'Failed to generate PDF document', 
+        details: error instanceof Error ? error.message : 'Unknown error' 
+      },
+      { status: 500 }
+    );
   }
 }
