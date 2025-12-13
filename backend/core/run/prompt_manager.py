@@ -127,10 +127,18 @@ If relevant context seems missing, ask a clarifying question.
             return system_content
         
         agentpress_tools = agent_config.get('agentpress_tools', {})
-        has_builder_tools = any(
-            agentpress_tools.get(tool, False) 
-            for tool in ['agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool']
-        )
+        
+        def is_tool_enabled(tool_name: str) -> bool:
+            tool_config = agentpress_tools.get(tool_name)
+            if isinstance(tool_config, bool):
+                return tool_config
+            elif isinstance(tool_config, dict):
+                return tool_config.get('enabled', False)
+            else:
+                return False
+        
+        builder_tool_names = ['agent_creation_tool', 'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool']
+        has_builder_tools = any(is_tool_enabled(tool) for tool in builder_tool_names)
         
         if has_builder_tools:
             builder_prompt = get_agent_builder_prompt()
