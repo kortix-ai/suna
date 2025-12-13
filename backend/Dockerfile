@@ -9,7 +9,15 @@ RUN apk add --no-cache curl git \
     gcc \
     linux-headers \
     musl-dev \
-    python3-dev
+    python3-dev \
+    # Dependencies for WeasyPrint (PDF generation)
+    pango \
+    cairo \
+    gdk-pixbuf \
+    libffi \
+    fontconfig \
+    ttf-dejavu \
+    ttf-liberation
 
 # Install Python dependencies
 COPY pyproject.toml uv.lock ./
