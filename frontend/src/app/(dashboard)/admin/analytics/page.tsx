@@ -667,7 +667,7 @@ function ARRSimulator() {
   // Weekly projections derived from monthly (matching HTML dashboard logic exactly)
   const weeklyProjections = useMemo((): SimulationWeek[] => {
     const weeks: SimulationWeek[] = [];
-    const startDate = new Date(2025, 11, 12); // Dec 12, 2025
+    const startDate = new Date(2025, 11, 15); // Dec 15, 2025 (Monday)
     
     let weekNum = 1;
     const currentDate = new Date(startDate);
