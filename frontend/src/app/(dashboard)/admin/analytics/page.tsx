@@ -575,6 +575,28 @@ interface SimulationMonth {
   arr: number;
 }
 
+interface SimulationWeek {
+  week: number;
+  dateRange: string;
+  monthIndex: number;
+  // Goal values
+  visitors: number;
+  signups: number;
+  newPaid: number;
+  subscribers: number;
+  mrr: number;
+  arr: number;
+}
+
+interface WeeklyActual {
+  views: number;
+  signups: number;
+  newPaid: number;
+  subscribers: number;
+  mrr: number;
+  arr: number;
+}
+
 function ARRSimulator() {
   // Starting parameters (editable)
   const [startingSubs, setStartingSubs] = useState(639);
@@ -642,6 +664,123 @@ function ARRSimulator() {
     negativeChurned: -p.churned,
   }));
 
+  // Weekly projections derived from monthly (matching HTML dashboard logic exactly)
+  const weeklyProjections = useMemo((): SimulationWeek[] => {
+    const weeks: SimulationWeek[] = [];
+    const startDate = new Date(2025, 11, 12); // Dec 12, 2025
+    
+    let weekNum = 1;
+    const currentDate = new Date(startDate);
+    let totalSubs = startingSubs;
+    
+    projections.forEach((month, monthIdx) => {
+      // HTML logic: every 3rd month (index 2, 5, ...) has 5 weeks, others have 4
+      const weeksInMonth = monthIdx % 3 === 2 ? 5 : 4;
+      
+      // Split monthly data evenly across weeks
+      const weeklyViews = Math.round(month.visitors / weeksInMonth);
+      const weeklySignups = Math.round(month.signups / weeksInMonth);
+      const weeklyNewPaid = Math.round(month.newPaid / weeksInMonth);
+      const weeklyChurned = Math.round(month.churned / weeksInMonth);
+      
+      for (let w = 0; w < weeksInMonth; w++) {
+        const weekStart = new Date(currentDate);
+        const weekEnd = new Date(currentDate);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        
+        // Update running subscriber count (matching HTML logic)
+        totalSubs = Math.max(0, totalSubs + weeklyNewPaid - weeklyChurned);
+        const weeklyMRR = totalSubs * arpu;
+        const weeklyARR = weeklyMRR * 12;
+        
+        weeks.push({
+          week: weekNum,
+          dateRange: `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+          monthIndex: monthIdx,
+          visitors: weeklyViews,
+          signups: weeklySignups,
+          newPaid: weeklyNewPaid,
+          subscribers: Math.round(totalSubs),
+          mrr: Math.round(weeklyMRR),
+          arr: Math.round(weeklyARR),
+        });
+        
+        weekNum++;
+        currentDate.setDate(currentDate.getDate() + 7);
+      }
+    });
+    
+    return weeks;
+  }, [projections, startingSubs, arpu]);
+
+  // Actual weekly data (persisted to localStorage)
+  const [actualData, setActualData] = useState<Record<number, WeeklyActual>>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('arr-simulator-actual-data');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          return {};
+        }
+      }
+    }
+    return {};
+  });
+
+  // Persist actual data to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('arr-simulator-actual-data', JSON.stringify(actualData));
+    }
+  }, [actualData]);
+
+  const updateActualData = (week: number, field: keyof WeeklyActual, value: number) => {
+    setActualData(prev => ({
+      ...prev,
+      [week]: {
+        ...prev[week],
+        [field]: value,
+      }
+    }));
+  };
+
+  const clearActualData = () => {
+    setActualData({});
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('arr-simulator-actual-data');
+    }
+  };
+
+  // Calculate variance percentage
+  const getVariance = (actual: number | undefined, goal: number): { value: number; color: string } => {
+    if (!actual || actual === 0) return { value: 0, color: 'text-muted-foreground' };
+    const variance = ((actual - goal) / goal) * 100;
+    if (variance >= 0) return { value: variance, color: 'text-green-600' };
+    if (variance >= -10) return { value: variance, color: 'text-yellow-600' };
+    return { value: variance, color: 'text-red-500' };
+  };
+
+  // Prepare weekly chart data for actual vs goal comparison
+  const weeklyChartData = weeklyProjections.map(w => ({
+    week: `W${w.week}`,
+    goalViews: w.visitors,
+    actualViews: actualData[w.week]?.views || 0,
+    goalSignups: w.signups,
+    actualSignups: actualData[w.week]?.signups || 0,
+    goalNewPaid: w.newPaid,
+    actualNewPaid: actualData[w.week]?.newPaid || 0,
+    goalSubs: w.subscribers,
+    actualSubs: actualData[w.week]?.subscribers || 0,
+    goalMRR: w.mrr,
+    actualMRR: actualData[w.week]?.mrr || 0,
+    goalARR: w.arr,
+    actualARR: actualData[w.week]?.arr || 0,
+  }));
+
+  // View state
+  const [simulatorView, setSimulatorView] = useState<'monthly' | 'weekly'>('monthly');
+
   // Format currency
   const formatCurrency = (value: number) => {
     if (value >= 1000000) {
@@ -704,6 +843,15 @@ function ARRSimulator() {
               />
             </div>
             <div className="space-y-2">
+              <Label className="text-xs">Monthly Visitor Growth (%)</Label>
+              <Input
+                type="number"
+                value={visitorGrowth}
+                onChange={(e) => setVisitorGrowth(Number(e.target.value))}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
               <Label className="text-xs">Landing Conv. (%)</Label>
               <Input
                 type="number"
@@ -741,15 +889,6 @@ function ARRSimulator() {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-xs">Visitor Growth (%/mo)</Label>
-              <Input
-                type="number"
-                value={visitorGrowth}
-                onChange={(e) => setVisitorGrowth(Number(e.target.value))}
-                className="h-9"
-              />
-            </div>
-            <div className="space-y-2">
               <Label className="text-xs">Target ARR ($)</Label>
               <Input
                 type="number"
@@ -762,12 +901,35 @@ function ARRSimulator() {
         </CardContent>
       </Card>
 
+      {/* View Toggle */}
+      <div className="flex items-center gap-2">
+        <Button
+          variant={simulatorView === 'monthly' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setSimulatorView('monthly')}
+        >
+          📅 Monthly View
+        </Button>
+        <Button
+          variant={simulatorView === 'weekly' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setSimulatorView('weekly')}
+        >
+          📊 Weekly Tracking
+        </Button>
+        {simulatorView === 'weekly' && Object.keys(actualData).length > 0 && (
+          <Button variant="ghost" size="sm" onClick={clearActualData} className="text-red-500 hover:text-red-600">
+            Clear Actual Data
+          </Button>
+        )}
+      </div>
+
       {/* Key Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold text-primary">{formatCurrency(finalMonth?.arr || 0)}</div>
-            <p className="text-xs text-muted-foreground mt-1">Projected ARR (Jun 2025)</p>
+            <p className="text-xs text-muted-foreground mt-1">Projected ARR (Jun 2026)</p>
           </CardContent>
         </Card>
         <Card>
@@ -836,6 +998,8 @@ function ARRSimulator() {
         </CardContent>
       </Card>
 
+      {simulatorView === 'monthly' && (
+      <>
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* ARR Growth Trajectory */}
@@ -1042,7 +1206,7 @@ function ARRSimulator() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Monthly Breakdown</CardTitle>
-          <CardDescription>Projected growth from Dec 2024 to May 2025</CardDescription>
+          <CardDescription>Projected growth from Dec 2025 to Jun 2026</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -1077,6 +1241,256 @@ function ARRSimulator() {
           </div>
         </CardContent>
       </Card>
+      </>
+      )}
+
+      {/* Weekly Tracking View */}
+      {simulatorView === 'weekly' && (
+      <>
+        {/* Weekly Comparison Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* ARR: Actual vs Goal */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">📈 ARR: Actual vs Goal</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={weeklyChartData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={3} />
+                    <YAxis tickFormatter={(v) => `$${v.toLocaleString()}`} tick={{ fontSize: 9 }} width={80} />
+                    <Tooltip formatter={(v: number) => [`$${v.toLocaleString()}`, '']} />
+                    <Legend />
+                    <Line type="monotone" dataKey="goalARR" name="Goal" stroke="#10b981" strokeWidth={2} dot={false} strokeDasharray="5 5" />
+                    <Line type="monotone" dataKey="actualARR" name="Actual" stroke="hsl(var(--primary))" strokeWidth={3} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Subscribers: Actual vs Goal */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">👥 Subscribers: Actual vs Goal</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={weeklyChartData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={3} />
+                    <YAxis tickFormatter={(v) => v.toLocaleString()} tick={{ fontSize: 9 }} width={60} />
+                    <Tooltip formatter={(v: number) => [v.toLocaleString(), '']} />
+                    <Legend />
+                    <Line type="monotone" dataKey="goalSubs" name="Goal" stroke="#10b981" strokeWidth={2} dot={false} strokeDasharray="5 5" />
+                    <Line type="monotone" dataKey="actualSubs" name="Actual" stroke="#8b5cf6" strokeWidth={3} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* MRR: Actual vs Goal */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">💰 MRR: Actual vs Goal</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={weeklyChartData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={3} />
+                    <YAxis tickFormatter={(v) => `$${v.toLocaleString()}`} tick={{ fontSize: 9 }} width={70} />
+                    <Tooltip formatter={(v: number) => [`$${v.toLocaleString()}`, '']} />
+                    <Legend />
+                    <Line type="monotone" dataKey="goalMRR" name="Goal" stroke="#10b981" strokeWidth={2} dot={false} strokeDasharray="5 5" />
+                    <Line type="monotone" dataKey="actualMRR" name="Actual" stroke="#f59e0b" strokeWidth={3} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* New Paid: Actual vs Goal */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">🎯 New Paid: Actual vs Goal</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={weeklyChartData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={3} />
+                    <YAxis tickFormatter={(v) => v.toLocaleString()} tick={{ fontSize: 9 }} />
+                    <Tooltip formatter={(v: number) => [v.toLocaleString(), '']} />
+                    <Legend />
+                    <Bar dataKey="goalNewPaid" name="Goal" fill="#10b981" opacity={0.3} />
+                    <Bar dataKey="actualNewPaid" name="Actual" fill="#10b981" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Weekly Breakdown Table with Actual Data Entry */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">📊 Weekly Tracking (Dec 2025 - Jun 2026)</CardTitle>
+            <CardDescription>
+              Enter actual weekly data to compare against goals. Click any Actual cell to edit.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-background z-10">
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left p-2 font-medium">Week</th>
+                    <th className="text-left p-2 font-medium">Date Range</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>Views</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>Signups</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>New Paid</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>Subscribers</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>MRR</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>ARR</th>
+                  </tr>
+                  <tr className="border-b bg-muted/30">
+                    <th></th>
+                    <th></th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {weeklyProjections.map((week) => {
+                    const actual: Partial<WeeklyActual> = actualData[week.week] || {};
+                    const viewsVar = getVariance(actual.views, week.visitors);
+                    const signupsVar = getVariance(actual.signups, week.signups);
+                    const newPaidVar = getVariance(actual.newPaid, week.newPaid);
+                    const subsVar = getVariance(actual.subscribers, week.subscribers);
+                    const mrrVar = getVariance(actual.mrr, week.mrr);
+                    const arrVar = getVariance(actual.arr, week.arr);
+                    
+                    return (
+                      <tr key={week.week} className={`border-b hover:bg-muted/30 ${week.week === weeklyProjections.length ? 'bg-primary/5 font-medium' : ''}`}>
+                        <td className="p-2 font-medium">W{week.week}</td>
+                        <td className="p-2 text-muted-foreground whitespace-nowrap">{week.dateRange}</td>
+                        {/* Views */}
+                        <td className="text-right p-1">{formatNumber(week.visitors)}</td>
+                        <td className="text-right p-1">
+                          <Input
+                            type="number"
+                            value={actual.views || ''}
+                            onChange={(e) => updateActualData(week.week, 'views', Number(e.target.value))}
+                            className="h-5 w-16 text-[10px] text-right"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${viewsVar.color}`}>
+                          {actual.views ? `${viewsVar.value >= 0 ? '+' : ''}${viewsVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* Signups */}
+                        <td className="text-right p-1">{formatNumber(week.signups)}</td>
+                        <td className="text-right p-1">
+                          <Input
+                            type="number"
+                            value={actual.signups || ''}
+                            onChange={(e) => updateActualData(week.week, 'signups', Number(e.target.value))}
+                            className="h-5 w-16 text-[10px] text-right"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${signupsVar.color}`}>
+                          {actual.signups ? `${signupsVar.value >= 0 ? '+' : ''}${signupsVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* New Paid */}
+                        <td className="text-right p-1">{formatNumber(week.newPaid)}</td>
+                        <td className="text-right p-1">
+                          <Input
+                            type="number"
+                            value={actual.newPaid || ''}
+                            onChange={(e) => updateActualData(week.week, 'newPaid', Number(e.target.value))}
+                            className="h-5 w-16 text-[10px] text-right"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${newPaidVar.color}`}>
+                          {actual.newPaid ? `${newPaidVar.value >= 0 ? '+' : ''}${newPaidVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* Subscribers */}
+                        <td className="text-right p-1 font-medium">{formatNumber(week.subscribers)}</td>
+                        <td className="text-right p-1">
+                          <Input
+                            type="number"
+                            value={actual.subscribers || ''}
+                            onChange={(e) => updateActualData(week.week, 'subscribers', Number(e.target.value))}
+                            className="h-5 w-16 text-[10px] text-right"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${subsVar.color}`}>
+                          {actual.subscribers ? `${subsVar.value >= 0 ? '+' : ''}${subsVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* MRR */}
+                        <td className="text-right p-1">{formatCurrency(week.mrr)}</td>
+                        <td className="text-right p-1">
+                          <Input
+                            type="number"
+                            value={actual.mrr || ''}
+                            onChange={(e) => updateActualData(week.week, 'mrr', Number(e.target.value))}
+                            className="h-5 w-16 text-[10px] text-right"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${mrrVar.color}`}>
+                          {actual.mrr ? `${mrrVar.value >= 0 ? '+' : ''}${mrrVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* ARR */}
+                        <td className="text-right p-1 font-medium">{formatCurrency(week.arr)}</td>
+                        <td className="text-right p-1">
+                          <Input
+                            type="number"
+                            value={actual.arr || ''}
+                            onChange={(e) => updateActualData(week.week, 'arr', Number(e.target.value))}
+                            className="h-5 w-16 text-[10px] text-right"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${arrVar.color}`}>
+                          {actual.arr ? `${arrVar.value >= 0 ? '+' : ''}${arrVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </>
+      )}
 
     </div>
   );
