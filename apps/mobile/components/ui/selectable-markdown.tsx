@@ -10,7 +10,6 @@ import React, { useMemo, useState } from 'react';
 import {
   StyleSheet,
   TextStyle,
-  ViewStyle,
   View,
   Text as RNText,
   Pressable,
@@ -35,7 +34,7 @@ export interface SelectableMarkdownTextProps {
   /** The markdown text content to render */
   children: string;
   /** Additional style for the text input */
-  style?: TextStyle | ViewStyle;
+  style?: TextStyle;
   /** Whether to use dark mode (if not provided, will use color scheme hook) */
   isDark?: boolean;
 }
@@ -238,7 +237,7 @@ function MarkdownWithLinkHandling({
 }: {
   text: string;
   isDark: boolean;
-  style?: TextStyle | ViewStyle;
+  style?: TextStyle;
   needsSpacing?: boolean;
 }) {
   const blocks = useMemo(() => splitIntoBlocks(text), [text]);
@@ -250,7 +249,7 @@ function MarkdownWithLinkHandling({
     return (
       <View style={needsSpacing && styles.partSpacing} pointerEvents="box-none">
         <MarkdownTextInput
-          value={text}
+          value={text.trimEnd()}
           onChangeText={() => { }}
           parser={markdownParser}
           markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
@@ -279,7 +278,7 @@ function MarkdownWithLinkHandling({
           return (
             <View key={`txt-${idx}`} pointerEvents="box-none">
               <MarkdownTextInput
-                value={block.content}
+                value={block.content.trimEnd()}
                 onChangeText={() => { }}
                 parser={markdownParser}
                 markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
@@ -314,8 +313,10 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
   const { colorScheme } = useColorScheme();
   const isDark = isDarkProp ?? colorScheme === 'dark';
 
-  // Ensure children is a string
-  const text = typeof children === 'string' ? children : String(children || '');
+  // Ensure children is a string and trim trailing whitespace to prevent extra spacing on iOS
+  const text = typeof children === 'string'
+    ? children.trimEnd()
+    : String(children || '').trimEnd();
 
   // Split content by code blocks and tables
   const contentParts = useMemo(() => {
@@ -480,14 +481,14 @@ const styles = StyleSheet.create({
   },
   base: {
     fontSize: 16,
-    lineHeight: 24,
+    lineHeight: 20, // Reduced from 24 to minimize extra bottom spacing on iOS
     fontFamily: 'System',
     padding: 0,
     margin: 0,
     paddingLeft: 0,
     paddingRight: 0,
-    paddingTop: 0,
-    paddingBottom: 0,
+    paddingTop: 2,
+    paddingBottom: 2,
     marginLeft: 0,
     marginRight: 0,
     marginTop: 0,
