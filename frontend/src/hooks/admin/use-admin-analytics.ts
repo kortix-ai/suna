@@ -289,6 +289,76 @@ export function useRefreshAnalytics() {
     refreshRetention: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'retention'] });
     },
+    refreshARRActuals: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'arr-actuals'] });
+    },
   };
+}
+
+// ============================================================================
+// ARR WEEKLY ACTUALS
+// ============================================================================
+
+export interface WeeklyActualData {
+  week_number: number;
+  week_start_date: string;
+  views: number;
+  signups: number;
+  new_paid: number;
+  subscribers: number;
+  mrr: number;
+  arr: number;
+}
+
+export interface WeeklyActualsResponse {
+  actuals: Record<number, WeeklyActualData>;
+}
+
+export function useARRWeeklyActuals() {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'arr-actuals'],
+    queryFn: async (): Promise<WeeklyActualsResponse> => {
+      const response = await backendApi.get('/admin/analytics/arr/actuals');
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 60000, // 1 minute
+  });
+}
+
+export function useUpdateARRWeeklyActual() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (data: WeeklyActualData): Promise<WeeklyActualData> => {
+      const response = await backendApi.put(`/admin/analytics/arr/actuals/${data.week_number}`, data);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'arr-actuals'] });
+    },
+  });
+}
+
+export function useDeleteARRWeeklyActual() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (weekNumber: number): Promise<{ message: string }> => {
+      const response = await backendApi.delete(`/admin/analytics/arr/actuals/${weekNumber}`);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'arr-actuals'] });
+    },
+  });
 }
 

@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import asyncio
 import httpx
-from core.auth import require_admin
+from core.auth import require_admin, require_super_admin
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.pagination import PaginationService, PaginationParams, PaginatedResponse
@@ -918,3 +918,107 @@ async def get_conversion_funnel(
     except Exception as e:
         logger.error(f"Failed to get conversion funnel: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get conversion funnel")
+
+
+# ============================================================================
+# ARR WEEKLY ACTUALS ENDPOINTS
+# ============================================================================
+
+class WeeklyActualData(BaseModel):
+    week_number: int
+    week_start_date: str  # YYYY-MM-DD
+    views: Optional[int] = 0
+    signups: Optional[int] = 0
+    new_paid: Optional[int] = 0
+    subscribers: Optional[int] = 0
+    mrr: Optional[float] = 0
+    arr: Optional[float] = 0
+
+
+class WeeklyActualsResponse(BaseModel):
+    actuals: Dict[int, WeeklyActualData]
+
+
+@router.get("/arr/actuals")
+async def get_arr_weekly_actuals(
+    admin: dict = Depends(require_super_admin)
+) -> WeeklyActualsResponse:
+    """Get all ARR weekly actuals for the simulator. Super admin only."""
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        result = await client.from_('arr_weekly_actuals').select('*').order('week_number').execute()
+        
+        actuals = {}
+        for row in result.data or []:
+            actuals[row['week_number']] = WeeklyActualData(
+                week_number=row['week_number'],
+                week_start_date=row['week_start_date'],
+                views=row.get('views', 0) or 0,
+                signups=row.get('signups', 0) or 0,
+                new_paid=row.get('new_paid', 0) or 0,
+                subscribers=row.get('subscribers', 0) or 0,
+                mrr=float(row.get('mrr', 0) or 0),
+                arr=float(row.get('arr', 0) or 0),
+            )
+        
+        return WeeklyActualsResponse(actuals=actuals)
+        
+    except Exception as e:
+        logger.error(f"Failed to get ARR weekly actuals: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get ARR weekly actuals")
+
+
+@router.put("/arr/actuals/{week_number}")
+async def update_arr_weekly_actual(
+    week_number: int,
+    data: WeeklyActualData,
+    admin: dict = Depends(require_super_admin)
+) -> WeeklyActualData:
+    """Update or create ARR weekly actual data for a specific week. Super admin only."""
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        # Upsert the data
+        upsert_data = {
+            'week_number': week_number,
+            'week_start_date': data.week_start_date,
+            'views': data.views or 0,
+            'signups': data.signups or 0,
+            'new_paid': data.new_paid or 0,
+            'subscribers': data.subscribers or 0,
+            'mrr': data.mrr or 0,
+            'arr': data.arr or 0,
+        }
+        
+        result = await client.from_('arr_weekly_actuals').upsert(
+            upsert_data,
+            on_conflict='week_number'
+        ).execute()
+        
+        return data
+        
+    except Exception as e:
+        logger.error(f"Failed to update ARR weekly actual: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update ARR weekly actual")
+
+
+@router.delete("/arr/actuals/{week_number}")
+async def delete_arr_weekly_actual(
+    week_number: int,
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, str]:
+    """Delete ARR weekly actual for a specific week. Super admin only."""
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        await client.from_('arr_weekly_actuals').delete().eq('week_number', week_number).execute()
+        
+        return {"message": f"Week {week_number} actual data deleted"}
+        
+    except Exception as e:
+        logger.error(f"Failed to delete ARR weekly actual: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete ARR weekly actual")
