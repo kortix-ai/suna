@@ -14,18 +14,13 @@ from core.utils.logger import logger
 class PromptManager:
     @staticmethod
     async def build_minimal_prompt(agent_config: Optional[dict], tool_registry=None, mcp_loader=None, user_id: Optional[str] = None, thread_id: Optional[str] = None, client=None) -> dict:
-        import datetime
-        
         if agent_config and agent_config.get('system_prompt'):
             content = agent_config['system_prompt'].strip()
         else:
             from core.prompts.core_prompt import get_core_system_prompt
             content = get_core_system_prompt()
         
-        now = datetime.datetime.now(datetime.timezone.utc)
-        content += f"\n\n=== CURRENT DATE/TIME ===\n"
-        content += f"Today's date: {now.strftime('%A, %B %d, %Y')}\n"
-        content += f"Current time: {now.strftime('%H:%M UTC')}\n"
+        content = PromptManager._append_datetime_info(content)
         
         content += """
 
