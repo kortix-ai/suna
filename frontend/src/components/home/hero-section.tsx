@@ -113,11 +113,6 @@ export function HeroSection() {
 
     const [authDialogOpen, setAuthDialogOpen] = useState(false);
 
-    useEffect(() => {
-        if (authDialogOpen && inputValue.trim()) {
-            localStorage.setItem(PENDING_PROMPT_KEY, inputValue.trim());
-        }
-    }, [authDialogOpen, inputValue]);
 
     useEffect(() => {
         if (authDialogOpen && user && !isLoading) {
