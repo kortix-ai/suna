@@ -57,9 +57,13 @@ import {
   useRetentionData,
   useTranslate,
   useRefreshAnalytics,
+  useARRWeeklyActuals,
+  useUpdateARRWeeklyActual,
+  useDeleteARRWeeklyActual,
   type ThreadAnalytics,
   type RetentionData,
   type ThreadBrowseParams,
+  type WeeklyActualData,
 } from '@/hooks/admin/use-admin-analytics';
 
 // ============================================================================
@@ -713,43 +717,86 @@ function ARRSimulator() {
     return weeks;
   }, [projections, startingSubs, arpu]);
 
-  // Actual weekly data (persisted to localStorage)
-  const [actualData, setActualData] = useState<Record<number, WeeklyActual>>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('arr-simulator-actual-data');
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch {
-          return {};
-        }
-      }
-    }
-    return {};
-  });
+  // Actual weekly data (persisted to database)
+  const { data: arrActualsData, isLoading: actualsLoading } = useARRWeeklyActuals();
+  const updateActualMutation = useUpdateARRWeeklyActual();
+  const deleteActualMutation = useDeleteARRWeeklyActual();
 
-  // Persist actual data to localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('arr-simulator-actual-data', JSON.stringify(actualData));
-    }
-  }, [actualData]);
+  // Convert API data to local format
+  const actualData: Record<number, WeeklyActual> = useMemo(() => {
+    if (!arrActualsData?.actuals) return {};
+    const result: Record<number, WeeklyActual> = {};
+    Object.entries(arrActualsData.actuals).forEach(([weekNum, data]) => {
+      result[Number(weekNum)] = {
+        views: data.views || 0,
+        signups: data.signups || 0,
+        newPaid: data.new_paid || 0,
+        subscribers: data.subscribers || 0,
+        mrr: data.mrr || 0,
+        arr: data.arr || 0,
+      };
+    });
+    return result;
+  }, [arrActualsData]);
 
-  const updateActualData = (week: number, field: keyof WeeklyActual, value: number) => {
-    setActualData(prev => ({
-      ...prev,
-      [week]: {
-        ...prev[week],
-        [field]: value,
-      }
-    }));
+  // Local state for pending edits (so we don't call API on every keystroke)
+  const [pendingEdits, setPendingEdits] = useState<Record<string, string>>({});
+
+  // Get display value for an input (pending edit or saved value)
+  const getInputValue = (week: number, field: keyof WeeklyActual): string => {
+    const key = `${week}-${field}`;
+    if (key in pendingEdits) return pendingEdits[key];
+    const saved = actualData[week]?.[field];
+    return saved ? String(saved) : '';
   };
 
-  const clearActualData = () => {
-    setActualData({});
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('arr-simulator-actual-data');
-    }
+  // Handle input change (local state only)
+  const handleInputChange = (week: number, field: keyof WeeklyActual, value: string) => {
+    const key = `${week}-${field}`;
+    setPendingEdits(prev => ({ ...prev, [key]: value }));
+  };
+
+  // Save to API on blur
+  const handleInputBlur = (week: number, field: keyof WeeklyActual) => {
+    const key = `${week}-${field}`;
+    const pendingValue = pendingEdits[key];
+    
+    // If no pending edit, nothing to save
+    if (pendingValue === undefined) return;
+    
+    const weekProjection = weeklyProjections.find(w => w.week === week);
+    if (!weekProjection) return;
+    
+    const value = Number(pendingValue) || 0;
+    const currentData = actualData[week] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+    const updatedData = { ...currentData, [field]: value };
+    
+    // Map field names for API
+    const apiData: WeeklyActualData = {
+      week_number: week,
+      week_start_date: new Date(2025, 11, 15 + (week - 1) * 7).toISOString().split('T')[0],
+      views: updatedData.views,
+      signups: updatedData.signups,
+      new_paid: updatedData.newPaid,
+      subscribers: updatedData.subscribers,
+      mrr: updatedData.mrr,
+      arr: updatedData.arr,
+    };
+    
+    updateActualMutation.mutate(apiData);
+  };
+
+  const deleteWeekActual = (weekNumber: number) => {
+    // Clear any pending edits for this week
+    setPendingEdits(prev => {
+      const next = { ...prev };
+      const fields: (keyof WeeklyActual)[] = ['views', 'signups', 'newPaid', 'subscribers', 'mrr', 'arr'];
+      fields.forEach(field => {
+        delete next[`${weekNumber}-${field}`];
+      });
+      return next;
+    });
+    deleteActualMutation.mutate(weekNumber);
   };
 
   // Calculate variance percentage
@@ -777,6 +824,32 @@ function ARRSimulator() {
     goalARR: w.arr,
     actualARR: actualData[w.week]?.arr || 0,
   }));
+
+  // Aggregate weekly actuals into monthly actuals for comparison
+  const monthlyActuals = useMemo(() => {
+    const result: Record<number, { views: number; signups: number; newPaid: number; subscribers: number; mrr: number; arr: number }> = {};
+    
+    weeklyProjections.forEach((week) => {
+      const monthIdx = week.monthIndex;
+      const weekActual = actualData[week.week];
+      
+      if (!result[monthIdx]) {
+        result[monthIdx] = { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+      }
+      
+      if (weekActual) {
+        result[monthIdx].views += weekActual.views || 0;
+        result[monthIdx].signups += weekActual.signups || 0;
+        result[monthIdx].newPaid += weekActual.newPaid || 0;
+        // For subscribers, MRR, ARR - take the last week's value as end-of-month value
+        result[monthIdx].subscribers = weekActual.subscribers || result[monthIdx].subscribers;
+        result[monthIdx].mrr = weekActual.mrr || result[monthIdx].mrr;
+        result[monthIdx].arr = weekActual.arr || result[monthIdx].arr;
+      }
+    });
+    
+    return result;
+  }, [weeklyProjections, actualData]);
 
   // View state
   const [simulatorView, setSimulatorView] = useState<'monthly' | 'weekly'>('monthly');
@@ -917,11 +990,6 @@ function ARRSimulator() {
         >
           📊 Weekly Tracking
         </Button>
-        {simulatorView === 'weekly' && Object.keys(actualData).length > 0 && (
-          <Button variant="ghost" size="sm" onClick={clearActualData} className="text-red-500 hover:text-red-600">
-            Clear Actual Data
-          </Button>
-        )}
       </div>
 
       {/* Key Metrics */}
@@ -1202,11 +1270,11 @@ function ARRSimulator() {
         </Card>
       </div>
 
-      {/* Monthly Breakdown Table */}
+      {/* Monthly Breakdown Table with Actual vs Goal */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Monthly Breakdown</CardTitle>
-          <CardDescription>Projected growth from Dec 2025 to Jun 2026</CardDescription>
+          <CardTitle className="text-base">Monthly Breakdown (Goal vs Actual)</CardTitle>
+          <CardDescription>Projected growth from Dec 2025 to Jun 2026 with actual data comparison</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -1214,28 +1282,70 @@ function ARRSimulator() {
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="text-left p-3 font-medium">Month</th>
-                  <th className="text-right p-3 font-medium">Visitors</th>
-                  <th className="text-right p-3 font-medium">Signups</th>
-                  <th className="text-right p-3 font-medium">New Paid</th>
-                  <th className="text-right p-3 font-medium">Churned</th>
-                  <th className="text-right p-3 font-medium">Total Subs</th>
-                  <th className="text-right p-3 font-medium">MRR</th>
-                  <th className="text-right p-3 font-medium">ARR</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>Visitors</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>Signups</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>New Paid</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>Total Subs</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>MRR</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>ARR</th>
+                </tr>
+                <tr className="border-b bg-muted/30 text-xs">
+                  <th></th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
                 </tr>
               </thead>
               <tbody>
-                {projections.map((month, i) => (
-                  <tr key={month.month} className={`border-b ${i === projections.length - 1 ? 'bg-primary/5 font-medium' : ''}`}>
-                    <td className="p-3">{month.month}</td>
-                    <td className="text-right p-3">{formatNumber(month.visitors)}</td>
-                    <td className="text-right p-3">{formatNumber(month.signups)}</td>
-                    <td className="text-right p-3 text-green-600">+{formatNumber(month.newPaid)}</td>
-                    <td className="text-right p-3 text-red-500">-{formatNumber(month.churned)}</td>
-                    <td className="text-right p-3">{formatNumber(month.totalSubs)}</td>
-                    <td className="text-right p-3">{formatCurrency(month.mrr)}</td>
-                    <td className="text-right p-3 font-medium">{formatCurrency(month.arr)}</td>
-                  </tr>
-                ))}
+                {projections.map((month, i) => {
+                  const actual = monthlyActuals[i] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+                  const hasActual = actual.views > 0 || actual.signups > 0 || actual.subscribers > 0;
+                  
+                  return (
+                    <tr key={month.month} className={`border-b ${i === projections.length - 1 ? 'bg-primary/5 font-medium' : ''}`}>
+                      <td className="p-3">{month.month}</td>
+                      {/* Visitors */}
+                      <td className="text-right p-2 text-muted-foreground">{formatNumber(month.visitors)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.views >= month.visitors ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.views > 0 ? formatNumber(actual.views) : '—'}
+                      </td>
+                      {/* Signups */}
+                      <td className="text-right p-2 text-muted-foreground">{formatNumber(month.signups)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.signups >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.signups > 0 ? formatNumber(actual.signups) : '—'}
+                      </td>
+                      {/* New Paid */}
+                      <td className="text-right p-2 text-muted-foreground">{formatNumber(month.newPaid)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.newPaid >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.newPaid > 0 ? formatNumber(actual.newPaid) : '—'}
+                      </td>
+                      {/* Total Subs */}
+                      <td className="text-right p-2 text-muted-foreground">{formatNumber(month.totalSubs)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.subscribers >= month.totalSubs ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.subscribers > 0 ? formatNumber(actual.subscribers) : '—'}
+                      </td>
+                      {/* MRR */}
+                      <td className="text-right p-2 text-muted-foreground">{formatCurrency(month.mrr)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.mrr >= month.mrr ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.mrr > 0 ? formatCurrency(actual.mrr) : '—'}
+                      </td>
+                      {/* ARR */}
+                      <td className="text-right p-2 text-muted-foreground">{formatCurrency(month.arr)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.arr >= month.arr ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.arr > 0 ? formatCurrency(actual.arr) : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1349,7 +1459,7 @@ function ARRSimulator() {
           <CardContent className="p-0">
             <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
               <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-background z-10">
+                <thead className="sticky top-0 bg-background">
                   <tr className="border-b bg-muted/50">
                     <th className="text-left p-2 font-medium">Week</th>
                     <th className="text-left p-2 font-medium">Date Range</th>
@@ -1359,6 +1469,7 @@ function ARRSimulator() {
                     <th className="text-center p-2 font-medium" colSpan={3}>Subscribers</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>MRR</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>ARR</th>
+                    <th className="p-2 w-8"></th>
                   </tr>
                   <tr className="border-b bg-muted/30">
                     <th></th>
@@ -1381,6 +1492,7 @@ function ARRSimulator() {
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1402,9 +1514,10 @@ function ARRSimulator() {
                         <td className="text-right p-1">
                           <Input
                             type="number"
-                            value={actual.views || ''}
-                            onChange={(e) => updateActualData(week.week, 'views', Number(e.target.value))}
-                            className="h-5 w-16 text-[10px] text-right"
+                            value={getInputValue(week.week, 'views')}
+                            onChange={(e) => handleInputChange(week.week, 'views', e.target.value)}
+                            onBlur={() => handleInputBlur(week.week, 'views')}
+                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             placeholder="—"
                           />
                         </td>
@@ -1416,9 +1529,10 @@ function ARRSimulator() {
                         <td className="text-right p-1">
                           <Input
                             type="number"
-                            value={actual.signups || ''}
-                            onChange={(e) => updateActualData(week.week, 'signups', Number(e.target.value))}
-                            className="h-5 w-16 text-[10px] text-right"
+                            value={getInputValue(week.week, 'signups')}
+                            onChange={(e) => handleInputChange(week.week, 'signups', e.target.value)}
+                            onBlur={() => handleInputBlur(week.week, 'signups')}
+                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             placeholder="—"
                           />
                         </td>
@@ -1430,9 +1544,10 @@ function ARRSimulator() {
                         <td className="text-right p-1">
                           <Input
                             type="number"
-                            value={actual.newPaid || ''}
-                            onChange={(e) => updateActualData(week.week, 'newPaid', Number(e.target.value))}
-                            className="h-5 w-16 text-[10px] text-right"
+                            value={getInputValue(week.week, 'newPaid')}
+                            onChange={(e) => handleInputChange(week.week, 'newPaid', e.target.value)}
+                            onBlur={() => handleInputBlur(week.week, 'newPaid')}
+                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             placeholder="—"
                           />
                         </td>
@@ -1444,9 +1559,10 @@ function ARRSimulator() {
                         <td className="text-right p-1">
                           <Input
                             type="number"
-                            value={actual.subscribers || ''}
-                            onChange={(e) => updateActualData(week.week, 'subscribers', Number(e.target.value))}
-                            className="h-5 w-16 text-[10px] text-right"
+                            value={getInputValue(week.week, 'subscribers')}
+                            onChange={(e) => handleInputChange(week.week, 'subscribers', e.target.value)}
+                            onBlur={() => handleInputBlur(week.week, 'subscribers')}
+                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             placeholder="—"
                           />
                         </td>
@@ -1458,9 +1574,10 @@ function ARRSimulator() {
                         <td className="text-right p-1">
                           <Input
                             type="number"
-                            value={actual.mrr || ''}
-                            onChange={(e) => updateActualData(week.week, 'mrr', Number(e.target.value))}
-                            className="h-5 w-16 text-[10px] text-right"
+                            value={getInputValue(week.week, 'mrr')}
+                            onChange={(e) => handleInputChange(week.week, 'mrr', e.target.value)}
+                            onBlur={() => handleInputBlur(week.week, 'mrr')}
+                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             placeholder="—"
                           />
                         </td>
@@ -1472,14 +1589,26 @@ function ARRSimulator() {
                         <td className="text-right p-1">
                           <Input
                             type="number"
-                            value={actual.arr || ''}
-                            onChange={(e) => updateActualData(week.week, 'arr', Number(e.target.value))}
-                            className="h-5 w-16 text-[10px] text-right"
+                            value={getInputValue(week.week, 'arr')}
+                            onChange={(e) => handleInputChange(week.week, 'arr', e.target.value)}
+                            onBlur={() => handleInputBlur(week.week, 'arr')}
+                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             placeholder="—"
                           />
                         </td>
                         <td className={`text-right p-1 text-[10px] ${arrVar.color}`}>
                           {actual.arr ? `${arrVar.value >= 0 ? '+' : ''}${arrVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        <td className="p-1">
+                          {(actual.views || actual.signups || actual.newPaid || actual.subscribers || actual.mrr || actual.arr) && (
+                            <button
+                              onClick={() => deleteWeekActual(week.week)}
+                              className="text-muted-foreground hover:text-red-500 transition-colors"
+                              title={`Delete week ${week.week} data`}
+                            >
+                              🗑️
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
