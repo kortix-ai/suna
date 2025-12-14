@@ -93,12 +93,38 @@ export function markdownParser(input: string) {
   }
 
   // Headings: # Heading (all levels h1-h6 use h1 style)
+  // Parse AFTER bold/italic/etc so we don't override their syntax markers
   const headingRegex = /^(#{1,6})\s+(.+)$/gm;
   while ((match = headingRegex.exec(input)) !== null) {
+    const headingStart = match.index;
+    const syntaxEnd = headingStart + match[1].length + 1;
+    const contentStart = syntaxEnd;
+    const contentEnd = headingStart + match[0].length;
+    
     // Mark "# " as syntax (will be made invisible in config)
-    ranges.push({ start: match.index, length: match[1].length + 1, type: 'syntax' });
-    // Mark heading text
-    ranges.push({ start: match.index + match[1].length + 1, length: match[2].length, type: 'h1' });
+    ranges.push({ start: headingStart, length: match[1].length + 1, type: 'syntax' });
+    
+    // For heading content, only mark positions that are NOT already marked as syntax
+    // This prevents overriding bold/italic syntax markers
+    const existingSyntaxRanges = ranges.filter(r => 
+      r.type === 'syntax' && 
+      r.start >= contentStart && 
+      r.start < contentEnd
+    );
+    
+    // Create h1 ranges only for gaps between syntax markers
+    let lastEnd = contentStart;
+    for (const syntaxRange of existingSyntaxRanges.sort((a, b) => a.start - b.start)) {
+      if (syntaxRange.start > lastEnd) {
+        // There's a gap - mark it as h1
+        ranges.push({ start: lastEnd, length: syntaxRange.start - lastEnd, type: 'h1' });
+      }
+      lastEnd = syntaxRange.start + syntaxRange.length;
+    }
+    // Mark remaining content after last syntax marker
+    if (lastEnd < contentEnd) {
+      ranges.push({ start: lastEnd, length: contentEnd - lastEnd, type: 'h1' });
+    }
   }
 
   // Blockquotes: > text
