@@ -5,7 +5,6 @@ import { Icon } from '@/components/ui/icon';
 import {
   Bold,
   Italic,
-  Underline,
   Strikethrough,
   Code,
   List,
@@ -14,7 +13,6 @@ import {
   Quote,
   CodeSquare,
   Minus,
-  Link2,
   Table,
   ChevronDown,
   Heading1,
@@ -31,6 +29,8 @@ import Animated, {
   FadeOut,
 } from 'react-native-reanimated';
 import { useColorScheme } from 'nativewind';
+import { TableEditorModal } from './TableEditorModal';
+import { CodeBlockEditorModal } from './CodeBlockEditorModal';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -480,6 +480,9 @@ TextTypeDropdown.displayName = 'TextTypeDropdown';
  * Shows active state for text styles based on cursor position.
  */
 export const MarkdownToolbar = React.memo(({ onFormat, isVisible, text = '', selection }: MarkdownToolbarProps) => {
+  const [showTableModal, setShowTableModal] = React.useState(false);
+  const [showCodeBlockModal, setShowCodeBlockModal] = React.useState(false);
+
   // Detect active formats based on cursor position
   const activeFormats = React.useMemo(() => {
     const cursorPos = selection?.start ?? 0;
@@ -491,6 +494,16 @@ export const MarkdownToolbar = React.memo(({ onFormat, isVisible, text = '', sel
     if (textType && textType.prefix) {
       onFormat('heading', textType.prefix);
     }
+  }, [onFormat]);
+
+  const handleTableInsert = React.useCallback((tableMarkdown: string) => {
+    // Insert the table markdown at the current cursor position
+    onFormat('table', tableMarkdown);
+  }, [onFormat]);
+
+  const handleCodeBlockInsert = React.useCallback((codeBlockMarkdown: string) => {
+    // Insert the code block markdown at the current cursor position
+    onFormat('code-block', codeBlockMarkdown);
   }, [onFormat]);
 
   if (!isVisible) return null;
@@ -571,7 +584,7 @@ export const MarkdownToolbar = React.memo(({ onFormat, isVisible, text = '', sel
           />
           <ToolButton
             icon={CodeSquare}
-            onPress={() => onFormat('code-block')}
+            onPress={() => setShowCodeBlockModal(true)}
             label="Code Block"
           />
           <ToolButton
@@ -582,25 +595,28 @@ export const MarkdownToolbar = React.memo(({ onFormat, isVisible, text = '', sel
 
           <ToolbarDivider />
 
-          {/* Media & Links */}
-          <ToolButton
-            icon={Underline}
-            onPress={() => onFormat('underline')}
-            isActive={activeFormats.underline}
-            label="Underline"
-          />
-          <ToolButton
-            icon={Link2}
-            onPress={() => onFormat('link')}
-            label="Link"
-          />
+          {/* Table */}
           <ToolButton
             icon={Table}
-            onPress={() => onFormat('table')}
+            onPress={() => setShowTableModal(true)}
             label="Table"
           />
         </View>
       </ScrollView>
+
+      {/* Table Editor Modal */}
+      <TableEditorModal
+        visible={showTableModal}
+        onClose={() => setShowTableModal(false)}
+        onInsert={handleTableInsert}
+      />
+
+      {/* Code Block Editor Modal */}
+      <CodeBlockEditorModal
+        visible={showCodeBlockModal}
+        onClose={() => setShowCodeBlockModal(false)}
+        onInsert={handleCodeBlockInsert}
+      />
     </Animated.View>
   );
 });
@@ -681,8 +697,18 @@ export function insertMarkdownFormat(
     }
   }
 
-  // Handle code-block - can wrap selected text
+  // Handle code-block - can wrap selected text or use custom markdown from modal
   if (format === 'code-block') {
+    // If extra contains custom code block markdown from modal, use it
+    if (extra) {
+      const needsNewlineBefore = currentLineBeforeSelection.length > 0;
+      const insertion = needsNewlineBefore ? '\n' + extra + '\n\n' : extra + '\n\n';
+      const newText = beforeSelection + insertion + afterSelection;
+      const newCursorPosition = selectionStart + insertion.length;
+      return { newText, newCursorPosition, newSelectionEnd: newCursorPosition };
+    }
+
+    // Default behavior when no custom markdown provided
     if (hasSelection) {
       const needsNewlineBefore = currentLineBeforeSelection.length > 0;
       const prefix = needsNewlineBefore ? '\n```\n' : '```\n';
@@ -817,7 +843,8 @@ export function insertMarkdownFormat(
       break;
 
     case 'table':
-      const tableTemplate = `| Header 1 | Header 2 |
+      // If extra contains custom table markdown, use it; otherwise use template
+      const tableTemplate = extra || `| Header 1 | Header 2 |
 | -------- | -------- |
 | Cell 1   | Cell 2   |`;
       if (currentLineBeforeSelection.length === 0) {

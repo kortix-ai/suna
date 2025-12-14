@@ -11,6 +11,8 @@ import {
 } from '@/lib/utils/live-markdown-config';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import { TableEditorModal } from '@/components/chat/TableEditorModal';
+import { CodeBlockEditorModal } from '@/components/chat/CodeBlockEditorModal';
 
 interface HybridMarkdownEditorProps {
   value: string;
@@ -180,8 +182,6 @@ function CodeBlock({
 }) {
   const [copied, setCopied] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editCode, setEditCode] = useState(code);
-  const [editLanguage, setEditLanguage] = useState(language || '');
 
   const handleCopy = async () => {
     try {
@@ -195,8 +195,6 @@ function CodeBlock({
   };
 
   const handleEdit = () => {
-    setEditCode(code);
-    setEditLanguage(language || '');
     setShowEditModal(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
@@ -219,21 +217,32 @@ function CodeBlock({
     );
   };
 
-  const handleSave = () => {
-    onEdit?.(editCode, editLanguage || undefined);
-    setShowEditModal(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  const handleCodeBlockInsert = (codeBlockMarkdown: string) => {
+    // Parse the markdown to extract code and language
+    const match = codeBlockMarkdown.match(/^```(\w*)\n([\s\S]*?)\n```$/);
+    if (match) {
+      const [, lang, codeContent] = match;
+      onEdit?.(codeContent, lang || undefined);
+    }
   };
 
   return (
     <>
       <View className="border border-border rounded-3xl overflow-hidden bg-card">
-        <View className="flex-row justify-between items-center px-4 py-3 border-b border-border">
-          {language && (
-            <Text className="text-xs font-roobert-medium text-primary opacity-60 uppercase">
-              {language}
+        <View className="flex-row items-center justify-between px-4 py-3 border-b border-border">
+          <View className="flex-row items-center gap-2">
+            <Text className="text-xs font-roobert-medium text-primary opacity-50 uppercase tracking-wider">
+              Code Block
             </Text>
-          )}
+            {language && (
+              <>
+                <View className="w-1 h-1 rounded-full bg-border" />
+                <Text className="text-xs font-roobert-medium text-primary opacity-60 uppercase">
+                  {language}
+                </Text>
+              </>
+            )}
+          </View>
           <View className="flex-row gap-2">
             {editable && (
               <>
@@ -263,65 +272,43 @@ function CodeBlock({
         </Text>
       </View>
 
-      {/* Edit Modal */}
-      <Modal
+      {/* Code Block Editor Modal */}
+      <CodeBlockEditorModal
         visible={showEditModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowEditModal(false)}
-      >
-        <View className="flex-1 bg-background">
-          <View className="flex-row justify-between items-center px-5 py-4 border-b border-border">
-            <Text className="text-xl font-roobert-semibold text-primary">Edit Code Block</Text>
-            <Pressable onPress={() => setShowEditModal(false)} className="p-2">
-              <Icon as={X} size={24} className="text-primary" />
-            </Pressable>
-          </View>
-
-          <ScrollView className="flex-1 px-5 py-4">
-            <Text className="text-sm font-roobert-semibold text-primary mb-2">
-              Language (optional)
-            </Text>
-            <TextInput
-              value={editLanguage}
-              onChangeText={setEditLanguage}
-              placeholder="e.g., javascript, python, typescript"
-              placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
-              className="px-4 py-3 rounded-xl border border-border bg-card text-primary font-roobert text-base mb-5"
-            />
-
-            <Text className="text-sm font-roobert-semibold text-primary mb-2">
-              Code
-            </Text>
-            <TextInput
-              value={editCode}
-              onChangeText={setEditCode}
-              multiline
-              placeholder="Enter your code here..."
-              placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
-              className="px-4 py-3 rounded-xl border border-border bg-card text-primary font-roobert-mono text-sm"
-              style={{ minHeight: 300, textAlignVertical: 'top' }}
-            />
-          </ScrollView>
-
-          <View className="flex-row gap-3 px-5 py-4 border-t border-border">
-            <Pressable
-              onPress={() => setShowEditModal(false)}
-              className="flex-1 py-3.5 rounded-xl items-center bg-card border border-border active:opacity-70"
-            >
-              <Text className="text-base font-roobert-semibold text-primary">Cancel</Text>
-            </Pressable>
-            <Pressable
-              onPress={handleSave}
-              className="flex-1 py-3.5 rounded-xl items-center bg-primary active:opacity-70"
-            >
-              <Text className="text-base font-roobert-semibold text-background">Save</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+        onClose={() => setShowEditModal(false)}
+        onInsert={handleCodeBlockInsert}
+        initialData={{ code, language: language || '' }}
+      />
     </>
   );
+}
+
+/**
+ * Parse markdown table into structured data
+ */
+function parseMarkdownTable(text: string): { headers: string[]; cells: string[][] } {
+  const lines = text.split('\n').filter(line => line.trim());
+  const dataLines = lines.filter((line, idx) => {
+    if (!line.includes('|')) return false;
+    // Skip separator row (second line with dashes)
+    if (idx === 1 && /^[\s|:|-]+$/.test(line)) return false;
+    return true;
+  });
+
+  if (dataLines.length === 0) {
+    return { headers: ['Header 1', 'Header 2'], cells: [['', '']] };
+  }
+
+  // Parse header row
+  const headerLine = dataLines[0];
+  const headers = headerLine.split('|').filter(cell => cell.trim()).map(cell => cell.trim());
+
+  // Parse data rows
+  const cells = dataLines.slice(1).map(line => {
+    return line.split('|').filter(cell => cell.trim()).map(cell => cell.trim());
+  });
+
+  return { headers: headers.length > 0 ? headers : ['Header 1'], cells: cells.length > 0 ? cells : [['']] };
 }
 
 /**
@@ -341,10 +328,8 @@ function SimpleTable({
   onDelete?: () => void;
 }) {
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editText, setEditText] = useState(text);
 
   const handleEdit = () => {
-    setEditText(text);
     setShowEditModal(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
@@ -367,10 +352,8 @@ function SimpleTable({
     );
   };
 
-  const handleSave = () => {
-    onEdit?.(editText);
-    setShowEditModal(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  const handleTableInsert = (tableMarkdown: string) => {
+    onEdit?.(tableMarkdown);
   };
 
   const lines = text.split('\n');
@@ -378,22 +361,27 @@ function SimpleTable({
   return (
     <>
       <View className="border border-border rounded-3xl overflow-hidden bg-card">
-        {editable && (
-          <View className="px-4 py-2 border-b border-border flex-row justify-end gap-2">
-            <Pressable
-              onPress={handleEdit}
-              className="px-3 py-1.5 rounded-lg bg-card border border-border active:opacity-70"
-            >
-              <Icon as={Edit3} size={14} className="text-primary" />
-            </Pressable>
-            <Pressable
-              onPress={handleDelete}
-              className="px-3 py-1.5 rounded-lg bg-card border border-border active:opacity-70"
-            >
-              <Icon as={Trash2} size={14} className="text-red-500" />
-            </Pressable>
-          </View>
-        )}
+        <View className="px-4 py-2 border-b border-border flex-row items-center justify-between gap-2">
+          <Text className="text-xs font-roobert-medium text-primary opacity-50 uppercase tracking-wider">
+            Table
+          </Text>
+          {editable && (
+            <View className="flex-row gap-2">
+              <Pressable
+                onPress={handleEdit}
+                className="px-3 py-1.5 rounded-lg bg-card border border-border active:opacity-70"
+              >
+                <Icon as={Edit3} size={14} className="text-primary" />
+              </Pressable>
+              <Pressable
+                onPress={handleDelete}
+                className="px-3 py-1.5 rounded-lg bg-card border border-border active:opacity-70"
+              >
+                <Icon as={Trash2} size={14} className="text-red-500" />
+              </Pressable>
+            </View>
+          )}
+        </View>
         {lines.map((line, idx) => {
           if (!line.includes('|')) return null;
 
@@ -424,52 +412,13 @@ function SimpleTable({
         })}
       </View>
 
-      {/* Edit Modal */}
-      <Modal
+      {/* Table Editor Modal */}
+      <TableEditorModal
         visible={showEditModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowEditModal(false)}
-      >
-        <View className="flex-1 bg-background">
-          <View className="flex-row justify-between items-center px-5 py-4 border-b border-border">
-            <Text className="text-xl font-roobert-semibold text-primary">Edit Table</Text>
-            <Pressable onPress={() => setShowEditModal(false)} className="p-2">
-              <Icon as={X} size={24} className="text-primary" />
-            </Pressable>
-          </View>
-
-          <ScrollView className="flex-1 px-5 py-4">
-            <Text className="text-sm font-roobert-semibold text-primary mb-2">
-              Table Markdown
-            </Text>
-            <TextInput
-              value={editText}
-              onChangeText={setEditText}
-              multiline
-              placeholder="| Header 1 | Header 2 |&#10;|----------|----------|&#10;| Cell 1   | Cell 2   |"
-              placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
-              className="px-4 py-3 rounded-xl border border-border bg-card text-primary font-roobert-mono text-sm"
-              style={{ minHeight: 300, textAlignVertical: 'top' }}
-            />
-          </ScrollView>
-
-          <View className="flex-row gap-3 px-5 py-4 border-t border-border">
-            <Pressable
-              onPress={() => setShowEditModal(false)}
-              className="flex-1 py-3.5 rounded-xl items-center bg-card border border-border active:opacity-70"
-            >
-              <Text className="text-base font-roobert-semibold text-primary">Cancel</Text>
-            </Pressable>
-            <Pressable
-              onPress={handleSave}
-              className="flex-1 py-3.5 rounded-xl items-center bg-primary active:opacity-70"
-            >
-              <Text className="text-base font-roobert-semibold text-background">Save</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+        onClose={() => setShowEditModal(false)}
+        onInsert={handleTableInsert}
+        initialData={parseMarkdownTable(text)}
+      />
     </>
   );
 }
