@@ -920,7 +920,7 @@ function ARRSimulator() {
             ARR Growth Simulator
           </CardTitle>
           <CardDescription>
-            Adjust parameters to model your path to {formatCurrency(targetARR)} ARR by June 2025
+            Adjust parameters to model your path to {formatCurrency(targetARR)} ARR by June 2026
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -1131,7 +1131,7 @@ function ARRSimulator() {
                   <XAxis 
                     dataKey="month" 
                     tick={{ fontSize: 12 }}
-                    tickFormatter={(value) => value.replace(' 2024', '').replace(' 2025', '')}
+                    tickFormatter={(value) => value.replace(/ \d{4}$/, '')}
                   />
                   <YAxis 
                     tick={{ fontSize: 12 }}
@@ -1184,7 +1184,7 @@ function ARRSimulator() {
                   <XAxis 
                     dataKey="month" 
                     tick={{ fontSize: 12 }}
-                    tickFormatter={(value) => value.replace(' 2024', '').replace(' 2025', '')}
+                    tickFormatter={(value) => value.replace(/ \d{4}$/, '')}
                   />
                   <YAxis 
                     tick={{ fontSize: 12 }}
@@ -1231,7 +1231,7 @@ function ARRSimulator() {
                   <XAxis 
                     dataKey="month" 
                     tick={{ fontSize: 12 }}
-                    tickFormatter={(value) => value.replace(' 2024', '').replace(' 2025', '')}
+                    tickFormatter={(value) => value.replace(/ \d{4}$/, '')}
                   />
                   <YAxis 
                     tick={{ fontSize: 12 }}
@@ -1278,7 +1278,7 @@ function ARRSimulator() {
                   <XAxis 
                     dataKey="month" 
                     tick={{ fontSize: 12 }}
-                    tickFormatter={(value) => value.replace(' 2024', '').replace(' 2025', '')}
+                    tickFormatter={(value) => value.replace(/ \d{4}$/, '')}
                   />
                   <YAxis 
                     tick={{ fontSize: 12 }}
