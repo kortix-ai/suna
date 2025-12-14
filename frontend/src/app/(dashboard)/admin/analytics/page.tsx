@@ -60,6 +60,9 @@ import {
   useARRWeeklyActuals,
   useUpdateARRWeeklyActual,
   useDeleteARRWeeklyActual,
+  useARRSimulatorConfig,
+  useUpdateARRSimulatorConfig,
+  type SimulatorConfigData,
   type ThreadAnalytics,
   type RetentionData,
   type ThreadBrowseParams,
@@ -602,7 +605,11 @@ interface WeeklyActual {
 }
 
 function ARRSimulator() {
-  // Starting parameters (editable)
+  // Fetch config from database
+  const { data: configData, isLoading: configLoading } = useARRSimulatorConfig();
+  const updateConfigMutation = useUpdateARRSimulatorConfig();
+
+  // Local state for config (initialized from DB, saved on blur)
   const [startingSubs, setStartingSubs] = useState(639);
   const [startingMRR, setStartingMRR] = useState(21646);
   const [weeklyVisitors, setWeeklyVisitors] = useState(40000);
@@ -612,6 +619,36 @@ function ARRSimulator() {
   const [monthlyChurn, setMonthlyChurn] = useState(25);
   const [visitorGrowth, setVisitorGrowth] = useState(5);
   const [targetARR, setTargetARR] = useState(10000000);
+
+  // Initialize state from database when config loads
+  useEffect(() => {
+    if (configData) {
+      setStartingSubs(configData.starting_subs);
+      setStartingMRR(configData.starting_mrr);
+      setWeeklyVisitors(configData.weekly_visitors);
+      setLandingConversion(configData.landing_conversion);
+      setSignupToPaid(configData.signup_to_paid);
+      setArpu(configData.arpu);
+      setMonthlyChurn(configData.monthly_churn);
+      setVisitorGrowth(configData.visitor_growth);
+      setTargetARR(configData.target_arr);
+    }
+  }, [configData]);
+
+  // Save config to database
+  const saveConfig = () => {
+    updateConfigMutation.mutate({
+      starting_subs: startingSubs,
+      starting_mrr: startingMRR,
+      weekly_visitors: weeklyVisitors,
+      landing_conversion: landingConversion,
+      signup_to_paid: signupToPaid,
+      arpu: arpu,
+      monthly_churn: monthlyChurn,
+      visitor_growth: visitorGrowth,
+      target_arr: targetARR,
+    });
+  };
 
   // Calculate monthly projections (aligned with HTML version logic)
   const projections = useMemo((): SimulationMonth[] => {
@@ -892,8 +929,9 @@ function ARRSimulator() {
               <Label className="text-xs">Starting Subscribers</Label>
               <Input
                 type="number"
-                value={startingSubs}
-                onChange={(e) => setStartingSubs(Number(e.target.value))}
+                value={startingSubs || ''}
+                onChange={(e) => setStartingSubs(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
                 className="h-9"
               />
             </div>
@@ -901,8 +939,9 @@ function ARRSimulator() {
               <Label className="text-xs">Starting MRR ($)</Label>
               <Input
                 type="number"
-                value={startingMRR}
-                onChange={(e) => setStartingMRR(Number(e.target.value))}
+                value={startingMRR || ''}
+                onChange={(e) => setStartingMRR(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
                 className="h-9"
               />
             </div>
@@ -910,8 +949,9 @@ function ARRSimulator() {
               <Label className="text-xs">Weekly Visitors</Label>
               <Input
                 type="number"
-                value={weeklyVisitors}
-                onChange={(e) => setWeeklyVisitors(Number(e.target.value))}
+                value={weeklyVisitors || ''}
+                onChange={(e) => setWeeklyVisitors(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
                 className="h-9"
               />
             </div>
@@ -919,8 +959,9 @@ function ARRSimulator() {
               <Label className="text-xs">Monthly Visitor Growth (%)</Label>
               <Input
                 type="number"
-                value={visitorGrowth}
-                onChange={(e) => setVisitorGrowth(Number(e.target.value))}
+                value={visitorGrowth || ''}
+                onChange={(e) => setVisitorGrowth(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
                 className="h-9"
               />
             </div>
@@ -928,8 +969,9 @@ function ARRSimulator() {
               <Label className="text-xs">Landing Conv. (%)</Label>
               <Input
                 type="number"
-                value={landingConversion}
-                onChange={(e) => setLandingConversion(Number(e.target.value))}
+                value={landingConversion || ''}
+                onChange={(e) => setLandingConversion(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
                 className="h-9"
               />
             </div>
@@ -937,8 +979,9 @@ function ARRSimulator() {
               <Label className="text-xs">Signup → Paid (%)</Label>
               <Input
                 type="number"
-                value={signupToPaid}
-                onChange={(e) => setSignupToPaid(Number(e.target.value))}
+                value={signupToPaid || ''}
+                onChange={(e) => setSignupToPaid(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
                 step="0.1"
                 className="h-9"
               />
@@ -947,8 +990,9 @@ function ARRSimulator() {
               <Label className="text-xs">ARPU ($/mo)</Label>
               <Input
                 type="number"
-                value={arpu}
-                onChange={(e) => setArpu(Number(e.target.value))}
+                value={arpu || ''}
+                onChange={(e) => setArpu(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
                 className="h-9"
               />
             </div>
@@ -956,8 +1000,9 @@ function ARRSimulator() {
               <Label className="text-xs">Monthly Churn (%)</Label>
               <Input
                 type="number"
-                value={monthlyChurn}
-                onChange={(e) => setMonthlyChurn(Number(e.target.value))}
+                value={monthlyChurn || ''}
+                onChange={(e) => setMonthlyChurn(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
                 className="h-9"
               />
             </div>
@@ -965,8 +1010,9 @@ function ARRSimulator() {
               <Label className="text-xs">Target ARR ($)</Label>
               <Input
                 type="number"
-                value={targetARR}
-                onChange={(e) => setTargetARR(Number(e.target.value))}
+                value={targetARR || ''}
+                onChange={(e) => setTargetARR(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
                 className="h-9"
               />
             </div>

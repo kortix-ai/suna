@@ -1022,3 +1022,91 @@ async def delete_arr_weekly_actual(
     except Exception as e:
         logger.error(f"Failed to delete ARR weekly actual: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete ARR weekly actual")
+
+
+# ============================================================================
+# ARR SIMULATOR CONFIG ENDPOINTS
+# ============================================================================
+
+class SimulatorConfigData(BaseModel):
+    starting_subs: Optional[int] = 639
+    starting_mrr: Optional[float] = 21646
+    weekly_visitors: Optional[int] = 40000
+    landing_conversion: Optional[float] = 25
+    signup_to_paid: Optional[float] = 1
+    arpu: Optional[float] = 34
+    monthly_churn: Optional[float] = 25
+    visitor_growth: Optional[float] = 5
+    target_arr: Optional[float] = 10000000
+
+
+@router.get("/arr/config")
+async def get_arr_simulator_config(
+    admin: dict = Depends(require_super_admin)
+) -> SimulatorConfigData:
+    """Get ARR simulator configuration. Super admin only."""
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        result = await client.from_('arr_simulator_config').select('*').limit(1).execute()
+        
+        if result.data and len(result.data) > 0:
+            row = result.data[0]
+            return SimulatorConfigData(
+                starting_subs=row.get('starting_subs', 639) or 639,
+                starting_mrr=float(row.get('starting_mrr', 21646) or 21646),
+                weekly_visitors=row.get('weekly_visitors', 40000) or 40000,
+                landing_conversion=float(row.get('landing_conversion', 25) or 25),
+                signup_to_paid=float(row.get('signup_to_paid', 1) or 1),
+                arpu=float(row.get('arpu', 34) or 34),
+                monthly_churn=float(row.get('monthly_churn', 25) or 25),
+                visitor_growth=float(row.get('visitor_growth', 5) or 5),
+                target_arr=float(row.get('target_arr', 10000000) or 10000000),
+            )
+        
+        # Return defaults if no config exists
+        return SimulatorConfigData()
+        
+    except Exception as e:
+        logger.error(f"Failed to get ARR simulator config: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get ARR simulator config")
+
+
+@router.put("/arr/config")
+async def update_arr_simulator_config(
+    data: SimulatorConfigData,
+    admin: dict = Depends(require_super_admin)
+) -> SimulatorConfigData:
+    """Update ARR simulator configuration. Super admin only."""
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        # Get existing config ID
+        existing = await client.from_('arr_simulator_config').select('id').limit(1).execute()
+        
+        update_data = {
+            'starting_subs': data.starting_subs,
+            'starting_mrr': data.starting_mrr,
+            'weekly_visitors': data.weekly_visitors,
+            'landing_conversion': data.landing_conversion,
+            'signup_to_paid': data.signup_to_paid,
+            'arpu': data.arpu,
+            'monthly_churn': data.monthly_churn,
+            'visitor_growth': data.visitor_growth,
+            'target_arr': data.target_arr,
+        }
+        
+        if existing.data and len(existing.data) > 0:
+            # Update existing row
+            await client.from_('arr_simulator_config').update(update_data).eq('id', existing.data[0]['id']).execute()
+        else:
+            # Insert new row
+            await client.from_('arr_simulator_config').insert(update_data).execute()
+        
+        return data
+        
+    except Exception as e:
+        logger.error(f"Failed to update ARR simulator config: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update ARR simulator config")
