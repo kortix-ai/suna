@@ -81,12 +81,10 @@ function CodeBlock({
 
   return (
     <View style={[styles.codeBlock, isDark ? styles.codeBlockDark : styles.codeBlockLight]}>
-      <View style={styles.codeBlockHeader}>
-        {language && (
-          <RNText style={[styles.codeBlockLanguage, isDark ? styles.darkText : styles.lightText]}>
-            {language}
-          </RNText>
-        )}
+      <View style={[styles.codeBlockHeader, { borderBottomColor: isDark ? '#3f3f46' : '#e4e4e7' }]}>
+        <RNText style={[styles.codeBlockLanguage, isDark ? styles.darkText : styles.lightText]}>
+          {language || 'Code Block'}
+        </RNText>
         <Pressable
           onPress={handleCopy}
           style={[styles.copyButton, isDark ? styles.copyButtonDark : styles.copyButtonLight]}>
@@ -575,13 +573,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#DCDDDE',
   },
   codeBlockLanguage: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '500',
     textTransform: 'uppercase',
-    opacity: 0.6,
+    opacity: 0.5,
+    letterSpacing: 0.8,
   },
   copyButton: {
     paddingHorizontal: 12,

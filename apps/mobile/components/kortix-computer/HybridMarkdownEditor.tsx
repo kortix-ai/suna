@@ -230,19 +230,9 @@ function CodeBlock({
     <>
       <View className="border border-border rounded-3xl overflow-hidden bg-card">
         <View className="flex-row items-center justify-between px-4 py-3 border-b border-border">
-          <View className="flex-row items-center gap-2">
-            <Text className="text-xs font-roobert-medium text-primary opacity-50 uppercase tracking-wider">
-              Code Block
-            </Text>
-            {language && (
-              <>
-                <View className="w-1 h-1 rounded-full bg-border" />
-                <Text className="text-xs font-roobert-medium text-primary opacity-60 uppercase">
-                  {language}
-                </Text>
-              </>
-            )}
-          </View>
+          <Text className="text-xs font-roobert-medium text-primary opacity-50 uppercase tracking-wider">
+            {language || 'Code Block'}
+          </Text>
           <View className="flex-row gap-2">
             {editable && (
               <>
@@ -361,11 +351,11 @@ function SimpleTable({
   return (
     <>
       <View className="border border-border rounded-3xl overflow-hidden bg-card">
-        <View className="px-4 py-2 border-b border-border flex-row items-center justify-between gap-2">
-          <Text className="text-xs font-roobert-medium text-primary opacity-50 uppercase tracking-wider">
-            Table
-          </Text>
-          {editable && (
+        {editable && (
+          <View className="px-4 py-2 border-b border-border flex-row items-center justify-between gap-2">
+            <Text className="text-xs font-roobert-medium text-primary opacity-50 uppercase tracking-wider">
+              Table
+            </Text>
             <View className="flex-row gap-2">
               <Pressable
                 onPress={handleEdit}
@@ -380,8 +370,8 @@ function SimpleTable({
                 <Icon as={Trash2} size={14} className="text-red-500" />
               </Pressable>
             </View>
-          )}
-        </View>
+          </View>
+        )}
         {lines.map((line, idx) => {
           if (!line.includes('|')) return null;
 
