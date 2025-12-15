@@ -70,6 +70,63 @@ class ContextManager:
         """Get the singleton Anthropic client."""
         return _get_anthropic_client_singleton()
     
+    async def save_compressed_messages(self, compressed_messages: List[Dict[str, Any]]) -> int:
+        """Save compressed message content to database metadata.
+        
+        Updates messages in DB with:
+        - metadata.compressed = True
+        - metadata.compressed_content = the compressed content
+        
+        This allows future reads to use compressed content directly without re-compressing.
+        
+        Args:
+            compressed_messages: List of dicts with 'message_id' and 'compressed_content'
+            
+        Returns:
+            Number of messages successfully saved
+        """
+        if not compressed_messages:
+            return 0
+        
+        saved_count = 0
+        client = await self.db.client
+        
+        for msg_data in compressed_messages:
+            message_id = msg_data.get('message_id')
+            compressed_content = msg_data.get('compressed_content')
+            
+            if not message_id or not compressed_content:
+                continue
+            
+            try:
+                # Get existing metadata
+                result = await client.table('messages').select('metadata').eq('message_id', message_id).single().execute()
+                
+                if result.data:
+                    existing_metadata = result.data.get('metadata', {}) or {}
+                    
+                    # Skip if already compressed
+                    if existing_metadata.get('compressed'):
+                        continue
+                    
+                    # Update metadata with compressed content
+                    existing_metadata['compressed'] = True
+                    existing_metadata['compressed_content'] = compressed_content
+                    
+                    await client.table('messages').update({
+                        'metadata': existing_metadata
+                    }).eq('message_id', message_id).execute()
+                    
+                    saved_count += 1
+                    
+            except Exception as e:
+                logger.warning(f"Failed to save compressed message {message_id}: {e}")
+        
+        if saved_count > 0:
+            logger.info(f"💾 Saved {saved_count} compressed messages to database")
+        
+        return saved_count
+    
     def _get_bedrock_client(self):
         """Get the singleton Bedrock client."""
         return _get_bedrock_client_singleton()
@@ -1004,7 +1061,15 @@ class ContextManager:
         """Compress the messages WITHOUT applying caching during iterations.
         
         Caching should be applied ONCE at the end by the caller, not during compression.
+        Compressed messages are saved to the database for future reads.
         """
+        # Capture original content for messages with message_id (for tracking compression)
+        original_content_map: Dict[str, Any] = {}
+        for msg in messages:
+            message_id = msg.get('message_id')
+            if message_id:
+                original_content_map[message_id] = msg.get('content')
+        
         # Get model-specific token limits from constants
         context_window = model_manager.get_context_window(llm_model)
         
@@ -1040,7 +1105,7 @@ class ContextManager:
         # Check if we're already under threshold - no compression needed!
         if uncompressed_total_token_count <= max_tokens:
             logger.info(f"✅ Token count ({uncompressed_total_token_count}) under threshold ({max_tokens}), skipping compression")
-            return self.middle_out_messages(result)
+            return await self.middle_out_messages(result)
         
         # PRIMARY STRATEGY: Remove old tool outputs if over threshold
         if uncompressed_total_token_count > max_tokens:
@@ -1124,7 +1189,33 @@ class ContextManager:
             logger.info(f"After message omission to target: {compressed_total} tokens")
 
         logger.info(f"✨ Final compression complete: {compressed_total} tokens (target: {target_tokens}, max: {max_tokens})")
-        return self.middle_out_messages(result)
+        
+        # Identify messages that were compressed and save to database
+        compressed_to_save: List[Dict[str, Any]] = []
+        for msg in result:
+            message_id = msg.get('message_id')
+            if message_id and message_id in original_content_map:
+                original_content = original_content_map[message_id]
+                current_content = msg.get('content')
+                
+                # If content changed, it was compressed
+                if current_content != original_content:
+                    # Save the FULL message structure (matching DB content format)
+                    # Remove message_id from the saved content as it's stored separately
+                    msg_to_save = {k: v for k, v in msg.items() if k != 'message_id'}
+                    compressed_to_save.append({
+                        'message_id': message_id,
+                        'compressed_content': json.dumps(msg_to_save)
+                    })
+        
+        # Save compressed messages to database (fire and forget for performance)
+        if compressed_to_save:
+            try:
+                await self.save_compressed_messages(compressed_to_save)
+            except Exception as e:
+                logger.warning(f"Failed to save compressed messages: {e}")
+        
+        return await self.middle_out_messages(result)
     
     async def compress_messages_by_omitting_messages(
             self, 
@@ -1170,6 +1261,9 @@ class ContextManager:
         safety_limit = 500
         current_token_count = initial_token_count
         
+        # Track all omitted messages to save them with placeholder content
+        all_omitted_messages: List[Dict[str, Any]] = []
+        
         while current_token_count > max_allowed_tokens and safety_limit > 0:
             safety_limit -= 1
             
@@ -1188,6 +1282,10 @@ class ContextManager:
                 removed_msg_count = sum(len(g) for g in removed_groups)
                 logger.debug(f"Removing {len(removed_groups)} groups ({removed_msg_count} messages) from middle")
                 
+                # Track omitted messages
+                for group in removed_groups:
+                    all_omitted_messages.extend(group)
+                
                 message_groups = message_groups[:middle_start] + message_groups[middle_end:]
             else:
                 # Remove from earlier groups, preserving recent context
@@ -1196,6 +1294,10 @@ class ContextManager:
                     removed_groups = message_groups[:groups_to_remove]
                     removed_msg_count = sum(len(g) for g in removed_groups)
                     logger.debug(f"Removing {groups_to_remove} early groups ({removed_msg_count} messages)")
+                    
+                    # Track omitted messages
+                    for group in removed_groups:
+                        all_omitted_messages.extend(group)
                     
                     message_groups = message_groups[groups_to_remove:]
                 else:
@@ -1207,6 +1309,33 @@ class ContextManager:
             
             # Recalculate token count WITH caching
             current_token_count = await self.count_tokens(llm_model, conversation_messages, system_message, apply_caching=True)
+
+        # Save omitted messages with placeholder content so they're read as compressed next time
+        if all_omitted_messages:
+            omitted_to_save: List[Dict[str, Any]] = []
+            for msg in all_omitted_messages:
+                message_id = msg.get('message_id')
+                if message_id:
+                    # Create placeholder content preserving message structure
+                    placeholder_msg = {
+                        'role': msg.get('role', 'user'),
+                        'content': f"[Message omitted for context management. message_id: \"{message_id}\". Use expand-message tool to view full content.]"
+                    }
+                    # Preserve tool_call_id for tool messages
+                    if msg.get('tool_call_id'):
+                        placeholder_msg['tool_call_id'] = msg['tool_call_id']
+                    
+                    omitted_to_save.append({
+                        'message_id': message_id,
+                        'compressed_content': json.dumps(placeholder_msg)
+                    })
+            
+            if omitted_to_save:
+                try:
+                    saved_count = await self.save_compressed_messages(omitted_to_save)
+                    logger.info(f"💾 Saved {saved_count} omitted messages as compressed placeholders")
+                except Exception as e:
+                    logger.warning(f"Failed to save omitted messages: {e}")
 
         # Flatten final groups to messages
         final_messages = self.flatten_message_groups(message_groups)
@@ -1224,7 +1353,7 @@ class ContextManager:
             
         return final_messages
     
-    def middle_out_messages(self, messages: List[Dict[str, Any]], max_messages: int = 320) -> List[Dict[str, Any]]:
+    async def middle_out_messages(self, messages: List[Dict[str, Any]], max_messages: int = 320) -> List[Dict[str, Any]]:
         """Remove message GROUPS from the middle of the list, keeping approximately max_messages total.
         
         CRITICAL: This method operates on atomic message groups to preserve
@@ -1270,9 +1399,37 @@ class ContextManager:
         # Build the result by keeping start and end groups
         kept_groups = message_groups[:keep_start_groups] + message_groups[-keep_end_groups:]
         
+        # Track removed groups for saving as compressed
+        removed_groups = message_groups[keep_start_groups:-keep_end_groups] if keep_end_groups > 0 else message_groups[keep_start_groups:]
+        
         removed_count = len(message_groups) - len(kept_groups)
         if removed_count > 0:
             logger.info(f"📦 Middle-out: removed {removed_count} groups from middle ({len(message_groups)} -> {len(kept_groups)} groups)")
+            
+            # Save removed messages with placeholder content
+            omitted_to_save: List[Dict[str, Any]] = []
+            for group in removed_groups:
+                for msg in group:
+                    message_id = msg.get('message_id')
+                    if message_id:
+                        placeholder_msg = {
+                            'role': msg.get('role', 'user'),
+                            'content': f"[Message omitted for context management. message_id: \"{message_id}\". Use expand-message tool to view full content.]"
+                        }
+                        if msg.get('tool_call_id'):
+                            placeholder_msg['tool_call_id'] = msg['tool_call_id']
+                        
+                        omitted_to_save.append({
+                            'message_id': message_id,
+                            'compressed_content': json.dumps(placeholder_msg)
+                        })
+            
+            if omitted_to_save:
+                try:
+                    saved_count = await self.save_compressed_messages(omitted_to_save)
+                    logger.info(f"💾 Saved {saved_count} middle-out omitted messages as compressed placeholders")
+                except Exception as e:
+                    logger.warning(f"Failed to save middle-out omitted messages: {e}")
         
         # Flatten groups back to messages
         result = self.flatten_message_groups(kept_groups)
@@ -1283,4 +1440,4 @@ class ContextManager:
             logger.warning(f"⚠️ Middle-out validation found pairing issues (orphaned: {len(orphaned_ids)}, unanswered: {len(unanswered_ids)}) - repairing")
             result = self.repair_tool_call_pairing(result)
         
-        return result 
+        return result
