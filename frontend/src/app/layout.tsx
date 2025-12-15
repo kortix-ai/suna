@@ -253,7 +253,7 @@ export default function RootLayout({
             <Analytics />
           </Suspense>
           <Suspense fallback={null}>
-            <GoogleAnalytics gaId="G-6ETJFB3PT3" />
+            <GoogleAnalytics gaId="G-QSCBD7F1SD" />
           </Suspense>
           <Suspense fallback={null}>
             <SpeedInsights />
