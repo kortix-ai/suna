@@ -939,6 +939,44 @@ class WeeklyActualsResponse(BaseModel):
     actuals: Dict[int, WeeklyActualData]
 
 
+@router.get("/arr/signups")
+async def get_signups_by_date(
+    date_from: str = Query(..., description="Start date YYYY-MM-DD"),
+    date_to: str = Query(..., description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """
+    Get signup counts grouped by date for a date range.
+    Frontend can aggregate into weeks as needed.
+    Super admin only.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        # Single DB query for all signups in range
+        result = await client.schema('basejump').from_('accounts').select(
+            'created_at'
+        ).gte('created_at', f"{date_from}T00:00:00Z").lte('created_at', f"{date_to}T23:59:59.999999Z").execute()
+        
+        # Group by date
+        signups_by_date: Dict[str, int] = {}
+        for account in result.data or []:
+            date = account['created_at'][:10]  # Extract YYYY-MM-DD
+            signups_by_date[date] = signups_by_date.get(date, 0) + 1
+        
+        return {
+            "date_from": date_from,
+            "date_to": date_to,
+            "signups_by_date": signups_by_date,
+            "total": len(result.data or [])
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get signups by date: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get signups")
+
+
 @router.get("/arr/actuals")
 async def get_arr_weekly_actuals(
     admin: dict = Depends(require_super_admin)

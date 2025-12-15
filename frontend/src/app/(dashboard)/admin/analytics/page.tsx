@@ -62,6 +62,7 @@ import {
   useDeleteARRWeeklyActual,
   useARRSimulatorConfig,
   useUpdateARRSimulatorConfig,
+  useSignupsByDate,
   type SimulatorConfigData,
   type ThreadAnalytics,
   type RetentionData,
@@ -705,6 +706,32 @@ function ARRSimulator() {
     negativeChurned: -p.churned,
   }));
 
+  // Date range for fetching signups (Dec 15, 2025 to Jun 15, 2026)
+  const signupsDateFrom = '2025-12-15';
+  const signupsDateTo = '2026-06-15';
+  
+  // Fetch signups grouped by date
+  const { data: signupsByDateData } = useSignupsByDate(signupsDateFrom, signupsDateTo);
+  
+  // Group signups by week number (frontend owns week logic)
+  const signupsByWeek = useMemo((): Record<number, number> => {
+    if (!signupsByDateData?.signups_by_date) return {};
+    
+    const startDate = new Date(2025, 11, 15); // Dec 15, 2025
+    const result: Record<number, number> = {};
+    
+    Object.entries(signupsByDateData.signups_by_date).forEach(([dateStr, count]) => {
+      const date = new Date(dateStr);
+      const daysSinceStart = Math.floor((date.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      const weekNum = Math.floor(daysSinceStart / 7) + 1;
+      if (weekNum >= 1) {
+        result[weekNum] = (result[weekNum] || 0) + count;
+      }
+    });
+    
+    return result;
+  }, [signupsByDateData]);
+
   // Weekly projections derived from monthly (matching HTML dashboard logic exactly)
   const weeklyProjections = useMemo((): SimulationWeek[] => {
     const weeks: SimulationWeek[] = [];
@@ -824,10 +851,10 @@ function ARRSimulator() {
   };
 
   const deleteWeekActual = (weekNumber: number) => {
-    // Clear any pending edits for this week
+    // Clear any pending edits for this week (signups excluded - it's auto-fetched)
     setPendingEdits(prev => {
       const next = { ...prev };
-      const fields: (keyof WeeklyActual)[] = ['views', 'signups', 'newPaid', 'subscribers', 'mrr', 'arr'];
+      const fields: (keyof WeeklyActual)[] = ['views', 'newPaid', 'subscribers', 'mrr', 'arr'];
       fields.forEach(field => {
         delete next[`${weekNumber}-${field}`];
       });
@@ -851,7 +878,7 @@ function ARRSimulator() {
     goalViews: w.visitors,
     actualViews: actualData[w.week]?.views || 0,
     goalSignups: w.signups,
-    actualSignups: actualData[w.week]?.signups || 0,
+    actualSignups: signupsByWeek[w.week] || 0,
     goalNewPaid: w.newPaid,
     actualNewPaid: actualData[w.week]?.newPaid || 0,
     goalSubs: w.subscribers,
@@ -869,14 +896,17 @@ function ARRSimulator() {
     weeklyProjections.forEach((week) => {
       const monthIdx = week.monthIndex;
       const weekActual = actualData[week.week];
+      const autoSignups = signupsByWeek[week.week] || 0;
       
       if (!result[monthIdx]) {
         result[monthIdx] = { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
       }
       
+      // Use auto-fetched signups from database
+      result[monthIdx].signups += autoSignups;
+      
       if (weekActual) {
         result[monthIdx].views += weekActual.views || 0;
-        result[monthIdx].signups += weekActual.signups || 0;
         result[monthIdx].newPaid += weekActual.newPaid || 0;
         // For subscribers, MRR, ARR - take the last week's value as end-of-month value
         result[monthIdx].subscribers = weekActual.subscribers || result[monthIdx].subscribers;
@@ -886,7 +916,7 @@ function ARRSimulator() {
     });
     
     return result;
-  }, [weeklyProjections, actualData]);
+  }, [weeklyProjections, actualData, signupsByWeek]);
 
   // View state
   const [simulatorView, setSimulatorView] = useState<'monthly' | 'weekly'>('monthly');
@@ -1544,8 +1574,10 @@ function ARRSimulator() {
                 <tbody>
                   {weeklyProjections.map((week) => {
                     const actual: Partial<WeeklyActual> = actualData[week.week] || {};
+                    // Get auto-fetched signups from database
+                    const autoSignups = signupsByWeek[week.week] ?? 0;
                     const viewsVar = getVariance(actual.views, week.visitors);
-                    const signupsVar = getVariance(actual.signups, week.signups);
+                    const signupsVar = getVariance(autoSignups, week.signups);
                     const newPaidVar = getVariance(actual.newPaid, week.newPaid);
                     const subsVar = getVariance(actual.subscribers, week.subscribers);
                     const mrrVar = getVariance(actual.mrr, week.mrr);
@@ -1570,20 +1602,15 @@ function ARRSimulator() {
                         <td className={`text-right p-1 text-[10px] ${viewsVar.color}`}>
                           {actual.views ? `${viewsVar.value >= 0 ? '+' : ''}${viewsVar.value.toFixed(1)}%` : '—'}
                         </td>
-                        {/* Signups */}
+                        {/* Signups - Auto-fetched from database */}
                         <td className="text-right p-1">{formatNumber(week.signups)}</td>
                         <td className="text-right p-1">
-                          <Input
-                            type="number"
-                            value={getInputValue(week.week, 'signups')}
-                            onChange={(e) => handleInputChange(week.week, 'signups', e.target.value)}
-                            onBlur={() => handleInputBlur(week.week, 'signups')}
-                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            placeholder="—"
-                          />
+                          <span className={`text-[10px] font-medium ${autoSignups > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                            {autoSignups > 0 ? formatNumber(autoSignups) : '—'}
+                          </span>
                         </td>
                         <td className={`text-right p-1 text-[10px] ${signupsVar.color}`}>
-                          {actual.signups ? `${signupsVar.value >= 0 ? '+' : ''}${signupsVar.value.toFixed(1)}%` : '—'}
+                          {autoSignups > 0 ? `${signupsVar.value >= 0 ? '+' : ''}${signupsVar.value.toFixed(1)}%` : '—'}
                         </td>
                         {/* New Paid */}
                         <td className="text-right p-1">{formatNumber(week.newPaid)}</td>
@@ -1646,7 +1673,7 @@ function ARRSimulator() {
                           {actual.arr ? `${arrVar.value >= 0 ? '+' : ''}${arrVar.value.toFixed(1)}%` : '—'}
                         </td>
                         <td className="p-1">
-                          {(actual.views || actual.signups || actual.newPaid || actual.subscribers || actual.mrr || actual.arr) && (
+                          {(actual.views || actual.newPaid || actual.subscribers || actual.mrr || actual.arr) && (
                             <button
                               onClick={() => deleteWeekActual(week.week)}
                               className="text-muted-foreground hover:text-red-500 transition-colors"

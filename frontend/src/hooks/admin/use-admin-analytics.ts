@@ -409,3 +409,31 @@ export function useUpdateARRSimulatorConfig() {
   });
 }
 
+// ============================================================================
+// ARR SIGNUPS BY DATE (fetched from database, grouped by frontend)
+// ============================================================================
+
+export interface SignupsByDateResponse {
+  date_from: string;
+  date_to: string;
+  signups_by_date: Record<string, number>;  // YYYY-MM-DD -> count
+  total: number;
+}
+
+export function useSignupsByDate(dateFrom: string, dateTo: string) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'signups-by-date', dateFrom, dateTo],
+    queryFn: async (): Promise<SignupsByDateResponse> => {
+      const response = await backendApi.get(
+        `/admin/analytics/arr/signups?date_from=${dateFrom}&date_to=${dateTo}`
+      );
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 60000, // 1 minute
+    enabled: !!dateFrom && !!dateTo,
+  });
+}
+
