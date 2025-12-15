@@ -2,7 +2,7 @@
 // CORE EXPORTS - Unified Account State
 // =============================================================================
 export { billingApi, accountStateSelectors, type AccountState } from './api';
-export { 
+export {
   useAccountState,
   useAccountStateWithStreaming,
   accountStateKeys,
@@ -85,6 +85,8 @@ export {
   getCustomerInfo,
   checkSubscriptionStatus,
   presentPaywall,
+  presentCustomerInfo,
+  isRevenueCatInitialized,
 } from './revenuecat';
 export type { RevenueCatProduct } from './revenuecat';
 
@@ -95,11 +97,11 @@ export { getPlanName, getPlanIcon } from './plan-utils';
 
 export { logAvailableProducts, findPackageForTier } from './revenuecat-utils';
 export { debugRevenueCat } from './debug-revenuecat';
-export { 
-  getRevenueCatPricing, 
-  getRevenueCatDisplayPrice, 
+export {
+  getRevenueCatPricing,
+  getRevenueCatDisplayPrice,
   getRevenueCatPackageForCheckout,
   getRevenueCatYearlySavings,
-  type RevenueCatPricingData 
+  type RevenueCatPricingData
 } from './revenuecat-pricing';
 

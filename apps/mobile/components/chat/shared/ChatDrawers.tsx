@@ -57,32 +57,35 @@ export function ChatDrawers({
 }: ChatDrawersProps) {
   return (
     <>
-      {/* Agent Drawer */}
-      <AgentDrawer
-        visible={isAgentDrawerVisible}
-        onClose={onCloseAgentDrawer}
-        onOpenWorkerConfig={onOpenWorkerConfig}
-        onDismiss={onAgentDrawerDismiss}
-      />
+      {isAgentDrawerVisible && (
+        <AgentDrawer
+          visible={isAgentDrawerVisible}
+          onClose={onCloseAgentDrawer}
+          onOpenWorkerConfig={onOpenWorkerConfig}
+          onDismiss={onAgentDrawerDismiss}
+        />
+      )}
 
-      {/* Worker Config Drawer */}
-      <WorkerConfigDrawer
-        visible={isWorkerConfigDrawerVisible}
-        workerId={workerConfigWorkerId}
-        onClose={onCloseWorkerConfigDrawer}
-        onWorkerUpdated={onWorkerUpdated}
-        initialView={workerConfigInitialView}
-        onUpgradePress={onUpgradePress}
-      />
+      {isWorkerConfigDrawerVisible && workerConfigWorkerId && (
+        <WorkerConfigDrawer
+          visible={isWorkerConfigDrawerVisible}
+          workerId={workerConfigWorkerId}
+          onClose={onCloseWorkerConfigDrawer}
+          onWorkerUpdated={onWorkerUpdated}
+          initialView={workerConfigInitialView}
+          onUpgradePress={onUpgradePress}
+        />
+      )}
 
-      {/* Attachment Drawer */}
-      <AttachmentDrawer
-        visible={isAttachmentDrawerVisible}
-        onClose={onCloseAttachmentDrawer}
-        onTakePicture={onTakePicture}
-        onChooseImages={onChooseImages}
-        onChooseFiles={onChooseFiles}
-      />
+      {isAttachmentDrawerVisible && (
+        <AttachmentDrawer
+          visible={isAttachmentDrawerVisible}
+          onClose={onCloseAttachmentDrawer}
+          onTakePicture={onTakePicture}
+          onChooseImages={onChooseImages}
+          onChooseFiles={onChooseFiles}
+        />
+      )}
     </>
   );
 }

@@ -8,26 +8,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 export interface AnalyticsSummary {
   total_users: number;
   total_threads: number;
-  total_messages: number;
-  active_users_today: number;
   active_users_week: number;
   new_signups_today: number;
   new_signups_week: number;
-  new_subscriptions_today: number;
-  new_subscriptions_week: number;
-  conversion_rate_today: number;
   conversion_rate_week: number;
-  avg_messages_per_thread: number;
   avg_threads_per_user: number;
-}
-
-export interface DailyStats {
-  date: string;
-  signups: number;
-  subscriptions: number;
-  threads_created: number;
-  active_users: number;
-  conversion_rate: number;
 }
 
 export interface ThreadAnalytics {
@@ -148,20 +133,6 @@ export function useAnalyticsSummary() {
       return response.data;
     },
     staleTime: 60000, // 1 minute
-  });
-}
-
-export function useDailyStats(days: number = 30) {
-  return useQuery({
-    queryKey: ['admin', 'analytics', 'daily', days],
-    queryFn: async (): Promise<DailyStats[]> => {
-      const response = await backendApi.get(`/admin/analytics/daily?days=${days}`);
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-    staleTime: 300000, // 5 minutes
   });
 }
 
@@ -312,15 +283,129 @@ export function useRefreshAnalytics() {
     refreshSummary: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'summary'] });
     },
-    refreshDaily: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'daily'] });
-    },
     refreshThreads: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'threads'] });
     },
     refreshRetention: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'retention'] });
     },
+    refreshARRActuals: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'arr-actuals'] });
+    },
   };
+}
+
+// ============================================================================
+// ARR WEEKLY ACTUALS
+// ============================================================================
+
+export interface WeeklyActualData {
+  week_number: number;
+  week_start_date: string;
+  views: number;
+  signups: number;
+  new_paid: number;
+  subscribers: number;
+  mrr: number;
+  arr: number;
+}
+
+export interface WeeklyActualsResponse {
+  actuals: Record<number, WeeklyActualData>;
+}
+
+export function useARRWeeklyActuals() {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'arr-actuals'],
+    queryFn: async (): Promise<WeeklyActualsResponse> => {
+      const response = await backendApi.get('/admin/analytics/arr/actuals');
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 60000, // 1 minute
+  });
+}
+
+export function useUpdateARRWeeklyActual() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (data: WeeklyActualData): Promise<WeeklyActualData> => {
+      const response = await backendApi.put(`/admin/analytics/arr/actuals/${data.week_number}`, data);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'arr-actuals'] });
+    },
+  });
+}
+
+export function useDeleteARRWeeklyActual() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (weekNumber: number): Promise<{ message: string }> => {
+      const response = await backendApi.delete(`/admin/analytics/arr/actuals/${weekNumber}`);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'arr-actuals'] });
+    },
+  });
+}
+
+// ============================================================================
+// ARR SIMULATOR CONFIG
+// ============================================================================
+
+export interface SimulatorConfigData {
+  starting_subs: number;
+  starting_mrr: number;
+  weekly_visitors: number;
+  landing_conversion: number;
+  signup_to_paid: number;
+  arpu: number;
+  monthly_churn: number;
+  visitor_growth: number;
+  target_arr: number;
+}
+
+export function useARRSimulatorConfig() {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'arr-config'],
+    queryFn: async (): Promise<SimulatorConfigData> => {
+      const response = await backendApi.get('/admin/analytics/arr/config');
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 60000, // 1 minute
+  });
+}
+
+export function useUpdateARRSimulatorConfig() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (data: SimulatorConfigData): Promise<SimulatorConfigData> => {
+      const response = await backendApi.put('/admin/analytics/arr/config', data);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'arr-config'] });
+    },
+  });
 }
 

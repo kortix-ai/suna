@@ -38,6 +38,7 @@ import { useAllTriggers } from '@/lib/triggers';
 import { groupThreadsByMonth } from '@/lib/utils/thread-utils';
 import { TriggerCreationDrawer, TriggerList } from '@/components/triggers';
 import { WorkerCreationDrawer } from '@/components/workers/WorkerCreationDrawer';
+import { WorkerConfigDrawer } from '@/components/workers/WorkerConfigDrawer';
 import { useAdvancedFeatures } from '@/hooks';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import type {
@@ -335,6 +336,10 @@ interface MenuPageProps {
   onWorkersPress?: () => void;
   onTriggersPress?: () => void;
   onClose?: () => void;
+  // Worker config drawer props
+  workerConfigWorkerId?: string | null;
+  workerConfigInitialView?: 'instructions' | 'tools' | 'integrations' | 'triggers';
+  onCloseWorkerConfigDrawer?: () => void;
 }
 
 /**
@@ -376,6 +381,9 @@ export function MenuPage({
   onWorkersPress,
   onTriggersPress,
   onClose,
+  workerConfigWorkerId,
+  workerConfigInitialView,
+  onCloseWorkerConfigDrawer,
 }: MenuPageProps) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
@@ -906,19 +914,30 @@ export function MenuPage({
         />
       )}
 
-      {/* Trigger Creation Drawer */}
-      <TriggerCreationDrawer
-        visible={isTriggerDrawerVisible}
-        onClose={handleTriggerDrawerClose}
-        onTriggerCreated={handleTriggerCreated}
-      />
+      {isTriggerDrawerVisible && (
+        <TriggerCreationDrawer
+          visible={isTriggerDrawerVisible}
+          onClose={handleTriggerDrawerClose}
+          onTriggerCreated={handleTriggerCreated}
+        />
+      )}
 
-      {/* Worker Creation Drawer */}
-      <WorkerCreationDrawer
-        visible={isWorkerCreationDrawerVisible}
-        onClose={handleWorkerCreationDrawerClose}
-        onWorkerCreated={handleWorkerCreated}
-      />
+      {isWorkerCreationDrawerVisible && (
+        <WorkerCreationDrawer
+          visible={isWorkerCreationDrawerVisible}
+          onClose={handleWorkerCreationDrawerClose}
+          onWorkerCreated={handleWorkerCreated}
+        />
+      )}
+
+      {workerConfigWorkerId && (
+        <WorkerConfigDrawer
+          visible={!!workerConfigWorkerId}
+          workerId={workerConfigWorkerId || null}
+          initialView={workerConfigInitialView}
+          onClose={onCloseWorkerConfigDrawer || (() => {})}
+        />
+      )}
     </View>
   );
 }

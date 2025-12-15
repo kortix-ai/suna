@@ -54,6 +54,11 @@ class ThreadManager:
             thread_manager=self,
             project_id=self.project_id
         )
+        
+        self._memory_context: Optional[Dict[str, Any]] = None
+
+    def set_memory_context(self, memory_context: Optional[Dict[str, Any]]):
+        self._memory_context = memory_context
 
     def add_tool(self, tool_class: Type[Tool], function_names: Optional[List[str]] = None, **kwargs):
         self.tool_registry.register_tool(tool_class, function_names, **kwargs)
@@ -583,11 +588,16 @@ class ThreadManager:
                 except Exception as e:
                     logger.debug(f"Failed to check cache_needs_rebuild flag: {e}")
 
+            messages_with_context = messages
+            if self._memory_context and len(messages) > 0:
+                messages_with_context = [self._memory_context] + messages
+                logger.debug(f"Injected memory context as first message (preserves prompt caching)")
+            
             cache_start = time.time()
-            if ENABLE_PROMPT_CACHING and len(messages) > 2:
+            if ENABLE_PROMPT_CACHING and len(messages_with_context) > 2:
                 prepared_messages = await apply_anthropic_caching_strategy(
                     system_prompt, 
-                    messages, 
+                    messages_with_context, 
                     llm_model,
                     thread_id=thread_id,
                     force_recalc=force_rebuild
@@ -595,9 +605,9 @@ class ThreadManager:
                 prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
                 logger.debug(f"⏱️ [TIMING] Prompt caching: {(time.time() - cache_start) * 1000:.1f}ms")
             else:
-                if ENABLE_PROMPT_CACHING and len(messages) <= 2:
-                    logger.debug(f"First message: Skipping caching and validation ({len(messages)} messages)")
-                prepared_messages = [system_prompt] + messages
+                if ENABLE_PROMPT_CACHING and len(messages_with_context) <= 2:
+                    logger.debug(f"First message: Skipping caching and validation ({len(messages_with_context)} messages)")
+                prepared_messages = [system_prompt] + messages_with_context
 
             # Get tool schemas for LLM API call (after compression)
             schema_start = time.time()

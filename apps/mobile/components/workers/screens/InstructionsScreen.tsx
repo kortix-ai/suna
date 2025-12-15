@@ -4,8 +4,8 @@
  * Allows editing the system prompt/instructions for a worker
  */
 
-import React, { useState, useEffect } from 'react';
-import { View, TextInput, ScrollView } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, TextInput, ScrollView, Keyboard } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
@@ -27,6 +27,9 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
   const [systemPrompt, setSystemPrompt] = useState('');
   const [hasChanges, setHasChanges] = useState(false);
   const { t } = useLanguage();
+
+  // TextInput ref to control focus manually
+  const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (agent?.system_prompt !== undefined) {
@@ -60,10 +63,9 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
     try {
       await updateAgentMutation.mutateAsync({
         agentId,
-        data: {
-          system_prompt: systemPrompt,
-        },
+        data: { system_prompt: systemPrompt },
       });
+
       setHasChanges(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onUpdate?.();
@@ -91,7 +93,7 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
 
   return (
     <View className="flex-1" style={{ flex: 1, position: 'relative' }}>
-      {/* Header content */}
+      {/* Header */}
       <View className="mb-4 flex flex-col">
         <Text className="mb-2 font-roobert-semibold text-base text-foreground">
           {t('workers.instructions.title')}
@@ -116,7 +118,7 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
         )}
       </View>
 
-      {/* TextInput with fixed height based on available space */}
+      {/* Scrollable text input */}
       <View style={{ flex: 1, marginBottom: isEditable ? 84 : 0 }}>
         <ScrollView
           keyboardShouldPersistTaps="handled"
@@ -134,6 +136,7 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
             padding: 16,
           }}>
           <TextInput
+            ref={inputRef}
             value={systemPrompt}
             onChangeText={handleTextChange}
             placeholder={t('workers.instructions.placeholder')}
@@ -142,16 +145,16 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
             scrollEnabled={false}
             editable={isEditable}
             style={{
-              minHeight: 200,
               fontSize: 16,
               color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
               textAlignVertical: 'top',
+              minHeight: 300,
             }}
           />
         </ScrollView>
       </View>
 
-      {/* Sticky button at bottom */}
+      {/* Sticky Save Button */}
       {isEditable && (
         <View
           style={{
@@ -160,7 +163,6 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
             left: 0,
             right: 0,
             paddingBottom: 16,
-            zIndex: 10,
           }}>
           <Pressable
             onPress={handleSave}
@@ -175,6 +177,7 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
             ) : (
               <Icon as={Save} size={18} className="text-primary-foreground" />
             )}
+
             <Text className="font-roobert-semibold text-base text-primary-foreground">
               {updateAgentMutation.isPending
                 ? t('workers.instructions.saving')

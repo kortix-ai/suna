@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,8 +34,22 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
 import {
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  ReferenceLine,
+} from 'recharts';
+import {
   useAnalyticsSummary,
-  useDailyStats,
   useThreadBrowser,
   useMessageDistribution,
   useCategoryDistribution,
@@ -43,9 +57,16 @@ import {
   useRetentionData,
   useTranslate,
   useRefreshAnalytics,
+  useARRWeeklyActuals,
+  useUpdateARRWeeklyActual,
+  useDeleteARRWeeklyActual,
+  useARRSimulatorConfig,
+  useUpdateARRSimulatorConfig,
+  type SimulatorConfigData,
   type ThreadAnalytics,
   type RetentionData,
   type ThreadBrowseParams,
+  type WeeklyActualData,
 } from '@/hooks/admin/use-admin-analytics';
 
 // ============================================================================
@@ -95,10 +116,11 @@ function StatCard({ title, value, description, icon, trend, className }: StatCar
 
 interface ThreadBrowserProps {
   categoryFilter?: string | null;
+  filterDate?: string | null;  // Date string in YYYY-MM-DD format for filtering when category is selected
   onClearCategory?: () => void;
 }
 
-function ThreadBrowser({ categoryFilter, onClearCategory }: ThreadBrowserProps) {
+function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBrowserProps) {
   const [params, setParams] = useState<ThreadBrowseParams>({
     page: 1,
     page_size: 15,
@@ -109,10 +131,28 @@ function ThreadBrowser({ categoryFilter, onClearCategory }: ThreadBrowserProps) 
   const [messageFilter, setMessageFilter] = useState<string>('all');
   const [translations, setTranslations] = useState<Record<string, string>>({});
   
-  // Include category filter in query params
+  // Reset page to 1 when category filter or date changes (date only matters when category is active)
+  const prevCategoryRef = useRef(categoryFilter);
+  const prevDateRef = useRef(filterDate);
+  useEffect(() => {
+    const categoryChanged = prevCategoryRef.current !== categoryFilter;
+    const dateChanged = prevDateRef.current !== filterDate && categoryFilter;
+    
+    if (categoryChanged || dateChanged) {
+      setParams(p => ({ ...p, page: 1 }));
+    }
+    
+    prevCategoryRef.current = categoryFilter;
+    prevDateRef.current = filterDate;
+  }, [categoryFilter, filterDate]);
+  
+  // Include category filter and date filter in query params
+  // When category is selected from distribution, also filter by the selected date
   const queryParams: ThreadBrowseParams = {
     ...params,
     category: categoryFilter || undefined,
+    date_from: categoryFilter && filterDate ? filterDate : undefined,
+    date_to: categoryFilter && filterDate ? filterDate : undefined,
   };
   
   const { data: threadsData, isLoading } = useThreadBrowser(queryParams);
@@ -317,6 +357,11 @@ function ThreadBrowser({ categoryFilter, onClearCategory }: ThreadBrowserProps) 
               <Badge variant="secondary" className="mt-1 flex items-center gap-1 h-10 px-3">
                 <Filter className="h-3 w-3" />
                 {categoryFilter}
+                {filterDate && (
+                  <span className="text-muted-foreground">
+                    ({filterDate})
+                  </span>
+                )}
                 <button
                   onClick={onClearCategory}
                   className="ml-1 hover:text-destructive"
@@ -522,6 +567,1111 @@ function RetentionTab() {
 }
 
 // ============================================================================
+// ARR SIMULATOR COMPONENT
+// ============================================================================
+
+interface SimulationMonth {
+  month: string;
+  monthIndex: number;
+  visitors: number;
+  signups: number;
+  newPaid: number;
+  churned: number;
+  totalSubs: number;
+  mrr: number;
+  arr: number;
+}
+
+interface SimulationWeek {
+  week: number;
+  dateRange: string;
+  monthIndex: number;
+  // Goal values
+  visitors: number;
+  signups: number;
+  newPaid: number;
+  subscribers: number;
+  mrr: number;
+  arr: number;
+}
+
+interface WeeklyActual {
+  views: number;
+  signups: number;
+  newPaid: number;
+  subscribers: number;
+  mrr: number;
+  arr: number;
+}
+
+function ARRSimulator() {
+  // Fetch config from database
+  const { data: configData, isLoading: configLoading } = useARRSimulatorConfig();
+  const updateConfigMutation = useUpdateARRSimulatorConfig();
+
+  // Local state for config (initialized from DB, saved on blur)
+  const [startingSubs, setStartingSubs] = useState(639);
+  const [startingMRR, setStartingMRR] = useState(21646);
+  const [weeklyVisitors, setWeeklyVisitors] = useState(40000);
+  const [landingConversion, setLandingConversion] = useState(25);
+  const [signupToPaid, setSignupToPaid] = useState(1);
+  const [arpu, setArpu] = useState(34);
+  const [monthlyChurn, setMonthlyChurn] = useState(25);
+  const [visitorGrowth, setVisitorGrowth] = useState(5);
+  const [targetARR, setTargetARR] = useState(10000000);
+
+  // Initialize state from database when config loads
+  useEffect(() => {
+    if (configData) {
+      setStartingSubs(configData.starting_subs);
+      setStartingMRR(configData.starting_mrr);
+      setWeeklyVisitors(configData.weekly_visitors);
+      setLandingConversion(configData.landing_conversion);
+      setSignupToPaid(configData.signup_to_paid);
+      setArpu(configData.arpu);
+      setMonthlyChurn(configData.monthly_churn);
+      setVisitorGrowth(configData.visitor_growth);
+      setTargetARR(configData.target_arr);
+    }
+  }, [configData]);
+
+  // Save config to database
+  const saveConfig = () => {
+    updateConfigMutation.mutate({
+      starting_subs: startingSubs,
+      starting_mrr: startingMRR,
+      weekly_visitors: weeklyVisitors,
+      landing_conversion: landingConversion,
+      signup_to_paid: signupToPaid,
+      arpu: arpu,
+      monthly_churn: monthlyChurn,
+      visitor_growth: visitorGrowth,
+      target_arr: targetARR,
+    });
+  };
+
+  // Calculate monthly projections (aligned with HTML version logic)
+  const projections = useMemo((): SimulationMonth[] => {
+    const months: SimulationMonth[] = [];
+    const monthNames = ['Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026'];
+    
+    let totalSubs = startingSubs;
+    
+    for (let i = 0; i < 6; i++) {
+      // Monthly views = weekly views * 4.33 weeks per month, with compound growth
+      const monthlyViews = Math.round(weeklyVisitors * 4.33 * Math.pow(1 + visitorGrowth / 100, i));
+      
+      // Signups from landing page
+      const signups = Math.round(monthlyViews * (landingConversion / 100));
+      
+      // New paid customers
+      const newPaid = Math.round(signups * (signupToPaid / 100));
+      
+      // Churned customers (from current total before adding new)
+      const churned = Math.round(totalSubs * (monthlyChurn / 100));
+      
+      // Update subscriber count
+      totalSubs = Math.max(0, totalSubs + newPaid - churned);
+      
+      // MRR = total subs * ARPU
+      const mrr = totalSubs * arpu;
+      
+      // ARR = MRR * 12
+      const arr = mrr * 12;
+      
+      months.push({
+        month: monthNames[i],
+        monthIndex: i,
+        visitors: monthlyViews,
+        signups,
+        newPaid,
+        churned,
+        totalSubs,
+        mrr,
+        arr,
+      });
+    }
+    
+    return months;
+  }, [startingSubs, weeklyVisitors, landingConversion, signupToPaid, arpu, monthlyChurn, visitorGrowth]);
+
+  const finalMonth = projections[projections.length - 1];
+  const gapToTarget = targetARR - (finalMonth?.arr || 0);
+  const progressPercent = Math.min(100, ((finalMonth?.arr || 0) / targetARR) * 100);
+
+  // Prepare chart data with negative churned for bar chart
+  const chartData = projections.map(p => ({
+    ...p,
+    negativeChurned: -p.churned,
+  }));
+
+  // Weekly projections derived from monthly (matching HTML dashboard logic exactly)
+  const weeklyProjections = useMemo((): SimulationWeek[] => {
+    const weeks: SimulationWeek[] = [];
+    const startDate = new Date(2025, 11, 15); // Dec 15, 2025 (Monday)
+    
+    let weekNum = 1;
+    const currentDate = new Date(startDate);
+    let totalSubs = startingSubs;
+    
+    projections.forEach((month, monthIdx) => {
+      // HTML logic: every 3rd month (index 2, 5, ...) has 5 weeks, others have 4
+      const weeksInMonth = monthIdx % 3 === 2 ? 5 : 4;
+      
+      // Split monthly data evenly across weeks
+      const weeklyViews = Math.round(month.visitors / weeksInMonth);
+      const weeklySignups = Math.round(month.signups / weeksInMonth);
+      const weeklyNewPaid = Math.round(month.newPaid / weeksInMonth);
+      const weeklyChurned = Math.round(month.churned / weeksInMonth);
+      
+      for (let w = 0; w < weeksInMonth; w++) {
+        const weekStart = new Date(currentDate);
+        const weekEnd = new Date(currentDate);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        
+        // Update running subscriber count (matching HTML logic)
+        totalSubs = Math.max(0, totalSubs + weeklyNewPaid - weeklyChurned);
+        const weeklyMRR = totalSubs * arpu;
+        const weeklyARR = weeklyMRR * 12;
+        
+        weeks.push({
+          week: weekNum,
+          dateRange: `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+          monthIndex: monthIdx,
+          visitors: weeklyViews,
+          signups: weeklySignups,
+          newPaid: weeklyNewPaid,
+          subscribers: Math.round(totalSubs),
+          mrr: Math.round(weeklyMRR),
+          arr: Math.round(weeklyARR),
+        });
+        
+        weekNum++;
+        currentDate.setDate(currentDate.getDate() + 7);
+      }
+    });
+    
+    return weeks;
+  }, [projections, startingSubs, arpu]);
+
+  // Actual weekly data (persisted to database)
+  const { data: arrActualsData, isLoading: actualsLoading } = useARRWeeklyActuals();
+  const updateActualMutation = useUpdateARRWeeklyActual();
+  const deleteActualMutation = useDeleteARRWeeklyActual();
+
+  // Convert API data to local format
+  const actualData: Record<number, WeeklyActual> = useMemo(() => {
+    if (!arrActualsData?.actuals) return {};
+    const result: Record<number, WeeklyActual> = {};
+    Object.entries(arrActualsData.actuals).forEach(([weekNum, data]) => {
+      result[Number(weekNum)] = {
+        views: data.views || 0,
+        signups: data.signups || 0,
+        newPaid: data.new_paid || 0,
+        subscribers: data.subscribers || 0,
+        mrr: data.mrr || 0,
+        arr: data.arr || 0,
+      };
+    });
+    return result;
+  }, [arrActualsData]);
+
+  // Local state for pending edits (so we don't call API on every keystroke)
+  const [pendingEdits, setPendingEdits] = useState<Record<string, string>>({});
+
+  // Get display value for an input (pending edit or saved value)
+  const getInputValue = (week: number, field: keyof WeeklyActual): string => {
+    const key = `${week}-${field}`;
+    if (key in pendingEdits) return pendingEdits[key];
+    const saved = actualData[week]?.[field];
+    return saved ? String(saved) : '';
+  };
+
+  // Handle input change (local state only)
+  const handleInputChange = (week: number, field: keyof WeeklyActual, value: string) => {
+    const key = `${week}-${field}`;
+    setPendingEdits(prev => ({ ...prev, [key]: value }));
+  };
+
+  // Save to API on blur
+  const handleInputBlur = (week: number, field: keyof WeeklyActual) => {
+    const key = `${week}-${field}`;
+    const pendingValue = pendingEdits[key];
+    
+    // If no pending edit, nothing to save
+    if (pendingValue === undefined) return;
+    
+    const weekProjection = weeklyProjections.find(w => w.week === week);
+    if (!weekProjection) return;
+    
+    const value = Number(pendingValue) || 0;
+    const currentData = actualData[week] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+    const updatedData = { ...currentData, [field]: value };
+    
+    // Map field names for API
+    const apiData: WeeklyActualData = {
+      week_number: week,
+      week_start_date: new Date(2025, 11, 15 + (week - 1) * 7).toISOString().split('T')[0],
+      views: updatedData.views,
+      signups: updatedData.signups,
+      new_paid: updatedData.newPaid,
+      subscribers: updatedData.subscribers,
+      mrr: updatedData.mrr,
+      arr: updatedData.arr,
+    };
+    
+    updateActualMutation.mutate(apiData);
+  };
+
+  const deleteWeekActual = (weekNumber: number) => {
+    // Clear any pending edits for this week
+    setPendingEdits(prev => {
+      const next = { ...prev };
+      const fields: (keyof WeeklyActual)[] = ['views', 'signups', 'newPaid', 'subscribers', 'mrr', 'arr'];
+      fields.forEach(field => {
+        delete next[`${weekNumber}-${field}`];
+      });
+      return next;
+    });
+    deleteActualMutation.mutate(weekNumber);
+  };
+
+  // Calculate variance percentage
+  const getVariance = (actual: number | undefined, goal: number): { value: number; color: string } => {
+    if (!actual || actual === 0) return { value: 0, color: 'text-muted-foreground' };
+    const variance = ((actual - goal) / goal) * 100;
+    if (variance >= 0) return { value: variance, color: 'text-green-600' };
+    if (variance >= -10) return { value: variance, color: 'text-yellow-600' };
+    return { value: variance, color: 'text-red-500' };
+  };
+
+  // Prepare weekly chart data for actual vs goal comparison
+  const weeklyChartData = weeklyProjections.map(w => ({
+    week: `W${w.week}`,
+    goalViews: w.visitors,
+    actualViews: actualData[w.week]?.views || 0,
+    goalSignups: w.signups,
+    actualSignups: actualData[w.week]?.signups || 0,
+    goalNewPaid: w.newPaid,
+    actualNewPaid: actualData[w.week]?.newPaid || 0,
+    goalSubs: w.subscribers,
+    actualSubs: actualData[w.week]?.subscribers || 0,
+    goalMRR: w.mrr,
+    actualMRR: actualData[w.week]?.mrr || 0,
+    goalARR: w.arr,
+    actualARR: actualData[w.week]?.arr || 0,
+  }));
+
+  // Aggregate weekly actuals into monthly actuals for comparison
+  const monthlyActuals = useMemo(() => {
+    const result: Record<number, { views: number; signups: number; newPaid: number; subscribers: number; mrr: number; arr: number }> = {};
+    
+    weeklyProjections.forEach((week) => {
+      const monthIdx = week.monthIndex;
+      const weekActual = actualData[week.week];
+      
+      if (!result[monthIdx]) {
+        result[monthIdx] = { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+      }
+      
+      if (weekActual) {
+        result[monthIdx].views += weekActual.views || 0;
+        result[monthIdx].signups += weekActual.signups || 0;
+        result[monthIdx].newPaid += weekActual.newPaid || 0;
+        // For subscribers, MRR, ARR - take the last week's value as end-of-month value
+        result[monthIdx].subscribers = weekActual.subscribers || result[monthIdx].subscribers;
+        result[monthIdx].mrr = weekActual.mrr || result[monthIdx].mrr;
+        result[monthIdx].arr = weekActual.arr || result[monthIdx].arr;
+      }
+    });
+    
+    return result;
+  }, [weeklyProjections, actualData]);
+
+  // View state
+  const [simulatorView, setSimulatorView] = useState<'monthly' | 'weekly'>('monthly');
+
+  // Format currency
+  const formatCurrency = (value: number) => {
+    if (value >= 1000000) {
+      return `$${(value / 1000000).toFixed(2)}M`;
+    } else if (value >= 1000) {
+      return `$${(value / 1000).toFixed(1)}K`;
+    }
+    return `$${value.toFixed(0)}`;
+  };
+
+  const formatNumber = (value: number) => {
+    if (value >= 1000000) {
+      return `${(value / 1000000).toFixed(2)}M`;
+    } else if (value >= 1000) {
+      return `${(value / 1000).toFixed(1)}K`;
+    }
+    return value.toLocaleString();
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Parameters */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            ARR Growth Simulator
+          </CardTitle>
+          <CardDescription>
+            Adjust parameters to model your path to {formatCurrency(targetARR)} ARR by June 2026
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            <div className="space-y-2">
+              <Label className="text-xs">Starting Subscribers</Label>
+              <Input
+                type="number"
+                value={startingSubs || ''}
+                onChange={(e) => setStartingSubs(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Starting MRR ($)</Label>
+              <Input
+                type="number"
+                value={startingMRR || ''}
+                onChange={(e) => setStartingMRR(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Weekly Visitors</Label>
+              <Input
+                type="number"
+                value={weeklyVisitors || ''}
+                onChange={(e) => setWeeklyVisitors(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Monthly Visitor Growth (%)</Label>
+              <Input
+                type="number"
+                value={visitorGrowth || ''}
+                onChange={(e) => setVisitorGrowth(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Landing Conv. (%)</Label>
+              <Input
+                type="number"
+                value={landingConversion || ''}
+                onChange={(e) => setLandingConversion(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Signup → Paid (%)</Label>
+              <Input
+                type="number"
+                value={signupToPaid || ''}
+                onChange={(e) => setSignupToPaid(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
+                step="0.1"
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">ARPU ($/mo)</Label>
+              <Input
+                type="number"
+                value={arpu || ''}
+                onChange={(e) => setArpu(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Monthly Churn (%)</Label>
+              <Input
+                type="number"
+                value={monthlyChurn || ''}
+                onChange={(e) => setMonthlyChurn(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Target ARR ($)</Label>
+              <Input
+                type="number"
+                value={targetARR || ''}
+                onChange={(e) => setTargetARR(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
+                className="h-9"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* View Toggle */}
+      <div className="flex items-center gap-2">
+        <Button
+          variant={simulatorView === 'monthly' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setSimulatorView('monthly')}
+        >
+          📅 Monthly View
+        </Button>
+        <Button
+          variant={simulatorView === 'weekly' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setSimulatorView('weekly')}
+        >
+          📊 Weekly Tracking
+        </Button>
+      </div>
+
+      {/* Key Metrics */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold text-primary">{formatCurrency(finalMonth?.arr || 0)}</div>
+            <p className="text-xs text-muted-foreground mt-1">Projected ARR (Jun 2026)</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold">{formatNumber(finalMonth?.totalSubs || 0)}</div>
+            <p className="text-xs text-muted-foreground mt-1">Total Subscribers</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className={`text-2xl font-bold ${gapToTarget > 0 ? 'text-red-500' : 'text-green-500'}`}>
+              {gapToTarget > 0 ? `-${formatCurrency(gapToTarget)}` : `+${formatCurrency(Math.abs(gapToTarget))}`}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">Gap to Target</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-2xl font-bold">{progressPercent.toFixed(1)}%</div>
+            <p className="text-xs text-muted-foreground mt-1">Progress to Goal</p>
+            <div className="mt-2 h-2 bg-muted rounded-full overflow-hidden">
+              <div 
+                className={`h-full transition-all ${progressPercent >= 100 ? 'bg-green-500' : 'bg-primary'}`}
+                style={{ width: `${Math.min(100, progressPercent)}%` }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ARR Progress Bar */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium">ARR Trajectory</span>
+            <span className="text-sm text-muted-foreground">
+              {formatCurrency(projections[0]?.arr || 0)} → {formatCurrency(finalMonth?.arr || 0)}
+            </span>
+          </div>
+          <div className="relative h-8 bg-muted rounded-lg overflow-hidden">
+            {projections.map((month, i) => {
+              const width = (month.arr / targetARR) * 100;
+              const opacity = 0.3 + (i / projections.length) * 0.7;
+              return (
+                <div
+                  key={month.month}
+                  className="absolute h-full bg-primary transition-all"
+                  style={{
+                    width: `${Math.min(100, width)}%`,
+                    opacity,
+                    left: 0,
+                  }}
+                />
+              );
+            })}
+            <div 
+              className="absolute h-full border-r-2 border-dashed border-green-500"
+              style={{ left: '100%' }}
+            />
+            <div className="absolute inset-0 flex items-center justify-end pr-2">
+              <span className="text-xs font-medium text-green-600 bg-background/80 px-1 rounded">
+                {formatCurrency(targetARR)} target
+              </span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {simulatorView === 'monthly' && (
+      <>
+      {/* Charts Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* ARR Growth Trajectory */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              📈 ARR Growth Trajectory
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={projections}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis 
+                    dataKey="month" 
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => value.replace(/ \d{4}$/, '')}
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`}
+                    domain={[0, Math.max(targetARR * 1.1, (finalMonth?.arr || 0) * 1.2)]}
+                  />
+                  <Tooltip 
+                    formatter={(value: number) => [formatCurrency(value), 'ARR']}
+                    labelStyle={{ color: 'hsl(var(--foreground))' }}
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--background))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px'
+                    }}
+                  />
+                  <Legend />
+                  <ReferenceLine 
+                    y={targetARR} 
+                    stroke="#10b981" 
+                    strokeDasharray="5 5" 
+                    label={{ value: '$10M Target', position: 'right', fill: '#10b981', fontSize: 12 }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="arr" 
+                    name="ARR"
+                    stroke="hsl(var(--primary))" 
+                    strokeWidth={3}
+                    dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2, r: 5 }}
+                    activeDot={{ r: 7 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Subscriber Growth */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              👥 Subscriber Growth
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={projections}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis 
+                    dataKey="month" 
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => value.replace(/ \d{4}$/, '')}
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => formatNumber(value)}
+                  />
+                  <Tooltip 
+                    formatter={(value: number) => [formatNumber(value), 'Subscribers']}
+                    labelStyle={{ color: 'hsl(var(--foreground))' }}
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--background))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px'
+                    }}
+                  />
+                  <Legend />
+                  <Area 
+                    type="monotone" 
+                    dataKey="totalSubs" 
+                    name="Total Subscribers"
+                    stroke="#8b5cf6" 
+                    fill="#8b5cf6"
+                    fillOpacity={0.2}
+                    strokeWidth={3}
+                    dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 5 }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* MRR Growth */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              💰 MRR Growth
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={projections}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis 
+                    dataKey="month" 
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => value.replace(/ \d{4}$/, '')}
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`}
+                  />
+                  <Tooltip 
+                    formatter={(value: number) => [formatCurrency(value), 'MRR']}
+                    labelStyle={{ color: 'hsl(var(--foreground))' }}
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--background))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px'
+                    }}
+                  />
+                  <Legend />
+                  <Area 
+                    type="monotone" 
+                    dataKey="mrr" 
+                    name="MRR"
+                    stroke="#f59e0b" 
+                    fill="#f59e0b"
+                    fillOpacity={0.2}
+                    strokeWidth={3}
+                    dot={{ fill: '#f59e0b', strokeWidth: 2, r: 5 }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* New Signups vs Churn */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              📊 New Signups vs Churn
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis 
+                    dataKey="month" 
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => value.replace(/ \d{4}$/, '')}
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => formatNumber(Math.abs(value))}
+                  />
+                  <Tooltip 
+                    formatter={(value: number, name: string) => [
+                      formatNumber(Math.abs(value)), 
+                      name
+                    ]}
+                    labelStyle={{ color: 'hsl(var(--foreground))' }}
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--background))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px'
+                    }}
+                  />
+                  <Legend />
+                  <Bar 
+                    dataKey="newPaid" 
+                    name="New Paid Customers"
+                    fill="#10b981" 
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Bar 
+                    dataKey="negativeChurned" 
+                    name="Churned Customers"
+                    fill="#ef4444" 
+                    radius={[0, 0, 4, 4]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Monthly Breakdown Table with Actual vs Goal */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Monthly Breakdown (Goal vs Actual)</CardTitle>
+          <CardDescription>Projected growth from Dec 2025 to Jun 2026 with actual data comparison</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="text-left p-3 font-medium">Month</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>Visitors</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>Signups</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>New Paid</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>Total Subs</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>MRR</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>ARR</th>
+                </tr>
+                <tr className="border-b bg-muted/30 text-xs">
+                  <th></th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                </tr>
+              </thead>
+              <tbody>
+                {projections.map((month, i) => {
+                  const actual = monthlyActuals[i] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+                  const hasActual = actual.views > 0 || actual.signups > 0 || actual.subscribers > 0;
+                  
+                  return (
+                    <tr key={month.month} className={`border-b ${i === projections.length - 1 ? 'bg-primary/5 font-medium' : ''}`}>
+                      <td className="p-3">{month.month}</td>
+                      {/* Visitors */}
+                      <td className="text-right p-2 text-muted-foreground">{formatNumber(month.visitors)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.views >= month.visitors ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.views > 0 ? formatNumber(actual.views) : '—'}
+                      </td>
+                      {/* Signups */}
+                      <td className="text-right p-2 text-muted-foreground">{formatNumber(month.signups)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.signups >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.signups > 0 ? formatNumber(actual.signups) : '—'}
+                      </td>
+                      {/* New Paid */}
+                      <td className="text-right p-2 text-muted-foreground">{formatNumber(month.newPaid)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.newPaid >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.newPaid > 0 ? formatNumber(actual.newPaid) : '—'}
+                      </td>
+                      {/* Total Subs */}
+                      <td className="text-right p-2 text-muted-foreground">{formatNumber(month.totalSubs)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.subscribers >= month.totalSubs ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.subscribers > 0 ? formatNumber(actual.subscribers) : '—'}
+                      </td>
+                      {/* MRR */}
+                      <td className="text-right p-2 text-muted-foreground">{formatCurrency(month.mrr)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.mrr >= month.mrr ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.mrr > 0 ? formatCurrency(actual.mrr) : '—'}
+                      </td>
+                      {/* ARR */}
+                      <td className="text-right p-2 text-muted-foreground">{formatCurrency(month.arr)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.arr >= month.arr ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.arr > 0 ? formatCurrency(actual.arr) : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+      </>
+      )}
+
+      {/* Weekly Tracking View */}
+      {simulatorView === 'weekly' && (
+      <>
+        {/* Weekly Comparison Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* ARR: Actual vs Goal */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">📈 ARR: Actual vs Goal</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={weeklyChartData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={3} />
+                    <YAxis tickFormatter={(v) => `$${v.toLocaleString()}`} tick={{ fontSize: 9 }} width={80} />
+                    <Tooltip formatter={(v: number) => [`$${v.toLocaleString()}`, '']} />
+                    <Legend />
+                    <Line type="monotone" dataKey="goalARR" name="Goal" stroke="#10b981" strokeWidth={2} dot={false} strokeDasharray="5 5" />
+                    <Line type="monotone" dataKey="actualARR" name="Actual" stroke="hsl(var(--primary))" strokeWidth={3} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Subscribers: Actual vs Goal */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">👥 Subscribers: Actual vs Goal</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={weeklyChartData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={3} />
+                    <YAxis tickFormatter={(v) => v.toLocaleString()} tick={{ fontSize: 9 }} width={60} />
+                    <Tooltip formatter={(v: number) => [v.toLocaleString(), '']} />
+                    <Legend />
+                    <Line type="monotone" dataKey="goalSubs" name="Goal" stroke="#10b981" strokeWidth={2} dot={false} strokeDasharray="5 5" />
+                    <Line type="monotone" dataKey="actualSubs" name="Actual" stroke="#8b5cf6" strokeWidth={3} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* MRR: Actual vs Goal */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">💰 MRR: Actual vs Goal</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={weeklyChartData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={3} />
+                    <YAxis tickFormatter={(v) => `$${v.toLocaleString()}`} tick={{ fontSize: 9 }} width={70} />
+                    <Tooltip formatter={(v: number) => [`$${v.toLocaleString()}`, '']} />
+                    <Legend />
+                    <Line type="monotone" dataKey="goalMRR" name="Goal" stroke="#10b981" strokeWidth={2} dot={false} strokeDasharray="5 5" />
+                    <Line type="monotone" dataKey="actualMRR" name="Actual" stroke="#f59e0b" strokeWidth={3} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* New Paid: Actual vs Goal */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">🎯 New Paid: Actual vs Goal</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={weeklyChartData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={3} />
+                    <YAxis tickFormatter={(v) => v.toLocaleString()} tick={{ fontSize: 9 }} />
+                    <Tooltip formatter={(v: number) => [v.toLocaleString(), '']} />
+                    <Legend />
+                    <Bar dataKey="goalNewPaid" name="Goal" fill="#10b981" opacity={0.3} />
+                    <Bar dataKey="actualNewPaid" name="Actual" fill="#10b981" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Weekly Breakdown Table with Actual Data Entry */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">📊 Weekly Tracking (Dec 2025 - Jun 2026)</CardTitle>
+            <CardDescription>
+              Enter actual weekly data to compare against goals. Click any Actual cell to edit.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-background">
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left p-2 font-medium">Week</th>
+                    <th className="text-left p-2 font-medium">Date Range</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>Views</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>Signups</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>New Paid</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>Subscribers</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>MRR</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>ARR</th>
+                    <th className="p-2 w-8"></th>
+                  </tr>
+                  <tr className="border-b bg-muted/30">
+                    <th></th>
+                    <th></th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {weeklyProjections.map((week) => {
+                    const actual: Partial<WeeklyActual> = actualData[week.week] || {};
+                    const viewsVar = getVariance(actual.views, week.visitors);
+                    const signupsVar = getVariance(actual.signups, week.signups);
+                    const newPaidVar = getVariance(actual.newPaid, week.newPaid);
+                    const subsVar = getVariance(actual.subscribers, week.subscribers);
+                    const mrrVar = getVariance(actual.mrr, week.mrr);
+                    const arrVar = getVariance(actual.arr, week.arr);
+                    
+                    return (
+                      <tr key={week.week} className={`border-b hover:bg-muted/30 ${week.week === weeklyProjections.length ? 'bg-primary/5 font-medium' : ''}`}>
+                        <td className="p-2 font-medium">W{week.week}</td>
+                        <td className="p-2 text-muted-foreground whitespace-nowrap">{week.dateRange}</td>
+                        {/* Views */}
+                        <td className="text-right p-1">{formatNumber(week.visitors)}</td>
+                        <td className="text-right p-1">
+                          <Input
+                            type="number"
+                            value={getInputValue(week.week, 'views')}
+                            onChange={(e) => handleInputChange(week.week, 'views', e.target.value)}
+                            onBlur={() => handleInputBlur(week.week, 'views')}
+                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${viewsVar.color}`}>
+                          {actual.views ? `${viewsVar.value >= 0 ? '+' : ''}${viewsVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* Signups */}
+                        <td className="text-right p-1">{formatNumber(week.signups)}</td>
+                        <td className="text-right p-1">
+                          <Input
+                            type="number"
+                            value={getInputValue(week.week, 'signups')}
+                            onChange={(e) => handleInputChange(week.week, 'signups', e.target.value)}
+                            onBlur={() => handleInputBlur(week.week, 'signups')}
+                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${signupsVar.color}`}>
+                          {actual.signups ? `${signupsVar.value >= 0 ? '+' : ''}${signupsVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* New Paid */}
+                        <td className="text-right p-1">{formatNumber(week.newPaid)}</td>
+                        <td className="text-right p-1">
+                          <Input
+                            type="number"
+                            value={getInputValue(week.week, 'newPaid')}
+                            onChange={(e) => handleInputChange(week.week, 'newPaid', e.target.value)}
+                            onBlur={() => handleInputBlur(week.week, 'newPaid')}
+                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${newPaidVar.color}`}>
+                          {actual.newPaid ? `${newPaidVar.value >= 0 ? '+' : ''}${newPaidVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* Subscribers */}
+                        <td className="text-right p-1 font-medium">{formatNumber(week.subscribers)}</td>
+                        <td className="text-right p-1">
+                          <Input
+                            type="number"
+                            value={getInputValue(week.week, 'subscribers')}
+                            onChange={(e) => handleInputChange(week.week, 'subscribers', e.target.value)}
+                            onBlur={() => handleInputBlur(week.week, 'subscribers')}
+                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${subsVar.color}`}>
+                          {actual.subscribers ? `${subsVar.value >= 0 ? '+' : ''}${subsVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* MRR */}
+                        <td className="text-right p-1">{formatCurrency(week.mrr)}</td>
+                        <td className="text-right p-1">
+                          <Input
+                            type="number"
+                            value={getInputValue(week.week, 'mrr')}
+                            onChange={(e) => handleInputChange(week.week, 'mrr', e.target.value)}
+                            onBlur={() => handleInputBlur(week.week, 'mrr')}
+                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${mrrVar.color}`}>
+                          {actual.mrr ? `${mrrVar.value >= 0 ? '+' : ''}${mrrVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* ARR */}
+                        <td className="text-right p-1 font-medium">{formatCurrency(week.arr)}</td>
+                        <td className="text-right p-1">
+                          <Input
+                            type="number"
+                            value={getInputValue(week.week, 'arr')}
+                            onChange={(e) => handleInputChange(week.week, 'arr', e.target.value)}
+                            onBlur={() => handleInputBlur(week.week, 'arr')}
+                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${arrVar.color}`}>
+                          {actual.arr ? `${arrVar.value >= 0 ? '+' : ''}${arrVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        <td className="p-1">
+                          {(actual.views || actual.signups || actual.newPaid || actual.subscribers || actual.mrr || actual.arr) && (
+                            <button
+                              onClick={() => deleteWeekActual(week.week)}
+                              className="text-muted-foreground hover:text-red-500 transition-colors"
+                              title={`Delete week ${week.week} data`}
+                            >
+                              🗑️
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </>
+      )}
+
+    </div>
+  );
+}
+
+// ============================================================================
 // MAIN PAGE COMPONENT
 // ============================================================================
 
@@ -540,7 +1690,6 @@ export default function AdminAnalyticsPage() {
   const dateString = format(distributionDate, 'yyyy-MM-dd');
   
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
-  const { data: dailyStats } = useDailyStats(7);
   const { data: distribution } = useMessageDistribution(dateString);
   const { data: categoryDistribution } = useCategoryDistribution(dateString);
   const { data: conversionFunnel, isLoading: funnelLoading } = useConversionFunnel(dateString);
@@ -793,17 +1942,26 @@ export default function AdminAnalyticsPage() {
               <UserCheck className="h-4 w-4" />
               Retention
             </TabsTrigger>
+            <TabsTrigger value="simulator" className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4" />
+              ARR Simulator
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="threads">
-            <ThreadBrowser 
-              categoryFilter={categoryFilter} 
-              onClearCategory={() => setCategoryFilter(null)} 
+            <ThreadBrowser
+              categoryFilter={categoryFilter}
+              filterDate={dateString}
+              onClearCategory={() => setCategoryFilter(null)}
             />
           </TabsContent>
 
           <TabsContent value="retention">
             <RetentionTab />
+          </TabsContent>
+
+          <TabsContent value="simulator">
+            <ARRSimulator />
           </TabsContent>
         </Tabs>
       </div>

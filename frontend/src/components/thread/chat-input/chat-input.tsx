@@ -22,7 +22,6 @@ import { X, Image as ImageIcon, Presentation, BarChart3, FileText, Search, Users
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { VoiceRecorder } from './voice-recorder';
 import { useTheme } from 'next-themes';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { UnifiedConfigMenu } from './unified-config-menu';
 import { AttachmentGroup } from '../attachment-group';
 import { cn } from '@/lib/utils';
@@ -43,6 +42,7 @@ import { isStagingMode, isLocalMode } from '@/lib/config';
 import { PlanSelectionModal } from '@/components/billing/pricing';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
+import { MemoryToggle } from './memory-toggle';
 
 import posthog from 'posthog-js';
 
@@ -202,6 +202,149 @@ interface IntegrationsDropdownProps {
   onOpenPlanModal: () => void;
 }
 
+// Rotating integration logos carousel with smooth transitions
+const IntegrationLogosCarousel = memo(function IntegrationLogosCarousel({ 
+  enabled 
+}: { enabled: boolean }) {
+  const popularIntegrations = useMemo(() => [
+    'googledrive',
+    'gmail',
+    'googlecalendar',
+    'slack',
+    'notion',
+    'github',
+    'linear',
+    'airtable',
+    'asana',
+    'trello',
+    'salesforce',
+    'hubspot',
+  ], []);
+
+  const [displayIndex, setDisplayIndex] = useState(0);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const transitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isTransitioningRef = useRef(false);
+  const popularIntegrationsRef = useRef(popularIntegrations);
+
+  // Keep ref in sync
+  useEffect(() => {
+    popularIntegrationsRef.current = popularIntegrations;
+  }, [popularIntegrations]);
+
+  // Calculate indices for current and next logos
+  const currentSlug = popularIntegrations[displayIndex];
+  const nextIndex = (displayIndex + 1) % popularIntegrations.length;
+  const nextSlug = popularIntegrations[nextIndex];
+  
+  // Preload current and next icons for smooth transitions
+  const { data: currentIconData } = useComposioToolkitIcon(currentSlug, { enabled });
+  const { data: nextIconData } = useComposioToolkitIcon(nextSlug, { enabled });
+
+  // Sync ref with state for isTransitioning
+  useEffect(() => {
+    isTransitioningRef.current = isTransitioning;
+  }, [isTransitioning]);
+
+  // Transition to next logo - using ref to avoid dependency issues
+  const transitionToNextRef = useRef(() => {
+    if (isTransitioningRef.current) {
+      return;
+    }
+
+    // Proceed with transition even if next image is still loading
+    // The image will appear when it loads
+    setIsTransitioning(true);
+    isTransitioningRef.current = true;
+    
+    // After fade transition completes, update index
+    transitionTimeoutRef.current = setTimeout(() => {
+      setDisplayIndex((prev) => {
+        const nextIdx = (prev + 1) % popularIntegrationsRef.current.length;
+        return nextIdx;
+      });
+      setIsTransitioning(false);
+      isTransitioningRef.current = false;
+    }, 500); // Match CSS transition duration
+  });
+
+  // Carousel rotation logic - runs continuously
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+    
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+    
+    // Start interval that runs every second
+    intervalRef.current = setInterval(() => {
+      transitionToNextRef.current();
+    }, 1000);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      if (transitionTimeoutRef.current) {
+        clearTimeout(transitionTimeoutRef.current);
+        transitionTimeoutRef.current = null;
+      }
+    };
+  }, [enabled]);
+
+  if (!enabled) {
+    return <Plug className="h-3 w-3" />;
+  }
+
+  if (!currentIconData?.icon_url) {
+    return <Plug className="h-3 w-3 animate-pulse" />;
+  }
+
+  const currentUrl = currentIconData.icon_url;
+  const nextUrl = nextIconData?.icon_url;
+
+  return (
+    <div className="relative h-3 w-3 overflow-hidden">
+      {/* Current logo - fading out during transition */}
+      <img
+        key={`current-${currentSlug}`}
+        src={currentUrl}
+        alt={currentSlug}
+        className={`absolute inset-0 h-3 w-3 object-contain transition-opacity duration-500 ease-in-out ${
+          isTransitioning ? 'opacity-0' : 'opacity-100'
+        }`}
+        style={{
+          willChange: 'opacity',
+          backfaceVisibility: 'hidden',
+          transform: 'translateZ(0)', // Force GPU acceleration
+        }}
+      />
+      
+      {/* Next logo - fading in during transition */}
+      {nextUrl && (
+        <img
+          key={`next-${nextSlug}`}
+          src={nextUrl}
+          alt={nextSlug}
+          className={`absolute inset-0 h-3 w-3 object-contain transition-opacity duration-500 ease-in-out ${
+            isTransitioning ? 'opacity-100' : 'opacity-0'
+          }`}
+          style={{
+            willChange: 'opacity',
+            backfaceVisibility: 'hidden',
+            transform: 'translateZ(0)', // Force GPU acceleration
+          }}
+        />
+      )}
+    </div>
+  );
+});
+
 const IntegrationsDropdown = memo(function IntegrationsDropdown({
   isLoggedIn,
   loading,
@@ -218,115 +361,31 @@ const IntegrationsDropdown = memo(function IntegrationsDropdown({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <div className="relative">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-10 w-10 p-0 bg-transparent border-[1.5px] border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
-                disabled={loading || (disabled && !isAgentRunning)}
-              >
-                <Plug className="h-5 w-5" />
-              </Button>
-              {isFreeTier && !isLocalMode() && (
-                <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center z-10 pointer-events-none">
-                  <Lock className="h-2.5 w-2.5 text-primary-foreground" strokeWidth={2.5} />
-                </div>
-              )}
+        <div className="relative">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-10 w-10 p-0 bg-transparent border-[1.5px] border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
+            disabled={loading || (disabled && !isAgentRunning)}
+            onClick={() => {
+              if (!isFreeTier || isLocalMode()) {
+                onOpenRegistry(null);
+              } else {
+                onOpenPlanModal();
+              }
+            }}
+          >
+            <IntegrationLogosCarousel enabled={isLoggedIn && !loading && !(disabled && !isAgentRunning)} />
+          </Button>
+          {isFreeTier && !isLocalMode() && (
+            <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center z-10 pointer-events-none">
+              <Lock className="h-2.5 w-2.5 text-primary-foreground" strokeWidth={2.5} />
             </div>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-[320px] px-0 py-3 border-[1.5px] border-border rounded-2xl" sideOffset={6}>
-            <div className="px-3 mb-3">
-              <span className="text-xs font-medium text-muted-foreground pl-1">Integrations</span>
-            </div>
-            <div className="space-y-0.5 px-2 relative">
-              {quickIntegrations.map((integration) => (
-                <SpotlightCard 
-                  key={integration.id} 
-                  className={cn(
-                    "transition-colors bg-transparent",
-                    isFreeTier && !isLocalMode() ? "cursor-not-allowed" : "cursor-pointer"
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "flex items-center gap-3 text-sm px-1 py-1 relative",
-                      isFreeTier && !isLocalMode() && "blur-[3px] opacity-70"
-                    )}
-                    onClick={() => {
-                      if (!isFreeTier || isLocalMode()) {
-                        onOpenRegistry(integration.slug);
-                      }
-                    }}
-                  >
-                    <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
-                      {integrationIcons[integration.id] ? (
-                        <img
-                          src={integrationIcons[integration.id]}
-                          alt={integration.name}
-                          className="h-4 w-4"
-                        />
-                      ) : (
-                        <div className="h-4 w-4 bg-muted rounded" />
-                      )}
-                    </div>
-                    <span className="flex-1 truncate font-medium">{integration.name}</span>
-                    <span className="text-xs text-muted-foreground">Connect</span>
-                  </div>
-                </SpotlightCard>
-              ))}
-              <SpotlightCard 
-                className={cn(
-                  "transition-colors bg-transparent",
-                  isFreeTier && !isLocalMode() ? "cursor-not-allowed" : "cursor-pointer"
-                )}
-              >
-                <div
-                  className={cn(
-                    "flex items-center gap-3 text-sm cursor-pointer px-1 py-1 min-h-[40px] relative",
-                    isFreeTier && !isLocalMode() && "blur-[3px] opacity-70"
-                  )}
-                  onClick={() => {
-                    if (!isFreeTier || isLocalMode()) {
-                      onOpenRegistry(null);
-                    }
-                  }}
-                >
-                  <span className="text-muted-foreground font-medium">+ See all integrations</span>
-                </div>
-              </SpotlightCard>
-              
-              {isFreeTier && !isLocalMode() && (
-                <div className="absolute inset-0 z-10 pointer-events-none">
-                  <div className="absolute inset-0 bg-background/60 backdrop-blur-sm rounded-lg" />
-                  <div className="relative h-full flex flex-col items-center justify-center px-6 py-5 gap-4">
-                    <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 border border-primary/20">
-                      <Lock className="h-5 w-5 text-primary" strokeWidth={2} />
-                    </div>
-                    <div className="text-center space-y-1">
-                      <p className="text-sm font-semibold text-foreground">Unlock Integrations</p>
-                      <p className="text-xs text-muted-foreground max-w-[200px]">
-                        Connect Google Drive, Slack, Notion, and 100+ apps
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => onOpenRegistry(null)}
-                      className="h-8 px-4 text-xs font-medium shadow-md hover:shadow-lg transition-all pointer-events-auto"
-                    >
-                      Explore
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          )}
+        </div>
       </TooltipTrigger>
       <TooltipContent side="top">
-        <p>Connect integrations</p>
+        <p>Integrations</p>
       </TooltipContent>
     </Tooltip>
   );
@@ -614,6 +673,8 @@ export interface ChatInputProps {
   selectedTemplate?: string | null;
   threadId?: string | null;
   projectId?: string;
+  memoryEnabled?: boolean;
+  onMemoryToggle?: (enabled: boolean) => void;
 }
 
 export interface UploadedFile {
@@ -666,6 +727,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       selectedTemplate = null,
       threadId = null,
       projectId,
+      memoryEnabled,
+      onMemoryToggle,
     },
     ref,
   ) => {
@@ -857,6 +920,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           if (newValue) textarea.appendValue(newValue);
         }
         valueRef.current = newValue;
+        // Keep hasContent state in sync with the actual value
+        setHasContent(newValue.trim().length > 0);
       },
       getValue: () => valueRef.current,
     }), [pendingFiles]);
@@ -945,36 +1010,26 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       }
     }, [autoFocus]);
 
-    // Track previous isAgentRunning value to detect actual transitions
+    // Track previous isAgentRunning value to detect when agent starts
+    // Used only for clearing files, NOT for clearing text input
+    // Text input clearing is handled explicitly in handleSubmit to avoid race conditions
     const prevIsAgentRunning = useRef(isAgentRunning);
     
-    // Clear input only when agent STARTS running (transitions from false to true)
-    // This prevents clearing when agent stops or when component re-renders
+    // Clear files when agent STARTS running (transitions from false to true)
+    // Note: We do NOT clear text here - that's handled explicitly after successful submit
+    // This prevents the bug where input would sometimes clear when agent stops
     useEffect(() => {
       const wasRunning = prevIsAgentRunning.current;
       prevIsAgentRunning.current = isAgentRunning;
       
-      // Only clear when agent actually starts (false → true transition)
+      // Only clear files when agent actually starts (false → true transition)
       if (isAgentRunning && !wasRunning) {
-        // Clear the isolated textarea
-        const textarea = textareaRef.current as any;
-        if (textarea?.clearValue) {
-          textarea.clearValue();
-        }
-        valueRef.current = '';
-        setHasContent(false);
-        setHasSubmitted(false);
-        
         // Clear files when agent starts running
         setUploadedFiles([]);
         setIsSendingFiles(false);
-        
-        // Notify parent in controlled mode
-        if (isControlled && controlledOnChange) {
-          controlledOnChange('');
-        }
+        setHasSubmitted(false);
       }
-    }, [isAgentRunning, isControlled, controlledOnChange]);
+    }, [isAgentRunning]);
 
     // Reset sending state if loading becomes false without agent starting (submission failure)
     useEffect(() => {
@@ -1232,6 +1287,14 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           onOpenPlanModal={handleOpenPlanModal}
         />
 
+        {/* {isLoggedIn && !threadId && (
+          <MemoryToggle
+            disabled={loading || (disabled && !isAgentRunning)}
+            memoryEnabled={memoryEnabled}
+            onMemoryToggle={onMemoryToggle}
+          />
+        )} */}
+
         <SunaAgentModeSwitcher
           enabled={ENABLE_SUNA_AGENT_MODES}
           isSunaAgent={isSunaAgent}
@@ -1247,7 +1310,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           />
         )}
       </div>
-    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, projectId, messages, isLoggedIn, isFreeTier, quickIntegrations, integrationIcons, handleOpenRegistry, handleOpenPlanModal, isSunaAgent, sunaAgentModes, onModeDeselect, selectedMode, isModeDismissing, handleModeDeselect]);
+    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, projectId, messages, isLoggedIn, isFreeTier, quickIntegrations, integrationIcons, handleOpenRegistry, handleOpenPlanModal, threadId, memoryEnabled, onMemoryToggle, isSunaAgent, sunaAgentModes, onModeDeselect, selectedMode, isModeDismissing, handleModeDeselect]);
 
     const rightControls = useMemo(() => (
       <div className='flex items-center gap-2 flex-shrink-0'>

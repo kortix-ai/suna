@@ -25,7 +25,7 @@
  */
 
 import React, { ReactNode } from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, View, Platform, TouchableOpacity } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
@@ -33,7 +33,11 @@ import { Check, ChevronRight } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { cn } from '@/lib';
 
+// NOTE: AnimatedPressable blocks touches on Android - use TouchableOpacity instead
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+// Android hit slop for better touch targets
+const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 8, bottom: 8, left: 8, right: 8 } : undefined;
 
 export interface SelectableListItemProps {
   /** Avatar component (AgentAvatar, ModelAvatar, etc.) */
@@ -116,12 +120,11 @@ export function SelectableListItem({
       : 'transparent';
 
   return (
-    <AnimatedPressable
+    <TouchableOpacity
       onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={[animatedStyle]}
-      className="flex-row items-center justify-between active:opacity-70"
+      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+      hitSlop={ANDROID_HIT_SLOP}
+      activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel || `Select ${title}`}>
       {/* Left: Avatar + Text */}
@@ -202,6 +205,6 @@ export function SelectableListItem({
           ) : null}
         </View>
       )}
-    </AnimatedPressable>
+    </TouchableOpacity>
   );
 }

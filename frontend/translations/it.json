@@ -188,6 +188,41 @@
     "integrations": {
       "opening": "Apertura integrazioni",
       "redirecting": "Reindirizzamento alla pagina delle integrazioni..."
+    },
+    "memory": {
+      "title": "Memoria IA",
+      "description": "Ricorda automaticamente il contesto tra le conversazioni",
+      "enabled": "Abilitata",
+      "disabled": "Disabilitata",
+      "notAvailable": "La memoria non è disponibile nel tuo piano attuale. Passa a Plus o superiore per abilitare la memoria automatica.",
+      "usage": "Utilizzo della Memoria",
+      "available": "{count} ricordi disponibili",
+      "noLimit": "Illimitato",
+      "yourMemories": "I Tuoi Ricordi",
+      "yourMemoriesDescription": "Visualizza e gestisci ciò che l'IA ricorda di te",
+      "clearAll": "Cancella Tutto",
+      "deleteAllTitle": "Eliminare tutti i ricordi?",
+      "deleteAllDescription": "Questo eliminerà permanentemente tutti i {count} ricordi. L'IA non ricorderà più le informazioni dalle conversazioni passate. Questa azione non può essere annullata.",
+      "deleteAllButton": "Elimina Tutti i Ricordi",
+      "noMemoriesYet": "Ancora nessun ricordo",
+      "noMemoriesDescription": "Avvia una conversazione e l'IA ricorderà automaticamente informazioni importanti su di te",
+      "searchMemories": "Cerca ricordi...",
+      "filterByType": "Filtra per tipo",
+      "allTypes": "Tutti i Tipi",
+      "personalFacts": "Fatti Personali",
+      "preferences": "Preferenze",
+      "context": "Contesto",
+      "conversations": "Conversazioni",
+      "noMatchingMemories": "Nessun ricordo corrispondente",
+      "adjustFilters": "Prova ad aggiustare i tuoi filtri o la query di ricerca",
+      "loadMore": "Carica Altro",
+      "loading": "Caricamento dei ricordi...",
+      "memoryTypes": {
+        "fact": "Fatto",
+        "preference": "Preferenza",
+        "context": "Contesto",
+        "conversation_summary": "Conversazione"
+      }
     }
   },
   "triggers": {
@@ -1008,6 +1043,28 @@
         "8": "Studia le strategie di prezzo delle aziende di successo di scatole di abbonamento D2C",
         "9": "Ricerca il panorama competitivo delle soluzioni di cybersecurity alimentate da AI"
       }
+    }
+  },
+  "announcements": {
+    "memories": {
+      "title": "Presentiamo le Memorie",
+      "description": "Kortix ora ricorda le tue preferenze e il contesto in tutte le conversazioni",
+      "features": {
+        "personalized": {
+          "title": "Esperienza Personalizzata",
+          "description": "Si adatta al tuo stile di lavoro nel tempo"
+        },
+        "retention": {
+          "title": "Ritenzione del Contesto",
+          "description": "Dettagli importanti ricordati tra le chat"
+        },
+        "control": {
+          "title": "Sei Tu al Comando",
+          "description": "Disattiva o cancella in qualsiasi momento"
+        }
+      },
+      "manageButton": "Gestisci Memorie",
+      "dismissButton": "Capito"
     }
   }
 }

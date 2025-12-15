@@ -188,6 +188,49 @@
     "integrations": {
       "opening": "Opening Integrations",
       "redirecting": "Redirecting to Integrations page..."
+    },
+    "memory": {
+      "title": "AI Memory",
+      "description": "Automatically remember context across conversations",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "notAvailable": "Memory is not available on your current plan. Upgrade to Plus or higher to enable automatic memory.",
+      "enableMemory": "Enable Memory",
+      "enableMemoryDescription": "Allow Kortix to remember information from your conversations",
+      "memoryDisabledByUser": "Memory is currently disabled. Enable it above to start building memories from your conversations.",
+      "upgradeRequired": "Memory requires upgrade",
+      "clickToUpgrade": "Click to see plans",
+      "memoryEnabledTooltip": "Memory enabled",
+      "memoryDisabledTooltip": "Memory disabled",
+      "clickToToggle": "Click to toggle",
+      "usage": "Memory Usage",
+      "available": "{count} memories available",
+      "noLimit": "Unlimited",
+      "yourMemories": "Your Memories",
+      "yourMemoriesDescription": "View and manage what the AI remembers about you",
+      "clearAll": "Clear All",
+      "deleteAllTitle": "Delete all memories?",
+      "deleteAllDescription": "This will permanently delete all {count} memories. The AI will no longer remember information from past conversations. This action cannot be undone.",
+      "deleteAllButton": "Delete All Memories",
+      "noMemoriesYet": "No memories yet",
+      "noMemoriesDescription": "Start a conversation and the AI will automatically remember important information about you",
+      "searchMemories": "Search memories...",
+      "filterByType": "Filter by type",
+      "allTypes": "All Types",
+      "personalFacts": "Personal Facts",
+      "preferences": "Preferences",
+      "context": "Context",
+      "conversations": "Conversations",
+      "noMatchingMemories": "No matching memories",
+      "adjustFilters": "Try adjusting your filters or search query",
+      "loadMore": "Load More",
+      "loading": "Loading memories...",
+      "memoryTypes": {
+        "fact": "Fact",
+        "preference": "Preference",
+        "context": "Context",
+        "conversation_summary": "Conversation"
+      }
     }
   },
   "triggers": {
@@ -1095,6 +1138,28 @@
         "8": "Study pricing strategies of successful D2C subscription box companies",
         "9": "Research the competitive landscape of AI-powered cybersecurity solutions"
       }
+    }
+  },
+  "announcements": {
+    "memories": {
+      "title": "Introducing Memories",
+      "description": "Kortix now remembers your preferences and context across all conversations",
+      "features": {
+        "personalized": {
+          "title": "Personalized Experience",
+          "description": "Adapts to your working style over time"
+        },
+        "retention": {
+          "title": "Context Retention",
+          "description": "Important details remembered across chats"
+        },
+        "control": {
+          "title": "You're in Control",
+          "description": "Toggle off or clear memories anytime"
+        }
+      },
+      "manageButton": "Manage Memories",
+      "dismissButton": "Got it"
     }
   }
 }
