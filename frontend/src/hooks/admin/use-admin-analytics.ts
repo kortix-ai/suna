@@ -437,3 +437,32 @@ export function useSignupsByDate(dateFrom: string, dateTo: string) {
   });
 }
 
+// ============================================================================
+// ARR VIEWS BY DATE (fetched from Google Analytics, grouped by frontend)
+// ============================================================================
+
+export interface ViewsByDateResponse {
+  date_from: string;
+  date_to: string;
+  views_by_date: Record<string, number>;  // YYYY-MM-DD -> count
+  total: number;
+}
+
+export function useViewsByDate(dateFrom: string, dateTo: string) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'views-by-date', dateFrom, dateTo],
+    queryFn: async (): Promise<ViewsByDateResponse> => {
+      const response = await backendApi.get(
+        `/admin/analytics/arr/views?date_from=${dateFrom}&date_to=${dateTo}`
+      );
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 60000, // 1 minute
+    enabled: !!dateFrom && !!dateTo,
+    retry: 1, // Only retry once since GA might not be configured
+  });
+}
+

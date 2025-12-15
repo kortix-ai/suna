@@ -1011,6 +1011,63 @@ async def get_signups_by_date(
         raise HTTPException(status_code=500, detail="Failed to get signups")
 
 
+@router.get("/arr/views")
+async def get_views_by_date(
+    date_from: str = Query(..., description="Start date YYYY-MM-DD"),
+    date_to: str = Query(..., description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """
+    Get view counts (newUsers) from Google Analytics grouped by date.
+    Frontend can aggregate into weeks as needed.
+    Super admin only.
+    """
+    property_id = config.GA_PROPERTY_ID
+    if not property_id:
+        raise HTTPException(
+            status_code=500,
+            detail="Google Analytics not configured. Set GA_PROPERTY_ID environment variable."
+        )
+    
+    try:
+        client = get_ga_client()
+        
+        # Query GA with date dimension to get daily breakdown
+        request = RunReportRequest(
+            property=f"properties/{property_id}",
+            date_ranges=[DateRange(start_date=date_from, end_date=date_to)],
+            dimensions=[Dimension(name="date")],
+            metrics=[Metric(name="newUsers")],
+        )
+        
+        response = client.run_report(request)
+        
+        # Parse response into date -> count mapping
+        views_by_date: Dict[str, int] = {}
+        total = 0
+        
+        for row in response.rows or []:
+            # Date comes in YYYYMMDD format, convert to YYYY-MM-DD
+            raw_date = row.dimension_values[0].value
+            formatted_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+            count = int(row.metric_values[0].value)
+            views_by_date[formatted_date] = count
+            total += count
+        
+        return {
+            "date_from": date_from,
+            "date_to": date_to,
+            "views_by_date": views_by_date,
+            "total": total
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get views by date from GA: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get views from Google Analytics")
+
+
 @router.get("/arr/actuals")
 async def get_arr_weekly_actuals(
     admin: dict = Depends(require_super_admin)
