@@ -1,0 +1,185 @@
+name: Production Build & Submit
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to build'
+        required: true
+        default: 'ios'
+        type: choice
+        options:
+          - ios
+          - android
+          - all
+      version_bump:
+        description: 'Version bump type'
+        required: false
+        default: 'none'
+        type: choice
+        options:
+          - none
+          - patch
+          - minor
+          - major
+      auto_increment:
+        description: 'Auto-increment patch version?'
+        required: false
+        default: true
+        type: boolean
+  push:
+    branches:
+      - production
+    paths:
+      - 'apps/mobile/app.json'
+      - 'apps/mobile/eas.json'
+      - 'apps/mobile/package.json'
+
+permissions:
+  contents: read
+
+jobs:
+  build-production:
+    name: Build Production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Setup EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        working-directory: apps/mobile
+        run: npm install
+
+      - name: Get current version from app.json
+        id: current_version
+        working-directory: apps/mobile
+        run: |
+          VERSION=$(node -p "require('./app.json').expo.version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
+
+      - name: Get current EAS remote version
+        id: remote_version
+        working-directory: apps/mobile
+        run: |
+          REMOTE_VERSION=$(eas version:view --platform ios --json 2>/dev/null | jq -r '.ios' || echo "not-set")
+          if [ "$REMOTE_VERSION" == "null" ] || [ "$REMOTE_VERSION" == "" ]; then
+            REMOTE_VERSION="not-set"
+          fi
+          echo "remote_version=$REMOTE_VERSION" >> $GITHUB_OUTPUT
+          echo "Remote version: $REMOTE_VERSION"
+
+      - name: Determine version to use
+        id: version_logic
+        working-directory: apps/mobile
+        run: |
+          CURRENT="${{ steps.current_version.outputs.version }}"
+          REMOTE="${{ steps.remote_version.outputs.remote_version }}"
+          BUMP_TYPE="${{ github.event.inputs.version_bump }}"
+          AUTO_INCREMENT="${{ github.event.inputs.auto_increment }}"
+          
+          # If version_bump is specified, increment from remote
+          if [ "$BUMP_TYPE" != "none" ] && [ "$REMOTE" != "not-set" ]; then
+            IFS='.' read -r major minor patch <<< "$REMOTE"
+            case "$BUMP_TYPE" in
+              patch) patch=$((patch + 1)) ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+            esac
+            NEW_VERSION="$major.$minor.$patch"
+          # If auto_increment and remote exists, increment patch
+          elif [ "$AUTO_INCREMENT" == "true" ] && [ "$REMOTE" != "not-set" ]; then
+            IFS='.' read -r major minor patch <<< "$REMOTE"
+            patch=$((patch + 1))
+            NEW_VERSION="$major.$minor.$patch"
+          # Use version from app.json
+          else
+            NEW_VERSION="$CURRENT"
+          fi
+          
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "Will use version: $NEW_VERSION"
+
+      - name: Update version in app.json (if needed)
+        if: steps.version_logic.outputs.new_version != steps.current_version.outputs.version
+        working-directory: apps/mobile
+        run: |
+          NEW_VERSION="${{ steps.version_logic.outputs.new_version }}"
+          node -e "
+            const fs = require('fs');
+            const appJson = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+            appJson.expo.version = '$NEW_VERSION';
+            appJson.expo.runtimeVersion = '$NEW_VERSION';
+            fs.writeFileSync('app.json', JSON.stringify(appJson, null, 2) + '\n');
+          "
+          echo "Updated app.json to version $NEW_VERSION"
+
+      - name: Update EAS remote version
+        working-directory: apps/mobile
+        run: |
+          NEW_VERSION="${{ steps.version_logic.outputs.new_version }}"
+          PLATFORM="${{ github.event.inputs.platform }}"
+          
+          # Default to 'all' if triggered by push
+          if [ "${{ github.event_name }}" == "push" ] || [ -z "$PLATFORM" ]; then
+            PLATFORM="all"
+          fi
+          
+          if [ "$PLATFORM" == "all" ]; then
+            eas version:set $NEW_VERSION --platform ios --non-interactive
+            eas version:set $NEW_VERSION --platform android --non-interactive
+          else
+            eas version:set $NEW_VERSION --platform $PLATFORM --non-interactive
+          fi
+          echo "✅ Updated EAS remote version to $NEW_VERSION"
+
+      - name: Build iOS Production
+        if: github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all' || github.event_name == 'push'
+        working-directory: apps/mobile
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: https://heprlhlltebrxydgtsjs.supabase.co
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlcHJsaGxsdGVicnh5ZGd0c2pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxODcxNjQsImV4cCI6MjA2MDc2MzE2NH0.YRo1iZw06YSxqBhotBnD1d5jZxw7hHwswe1wKp8VpfA
+          EXPO_PUBLIC_BACKEND_URL: https://staging-api.suna.so/v1
+          EXPO_PUBLIC_USE_REVENUECAT: 'true'
+          EXPO_PUBLIC_REVENUECAT_IOS_API_KEY: appl_UpcFYduOZYUgSqKPNvtzgXkPCeh
+          EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY: incoming
+        run: |
+          eas build --profile production --platform ios --auto-submit --non-interactive --no-wait
+
+      - name: Build Android Production
+        if: github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all' || github.event_name == 'push'
+        working-directory: apps/mobile
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: https://heprlhlltebrxydgtsjs.supabase.co
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlcHJsaGxsdGVicnh5ZGd0c2pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxODcxNjQsImV4cCI6MjA2MDc2MzE2NH0.YRo1iZw06YSxqBhotBnD1d5jZxw7hHwswe1wKp8VpfA
+          EXPO_PUBLIC_BACKEND_URL: https://staging-api.suna.so/v1
+          EXPO_PUBLIC_USE_REVENUECAT: 'true'
+          EXPO_PUBLIC_REVENUECAT_IOS_API_KEY: appl_UpcFYduOZYUgSqKPNvtzgXkPCeh
+          EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY: incoming
+        run: |
+          eas build --profile production --platform android --auto-submit --non-interactive --no-wait
+
+      - name: Summary
+        run: |
+          PLATFORM="${{ github.event.inputs.platform }}"
+          if [ -z "$PLATFORM" ] || [ "${{ github.event_name }}" == "push" ]; then
+            PLATFORM="all"
+          fi
+          echo "## 🚀 Production Build Started" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.version_logic.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platform**: $PLATFORM" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build**: Check EAS dashboard for progress" >> $GITHUB_STEP_SUMMARY
