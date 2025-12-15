@@ -5,7 +5,7 @@ const path = require('path');
 const PROTOCOL_SCHEME = 'kortix';
 
 // Get URL from environment variable or default to production
-const APP_URL = process.env.APP_URL || 'http://localhost:3000';
+const APP_URL = process.env.APP_URL || 'https://kortix.com/';
 
 // Simple dev check without ES module dependency
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
