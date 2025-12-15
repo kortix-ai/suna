@@ -1,8 +1,10 @@
 'use client';
 
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { BackgroundAALChecker } from '@/components/auth/background-aal-checker';
 import { HeroSection as NewHeroSection } from '@/components/home/hero-section';
+import { isElectron } from '@/lib/utils/is-electron';
 
 // Lazy load below-the-fold components for faster FCP/LCP
 const ShowCaseSection = lazy(() => 
@@ -32,23 +34,17 @@ function ShowCaseSkeleton() {
 }
 
 export default function Home() {
+  const router = useRouter();
+
+  useEffect(() => {
+    // Always redirect to auth page (both web and desktop app)
+    router.replace('/auth');
+  }, [router]);
+
+  // Show loading state while redirecting
   return (
-    <>
-      <BackgroundAALChecker>
-        <main className="w-full">
-          {/* Hero is critical for LCP - load immediately */}
-          <NewHeroSection />
-          
-          {/* Below-the-fold content - lazy loaded with Suspense */}
-          <Suspense fallback={<ShowCaseSkeleton />}>
-            <ShowCaseSection />
-          </Suspense>
-          
-          <Suspense fallback={null}>
-            <WordmarkFooter />
-          </Suspense>
-        </main>
-      </BackgroundAALChecker>
-    </>
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+    </div>
   );
 }

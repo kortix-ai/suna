@@ -1,0 +1,187 @@
+name: Desktop App Build
+
+on:
+  push:
+    branches:
+      - main
+      - PRODUCTION
+    paths:
+      - 'apps/desktop/**'
+      - '.github/workflows/desktop-build.yml'
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create GitHub release'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Build macOS app
+        working-directory: apps/desktop
+        run: npm run build:mac
+        env:
+          # Skip notarization in CI (requires Apple Developer credentials)
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: List build outputs
+        working-directory: apps/desktop
+        run: ls -lah dist/
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kortix-macos-${{ github.sha }}
+          path: |
+            apps/desktop/dist/*.dmg
+          retention-days: 30
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Build Windows app
+        working-directory: apps/desktop
+        run: npm run build:win
+        env:
+          # Skip code signing in CI (requires Windows code signing certificate)
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: List build outputs
+        working-directory: apps/desktop
+        run: dir dist\
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kortix-windows-${{ github.sha }}
+          path: |
+            apps/desktop/dist/*.exe
+          retention-days: 30
+
+  create-release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' && 
+      github.event.inputs.create_release == 'true' ||
+      github.ref == 'refs/heads/PRODUCTION'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version from package.json
+        id: version
+        working-directory: apps/desktop
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kortix-macos-${{ github.sha }}
+          path: ./artifacts/macos
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kortix-windows-${{ github.sha }}
+          path: ./artifacts/windows
+
+      - name: List all artifacts
+        run: |
+          echo "=== macOS artifacts ==="
+          ls -lah ./artifacts/macos/
+          echo "=== Windows artifacts ==="
+          ls -lah ./artifacts/windows/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: desktop-${{ steps.version.outputs.tag }}
+          name: Desktop App ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            ./artifacts/macos/*
+            ./artifacts/windows/*
+          body: |
+            ## Kortix Desktop App ${{ steps.version.outputs.version }}
+            
+            ### Downloads
+            
+            - **macOS**: Download the `.dmg` file
+            - **Windows**: Download the `.exe` file
+            
+            ### Installation
+            
+            **macOS:**
+            1. Download and open the `.dmg` file
+            2. Drag Kortix to your Applications folder
+            3. Open Kortix from Applications
+            
+            **Windows:**
+            1. Download and run the `.exe` installer
+            2. Follow the installation wizard
+            3. Launch Kortix from the Start Menu
+            
+            ---
+            
+            Built from commit: ${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Build Status
+        run: |
+          if [ "${{ needs.build-macos.result }}" == "success" ] && [ "${{ needs.build-windows.result }}" == "success" ]; then
+            echo "✅ All desktop builds completed successfully!"
+          else
+            echo "❌ Some builds failed:"
+            echo "  macOS: ${{ needs.build-macos.result }}"
+            echo "  Windows: ${{ needs.build-windows.result }}"
+            exit 1
+          fi
