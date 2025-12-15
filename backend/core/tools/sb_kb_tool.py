@@ -18,12 +18,17 @@ from core.utils.logger import logger
 ### KNOWLEDGE BASE SEMANTIC SEARCH
 
 **LOCAL KNOWLEDGE BASE (Sandbox Files):**
-- Use `init_kb` to initialize kb-fusion binary before searching (sync_global_knowledge_base=false by default)
-- Use `search_files` to perform intelligent content discovery with natural language queries
-- Provide FULL path to files/documents - NO filename only
-- ALWAYS use when you need to find specific information within large documents or datasets
-- Use `ls_kb` to list all indexed LOCAL files and their status
+- Use `semantic_search` to perform intelligent content discovery with natural language queries
+- Files are automatically indexed in the background - large files/folders may take time to index
+- IMPORTANT: Only searches files that have already been indexed. If you get no results, files might still be indexing
+- Use `ls_kb` to check which files are indexed and their status
+- Path is optional - defaults to /workspace for general questions, or specify a file path for targeted search
 - Use `cleanup_kb` for maintenance operations (default|remove_files|clear_embeddings|clear_all)
+
+**INDEXING NOTES:**
+- First search may be slower as kb-fusion initializes
+- New files are indexed automatically but may not appear in search results immediately
+- Check `ls_kb` to verify file indexing status before searching
 
 **GLOBAL KNOWLEDGE BASE MANAGEMENT:**
 - Use `global_kb_sync` to download assigned knowledge base files to sandbox
@@ -40,7 +45,7 @@ from core.utils.logger import logger
   - `global_kb_delete_item` - Remove files or folders using their ID
 - **ENABLE/DISABLE:**
   - `global_kb_enable_item` - Enable or disable KB files for this agent (controls sync)
-
+    
 **WORKFLOW:**
 Create folder → Upload files from sandbox → Organize and manage → Enable → Sync to access
 Structure is 1-level deep: folders contain files only (no nested folders)
@@ -52,152 +57,139 @@ class SandboxKbTool(SandboxToolsBase):
 
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
-        self.kb_version = "0.1.1"
+        self.kb_version = "0.1.2"
         self.kb_download_url = f"https://github.com/kortix-ai/kb-fusion/releases/download/v{self.kb_version}/kb"
 
-    async def _execute_kb_command(self, command: str) -> dict:
+    async def _execute_kb_command(self, command: str, cwd: str = None) -> dict:
         await self._ensure_sandbox()
 
-        env = {"OPENAI_API_KEY": config.OPENAI_API_KEY} if config.OPENAI_API_KEY else {}
-        response = await self.sandbox.process.exec(command, env=env)
+        env = {}
+        if config.OPENAI_API_KEY:
+            env["OPENAI_API_KEY"] = config.OPENAI_API_KEY
+        
+        # Let kb use its default location (~/.config/kb/ or ~/knowledge-base/)
+        # Don't force KB_DIR so file watcher and direct commands use same DB
+        
+        response = await self.sandbox.process.exec(command, env=env, cwd=cwd or "/workspace")
         
         return {
             "output": response.result,
             "exit_code": response.exit_code
         }
 
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "init_kb",
-            "description": "Initialize the kb-fusion binary. Checks if kb exists and installs/updates if needed. Optionally sync global knowledge base files.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "sync_global_knowledge_base": {
-                        "type": "boolean",
-                        "description": "Whether to sync agent's knowledge base files to sandbox after initialization",
-                        "default": False
-                    }
-                },
-                "required": []
-            }
-        }
-    })
-    async def init_kb(self, sync_global_knowledge_base: bool = False) -> ToolResult:
+    async def _ensure_kb_initialized(self) -> dict:
+        """Internal method to ensure kb-fusion is installed and up to date."""
         try:
             await self._ensure_sandbox()
             
-            # Check if kb exists and get version
-            check_result = await self._execute_kb_command("kb -v")
+            # kb will create its default directory automatically when first used
+            
+            # Check if kb exists and get version using _execute_kb_command (has OPENAI_API_KEY)
+            check_result = await self._execute_kb_command("kb -v 2>&1")
             
             if check_result["exit_code"] == 0:
                 output = check_result["output"].strip()
                 if f"kb-fusion {self.kb_version}" in output:
-                    result_data = {
-                        "message": f"kb-fusion {self.kb_version} is already installed and up to date.",
-                        "version": self.kb_version
-                    }
-                    
-                    # Optionally sync global knowledge base even if KB is already installed
-                    if sync_global_knowledge_base:
-                        sync_result = await self.global_kb_sync()
-                        if sync_result.success:
-                            import json
-                            sync_data = json.loads(sync_result.output)
-                            result_data["sync_result"] = sync_data
-                            result_data["message"] += f" Knowledge base synced: {sync_data.get('synced_files', 0)} files."
-                        else:
-                            result_data["sync_warning"] = f"Knowledge base sync failed: {sync_result.output}"
-                    
-                    return self.success_response(result_data)
-                else:
-                    # Update needed
-                    install_msg = f"Updating kb-fusion to version {self.kb_version}"
-            else:
-                # Install needed
-                install_msg = f"Installing kb-fusion version {self.kb_version}"
+                    # Already installed and up to date
+                    return {"success": True, "already_installed": True}
             
-            # Download and install kb binary
-            install_commands = [
-                f"curl -L {self.kb_download_url} -o /usr/local/bin/kb",
-                "chmod +x /usr/local/bin/kb"
-            ]
+            # Need to install or update - download doesn't need env vars
+            download_result = await self.sandbox.process.exec(
+                f"curl -L -f {self.kb_download_url} -o /tmp/kb && chmod +x /tmp/kb && mv /tmp/kb /usr/local/bin/kb"
+            )
             
-            for cmd in install_commands:
-                result = await self._execute_kb_command(cmd)
-                if result["exit_code"] != 0:
-                    return self.fail_response(f"Failed to install kb: {result['output']}")
+            if download_result.exit_code != 0:
+                return {"success": False, "error": f"Failed to download kb: {download_result.result}"}
             
-            # Verify installation
+            # Verify installation using _execute_kb_command (has OPENAI_API_KEY)
             verify_result = await self._execute_kb_command("kb -v")
             if verify_result["exit_code"] != 0:
-                return self.fail_response(f"kb installation verification failed: {verify_result['output']}")
+                return {"success": False, "error": f"kb installation verification failed: {verify_result['output']}"}
             
-            result_data = {
-                "message": f"{install_msg} completed successfully.",
-                "version": self.kb_version,
-                "verification": verify_result["output"].strip()
-            }
-            
-            # Optionally sync global knowledge base
-            if sync_global_knowledge_base:
-                sync_result = await self.global_kb_sync()
-                if sync_result.success:
-                    import json
-                    sync_data = json.loads(sync_result.output)
-                    result_data["sync_result"] = sync_data
-                    result_data["message"] += f" Knowledge base synced: {sync_data.get('synced_files', 0)} files."
-                else:
-                    result_data["sync_warning"] = f"Knowledge base sync failed: {sync_result.output}"
-            
-            return self.success_response(result_data)
+            return {"success": True, "installed": True, "version": self.kb_version}
             
         except Exception as e:
-            return self.fail_response(f"Error installing kb: {str(e)}")
+            return {"success": False, "error": f"Error installing kb: {str(e)}"}
 
     @openapi_schema({
         "type": "function",
         "function": {
-            "name": "search_files",
-            "description": "Perform semantic search on files using kb-fusion. Searches for multiple queries in a specified full file path.",
+            "name": "semantic_search",
+            "description": "Perform semantic search on files using natural language queries. Searches /workspace by default, or specify a file path for targeted search. NOTE: Only searches already-indexed files. Files are indexed automatically in the background, but large codebases may take time. If no results found, files might still be indexing - use ls_kb to check indexing status.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Full Path to the file or directory to search in."
-                    },
                     "queries": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "List of search queries to execute."
+                        "description": "Natural language questions to search for (e.g., 'How does authentication work?', 'Where is the database configured?')"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Optional: Path to specific file or directory to search. Defaults to /workspace if not provided."
                     }
                 },
-                "required": ["path", "queries"]
+                "required": ["queries"]
             }
         }
     })
-    async def search_files(self, path: str, queries: List[str]) -> ToolResult:
+    async def semantic_search(self, queries: List[str], path: Optional[str] = None) -> ToolResult:
+        import json
+        
         try:
+            # Handle case where queries might be passed as a JSON string instead of a list
+            if isinstance(queries, str):
+                try:
+                    queries = json.loads(queries)
+                except json.JSONDecodeError:
+                    # If it's a plain string, wrap it in a list
+                    queries = [queries]
+            
             if not queries:
                 return self.fail_response("At least one query is required for search.")
             
-            # Build search command
+            # Ensure all queries are strings
+            queries = [str(q) for q in queries]
+            
+            # Ensure kb-fusion is initialized
+            init_result = await self._ensure_kb_initialized()
+            if not init_result.get("success"):
+                return self.fail_response(f"Failed to initialize kb-fusion: {init_result.get('error', 'Unknown error')}")
+            
+            # Default to /workspace if no path provided
+            search_path = path or "/workspace"
+            
+            # Verify path exists in sandbox
+            check_path = await self.sandbox.process.exec(f"test -e {search_path} && echo 'exists' || echo 'not_found'")
+            if "not_found" in check_path.result:
+                return self.fail_response(f"Path not found: {search_path}")
+            
+            # Build search command with proper escaping
+            # kb-fusion will auto-index files on first search
             query_args = " ".join([f'"{query}"' for query in queries])
-            search_command = f'kb search "{path}" {query_args} -k 18 --json'
+            search_command = f'kb search "{search_path}" {query_args} -k 18 --json'
             
             result = await self._execute_kb_command(search_command)
             
             if result["exit_code"] != 0:
                 return self.fail_response(f"Search failed: {result['output']}")
             
-            return self.success_response({
-                "search_results": result["output"],
-                "path": path,
-                "queries": queries,
-                "command": search_command
-            })
+            # Parse results to check if any hits were found
+            try:
+                results_data = json.loads(result["output"])
+                total_hits = sum(len(query_result.get("hits", [])) for query_result in results_data)
+                
+                response = {"results": result["output"]}
+                
+                if total_hits == 0:
+                    response["note"] = "No results found. Files may still be indexing in the background. Use ls_kb to check which files are currently indexed."
+                
+                return self.success_response(response)
+            except json.JSONDecodeError:
+                # If parsing fails, just return raw results
+                return self.success_response({
+                    "results": result["output"]
+                })
             
         except Exception as e:
             return self.fail_response(f"Error performing search: {str(e)}")
@@ -236,6 +228,11 @@ class SandboxKbTool(SandboxToolsBase):
     })
     async def cleanup_kb(self, operation: str, file_paths: Optional[List[str]] = None, days: Optional[int] = None, retention_days: int = 30) -> ToolResult:
         try:
+            # Ensure kb-fusion is initialized
+            init_result = await self._ensure_kb_initialized()
+            if not init_result.get("success"):
+                return self.fail_response(f"Failed to initialize kb-fusion: {init_result.get('error', 'Unknown error')}")
+            
             if operation == "default":
                 command = f"kb sweep --retention-days {retention_days}"
             elif operation == "remove_files":
@@ -271,7 +268,7 @@ class SandboxKbTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "ls_kb",
-            "description": "List indexed files in the knowledge base. Shows file status, size, modification time, and paths.",
+            "description": "List all indexed files in the knowledge base with their status, size, modification time, and paths. Use this to verify which files are indexed and available for semantic_search. If files are missing, they may still be indexing in the background.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -281,6 +278,11 @@ class SandboxKbTool(SandboxToolsBase):
     })
     async def ls_kb(self) -> ToolResult:
         try:
+            # Ensure kb-fusion is initialized
+            init_result = await self._ensure_kb_initialized()
+            if not init_result.get("success"):
+                return self.fail_response(f"Failed to initialize kb-fusion: {init_result.get('error', 'Unknown error')}")
+            
             result = await self._execute_kb_command("kb ls")
             if result["exit_code"] != 0:
                 return self.fail_response(f"List operation failed: {result['output']}")
