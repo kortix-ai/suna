@@ -117,41 +117,6 @@ async def get_openai_client():
     return openai.AsyncOpenAI(api_key=api_key)
 
 
-async def query_posthog(query: str, date_from: str, date_to: str) -> Dict[str, Any]:
-    """Query PostHog API for analytics data. DEPRECATED: Use query_google_analytics instead."""
-    api_key = config.POSTHOG_PERSONAL_API_KEY
-    project_id = config.POSTHOG_PROJECT_ID
-    host = config.POSTHOG_HOST or "https://eu.posthog.com"
-    
-    if not api_key or not project_id:
-        raise HTTPException(
-            status_code=500, 
-            detail="PostHog not configured. Set POSTHOG_PERSONAL_API_KEY and POSTHOG_PROJECT_ID."
-        )
-    
-    url = f"{host}/api/projects/{project_id}/query/"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "query": {
-            "kind": "HogQLQuery",
-            "query": query
-        }
-    }
-    
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(url, json=payload, headers=headers)
-        
-        if response.status_code != 200:
-            logger.error(f"PostHog API error: {response.status_code} - {response.text}")
-            raise HTTPException(status_code=500, detail=f"PostHog API error: {response.status_code}")
-        
-        return response.json()
-
-
 def get_ga_client() -> "BetaAnalyticsDataClient":
     """Get Google Analytics client with service account credentials."""
     if not GA_AVAILABLE:
