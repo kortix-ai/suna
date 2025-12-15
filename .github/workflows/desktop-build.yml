@@ -51,6 +51,46 @@ jobs:
           # Skip notarization in CI (requires Apple Developer credentials)
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
+      - name: Ad-hoc code sign the app
+        working-directory: apps/desktop
+        run: |
+          # Find the .app bundle
+          APP_PATH=$(find dist/mac*/ -name "*.app" -type d | head -1)
+          
+          if [ -n "$APP_PATH" ]; then
+            echo "🔏 Ad-hoc signing: $APP_PATH"
+            
+            # Remove any existing signature
+            codesign --remove-signature "$APP_PATH" 2>/dev/null || true
+            
+            # Ad-hoc sign with hardened runtime
+            codesign --force --deep --sign - \
+              --options runtime \
+              --entitlements <(cat <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>com.apple.security.cs.allow-jit</key>
+            <true/>
+            <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+            <true/>
+            <key>com.apple.security.cs.disable-library-validation</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+          ) "$APP_PATH"
+            
+            # Verify signature
+            codesign --verify --verbose "$APP_PATH"
+            
+            echo "✅ App signed successfully"
+          else
+            echo "⚠️  Warning: Could not find .app bundle"
+            ls -R dist/
+          fi
+
       - name: List build outputs
         working-directory: apps/desktop
         run: ls -lah dist/
@@ -60,8 +100,15 @@ jobs:
         run: |
           for file in *.dmg; do
             if [ -f "$file" ]; then
-              base="${file%.dmg}"
-              mv "$file" "${base}-${{ matrix.arch }}.dmg"
+              # Extract base name and check if arch is already in filename
+              if [[ "$file" == *"-${{ matrix.arch }}.dmg" ]]; then
+                echo "✓ Already has arch suffix: $file"
+              else
+                base="${file%.dmg}"
+                newname="${base}-${{ matrix.arch }}.dmg"
+                mv "$file" "$newname"
+                echo "✓ Renamed: $file → $newname"
+              fi
             fi
           done
           ls -lah
@@ -77,12 +124,6 @@ jobs:
           R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          
-          if [[ "${{ github.ref }}" == "refs/heads/PRODUCTION" ]]; then
-            ENV_PREFIX="production"
-          else
-            ENV_PREFIX="staging"
-          fi
           
           brew install rclone
           
@@ -105,17 +146,17 @@ jobs:
               echo "📤 Uploading: $filename"
               
               # Upload versioned
-              rclone copy "$file" "r2:${R2_BUCKET}/desktop/${ENV_PREFIX}/${VERSION}/macos/" \
+              rclone copy "$file" "r2:${R2_BUCKET}/desktop/${VERSION}/macos/" \
                 --progress \
                 --s3-upload-concurrency 4
               
-              # Upload as latest
-              rclone copy "$file" "r2:${R2_BUCKET}/desktop/${ENV_PREFIX}/latest/macos/" \
+              # Upload as latest (overwrites on rebuild)
+              rclone copy "$file" "r2:${R2_BUCKET}/desktop/latest/macos/" \
                 --progress \
                 --s3-upload-concurrency 4
               
               echo "✅ Uploaded: $filename"
-              echo "🔗 ${R2_PUBLIC_URL}/desktop/${ENV_PREFIX}/latest/macos/${filename}"
+              echo "🔗 ${R2_PUBLIC_URL}/desktop/latest/macos/${filename}"
             fi
           done
 
@@ -168,12 +209,6 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           
-          if [[ "${{ github.ref }}" == "refs/heads/PRODUCTION" ]]; then
-            ENV_PREFIX="production"
-          else
-            ENV_PREFIX="staging"
-          fi
-          
           # Install rclone
           curl https://downloads.rclone.org/rclone-current-windows-amd64.zip -o rclone.zip
           unzip -q rclone.zip
@@ -198,17 +233,17 @@ jobs:
               echo "📤 Uploading: $filename"
               
               # Upload versioned
-              "$RCLONE_PATH" copy "$file" "r2:${R2_BUCKET}/desktop/${ENV_PREFIX}/${VERSION}/windows/" \
+              "$RCLONE_PATH" copy "$file" "r2:${R2_BUCKET}/desktop/${VERSION}/windows/" \
                 --progress \
                 --s3-upload-concurrency 4
               
-              # Upload as latest
-              "$RCLONE_PATH" copy "$file" "r2:${R2_BUCKET}/desktop/${ENV_PREFIX}/latest/windows/" \
+              # Upload as latest (overwrites on rebuild)
+              "$RCLONE_PATH" copy "$file" "r2:${R2_BUCKET}/desktop/latest/windows/" \
                 --progress \
                 --s3-upload-concurrency 4
               
               echo "✅ Uploaded: $filename"
-              echo "🔗 ${R2_PUBLIC_URL}/desktop/${ENV_PREFIX}/latest/windows/${filename}"
+              echo "🔗 ${R2_PUBLIC_URL}/desktop/latest/windows/${filename}"
             fi
           done
 
