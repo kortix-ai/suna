@@ -26,6 +26,9 @@ permissions:
 jobs:
   build-macos:
     runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -41,9 +44,9 @@ jobs:
         working-directory: apps/desktop
         run: npm ci
 
-      - name: Build macOS app
+      - name: Build macOS app (${{ matrix.arch }})
         working-directory: apps/desktop
-        run: npm run build:mac
+        run: npm run build:mac -- --${{ matrix.arch }}
         env:
           # Skip notarization in CI (requires Apple Developer credentials)
           CSC_IDENTITY_AUTO_DISCOVERY: false
@@ -52,10 +55,21 @@ jobs:
         working-directory: apps/desktop
         run: ls -lah dist/
 
+      - name: Rename artifacts with architecture
+        working-directory: apps/desktop/dist
+        run: |
+          for file in *.dmg; do
+            if [ -f "$file" ]; then
+              base="${file%.dmg}"
+              mv "$file" "${base}-${{ matrix.arch }}.dmg"
+            fi
+          done
+          ls -lah
+
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kortix-macos-${{ github.sha }}
+          name: kortix-macos-${{ matrix.arch }}-${{ github.sha }}
           path: |
             apps/desktop/dist/*.dmg
           retention-days: 30
@@ -96,8 +110,186 @@ jobs:
             apps/desktop/dist/*.exe
           retention-days: 30
 
-  create-release:
+  upload-to-r2:
     needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/PRODUCTION'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./apps/desktop/package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Download macOS x64 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kortix-macos-x64-${{ github.sha }}
+          path: ./artifacts/macos-x64
+
+      - name: Download macOS ARM64 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kortix-macos-arm64-${{ github.sha }}
+          path: ./artifacts/macos-arm64
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kortix-windows-${{ github.sha }}
+          path: ./artifacts/windows
+
+      - name: Configure AWS CLI for R2
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          aws-region: auto
+
+      - name: Upload to Cloudflare R2
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Set environment prefix (staging vs production)
+          if [[ "${{ github.ref }}" == "refs/heads/PRODUCTION" ]]; then
+            ENV_PREFIX="production"
+          else
+            ENV_PREFIX="staging"
+          fi
+          
+          echo "📦 Uploading to R2 bucket: $R2_BUCKET"
+          echo "🏷️  Version: $VERSION"
+          echo "🌍 Environment: $ENV_PREFIX"
+          
+          # Upload macOS Intel (x64)
+          for file in ./artifacts/macos-x64/*.dmg; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              aws s3 cp "$file" \
+                "s3://$R2_BUCKET/desktop/$ENV_PREFIX/$VERSION/macos/$filename" \
+                --endpoint-url "$R2_ENDPOINT" \
+                --content-type "application/x-apple-diskimage"
+              
+              # Also upload as "latest" for easy access
+              aws s3 cp "$file" \
+                "s3://$R2_BUCKET/desktop/$ENV_PREFIX/latest/macos/$filename" \
+                --endpoint-url "$R2_ENDPOINT" \
+                --content-type "application/x-apple-diskimage"
+              
+              echo "✅ Uploaded macOS x64: $filename"
+            fi
+          done
+          
+          # Upload macOS Apple Silicon (ARM64)
+          for file in ./artifacts/macos-arm64/*.dmg; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              aws s3 cp "$file" \
+                "s3://$R2_BUCKET/desktop/$ENV_PREFIX/$VERSION/macos/$filename" \
+                --endpoint-url "$R2_ENDPOINT" \
+                --content-type "application/x-apple-diskimage"
+              
+              # Also upload as "latest"
+              aws s3 cp "$file" \
+                "s3://$R2_BUCKET/desktop/$ENV_PREFIX/latest/macos/$filename" \
+                --endpoint-url "$R2_ENDPOINT" \
+                --content-type "application/x-apple-diskimage"
+              
+              echo "✅ Uploaded macOS ARM64: $filename"
+            fi
+          done
+          
+          # Upload Windows
+          for file in ./artifacts/windows/*.exe; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              aws s3 cp "$file" \
+                "s3://$R2_BUCKET/desktop/$ENV_PREFIX/$VERSION/windows/$filename" \
+                --endpoint-url "$R2_ENDPOINT" \
+                --content-type "application/x-msdownload"
+              
+              # Also upload as "latest"
+              aws s3 cp "$file" \
+                "s3://$R2_BUCKET/desktop/$ENV_PREFIX/latest/windows/$filename" \
+                --endpoint-url "$R2_ENDPOINT" \
+                --content-type "application/x-msdownload"
+              
+              echo "✅ Uploaded Windows: $filename"
+            fi
+          done
+          
+          echo "🎉 All files uploaded to R2!"
+
+      - name: Generate download URLs
+        env:
+          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/PRODUCTION" ]]; then
+            ENV_PREFIX="production"
+          else
+            ENV_PREFIX="staging"
+          fi
+          
+          echo "## 📥 Download URLs" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Version $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # List all uploaded files and create URLs
+          for file in ./artifacts/macos-x64/*.dmg; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              echo "- **macOS Intel (x64)**: ${R2_PUBLIC_URL}/desktop/${ENV_PREFIX}/${VERSION}/macos/${filename}" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          
+          for file in ./artifacts/macos-arm64/*.dmg; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              echo "- **macOS Apple Silicon (ARM64)**: ${R2_PUBLIC_URL}/desktop/${ENV_PREFIX}/${VERSION}/macos/${filename}" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          
+          for file in ./artifacts/windows/*.exe; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              echo "- **Windows**: ${R2_PUBLIC_URL}/desktop/${ENV_PREFIX}/${VERSION}/windows/${filename}" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Latest (always current)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          for file in ./artifacts/macos-x64/*.dmg; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              echo "- **macOS Intel (x64)**: ${R2_PUBLIC_URL}/desktop/${ENV_PREFIX}/latest/macos/${filename}" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          
+          for file in ./artifacts/macos-arm64/*.dmg; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              echo "- **macOS Apple Silicon (ARM64)**: ${R2_PUBLIC_URL}/desktop/${ENV_PREFIX}/latest/macos/${filename}" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          
+          for file in ./artifacts/windows/*.exe; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              echo "- **Windows**: ${R2_PUBLIC_URL}/desktop/${ENV_PREFIX}/latest/windows/${filename}" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+  create-release:
+    needs: [build-macos, build-windows, upload-to-r2]
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'workflow_dispatch' && 
@@ -109,17 +301,22 @@ jobs:
 
       - name: Get version from package.json
         id: version
-        working-directory: apps/desktop
         run: |
-          VERSION=$(node -p "require('./package.json').version")
+          VERSION=$(node -p "require('./apps/desktop/package.json').version")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=v$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Download macOS artifacts
+      - name: Download macOS x64 artifacts
         uses: actions/download-artifact@v4
         with:
-          name: kortix-macos-${{ github.sha }}
-          path: ./artifacts/macos
+          name: kortix-macos-x64-${{ github.sha }}
+          path: ./artifacts/macos-x64
+
+      - name: Download macOS ARM64 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kortix-macos-arm64-${{ github.sha }}
+          path: ./artifacts/macos-arm64
 
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4
@@ -129,8 +326,10 @@ jobs:
 
       - name: List all artifacts
         run: |
-          echo "=== macOS artifacts ==="
-          ls -lah ./artifacts/macos/
+          echo "=== macOS x64 artifacts ==="
+          ls -lah ./artifacts/macos-x64/
+          echo "=== macOS ARM64 artifacts ==="
+          ls -lah ./artifacts/macos-arm64/
           echo "=== Windows artifacts ==="
           ls -lah ./artifacts/windows/
 
@@ -142,22 +341,28 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            ./artifacts/macos/*
+            ./artifacts/macos-x64/*
+            ./artifacts/macos-arm64/*
             ./artifacts/windows/*
           body: |
             ## Kortix Desktop App ${{ steps.version.outputs.version }}
             
             ### Downloads
             
-            - **macOS**: Download the `.dmg` file
-            - **Windows**: Download the `.exe` file
+            **macOS:**
+            - **Apple Silicon (M1/M2/M3)**: Download the `-arm64.dmg` file
+            - **Intel**: Download the `-x64.dmg` file
+            
+            **Windows:**
+            - Download the `.exe` installer
             
             ### Installation
             
             **macOS:**
-            1. Download and open the `.dmg` file
-            2. Drag Kortix to your Applications folder
-            3. Open Kortix from Applications
+            1. Download the appropriate `.dmg` file for your Mac (Apple Silicon or Intel)
+            2. Open the `.dmg` file
+            3. Drag Kortix to your Applications folder
+            4. Open Kortix from Applications
             
             **Windows:**
             1. Download and run the `.exe` installer
@@ -171,17 +376,53 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   notify:
-    needs: [build-macos, build-windows]
+    needs: [build-macos, build-windows, upload-to-r2]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Build Status
         run: |
-          if [ "${{ needs.build-macos.result }}" == "success" ] && [ "${{ needs.build-windows.result }}" == "success" ]; then
-            echo "✅ All desktop builds completed successfully!"
+          MACOS_STATUS="${{ needs.build-macos.result }}"
+          WINDOWS_STATUS="${{ needs.build-windows.result }}"
+          R2_STATUS="${{ needs.upload-to-r2.result }}"
+          
+          echo "## 🏗️ Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "$MACOS_STATUS" == "success" ]; then
+            echo "✅ macOS (Intel + Apple Silicon): Success" >> $GITHUB_STEP_SUMMARY
+            echo "✅ macOS builds completed successfully!"
           else
-            echo "❌ Some builds failed:"
-            echo "  macOS: ${{ needs.build-macos.result }}"
-            echo "  Windows: ${{ needs.build-windows.result }}"
+            echo "❌ macOS (Intel + Apple Silicon): $MACOS_STATUS" >> $GITHUB_STEP_SUMMARY
+            echo "❌ macOS builds failed: $MACOS_STATUS"
+          fi
+          
+          if [ "$WINDOWS_STATUS" == "success" ]; then
+            echo "✅ Windows: Success" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Windows build completed successfully!"
+          else
+            echo "❌ Windows: $WINDOWS_STATUS" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Windows build failed: $WINDOWS_STATUS"
+          fi
+          
+          if [ "$R2_STATUS" == "success" ] || [ "$R2_STATUS" == "skipped" ]; then
+            if [ "$R2_STATUS" == "success" ]; then
+              echo "✅ Cloudflare R2 Upload: Success" >> $GITHUB_STEP_SUMMARY
+              echo "✅ Files uploaded to R2!"
+            else
+              echo "⏭️  Cloudflare R2 Upload: Skipped (not main/PRODUCTION branch)" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "❌ Cloudflare R2 Upload: $R2_STATUS" >> $GITHUB_STEP_SUMMARY
+            echo "❌ R2 upload failed: $R2_STATUS"
+          fi
+          
+          if [ "$MACOS_STATUS" == "success" ] && [ "$WINDOWS_STATUS" == "success" ]; then
+            echo ""
+            echo "🎉 All desktop builds completed successfully!"
+            exit 0
+          else
+            echo ""
+            echo "❌ Some builds failed"
             exit 1
           fi
