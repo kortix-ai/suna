@@ -71,6 +71,8 @@ RUN apt-get update && apt-get install -y \
     # OCR Tools
     tesseract-ocr \
     tesseract-ocr-eng \
+    # File system monitoring
+    inotify-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js and npm (primary package manager)
@@ -112,9 +114,10 @@ RUN npx playwright install chromium
 # Verify installation
 RUN node -e "import('playwright').then(() => console.log('Playwright installation verified')).catch(e => { console.error('Playwright verification failed:', e); process.exit(1); })"
 
-# Copy server script
+# Copy server script and file watcher
 COPY . /app
 COPY server.py /app/server.py
+RUN chmod +x /app/file_watcher.sh
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
