@@ -66,7 +66,60 @@ jobs:
           done
           ls -lah
 
-      - name: Upload macOS artifacts
+      - name: Upload to R2 (if main/PRODUCTION)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/PRODUCTION'
+        working-directory: apps/desktop
+        env:
+          R2_ACCOUNT_ID: "9785405a992435bb0c7bd19f9b6d26d5"
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          
+          if [[ "${{ github.ref }}" == "refs/heads/PRODUCTION" ]]; then
+            ENV_PREFIX="production"
+          else
+            ENV_PREFIX="staging"
+          fi
+          
+          brew install rclone
+          
+          # Configure rclone for R2
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf << EOF
+          [r2]
+          type = s3
+          provider = Cloudflare
+          access_key_id = ${R2_ACCESS_KEY_ID}
+          secret_access_key = ${R2_SECRET_ACCESS_KEY}
+          endpoint = https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+          acl = private
+          EOF
+          
+          for file in dist/*.dmg; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              
+              echo "📤 Uploading: $filename"
+              
+              # Upload versioned
+              rclone copy "$file" "r2:${R2_BUCKET}/desktop/${ENV_PREFIX}/${VERSION}/macos/" \
+                --progress \
+                --s3-upload-concurrency 4
+              
+              # Upload as latest
+              rclone copy "$file" "r2:${R2_BUCKET}/desktop/${ENV_PREFIX}/latest/macos/" \
+                --progress \
+                --s3-upload-concurrency 4
+              
+              echo "✅ Uploaded: $filename"
+              echo "🔗 ${R2_PUBLIC_URL}/desktop/${ENV_PREFIX}/latest/macos/${filename}"
+            fi
+          done
+
+      - name: Upload macOS artifacts (for GitHub Release)
         uses: actions/upload-artifact@v4
         with:
           name: kortix-macos-${{ matrix.arch }}-${{ github.sha }}
@@ -102,7 +155,64 @@ jobs:
         working-directory: apps/desktop
         run: dir dist\
 
-      - name: Upload Windows artifacts
+      - name: Upload to R2 (if main/PRODUCTION)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/PRODUCTION'
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          R2_ACCOUNT_ID: "9785405a992435bb0c7bd19f9b6d26d5"
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          
+          if [[ "${{ github.ref }}" == "refs/heads/PRODUCTION" ]]; then
+            ENV_PREFIX="production"
+          else
+            ENV_PREFIX="staging"
+          fi
+          
+          # Install rclone
+          curl https://downloads.rclone.org/rclone-current-windows-amd64.zip -o rclone.zip
+          unzip -q rclone.zip
+          RCLONE_PATH=$(find . -name "rclone.exe" | head -1)
+          
+          # Configure rclone for R2
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf << EOF
+          [r2]
+          type = s3
+          provider = Cloudflare
+          access_key_id = ${R2_ACCESS_KEY_ID}
+          secret_access_key = ${R2_SECRET_ACCESS_KEY}
+          endpoint = https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+          acl = private
+          EOF
+          
+          for file in dist/*.exe; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              
+              echo "📤 Uploading: $filename"
+              
+              # Upload versioned
+              "$RCLONE_PATH" copy "$file" "r2:${R2_BUCKET}/desktop/${ENV_PREFIX}/${VERSION}/windows/" \
+                --progress \
+                --s3-upload-concurrency 4
+              
+              # Upload as latest
+              "$RCLONE_PATH" copy "$file" "r2:${R2_BUCKET}/desktop/${ENV_PREFIX}/latest/windows/" \
+                --progress \
+                --s3-upload-concurrency 4
+              
+              echo "✅ Uploaded: $filename"
+              echo "🔗 ${R2_PUBLIC_URL}/desktop/${ENV_PREFIX}/latest/windows/${filename}"
+            fi
+          done
+
+      - name: Upload Windows artifacts (for GitHub Release)
         uses: actions/upload-artifact@v4
         with:
           name: kortix-windows-${{ github.sha }}
@@ -110,187 +220,8 @@ jobs:
             apps/desktop/dist/*.exe
           retention-days: 30
 
-  upload-to-r2:
-    needs: [build-macos, build-windows]
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/PRODUCTION'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Get version from package.json
-        id: version
-        run: |
-          VERSION=$(node -p "require('./apps/desktop/package.json').version")
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Download macOS x64 artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: kortix-macos-x64-${{ github.sha }}
-          path: ./artifacts/macos-x64
-
-      - name: Download macOS ARM64 artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: kortix-macos-arm64-${{ github.sha }}
-          path: ./artifacts/macos-arm64
-
-      - name: Download Windows artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: kortix-windows-${{ github.sha }}
-          path: ./artifacts/windows
-
-      - name: Install AWS CLI
-        run: |
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          unzip -q awscliv2.zip
-          sudo ./aws/install --update
-
-      - name: Upload to Cloudflare R2
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          # Set environment prefix (staging vs production)
-          if [[ "${{ github.ref }}" == "refs/heads/PRODUCTION" ]]; then
-            ENV_PREFIX="production"
-          else
-            ENV_PREFIX="staging"
-          fi
-          
-          echo "📦 Uploading to R2 bucket: $R2_BUCKET"
-          echo "🏷️  Version: $VERSION"
-          echo "🌍 Environment: $ENV_PREFIX"
-          
-          # Upload macOS Intel (x64)
-          for file in ./artifacts/macos-x64/*.dmg; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              aws s3 cp "$file" \
-                "s3://$R2_BUCKET/desktop/$ENV_PREFIX/$VERSION/macos/$filename" \
-                --endpoint-url "$R2_ENDPOINT" \
-                --content-type "application/x-apple-diskimage"
-              
-              # Also upload as "latest" for easy access
-              aws s3 cp "$file" \
-                "s3://$R2_BUCKET/desktop/$ENV_PREFIX/latest/macos/$filename" \
-                --endpoint-url "$R2_ENDPOINT" \
-                --content-type "application/x-apple-diskimage"
-              
-              echo "✅ Uploaded macOS x64: $filename"
-            fi
-          done
-          
-          # Upload macOS Apple Silicon (ARM64)
-          for file in ./artifacts/macos-arm64/*.dmg; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              aws s3 cp "$file" \
-                "s3://$R2_BUCKET/desktop/$ENV_PREFIX/$VERSION/macos/$filename" \
-                --endpoint-url "$R2_ENDPOINT" \
-                --content-type "application/x-apple-diskimage"
-              
-              # Also upload as "latest"
-              aws s3 cp "$file" \
-                "s3://$R2_BUCKET/desktop/$ENV_PREFIX/latest/macos/$filename" \
-                --endpoint-url "$R2_ENDPOINT" \
-                --content-type "application/x-apple-diskimage"
-              
-              echo "✅ Uploaded macOS ARM64: $filename"
-            fi
-          done
-          
-          # Upload Windows
-          for file in ./artifacts/windows/*.exe; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              aws s3 cp "$file" \
-                "s3://$R2_BUCKET/desktop/$ENV_PREFIX/$VERSION/windows/$filename" \
-                --endpoint-url "$R2_ENDPOINT" \
-                --content-type "application/x-msdownload"
-              
-              # Also upload as "latest"
-              aws s3 cp "$file" \
-                "s3://$R2_BUCKET/desktop/$ENV_PREFIX/latest/windows/$filename" \
-                --endpoint-url "$R2_ENDPOINT" \
-                --content-type "application/x-msdownload"
-              
-              echo "✅ Uploaded Windows: $filename"
-            fi
-          done
-          
-          echo "🎉 All files uploaded to R2!"
-
-      - name: Generate download URLs
-        env:
-          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          if [[ "${{ github.ref }}" == "refs/heads/PRODUCTION" ]]; then
-            ENV_PREFIX="production"
-          else
-            ENV_PREFIX="staging"
-          fi
-          
-          echo "## 📥 Download URLs" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Version $VERSION" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # List all uploaded files and create URLs
-          for file in ./artifacts/macos-x64/*.dmg; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              echo "- **macOS Intel (x64)**: ${R2_PUBLIC_URL}/desktop/${ENV_PREFIX}/${VERSION}/macos/${filename}" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
-          
-          for file in ./artifacts/macos-arm64/*.dmg; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              echo "- **macOS Apple Silicon (ARM64)**: ${R2_PUBLIC_URL}/desktop/${ENV_PREFIX}/${VERSION}/macos/${filename}" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
-          
-          for file in ./artifacts/windows/*.exe; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              echo "- **Windows**: ${R2_PUBLIC_URL}/desktop/${ENV_PREFIX}/${VERSION}/windows/${filename}" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Latest (always current)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          for file in ./artifacts/macos-x64/*.dmg; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              echo "- **macOS Intel (x64)**: ${R2_PUBLIC_URL}/desktop/${ENV_PREFIX}/latest/macos/${filename}" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
-          
-          for file in ./artifacts/macos-arm64/*.dmg; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              echo "- **macOS Apple Silicon (ARM64)**: ${R2_PUBLIC_URL}/desktop/${ENV_PREFIX}/latest/macos/${filename}" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
-          
-          for file in ./artifacts/windows/*.exe; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              echo "- **Windows**: ${R2_PUBLIC_URL}/desktop/${ENV_PREFIX}/latest/windows/${filename}" >> $GITHUB_STEP_SUMMARY
-            fi
-          done
-
   create-release:
-    needs: [build-macos, build-windows, upload-to-r2]
+    needs: [build-macos, build-windows]
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'workflow_dispatch' && 
@@ -377,7 +308,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   notify:
-    needs: [build-macos, build-windows, upload-to-r2]
+    needs: [build-macos, build-windows]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -385,7 +316,6 @@ jobs:
         run: |
           MACOS_STATUS="${{ needs.build-macos.result }}"
           WINDOWS_STATUS="${{ needs.build-windows.result }}"
-          R2_STATUS="${{ needs.upload-to-r2.result }}"
           
           echo "## 🏗️ Build Status" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -404,18 +334,6 @@ jobs:
           else
             echo "❌ Windows: $WINDOWS_STATUS" >> $GITHUB_STEP_SUMMARY
             echo "❌ Windows build failed: $WINDOWS_STATUS"
-          fi
-          
-          if [ "$R2_STATUS" == "success" ] || [ "$R2_STATUS" == "skipped" ]; then
-            if [ "$R2_STATUS" == "success" ]; then
-              echo "✅ Cloudflare R2 Upload: Success" >> $GITHUB_STEP_SUMMARY
-              echo "✅ Files uploaded to R2!"
-            else
-              echo "⏭️  Cloudflare R2 Upload: Skipped (not main/PRODUCTION branch)" >> $GITHUB_STEP_SUMMARY
-            fi
-          else
-            echo "❌ Cloudflare R2 Upload: $R2_STATUS" >> $GITHUB_STEP_SUMMARY
-            echo "❌ R2 upload failed: $R2_STATUS"
           fi
           
           if [ "$MACOS_STATUS" == "success" ] && [ "$WINDOWS_STATUS" == "success" ]; then
