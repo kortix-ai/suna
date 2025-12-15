@@ -13,6 +13,8 @@ from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import asyncio
 import httpx
+import json
+import os
 from core.auth import require_admin, require_super_admin
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
@@ -20,6 +22,23 @@ from core.utils.pagination import PaginationService, PaginationParams, Paginated
 from core.utils.config import config
 from core.utils.query_utils import batch_query_in
 import openai
+
+# Google Analytics imports
+try:
+    from google.analytics.data_v1beta import BetaAnalyticsDataClient
+    from google.analytics.data_v1beta.types import (
+        RunReportRequest,
+        DateRange,
+        Dimension,
+        Metric,
+        FilterExpression,
+        Filter,
+    )
+    from google.oauth2 import service_account
+    GA_AVAILABLE = True
+except ImportError:
+    GA_AVAILABLE = False
+    logger.warning("Google Analytics SDK not installed. Install with: pip install google-analytics-data")
 
 router = APIRouter(prefix="/admin/analytics", tags=["admin-analytics"])
 
@@ -98,39 +117,77 @@ async def get_openai_client():
     return openai.AsyncOpenAI(api_key=api_key)
 
 
-async def query_posthog(query: str, date_from: str, date_to: str) -> Dict[str, Any]:
-    """Query PostHog API for analytics data."""
-    api_key = config.POSTHOG_PERSONAL_API_KEY
-    project_id = config.POSTHOG_PROJECT_ID
-    host = config.POSTHOG_HOST or "https://eu.posthog.com"
-    
-    if not api_key or not project_id:
+def get_ga_client() -> "BetaAnalyticsDataClient":
+    """Get Google Analytics client with service account credentials."""
+    if not GA_AVAILABLE:
         raise HTTPException(
-            status_code=500, 
-            detail="PostHog not configured. Set POSTHOG_PERSONAL_API_KEY and POSTHOG_PROJECT_ID."
+            status_code=500,
+            detail="Google Analytics SDK not installed. Install with: pip install google-analytics-data"
         )
     
-    url = f"{host}/api/projects/{project_id}/query/"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
+    credentials_json = config.GA_CREDENTIALS_JSON
+    if not credentials_json:
+        raise HTTPException(
+            status_code=500,
+            detail="Google Analytics not configured. Set GA_CREDENTIALS_JSON environment variable."
+        )
     
-    payload = {
-        "query": {
-            "kind": "HogQLQuery",
-            "query": query
-        }
-    }
+    # Check if it's a file path or JSON string
+    if os.path.isfile(credentials_json):
+        credentials = service_account.Credentials.from_service_account_file(credentials_json)
+    else:
+        # Parse as JSON string
+        try:
+            credentials_info = json.loads(credentials_json)
+            credentials = service_account.Credentials.from_service_account_info(credentials_info)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=500,
+                detail="Invalid GA_CREDENTIALS_JSON: must be valid JSON or a file path"
+            )
     
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(url, json=payload, headers=headers)
-        
-        if response.status_code != 200:
-            logger.error(f"PostHog API error: {response.status_code} - {response.text}")
-            raise HTTPException(status_code=500, detail=f"PostHog API error: {response.status_code}")
-        
-        return response.json()
+    return BetaAnalyticsDataClient(credentials=credentials)
+
+
+def query_google_analytics(date_str: str) -> Dict[str, int]:
+    """
+    Query Google Analytics for visitor stats on a specific date.
+    Returns dict with 'pageviews' and 'unique_visitors'.
+    """
+    property_id = config.GA_PROPERTY_ID
+    if not property_id:
+        raise HTTPException(
+            status_code=500,
+            detail="Google Analytics not configured. Set GA_PROPERTY_ID environment variable."
+        )
+    
+    client = get_ga_client()
+    
+    # Build the request - no hostname filter needed (dedicated kortix property)
+    request = RunReportRequest(
+        property=f"properties/{property_id}",
+        date_ranges=[DateRange(start_date=date_str, end_date=date_str)],
+        metrics=[
+            Metric(name="screenPageViews"),
+            Metric(name="newUsers"),
+        ],
+    )
+    
+    response = client.run_report(request)
+    
+    # Extract results
+    pageviews = 0
+    unique_visitors = 0
+    
+    if response.rows:
+        row = response.rows[0]
+        pageviews = int(row.metric_values[0].value) if row.metric_values else 0
+        unique_visitors = int(row.metric_values[1].value) if len(row.metric_values) > 1 else 0
+    
+    return {
+        "pageviews": pageviews,
+        "unique_visitors": unique_visitors
+    }
 
 
 # ============================================================================
@@ -794,7 +851,7 @@ async def get_visitor_stats(
     date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
     admin: dict = Depends(require_admin)
 ) -> VisitorStats:
-    """Get visitor statistics from PostHog for a specific day."""
+    """Get visitor statistics from Google Analytics for a specific day."""
     try:
         # Parse date or default to today
         if date:
@@ -807,28 +864,13 @@ async def get_visitor_stats(
         
         date_str = selected_date.strftime("%Y-%m-%d")
         
-        # Query PostHog for pageview events on the selected date
-        query = f"""
-        SELECT 
-            count() as pageviews,
-            count(DISTINCT distinct_id) as unique_visitors
-        FROM events
-        WHERE event = '$pageview'
-          AND timestamp >= toDateTime('{date_str} 00:00:00')
-          AND timestamp < toDateTime('{date_str} 23:59:59')
-        """
-        
-        result = await query_posthog(query, date_str, date_str)
-        
-        # Extract results
-        data = result.get('results', [[0, 0]])[0]
-        pageviews = data[0] if len(data) > 0 else 0
-        unique_visitors = data[1] if len(data) > 1 else 0
+        # Query Google Analytics for pageview events on the selected date
+        ga_data = query_google_analytics(date_str)
         
         return VisitorStats(
-            total_visitors=unique_visitors,
-            unique_visitors=unique_visitors,
-            pageviews=pageviews,
+            total_visitors=ga_data["unique_visitors"],
+            unique_visitors=ga_data["unique_visitors"],
+            pageviews=ga_data["pageviews"],
             date=date_str
         )
         
@@ -865,18 +907,10 @@ async def get_conversion_funnel(
         # Define async functions for parallel execution
         async def get_visitors():
             try:
-                query = f"""
-                SELECT count(DISTINCT distinct_id) as unique_visitors
-                FROM events
-                WHERE event = '$pageview'
-                  AND timestamp >= toDateTime('{date_str} 00:00:00')
-                  AND timestamp < toDateTime('{date_str} 23:59:59')
-                """
-                result = await query_posthog(query, date_str, date_str)
-                data = result.get('results', [[0]])[0]
-                return data[0] if len(data) > 0 else 0
+                ga_data = query_google_analytics(date_str)
+                return ga_data["unique_visitors"]
             except Exception as e:
-                logger.warning(f"Failed to get PostHog visitors: {e}")
+                logger.warning(f"Failed to get Google Analytics visitors: {e}")
                 return 0
         
         async def get_signups():
