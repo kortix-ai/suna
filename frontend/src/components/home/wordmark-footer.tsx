@@ -28,7 +28,7 @@ export function WordmarkFooter() {
     }, [isMobile]);
 
     return (
-        <section className="w-full px-6">
+        <section className="w-full px-6 animate-in fade-in-0 duration-700 fill-mode-both">
             <div
                 ref={containerRef}
                 onMouseEnter={() => !isMobile && setIsHovered(true)}

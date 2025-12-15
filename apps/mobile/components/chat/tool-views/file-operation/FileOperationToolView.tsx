@@ -829,3 +829,4 @@ export function FileOperationToolView({
     </ToolViewCard>
   );
 }
+
