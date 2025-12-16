@@ -139,26 +139,25 @@ jobs:
           "
           echo "Synced version to app.json (reference only, remote version is used for builds)"
 
-      - name: Update EAS remote version
+      - name: Check EAS remote version
         working-directory: apps/mobile
+        id: check_remote_version
         run: |
-          NEW_VERSION="${{ steps.version_logic.outputs.new_version }}"
-          PLATFORM="${{ github.event.inputs.platform }}"
+          # Check current remote version (for info only)
+          CURRENT_REMOTE=$(eas build:version:get --platform ios --json --non-interactive 2>/dev/null | jq -r '.ios.appVersion // empty' || echo "not-set")
+          echo "current_remote=$CURRENT_REMOTE" >> $GITHUB_OUTPUT
           
-          # Default to 'all' if triggered by push
-          if [ "${{ github.event_name }}" == "push" ] || [ -z "$PLATFORM" ]; then
-            PLATFORM="all"
-          fi
-          
-          # Use build:version:set command - pipe version as input (interactive command)
-          # Note: autoIncrement only increments build numbers, not app version strings
-          if [ "$PLATFORM" == "all" ]; then
-            echo -e "$NEW_VERSION" | eas build:version:set --platform ios 2>&1 || echo "$NEW_VERSION" | eas build:version:set --platform ios
-            echo -e "$NEW_VERSION" | eas build:version:set --platform android 2>&1 || echo "$NEW_VERSION" | eas build:version:set --platform android
+          if [ "$CURRENT_REMOTE" == "not-set" ] || [ -z "$CURRENT_REMOTE" ] || [ "$CURRENT_REMOTE" == "null" ]; then
+            echo "⚠️ No remote version found!"
+            echo "💡 Set version manually first: eas build:version:set --platform ios"
+            echo "💡 Or the build will prompt you to set it"
           else
-            echo -e "$NEW_VERSION" | eas build:version:set --platform $PLATFORM 2>&1 || echo "$NEW_VERSION" | eas build:version:set --platform $PLATFORM
+            echo "✅ Current remote version: $CURRENT_REMOTE"
           fi
-          echo "✅ Updated EAS remote version to $NEW_VERSION"
+          
+          # Note: eas build:version:set is interactive and doesn't work well in CI/CD
+          # Versions should be set manually before running builds
+          # The build will use whatever version is currently set remotely
 
       - name: Build iOS Production
         if: github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all' || github.event_name == 'push'
