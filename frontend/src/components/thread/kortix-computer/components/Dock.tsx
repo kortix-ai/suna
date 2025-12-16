@@ -286,6 +286,15 @@ export const AppDock = memo(function AppDock({
   isBrowserWindowOpen = false,
 }: AppDockProps) {
   const [scrollOffset, setScrollOffset] = useState(0);
+  const maxVisibleIcons = 12;
+  
+  useEffect(() => {
+    if (currentIndex < scrollOffset) {
+      setScrollOffset(currentIndex);
+    } else if (currentIndex >= scrollOffset + maxVisibleIcons) {
+      setScrollOffset(Math.max(0, currentIndex - maxVisibleIcons + 1));
+    }
+  }, [currentIndex, scrollOffset, maxVisibleIcons]);
   
   if (toolCalls.length === 0) return null;
 
@@ -300,18 +309,8 @@ export const AppDock = memo(function AppDock({
     return tool.toolResult.success === false || tool.isSuccess === false;
   };
 
-  const maxVisibleIcons = 12;
-  
-  useEffect(() => {
-    if (currentIndex < scrollOffset) {
-      setScrollOffset(currentIndex);
-    } else if (currentIndex >= scrollOffset + maxVisibleIcons) {
-      setScrollOffset(Math.max(0, currentIndex - maxVisibleIcons + 1));
-    }
-  }, [currentIndex, scrollOffset, maxVisibleIcons]);
-  
-  let startIndex = scrollOffset;
-  let endIndex = Math.min(toolCalls.length, startIndex + maxVisibleIcons);
+  const startIndex = scrollOffset;
+  const endIndex = Math.min(toolCalls.length, startIndex + maxVisibleIcons);
   
   const visibleTools = toolCalls.slice(startIndex, endIndex);
 
