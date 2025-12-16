@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useEffect } from 'react';
-import { View, ScrollView } from 'react-native';
+import React, { useMemo, useRef, useEffect, useState, useCallback } from 'react';
+import { View, ScrollView, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { CircleDashed } from 'lucide-react-native';
@@ -156,6 +156,9 @@ interface StreamingToolCardProps {
 
 export const StreamingToolCard = React.memo(function StreamingToolCard({ content }: StreamingToolCardProps) {
   const scrollViewRef = useRef<ScrollView>(null);
+  const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
+  const contentHeightRef = useRef(0);
+  const scrollViewHeightRef = useRef(0);
 
   const toolInfo = useMemo(() => {
     const rawToolName = extractToolNameFromStream(content);
@@ -177,11 +180,20 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
     };
   }, [content]);
 
+  // Track if user has scrolled away from bottom
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    // Consider "at bottom" if within 50px of the bottom
+    setIsUserScrolledUp(distanceFromBottom > 50);
+  }, []);
+
+  // Only auto-scroll if user hasn't scrolled up
   useEffect(() => {
-    if (scrollViewRef.current && toolInfo?.streamingContent) {
-      scrollViewRef.current.scrollToEnd({ animated: true });
+    if (scrollViewRef.current && toolInfo?.streamingContent && !isUserScrolledUp) {
+      scrollViewRef.current.scrollToEnd({ animated: false });
     }
-  }, [toolInfo?.streamingContent]);
+  }, [toolInfo?.streamingContent, isUserScrolledUp]);
 
   if (!toolInfo) {
     return (
@@ -242,6 +254,8 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
         ref={scrollViewRef}
         className="max-h-[300px] bg-card"
         showsVerticalScrollIndicator={true}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
       >
         <View className="p-3">
           <Text

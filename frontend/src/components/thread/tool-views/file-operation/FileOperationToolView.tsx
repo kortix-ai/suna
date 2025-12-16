@@ -40,6 +40,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { FileDownloadButton } from '../shared/FileDownloadButton';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 import {
   getLanguageFromFileName,
@@ -472,8 +473,6 @@ export function FileOperationToolView({
   const lastLineCountRef = React.useRef<number>(0);
   const isUserScrollingSourceRef = React.useRef<boolean>(false);
   const isUserScrollingPreviewRef = React.useRef<boolean>(false);
-  const scrollTimeoutSourceRef = React.useRef<NodeJS.Timeout | null>(null);
-  const scrollTimeoutPreviewRef = React.useRef<NodeJS.Timeout | null>(null);
 
   const isNearBottom = (element: HTMLElement, threshold: number = 100): boolean => {
     return element.scrollHeight - element.scrollTop - element.clientHeight < threshold;
@@ -484,23 +483,14 @@ export function FileOperationToolView({
     if (!viewport) return;
 
     const handleScroll = () => {
-      if (scrollTimeoutSourceRef.current) {
-        clearTimeout(scrollTimeoutSourceRef.current);
-      }
-
+      // Only allow auto-scroll when user is near the bottom
+      // Don't use timeout - respect user's scroll position continuously
       isUserScrollingSourceRef.current = !isNearBottom(viewport);
-
-      scrollTimeoutSourceRef.current = setTimeout(() => {
-        isUserScrollingSourceRef.current = false;
-      }, 1000);
     };
 
     viewport.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       viewport.removeEventListener('scroll', handleScroll);
-      if (scrollTimeoutSourceRef.current) {
-        clearTimeout(scrollTimeoutSourceRef.current);
-      }
     };
   }, []);
 
@@ -509,23 +499,14 @@ export function FileOperationToolView({
     if (!viewport) return;
 
     const handleScroll = () => {
-      if (scrollTimeoutPreviewRef.current) {
-        clearTimeout(scrollTimeoutPreviewRef.current);
-      }
-
+      // Only allow auto-scroll when user is near the bottom
+      // Don't use timeout - respect user's scroll position continuously
       isUserScrollingPreviewRef.current = !isNearBottom(viewport);
-
-      scrollTimeoutPreviewRef.current = setTimeout(() => {
-        isUserScrollingPreviewRef.current = false;
-      }, 1000);
     };
 
     viewport.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       viewport.removeEventListener('scroll', handleScroll);
-      if (scrollTimeoutPreviewRef.current) {
-        clearTimeout(scrollTimeoutPreviewRef.current);
-      }
     };
   }, []);
 
@@ -869,60 +850,91 @@ export function FileOperationToolView({
                 </TabsTrigger>
               </TabsList>
             </div>
-            <div className='flex items-center gap-1.5 flex-shrink-0'>
-              {fileContent && !isStreaming && !isPresentationSlide && operation !== 'delete' && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCopyContent}
-                  disabled={isCopyingContent}
-                  className="h-8 w-8 p-0"
-                  title="Copy file content"
-                >
-                  {isCopyingContent ? (
-                    <Check className="h-4 w-4" />
-                  ) : (
-                    <Copy className="h-4 w-4" />
-                  )}
-                </Button>
-              )}
-              {fileContent && !isStreaming && !isPresentationSlide && operation !== 'delete' && (
-                <FileDownloadButton
-                  content={fileContent}
-                  fileName={fileName}
-                  disabled={isStreaming}
-                />
-              )}
-              {processedFilePath && !isStreaming && !isPresentationSlide && operation !== 'delete' && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => openFileInComputer(processedFilePath)}
-                  className="h-8 gap-1.5 px-2"
-                  title="Edit in Files Manager"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  <span className="text-xs hidden sm:inline">Edit</span>
-                </Button>
-              )}
-              {isPresentationSlide && presentationName && project?.sandbox?.sandbox_url && !isStreaming && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    openPresentation(
-                      presentationName,
-                      project.sandbox.sandbox_url,
-                      slideNumber || 1
-                    );
-                  }}
-                  className="h-8 w-8 p-0"
-                  title="Open presentation fullscreen"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
+            <TooltipProvider delayDuration={0}>
+              <div className='flex items-center gap-1.5 flex-shrink-0'>
+                {!isPresentationSlide && operation !== 'delete' && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCopyContent}
+                        disabled={isCopyingContent || isStreaming || !fileContent}
+                        className="h-8 w-8 p-0"
+                      >
+                        {isCopyingContent ? (
+                          <Check className="h-4 w-4" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {isStreaming ? 'Available when complete' : 'Copy file content'}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {!isPresentationSlide && operation !== 'delete' && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span>
+                        <FileDownloadButton
+                          content={fileContent || ''}
+                          fileName={fileName}
+                          disabled={isStreaming || !fileContent}
+                        />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {isStreaming ? 'Available when complete' : 'Download file'}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {processedFilePath && !isPresentationSlide && operation !== 'delete' && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openFileInComputer(processedFilePath)}
+                        disabled={isStreaming}
+                        className="h-8 gap-1.5 px-2"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        <span className="text-xs hidden sm:inline">Edit</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {isStreaming ? 'Available when complete' : 'Edit in Files Manager'}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {isPresentationSlide && presentationName && project?.sandbox?.sandbox_url && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          openPresentation(
+                            presentationName,
+                            project.sandbox.sandbox_url,
+                            slideNumber || 1
+                          );
+                        }}
+                        disabled={isStreaming}
+                        className="h-8 w-8 p-0"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {isStreaming ? 'Available when complete' : 'Open presentation fullscreen'}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            </TooltipProvider>
           </div>
         </CardHeader>
 

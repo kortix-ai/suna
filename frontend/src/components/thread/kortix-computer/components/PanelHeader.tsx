@@ -72,35 +72,41 @@ export const PanelHeader = memo(function PanelHeader({
 
   return (
     <div className={cn(
-      "h-14 flex-shrink-0 px-4 flex items-center justify-between",
+      "h-14 flex-shrink-0 px-4 grid grid-cols-3 items-center",
       !isMaximized && "border-b border-border"
     )}>
-      <div className="flex items-center gap-4">
+      {/* Left: Traffic light buttons */}
+      <div className="flex items-center justify-start">
         <ToolbarButtons 
           onClose={onClose}
           onMinimize={onMinimize || onClose}
           onMaximize={onMaximize || (() => {})}
           isMaximized={isMaximized}
         />
-        <div className="flex items-center gap-1">
-          <div className="w-6 h-6 flex items-center justify-center">
-            <KortixLogo size={18}/>
-          </div>
-          <h2 className="text-md font-semibold text-foreground">
-            {title}
-          </h2>
-          {isStreaming && (
-            <div className="px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary flex items-center gap-1.5">
-              <CircleDashed className="h-3 w-3 animate-spin" />
-              <span>Running</span>
-            </div>
-          )}
-        </div>
       </div>
 
-      {!hideViewToggle && (
-        <ViewToggle currentView={currentView} onViewChange={onViewChange} showFilesTab={showFilesTab} />
-      )}
+      {/* Center: Logo and title (always centered) */}
+      <div className="flex items-center justify-center gap-2">
+        <div className="w-6 h-6 flex items-center justify-center">
+          <KortixLogo size={18}/>
+        </div>
+        <h2 className="text-md font-semibold text-foreground">
+          {title}
+        </h2>
+      </div>
+
+      {/* Right: Running indicator + View toggle */}
+      <div className="flex items-center justify-end gap-2">
+        {isStreaming && (
+          <div className="px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary flex items-center gap-1.5">
+            <CircleDashed className="h-3 w-3 animate-spin" />
+            <span>Running</span>
+          </div>
+        )}
+        {!hideViewToggle && (
+          <ViewToggle currentView={currentView} onViewChange={onViewChange} showFilesTab={showFilesTab} />
+        )}
+      </div>
     </div>
   );
 });

@@ -39,26 +39,18 @@ eas build --profile testflight --platform android --auto-submit
 
 ## Version Management
 
-**Set version** (when you want new release):
-```bash
-# iOS
-eas build:version:set --platform ios
-# Enter version: 1.1.0
-
-# Android
-eas build:version:set --platform android
-# Enter version: 1.1.0
+**App Store version** → Edit `app.json` line 5:
+```json
+"version": "1.2.0"
 ```
 
-**Check version:**
-```bash
-eas build:version:get --platform ios
-eas build:version:get --platform android
-```
+**Build numbers** → Auto-managed by EAS (remote)
 
-- Versions stored on EAS (remote)
-- Build numbers auto-increment
-- Update version only for new releases
+| What | How |
+|------|-----|
+| New App Store release | Bump `version` in `app.json` |
+| Build numbers | Automatic (1, 2, 3...) |
+| Check current version | `eas build:version:get -p ios` |
 
 ## OTA Updates
 

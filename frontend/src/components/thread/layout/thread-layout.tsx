@@ -253,7 +253,7 @@ export const ThreadLayout = memo(function ThreadLayout({
           ref={mainPanelRef}
           defaultSize={shouldShowPanel ? 50 : 100}
           minSize={shouldShowPanel ? 30 : 100}
-          maxSize={shouldShowPanel ? 95 : 100}
+          maxSize={shouldShowPanel ? 65 : 100}
           className="flex flex-col overflow-hidden relative bg-transparent"
         >
           <SiteHeader
@@ -290,7 +290,7 @@ export const ThreadLayout = memo(function ThreadLayout({
         <ResizablePanel
           ref={sidePanelRef}
           defaultSize={shouldShowPanel ? 50 : 0}
-          minSize={shouldShowPanel ? 20 : 0}
+          minSize={shouldShowPanel ? 35 : 0}
           maxSize={shouldShowPanel ? 70 : 0}
           collapsible={true}
           className={cn(

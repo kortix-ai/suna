@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useState, useCallback, useEffect, ReactNode } from 'react';
+import { memo, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { Folder, Globe } from 'lucide-react';
 import { AppWindow } from './AppWindow';
@@ -277,6 +277,60 @@ export const SandboxDesktop = memo(function SandboxDesktop({
       openToolWindow(latestIndex);
     }
   }, [latestIndex, toolCalls.length]);
+
+  // When activeView changes externally (e.g., clicking Edit in FileOperationToolView), open the corresponding window
+  const previousViewRef = useRef(currentView);
+  useEffect(() => {
+    // Only act if view actually changed
+    if (previousViewRef.current === currentView) return;
+    previousViewRef.current = currentView;
+    
+    if (currentView === 'files') {
+      const existingFilesWindow = openWindows.find(w => w.type === 'files');
+      if (!existingFilesWindow) {
+        openSystemWindow('files');
+      } else if (existingFilesWindow.isMinimized) {
+        // Restore minimized window and bring to front
+        setOpenWindows(prev => prev.map(w => 
+          w.id === existingFilesWindow.id 
+            ? { ...w, isMinimized: false, zIndex: maxZIndex + 1 }
+            : w
+        ));
+        setMaxZIndex(prev => prev + 1);
+        setActiveWindowId(existingFilesWindow.id);
+      } else {
+        // Bring existing window to front
+        setOpenWindows(prev => prev.map(w => 
+          w.id === existingFilesWindow.id 
+            ? { ...w, zIndex: maxZIndex + 1 }
+            : w
+        ));
+        setMaxZIndex(prev => prev + 1);
+        setActiveWindowId(existingFilesWindow.id);
+      }
+    } else if (currentView === 'browser') {
+      const existingBrowserWindow = openWindows.find(w => w.type === 'browser');
+      if (!existingBrowserWindow) {
+        openSystemWindow('browser');
+      } else if (existingBrowserWindow.isMinimized) {
+        setOpenWindows(prev => prev.map(w => 
+          w.id === existingBrowserWindow.id 
+            ? { ...w, isMinimized: false, zIndex: maxZIndex + 1 }
+            : w
+        ));
+        setMaxZIndex(prev => prev + 1);
+        setActiveWindowId(existingBrowserWindow.id);
+      } else {
+        setOpenWindows(prev => prev.map(w => 
+          w.id === existingBrowserWindow.id 
+            ? { ...w, zIndex: maxZIndex + 1 }
+            : w
+        ));
+        setMaxZIndex(prev => prev + 1);
+        setActiveWindowId(existingBrowserWindow.id);
+      }
+    }
+  }, [currentView, openWindows, maxZIndex, openSystemWindow]);
 
   const handleDockNavigate = useCallback((index: number) => {
     openToolWindow(index);

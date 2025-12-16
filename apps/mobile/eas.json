@@ -13,7 +13,7 @@
         "EXPO_PUBLIC_BACKEND_URL": "https://staging-api.suna.so/v1",
         "EXPO_PUBLIC_USE_REVENUECAT": "true",
         "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "appl_UpcFYduOZYUgSqKPNvtzgXkPCeh",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "incoming"
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "goog_wckzzdVDdOjbVHemqCsuFckMrMQ"
       }
     },
     "production": {
@@ -30,7 +30,7 @@
         "EXPO_PUBLIC_BACKEND_URL": "https://api.kortix.com/v1",
         "EXPO_PUBLIC_USE_REVENUECAT": "true",
         "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "appl_UpcFYduOZYUgSqKPNvtzgXkPCeh",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "incoming"
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "goog_wckzzdVDdOjbVHemqCsuFckMrMQ"
       }
     },
     "testflight": {
@@ -49,7 +49,7 @@
         "EXPO_PUBLIC_BACKEND_URL": "https://staging-api.suna.so/v1",
         "EXPO_PUBLIC_USE_REVENUECAT": "true",
         "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "appl_UpcFYduOZYUgSqKPNvtzgXkPCeh",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "incoming"
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "goog_wckzzdVDdOjbVHemqCsuFckMrMQ"
       }
     },
     "development-simulator": {
