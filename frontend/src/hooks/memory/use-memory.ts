@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import {
   listMemories,
   getMemoryStats,
@@ -27,6 +27,21 @@ export function useMemories(page: number = 1, limit: number = 50, memoryType?: s
   return useQuery({
     queryKey: ['memory', 'list', page, limit, memoryType],
     queryFn: () => listMemories({ page, limit, memory_type: memoryType }),
+    staleTime: 10000,
+  });
+}
+
+export function useInfiniteMemories(limit: number = 50, memoryType?: string) {
+  return useInfiniteQuery({
+    queryKey: ['memory', 'list', 'infinite', limit, memoryType],
+    queryFn: ({ pageParam = 1 }) => listMemories({ page: pageParam, limit, memory_type: memoryType }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      if (lastPage.page < lastPage.pages) {
+        return lastPage.page + 1;
+      }
+      return undefined;
+    },
     staleTime: 10000,
   });
 }
