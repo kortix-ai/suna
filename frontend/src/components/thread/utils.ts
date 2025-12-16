@@ -112,8 +112,10 @@ export const getToolIcon = (toolName: string): ElementType => {
 
     // Task operations
     case 'create-tasks':
+    case 'create_tasks':
       return List;
     case 'update-tasks':
+    case 'update_tasks':
       return ListTodo;
 
     // Shell commands
@@ -228,10 +230,17 @@ export const extractPrimaryParam = (
   if (!content) return null;
 
   try {
-    // Try to parse as JSON first
     const parsed = JSON.parse(content);
     
-    // Handle browser tools
+    if (parsed.query) {
+      const query = Array.isArray(parsed.query) ? parsed.query[0] : parsed.query;
+      return query.length > 30 ? query.substring(0, 27) + '...' : query;
+    }
+    if (parsed.arguments?.query) {
+      const query = Array.isArray(parsed.arguments.query) ? parsed.arguments.query[0] : parsed.arguments.query;
+      return query.length > 30 ? query.substring(0, 27) + '...' : query;
+    }
+    
     if (toolName?.toLowerCase().startsWith('browser_')) {
       if (parsed.url) return parsed.url;
       if (parsed.arguments?.url) return parsed.arguments.url;
@@ -242,7 +251,6 @@ export const extractPrimaryParam = (
       return null;
     }
 
-    // Handle file operations
     if (parsed.file_path) {
       const path = parsed.file_path;
       return typeof path === 'string' ? path.split('/').pop() || path : null;
@@ -252,7 +260,6 @@ export const extractPrimaryParam = (
       return typeof path === 'string' ? path.split('/').pop() || path : null;
     }
 
-    // Handle execute-command
     if (toolName?.toLowerCase() === 'execute-command') {
       if (parsed.command) {
         const cmd = parsed.command;
@@ -264,7 +271,6 @@ export const extractPrimaryParam = (
       }
     }
   } catch (e) {
-    // Not JSON, continue with regex fallback
   }
 
   // Fallback: regex extraction for plain text content
@@ -383,7 +389,9 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['delete-document', 'Deleting Document'],
 
   ['create-tasks', 'Creating Tasks'],
+  ['create_tasks', 'Creating Tasks'],
   ['update-tasks', 'Updating Tasks'],
+  ['update_tasks', 'Updating Tasks'],
   
   ['browser_navigate_to', 'Navigating to Page'],
   ['browser_act', 'Performing Action'],
