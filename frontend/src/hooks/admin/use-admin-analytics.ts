@@ -1,6 +1,9 @@
 import { backendApi } from '@/lib/api-client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
+// Analytics source type
+export type AnalyticsSource = 'vercel' | 'ga';
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -199,13 +202,14 @@ export function useCategoryDistribution(date?: string) {
   });
 }
 
-export function useVisitorStats(date?: string) {
+export function useVisitorStats(date?: string, source: AnalyticsSource = 'vercel') {
   return useQuery({
-    queryKey: ['admin', 'analytics', 'visitors', date],
+    queryKey: ['admin', 'analytics', 'visitors', date, source],
     queryFn: async (): Promise<VisitorStats> => {
-      const url = date
-        ? `/admin/analytics/visitors?date=${date}`
-        : '/admin/analytics/visitors';
+      const params = new URLSearchParams();
+      if (date) params.append('date', date);
+      params.append('source', source);
+      const url = `/admin/analytics/visitors?${params.toString()}`;
       const response = await backendApi.get(url);
       if (response.error) {
         throw new Error(response.error.message);
@@ -214,17 +218,18 @@ export function useVisitorStats(date?: string) {
     },
     staleTime: 300000, // 5 minutes
     placeholderData: (previousData) => previousData,
-    retry: 1, // Only retry once since PostHog might not be configured
+    retry: 1,
   });
 }
 
-export function useConversionFunnel(date?: string) {
+export function useConversionFunnel(date?: string, source: AnalyticsSource = 'vercel') {
   return useQuery({
-    queryKey: ['admin', 'analytics', 'conversion-funnel', date],
+    queryKey: ['admin', 'analytics', 'conversion-funnel', date, source],
     queryFn: async (): Promise<ConversionFunnel> => {
-      const url = date
-        ? `/admin/analytics/conversion-funnel?date=${date}`
-        : '/admin/analytics/conversion-funnel';
+      const params = new URLSearchParams();
+      if (date) params.append('date', date);
+      params.append('source', source);
+      const url = `/admin/analytics/conversion-funnel?${params.toString()}`;
       const response = await backendApi.get(url);
       if (response.error) {
         throw new Error(response.error.message);
@@ -448,12 +453,12 @@ export interface ViewsByDateResponse {
   total: number;
 }
 
-export function useViewsByDate(dateFrom: string, dateTo: string) {
+export function useViewsByDate(dateFrom: string, dateTo: string, source: AnalyticsSource = 'vercel') {
   return useQuery({
-    queryKey: ['admin', 'analytics', 'views-by-date', dateFrom, dateTo],
+    queryKey: ['admin', 'analytics', 'views-by-date', dateFrom, dateTo, source],
     queryFn: async (): Promise<ViewsByDateResponse> => {
       const response = await backendApi.get(
-        `/admin/analytics/arr/views?date_from=${dateFrom}&date_to=${dateTo}`
+        `/admin/analytics/arr/views?date_from=${dateFrom}&date_to=${dateTo}&source=${source}`
       );
       if (response.error) {
         throw new Error(response.error.message);
@@ -462,7 +467,7 @@ export function useViewsByDate(dateFrom: string, dateTo: string) {
     },
     staleTime: 60000, // 1 minute
     enabled: !!dateFrom && !!dateTo,
-    retry: 1, // Only retry once since GA might not be configured
+    retry: 1,
   });
 }
 

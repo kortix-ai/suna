@@ -8,7 +8,7 @@ Provides analytics data for the admin dashboard including:
 """
 
 from fastapi import APIRouter, HTTPException, Depends, Query
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import asyncio
@@ -188,6 +188,68 @@ def query_google_analytics(date_str: str) -> Dict[str, int]:
         "pageviews": pageviews,
         "unique_visitors": unique_visitors
     }
+
+
+async def query_vercel_analytics(date_str: str) -> Dict[str, int]:
+    """
+    Query Vercel Analytics from our database (populated via drains).
+    Returns dict with 'pageviews' and 'unique_visitors'.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        result = await client.rpc('get_vercel_analytics', {
+            'target_date': date_str
+        }).execute()
+        
+        if result.data and len(result.data) > 0:
+            row = result.data[0]
+            return {
+                "pageviews": row.get('pageviews', 0) or 0,
+                "unique_visitors": row.get('unique_visitors', 0) or 0
+            }
+        
+        return {"pageviews": 0, "unique_visitors": 0}
+        
+    except Exception as e:
+        logger.error(f"Failed to query Vercel analytics: {e}", exc_info=True)
+        return {"pageviews": 0, "unique_visitors": 0}
+
+
+async def query_vercel_analytics_range(start_date: str, end_date: str) -> Dict[str, int]:
+    """
+    Query Vercel Analytics for a date range (for ARR views endpoint).
+    Returns dict mapping date -> unique_visitors count.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        result = await client.rpc('get_vercel_analytics_range', {
+            'start_date': start_date,
+            'end_date': end_date
+        }).execute()
+        
+        views_by_date: Dict[str, int] = {}
+        total = 0
+        
+        for row in result.data or []:
+            date = row.get('analytics_date')
+            unique_visitors = row.get('unique_visitors', 0) or 0
+            if date:
+                views_by_date[date] = unique_visitors
+                total += unique_visitors
+        
+        return views_by_date, total
+        
+    except Exception as e:
+        logger.error(f"Failed to query Vercel analytics range: {e}", exc_info=True)
+        return {}, 0
+
+
+# Analytics source type
+AnalyticsSource = Literal["vercel", "ga"]
 
 
 # ============================================================================
@@ -849,9 +911,10 @@ async def get_category_distribution(
 @router.get("/visitors")
 async def get_visitor_stats(
     date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    source: AnalyticsSource = Query("vercel", description="Analytics source: vercel (primary) or ga"),
     admin: dict = Depends(require_admin)
 ) -> VisitorStats:
-    """Get visitor statistics from Google Analytics for a specific day."""
+    """Get visitor statistics for a specific day. Vercel is primary, GA is fallback."""
     try:
         # Parse date or default to today
         if date:
@@ -864,13 +927,16 @@ async def get_visitor_stats(
         
         date_str = selected_date.strftime("%Y-%m-%d")
         
-        # Query Google Analytics for pageview events on the selected date
-        ga_data = query_google_analytics(date_str)
+        # Query based on source
+        if source == "vercel":
+            data = await query_vercel_analytics(date_str)
+        else:
+            data = query_google_analytics(date_str)
         
         return VisitorStats(
-            total_visitors=ga_data["unique_visitors"],
-            unique_visitors=ga_data["unique_visitors"],
-            pageviews=ga_data["pageviews"],
+            total_visitors=data["unique_visitors"],
+            unique_visitors=data["unique_visitors"],
+            pageviews=data["pageviews"],
             date=date_str
         )
         
@@ -884,6 +950,7 @@ async def get_visitor_stats(
 @router.get("/conversion-funnel")
 async def get_conversion_funnel(
     date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    source: AnalyticsSource = Query("vercel", description="Analytics source: vercel (primary) or ga"),
     admin: dict = Depends(require_admin)
 ) -> ConversionFunnel:
     """Get full conversion funnel: Visitors → Signups → Subscriptions."""
@@ -907,10 +974,13 @@ async def get_conversion_funnel(
         # Define async functions for parallel execution
         async def get_visitors():
             try:
-                ga_data = query_google_analytics(date_str)
-                return ga_data["unique_visitors"]
+                if source == "vercel":
+                    data = await query_vercel_analytics(date_str)
+                else:
+                    data = query_google_analytics(date_str)
+                return data["unique_visitors"]
             except Exception as e:
-                logger.warning(f"Failed to get Google Analytics visitors: {e}")
+                logger.warning(f"Failed to get {source} visitors: {e}")
                 return 0
         
         async def get_signups():
@@ -1017,57 +1087,69 @@ async def get_signups_by_date(
 async def get_views_by_date(
     date_from: str = Query(..., description="Start date YYYY-MM-DD"),
     date_to: str = Query(..., description="End date YYYY-MM-DD"),
+    source: AnalyticsSource = Query("vercel", description="Analytics source: vercel (primary) or ga"),
     admin: dict = Depends(require_super_admin)
 ) -> Dict[str, Any]:
     """
-    Get view counts (newUsers) from Google Analytics grouped by date.
+    Get view counts (unique visitors) grouped by date.
     Frontend can aggregate into weeks as needed.
     Super admin only.
     """
-    property_id = config.GA_PROPERTY_ID
-    if not property_id:
-        raise HTTPException(
-            status_code=500,
-            detail="Google Analytics not configured. Set GA_PROPERTY_ID environment variable."
-        )
-    
     try:
-        client = get_ga_client()
-        
-        # Query GA with date dimension to get daily breakdown
-        request = RunReportRequest(
-            property=f"properties/{property_id}",
-            date_ranges=[DateRange(start_date=date_from, end_date=date_to)],
-            dimensions=[Dimension(name="date")],
-            metrics=[Metric(name="newUsers")],
-        )
-        
-        response = client.run_report(request)
-        
-        # Parse response into date -> count mapping
-        views_by_date: Dict[str, int] = {}
-        total = 0
-        
-        for row in response.rows or []:
-            # Date comes in YYYYMMDD format, convert to YYYY-MM-DD
-            raw_date = row.dimension_values[0].value
-            formatted_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
-            count = int(row.metric_values[0].value)
-            views_by_date[formatted_date] = count
-            total += count
-        
-        return {
-            "date_from": date_from,
-            "date_to": date_to,
-            "views_by_date": views_by_date,
-            "total": total
-        }
+        if source == "vercel":
+            # Query Vercel analytics from our database
+            views_by_date, total = await query_vercel_analytics_range(date_from, date_to)
+            return {
+                "date_from": date_from,
+                "date_to": date_to,
+                "views_by_date": views_by_date,
+                "total": total
+            }
+        else:
+            # Query Google Analytics
+            property_id = config.GA_PROPERTY_ID
+            if not property_id:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Google Analytics not configured. Set GA_PROPERTY_ID environment variable."
+                )
+            
+            client = get_ga_client()
+            
+            # Query GA with date dimension to get daily breakdown
+            request = RunReportRequest(
+                property=f"properties/{property_id}",
+                date_ranges=[DateRange(start_date=date_from, end_date=date_to)],
+                dimensions=[Dimension(name="date")],
+                metrics=[Metric(name="newUsers")],
+            )
+            
+            response = client.run_report(request)
+            
+            # Parse response into date -> count mapping
+            views_by_date: Dict[str, int] = {}
+            total = 0
+            
+            for row in response.rows or []:
+                # Date comes in YYYYMMDD format, convert to YYYY-MM-DD
+                raw_date = row.dimension_values[0].value
+                formatted_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+                count = int(row.metric_values[0].value)
+                views_by_date[formatted_date] = count
+                total += count
+            
+            return {
+                "date_from": date_from,
+                "date_to": date_to,
+                "views_by_date": views_by_date,
+                "total": total
+            }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get views by date from GA: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to get views from Google Analytics")
+        logger.error(f"Failed to get views by date: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get views")
 
 
 @router.get("/arr/actuals")

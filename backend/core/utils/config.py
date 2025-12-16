@@ -280,6 +280,9 @@ class Configuration:
     # Google Analytics (GA4) - for visitor tracking in admin dashboard
     GA_PROPERTY_ID: Optional[str] = None  # GA4 Property ID (numeric, e.g., "516492562")
     GA_CREDENTIALS_JSON: Optional[str] = None  # Service account JSON credentials (as string or file path)
+    
+    # Vercel Analytics (via drains) - primary source of truth for visitor tracking
+    VERCEL_DRAIN_SECRET: Optional[str] = None  # Secret for authenticating Vercel drain webhooks
 
     # LLM API keys
     ANTHROPIC_API_KEY: Optional[str] = None

@@ -1,11 +1,15 @@
 import hmac
-from fastapi import APIRouter, Depends, HTTPException, Header, BackgroundTasks
+import hashlib
+import json
+from fastapi import APIRouter, Depends, HTTPException, Header, BackgroundTasks, Request
 from pydantic import BaseModel
 from typing import Dict, Optional
+from datetime import datetime, timezone
 import os
 import concurrent.futures
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
+from core.utils.config import config
 from core.billing.subscriptions import free_tier_service
 from core.utils.suna_default_agent_service import SunaDefaultAgentService
 from core.services.supabase import DBConnection
@@ -289,3 +293,109 @@ async def handle_user_created_webhook(
             success=False,
             message=str(e)
         )
+
+
+# ============================================================================
+# Vercel Analytics Drain Webhook
+# ============================================================================
+
+def verify_vercel_signature(payload: bytes, signature: str, secret: str) -> bool:
+    """Verify Vercel Log Drain signature (HMAC-SHA1)."""
+    if not secret:
+        return False
+    expected = hmac.new(secret.encode(), payload, hashlib.sha1).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+@webhook_router.post("/webhooks/vercel-drain")
+async def receive_vercel_drain(
+    request: Request,
+    x_vercel_signature: Optional[str] = Header(None, alias="x-vercel-signature")
+):
+    """
+    Webhook endpoint for Vercel Analytics drains.
+    Receives pageview events and stores device IDs for unique visitor counting.
+    """
+    body = await request.body()
+    
+    # Verify signature if secret is configured
+    drain_secret = config.VERCEL_DRAIN_SECRET
+    if drain_secret:
+        if not x_vercel_signature:
+            raise HTTPException(status_code=401, detail="Missing signature")
+        if not verify_vercel_signature(body, x_vercel_signature, drain_secret):
+            raise HTTPException(status_code=401, detail="Invalid signature")
+    
+    try:
+        # Parse the payload - Vercel sends NDJSON (newline-delimited JSON)
+        payload_str = body.decode('utf-8')
+        
+        # Log payload length and sample
+        logger.debug(f"Vercel drain payload: {payload_str}")
+        
+        # Parse all lines
+        parsed_items = []
+        for line in payload_str.strip().split('\n'):
+            if line:
+                parsed_items.append(json.loads(line))
+        
+        # Flatten: each line could be a dict (single event) or list (array of events)
+        events = []
+        for item in parsed_items:
+            if isinstance(item, list):
+                events.extend(item)
+            elif isinstance(item, dict):
+                events.append(item)
+        
+        db = DBConnection()
+        client = await db.client
+        
+        # Process each event
+        processed = 0
+        skipped = 0
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            
+            # Only track pageview events
+            if event.get('eventType') != 'pageview':
+                skipped += 1
+                continue
+            
+            # Use deviceId for unique visitor tracking (it's numeric, convert to string)
+            raw_device_id = event.get('deviceId')
+            if raw_device_id is None:
+                continue
+            
+            device_id = str(raw_device_id)
+            
+            if not device_id:
+                continue
+            
+            # Get timestamp and convert to date
+            timestamp = event.get('timestamp') or event.get('time') or event.get('ts')
+            if timestamp:
+                if isinstance(timestamp, (int, float)):
+                    dt = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
+                else:
+                    dt = datetime.fromisoformat(str(timestamp).replace('Z', '+00:00'))
+                event_date = dt.strftime('%Y-%m-%d')
+            else:
+                event_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+            
+            # Upsert the pageview (add device_id to array if not exists)
+            await client.rpc('upsert_vercel_pageview', {
+                'p_date': event_date,
+                'p_device_id': device_id
+            }).execute()
+            processed += 1
+        
+        logger.info(f"Vercel drain: {processed} pageviews processed, {skipped} non-pageview skipped, {len(events)} total events")
+        return {"status": "ok", "processed": processed}
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Vercel drain payload: {e}")
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+    except Exception as e:
+        logger.error(f"Failed to process Vercel drain: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to process events")

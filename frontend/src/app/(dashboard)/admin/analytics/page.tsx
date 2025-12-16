@@ -69,6 +69,7 @@ import {
   type RetentionData,
   type ThreadBrowseParams,
   type WeeklyActualData,
+  type AnalyticsSource,
 } from '@/hooks/admin/use-admin-analytics';
 
 // ============================================================================
@@ -606,7 +607,11 @@ interface WeeklyActual {
   arr: number;
 }
 
-function ARRSimulator() {
+interface ARRSimulatorProps {
+  analyticsSource: AnalyticsSource;
+}
+
+function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   // Fetch config from database
   const { data: configData, isLoading: configLoading } = useARRSimulatorConfig();
   const updateConfigMutation = useUpdateARRSimulatorConfig();
@@ -714,8 +719,8 @@ function ARRSimulator() {
   // Fetch signups grouped by date
   const { data: signupsByDateData } = useSignupsByDate(signupsDateFrom, signupsDateTo);
   
-  // Fetch views (newUsers) from Google Analytics
-  const { data: viewsByDateData } = useViewsByDate(signupsDateFrom, signupsDateTo);
+  // Fetch views (unique visitors) from analytics source
+  const { data: viewsByDateData } = useViewsByDate(signupsDateFrom, signupsDateTo, analyticsSource);
   
   // Group signups by week number (frontend owns week logic)
   const signupsByWeek = useMemo((): Record<number, number> => {
@@ -1733,6 +1738,7 @@ export default function AdminAnalyticsPage() {
   const [distributionDate, setDistributionDate] = useState<Date>(getUTCToday);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('vercel');
   
   const utcToday = getUTCToday();
   const dateString = format(distributionDate, 'yyyy-MM-dd');
@@ -1740,7 +1746,7 @@ export default function AdminAnalyticsPage() {
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
   const { data: distribution } = useMessageDistribution(dateString);
   const { data: categoryDistribution } = useCategoryDistribution(dateString);
-  const { data: conversionFunnel, isLoading: funnelLoading } = useConversionFunnel(dateString);
+  const { data: conversionFunnel, isLoading: funnelLoading } = useConversionFunnel(dateString, analyticsSource);
   const { refreshAll } = useRefreshAnalytics();
 
   return (
@@ -1756,10 +1762,21 @@ export default function AdminAnalyticsPage() {
               Understand retention, conversion, and user behavior
             </p>
           </div>
-          <Button onClick={refreshAll} variant="outline">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-3">
+            <Select value={analyticsSource} onValueChange={(v) => setAnalyticsSource(v as AnalyticsSource)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="vercel">Vercel</SelectItem>
+                <SelectItem value="ga">Google Analytics</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={refreshAll} variant="outline">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         {/* Summary Stats */}
@@ -2009,7 +2026,7 @@ export default function AdminAnalyticsPage() {
           </TabsContent>
 
           <TabsContent value="simulator">
-            <ARRSimulator />
+            <ARRSimulator analyticsSource={analyticsSource} />
           </TabsContent>
         </Tabs>
       </div>
