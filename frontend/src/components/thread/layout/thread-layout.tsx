@@ -153,12 +153,9 @@ export const ThreadLayout = memo(function ThreadLayout({
     return (
       <>
         <div className="relative h-full">
-          {/* Main content - always full width */}
           <div className="flex flex-col h-full overflow-hidden">
             {children}
           </div>
-
-          {/* Kortix Computer - Full replacement overlay for compact */}
           {isSidePanelOpen && initialLoadCompleted && (
             <div className="absolute inset-0 bg-background z-40">
               <KortixComputer

@@ -241,6 +241,8 @@ const TOOL_DISPLAY_NAMES = new Map([
 
   ['create-tasks', 'Creating Tasks'],
   ['update-tasks', 'Updating Tasks'],
+  ['update_tasks', 'Updating Tasks'],
+  ['create_tasks', 'Creating Tasks'],
   
   ['browser_navigate_to', 'Navigating to Page'],
   ['browser_act', 'Performing Action'],

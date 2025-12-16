@@ -966,14 +966,30 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     };
   }, [messages, initialLoadCompleted]);
 
+  const prevMessagesLengthRef = useRef(0);
+
   useEffect(() => {
     if (initialLoadCompleted && scrollContainerRef.current && messages.length > 0) {
-      const timeoutId = setTimeout(() => {
-        if (scrollContainerRef.current) {
-          scrollContainerRef.current.scrollTo({ top: 0, behavior: 'auto' });
-        }
-      }, 200);
-      return () => clearTimeout(timeoutId);
+      const wasNewMessageAdded = messages.length > prevMessagesLengthRef.current;
+      prevMessagesLengthRef.current = messages.length;
+
+      if (!wasNewMessageAdded) {
+        return;
+      }
+
+      const scrollContainer = scrollContainerRef.current;
+      const scrollTop = scrollContainer.scrollTop;
+      const threshold = 100;
+      const isNearBottom = scrollTop > -threshold;
+
+      if (isNearBottom) {
+        const timeoutId = setTimeout(() => {
+          if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTo({ top: 0, behavior: 'auto' });
+          }
+        }, 200);
+        return () => clearTimeout(timeoutId);
+      }
     }
   }, [initialLoadCompleted, messages.length]);
 
