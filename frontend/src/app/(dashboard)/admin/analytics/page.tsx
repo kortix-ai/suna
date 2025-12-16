@@ -18,7 +18,6 @@ import {
   TrendingUp,
   Activity,
   Calendar as CalendarIcon,
-  RefreshCw,
   ExternalLink,
   Languages,
   Eye,
@@ -56,7 +55,6 @@ import {
   useConversionFunnel,
   useRetentionData,
   useTranslate,
-  useRefreshAnalytics,
   useARRWeeklyActuals,
   useUpdateARRWeeklyActual,
   useDeleteARRWeeklyActual,
@@ -1747,7 +1745,6 @@ export default function AdminAnalyticsPage() {
   const { data: distribution } = useMessageDistribution(dateString);
   const { data: categoryDistribution } = useCategoryDistribution(dateString);
   const { data: conversionFunnel, isLoading: funnelLoading } = useConversionFunnel(dateString, analyticsSource);
-  const { refreshAll } = useRefreshAnalytics();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
@@ -1762,7 +1759,8 @@ export default function AdminAnalyticsPage() {
               Understand retention, conversion, and user behavior
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Visitor Source</span>
             <Select value={analyticsSource} onValueChange={(v) => setAnalyticsSource(v as AnalyticsSource)}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Source" />
@@ -1772,10 +1770,6 @@ export default function AdminAnalyticsPage() {
                 <SelectItem value="ga">Google Analytics</SelectItem>
               </SelectContent>
             </Select>
-            <Button onClick={refreshAll} variant="outline">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh
-            </Button>
           </div>
         </div>
 
