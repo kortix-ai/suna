@@ -75,8 +75,13 @@ jobs:
         id: remote_version
         working-directory: apps/mobile
         run: |
-          REMOTE_VERSION=$(eas version:view --platform ios --json 2>/dev/null | jq -r '.ios' || echo "not-set")
-          if [ "$REMOTE_VERSION" == "null" ] || [ "$REMOTE_VERSION" == "" ]; then
+          # Get remote version using JSON output (requires EAS CLI 12.0.0+)
+          # Try JSON first, fallback to parsing text output
+          REMOTE_VERSION=$(eas build:version:get --platform ios --json --non-interactive 2>/dev/null | jq -r '.ios.appVersion // empty' || \
+            eas build:version:get --platform ios --non-interactive 2>/dev/null | grep -i "appVersion" | head -1 | awk '{print $NF}' || \
+            echo "not-set")
+          
+          if [ "$REMOTE_VERSION" == "not-set" ] || [ -z "$REMOTE_VERSION" ] || [ "$REMOTE_VERSION" == "null" ]; then
             REMOTE_VERSION="not-set"
           fi
           echo "remote_version=$REMOTE_VERSION" >> $GITHUB_OUTPUT
@@ -91,9 +96,14 @@ jobs:
           BUMP_TYPE="${{ github.event.inputs.version_bump }}"
           AUTO_INCREMENT="${{ github.event.inputs.auto_increment }}"
           
-          # If version_bump is specified, increment from remote
-          if [ "$BUMP_TYPE" != "none" ] && [ "$REMOTE" != "not-set" ]; then
-            IFS='.' read -r major minor patch <<< "$REMOTE"
+          # With remote version source, prioritize remote version
+          # If version_bump is specified, increment from remote (or current if remote not set)
+          if [ "$BUMP_TYPE" != "none" ]; then
+            BASE_VERSION="$REMOTE"
+            if [ "$BASE_VERSION" == "not-set" ]; then
+              BASE_VERSION="$CURRENT"
+            fi
+            IFS='.' read -r major minor patch <<< "$BASE_VERSION"
             case "$BUMP_TYPE" in
               patch) patch=$((patch + 1)) ;;
               minor) minor=$((minor + 1)); patch=0 ;;
@@ -105,7 +115,9 @@ jobs:
             IFS='.' read -r major minor patch <<< "$REMOTE"
             patch=$((patch + 1))
             NEW_VERSION="$major.$minor.$patch"
-          # Use version from app.json
+          # Use remote version if available, otherwise fallback to app.json
+          elif [ "$REMOTE" != "not-set" ]; then
+            NEW_VERSION="$REMOTE"
           else
             NEW_VERSION="$CURRENT"
           fi
@@ -113,19 +125,19 @@ jobs:
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "Will use version: $NEW_VERSION"
 
-      - name: Update version in app.json (if needed)
-        if: steps.version_logic.outputs.new_version != steps.current_version.outputs.version
+      - name: Sync version to app.json (for reference only)
         working-directory: apps/mobile
         run: |
           NEW_VERSION="${{ steps.version_logic.outputs.new_version }}"
+          # Update app.json for reference (not used in builds with remote source)
           node -e "
             const fs = require('fs');
             const appJson = JSON.parse(fs.readFileSync('app.json', 'utf8'));
             appJson.expo.version = '$NEW_VERSION';
-            appJson.expo.runtimeVersion = '$NEW_VERSION';
+            // runtimeVersion is NOT updated - it only changes when native code changes
             fs.writeFileSync('app.json', JSON.stringify(appJson, null, 2) + '\n');
           "
-          echo "Updated app.json to version $NEW_VERSION"
+          echo "Synced version to app.json (reference only, remote version is used for builds)"
 
       - name: Update EAS remote version
         working-directory: apps/mobile
@@ -138,11 +150,13 @@ jobs:
             PLATFORM="all"
           fi
           
+          # Use build:version:set command - pipe version as input (interactive command)
+          # Note: autoIncrement only increments build numbers, not app version strings
           if [ "$PLATFORM" == "all" ]; then
-            eas version:set $NEW_VERSION --platform ios --non-interactive
-            eas version:set $NEW_VERSION --platform android --non-interactive
+            echo -e "$NEW_VERSION" | eas build:version:set --platform ios 2>&1 || echo "$NEW_VERSION" | eas build:version:set --platform ios
+            echo -e "$NEW_VERSION" | eas build:version:set --platform android 2>&1 || echo "$NEW_VERSION" | eas build:version:set --platform android
           else
-            eas version:set $NEW_VERSION --platform $PLATFORM --non-interactive
+            echo -e "$NEW_VERSION" | eas build:version:set --platform $PLATFORM 2>&1 || echo "$NEW_VERSION" | eas build:version:set --platform $PLATFORM
           fi
           echo "✅ Updated EAS remote version to $NEW_VERSION"
 
