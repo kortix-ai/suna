@@ -66,8 +66,9 @@ versionName "1.2.0"
 - Only works for JS/TS changes
 - Users get updates instantly
 
-**Manual publish:**
+**Manual publish (if needed):**
 ```bash
+cd apps/mobile
 eas update --branch main --message "Update" --platform ios
 eas update --branch main --message "Update" --platform android
 ```

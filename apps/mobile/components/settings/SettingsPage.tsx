@@ -258,7 +258,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
                 }
                 onPress={handleAccountDeletion}
                 showBadge={deletionStatus?.has_pending_deletion}
-                destructive
               />
             )}
             {!isGuest && (
@@ -267,7 +266,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
                 label={t('settings.signOut')}
                 onPress={handleSignOut}
                 isLoading={isSigningOut}
-                destructive
               />
             )}
           </View>

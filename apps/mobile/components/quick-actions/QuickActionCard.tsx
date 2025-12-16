@@ -61,11 +61,11 @@ export function QuickActionCard({ action }: QuickActionCardProps) {
       <Icon 
         as={action.icon} 
         size={18} 
-        className={isSelected ? 'text-primary-foreground mr-2' : 'text-foreground/70 mr-2'}
+        className={isSelected ? 'text-primary mr-2' : 'text-foreground/70 mr-2'}
         strokeWidth={2}
       />
       <Text className={`text-sm font-roobert ${
-        isSelected ? 'text-primary-foreground font-roobert-medium' : 'text-foreground/80'
+        isSelected ? 'text-primary font-roobert-medium' : 'text-foreground/80'
       }`}>
         {translatedLabel}
       </Text>
