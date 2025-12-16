@@ -39,17 +39,25 @@ eas build --profile testflight --platform android --auto-submit
 
 ## Version Management
 
-**App Store version** → Edit `app.json` line 5:
-```json
+**For new App Store release, update ALL 3 files:**
+
+```bash
+# 1. app.json (line 5)
 "version": "1.2.0"
+
+# 2. ios/Kortix/Info.plist (CFBundleShortVersionString)
+<string>1.2.0</string>
+
+# 3. android/app/build.gradle (versionName)
+versionName "1.2.0"
 ```
 
 **Build numbers** → Auto-managed by EAS (remote)
 
 | What | How |
 |------|-----|
-| New App Store release | Bump `version` in `app.json` |
-| Build numbers | Automatic (1, 2, 3...) |
+| New App Store release | Bump version in all 3 files above |
+| Build numbers | Automatic (71, 72, 73...) |
 | Check current version | `eas build:version:get -p ios` |
 
 ## OTA Updates
