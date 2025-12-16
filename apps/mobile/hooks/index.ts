@@ -32,7 +32,14 @@ export { useAccountInitialization } from './useAccountInitialization';
 export { useAccountSetup } from './useAccountSetup';
 
 // Billing hooks
-export { useUpgradePaywall } from './useUpgradePaywall';
+export {
+  useUpgradePaywall,
+  PAYWALL_NAMES,
+  getPaywallForTier,
+  isTopupsTier,
+  logAvailablePaywalls,
+  type PaywallName,
+} from './useUpgradePaywall';
 
 // Re-export commonly used hooks from lib for convenience
 export {

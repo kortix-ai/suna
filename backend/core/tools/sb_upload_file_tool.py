@@ -141,7 +141,7 @@ class SandboxUploadFileTool(SandboxToolsBase):
                 
                 url_expires_at = datetime.now() + timedelta(seconds=expires_in)
                 
-                await self._track_upload(
+                file_upload_id = await self._track_upload(
                     client,
                     account_id,
                     storage_path,
@@ -158,6 +158,8 @@ class SandboxUploadFileTool(SandboxToolsBase):
                 message += f"📏 Size: {self._format_file_size(file_info.size)}\n"
                 message += f"🔗 Secure Access URL: {signed_url}\n"
                 message += f"⏰ URL expires: {url_expires_at.strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
+                if file_upload_id:
+                    message += f"📋 File ID: {file_upload_id}\n"
                 message += f"\n🔐 This file is stored in private, secure storage with account isolation."
                 
                 return self.success_response(message)
@@ -211,7 +213,7 @@ class SandboxUploadFileTool(SandboxToolsBase):
             
             user_id = None
             try:
-                account_result = await client.table('basejump.account_user').select('user_id').eq('account_id', account_id).limit(1).execute()
+                account_result = await client.schema("basejump").table('account_user').select('user_id').eq('account_id', account_id).limit(1).execute()
                 if account_result.data:
                     user_id = account_result.data[0].get('user_id')
             except Exception:
@@ -237,10 +239,14 @@ class SandboxUploadFileTool(SandboxToolsBase):
                 }
             }
             
-            await client.table('file_uploads').insert(upload_data).execute()
+            result = await client.table('file_uploads').insert(upload_data).execute()
+            file_upload_id = result.data[0]['id'] if result.data else None
+            
+            return file_upload_id
             
         except Exception as e:
             logger.warning(f"Failed to track file upload in database: {str(e)}")
+            return None
     
     def _format_file_size(self, size_bytes: int) -> str:
         for unit in ['B', 'KB', 'MB', 'GB']:

@@ -19,6 +19,7 @@ const SpeedInsights = lazy(() => import('@vercel/speed-insights/next').then(mod 
 const GoogleAnalytics = lazy(() => import('@next/third-parties/google').then(mod => ({ default: mod.GoogleAnalytics })));
 const PostHogIdentify = lazy(() => import('@/components/posthog-identify').then(mod => ({ default: mod.PostHogIdentify })));
 const PlanSelectionModal = lazy(() => import('@/components/billing/pricing/plan-selection-modal').then(mod => ({ default: mod.PlanSelectionModal })));
+const AnnouncementDialog = lazy(() => import('@/components/announcements/announcement-dialog').then(mod => ({ default: mod.AnnouncementDialog })));
 
 
 export const viewport: Viewport = {
@@ -252,6 +253,7 @@ export default function RootLayout({
             <Analytics />
           </Suspense>
           <Suspense fallback={null}>
+            <GoogleAnalytics gaId="G-QSCBD7F1SD" />
             <GoogleAnalytics gaId="G-6ETJFB3PT3" />
           </Suspense>
           <Suspense fallback={null}>

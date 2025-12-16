@@ -35,7 +35,7 @@ import {
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { CsvRenderer } from './CsvRenderer';
 import { XlsxRenderer } from './XlsxRenderer';
-import { ToolViewCard, TabSwitcher, StatusBadge, LoadingState, CodeRenderer } from '../shared';
+import { ToolViewCard, TabSwitcher, StatusBadge, LoadingState, CodeRenderer, FileDownloadButton } from '../shared';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import * as Clipboard from 'expo-clipboard';
@@ -365,6 +365,7 @@ export function FileOperationToolView({
     }
     setTimeout(() => setIsCopyingContent(false), 500);
   };
+
 
   const renderDiffView = () => {
     if (!oldStr || !newStr) {
@@ -768,6 +769,7 @@ export function FileOperationToolView({
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   setActiveTab(tabId as 'code' | 'preview' | 'changes');
                 }}
+                iconOnly={true}
               />
             )}
             {hasDiffData && (
@@ -780,6 +782,13 @@ export function FileOperationToolView({
             )}
           </View>
           <View className="flex-row items-center gap-2">
+            {fileContent && !isPresentationSlide && (
+              <FileDownloadButton
+                content={fileContent}
+                fileName={fileName || 'file.txt'}
+                disabled={isStreaming}
+              />
+            )}
             {fileContent && !isPresentationSlide && (
               <Pressable
                 onPress={handleCopyContent}
@@ -820,3 +829,4 @@ export function FileOperationToolView({
     </ToolViewCard>
   );
 }
+

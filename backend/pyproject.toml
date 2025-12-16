@@ -75,6 +75,7 @@ dependencies = [
   "composio>=0.8.0",
   "python-pptx>=1.0.0",
   "beautifulsoup4>=4.12.0",
+  "weasyprint>=63.0",
   "cssutils>=2.9.0",
   "fastapi-sso>=0.9.0",
   "daytona>=0.21.6",
@@ -90,6 +91,7 @@ dependencies = [
   "anthropic>=0.69.0",
   "novu-py>=3.11.0",
   "psutil>=5.9.0",
+  "google-analytics-data>=0.18.0",
 ]
 
 [project.urls]

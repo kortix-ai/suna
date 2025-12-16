@@ -33,11 +33,12 @@ import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { toast } from 'sonner';
 import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { Button } from '../ui/button';
-import { X, ChevronRight } from 'lucide-react';
+import { X, ChevronRight, HelpCircle } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { NotificationDropdown } from '../notifications/notification-dropdown';
 import { UsageLimitsPopover } from './usage-limits-popover';
 import { useSidebar } from '@/components/ui/sidebar';
+import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
 
 // Lazy load heavy components that aren't immediately visible
 const PlanSelectionModal = lazy(() => 
@@ -63,60 +64,6 @@ const CreditsDisplay = lazy(() =>
 );
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
-
-// Text component with letter-by-letter hover lift effect (staircase/wave effect)
-function LetterLiftText({ 
-  children, 
-  className 
-}: { 
-  children: React.ReactNode; 
-  className?: string;
-}) {
-  const text = String(children);
-  const [hoveredIndex, setHoveredIndex] = React.useState<number | null>(null);
-
-  // Calculate lift amount based on distance from hovered letter
-  const getLiftAmount = (index: number, hoveredIndex: number | null): number => {
-    if (hoveredIndex === null) return 0;
-    
-    const distance = Math.abs(index - hoveredIndex);
-    
-    // Staircase effect: closer letters lift more, further letters lift less
-    // Broader effect with more lift - affects up to 6 letters away
-    if (distance === 0) return -6; // Hovered letter
-    if (distance === 1) return -5; // Adjacent letters
-    if (distance === 2) return -4; // Two letters away
-    if (distance === 3) return -3; // Three letters away
-    if (distance === 4) return -2; // Four letters away
-    if (distance === 5) return -1.5; // Five letters away
-    if (distance === 6) return -0.5; // Six letters away
-    return 0; // Further letters don't lift
-  };
-
-  return (
-    <p className={className}>
-      {text.split('').map((letter, index) => {
-        const liftAmount = getLiftAmount(index, hoveredIndex);
-        
-        return (
-          <span
-            key={index}
-            onMouseEnter={() => setHoveredIndex(index)}
-            onMouseLeave={() => setHoveredIndex(null)}
-            style={{
-              display: 'inline-block',
-              transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-              transform: `translateY(${liftAmount}px)`,
-              cursor: 'default',
-            }}
-          >
-            {letter === ' ' ? '\u00A0' : letter}
-          </span>
-        );
-      })}
-    </p>
-  );
-}
 
 export function DashboardContent() {
   const t = useTranslations('dashboard');
@@ -157,7 +104,6 @@ export function DashboardContent() {
     runningThreadIds: string[];
   } | null>(null);
   const [showUpgradeCelebration, setShowUpgradeCelebration] = useState(false);
-  const [greeting, setGreeting] = useState('');
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
@@ -216,66 +162,6 @@ export function DashboardContent() {
     }
     return `${minutes}m`;
   };
-
-  // Generate randomized greeting on mount
-  React.useEffect(() => {
-    const getGreeting = () => {
-      const hour = new Date().getHours();
-      
-      // Get greeting arrays from translations
-      const morningGreetings = [
-        t('greetings.morning.0'),
-        t('greetings.morning.1'),
-        t('greetings.morning.2'),
-      ];
-      
-      const afternoonGreetings = [
-        t('greetings.afternoon.0'),
-        t('greetings.afternoon.1'),
-      ];
-      
-      const eveningGreetings = [
-        t('greetings.evening.0'),
-        t('greetings.evening.1'),
-        t('greetings.evening.2'),
-      ];
-      
-      const randomGreetings = [
-        t('greetings.random.0'),
-        t('greetings.random.1'),
-        t('greetings.random.2'),
-        t('greetings.random.3'),
-        t('greetings.random.4'),
-        t('greetings.random.5'),
-        t('greetings.random.6'),
-        t('greetings.random.7'),
-        t('greetings.random.8'),
-        t('greetings.random.9'),
-        t('greetings.random.10'),
-        t('greetings.random.11'),
-        t('greetings.random.12'),
-        t('greetings.random.13'),
-        t('greetings.random.14'),
-      ];
-      
-      // 40% chance of time-based greeting, 60% chance of random
-      const useTimeBased = Math.random() < 0.4;
-      
-      if (useTimeBased) {
-        if (hour >= 5 && hour < 12) {
-          return morningGreetings[Math.floor(Math.random() * morningGreetings.length)];
-        } else if (hour >= 12 && hour < 17) {
-          return afternoonGreetings[Math.floor(Math.random() * afternoonGreetings.length)];
-        } else {
-          return eveningGreetings[Math.floor(Math.random() * eveningGreetings.length)];
-        }
-      }
-      
-      return randomGreetings[Math.floor(Math.random() * randomGreetings.length)];
-    };
-    
-    setGreeting(getGreeting());
-  }, [t]);
 
   React.useEffect(() => {
     if (agents.length > 0) {
@@ -641,6 +527,13 @@ export function DashboardContent() {
             <CreditsDisplay />
           </Suspense>
           <UsageLimitsPopover />
+          <a
+            href="mailto:support@kortix.com"
+            className="flex items-center justify-center h-[41px] w-[41px] border-[1.5px] border-border/60 dark:border-border rounded-full bg-background dark:bg-background hover:bg-accent/30 dark:hover:bg-accent/20 hover:border-border dark:hover:border-border/80 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            title="Contact Support"
+          >
+            <HelpCircle className="h-5 w-5 text-muted-foreground dark:text-muted-foreground/60" />
+          </a>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -686,18 +579,14 @@ export function DashboardContent() {
 
             <div className="flex-1 flex items-start justify-center pt-[25vh] sm:pt-[30vh]">
               {viewMode === 'super-worker' && (
-                <div className="w-full animate-in fade-in-0 duration-300">
+                <div className="w-full">
                   <div className="px-4 py-6 sm:py-8">
                     <div className="w-full max-w-3xl mx-auto flex flex-col items-center space-y-5 sm:space-y-6 md:space-y-8">
-                      <div className="flex flex-col items-center text-center w-full">
-                        <LetterLiftText
-                          className="tracking-tight text-2xl sm:text-2xl md:text-3xl font-normal text-foreground/90"
-                        >
-                          {greeting || t('whatWouldYouLike')}
-                        </LetterLiftText>
+                      <div className="flex flex-col items-center text-center w-full animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
+                        <DynamicGreeting className="text-2xl sm:text-2xl md:text-3xl font-normal text-foreground/90" />
                       </div>
 
-                      <div className="w-full flex flex-col items-center">
+                      <div className="w-full flex flex-col items-center animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100 fill-mode-both">
                         <ChatInput
                           ref={chatInputRef}
                           onSubmit={handleSubmit}
@@ -767,7 +656,7 @@ export function DashboardContent() {
 
                   {/* Modes Panel - Below chat input, doesn't affect its position */}
                   {isSunaAgent && (
-                    <div className="px-4 pb-6 sm:pb-8">
+                    <div className="px-4 pb-6 sm:pb-8 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-200 fill-mode-both">
                       <div className="max-w-3xl mx-auto">
                         <Suspense fallback={<div className="h-24 bg-muted/10 rounded-lg animate-pulse" />}>
                           <SunaModesPanel

@@ -1042,5 +1042,27 @@
         "9": "Recherchiere das Wettbewerbsumfeld KI-gestützter Cybersicherheitslösungen"
       }
     }
+  },
+  "announcements": {
+    "memories": {
+      "title": "Wir stellen Erinnerungen vor",
+      "description": "Kortix merkt sich jetzt Ihre Präferenzen und den Kontext über alle Gespräche hinweg",
+      "features": {
+        "personalized": {
+          "title": "Personalisierte Erfahrung",
+          "description": "Passt sich im Laufe der Zeit an Ihren Arbeitsstil an"
+        },
+        "retention": {
+          "title": "Kontexterhaltung",
+          "description": "Wichtige Details werden zwischen Chats gespeichert"
+        },
+        "control": {
+          "title": "Sie haben die Kontrolle",
+          "description": "Jederzeit deaktivieren oder löschen"
+        }
+      },
+      "manageButton": "Erinnerungen verwalten",
+      "dismissButton": "Verstanden"
+    }
   }
 }

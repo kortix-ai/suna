@@ -485,7 +485,12 @@ class ThreadManager:
                                     .execute()
                                 
                                 if latest_msg_result.data:
-                                    new_msg_content = latest_msg_result.data.get('content', '')
+                                    # DB stores content as {"role": "user", "content": "actual text"}
+                                    db_content = latest_msg_result.data.get('content', {})
+                                    if isinstance(db_content, dict):
+                                        new_msg_content = db_content.get('content', '')
+                                    else:
+                                        new_msg_content = db_content
                                     if new_msg_content:
                                         new_msg_tokens = token_counter(
                                             model=llm_model, 

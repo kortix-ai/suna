@@ -80,87 +80,26 @@ jobs:
             git reset --hard origin/main
             set -a && source .env && set +a
             
-            # Show disk usage before deployment
-            echo "=== Disk usage before deployment ==="
+            echo "=== Pre-deployment disk usage ==="
             df -h / | tail -1
-            docker system df || true
             
-            # Function to wait for service health
-            wait_for_healthy() {
-              local service=$1
-              local max_attempts=30
-              local attempt=0
-              
-              echo "Waiting for $service to be healthy..."
-              while [ $attempt -lt $max_attempts ]; do
-                if docker compose ps $service | grep -q "healthy"; then
-                  echo "$service is healthy"
-                  return 0
-                fi
-                attempt=$((attempt + 1))
-                echo "Attempt $attempt/$max_attempts - waiting for $service..."
-                sleep 2
-              done
-              
-              echo "ERROR: $service failed to become healthy"
-              docker compose logs $service --tail 50
-              return 1
-            }
-            
-            # Ensure Redis is running (keep it up throughout deployment)
-            echo "=== Ensuring Redis is running ==="
-            docker compose up -d redis
-            wait_for_healthy redis
-            
-            # Clean up old images BEFORE building to save space
-            echo "=== Cleaning up old images before build ==="
+            # Clean up old images to save space
+            echo "=== Cleaning up old images ==="
             docker image prune -af --filter "until=24h" || true
             
-            # Build new images
-            echo "=== Building new images ==="
-            docker compose build api worker
+            # Build and deploy - Docker Compose handles orchestration
+            echo "=== Building and deploying services ==="
+            docker compose build
+            docker compose up -d --remove-orphans
             
-            # Rolling update: API service
-            echo "=== Deploying API service (zero-downtime) ==="
-            # Start new API container alongside old one
-            docker compose up -d --no-deps --scale api=2 api || true
-            # Wait for new container to be healthy
-            sleep 5
-            wait_for_healthy api
-            # Scale down to 1, removing old container
-            docker compose up -d --no-deps --scale api=1 api
-            
-            # Rolling update: Worker service
-            echo "=== Deploying Worker service (zero-downtime) ==="
-            # Start new Worker container alongside old one
-            docker compose up -d --no-deps --scale worker=2 worker || true
-            # Wait for new container to be healthy
-            sleep 5
-            wait_for_healthy worker
-            # Scale down to 1, removing old container
-            docker compose up -d --no-deps --scale worker=1 worker
-            
-            # Verify all services are running
-            echo "=== Verifying deployment ==="
-            docker compose ps
-            
-            # Clean up after deployment
+            # Quick cleanup
             echo "=== Post-deployment cleanup ==="
-            # Remove unused images (but keep recent ones)
             docker image prune -af --filter "until=1h" || true
-            # Clean up build cache aggressively
-            docker builder prune -af || true
-            # Remove dangling images
-            docker image prune -f || true
-            # Remove unused volumes (only those not attached to any container)
-            docker volume prune -f || true
+            docker builder prune -af --keep-storage=2GB || true
             
-            # Show final disk usage
-            echo "=== Disk usage after deployment ==="
+            echo "=== Deployment complete ==="
+            docker compose ps
             df -h / | tail -1
-            docker system df || true
-            
-            echo "=== Deployment complete - services running with zero downtime ==="
 
       # - name: Deploy to staging [legacy]
       #   if: steps.get_tag_name.outputs.environment == 'staging'

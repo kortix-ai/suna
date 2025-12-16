@@ -57,9 +57,18 @@ import {
   useRetentionData,
   useTranslate,
   useRefreshAnalytics,
+  useARRWeeklyActuals,
+  useUpdateARRWeeklyActual,
+  useDeleteARRWeeklyActual,
+  useARRSimulatorConfig,
+  useUpdateARRSimulatorConfig,
+  useSignupsByDate,
+  useViewsByDate,
+  type SimulatorConfigData,
   type ThreadAnalytics,
   type RetentionData,
   type ThreadBrowseParams,
+  type WeeklyActualData,
 } from '@/hooks/admin/use-admin-analytics';
 
 // ============================================================================
@@ -575,8 +584,34 @@ interface SimulationMonth {
   arr: number;
 }
 
+interface SimulationWeek {
+  week: number;
+  dateRange: string;
+  monthIndex: number;
+  // Goal values
+  visitors: number;
+  signups: number;
+  newPaid: number;
+  subscribers: number;
+  mrr: number;
+  arr: number;
+}
+
+interface WeeklyActual {
+  views: number;
+  signups: number;
+  newPaid: number;
+  subscribers: number;
+  mrr: number;
+  arr: number;
+}
+
 function ARRSimulator() {
-  // Starting parameters (editable)
+  // Fetch config from database
+  const { data: configData, isLoading: configLoading } = useARRSimulatorConfig();
+  const updateConfigMutation = useUpdateARRSimulatorConfig();
+
+  // Local state for config (initialized from DB, saved on blur)
   const [startingSubs, setStartingSubs] = useState(639);
   const [startingMRR, setStartingMRR] = useState(21646);
   const [weeklyVisitors, setWeeklyVisitors] = useState(40000);
@@ -586,6 +621,36 @@ function ARRSimulator() {
   const [monthlyChurn, setMonthlyChurn] = useState(25);
   const [visitorGrowth, setVisitorGrowth] = useState(5);
   const [targetARR, setTargetARR] = useState(10000000);
+
+  // Initialize state from database when config loads
+  useEffect(() => {
+    if (configData) {
+      setStartingSubs(configData.starting_subs);
+      setStartingMRR(configData.starting_mrr);
+      setWeeklyVisitors(configData.weekly_visitors);
+      setLandingConversion(configData.landing_conversion);
+      setSignupToPaid(configData.signup_to_paid);
+      setArpu(configData.arpu);
+      setMonthlyChurn(configData.monthly_churn);
+      setVisitorGrowth(configData.visitor_growth);
+      setTargetARR(configData.target_arr);
+    }
+  }, [configData]);
+
+  // Save config to database
+  const saveConfig = () => {
+    updateConfigMutation.mutate({
+      starting_subs: startingSubs,
+      starting_mrr: startingMRR,
+      weekly_visitors: weeklyVisitors,
+      landing_conversion: landingConversion,
+      signup_to_paid: signupToPaid,
+      arpu: arpu,
+      monthly_churn: monthlyChurn,
+      visitor_growth: visitorGrowth,
+      target_arr: targetARR,
+    });
+  };
 
   // Calculate monthly projections (aligned with HTML version logic)
   const projections = useMemo((): SimulationMonth[] => {
@@ -642,6 +707,245 @@ function ARRSimulator() {
     negativeChurned: -p.churned,
   }));
 
+  // Date range for fetching signups (Dec 15, 2025 to Jun 15, 2026)
+  const signupsDateFrom = '2025-12-15';
+  const signupsDateTo = '2026-06-15';
+  
+  // Fetch signups grouped by date
+  const { data: signupsByDateData } = useSignupsByDate(signupsDateFrom, signupsDateTo);
+  
+  // Fetch views (newUsers) from Google Analytics
+  const { data: viewsByDateData } = useViewsByDate(signupsDateFrom, signupsDateTo);
+  
+  // Group signups by week number (frontend owns week logic)
+  const signupsByWeek = useMemo((): Record<number, number> => {
+    if (!signupsByDateData?.signups_by_date) return {};
+    
+    const startDate = new Date(2025, 11, 15); // Dec 15, 2025
+    const result: Record<number, number> = {};
+    
+    Object.entries(signupsByDateData.signups_by_date).forEach(([dateStr, count]) => {
+      const date = new Date(dateStr);
+      const daysSinceStart = Math.floor((date.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      const weekNum = Math.floor(daysSinceStart / 7) + 1;
+      if (weekNum >= 1) {
+        result[weekNum] = (result[weekNum] || 0) + count;
+      }
+    });
+    
+    return result;
+  }, [signupsByDateData]);
+
+  // Group views by week number (same logic as signups)
+  const viewsByWeek = useMemo((): Record<number, number> => {
+    if (!viewsByDateData?.views_by_date) return {};
+    
+    const startDate = new Date(2025, 11, 15); // Dec 15, 2025
+    const result: Record<number, number> = {};
+    
+    Object.entries(viewsByDateData.views_by_date).forEach(([dateStr, count]) => {
+      const date = new Date(dateStr);
+      const daysSinceStart = Math.floor((date.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      const weekNum = Math.floor(daysSinceStart / 7) + 1;
+      if (weekNum >= 1) {
+        result[weekNum] = (result[weekNum] || 0) + count;
+      }
+    });
+    
+    return result;
+  }, [viewsByDateData]);
+
+  // Weekly projections derived from monthly (matching HTML dashboard logic exactly)
+  const weeklyProjections = useMemo((): SimulationWeek[] => {
+    const weeks: SimulationWeek[] = [];
+    const startDate = new Date(2025, 11, 15); // Dec 15, 2025 (Monday)
+    
+    let weekNum = 1;
+    const currentDate = new Date(startDate);
+    let totalSubs = startingSubs;
+    
+    projections.forEach((month, monthIdx) => {
+      // HTML logic: every 3rd month (index 2, 5, ...) has 5 weeks, others have 4
+      const weeksInMonth = monthIdx % 3 === 2 ? 5 : 4;
+      
+      // Split monthly data evenly across weeks
+      const weeklyViews = Math.round(month.visitors / weeksInMonth);
+      const weeklySignups = Math.round(month.signups / weeksInMonth);
+      const weeklyNewPaid = Math.round(month.newPaid / weeksInMonth);
+      const weeklyChurned = Math.round(month.churned / weeksInMonth);
+      
+      for (let w = 0; w < weeksInMonth; w++) {
+        const weekStart = new Date(currentDate);
+        const weekEnd = new Date(currentDate);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        
+        // Update running subscriber count (matching HTML logic)
+        totalSubs = Math.max(0, totalSubs + weeklyNewPaid - weeklyChurned);
+        const weeklyMRR = totalSubs * arpu;
+        const weeklyARR = weeklyMRR * 12;
+        
+        weeks.push({
+          week: weekNum,
+          dateRange: `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+          monthIndex: monthIdx,
+          visitors: weeklyViews,
+          signups: weeklySignups,
+          newPaid: weeklyNewPaid,
+          subscribers: Math.round(totalSubs),
+          mrr: Math.round(weeklyMRR),
+          arr: Math.round(weeklyARR),
+        });
+        
+        weekNum++;
+        currentDate.setDate(currentDate.getDate() + 7);
+      }
+    });
+    
+    return weeks;
+  }, [projections, startingSubs, arpu]);
+
+  // Actual weekly data (persisted to database)
+  const { data: arrActualsData, isLoading: actualsLoading } = useARRWeeklyActuals();
+  const updateActualMutation = useUpdateARRWeeklyActual();
+  const deleteActualMutation = useDeleteARRWeeklyActual();
+
+  // Convert API data to local format
+  const actualData: Record<number, WeeklyActual> = useMemo(() => {
+    if (!arrActualsData?.actuals) return {};
+    const result: Record<number, WeeklyActual> = {};
+    Object.entries(arrActualsData.actuals).forEach(([weekNum, data]) => {
+      result[Number(weekNum)] = {
+        views: data.views || 0,
+        signups: data.signups || 0,
+        newPaid: data.new_paid || 0,
+        subscribers: data.subscribers || 0,
+        mrr: data.mrr || 0,
+        arr: data.arr || 0,
+      };
+    });
+    return result;
+  }, [arrActualsData]);
+
+  // Local state for pending edits (so we don't call API on every keystroke)
+  const [pendingEdits, setPendingEdits] = useState<Record<string, string>>({});
+
+  // Get display value for an input (pending edit or saved value)
+  const getInputValue = (week: number, field: keyof WeeklyActual): string => {
+    const key = `${week}-${field}`;
+    if (key in pendingEdits) return pendingEdits[key];
+    const saved = actualData[week]?.[field];
+    return saved ? String(saved) : '';
+  };
+
+  // Handle input change (local state only)
+  const handleInputChange = (week: number, field: keyof WeeklyActual, value: string) => {
+    const key = `${week}-${field}`;
+    setPendingEdits(prev => ({ ...prev, [key]: value }));
+  };
+
+  // Save to API on blur
+  const handleInputBlur = (week: number, field: keyof WeeklyActual) => {
+    const key = `${week}-${field}`;
+    const pendingValue = pendingEdits[key];
+    
+    // If no pending edit, nothing to save
+    if (pendingValue === undefined) return;
+    
+    const weekProjection = weeklyProjections.find(w => w.week === week);
+    if (!weekProjection) return;
+    
+    const value = Number(pendingValue) || 0;
+    const currentData = actualData[week] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+    const updatedData = { ...currentData, [field]: value };
+    
+    // Map field names for API
+    const apiData: WeeklyActualData = {
+      week_number: week,
+      week_start_date: new Date(2025, 11, 15 + (week - 1) * 7).toISOString().split('T')[0],
+      views: updatedData.views,
+      signups: updatedData.signups,
+      new_paid: updatedData.newPaid,
+      subscribers: updatedData.subscribers,
+      mrr: updatedData.mrr,
+      arr: updatedData.arr,
+    };
+    
+    updateActualMutation.mutate(apiData);
+  };
+
+  const deleteWeekActual = (weekNumber: number) => {
+    // Clear any pending edits for this week (signups excluded - it's auto-fetched)
+    setPendingEdits(prev => {
+      const next = { ...prev };
+      const fields: (keyof WeeklyActual)[] = ['views', 'newPaid', 'subscribers', 'mrr', 'arr'];
+      fields.forEach(field => {
+        delete next[`${weekNumber}-${field}`];
+      });
+      return next;
+    });
+    deleteActualMutation.mutate(weekNumber);
+  };
+
+  // Calculate variance percentage
+  const getVariance = (actual: number | undefined, goal: number): { value: number; color: string } => {
+    if (!actual || actual === 0) return { value: 0, color: 'text-muted-foreground' };
+    const variance = ((actual - goal) / goal) * 100;
+    if (variance >= 0) return { value: variance, color: 'text-green-600' };
+    if (variance >= -10) return { value: variance, color: 'text-yellow-600' };
+    return { value: variance, color: 'text-red-500' };
+  };
+
+  // Prepare weekly chart data for actual vs goal comparison
+  const weeklyChartData = weeklyProjections.map(w => ({
+    week: `W${w.week}`,
+    goalViews: w.visitors,
+    actualViews: viewsByWeek[w.week] || 0,
+    goalSignups: w.signups,
+    actualSignups: signupsByWeek[w.week] || 0,
+    goalNewPaid: w.newPaid,
+    actualNewPaid: actualData[w.week]?.newPaid || 0,
+    goalSubs: w.subscribers,
+    actualSubs: actualData[w.week]?.subscribers || 0,
+    goalMRR: w.mrr,
+    actualMRR: actualData[w.week]?.mrr || 0,
+    goalARR: w.arr,
+    actualARR: actualData[w.week]?.arr || 0,
+  }));
+
+  // Aggregate weekly actuals into monthly actuals for comparison
+  const monthlyActuals = useMemo(() => {
+    const result: Record<number, { views: number; signups: number; newPaid: number; subscribers: number; mrr: number; arr: number }> = {};
+    
+    weeklyProjections.forEach((week) => {
+      const monthIdx = week.monthIndex;
+      const weekActual = actualData[week.week];
+      const autoSignups = signupsByWeek[week.week] || 0;
+      const autoViews = viewsByWeek[week.week] || 0;
+      
+      if (!result[monthIdx]) {
+        result[monthIdx] = { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+      }
+      
+      // Use auto-fetched signups from database
+      result[monthIdx].signups += autoSignups;
+      // Use auto-fetched views from Google Analytics
+      result[monthIdx].views += autoViews;
+      
+      if (weekActual) {
+        result[monthIdx].newPaid += weekActual.newPaid || 0;
+        // For subscribers, MRR, ARR - take the last week's value as end-of-month value
+        result[monthIdx].subscribers = weekActual.subscribers || result[monthIdx].subscribers;
+        result[monthIdx].mrr = weekActual.mrr || result[monthIdx].mrr;
+        result[monthIdx].arr = weekActual.arr || result[monthIdx].arr;
+      }
+    });
+    
+    return result;
+  }, [weeklyProjections, actualData, signupsByWeek, viewsByWeek]);
+
+  // View state
+  const [simulatorView, setSimulatorView] = useState<'monthly' | 'weekly'>('monthly');
+
   // Format currency
   const formatCurrency = (value: number) => {
     if (value >= 1000000) {
@@ -671,7 +975,7 @@ function ARRSimulator() {
             ARR Growth Simulator
           </CardTitle>
           <CardDescription>
-            Adjust parameters to model your path to {formatCurrency(targetARR)} ARR by June 2025
+            Adjust parameters to model your path to {formatCurrency(targetARR)} ARR by June 2026
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -680,8 +984,9 @@ function ARRSimulator() {
               <Label className="text-xs">Starting Subscribers</Label>
               <Input
                 type="number"
-                value={startingSubs}
-                onChange={(e) => setStartingSubs(Number(e.target.value))}
+                value={startingSubs || ''}
+                onChange={(e) => setStartingSubs(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
                 className="h-9"
               />
             </div>
@@ -689,8 +994,9 @@ function ARRSimulator() {
               <Label className="text-xs">Starting MRR ($)</Label>
               <Input
                 type="number"
-                value={startingMRR}
-                onChange={(e) => setStartingMRR(Number(e.target.value))}
+                value={startingMRR || ''}
+                onChange={(e) => setStartingMRR(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
                 className="h-9"
               />
             </div>
@@ -698,8 +1004,19 @@ function ARRSimulator() {
               <Label className="text-xs">Weekly Visitors</Label>
               <Input
                 type="number"
-                value={weeklyVisitors}
-                onChange={(e) => setWeeklyVisitors(Number(e.target.value))}
+                value={weeklyVisitors || ''}
+                onChange={(e) => setWeeklyVisitors(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Monthly Visitor Growth (%)</Label>
+              <Input
+                type="number"
+                value={visitorGrowth || ''}
+                onChange={(e) => setVisitorGrowth(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
                 className="h-9"
               />
             </div>
@@ -707,8 +1024,9 @@ function ARRSimulator() {
               <Label className="text-xs">Landing Conv. (%)</Label>
               <Input
                 type="number"
-                value={landingConversion}
-                onChange={(e) => setLandingConversion(Number(e.target.value))}
+                value={landingConversion || ''}
+                onChange={(e) => setLandingConversion(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
                 className="h-9"
               />
             </div>
@@ -716,8 +1034,9 @@ function ARRSimulator() {
               <Label className="text-xs">Signup → Paid (%)</Label>
               <Input
                 type="number"
-                value={signupToPaid}
-                onChange={(e) => setSignupToPaid(Number(e.target.value))}
+                value={signupToPaid || ''}
+                onChange={(e) => setSignupToPaid(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
                 step="0.1"
                 className="h-9"
               />
@@ -726,8 +1045,9 @@ function ARRSimulator() {
               <Label className="text-xs">ARPU ($/mo)</Label>
               <Input
                 type="number"
-                value={arpu}
-                onChange={(e) => setArpu(Number(e.target.value))}
+                value={arpu || ''}
+                onChange={(e) => setArpu(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
                 className="h-9"
               />
             </div>
@@ -735,17 +1055,9 @@ function ARRSimulator() {
               <Label className="text-xs">Monthly Churn (%)</Label>
               <Input
                 type="number"
-                value={monthlyChurn}
-                onChange={(e) => setMonthlyChurn(Number(e.target.value))}
-                className="h-9"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs">Visitor Growth (%/mo)</Label>
-              <Input
-                type="number"
-                value={visitorGrowth}
-                onChange={(e) => setVisitorGrowth(Number(e.target.value))}
+                value={monthlyChurn || ''}
+                onChange={(e) => setMonthlyChurn(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
                 className="h-9"
               />
             </div>
@@ -753,8 +1065,9 @@ function ARRSimulator() {
               <Label className="text-xs">Target ARR ($)</Label>
               <Input
                 type="number"
-                value={targetARR}
-                onChange={(e) => setTargetARR(Number(e.target.value))}
+                value={targetARR || ''}
+                onChange={(e) => setTargetARR(e.target.value === '' ? 0 : Number(e.target.value))}
+                onBlur={saveConfig}
                 className="h-9"
               />
             </div>
@@ -762,12 +1075,30 @@ function ARRSimulator() {
         </CardContent>
       </Card>
 
+      {/* View Toggle */}
+      <div className="flex items-center gap-2">
+        <Button
+          variant={simulatorView === 'monthly' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setSimulatorView('monthly')}
+        >
+          📅 Monthly View
+        </Button>
+        <Button
+          variant={simulatorView === 'weekly' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setSimulatorView('weekly')}
+        >
+          📊 Weekly Tracking
+        </Button>
+      </div>
+
       {/* Key Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold text-primary">{formatCurrency(finalMonth?.arr || 0)}</div>
-            <p className="text-xs text-muted-foreground mt-1">Projected ARR (Jun 2025)</p>
+            <p className="text-xs text-muted-foreground mt-1">Projected ARR (Jun 2026)</p>
           </CardContent>
         </Card>
         <Card>
@@ -836,6 +1167,8 @@ function ARRSimulator() {
         </CardContent>
       </Card>
 
+      {simulatorView === 'monthly' && (
+      <>
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* ARR Growth Trajectory */}
@@ -853,7 +1186,7 @@ function ARRSimulator() {
                   <XAxis 
                     dataKey="month" 
                     tick={{ fontSize: 12 }}
-                    tickFormatter={(value) => value.replace(' 2024', '').replace(' 2025', '')}
+                    tickFormatter={(value) => value.replace(/ \d{4}$/, '')}
                   />
                   <YAxis 
                     tick={{ fontSize: 12 }}
@@ -906,7 +1239,7 @@ function ARRSimulator() {
                   <XAxis 
                     dataKey="month" 
                     tick={{ fontSize: 12 }}
-                    tickFormatter={(value) => value.replace(' 2024', '').replace(' 2025', '')}
+                    tickFormatter={(value) => value.replace(/ \d{4}$/, '')}
                   />
                   <YAxis 
                     tick={{ fontSize: 12 }}
@@ -953,7 +1286,7 @@ function ARRSimulator() {
                   <XAxis 
                     dataKey="month" 
                     tick={{ fontSize: 12 }}
-                    tickFormatter={(value) => value.replace(' 2024', '').replace(' 2025', '')}
+                    tickFormatter={(value) => value.replace(/ \d{4}$/, '')}
                   />
                   <YAxis 
                     tick={{ fontSize: 12 }}
@@ -1000,7 +1333,7 @@ function ARRSimulator() {
                   <XAxis 
                     dataKey="month" 
                     tick={{ fontSize: 12 }}
-                    tickFormatter={(value) => value.replace(' 2024', '').replace(' 2025', '')}
+                    tickFormatter={(value) => value.replace(/ \d{4}$/, '')}
                   />
                   <YAxis 
                     tick={{ fontSize: 12 }}
@@ -1038,11 +1371,11 @@ function ARRSimulator() {
         </Card>
       </div>
 
-      {/* Monthly Breakdown Table */}
+      {/* Monthly Breakdown Table with Actual vs Goal */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Monthly Breakdown</CardTitle>
-          <CardDescription>Projected growth from Dec 2024 to May 2025</CardDescription>
+          <CardTitle className="text-base">Monthly Breakdown (Goal vs Actual)</CardTitle>
+          <CardDescription>Projected growth from Dec 2025 to Jun 2026 with actual data comparison</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -1050,33 +1383,337 @@ function ARRSimulator() {
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="text-left p-3 font-medium">Month</th>
-                  <th className="text-right p-3 font-medium">Visitors</th>
-                  <th className="text-right p-3 font-medium">Signups</th>
-                  <th className="text-right p-3 font-medium">New Paid</th>
-                  <th className="text-right p-3 font-medium">Churned</th>
-                  <th className="text-right p-3 font-medium">Total Subs</th>
-                  <th className="text-right p-3 font-medium">MRR</th>
-                  <th className="text-right p-3 font-medium">ARR</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>Visitors</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>Signups</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>New Paid</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>Total Subs</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>MRR</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>ARR</th>
+                </tr>
+                <tr className="border-b bg-muted/30 text-xs">
+                  <th></th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
                 </tr>
               </thead>
               <tbody>
-                {projections.map((month, i) => (
-                  <tr key={month.month} className={`border-b ${i === projections.length - 1 ? 'bg-primary/5 font-medium' : ''}`}>
-                    <td className="p-3">{month.month}</td>
-                    <td className="text-right p-3">{formatNumber(month.visitors)}</td>
-                    <td className="text-right p-3">{formatNumber(month.signups)}</td>
-                    <td className="text-right p-3 text-green-600">+{formatNumber(month.newPaid)}</td>
-                    <td className="text-right p-3 text-red-500">-{formatNumber(month.churned)}</td>
-                    <td className="text-right p-3">{formatNumber(month.totalSubs)}</td>
-                    <td className="text-right p-3">{formatCurrency(month.mrr)}</td>
-                    <td className="text-right p-3 font-medium">{formatCurrency(month.arr)}</td>
-                  </tr>
-                ))}
+                {projections.map((month, i) => {
+                  const actual = monthlyActuals[i] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+                  const hasActual = actual.views > 0 || actual.signups > 0 || actual.subscribers > 0;
+                  
+                  return (
+                    <tr key={month.month} className={`border-b ${i === projections.length - 1 ? 'bg-primary/5 font-medium' : ''}`}>
+                      <td className="p-3">{month.month}</td>
+                      {/* Visitors */}
+                      <td className="text-right p-2 text-muted-foreground">{formatNumber(month.visitors)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.views >= month.visitors ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.views > 0 ? formatNumber(actual.views) : '—'}
+                      </td>
+                      {/* Signups */}
+                      <td className="text-right p-2 text-muted-foreground">{formatNumber(month.signups)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.signups >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.signups > 0 ? formatNumber(actual.signups) : '—'}
+                      </td>
+                      {/* New Paid */}
+                      <td className="text-right p-2 text-muted-foreground">{formatNumber(month.newPaid)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.newPaid >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.newPaid > 0 ? formatNumber(actual.newPaid) : '—'}
+                      </td>
+                      {/* Total Subs */}
+                      <td className="text-right p-2 text-muted-foreground">{formatNumber(month.totalSubs)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.subscribers >= month.totalSubs ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.subscribers > 0 ? formatNumber(actual.subscribers) : '—'}
+                      </td>
+                      {/* MRR */}
+                      <td className="text-right p-2 text-muted-foreground">{formatCurrency(month.mrr)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.mrr >= month.mrr ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.mrr > 0 ? formatCurrency(actual.mrr) : '—'}
+                      </td>
+                      {/* ARR */}
+                      <td className="text-right p-2 text-muted-foreground">{formatCurrency(month.arr)}</td>
+                      <td className={`text-right p-2 font-medium ${hasActual && actual.arr >= month.arr ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.arr > 0 ? formatCurrency(actual.arr) : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </CardContent>
       </Card>
+      </>
+      )}
+
+      {/* Weekly Tracking View */}
+      {simulatorView === 'weekly' && (
+      <>
+        {/* Weekly Comparison Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* ARR: Actual vs Goal */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">📈 ARR: Actual vs Goal</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={weeklyChartData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={3} />
+                    <YAxis tickFormatter={(v) => `$${v.toLocaleString()}`} tick={{ fontSize: 9 }} width={80} />
+                    <Tooltip formatter={(v: number) => [`$${v.toLocaleString()}`, '']} />
+                    <Legend />
+                    <Line type="monotone" dataKey="goalARR" name="Goal" stroke="#10b981" strokeWidth={2} dot={false} strokeDasharray="5 5" />
+                    <Line type="monotone" dataKey="actualARR" name="Actual" stroke="hsl(var(--primary))" strokeWidth={3} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Subscribers: Actual vs Goal */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">👥 Subscribers: Actual vs Goal</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={weeklyChartData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={3} />
+                    <YAxis tickFormatter={(v) => v.toLocaleString()} tick={{ fontSize: 9 }} width={60} />
+                    <Tooltip formatter={(v: number) => [v.toLocaleString(), '']} />
+                    <Legend />
+                    <Line type="monotone" dataKey="goalSubs" name="Goal" stroke="#10b981" strokeWidth={2} dot={false} strokeDasharray="5 5" />
+                    <Line type="monotone" dataKey="actualSubs" name="Actual" stroke="#8b5cf6" strokeWidth={3} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* MRR: Actual vs Goal */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">💰 MRR: Actual vs Goal</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={weeklyChartData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={3} />
+                    <YAxis tickFormatter={(v) => `$${v.toLocaleString()}`} tick={{ fontSize: 9 }} width={70} />
+                    <Tooltip formatter={(v: number) => [`$${v.toLocaleString()}`, '']} />
+                    <Legend />
+                    <Line type="monotone" dataKey="goalMRR" name="Goal" stroke="#10b981" strokeWidth={2} dot={false} strokeDasharray="5 5" />
+                    <Line type="monotone" dataKey="actualMRR" name="Actual" stroke="#f59e0b" strokeWidth={3} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* New Paid: Actual vs Goal */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">🎯 New Paid: Actual vs Goal</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={weeklyChartData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="week" tick={{ fontSize: 10 }} interval={3} />
+                    <YAxis tickFormatter={(v) => v.toLocaleString()} tick={{ fontSize: 9 }} />
+                    <Tooltip formatter={(v: number) => [v.toLocaleString(), '']} />
+                    <Legend />
+                    <Bar dataKey="goalNewPaid" name="Goal" fill="#10b981" opacity={0.3} />
+                    <Bar dataKey="actualNewPaid" name="Actual" fill="#10b981" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Weekly Breakdown Table with Actual Data Entry */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">📊 Weekly Tracking (Dec 2025 - Jun 2026)</CardTitle>
+            <CardDescription>
+              Enter actual weekly data to compare against goals. Click any Actual cell to edit.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-background">
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left p-2 font-medium">Week</th>
+                    <th className="text-left p-2 font-medium">Date Range</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>Views</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>Signups</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>New Paid</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>Subscribers</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>MRR</th>
+                    <th className="text-center p-2 font-medium" colSpan={3}>ARR</th>
+                    <th className="p-2 w-8"></th>
+                  </tr>
+                  <tr className="border-b bg-muted/30">
+                    <th></th>
+                    <th></th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {weeklyProjections.map((week) => {
+                    const actual: Partial<WeeklyActual> = actualData[week.week] || {};
+                    // Get auto-fetched data
+                    const autoViews = viewsByWeek[week.week] ?? 0;
+                    const autoSignups = signupsByWeek[week.week] ?? 0;
+                    const viewsVar = getVariance(autoViews, week.visitors);
+                    const signupsVar = getVariance(autoSignups, week.signups);
+                    const newPaidVar = getVariance(actual.newPaid, week.newPaid);
+                    const subsVar = getVariance(actual.subscribers, week.subscribers);
+                    const mrrVar = getVariance(actual.mrr, week.mrr);
+                    const arrVar = getVariance(actual.arr, week.arr);
+                    
+                    return (
+                      <tr key={week.week} className={`border-b hover:bg-muted/30 ${week.week === weeklyProjections.length ? 'bg-primary/5 font-medium' : ''}`}>
+                        <td className="p-2 font-medium">W{week.week}</td>
+                        <td className="p-2 text-muted-foreground whitespace-nowrap">{week.dateRange}</td>
+                        {/* Views - Auto-fetched from Google Analytics */}
+                        <td className="text-right p-1">{formatNumber(week.visitors)}</td>
+                        <td className="text-right p-1">
+                          <span className={`text-[10px] font-medium ${autoViews > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                            {autoViews > 0 ? formatNumber(autoViews) : '—'}
+                          </span>
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${viewsVar.color}`}>
+                          {autoViews > 0 ? `${viewsVar.value >= 0 ? '+' : ''}${viewsVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* Signups - Auto-fetched from database */}
+                        <td className="text-right p-1">{formatNumber(week.signups)}</td>
+                        <td className="text-right p-1">
+                          <span className={`text-[10px] font-medium ${autoSignups > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                            {autoSignups > 0 ? formatNumber(autoSignups) : '—'}
+                          </span>
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${signupsVar.color}`}>
+                          {autoSignups > 0 ? `${signupsVar.value >= 0 ? '+' : ''}${signupsVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* New Paid */}
+                        <td className="text-right p-1">{formatNumber(week.newPaid)}</td>
+                        <td className="text-right p-1">
+                          <Input
+                            type="number"
+                            value={getInputValue(week.week, 'newPaid')}
+                            onChange={(e) => handleInputChange(week.week, 'newPaid', e.target.value)}
+                            onBlur={() => handleInputBlur(week.week, 'newPaid')}
+                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${newPaidVar.color}`}>
+                          {actual.newPaid ? `${newPaidVar.value >= 0 ? '+' : ''}${newPaidVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* Subscribers */}
+                        <td className="text-right p-1 font-medium">{formatNumber(week.subscribers)}</td>
+                        <td className="text-right p-1">
+                          <Input
+                            type="number"
+                            value={getInputValue(week.week, 'subscribers')}
+                            onChange={(e) => handleInputChange(week.week, 'subscribers', e.target.value)}
+                            onBlur={() => handleInputBlur(week.week, 'subscribers')}
+                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${subsVar.color}`}>
+                          {actual.subscribers ? `${subsVar.value >= 0 ? '+' : ''}${subsVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* MRR */}
+                        <td className="text-right p-1">{formatCurrency(week.mrr)}</td>
+                        <td className="text-right p-1">
+                          <Input
+                            type="number"
+                            value={getInputValue(week.week, 'mrr')}
+                            onChange={(e) => handleInputChange(week.week, 'mrr', e.target.value)}
+                            onBlur={() => handleInputBlur(week.week, 'mrr')}
+                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${mrrVar.color}`}>
+                          {actual.mrr ? `${mrrVar.value >= 0 ? '+' : ''}${mrrVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* ARR */}
+                        <td className="text-right p-1 font-medium">{formatCurrency(week.arr)}</td>
+                        <td className="text-right p-1">
+                          <Input
+                            type="number"
+                            value={getInputValue(week.week, 'arr')}
+                            onChange={(e) => handleInputChange(week.week, 'arr', e.target.value)}
+                            onBlur={() => handleInputBlur(week.week, 'arr')}
+                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            placeholder="—"
+                          />
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${arrVar.color}`}>
+                          {actual.arr ? `${arrVar.value >= 0 ? '+' : ''}${arrVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        <td className="p-1">
+                          {(actual.newPaid || actual.subscribers || actual.mrr || actual.arr) && (
+                            <button
+                              onClick={() => deleteWeekActual(week.week)}
+                              className="text-muted-foreground hover:text-red-500 transition-colors"
+                              title={`Delete week ${week.week} data`}
+                            >
+                              🗑️
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </>
+      )}
 
     </div>
   );

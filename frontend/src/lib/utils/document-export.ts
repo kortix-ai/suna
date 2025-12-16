@@ -2,6 +2,9 @@ import { toast } from 'sonner';
 import { saveAs } from 'file-saver';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
+import { createClient } from '@/lib/supabase/client';
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
 export type ExportFormat = 'pdf' | 'docx' | 'html' | 'markdown';
 
@@ -415,62 +418,101 @@ export async function exportDocument({ content, fileName, format }: DocumentExpo
   try {
     switch (format) {
       case 'pdf': {
-        console.log('[Document Export] Opening print dialog for PDF...');
+        console.log('[Document Export] Sending to backend PDF API...');
         
-        const printWindow = window.open('', '_blank', 'width=800,height=600');
-        if (!printWindow) {
-          toast.error('Popup blocked. Please allow popups for PDF export.');
-          return;
+        const toastId = toast.loading('Exporting to PDF...');
+        
+        try {
+          if (!BACKEND_URL) {
+            throw new Error('Backend API URL not configured');
+          }
+
+          // Get authentication token
+          const supabase = createClient();
+          const { data: { session } } = await supabase.auth.getSession();
+
+          if (!session?.access_token) {
+            throw new Error('Authentication required');
+          }
+
+          const response = await fetch(`${BACKEND_URL}/export/pdf`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ content: htmlContent, fileName: safeFileName }),
+          });
+
+          console.log('[Document Export] Backend PDF API response status:', response.status);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            let errorMessage = `Export failed: ${response.status}`;
+            try {
+              const errorData = JSON.parse(errorText);
+              errorMessage = errorData.detail || errorData.error || errorMessage;
+            } catch {
+              if (errorText.length < 200) {
+                errorMessage = errorText;
+              }
+            }
+            throw new Error(errorMessage);
+          }
+
+          const blob = await response.blob();
+          console.log('[Document Export] PDF blob size:', blob.size, 'bytes');
+          
+          saveAs(blob, `${safeFileName}.pdf`);
+          toast.success('PDF exported', { id: toastId });
+        } catch (error) {
+          console.error('[Document Export] PDF export error:', error);
+          toast.error(`PDF export failed: ${error instanceof Error ? error.message : 'Unknown error'}`, { id: toastId });
         }
-
-        const pdfHtml = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>${safeFileName}</title>
-  <style>
-    @page { size: A4; margin: 20mm; }
-    @media print {
-      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    }
-    ${DOCUMENT_STYLES}
-  </style>
-</head>
-<body>
-  ${htmlContent}
-<script>
-  window.onload = function() {
-    setTimeout(function() { window.print(); }, 200);
-    window.onafterprint = function() { window.close(); };
-  };
-</script>
-</body>
-</html>`;
-
-        printWindow.document.write(pdfHtml);
-        printWindow.document.close();
-        toast.success('Print dialog opened — select "Save as PDF"');
         break;
       }
 
       case 'docx': {
-        console.log('[Document Export] Sending to DOCX API...');
+        console.log('[Document Export] Sending to backend DOCX API...');
         
         const toastId = toast.loading('Exporting to Word...');
         
         try {
-          const response = await fetch('/api/export/docx', {
+          if (!BACKEND_URL) {
+            throw new Error('Backend API URL not configured');
+          }
+
+          // Get authentication token
+          const supabase = createClient();
+          const { data: { session } } = await supabase.auth.getSession();
+
+          if (!session?.access_token) {
+            throw new Error('Authentication required');
+          }
+
+          const response = await fetch(`${BACKEND_URL}/export/docx`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+            },
             body: JSON.stringify({ content: htmlContent, fileName: safeFileName }),
           });
 
-          console.log('[Document Export] DOCX API response status:', response.status);
+          console.log('[Document Export] Backend DOCX API response status:', response.status);
 
           if (!response.ok) {
-            const err = await response.json().catch(() => ({ error: 'Export failed' }));
-            console.error('[Document Export] DOCX API error:', err);
-            throw new Error(err.error || `Error ${response.status}`);
+            const errorText = await response.text();
+            let errorMessage = `Export failed: ${response.status}`;
+            try {
+              const errorData = JSON.parse(errorText);
+              errorMessage = errorData.detail || errorData.error || errorMessage;
+            } catch {
+              if (errorText.length < 200) {
+                errorMessage = errorText;
+              }
+            }
+            throw new Error(errorMessage);
           }
 
           const blob = await response.blob();

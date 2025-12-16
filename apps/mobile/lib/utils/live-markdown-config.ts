@@ -25,9 +25,30 @@ export function markdownParser(input: string) {
     url?: string;
   }> = [];
 
+  // Code blocks: ```...``` - style the entire block
+  const codeBlockRegex = /```[\w]*\n[\s\S]*?```/g;
+  let match;
+  while ((match = codeBlockRegex.exec(input)) !== null) {
+    // Mark entire code block with 'pre' style
+    ranges.push({ start: match.index, length: match[0].length, type: 'pre' });
+  }
+
+  // Horizontal separators: ---, ***, ___
+  const separatorRegex = /^(-{3,}|\*{3,}|_{3,})$/gm;
+  while ((match = separatorRegex.exec(input)) !== null) {
+    // Style separator lines
+    ranges.push({ start: match.index, length: match[1].length, type: 'syntax' });
+  }
+
+  // Table detection: lines with | ... |
+  const tableRegex = /^\|.*\|$/gm;
+  while ((match = tableRegex.exec(input)) !== null) {
+    // Dim table markup slightly
+    ranges.push({ start: match.index, length: match[0].length, type: 'code' });
+  }
+
   // Bold: **text** or __text__
   const boldRegex = /(\*\*|__)(.*?)\1/g;
-  let match;
   while ((match = boldRegex.exec(input)) !== null) {
     ranges.push({ start: match.index, length: match[1].length, type: 'syntax' });
     ranges.push({ start: match.index + match[1].length, length: match[2].length, type: 'bold' });
@@ -72,12 +93,38 @@ export function markdownParser(input: string) {
   }
 
   // Headings: # Heading (all levels h1-h6 use h1 style)
+  // Parse AFTER bold/italic/etc so we don't override their syntax markers
   const headingRegex = /^(#{1,6})\s+(.+)$/gm;
   while ((match = headingRegex.exec(input)) !== null) {
+    const headingStart = match.index;
+    const syntaxEnd = headingStart + match[1].length + 1;
+    const contentStart = syntaxEnd;
+    const contentEnd = headingStart + match[0].length;
+    
     // Mark "# " as syntax (will be made invisible in config)
-    ranges.push({ start: match.index, length: match[1].length + 1, type: 'syntax' });
-    // Mark heading text
-    ranges.push({ start: match.index + match[1].length + 1, length: match[2].length, type: 'h1' });
+    ranges.push({ start: headingStart, length: match[1].length + 1, type: 'syntax' });
+    
+    // For heading content, only mark positions that are NOT already marked as syntax
+    // This prevents overriding bold/italic syntax markers
+    const existingSyntaxRanges = ranges.filter(r => 
+      r.type === 'syntax' && 
+      r.start >= contentStart && 
+      r.start < contentEnd
+    );
+    
+    // Create h1 ranges only for gaps between syntax markers
+    let lastEnd = contentStart;
+    for (const syntaxRange of existingSyntaxRanges.sort((a, b) => a.start - b.start)) {
+      if (syntaxRange.start > lastEnd) {
+        // There's a gap - mark it as h1
+        ranges.push({ start: lastEnd, length: syntaxRange.start - lastEnd, type: 'h1' });
+      }
+      lastEnd = syntaxRange.start + syntaxRange.length;
+    }
+    // Mark remaining content after last syntax marker
+    if (lastEnd < contentEnd) {
+      ranges.push({ start: lastEnd, length: contentEnd - lastEnd, type: 'h1' });
+    }
   }
 
   // Blockquotes: > text
@@ -114,6 +161,13 @@ const FONT_FAMILY_EMOJI = Platform.select({
 let HEADING_MARGIN_LEFT = 0;
 
 /**
+ * LINK UNDERLINE CONTROL - Toggle underlines for markdown links
+ * Set to false to remove underlines (default), true to show them
+ * Adjust with: global.setLinkUnderline(true/false) and hot reload (press 'r')
+ */
+let LINK_UNDERLINE_ENABLED = false;
+
+/**
  * Helper to update heading margin at runtime (no rebuild needed!)
  * 
  * Usage in Metro console or React Native Debugger:
@@ -132,10 +186,32 @@ export function getHeadingMarginLeft() {
   return HEADING_MARGIN_LEFT;
 }
 
+/**
+ * Helper to toggle link underlines at runtime (no rebuild needed!)
+ * 
+ * Usage in Metro console or React Native Debugger:
+ * ```javascript
+ * global.setLinkUnderline(false); // Remove underlines (default)
+ * global.setLinkUnderline(true);  // Show underlines
+ * global.getLinkUnderline(); // Check current value
+ * ```
+ * Then press 'r' in Metro to hot reload and see changes.
+ */
+export function setLinkUnderline(enabled: boolean) {
+  LINK_UNDERLINE_ENABLED = enabled;
+  console.log(`[MarkdownConfig] Link underline ${enabled ? 'enabled' : 'disabled'}. Press 'r' in Metro to reload.`);
+}
+
+export function getLinkUnderline() {
+  return LINK_UNDERLINE_ENABLED;
+}
+
 // Expose to global for easy console access in dev mode
 if (__DEV__) {
   (global as any).setHeadingMargin = setHeadingMarginLeft;
   (global as any).getHeadingMargin = getHeadingMarginLeft;
+  (global as any).setLinkUnderline = setLinkUnderline;
+  (global as any).getLinkUnderline = getLinkUnderline;
 }
 
 /**
@@ -148,7 +224,8 @@ export const lightMarkdownStyle: MarkdownStyle = {
   } as any,
   link: {
     color: '#2563eb', // blue-600
-  },
+    get textDecorationLine() { return LINK_UNDERLINE_ENABLED ? 'underline' : 'none'; }, // Dynamic value
+  } as any,
   h1: {
     fontSize: 26,
     get marginLeft() { return HEADING_MARGIN_LEFT; }, // Dynamic value
@@ -188,7 +265,8 @@ export const darkMarkdownStyle: MarkdownStyle = {
   } as any,
   link: {
     color: '#3b82f6', // blue-500
-  },
+    get textDecorationLine() { return LINK_UNDERLINE_ENABLED ? 'underline' : 'none'; }, // Dynamic value
+  } as any,
   h1: {
     fontSize: 26,
     get marginLeft() { return HEADING_MARGIN_LEFT; }, // Dynamic value

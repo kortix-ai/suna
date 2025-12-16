@@ -1131,5 +1131,27 @@
         "9": "研究 AI 驱动的网络安全解决方案的竞争格局"
       }
     }
+  },
+  "announcements": {
+    "memories": {
+      "title": "介绍记忆功能",
+      "description": "Kortix 现在可以在所有对话中记住您的偏好和上下文",
+      "features": {
+        "personalized": {
+          "title": "个性化体验",
+          "description": "随着时间的推移适应您的工作风格"
+        },
+        "retention": {
+          "title": "上下文保留",
+          "description": "重要细节在对话之间被记住"
+        },
+        "control": {
+          "title": "您掌控一切",
+          "description": "随时关闭或清除记忆"
+        }
+      },
+      "manageButton": "管理记忆",
+      "dismissButton": "知道了"
+    }
   }
 }

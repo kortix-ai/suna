@@ -277,10 +277,9 @@ class Configuration:
             return self.STRIPE_CREDITS_500_PRICE_ID_STAGING
         return self.STRIPE_CREDITS_500_PRICE_ID_PROD
     
-    # PostHog Analytics
-    POSTHOG_PERSONAL_API_KEY: Optional[str] = None  # Personal API key (phx_...) for querying analytics
-    POSTHOG_PROJECT_ID: Optional[str] = None  # Project ID from PostHog
-    POSTHOG_HOST: Optional[str] = "https://eu.posthog.com"  # EU or US host
+    # Google Analytics (GA4) - for visitor tracking in admin dashboard
+    GA_PROPERTY_ID: Optional[str] = None  # GA4 Property ID (numeric, e.g., "516492562")
+    GA_CREDENTIALS_JSON: Optional[str] = None  # Service account JSON credentials (as string or file path)
 
     # LLM API keys
     ANTHROPIC_API_KEY: Optional[str] = None
@@ -358,8 +357,8 @@ class Configuration:
     STRIPE_PRODUCT_ID_STAGING: Optional[str] = 'prod_SCgIj3G7yPOAWY'
     
     # Sandbox configuration
-    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.25"
-    SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.25"
+    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.26"
+    SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.26"
     SANDBOX_ENTRYPOINT = "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf"
     
     # Debug configuration

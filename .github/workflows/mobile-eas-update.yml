@@ -1,4 +1,4 @@
-name: EAS Update - Expo Go Testing
+name: EAS OTA Update
 
 on:
   push:
@@ -78,6 +78,18 @@ jobs:
           echo "message=$(git log -1 --pretty=format:'%s')" >> $GITHUB_OUTPUT
           echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
+      - name: Check if native files changed
+        id: check_native
+        run: |
+          # Check if any native files changed (would require new build)
+          if git diff --name-only HEAD~1 HEAD | grep -E "(app\.json|eas\.json|ios/|android/|package\.json)" | grep -vE "(package-lock\.json|\.md$)" > /dev/null; then
+            echo "native_changed=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Native files changed - OTA update may not be sufficient"
+          else
+            echo "native_changed=false" >> $GITHUB_OUTPUT
+            echo "✅ Only JS/TS files changed - OTA update is appropriate"
+          fi
+
       - name: Publish EAS Update
         working-directory: apps/mobile
         env:
@@ -106,6 +118,16 @@ jobs:
               --platform $PLATFORM \
               --non-interactive
           fi
+
+      - name: Warning if native changes detected
+        if: steps.check_native.outputs.native_changed == 'true'
+        run: |
+          echo "::warning::Native files changed. You may need to create a new build instead of just OTA update."
+          echo "## ⚠️ Native Changes Detected" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Native files were changed. OTA update was published, but you may need to:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Build a new binary: Use 'Production Build' workflow" >> $GITHUB_STEP_SUMMARY
+          echo "2. Update runtimeVersion if needed" >> $GITHUB_STEP_SUMMARY
 
       - name: Comment on PR (if applicable)
         if: github.event_name == 'pull_request'

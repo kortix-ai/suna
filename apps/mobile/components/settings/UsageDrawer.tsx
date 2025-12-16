@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, Pressable } from 'react-native';
+import { View, Pressable, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import * as Haptics from 'expo-haptics';
@@ -110,7 +110,9 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onTopUpPress, on
       style={{
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
-        overflow: 'hidden'
+        overflow: 'hidden',
+        zIndex: 9999,
+        elevation: Platform.OS === 'android' ? 9999 : undefined,
       }}
     >
       <BottomSheetScrollView

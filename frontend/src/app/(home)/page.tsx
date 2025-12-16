@@ -33,22 +33,14 @@ function ShowCaseSkeleton() {
 
 export default function Home() {
   return (
-    <>
-      <BackgroundAALChecker>
-        <main className="w-full">
-          {/* Hero is critical for LCP - load immediately */}
-          <NewHeroSection />
-          
-          {/* Below-the-fold content - lazy loaded with Suspense */}
-          <Suspense fallback={<ShowCaseSkeleton />}>
-            <ShowCaseSection />
-          </Suspense>
-          
-          <Suspense fallback={null}>
-            <WordmarkFooter />
-          </Suspense>
-        </main>
-      </BackgroundAALChecker>
-    </>
+    <BackgroundAALChecker>
+      <NewHeroSection />
+      <Suspense fallback={<ShowCaseSkeleton />}>
+        <ShowCaseSection />
+      </Suspense>
+      <Suspense fallback={null}>
+        <WordmarkFooter />
+      </Suspense>
+    </BackgroundAALChecker>
   );
 }

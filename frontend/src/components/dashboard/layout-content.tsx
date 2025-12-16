@@ -14,6 +14,7 @@ import { usePresence } from '@/hooks/use-presence';
 import { useProjects } from '@/hooks/sidebar/use-sidebar';
 import { useIsMobile } from '@/hooks/utils';
 import { AppProviders } from '@/components/layout/app-providers';
+import { AnnouncementDialog } from '../announcements/announcement-dialog';
 
 // Lazy load heavy components that aren't needed for initial render
 const FloatingMobileMenuButton = lazy(() => 
@@ -165,6 +166,9 @@ export default function DashboardLayoutContent({
         {/* Site-wide welcome bonus banner for free tier users */}
         <Suspense fallback={null}>
           <WelcomeBonusBanner />
+        </Suspense>
+        <Suspense fallback={null}>
+          <AnnouncementDialog />
         </Suspense>
         
         <Suspense fallback={null}>

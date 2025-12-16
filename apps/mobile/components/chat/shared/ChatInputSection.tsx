@@ -133,10 +133,13 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
 
   // Track keyboard visibility
   React.useEffect(() => {
-    const showSubscription = Keyboard.addListener('keyboardWillShow', () => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    
+    const showSubscription = Keyboard.addListener(showEvent, () => {
       setIsKeyboardVisible(true);
     });
-    const hideSubscription = Keyboard.addListener('keyboardWillHide', () => {
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
       setIsKeyboardVisible(false);
     });
 
@@ -176,6 +179,7 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       className="absolute bottom-0 left-0 right-0"
       keyboardVerticalOffset={0}
+      style={Platform.OS === 'android' ? { elevation: 100, zIndex: 100 } : undefined}
     >
       {/* Gradient fade from transparent to background */}
       <LinearGradient
@@ -193,7 +197,7 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
 
       {/* Quick Action Expanded Content - Above Input (only on home) */}
       {showQuickActions && selectedQuickAction && selectedAction && (
-        <View className="mb-3">
+        <View className="mb-3" collapsable={false}>
           <QuickActionExpandedView
             actionId={selectedQuickAction}
             actionLabel={selectedActionLabel}
@@ -238,7 +242,7 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
 
       {/* Quick Action Bar - Below input (camera-style mode selector, only on home) */}
       {showQuickActions && onQuickActionPress && (
-        <View className="pb-8" pointerEvents="box-none">
+        <View className="pb-8" pointerEvents="box-none" collapsable={false}>
           <QuickActionBar
             onActionPress={onQuickActionPress}
             selectedActionId={selectedQuickAction}

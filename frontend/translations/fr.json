@@ -1131,5 +1131,27 @@
         "9": "Rechercher le paysage concurrentiel des solutions de cybersécurité alimentées par l'IA"
       }
     }
+  },
+  "announcements": {
+    "memories": {
+      "title": "Présentation des Mémoires",
+      "description": "Kortix se souvient maintenant de vos préférences et du contexte dans toutes les conversations",
+      "features": {
+        "personalized": {
+          "title": "Expérience Personnalisée",
+          "description": "S'adapte à votre style de travail au fil du temps"
+        },
+        "retention": {
+          "title": "Rétention du Contexte",
+          "description": "Détails importants mémorisés entre les conversations"
+        },
+        "control": {
+          "title": "Vous Êtes en Contrôle",
+          "description": "Désactivez ou effacez à tout moment"
+        }
+      },
+      "manageButton": "Gérer les Mémoires",
+      "dismissButton": "Compris"
+    }
   }
 }

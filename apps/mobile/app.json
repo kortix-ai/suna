@@ -2,7 +2,7 @@
   "expo": {
     "name": "Kortix",
     "slug": "kortix",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/AppIcon-Light.png",
     "scheme": "kortix",
@@ -29,6 +29,7 @@
     },
     "android": {
       "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -114,7 +115,7 @@
       }
     },
     "owner": "kortix",
-    "runtimeVersion": "1.0.0",
+    "runtimeVersion": "1.1.0",
     "updates": {
       "url": "https://u.expo.dev/9fca3cff-a291-41c9-88b9-feb8053b990f"
     }

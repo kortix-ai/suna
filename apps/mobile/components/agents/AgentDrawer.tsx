@@ -36,7 +36,7 @@ import {
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Pressable, View, ScrollView, Keyboard, Alert } from 'react-native';
+import { Pressable, View, ScrollView, Keyboard, Alert, TouchableOpacity, Platform } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   withTiming,
@@ -428,29 +428,32 @@ export function AgentDrawer({
 
       {advancedFeaturesEnabled && (
         <>
-          <AnimatedPressable
-            style={[
-              integrationsAnimatedStyle,
-              {
-                borderColor: hasFreeTier
-                  ? colorScheme === 'dark'
-                    ? '#22c55e'
-                    : '#16a34a'
-                  : colorScheme === 'dark'
-                    ? '#454444'
-                    : '#c2c2c2',
-                borderWidth: hasFreeTier ? 1.5 : 1,
-                backgroundColor: hasFreeTier
-                  ? colorScheme === 'dark'
-                    ? 'rgba(34, 197, 94, 0.1)'
-                    : 'rgba(22, 163, 74, 0.1)'
-                  : 'transparent',
-              },
-            ]}
-            className="mt-4 h-16 flex-1 flex-row items-center justify-center gap-2 rounded-2xl"
+          <TouchableOpacity
+            style={{
+              marginTop: 16,
+              height: 64,
+              flex: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              borderRadius: 16,
+              borderColor: hasFreeTier
+                ? colorScheme === 'dark'
+                  ? '#22c55e'
+                  : '#16a34a'
+                : colorScheme === 'dark'
+                  ? '#454444'
+                  : '#c2c2c2',
+              borderWidth: hasFreeTier ? 1.5 : 1,
+              backgroundColor: hasFreeTier
+                ? colorScheme === 'dark'
+                  ? 'rgba(34, 197, 94, 0.1)'
+                  : 'rgba(22, 163, 74, 0.1)'
+                : 'transparent',
+            }}
             onPress={handleIntegrationsPress}
-            onPressIn={handleIntegrationsPressIn}
-            onPressOut={handleIntegrationsPressOut}>
+            activeOpacity={0.7}>
             {hasFreeTier ? (
               <Lock size={18} color={colorScheme === 'dark' ? '#22c55e' : '#16a34a'} />
             ) : (
@@ -469,7 +472,7 @@ export function AgentDrawer({
               }}>
               {t('integrations.connectApps')}
             </Text>
-          </AnimatedPressable>
+          </TouchableOpacity>
           <View
             style={{ backgroundColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0' }}
             className="my-3 h-px w-full"
@@ -669,6 +672,10 @@ export function AgentDrawer({
         width: 36,
         height: 5,
         borderRadius: 3,
+      }}
+      style={{
+        zIndex: 9999,
+        elevation: Platform.OS === 'android' ? 9999 : undefined,
       }}>
       {/* Use BottomSheetFlatList directly for composio, composio-detail, and composio-connector views */}
       {['composio', 'composio-detail', 'composio-connector'].includes(currentView) ? (

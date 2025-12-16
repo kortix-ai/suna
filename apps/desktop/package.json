@@ -1,0 +1,56 @@
+{
+  "name": "kortix-desktop",
+  "version": "1.0.0",
+  "description": "Kortix Desktop",
+  "author": {
+    "name": "Kortix",
+    "email": "support@kortix.com",
+    "url": "https://kortix.com"
+  },
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:mac": "node -r dotenv/config -e 'require(\"./build-signed.js\")' || electron-builder --mac",
+    "build:mac:unsigned": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@electron/notarize": "^2.3.2",
+    "dotenv": "^16.4.5",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.kortix.desktop",
+    "productName": "Kortix",
+    "protocols": {
+      "name": "Kortix",
+      "schemes": ["kortix"]
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist"
+    },
+    "afterSign": "notarize.js",
+    "dmg": {
+      "sign": false,
+      "icon": "assets/icon.icns"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png"
+    }
+  }
+}

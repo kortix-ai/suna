@@ -104,7 +104,7 @@ export function ShowCaseSection() {
         <section className="w-full px-4 sm:px-6 py-12 sm:py-16 md:py-24 lg:py-32">
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
-                <div className="text-center mb-8 sm:mb-12 md:mb-16">
+                <div className="text-center mb-8 sm:mb-12 md:mb-16 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
                     <h1 className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium tracking-tighter text-balance text-center mb-3 sm:mb-4">
                         {t('title')}
                     </h1>
@@ -115,10 +115,11 @@ export function ShowCaseSection() {
 
                 {/* Workers Grid */}
                 <div className="space-y-4 sm:space-y-6">
-                    {workers.map((worker) => (
+                    {workers.map((worker, index) => (
                         <Card
                             key={worker.id}
-                            className="transition-all duration-300 cursor-pointer !rounded-[20px] sm:!rounded-[24px] !p-4 sm:!p-6"
+                            className="transition-all cursor-pointer !rounded-[20px] sm:!rounded-[24px] !p-4 sm:!p-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both"
+                            style={{ animationDelay: `${100 + index * 100}ms` }}
                             onMouseEnter={() => !isMobile && setActiveWorker(worker.id)}
                             onClick={() => isMobile && setActiveWorker(worker.id)}
                         >

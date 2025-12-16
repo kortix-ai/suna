@@ -535,7 +535,10 @@ export function useAuth() {
    * 2. Falls back to local-only if global fails
    * 3. Manually clears all Supabase keys from AsyncStorage as failsafe
    * 4. Forces React state update
-   * 5. Clears onboarding status for next user
+   * 5. Preserves user preferences (theme, language, onboarding cache)
+   * 
+   * Note: Onboarding status is stored in user_metadata (backend), so it persists
+   * across devices and logins. AsyncStorage cache is kept for faster checks.
    * 
    * Always succeeds from UI perspective to prevent stuck states
    */

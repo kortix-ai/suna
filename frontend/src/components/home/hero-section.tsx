@@ -27,6 +27,7 @@ import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { useAgentSelection } from '@/stores/agent-selection-store';
 import { useTranslations } from 'next-intl';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
+import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
 
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
 const AgentRunLimitDialog = lazy(() => 
@@ -82,7 +83,7 @@ export function HeroSection() {
     const prefetchedRouteRef = useRef<string | null>(null);
     const prefetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    const { data: agentsResponse } = useQuery({
+    const { data: agentsResponse, isLoading: isLoadingAgents } = useQuery({
         queryKey: agentKeys.list({
             limit: 100,
             sort_by: 'name',
@@ -99,6 +100,7 @@ export function HeroSection() {
     });
 
     const agents = agentsResponse?.agents || [];
+    const sunaAgent = agents.find(agent => agent.metadata?.is_suna_default === true);
 
     useEffect(() => {
         if (agents.length > 0) {
@@ -109,15 +111,14 @@ export function HeroSection() {
     const selectedAgent = selectedAgentId
         ? agents.find(agent => agent.agent_id === selectedAgentId)
         : null;
-    const isSunaAgent = !user || selectedAgent?.metadata?.is_suna_default || false;
+    
+    // Show Kortix modes: while loading, when not logged in, or when Kortix agent is selected
+    const isSunaAgent = !user || isLoading || isLoadingAgents
+        ? true
+        : (selectedAgent?.metadata?.is_suna_default || (!selectedAgentId && sunaAgent !== undefined) || false);
 
     const [authDialogOpen, setAuthDialogOpen] = useState(false);
 
-    useEffect(() => {
-        if (authDialogOpen && inputValue.trim()) {
-            localStorage.setItem(PENDING_PROMPT_KEY, inputValue.trim());
-        }
-    }, [authDialogOpen, inputValue]);
 
     useEffect(() => {
         if (authDialogOpen && user && !isLoading) {
@@ -323,13 +324,11 @@ export function HeroSection() {
 
                 <div className="relative z-10 pt-20 sm:pt-24 md:pt-32 mx-auto h-full w-full max-w-6xl flex flex-col items-center justify-center min-h-[60vh] sm:min-h-0">
 
-                    <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-12 sm:pt-20 max-w-4xl mx-auto pb-6 sm:pb-7">
-                        <h2 className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium tracking-tighter text-balance text-center px-4 sm:px-2">
-                            {t('whatWouldYouLike')}
-                        </h2>
+                    <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-12 sm:pt-20 max-w-4xl mx-auto pb-6 sm:pb-7 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
+                        <DynamicGreeting className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium text-balance text-center px-4 sm:px-2" />
                     </div>
 
-                    <div className="flex flex-col items-center w-full max-w-3xl mx-auto gap-2 flex-wrap justify-center px-4 sm:px-0">
+                    <div className="flex flex-col items-center w-full max-w-3xl mx-auto gap-2 flex-wrap justify-center px-4 sm:px-0 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100 fill-mode-both">
                         <div className="w-full relative">
                             <div className="relative z-10">
                                 <ChatInput
@@ -357,7 +356,7 @@ export function HeroSection() {
                         </div>
                     </div>
                     {isSunaAgent && (
-                        <div className="w-full max-w-3xl mx-auto mt-4 px-4 sm:px-0">
+                        <div className="w-full max-w-3xl mx-auto mt-4 px-4 sm:px-0 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-200 fill-mode-both">
                             <Suspense fallback={<div className="h-24 animate-pulse bg-muted/10 rounded-lg" />}>
                                 <SunaModesPanel
                                     selectedMode={selectedMode}

@@ -1,0 +1,422 @@
+name: Desktop App Build
+
+on:
+  push:
+    branches:
+      - main
+      - PRODUCTION
+    paths:
+      - 'apps/desktop/**'
+      - '.github/workflows/desktop-build.yml'
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create GitHub release'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Import Apple Code Signing Certificate
+        if: ${{ env.APPLE_CERTIFICATE_P12 != '' }}
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+        run: |
+          # Create temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          
+          # Create keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          
+          # Import certificate
+          echo "${{ secrets.APPLE_CERTIFICATE_P12 }}" | base64 --decode > certificate.p12
+          security import certificate.p12 \
+            -k "$KEYCHAIN_PATH" \
+            -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/productsign
+          
+          # Set keychain for codesign
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          
+          # Clean up
+          rm certificate.p12
+          
+          echo "✅ Certificate imported successfully"
+
+      - name: Build macOS app (${{ matrix.arch }})
+        working-directory: apps/desktop
+        run: npm run build:mac -- --${{ matrix.arch }}
+        env:
+          # Use proper signing if certificate is available
+          CSC_LINK: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Notarize app (if credentials available)
+        if: ${{ env.APPLE_ID != '' }}
+        working-directory: apps/desktop
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+        run: |
+          echo "🔔 Notarizing app with Apple..."
+          
+          # electron-builder handles notarization automatically if credentials are set
+          # The build step above already notarized it
+          
+          echo "✅ Notarization complete (if credentials were valid)"
+
+      - name: Ad-hoc code sign (fallback if no certificate)
+        if: ${{ env.APPLE_CERTIFICATE_P12 == '' }}
+        working-directory: apps/desktop
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+        run: |
+          echo "⚠️  No Apple certificate found, using ad-hoc signing"
+          echo "   Users will need to right-click > Open on first launch"
+          
+          # Find the .app bundle
+          APP_PATH=$(find dist/mac*/ -name "*.app" -type d | head -1)
+          
+          if [ -n "$APP_PATH" ]; then
+            echo "🔏 Ad-hoc signing: $APP_PATH"
+            
+            # Remove any existing signature
+            codesign --remove-signature "$APP_PATH" 2>/dev/null || true
+            
+            # Ad-hoc sign with hardened runtime
+            codesign --force --deep --sign - \
+              --options runtime \
+              "$APP_PATH"
+            
+            # Verify signature
+            codesign --verify --verbose "$APP_PATH"
+            
+            echo "✅ App signed successfully (ad-hoc)"
+          else
+            echo "⚠️  Warning: Could not find .app bundle"
+            ls -R dist/
+          fi
+
+      - name: List build outputs
+        working-directory: apps/desktop
+        run: ls -lah dist/
+
+      - name: Rename artifacts with architecture
+        working-directory: apps/desktop/dist
+        run: |
+          for file in *.dmg; do
+            if [ -f "$file" ]; then
+              # Extract base name and check if arch is already in filename
+              if [[ "$file" == *"-${{ matrix.arch }}.dmg" ]]; then
+                echo "✓ Already has arch suffix: $file"
+              else
+                base="${file%.dmg}"
+                newname="${base}-${{ matrix.arch }}.dmg"
+                mv "$file" "$newname"
+                echo "✓ Renamed: $file → $newname"
+              fi
+            fi
+          done
+          ls -lah
+
+      - name: Upload to R2 (if main/PRODUCTION)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/PRODUCTION'
+        working-directory: apps/desktop
+        env:
+          R2_ACCOUNT_ID: "9785405a992435bb0c7bd19f9b6d26d5"
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          
+          brew install rclone
+          
+          # Configure rclone for R2
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf << EOF
+          [r2]
+          type = s3
+          provider = Cloudflare
+          access_key_id = ${R2_ACCESS_KEY_ID}
+          secret_access_key = ${R2_SECRET_ACCESS_KEY}
+          endpoint = https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+          acl = private
+          EOF
+          
+          for file in dist/*.dmg; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              
+              echo "📤 Uploading: $filename"
+              
+              # Upload versioned
+              rclone copy "$file" "r2:${R2_BUCKET}/desktop/${VERSION}/macos/" \
+                --progress \
+                --s3-upload-concurrency 4
+              
+              # Upload as latest (overwrites on rebuild)
+              rclone copy "$file" "r2:${R2_BUCKET}/desktop/latest/macos/" \
+                --progress \
+                --s3-upload-concurrency 4
+              
+              echo "✅ Uploaded: $filename"
+              echo "🔗 ${R2_PUBLIC_URL}/desktop/latest/macos/${filename}"
+            fi
+          done
+
+      - name: Upload macOS artifacts (for GitHub Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: kortix-macos-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            apps/desktop/dist/*.dmg
+          retention-days: 30
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Build Windows app
+        working-directory: apps/desktop
+        run: npm run build:win
+        env:
+          # Skip code signing in CI (requires Windows code signing certificate)
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: List build outputs
+        working-directory: apps/desktop
+        run: dir dist\
+
+      - name: Upload to R2 (if main/PRODUCTION)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/PRODUCTION'
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          R2_ACCOUNT_ID: "9785405a992435bb0c7bd19f9b6d26d5"
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          
+          # Install rclone
+          curl https://downloads.rclone.org/rclone-current-windows-amd64.zip -o rclone.zip
+          unzip -q rclone.zip
+          RCLONE_PATH=$(find . -name "rclone.exe" | head -1)
+          
+          # Configure rclone for R2
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf << EOF
+          [r2]
+          type = s3
+          provider = Cloudflare
+          access_key_id = ${R2_ACCESS_KEY_ID}
+          secret_access_key = ${R2_SECRET_ACCESS_KEY}
+          endpoint = https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+          acl = private
+          EOF
+          
+          for file in dist/*.exe; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              
+              echo "📤 Uploading: $filename"
+              
+              # Upload versioned
+              "$RCLONE_PATH" copy "$file" "r2:${R2_BUCKET}/desktop/${VERSION}/windows/" \
+                --progress \
+                --s3-upload-concurrency 4
+              
+              # Upload as latest (overwrites on rebuild)
+              "$RCLONE_PATH" copy "$file" "r2:${R2_BUCKET}/desktop/latest/windows/" \
+                --progress \
+                --s3-upload-concurrency 4
+              
+              echo "✅ Uploaded: $filename"
+              echo "🔗 ${R2_PUBLIC_URL}/desktop/latest/windows/${filename}"
+            fi
+          done
+
+      - name: Upload Windows artifacts (for GitHub Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: kortix-windows-${{ github.sha }}
+          path: |
+            apps/desktop/dist/*.exe
+          retention-days: 30
+
+  create-release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' && 
+      github.event.inputs.create_release == 'true' ||
+      github.ref == 'refs/heads/PRODUCTION'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./apps/desktop/package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Download macOS x64 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kortix-macos-x64-${{ github.sha }}
+          path: ./artifacts/macos-x64
+
+      - name: Download macOS ARM64 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kortix-macos-arm64-${{ github.sha }}
+          path: ./artifacts/macos-arm64
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kortix-windows-${{ github.sha }}
+          path: ./artifacts/windows
+
+      - name: List all artifacts
+        run: |
+          echo "=== macOS x64 artifacts ==="
+          ls -lah ./artifacts/macos-x64/
+          echo "=== macOS ARM64 artifacts ==="
+          ls -lah ./artifacts/macos-arm64/
+          echo "=== Windows artifacts ==="
+          ls -lah ./artifacts/windows/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: desktop-${{ steps.version.outputs.tag }}
+          name: Desktop App ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            ./artifacts/macos-x64/*
+            ./artifacts/macos-arm64/*
+            ./artifacts/windows/*
+          body: |
+            ## Kortix Desktop App ${{ steps.version.outputs.version }}
+            
+            ### Downloads
+            
+            **macOS:**
+            - **Apple Silicon (M1/M2/M3)**: Download the `-arm64.dmg` file
+            - **Intel**: Download the `-x64.dmg` file
+            
+            **Windows:**
+            - Download the `.exe` installer
+            
+            ### Installation
+            
+            **macOS:**
+            1. Download the appropriate `.dmg` file for your Mac (Apple Silicon or Intel)
+            2. Open the `.dmg` file
+            3. Drag Kortix to your Applications folder
+            4. Open Kortix from Applications
+            
+            **Windows:**
+            1. Download and run the `.exe` installer
+            2. Follow the installation wizard
+            3. Launch Kortix from the Start Menu
+            
+            ---
+            
+            Built from commit: ${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Build Status
+        run: |
+          MACOS_STATUS="${{ needs.build-macos.result }}"
+          WINDOWS_STATUS="${{ needs.build-windows.result }}"
+          
+          echo "## 🏗️ Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "$MACOS_STATUS" == "success" ]; then
+            echo "✅ macOS (Intel + Apple Silicon): Success" >> $GITHUB_STEP_SUMMARY
+            echo "✅ macOS builds completed successfully!"
+          else
+            echo "❌ macOS (Intel + Apple Silicon): $MACOS_STATUS" >> $GITHUB_STEP_SUMMARY
+            echo "❌ macOS builds failed: $MACOS_STATUS"
+          fi
+          
+          if [ "$WINDOWS_STATUS" == "success" ]; then
+            echo "✅ Windows: Success" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Windows build completed successfully!"
+          else
+            echo "❌ Windows: $WINDOWS_STATUS" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Windows build failed: $WINDOWS_STATUS"
+          fi
+          
+          if [ "$MACOS_STATUS" == "success" ] && [ "$WINDOWS_STATUS" == "success" ]; then
+            echo ""
+            echo "🎉 All desktop builds completed successfully!"
+            exit 0
+          else
+            echo ""
+            echo "❌ Some builds failed"
+            exit 1
+          fi

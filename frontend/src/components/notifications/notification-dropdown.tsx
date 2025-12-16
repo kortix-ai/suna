@@ -1,14 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { Inbox } from '@novu/nextjs';
 import { Circle, Check } from 'lucide-react';
 import { Button } from '../ui/button';
-import { useTheme } from 'next-themes';
 import { Badge } from '../ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { UnifiedMarkdown } from '@/components/markdown';
+import { useAnnouncementStore, AnnouncementData } from '@/stores/announcement-store';
 
 type ChannelType = 'in_app' | 'email' | 'sms' | 'push' | 'chat';
 
@@ -82,10 +82,14 @@ const getRelativeTime = (dateString: string) => {
 };
 
 const NotificationItem = (notification: Notification) => {
+  const { openAnnouncement } = useAnnouncementStore();
+  
   const handleNavigation = (url: string, target?: '_blank' | '_self' | '_parent' | '_top') => {
-    if (url.startsWith('/internal/dialog/')) {
-      const dialogType = url.replace('/internal/dialog/', '');
-      console.log('Open dialog:', dialogType, notification.data);
+    if (url.startsWith('/internal/announcement')) {
+      const data = notification.data as unknown as AnnouncementData | undefined;
+      if (data?.component) {
+        openAnnouncement(data);
+      }
       return;
     }
 
@@ -244,7 +248,7 @@ export function NotificationDropdown() {
   const { user } = useAuth();
   const applicationIdentifier = process.env.NEXT_PUBLIC_NOVU_APP_IDENTIFIER;
 
-  if (!user?.id || !applicationIdentifier) {
+  if (!applicationIdentifier) {
     return null;
   }
 

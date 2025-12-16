@@ -49,8 +49,13 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
       if (line.startsWith('```')) {
         if (inCodeBlock) {
           elements.push(
-            <View key={getKey()} className="bg-card border border-border rounded-xl p-4 mb-4">
-              <Text className="text-xs font-roobert-mono text-primary leading-5">
+            <View key={getKey()} className="bg-card border border-border rounded-xl overflow-hidden mb-4">
+              <View className="px-4 py-2 border-b border-border">
+                <Text className="text-xs font-roobert-medium text-primary opacity-50 uppercase tracking-wider">
+                  {codeBlockLang || 'Code Block'}
+                </Text>
+              </View>
+              <Text className="text-xs font-roobert-mono text-primary leading-5 p-4">
                 {codeBlockContent.join('\n')}
               </Text>
             </View>
@@ -121,8 +126,13 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
 
     if (inCodeBlock && codeBlockContent.length > 0) {
       elements.push(
-        <View key={getKey()} className="bg-card border border-border rounded-xl p-4 mb-4">
-          <Text className="text-xs font-roobert-mono text-primary leading-5">
+        <View key={getKey()} className="bg-card border border-border rounded-xl overflow-hidden mb-4">
+          <View className="px-4 py-2 border-b border-border">
+            <Text className="text-xs font-roobert-medium text-primary opacity-50 uppercase tracking-wider">
+              {codeBlockLang || 'Code Block'}
+            </Text>
+          </View>
+          <Text className="text-xs font-roobert-mono text-primary leading-5 p-4">
             {codeBlockContent.join('\n')}
           </Text>
         </View>
