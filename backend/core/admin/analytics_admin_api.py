@@ -8,11 +8,13 @@ Provides analytics data for the admin dashboard including:
 """
 
 from fastapi import APIRouter, HTTPException, Depends, Query
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import asyncio
 import httpx
+import json
+import os
 from core.auth import require_admin, require_super_admin
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
@@ -20,6 +22,23 @@ from core.utils.pagination import PaginationService, PaginationParams, Paginated
 from core.utils.config import config
 from core.utils.query_utils import batch_query_in
 import openai
+
+# Google Analytics imports
+try:
+    from google.analytics.data_v1beta import BetaAnalyticsDataClient
+    from google.analytics.data_v1beta.types import (
+        RunReportRequest,
+        DateRange,
+        Dimension,
+        Metric,
+        FilterExpression,
+        Filter,
+    )
+    from google.oauth2 import service_account
+    GA_AVAILABLE = True
+except ImportError:
+    GA_AVAILABLE = False
+    logger.warning("Google Analytics SDK not installed. Install with: pip install google-analytics-data")
 
 router = APIRouter(prefix="/admin/analytics", tags=["admin-analytics"])
 
@@ -98,39 +117,139 @@ async def get_openai_client():
     return openai.AsyncOpenAI(api_key=api_key)
 
 
-async def query_posthog(query: str, date_from: str, date_to: str) -> Dict[str, Any]:
-    """Query PostHog API for analytics data."""
-    api_key = config.POSTHOG_PERSONAL_API_KEY
-    project_id = config.POSTHOG_PROJECT_ID
-    host = config.POSTHOG_HOST or "https://eu.posthog.com"
-    
-    if not api_key or not project_id:
+def get_ga_client() -> "BetaAnalyticsDataClient":
+    """Get Google Analytics client with service account credentials."""
+    if not GA_AVAILABLE:
         raise HTTPException(
-            status_code=500, 
-            detail="PostHog not configured. Set POSTHOG_PERSONAL_API_KEY and POSTHOG_PROJECT_ID."
+            status_code=500,
+            detail="Google Analytics SDK not installed. Install with: pip install google-analytics-data"
         )
     
-    url = f"{host}/api/projects/{project_id}/query/"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
+    credentials_json = config.GA_CREDENTIALS_JSON
+    if not credentials_json:
+        raise HTTPException(
+            status_code=500,
+            detail="Google Analytics not configured. Set GA_CREDENTIALS_JSON environment variable."
+        )
     
-    payload = {
-        "query": {
-            "kind": "HogQLQuery",
-            "query": query
-        }
-    }
+    # Check if it's a file path or JSON string
+    if os.path.isfile(credentials_json):
+        credentials = service_account.Credentials.from_service_account_file(credentials_json)
+    else:
+        # Parse as JSON string
+        try:
+            credentials_info = json.loads(credentials_json)
+            credentials = service_account.Credentials.from_service_account_info(credentials_info)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=500,
+                detail="Invalid GA_CREDENTIALS_JSON: must be valid JSON or a file path"
+            )
     
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(url, json=payload, headers=headers)
+    return BetaAnalyticsDataClient(credentials=credentials)
+
+
+def query_google_analytics(date_str: str) -> Dict[str, int]:
+    """
+    Query Google Analytics for visitor stats on a specific date.
+    Returns dict with 'pageviews' and 'unique_visitors'.
+    """
+    property_id = config.GA_PROPERTY_ID
+    if not property_id:
+        raise HTTPException(
+            status_code=500,
+            detail="Google Analytics not configured. Set GA_PROPERTY_ID environment variable."
+        )
+    
+    client = get_ga_client()
+    
+    # Build the request - no hostname filter needed (dedicated kortix property)
+    request = RunReportRequest(
+        property=f"properties/{property_id}",
+        date_ranges=[DateRange(start_date=date_str, end_date=date_str)],
+        metrics=[
+            Metric(name="screenPageViews"),
+            Metric(name="newUsers"),
+        ],
+    )
+    
+    response = client.run_report(request)
+    
+    # Extract results
+    pageviews = 0
+    unique_visitors = 0
+    
+    if response.rows:
+        row = response.rows[0]
+        pageviews = int(row.metric_values[0].value) if row.metric_values else 0
+        unique_visitors = int(row.metric_values[1].value) if len(row.metric_values) > 1 else 0
+    
+    return {
+        "pageviews": pageviews,
+        "unique_visitors": unique_visitors
+    }
+
+
+async def query_vercel_analytics(date_str: str) -> Dict[str, int]:
+    """
+    Query Vercel Analytics from our database (populated via drains).
+    Returns dict with 'pageviews' and 'unique_visitors'.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
         
-        if response.status_code != 200:
-            logger.error(f"PostHog API error: {response.status_code} - {response.text}")
-            raise HTTPException(status_code=500, detail=f"PostHog API error: {response.status_code}")
+        result = await client.rpc('get_vercel_analytics', {
+            'target_date': date_str
+        }).execute()
         
-        return response.json()
+        if result.data and len(result.data) > 0:
+            row = result.data[0]
+            return {
+                "pageviews": row.get('pageviews', 0) or 0,
+                "unique_visitors": row.get('unique_visitors', 0) or 0
+            }
+        
+        return {"pageviews": 0, "unique_visitors": 0}
+        
+    except Exception as e:
+        logger.error(f"Failed to query Vercel analytics: {e}", exc_info=True)
+        return {"pageviews": 0, "unique_visitors": 0}
+
+
+async def query_vercel_analytics_range(start_date: str, end_date: str) -> Dict[str, int]:
+    """
+    Query Vercel Analytics for a date range (for ARR views endpoint).
+    Returns dict mapping date -> unique_visitors count.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        result = await client.rpc('get_vercel_analytics_range', {
+            'start_date': start_date,
+            'end_date': end_date
+        }).execute()
+        
+        views_by_date: Dict[str, int] = {}
+        total = 0
+        
+        for row in result.data or []:
+            date = row.get('analytics_date')
+            unique_visitors = row.get('unique_visitors', 0) or 0
+            if date:
+                views_by_date[date] = unique_visitors
+                total += unique_visitors
+        
+        return views_by_date, total
+        
+    except Exception as e:
+        logger.error(f"Failed to query Vercel analytics range: {e}", exc_info=True)
+        return {}, 0
+
+
+# Analytics source type
+AnalyticsSource = Literal["vercel", "ga"]
 
 
 # ============================================================================
@@ -792,9 +911,10 @@ async def get_category_distribution(
 @router.get("/visitors")
 async def get_visitor_stats(
     date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    source: AnalyticsSource = Query("vercel", description="Analytics source: vercel (primary) or ga"),
     admin: dict = Depends(require_admin)
 ) -> VisitorStats:
-    """Get visitor statistics from PostHog for a specific day."""
+    """Get visitor statistics for a specific day. Vercel is primary, GA is fallback."""
     try:
         # Parse date or default to today
         if date:
@@ -807,28 +927,16 @@ async def get_visitor_stats(
         
         date_str = selected_date.strftime("%Y-%m-%d")
         
-        # Query PostHog for pageview events on the selected date
-        query = f"""
-        SELECT 
-            count() as pageviews,
-            count(DISTINCT distinct_id) as unique_visitors
-        FROM events
-        WHERE event = '$pageview'
-          AND timestamp >= toDateTime('{date_str} 00:00:00')
-          AND timestamp < toDateTime('{date_str} 23:59:59')
-        """
-        
-        result = await query_posthog(query, date_str, date_str)
-        
-        # Extract results
-        data = result.get('results', [[0, 0]])[0]
-        pageviews = data[0] if len(data) > 0 else 0
-        unique_visitors = data[1] if len(data) > 1 else 0
+        # Query based on source
+        if source == "vercel":
+            data = await query_vercel_analytics(date_str)
+        else:
+            data = query_google_analytics(date_str)
         
         return VisitorStats(
-            total_visitors=unique_visitors,
-            unique_visitors=unique_visitors,
-            pageviews=pageviews,
+            total_visitors=data["unique_visitors"],
+            unique_visitors=data["unique_visitors"],
+            pageviews=data["pageviews"],
             date=date_str
         )
         
@@ -842,6 +950,7 @@ async def get_visitor_stats(
 @router.get("/conversion-funnel")
 async def get_conversion_funnel(
     date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    source: AnalyticsSource = Query("vercel", description="Analytics source: vercel (primary) or ga"),
     admin: dict = Depends(require_admin)
 ) -> ConversionFunnel:
     """Get full conversion funnel: Visitors → Signups → Subscriptions."""
@@ -865,18 +974,13 @@ async def get_conversion_funnel(
         # Define async functions for parallel execution
         async def get_visitors():
             try:
-                query = f"""
-                SELECT count(DISTINCT distinct_id) as unique_visitors
-                FROM events
-                WHERE event = '$pageview'
-                  AND timestamp >= toDateTime('{date_str} 00:00:00')
-                  AND timestamp < toDateTime('{date_str} 23:59:59')
-                """
-                result = await query_posthog(query, date_str, date_str)
-                data = result.get('results', [[0]])[0]
-                return data[0] if len(data) > 0 else 0
+                if source == "vercel":
+                    data = await query_vercel_analytics(date_str)
+                else:
+                    data = query_google_analytics(date_str)
+                return data["unique_visitors"]
             except Exception as e:
-                logger.warning(f"Failed to get PostHog visitors: {e}")
+                logger.warning(f"Failed to get {source} visitors: {e}")
                 return 0
         
         async def get_signups():
@@ -937,6 +1041,115 @@ class WeeklyActualData(BaseModel):
 
 class WeeklyActualsResponse(BaseModel):
     actuals: Dict[int, WeeklyActualData]
+
+
+@router.get("/arr/signups")
+async def get_signups_by_date(
+    date_from: str = Query(..., description="Start date YYYY-MM-DD"),
+    date_to: str = Query(..., description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """
+    Get signup counts grouped by date for a date range.
+    Frontend can aggregate into weeks as needed.
+    Super admin only.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        # Use database function for efficient GROUP BY (bypasses row limits)
+        result = await client.rpc('get_signups_by_date', {
+            'start_date': f"{date_from}T00:00:00Z",
+            'end_date': f"{date_to}T23:59:59.999999Z"
+        }).execute()
+        
+        # Transform to dict format
+        signups_by_date = {
+            row['signup_date']: row['count'] 
+            for row in (result.data or [])
+        }
+        total = sum(signups_by_date.values())
+        
+        return {
+            "date_from": date_from,
+            "date_to": date_to,
+            "signups_by_date": signups_by_date,
+            "total": total
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get signups by date: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get signups")
+
+
+@router.get("/arr/views")
+async def get_views_by_date(
+    date_from: str = Query(..., description="Start date YYYY-MM-DD"),
+    date_to: str = Query(..., description="End date YYYY-MM-DD"),
+    source: AnalyticsSource = Query("vercel", description="Analytics source: vercel (primary) or ga"),
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """
+    Get view counts (unique visitors) grouped by date.
+    Frontend can aggregate into weeks as needed.
+    Super admin only.
+    """
+    try:
+        if source == "vercel":
+            # Query Vercel analytics from our database
+            views_by_date, total = await query_vercel_analytics_range(date_from, date_to)
+            return {
+                "date_from": date_from,
+                "date_to": date_to,
+                "views_by_date": views_by_date,
+                "total": total
+            }
+        else:
+            # Query Google Analytics
+            property_id = config.GA_PROPERTY_ID
+            if not property_id:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Google Analytics not configured. Set GA_PROPERTY_ID environment variable."
+                )
+            
+            client = get_ga_client()
+            
+            # Query GA with date dimension to get daily breakdown
+            request = RunReportRequest(
+                property=f"properties/{property_id}",
+                date_ranges=[DateRange(start_date=date_from, end_date=date_to)],
+                dimensions=[Dimension(name="date")],
+                metrics=[Metric(name="newUsers")],
+            )
+            
+            response = client.run_report(request)
+            
+            # Parse response into date -> count mapping
+            views_by_date: Dict[str, int] = {}
+            total = 0
+            
+            for row in response.rows or []:
+                # Date comes in YYYYMMDD format, convert to YYYY-MM-DD
+                raw_date = row.dimension_values[0].value
+                formatted_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+                count = int(row.metric_values[0].value)
+                views_by_date[formatted_date] = count
+                total += count
+            
+            return {
+                "date_from": date_from,
+                "date_to": date_to,
+                "views_by_date": views_by_date,
+                "total": total
+            }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get views by date: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get views")
 
 
 @router.get("/arr/actuals")

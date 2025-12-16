@@ -16,7 +16,7 @@ export function isElectron(): boolean {
 
   // Check for Electron-specific globals
   if (typeof window !== 'undefined') {
-    // @ts-ignore - Electron may inject these
+    // @ts-expect-error - Electron may inject these
     return !!(window.process && window.process.type === 'renderer');
   }
 

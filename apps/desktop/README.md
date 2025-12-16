@@ -21,9 +21,10 @@ npm start
 Build for your platform:
 
 ```bash
-npm run build:mac      # macOS
-npm run build:win      # Windows
-npm run build:linux    # Linux
+npm run build:mac          # macOS (with signing if .env exists)
+npm run build:mac:unsigned # macOS (quick, no signing)
+npm run build:win          # Windows
+npm run build:linux        # Linux
 ```
 
 Or build for all platforms:
@@ -31,6 +32,8 @@ Or build for all platforms:
 ```bash
 npm run build
 ```
+
+**Note:** For signed macOS builds, create a `.env` file with Apple credentials (see `LOCAL-BUILD.md`).
 
 ## Configuration
 
@@ -41,6 +44,10 @@ APP_URL=http://localhost:3000 npm start
 ```
 
 By default, it loads `https://kortix.com/`.
+
+## Installation
+
+For end users, see [INSTALLATION.md](./INSTALLATION.md) for detailed installation instructions including how to bypass macOS Gatekeeper on first launch.
 
 ## Deep Linking
 
@@ -53,3 +60,12 @@ The app registers the `kortix://` protocol for magic link authentication:
 5. App handles auth callback and logs user in
 
 The protocol is automatically registered when the app is installed.
+
+## Code Signing Status
+
+The CI/CD builds use **ad-hoc code signing** which means:
+- ✅ App is properly signed and not "damaged"
+- ⚠️ Not notarized with Apple (requires paid developer account)
+- 📝 Users must right-click → Open on first launch (macOS only)
+
+For production notarization, add Apple Developer credentials to GitHub Secrets.
