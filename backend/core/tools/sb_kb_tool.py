@@ -32,7 +32,8 @@ from core.utils.logger import logger
 
 **GLOBAL KNOWLEDGE BASE MANAGEMENT:**
 - Use `global_kb_sync` to download assigned knowledge base files to sandbox
-- Files synced to `root/knowledge-base-global/` with proper folder structure
+- Files synced to `/workspace/downloads/global-knowledge/` with proper folder structure
+- Files are automatically searchable via semantic_search since they're in /workspace
 - Use when users ask vague questions without specific file uploads or references
 
 **CRUD OPERATIONS FOR GLOBAL KB:**
@@ -300,7 +301,7 @@ class SandboxKbTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "global_kb_sync",
-            "description": "Sync agent's knowledge base files to sandbox ~/knowledge-base-global directory. Downloads all assigned knowledge base files and creates a local copy with proper folder structure.",
+            "description": "Sync agent's knowledge base files to /workspace/downloads/global-knowledge/. Downloads all assigned knowledge base files and creates a local copy with proper folder structure. Files are automatically searchable via semantic_search.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -309,7 +310,7 @@ class SandboxKbTool(SandboxToolsBase):
         }
     })
     async def global_kb_sync(self) -> ToolResult:
-        """Sync all agent's knowledge base files to sandbox ~/knowledge-base-global directory."""
+        """Sync all agent's knowledge base files to /workspace/downloads/global-knowledge/."""
         try:
             await self._ensure_sandbox()
             
@@ -342,13 +343,13 @@ class SandboxKbTool(SandboxToolsBase):
                 return self.success_response({
                     "message": "No knowledge base files to sync",
                     "synced_files": 0,
-                    "kb_directory": "~/knowledge-base-global"
+                    "kb_directory": "/workspace/downloads/global-knowledge"
                 })
             
-            # Create knowledge base directory in sandbox
-            kb_dir = "knowledge-base-global"
-            await self.sandbox.process.exec(f"mkdir -p ~/{kb_dir}")
-            await self.sandbox.process.exec(f"rm -rf ~/{kb_dir}/*")
+            # Create knowledge base directory in sandbox - in workspace so it's searchable
+            kb_dir = "/workspace/downloads/global-knowledge"
+            await self.sandbox.process.exec(f"mkdir -p {kb_dir}")
+            await self.sandbox.process.exec(f"rm -rf {kb_dir}/*")
             
             synced_files = 0
             folder_structure = {}
@@ -370,11 +371,11 @@ class SandboxKbTool(SandboxToolsBase):
                         continue
                     
                     # Create folder structure in sandbox
-                    folder_path = f"~/{kb_dir}/{folder_name}"
+                    folder_path = f"{kb_dir}/{folder_name}"
                     await self.sandbox.process.exec(f"mkdir -p '{folder_path}'")
                     
-                    # Upload file to sandbox
-                    file_destination = f"{kb_dir}/{folder_name}/{filename}"
+                    # Upload file to sandbox (path relative to /workspace for fs.upload_file)
+                    file_destination = f"downloads/global-knowledge/{folder_name}/{filename}"
                     await self.sandbox.fs.upload_file(file_response, file_destination)
                     
                     synced_files += 1
@@ -391,6 +392,8 @@ class SandboxKbTool(SandboxToolsBase):
 
 This directory contains your agent's knowledge base files, synced from the cloud.
 
+Location: `/workspace/downloads/global-knowledge/`
+
 ## Structure:
 """
             for folder_name, files in folder_structure.items():
@@ -400,7 +403,7 @@ This directory contains your agent's knowledge base files, synced from the cloud
             
             readme_content += f"""
 ## Usage:
-- Files are automatically synced when you run tasks that require knowledge base access
+- Files are automatically searchable via semantic_search (they're in /workspace)
 - You can manually sync with the `global_kb_sync` tool
 - Total files synced: {synced_files}
 
@@ -408,12 +411,12 @@ This directory contains your agent's knowledge base files, synced from the cloud
 Agent ID: {agent_id}
 """
             
-            await self.sandbox.fs.upload_file(readme_content.encode('utf-8'), f"{kb_dir}/README.md")
+            await self.sandbox.fs.upload_file(readme_content.encode('utf-8'), "downloads/global-knowledge/README.md")
             
             return self.success_response({
                 "message": f"Successfully synced {synced_files} files to knowledge base",
                 "synced_files": synced_files,
-                "kb_directory": f"~/{kb_dir}",
+                "kb_directory": kb_dir,
                 "folder_structure": folder_structure,
                 "agent_id": agent_id
             })
