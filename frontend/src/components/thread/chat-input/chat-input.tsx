@@ -936,6 +936,18 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       setMounted(true);
     }, []);
 
+    useEffect(() => {
+      if (controlledValue !== undefined && controlledValue !== valueRef.current) {
+        const textarea = textareaRef.current as any;
+        if (textarea?.clearValue) {
+          textarea.clearValue();
+          if (controlledValue) textarea.appendValue(controlledValue);
+        }
+        valueRef.current = controlledValue;
+        setHasContent(controlledValue.trim().length > 0);
+      }
+    }, [controlledValue]);
+
     // Typewriter effect for placeholder
     useEffect(() => {
       if (!mounted || hasContent || !animatePlaceholder) {
