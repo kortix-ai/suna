@@ -988,22 +988,24 @@ async def get_signups_by_date(
         db = DBConnection()
         client = await db.client
         
-        # Single DB query for all signups in range
-        result = await client.schema('basejump').from_('accounts').select(
-            'created_at'
-        ).gte('created_at', f"{date_from}T00:00:00Z").lte('created_at', f"{date_to}T23:59:59.999999Z").execute()
+        # Use database function for efficient GROUP BY (bypasses row limits)
+        result = await client.rpc('get_signups_by_date', {
+            'start_date': f"{date_from}T00:00:00Z",
+            'end_date': f"{date_to}T23:59:59.999999Z"
+        }).execute()
         
-        # Group by date
-        signups_by_date: Dict[str, int] = {}
-        for account in result.data or []:
-            date = account['created_at'][:10]  # Extract YYYY-MM-DD
-            signups_by_date[date] = signups_by_date.get(date, 0) + 1
+        # Transform to dict format
+        signups_by_date = {
+            row['signup_date']: row['count'] 
+            for row in (result.data or [])
+        }
+        total = sum(signups_by_date.values())
         
         return {
             "date_from": date_from,
             "date_to": date_to,
             "signups_by_date": signups_by_date,
-            "total": len(result.data or [])
+            "total": total
         }
         
     except Exception as e:
