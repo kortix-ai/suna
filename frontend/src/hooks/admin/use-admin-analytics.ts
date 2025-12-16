@@ -278,27 +278,6 @@ export function useTranslate() {
   });
 }
 
-export function useRefreshAnalytics() {
-  const queryClient = useQueryClient();
-  
-  return {
-    refreshAll: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics'] });
-    },
-    refreshSummary: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'summary'] });
-    },
-    refreshThreads: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'threads'] });
-    },
-    refreshRetention: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'retention'] });
-    },
-    refreshARRActuals: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'arr-actuals'] });
-    },
-  };
-}
 
 // ============================================================================
 // ARR WEEKLY ACTUALS
