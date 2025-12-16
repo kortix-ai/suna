@@ -27,6 +27,8 @@ import { PanelHeader } from './components/PanelHeader';
 import { NavigationControls } from './components/NavigationControls';
 import { EmptyState } from './components/EmptyState';
 import { LoadingState } from './components/LoadingState';
+import { AppDock } from './components/Dock';
+import { SandboxDesktop } from './components/Desktop';
 
 export interface ToolCallInput {
   toolCall: ToolCallData;
@@ -391,6 +393,12 @@ export const KortixComputer = memo(function KortixComputer({
     internalNavigate(bounded, 'user_explicit');
   }, [latestIndex, internalNavigate]);
 
+  const handleDockNavigate = useCallback((index: number) => {
+    const bounded = Math.max(0, Math.min(index, latestIndex));
+    setNavigationMode(bounded === latestIndex ? 'live' : 'manual');
+    internalNavigate(bounded, 'user_explicit');
+  }, [latestIndex, internalNavigate]);
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -416,7 +424,6 @@ export const KortixComputer = memo(function KortixComputer({
         handleClose();
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, handleClose, isDocumentModalOpen]);
@@ -669,12 +676,6 @@ export const KortixComputer = memo(function KortixComputer({
   }
 
   if (compact) {
-    const compactContent = (
-      <div className="flex-1 flex flex-col overflow-hidden bg-card max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>
-        {renderContent()}
-      </div>
-    );
-
     const compactNav = activeView === 'tools' && (displayTotalCalls > 1 || (isCurrentToolStreaming && totalCompletedCalls > 0)) && (
       <NavigationControls
         displayIndex={displayIndex}
@@ -692,31 +693,52 @@ export const KortixComputer = memo(function KortixComputer({
       />
     );
 
+    const compactDockNav = activeView === 'tools' && isMaximized ? (
+      <AppDock
+        toolCalls={toolCallSnapshots.map(s => s.toolCall)}
+        currentIndex={safeInternalIndex}
+        onNavigate={handleDockNavigate}
+        onPrevious={navigateToPrevious}
+        onNext={navigateToNext}
+        latestIndex={latestIndex}
+        agentStatus={agentStatus}
+        isLiveMode={isLiveMode}
+        onJumpToLive={jumpToLive}
+        onJumpToLatest={jumpToLatest}
+      />
+    ) : null;
+
     if (isMaximized) {
       return (
         <Dialog open={isMaximized} onOpenChange={(open) => !open && setIsMaximized(false)}>
           <DialogContent 
             hideCloseButton={true}
-            className="max-w-[100vw] max-h-[100vh] w-[100vw] h-[100vh] p-0 border-0 rounded-none"
+            className="max-w-[100vw] max-h-[100vh] w-[100vw] h-[100vh] p-0 border-0 rounded-none bg-transparent"
             style={{ contain: 'strict' }}
           >
-            <motion.div
-              key="fullscreen"
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              transition={{
-                type: "spring",
-                stiffness: 300,
-                damping: 30,
-                duration: 0.3
-              }}
-              className="h-full w-full flex flex-col bg-card overflow-hidden rounded-3xl border"
-              style={{ contain: 'strict' }}
-            >
-              {compactContent}
-              {compactNav}
-            </motion.div>
+            <SandboxDesktop
+              toolCalls={toolCallSnapshots.map(s => s.toolCall)}
+              currentIndex={safeInternalIndex}
+              onNavigate={handleDockNavigate}
+              onPrevious={navigateToPrevious}
+              onNext={navigateToNext}
+              latestIndex={latestIndex}
+              agentStatus={agentStatus}
+              isLiveMode={isLiveMode}
+              onJumpToLive={jumpToLive}
+              onJumpToLatest={jumpToLatest}
+              project={project}
+              messages={messages}
+              onFileClick={onFileClick}
+              streamingText={streamingText}
+              onClose={() => setIsMaximized(false)}
+              currentView={activeView}
+              onViewChange={setActiveView}
+              renderFilesView={renderFilesView}
+              renderBrowserView={renderBrowserView}
+              isStreaming={isStreaming}
+              project_id={projectId}
+            />
           </DialogContent>
         </Dialog>
       );
@@ -744,7 +766,9 @@ export const KortixComputer = memo(function KortixComputer({
               contain: 'strict',
             }}
           >
-            {compactContent}
+            <div className="flex-1 flex flex-col overflow-hidden bg-card max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>
+              {renderContent()}
+            </div>
             {compactNav}
           </motion.div>
         )}
@@ -755,12 +779,6 @@ export const KortixComputer = memo(function KortixComputer({
   if (!isOpen) {
     return null;
   }
-
-  const desktopContent = (
-    <div className="flex-1 flex flex-col overflow-hidden max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>
-      {renderContent()}
-    </div>
-  );
 
   const desktopNav = activeView === 'tools' && (displayTotalCalls > 1 || (isCurrentToolStreaming && totalCompletedCalls > 0)) && (
     <NavigationControls
@@ -779,31 +797,52 @@ export const KortixComputer = memo(function KortixComputer({
     />
   );
 
+  const dockNav = activeView === 'tools' && isMaximized ? (
+    <AppDock
+      toolCalls={toolCallSnapshots.map(s => s.toolCall)}
+      currentIndex={safeInternalIndex}
+      onNavigate={handleDockNavigate}
+      onPrevious={navigateToPrevious}
+      onNext={navigateToNext}
+      latestIndex={latestIndex}
+      agentStatus={agentStatus}
+      isLiveMode={isLiveMode}
+      onJumpToLive={jumpToLive}
+      onJumpToLatest={jumpToLatest}
+    />
+  ) : null;
+
   if (isMaximized) {
     return (
       <Dialog open={isMaximized} onOpenChange={(open) => !open && setIsMaximized(false)}>
         <DialogContent 
           hideCloseButton={true}
-          className="max-w-[100vw] max-h-[100vh] w-[100vw] h-[100vh] p-0 border-0 rounded-none"
+          className="max-w-[100vw] max-h-[100vh] w-[100vw] h-[100vh] p-0 border-0 rounded-none bg-transparent"
           style={{ contain: 'strict' }}
         >
-          <motion.div
-            key="fullscreen-resizable"
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.95, opacity: 0 }}
-            transition={{
-              type: "spring",
-              stiffness: 300,
-              damping: 30,
-              duration: 0.3
-            }}
-            className="h-full w-full flex flex-col bg-card overflow-hidden rounded-3xl border"
-            style={{ contain: 'strict' }}
-          >
-            {desktopContent}
-            {desktopNav}
-          </motion.div>
+          <SandboxDesktop
+            toolCalls={toolCallSnapshots.map(s => s.toolCall)}
+            currentIndex={safeInternalIndex}
+            onNavigate={handleDockNavigate}
+            onPrevious={navigateToPrevious}
+            onNext={navigateToNext}
+            latestIndex={latestIndex}
+            agentStatus={agentStatus}
+            isLiveMode={isLiveMode}
+            onJumpToLive={jumpToLive}
+            onJumpToLatest={jumpToLatest}
+            project={project}
+            messages={messages}
+            onFileClick={onFileClick}
+            streamingText={streamingText}
+            onClose={() => setIsMaximized(false)}
+            currentView={activeView}
+            onViewChange={setActiveView}
+            renderFilesView={renderFilesView}
+            renderBrowserView={renderBrowserView}
+            isStreaming={isStreaming}
+            project_id={projectId}
+          />
         </DialogContent>
       </Dialog>
     );
@@ -828,7 +867,9 @@ export const KortixComputer = memo(function KortixComputer({
       className="h-full w-full max-w-full max-h-full flex flex-col border rounded-3xl bg-card overflow-hidden min-w-0 min-h-0"
       style={{ contain: 'strict' }}
     >
-      {desktopContent}
+      <div className="flex-1 flex flex-col overflow-hidden max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>
+        {renderContent()}
+      </div>
       {desktopNav}
     </motion.div>
   );

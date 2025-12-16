@@ -10,7 +10,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from daytona_sdk import AsyncSandbox, SessionExecuteRequest
 
-from core.sandbox.sandbox import get_or_start_sandbox, delete_sandbox, create_sandbox
+from core.sandbox.sandbox import get_or_start_sandbox, delete_sandbox, create_sandbox, daytona
 from core.utils.logger import logger
 from core.utils.auth_utils import get_optional_user_id, verify_and_get_user_id_from_jwt, verify_sandbox_access, verify_sandbox_access_optional
 from core.services.supabase import DBConnection
@@ -440,7 +440,6 @@ async def ensure_project_sandbox_active(
     logger.debug(f"Received ensure sandbox active request for project {project_id}, user_id: {user_id}")
     client = await db.client
     
-    # Find the project and sandbox information
     project_result = await client.table('projects').select('*').eq('project_id', project_id).execute()
     
     if not project_result.data or len(project_result.data) == 0:
@@ -449,16 +448,13 @@ async def ensure_project_sandbox_active(
     
     project_data = project_result.data[0]
     
-    # For public projects, no authentication is needed
     if not project_data.get('is_public'):
-        # For private projects, we must have a user_id
         if not user_id:
             logger.error(f"Authentication required for private project {project_id}")
             raise HTTPException(status_code=401, detail="Authentication required for this resource")
             
         account_id = project_data.get('account_id')
         
-        # Verify account membership
         if account_id:
             account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', account_id).execute()
             if not (account_user_result.data and len(account_user_result.data) > 0):
@@ -466,14 +462,12 @@ async def ensure_project_sandbox_active(
                 raise HTTPException(status_code=403, detail="Not authorized to access this project")
     
     try:
-        # Get sandbox ID from project data
         sandbox_info = project_data.get('sandbox', {})
         if not sandbox_info.get('id'):
             raise HTTPException(status_code=404, detail="No sandbox found for this project")
             
         sandbox_id = sandbox_info['id']
         
-        # Get or start the sandbox
         logger.debug(f"Ensuring sandbox is active for project {project_id}")
         sandbox = await get_or_start_sandbox(sandbox_id)
         
@@ -486,6 +480,85 @@ async def ensure_project_sandbox_active(
         }
     except Exception as e:
         logger.error(f"Error ensuring sandbox is active for project {project_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/project/{project_id}/sandbox")
+async def get_project_sandbox_details(
+    project_id: str,
+    request: Request = None,
+    user_id: Optional[str] = Depends(get_optional_user_id)
+):
+    """
+    Get sandbox details for a project using the project ID.
+    Retrieves the sandbox ID from the project and fetches sandbox details from Daytona.
+    """
+    logger.debug(f"Received get sandbox details request for project {project_id}, user_id: {user_id}")
+    client = await db.client
+    
+    project_result = await client.table('projects').select('*').eq('project_id', project_id).execute()
+    
+    if not project_result.data or len(project_result.data) == 0:
+        logger.error(f"Project not found: {project_id}")
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    project_data = project_result.data[0]
+    
+    if not project_data.get('is_public'):
+        if not user_id:
+            logger.error(f"Authentication required for private project {project_id}")
+            raise HTTPException(status_code=401, detail="Authentication required for this resource")
+            
+        account_id = project_data.get('account_id')
+        
+        if account_id:
+            account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', account_id).execute()
+            if not (account_user_result.data and len(account_user_result.data) > 0):
+                logger.error(f"User {user_id} not authorized to access project {project_id}")
+                raise HTTPException(status_code=403, detail="Not authorized to access this project")
+    
+    try:
+        sandbox_info = project_data.get('sandbox', {})
+        if not sandbox_info.get('id'):
+            raise HTTPException(status_code=404, detail="No sandbox found for this project")
+            
+        sandbox_id = sandbox_info['id']
+        
+        logger.debug(f"Fetching sandbox details for sandbox {sandbox_id} (project {project_id})")
+        sandbox = await daytona.get(sandbox_id)
+        
+        sandbox_details = {
+            "sandbox_id": sandbox.id,
+            "state": sandbox.state.value if hasattr(sandbox.state, 'value') else str(sandbox.state),
+            "project_id": project_id,
+            "vnc_preview": sandbox_info.get('vnc_preview'),
+            "sandbox_url": sandbox_info.get('sandbox_url'),
+        }
+        
+        if hasattr(sandbox, 'created_at') and sandbox.created_at:
+            sandbox_details["created_at"] = str(sandbox.created_at)
+        if hasattr(sandbox, 'updated_at') and sandbox.updated_at:
+            sandbox_details["updated_at"] = str(sandbox.updated_at)
+        if hasattr(sandbox, 'target') and sandbox.target:
+            sandbox_details["target"] = sandbox.target
+        if hasattr(sandbox, 'cpu') and sandbox.cpu:
+            sandbox_details["cpu"] = sandbox.cpu
+        if hasattr(sandbox, 'memory') and sandbox.memory:
+            sandbox_details["memory"] = sandbox.memory
+        if hasattr(sandbox, 'disk') and sandbox.disk:
+            sandbox_details["disk"] = sandbox.disk
+        if hasattr(sandbox, 'labels') and sandbox.labels:
+            sandbox_details["labels"] = sandbox.labels
+        
+        logger.debug(f"Successfully fetched sandbox details for project {project_id}")
+        
+        return {
+            "status": "success",
+            "sandbox": sandbox_details
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching sandbox details for project {project_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/project/{project_id}/files")

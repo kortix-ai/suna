@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { DrawerTitle } from '@/components/ui/drawer';
 import { ViewType } from '@/stores/kortix-computer-store';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { cn } from '@/lib/utils';
 import { ViewToggle } from './ViewToggle';
 import { ToolbarButtons } from './ToolbarButtons';
 
@@ -22,6 +23,7 @@ interface PanelHeaderProps {
   onViewChange: (view: ViewType) => void;
   showFilesTab?: boolean;
   isMaximized?: boolean;
+  hideViewToggle?: boolean;
 }
 
 export const PanelHeader = memo(function PanelHeader({
@@ -37,24 +39,28 @@ export const PanelHeader = memo(function PanelHeader({
   onViewChange,
   showFilesTab = true,
   isMaximized = false,
+  hideViewToggle = false,
 }: PanelHeaderProps) {
   const title = "Kortix Computer";
 
   if (variant === 'drawer') {
     return (
-      <div className="h-14 flex-shrink-0 px-4 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800">
+      <div className="h-14 flex-shrink-0 px-4 flex items-center justify-between border-b border-border">
         <div className="flex items-center gap-2">
-          <DrawerTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
+          <div className="w-6 h-6 flex items-center justify-center">
+            <KortixLogo size={18}/>
+          </div>
+          <DrawerTitle className="text-sm font-semibold text-foreground">
             {title}
           </DrawerTitle>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <ViewToggle currentView={currentView} onViewChange={onViewChange} showFilesTab={showFilesTab} />
           <Button
             variant="ghost"
             size="icon"
             onClick={onClose}
-            className="h-8 w-8"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
             title="Minimize"
           >
             <Minimize2 className="h-4 w-4" />
@@ -65,32 +71,36 @@ export const PanelHeader = memo(function PanelHeader({
   }
 
   return (
-    <div className="h-14 flex-shrink-0 px-4 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800">
-      <div className="flex items-center gap-3">
+    <div className={cn(
+      "h-14 flex-shrink-0 px-4 flex items-center justify-between",
+      !isMaximized && "border-b border-border"
+    )}>
+      <div className="flex items-center gap-4">
         <ToolbarButtons 
           onClose={onClose}
           onMinimize={onMinimize || onClose}
           onMaximize={onMaximize || (() => {})}
           isMaximized={isMaximized}
         />
-        <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
-        <div className="flex items-center gap-2">
-          <KortixLogo size={16}/>
-          <h2 className="text-base font-medium text-zinc-900 dark:text-zinc-100">
+        <div className="flex items-center gap-1">
+          <div className="w-6 h-6 flex items-center justify-center">
+            <KortixLogo size={18}/>
+          </div>
+          <h2 className="text-md font-semibold text-foreground">
             {title}
           </h2>
+          {isStreaming && (
+            <div className="px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary flex items-center gap-1.5">
+              <CircleDashed className="h-3 w-3 animate-spin" />
+              <span>Running</span>
+            </div>
+          )}
         </div>
-        {isStreaming && (
-          <div className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400 flex items-center gap-1.5">
-            <CircleDashed className="h-3 w-3 animate-spin" />
-            <span>Running</span>
-          </div>
-        )}
       </div>
 
-      <div className="flex items-center gap-2">
+      {!hideViewToggle && (
         <ViewToggle currentView={currentView} onViewChange={onViewChange} showFilesTab={showFilesTab} />
-      </div>
+      )}
     </div>
   );
 });
