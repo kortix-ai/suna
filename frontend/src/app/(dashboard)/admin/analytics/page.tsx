@@ -1920,10 +1920,34 @@ export default function AdminAnalyticsPage() {
                       <div className="text-2xl font-bold">{conversionFunnel.signups.toLocaleString()}</div>
                       <p className="text-xs text-muted-foreground">Signups ({conversionFunnel.visitor_to_signup_rate}%)</p>
                     </div>
-                    <div className="text-center p-3 rounded-lg bg-muted/50">
-                      <div className="text-2xl font-bold">{conversionFunnel.subscriptions.toLocaleString()}</div>
-                      <p className="text-xs text-muted-foreground">Subs ({conversionFunnel.signup_to_subscription_rate}%)</p>
-                    </div>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <div className="text-center p-3 rounded-lg bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors">
+                          <div className="text-2xl font-bold">{conversionFunnel.subscriptions.toLocaleString()}</div>
+                          <p className="text-xs text-muted-foreground">Subs ({conversionFunnel.signup_to_subscription_rate}%)</p>
+                          {conversionFunnel.subscriptions > 0 && (
+                            <p className="text-[10px] text-primary mt-1">Click to view emails</p>
+                          )}
+                        </div>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-80 max-h-64 overflow-y-auto">
+                        <div className="space-y-2">
+                          <h4 className="font-medium text-sm">Subscriber Emails</h4>
+                          {conversionFunnel.subscriber_emails && conversionFunnel.subscriber_emails.length > 0 ? (
+                            <ul className="space-y-1">
+                              {conversionFunnel.subscriber_emails.map((email, idx) => (
+                                <li key={idx} className="text-sm text-muted-foreground flex items-center gap-2">
+                                  <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">{idx + 1}</span>
+                                  <a href={`mailto:${email}`} className="hover:text-primary hover:underline">{email}</a>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">No subscriber emails for this date</p>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <p className="text-xs text-muted-foreground text-center">
                     Overall: <span className="font-medium text-foreground">{conversionFunnel.overall_conversion_rate}%</span> conversion

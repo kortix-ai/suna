@@ -104,6 +104,7 @@ class ConversionFunnel(BaseModel):
     visitors: int
     signups: int
     subscriptions: int
+    subscriber_emails: List[str]  # Emails of new paid subscribers for this date
     visitor_to_signup_rate: float
     signup_to_subscription_rate: float
     overall_conversion_rate: float
@@ -154,7 +155,7 @@ def get_ga_client() -> "BetaAnalyticsDataClient":
     return BetaAnalyticsDataClient(credentials=credentials)
 
 
-async def search_paid_subscriptions_count(start_date: datetime, end_date: datetime) -> int:
+async def search_paid_subscriptions(start_date: datetime, end_date: datetime, include_emails: bool = False) -> Dict[str, Any]:
     """
     Search Stripe for active paid subscriptions created within a date range.
     Excludes free tier subscriptions using metadata filter.
@@ -162,9 +163,10 @@ async def search_paid_subscriptions_count(start_date: datetime, end_date: dateti
     Args:
         start_date: Start of the date range (inclusive)
         end_date: End of the date range (inclusive)
+        include_emails: If True, also fetch customer emails (requires expand)
     
     Returns:
-        Count of active paid subscriptions created in the range
+        Dict with 'count' and optionally 'emails' list
     """
     try:
         # Ensure stripe API key is set
@@ -181,6 +183,7 @@ async def search_paid_subscriptions_count(start_date: datetime, end_date: dateti
         query = f"status:'active' AND -metadata['tier']:'free' AND created>={start_ts} AND created<={end_ts}"
         
         count = 0
+        emails: List[str] = []
         has_more = True
         next_page = None
         
@@ -192,21 +195,32 @@ async def search_paid_subscriptions_count(start_date: datetime, end_date: dateti
             if next_page:
                 search_params['page'] = next_page
             
+            # Expand customer to get email if needed
+            if include_emails:
+                search_params['expand'] = ['data.customer']
+            
             result = await stripe.Subscription.search_async(**search_params)
             count += len(result.data)
+            
+            # Extract emails from expanded customer objects
+            if include_emails:
+                for sub in result.data:
+                    customer = sub.customer
+                    if customer and hasattr(customer, 'email') and customer.email:
+                        emails.append(customer.email)
             
             has_more = result.has_more
             next_page = result.next_page if has_more else None
         
         logger.debug(f"Stripe subscription search: found {count} paid subscriptions between {start_date} and {end_date}")
-        return count
+        return {'count': count, 'emails': emails}
         
     except stripe.error.StripeError as e:
         logger.error(f"Stripe error searching subscriptions: {e}", exc_info=True)
-        return 0
+        return {'count': 0, 'emails': []}
     except Exception as e:
         logger.error(f"Error searching Stripe subscriptions: {e}", exc_info=True)
-        return 0
+        return {'count': 0, 'emails': []}
 
 
 def query_google_analytics(date_str: str) -> Dict[str, int]:
@@ -336,7 +350,7 @@ async def get_analytics_summary(
             active_week_result,
             signups_today_result,
             signups_week_result,
-            new_subscriptions_week,
+            subs_result,
         ) = await asyncio.gather(
             client.schema('basejump').from_('accounts').select('id', count='exact').limit(1).execute(),
             client.from_('threads').select('thread_id', count='exact').limit(1).execute(),
@@ -344,7 +358,7 @@ async def get_analytics_summary(
             client.schema('basejump').from_('accounts').select('id', count='exact').gte('created_at', today_start.isoformat()).limit(1).execute(),
             client.schema('basejump').from_('accounts').select('id', count='exact').gte('created_at', week_start.isoformat()).limit(1).execute(),
             # Use Stripe directly to count paid subscriptions (excludes free tier)
-            search_paid_subscriptions_count(week_start, now),
+            search_paid_subscriptions(week_start, now, include_emails=False),
         )
         
         total_users = total_users_result.count or 0
@@ -352,7 +366,8 @@ async def get_analytics_summary(
         active_users_week = len(set(t['account_id'] for t in active_week_result.data or [] if t.get('account_id')))
         new_signups_today = signups_today_result.count or 0
         new_signups_week = signups_week_result.count or 0
-        # new_subscriptions_week is already an int from search_paid_subscriptions_count
+        # Extract count from search_paid_subscriptions result
+        new_subscriptions_week = subs_result['count'] if isinstance(subs_result, dict) else 0
         
         # Conversion rate
         conversion_rate_week = (new_subscriptions_week / new_signups_week * 100) if new_signups_week > 0 else 0
@@ -1051,17 +1066,21 @@ async def get_conversion_funnel(
             return result.count or 0
         
         async def get_subscriptions():
-            # Use Stripe directly to count paid subscriptions (excludes free tier)
+            # Use Stripe directly to get paid subscriptions with emails (excludes free tier)
             start_dt = datetime.fromisoformat(start_of_day.replace('Z', '+00:00')) if isinstance(start_of_day, str) else start_of_day
             end_dt = datetime.fromisoformat(end_of_day.replace('Z', '+00:00')) if isinstance(end_of_day, str) else end_of_day
-            return await search_paid_subscriptions_count(start_dt, end_dt)
+            return await search_paid_subscriptions(start_dt, end_dt, include_emails=True)
         
         # Execute all queries in parallel
-        visitors, signups, subscriptions = await asyncio.gather(
+        visitors, signups, subs_result = await asyncio.gather(
             get_visitors(),
             get_signups(),
             get_subscriptions()
         )
+        
+        # Extract count and emails from subs_result
+        subscriptions = subs_result['count']
+        subscriber_emails = subs_result['emails']
         
         # Calculate conversion rates
         visitor_to_signup = (signups / visitors * 100) if visitors > 0 else 0
@@ -1072,6 +1091,7 @@ async def get_conversion_funnel(
             visitors=visitors,
             signups=signups,
             subscriptions=subscriptions,
+            subscriber_emails=subscriber_emails,
             visitor_to_signup_rate=round(visitor_to_signup, 2),
             signup_to_subscription_rate=round(signup_to_sub, 2),
             overall_conversion_rate=round(overall, 2),
