@@ -71,6 +71,7 @@ export interface ConversionFunnel {
   visitors: number;
   signups: number;
   subscriptions: number;
+  subscriber_emails: string[];  // Emails of new paid subscribers for this date
   visitor_to_signup_rate: number;
   signup_to_subscription_rate: number;
   overall_conversion_rate: number;
