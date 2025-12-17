@@ -9,12 +9,36 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 const STORAGE_KEY = 'kortix-desktop-banner-dismissed';
 
+const DOWNLOAD_LINKS = {
+  windows: 'https://github.com/kortix-ai/suna/actions/runs/20237335301/artifacts/4873354994',
+  mac: 'https://github.com/kortix-ai/suna/actions/runs/20237335301/artifacts/4873350547',
+};
+
+type Platform = 'windows' | 'mac';
+
+function detectPlatform(): Platform {
+  if (typeof window === 'undefined') return 'mac';
+  
+  const userAgent = window.navigator.userAgent.toLowerCase();
+  const platform = window.navigator.platform?.toLowerCase() || '';
+  
+  // Check for Windows
+  if (platform.includes('win') || userAgent.includes('windows')) {
+    return 'windows';
+  }
+  
+  // Default to Mac (covers macOS, iOS, etc.)
+  return 'mac';
+}
+
 export function KortixDesktopBanner() {
   const [isVisible, setIsVisible] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [platform, setPlatform] = useState<Platform>('mac');
 
   useEffect(() => {
     setMounted(true);
+    setPlatform(detectPlatform());
     // Check if banner was previously dismissed
     const dismissed = localStorage.getItem(STORAGE_KEY);
     if (!dismissed) {
@@ -32,9 +56,10 @@ export function KortixDesktopBanner() {
   };
 
   const handleDownload = () => {
-    // Link to Kortix Desktop download page
-    window.open('https://kortix.ai/desktop', '_blank');
+    window.open(DOWNLOAD_LINKS[platform], '_blank');
   };
+
+  const platformLabel = platform === 'windows' ? 'Windows' : 'Mac';
 
   if (!mounted) return null;
 
@@ -88,7 +113,7 @@ export function KortixDesktopBanner() {
                 Kortix for Desktop is here
               </h3>
               <p className="text-muted-foreground dark:text-white/60 text-xs leading-relaxed mb-3">
-                Type, speak, or screenshot with Kortix—from anywhere on your Mac
+                Type, speak, or screenshot with Kortix—from anywhere on your {platformLabel}
               </p>
 
               {/* Download button */}
@@ -99,7 +124,7 @@ export function KortixDesktopBanner() {
                 className="w-full h-9 !bg-foreground hover:!bg-foreground/90 dark:!bg-white dark:hover:!bg-gray-100 !border-transparent !text-background dark:!text-black text-xs rounded-lg gap-1.5"
               >
                 <Download className="h-3.5 w-3.5" />
-                Download
+                Download for {platformLabel}
               </Button>
             </div>
           </div>
