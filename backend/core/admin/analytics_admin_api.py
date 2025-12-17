@@ -543,15 +543,26 @@ async def _browse_threads_filtered(
         # Enrich threads with project/user data and return directly
         enriched_threads = await _enrich_threads(client, page_threads)
         
-        # Handle email search if specified (filter enriched results)
+        # Handle email search if specified - use auth.users via RPC
         if search_email and enriched_threads:
-            search_lower = search_email.lower()
-            enriched_threads = [
-                t for t in enriched_threads
-                if t.user_email and search_lower in t.user_email.lower()
-            ]
-            # Adjust total count for email filter (approximate)
-            total_count = len(enriched_threads) if len(enriched_threads) < params.page_size else total_count
+            try:
+                account_result = await client.rpc('get_user_account_by_email', {'email_input': search_email}).execute()
+                if account_result.data:
+                    target_account_id = account_result.data.get('id')
+                    if target_account_id:
+                        enriched_threads = [
+                            t for t in enriched_threads
+                            if t.account_id == target_account_id
+                        ]
+                    else:
+                        enriched_threads = []
+                else:
+                    enriched_threads = []
+            except Exception as e:
+                logger.warning(f"Failed to search by email via RPC: {e}")
+                enriched_threads = []
+            # Adjust total count for email filter
+            total_count = len(enriched_threads)
         
         return await PaginationService.paginate_with_total_count(
             items=enriched_threads, total_count=total_count, params=params
@@ -593,26 +604,27 @@ async def _browse_threads_filtered(
         
         filtered_threads.append(thread)
     
-    # Filter by email if specified
+    # Filter by email if specified - use auth.users via RPC (not just billing_customers)
     if search_email:
-        account_ids = list(set(t['account_id'] for t in filtered_threads if t.get('account_id')))
-        if account_ids:
-            emails_data = await batch_query_in(
-                client=client,
-                table_name='billing_customers',
-                select_fields='account_id, email',
-                in_field='account_id',
-                in_values=account_ids,
-                schema='basejump'
-            )
-            account_emails = {e['account_id']: e['email'] for e in emails_data}
-            
-            search_lower = search_email.lower()
-            filtered_threads = [
-                t for t in filtered_threads
-                if t.get('account_id') and 
-                   account_emails.get(t['account_id'], '').lower().find(search_lower) >= 0
-            ]
+        # Find account by email using RPC that queries auth.users
+        try:
+            account_result = await client.rpc('get_user_account_by_email', {'email_input': search_email}).execute()
+            if account_result.data:
+                # Found exact match - filter threads by this account
+                target_account_id = account_result.data.get('id')
+                if target_account_id:
+                    filtered_threads = [
+                        t for t in filtered_threads
+                        if t.get('account_id') == target_account_id
+                    ]
+                else:
+                    filtered_threads = []
+            else:
+                # No exact match found - return empty results
+                filtered_threads = []
+        except Exception as e:
+            logger.warning(f"Failed to search by email via RPC: {e}")
+            filtered_threads = []
     
     total_count = len(filtered_threads)
     
@@ -656,11 +668,33 @@ async def _enrich_threads(client, threads: List[Dict]) -> List[ThreadAnalytics]:
     
     async def fetch_emails():
         if not account_ids:
-            return []
-        result = await client.schema('basejump').from_('billing_customers').select(
+            return {}
+        
+        # First try billing_customers (fast path for users with billing)
+        billing_result = await client.schema('basejump').from_('billing_customers').select(
             'account_id, email'
         ).in_('account_id', account_ids).execute()
-        return result.data or []
+        
+        account_emails = {e['account_id']: e['email'] for e in (billing_result.data or [])}
+        
+        # For accounts without billing email, get from auth.users via RPC
+        missing_account_ids = [aid for aid in account_ids if aid not in account_emails]
+        if missing_account_ids:
+            # Get primary_owner_user_id for missing accounts
+            accounts_result = await client.schema('basejump').from_('accounts').select(
+                'id, primary_owner_user_id'
+            ).in_('id', missing_account_ids).execute()
+            
+            for acc in (accounts_result.data or []):
+                if acc.get('primary_owner_user_id'):
+                    try:
+                        email_result = await client.rpc('get_user_email', {'user_id': acc['primary_owner_user_id']}).execute()
+                        if email_result.data:
+                            account_emails[acc['id']] = email_result.data
+                    except Exception as e:
+                        logger.debug(f"Could not get email for account {acc['id']}: {e}")
+        
+        return account_emails
     
     async def fetch_projects():
         if not project_ids:
@@ -688,7 +722,8 @@ async def _enrich_threads(client, threads: List[Dict]) -> List[ThreadAnalytics]:
             elif isinstance(content, str):
                 thread_first_messages[tid] = content
     
-    account_emails = {e['account_id']: e['email'] for e in emails_data}
+    # emails_data is already a dict {account_id: email} from fetch_emails()
+    account_emails = emails_data
     
     project_names = {}
     project_categories = {}
