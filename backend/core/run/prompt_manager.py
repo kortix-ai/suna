@@ -7,7 +7,6 @@ from core.tools.mcp_tool_wrapper import MCPToolWrapper
 from core.agentpress.tool import SchemaType
 from core.prompts.agent_builder_prompt import get_agent_builder_prompt
 from core.prompts.prompt import get_system_prompt
-from core.prompts.core_prompt import get_dynamic_system_prompt
 from core.tools.tool_guide_registry import get_minimal_tool_index, get_tool_guide
 from core.utils.logger import logger
 
@@ -70,8 +69,13 @@ If relevant context seems missing, ask a clarifying question.
                                   use_dynamic_tools: bool = True,
                                   mcp_loader=None) -> dict:
         
-        system_content = PromptManager._build_base_prompt(use_dynamic_tools)
-        system_content = PromptManager._append_agent_system_prompt(system_content, agent_config, use_dynamic_tools)
+        if agent_config and agent_config.get('system_prompt'):
+            system_content = agent_config['system_prompt'].strip()
+        else:
+            from core.prompts.core_prompt import get_core_system_prompt
+            system_content = get_core_system_prompt()
+        
+        system_content = PromptManager._build_base_prompt(system_content, use_dynamic_tools)
         system_content = await PromptManager._append_builder_tools_prompt(system_content, agent_config)
         
         kb_task = PromptManager._fetch_knowledge_base(agent_config, client)
@@ -101,23 +105,23 @@ If relevant context seems missing, ask a clarifying question.
         return system_message, None
     
     @staticmethod
-    def _build_base_prompt(use_dynamic_tools: bool) -> str:
+    def _build_base_prompt(system_content: str, use_dynamic_tools: bool) -> str:
         if use_dynamic_tools:
             logger.info("🚀 [DYNAMIC TOOLS] Using dynamic tool loading system (minimal index only)")
             minimal_index = get_minimal_tool_index()
-            default_system_content = get_dynamic_system_prompt(minimal_index)
-            logger.info(f"📊 [DYNAMIC TOOLS] Core prompt + minimal index: {len(default_system_content):,} chars")
+            system_content += "\n\n" + minimal_index
+            logger.info(f"📊 [DYNAMIC TOOLS] Core prompt + minimal index: {len(system_content):,} chars")
             
             preloaded_guides = PromptManager._get_preloaded_tool_guides()
             if preloaded_guides:
-                default_system_content += preloaded_guides
+                system_content += preloaded_guides
                 logger.info(f"📖 [DYNAMIC TOOLS] Added preloaded tool guides: {len(preloaded_guides):,} chars")
         else:
             logger.info("⚠️  [LEGACY MODE] Using full embedded prompt (all tool documentation included)")
-            default_system_content = get_system_prompt()
-            logger.info(f"📊 [LEGACY MODE] Full prompt size: {len(default_system_content):,} chars")
+            system_content = get_system_prompt()
+            logger.info(f"📊 [LEGACY MODE] Full prompt size: {len(system_content):,} chars")
         
-        return default_system_content
+        return system_content
     
     @staticmethod
     def _get_preloaded_tool_guides() -> str:
