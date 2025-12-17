@@ -16,19 +16,14 @@ import type { QuickAction } from '../shared/types';
  */
 export const QUICK_ACTIONS: QuickAction[] = [
   {
-    id: 'image',
-    label: 'Image',
-    icon: Image,
-  },
-  {
     id: 'slides',
     label: 'Slides',
     icon: Presentation,
   },
   {
-    id: 'data',
-    label: 'Data',
-    icon: Table2,
+    id: 'research',
+    label: 'Research',
+    icon: Search,
   },
   {
     id: 'docs',
@@ -36,14 +31,19 @@ export const QUICK_ACTIONS: QuickAction[] = [
     icon: FileText,
   },
   {
+    id: 'image',
+    label: 'Image',
+    icon: Image,
+  },
+  {
+    id: 'data',
+    label: 'Data',
+    icon: Table2,
+  },
+  {
     id: 'people',
     label: 'People',
     icon: Users,
-  },
-  {
-    id: 'research',
-    label: 'Research',
-    icon: Search,
   },
 ];
 

@@ -7,25 +7,19 @@ from core.tools.mcp_tool_wrapper import MCPToolWrapper
 from core.agentpress.tool import SchemaType
 from core.prompts.agent_builder_prompt import get_agent_builder_prompt
 from core.prompts.prompt import get_system_prompt
-from core.prompts.core_prompt import get_dynamic_system_prompt
-from core.tools.tool_guide_registry import get_minimal_tool_index
+from core.tools.tool_guide_registry import get_minimal_tool_index, get_tool_guide
 from core.utils.logger import logger
 
 class PromptManager:
     @staticmethod
     async def build_minimal_prompt(agent_config: Optional[dict], tool_registry=None, mcp_loader=None, user_id: Optional[str] = None, thread_id: Optional[str] = None, client=None) -> dict:
-        import datetime
-        
         if agent_config and agent_config.get('system_prompt'):
             content = agent_config['system_prompt'].strip()
         else:
             from core.prompts.core_prompt import get_core_system_prompt
             content = get_core_system_prompt()
         
-        now = datetime.datetime.now(datetime.timezone.utc)
-        content += f"\n\n=== CURRENT DATE/TIME ===\n"
-        content += f"Today's date: {now.strftime('%A, %B %d, %Y')}\n"
-        content += f"Current time: {now.strftime('%H:%M UTC')}\n"
+        content = PromptManager._append_datetime_info(content)
         
         content += """
 
@@ -50,6 +44,10 @@ If relevant context seems missing, ask a clarifying question.
 
 """
         
+        preloaded_guides = PromptManager._get_preloaded_tool_guides()
+        if preloaded_guides:
+            content += preloaded_guides
+        
         content = await PromptManager._append_jit_mcp_info(content, mcp_loader)
         
         system_message = {"role": "system", "content": content}
@@ -71,8 +69,13 @@ If relevant context seems missing, ask a clarifying question.
                                   use_dynamic_tools: bool = True,
                                   mcp_loader=None) -> dict:
         
-        system_content = PromptManager._build_base_prompt(use_dynamic_tools)
-        system_content = PromptManager._append_agent_system_prompt(system_content, agent_config, use_dynamic_tools)
+        if agent_config and agent_config.get('system_prompt'):
+            system_content = agent_config['system_prompt'].strip()
+        else:
+            from core.prompts.core_prompt import get_core_system_prompt
+            system_content = get_core_system_prompt()
+        
+        system_content = PromptManager._build_base_prompt(system_content, use_dynamic_tools)
         system_content = await PromptManager._append_builder_tools_prompt(system_content, agent_config)
         
         kb_task = PromptManager._fetch_knowledge_base(agent_config, client)
@@ -102,18 +105,45 @@ If relevant context seems missing, ask a clarifying question.
         return system_message, None
     
     @staticmethod
-    def _build_base_prompt(use_dynamic_tools: bool) -> str:
+    def _build_base_prompt(system_content: str, use_dynamic_tools: bool) -> str:
         if use_dynamic_tools:
             logger.info("🚀 [DYNAMIC TOOLS] Using dynamic tool loading system (minimal index only)")
             minimal_index = get_minimal_tool_index()
-            default_system_content = get_dynamic_system_prompt(minimal_index)
-            logger.info(f"📊 [DYNAMIC TOOLS] Core prompt + minimal index: {len(default_system_content):,} chars")
+            system_content += "\n\n" + minimal_index
+            logger.info(f"📊 [DYNAMIC TOOLS] Core prompt + minimal index: {len(system_content):,} chars")
+            
+            preloaded_guides = PromptManager._get_preloaded_tool_guides()
+            if preloaded_guides:
+                system_content += preloaded_guides
+                logger.info(f"📖 [DYNAMIC TOOLS] Added preloaded tool guides: {len(preloaded_guides):,} chars")
         else:
             logger.info("⚠️  [LEGACY MODE] Using full embedded prompt (all tool documentation included)")
-            default_system_content = get_system_prompt()
-            logger.info(f"📊 [LEGACY MODE] Full prompt size: {len(default_system_content):,} chars")
+            system_content = get_system_prompt()
+            logger.info(f"📊 [LEGACY MODE] Full prompt size: {len(system_content):,} chars")
         
-        return default_system_content
+        return system_content
+    
+    @staticmethod
+    def _get_preloaded_tool_guides() -> str:
+        from core.jit.loader import JITLoader
+        
+        core_tools = JITLoader.get_core_tools()
+        guides = []
+        
+        for tool_name in core_tools:
+            guide = get_tool_guide(tool_name)
+            if guide:
+                guides.append(guide)
+        
+        if not guides:
+            return ""
+        
+        guides_content = "\n\n# PRELOADED TOOL USAGE GUIDES\n"
+        guides_content += "The following tools are preloaded and ready to use immediately (no initialize_tools needed):\n\n"
+        guides_content += "\n\n".join(guides)
+        
+        logger.info(f"📖 [PRELOADED GUIDES] Loaded {len(guides)} guides for core tools")
+        return guides_content
     
     @staticmethod
     def _append_agent_system_prompt(system_content: str, agent_config: Optional[dict], use_dynamic_tools: bool) -> str:
@@ -127,10 +157,18 @@ If relevant context seems missing, ask a clarifying question.
             return system_content
         
         agentpress_tools = agent_config.get('agentpress_tools', {})
-        has_builder_tools = any(
-            agentpress_tools.get(tool, False) 
-            for tool in ['agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool']
-        )
+        
+        def is_tool_enabled(tool_name: str) -> bool:
+            tool_config = agentpress_tools.get(tool_name)
+            if isinstance(tool_config, bool):
+                return tool_config
+            elif isinstance(tool_config, dict):
+                return tool_config.get('enabled', False)
+            else:
+                return False
+        
+        builder_tool_names = ['agent_creation_tool', 'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool']
+        has_builder_tools = any(is_tool_enabled(tool) for tool in builder_tool_names)
         
         if has_builder_tools:
             builder_prompt = get_agent_builder_prompt()

@@ -149,15 +149,44 @@ export function AdminUserTable({ onUserSelect }: AdminUserTableProps) {
     );
   }
 
+  const availableTiers = [
+    { value: 'all', label: 'All Tiers' },
+    { value: 'tier_2_20', label: '20 Dollar' },
+    { value: 'tier_6_50', label: '50 Dollar' },
+    { value: 'tier_25_200', label: '200 Dollar' },
+  ];
+
+  const handleTierChange = (value: string) => {
+    setTierFilter(value === 'all' ? '' : value);
+    setPage(1);
+  };
+
   return (
     <div className="space-y-6">
-      <Input
-        id="search-email"
-        placeholder="Search by email..."
-        value={searchEmail}
-        onChange={(e) => setSearchEmail(e.target.value)}
-        className="pl-9"
-      />
+      <div className="flex flex-col sm:flex-row gap-3">
+        <Input
+          id="search-email"
+          placeholder="Search by email..."
+          value={searchEmail}
+          onChange={(e) => setSearchEmail(e.target.value)}
+          className="flex-1"
+        />
+        <Select value={tierFilter || 'all'} onValueChange={handleTierChange}>
+          <SelectTrigger className="w-full sm:w-[180px]">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <SelectValue placeholder="Filter by tier" />
+            </div>
+          </SelectTrigger>
+          <SelectContent>
+            {availableTiers.map((tier) => (
+              <SelectItem key={tier.value} value={tier.value}>
+                {tier.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <Card className='border-0 shadow-none bg-transparent'>
         <CardContent className="p-0">
           {isLoading ? (

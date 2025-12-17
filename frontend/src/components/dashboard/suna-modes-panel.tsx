@@ -70,48 +70,6 @@ interface Mode {
 
 const modes: Mode[] = [
   {
-    id: 'image',
-    label: 'Image',
-    icon: <ImageIcon className="w-4 h-4" />,
-    samplePrompts: [
-      'A majestic golden eagle soaring through misty mountain peaks at sunrise with dramatic lighting',
-      'Close-up portrait of a fashion model with avant-garde makeup, studio lighting, high contrast shadows',
-      'Cozy Scandinavian living room with natural wood furniture, indoor plants, and soft morning sunlight',
-      'Futuristic cyberpunk street market at night with neon signs, rain-slicked pavement, and holographic displays',
-      'Elegant product photography of luxury perfume bottle on marble surface with soft reflections',
-      'Whimsical floating islands connected by rope bridges in a pastel sky with dreamy clouds',
-      'Macro close-up of morning dew drops on vibrant flower petals with bokeh background',
-      'Modern workspace desk setup with laptop, coffee, notebook, and succulent plants from above',
-      'Mystical forest path with ancient trees, glowing fireflies, and ethereal light beams through fog',
-      'Architectural detail of contemporary glass building facade with geometric patterns and reflections',
-      'Vibrant street food vendor stall with colorful ingredients, steam rising, and warm lighting',
-      'Serene Japanese zen garden with raked sand, moss-covered stones, and cherry blossom petals',
-      'Dynamic action shot of athlete mid-jump against dramatic sunset sky, silhouette effect',
-      'Rustic farmhouse kitchen with copper pots, fresh herbs, wooden cutting boards, and natural textures',
-      'Abstract fluid art with swirling metallic gold, deep blue, and emerald green organic patterns',
-    ],
-    options: {
-      title: 'Choose a style',
-      items: [
-        { id: 'photorealistic', name: 'Photorealistic', image: '/images/image-styles/photorealistic_eagle-min.png' },
-        { id: 'watercolor', name: 'Watercolor', image: '/images/image-styles/watercolor_garden-min.png' },
-        { id: 'digital-art', name: 'Digital Art', image: '/images/image-styles/digital_art_cyberpunk-min.png' },
-        { id: 'oil-painting', name: 'Oil Painting', image: '/images/image-styles/oil_painting_villa-min.png' },
-        { id: 'minimalist', name: 'Minimalist', image: '/images/image-styles/minimalist_coffee-min.png' },
-        { id: 'isometric', name: 'Isometric', image: '/images/image-styles/isometric_bedroom-min.png' },
-        { id: 'vintage', name: 'Vintage', image: '/images/image-styles/vintage_diner-min.png' },
-        { id: 'comic', name: 'Comic Book', image: '/images/image-styles/comic_book_robot-min.png' },
-        { id: 'neon', name: 'Neon', image: '/images/image-styles/neon_jellyfish-min.png' },
-        { id: 'pastel', name: 'Pastel', image: '/images/image-styles/pastel_landscape-min.png' },
-        { id: 'geometric', name: 'Geometric', image: '/images/image-styles/geometric_crystal-min.png' },
-        { id: 'abstract', name: 'Abstract', image: '/images/image-styles/abstract_organic-min.png' },
-        { id: 'anime', name: 'Anime', image: '/images/image-styles/anime_forest-min.png' },
-        { id: 'impressionist', name: 'Impressionist', image: '/images/image-styles/impressionist_garden-min.png' },
-        { id: 'surreal', name: 'Surreal', image: '/images/image-styles/surreal_islands-min.png' },
-      ],
-    },
-  },
-  {
     id: 'slides',
     label: 'Slides',
     icon: <Presentation className="w-4 h-4" />,
@@ -254,6 +212,48 @@ const modes: Mode[] = [
       'Study pricing strategies of successful D2C subscription box companies',
       'Research the competitive landscape of AI-powered cybersecurity solutions',
     ],
+  },
+  {
+    id: 'image',
+    label: 'Image',
+    icon: <ImageIcon className="w-4 h-4" />,
+    samplePrompts: [
+      'A majestic golden eagle soaring through misty mountain peaks at sunrise with dramatic lighting',
+      'Close-up portrait of a fashion model with avant-garde makeup, studio lighting, high contrast shadows',
+      'Cozy Scandinavian living room with natural wood furniture, indoor plants, and soft morning sunlight',
+      'Futuristic cyberpunk street market at night with neon signs, rain-slicked pavement, and holographic displays',
+      'Elegant product photography of luxury perfume bottle on marble surface with soft reflections',
+      'Whimsical floating islands connected by rope bridges in a pastel sky with dreamy clouds',
+      'Macro close-up of morning dew drops on vibrant flower petals with bokeh background',
+      'Modern workspace desk setup with laptop, coffee, notebook, and succulent plants from above',
+      'Mystical forest path with ancient trees, glowing fireflies, and ethereal light beams through fog',
+      'Architectural detail of contemporary glass building facade with geometric patterns and reflections',
+      'Vibrant street food vendor stall with colorful ingredients, steam rising, and warm lighting',
+      'Serene Japanese zen garden with raked sand, moss-covered stones, and cherry blossom petals',
+      'Dynamic action shot of athlete mid-jump against dramatic sunset sky, silhouette effect',
+      'Rustic farmhouse kitchen with copper pots, fresh herbs, wooden cutting boards, and natural textures',
+      'Abstract fluid art with swirling metallic gold, deep blue, and emerald green organic patterns',
+    ],
+    options: {
+      title: 'Choose a style',
+      items: [
+        { id: 'photorealistic', name: 'Photorealistic', image: '/images/image-styles/photorealistic_eagle-min.png' },
+        { id: 'watercolor', name: 'Watercolor', image: '/images/image-styles/watercolor_garden-min.png' },
+        { id: 'digital-art', name: 'Digital Art', image: '/images/image-styles/digital_art_cyberpunk-min.png' },
+        { id: 'oil-painting', name: 'Oil Painting', image: '/images/image-styles/oil_painting_villa-min.png' },
+        { id: 'minimalist', name: 'Minimalist', image: '/images/image-styles/minimalist_coffee-min.png' },
+        { id: 'isometric', name: 'Isometric', image: '/images/image-styles/isometric_bedroom-min.png' },
+        { id: 'vintage', name: 'Vintage', image: '/images/image-styles/vintage_diner-min.png' },
+        { id: 'comic', name: 'Comic Book', image: '/images/image-styles/comic_book_robot-min.png' },
+        { id: 'neon', name: 'Neon', image: '/images/image-styles/neon_jellyfish-min.png' },
+        { id: 'pastel', name: 'Pastel', image: '/images/image-styles/pastel_landscape-min.png' },
+        { id: 'geometric', name: 'Geometric', image: '/images/image-styles/geometric_crystal-min.png' },
+        { id: 'abstract', name: 'Abstract', image: '/images/image-styles/abstract_organic-min.png' },
+        { id: 'anime', name: 'Anime', image: '/images/image-styles/anime_forest-min.png' },
+        { id: 'impressionist', name: 'Impressionist', image: '/images/image-styles/impressionist_garden-min.png' },
+        { id: 'surreal', name: 'Surreal', image: '/images/image-styles/surreal_islands-min.png' },
+      ],
+    },
   },
 ];
 
@@ -1240,25 +1240,31 @@ export function SunaModesPanel({
 
   return (
     <div className="w-full space-y-4">
-      {/* Mode Tabs - Only show when no mode is selected */}
-      {!selectedMode && (
-        <div className="flex items-center justify-center animate-in fade-in-0 zoom-in-95 duration-300 px-2 sm:px-0">
-          <div className="grid grid-cols-3 gap-2 sm:inline-flex sm:gap-2">
-            {modes.map((mode) => (
+      {/* Mode Tabs - Always visible with active state */}
+      <div className="flex items-center justify-center animate-in fade-in-0 zoom-in-95 duration-300 px-2 sm:px-0">
+        <div className="grid grid-cols-3 gap-2 sm:inline-flex sm:gap-2">
+          {modes.map((mode) => {
+            const isActive = selectedMode === mode.id;
+            return (
               <Button
                 key={mode.id}
                 variant="outline"
                 size="sm"
-                onClick={() => onModeSelect(mode.id)}
-                className="h-10 flex items-center justify-center sm:justify-start gap-2 shrink-0 transition-all duration-200 bg-background hover:bg-accent rounded-xl text-muted-foreground hover:text-foreground border-border cursor-pointer"
+                onClick={() => onModeSelect(isActive ? null : mode.id)}
+                className={cn(
+                  "h-10 flex items-center justify-center sm:justify-start gap-2 shrink-0 transition-all duration-200 rounded-xl cursor-pointer",
+                  isActive
+                    ? "bg-primary/10 text-primary border-primary hover:bg-primary/15 hover:text-primary shadow-sm"
+                    : "bg-background hover:bg-accent text-muted-foreground hover:text-foreground border-border"
+                )}
               >
                 {mode.icon}
                 <span>{mode.label}</span>
               </Button>
-            ))}
-          </div>
+            );
+          })}
         </div>
-      )}
+      </div>
 
       {/* Sample Prompts - Google List Style (for research, people) */}
       {selectedMode && displayedPrompts && ['research', 'people'].includes(selectedMode) && (

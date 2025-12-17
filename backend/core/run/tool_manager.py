@@ -188,6 +188,11 @@ class ToolManager:
         if config.ENV_MODE != EnvMode.PRODUCTION and config.VAPI_PRIVATE_KEY and 'vapi_voice_tool' not in disabled_tools:
             enabled_methods = self._get_enabled_methods_for_tool('vapi_voice_tool')
             self.thread_manager.add_tool(VapiVoiceTool, function_names=enabled_methods, thread_manager=self.thread_manager)
+        
+        if config.REALITY_DEFENDER_API_KEY and 'reality_defender_tool' not in disabled_tools:
+            from core.tools.reality_defender_tool import RealityDefenderTool
+            enabled_methods = self._get_enabled_methods_for_tool('reality_defender_tool')
+            self.thread_manager.add_tool(RealityDefenderTool, function_names=enabled_methods, project_id=self.project_id, thread_manager=self.thread_manager)
             
     def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
         from core.tools.tool_registry import AGENT_BUILDER_TOOLS, get_tool_class

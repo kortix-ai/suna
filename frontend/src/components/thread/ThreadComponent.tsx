@@ -554,8 +554,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     ) => {
       if (!message.trim() || isShared || !addUserMessageMutation || !startAgentMutation) return;
 
-      // Check if agent is running - if so, queue the message instead
-      if (agentStatus === 'running' || agentStatus === 'connecting') {
+      // Message queue feature flag - when disabled, don't queue messages while agent is running
+      const ENABLE_MESSAGE_QUEUE = false;
+      
+      // Check if agent is running - if so, queue the message instead (only if feature is enabled)
+      if (ENABLE_MESSAGE_QUEUE && (agentStatus === 'running' || agentStatus === 'connecting')) {
         console.log('[ThreadComponent] Agent is running, queueing message:', { message, options, agentStatus });
         const queuedId = queueMessage(threadId, message, {
           ...options,
@@ -565,6 +568,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         
         // Clear the input - the queue panel will show the message
         chatInputRef.current?.setValue('');
+        return;
+      }
+      
+      // If agent is running and queue is disabled, don't do anything (keep text in input)
+      if (agentStatus === 'running' || agentStatus === 'connecting') {
         return;
       }
 
@@ -966,14 +974,30 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     };
   }, [messages, initialLoadCompleted]);
 
+  const prevMessagesLengthRef = useRef(0);
+
   useEffect(() => {
     if (initialLoadCompleted && scrollContainerRef.current && messages.length > 0) {
-      const timeoutId = setTimeout(() => {
-        if (scrollContainerRef.current) {
-          scrollContainerRef.current.scrollTo({ top: 0, behavior: 'auto' });
-        }
-      }, 200);
-      return () => clearTimeout(timeoutId);
+      const wasNewMessageAdded = messages.length > prevMessagesLengthRef.current;
+      prevMessagesLengthRef.current = messages.length;
+
+      if (!wasNewMessageAdded) {
+        return;
+      }
+
+      const scrollContainer = scrollContainerRef.current;
+      const scrollTop = scrollContainer.scrollTop;
+      const threshold = 100;
+      const isNearBottom = scrollTop > -threshold;
+
+      if (isNearBottom) {
+        const timeoutId = setTimeout(() => {
+          if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTo({ top: 0, behavior: 'auto' });
+          }
+        }, 200);
+        return () => clearTimeout(timeoutId);
+      }
     }
   }, [initialLoadCompleted, messages.length]);
 

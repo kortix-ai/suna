@@ -1,15 +1,7 @@
 import * as React from 'react';
-import { View, Dimensions, Pressable } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  interpolate,
-  Extrapolation,
-  withSpring,
-  runOnJS,
-} from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { View, Dimensions, Pressable, Platform, ScrollView } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { QUICK_ACTIONS } from './quickActions';
@@ -17,10 +9,11 @@ import { QuickAction } from '.';
 import { useLanguage } from '@/contexts';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const ITEM_WIDTH = 85;
-const ITEM_SPACING = 8;
-const TOTAL_ITEM_WIDTH = ITEM_WIDTH + ITEM_SPACING;
-const SWIPE_THRESHOLD = 40;
+const ITEM_SPACING = 8; // Consistent spacing between items (always the same)
+const CONTAINER_PADDING = 16; // Padding on sides
+
+// Android hit slop for better touch targets
+const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 12, bottom: 12, left: 12, right: 12 } : undefined;
 
 interface QuickActionBarProps {
   actions?: QuickAction[];
@@ -34,62 +27,65 @@ interface QuickActionBarProps {
 interface ModeItemProps {
   action: QuickAction;
   index: number;
-  currentIndex: Animated.SharedValue<number>;
+  isSelected: boolean;
   onPress: () => void;
+  isLast: boolean;
 }
 
-const ModeItem = React.memo(({ action, index, currentIndex, onPress }: ModeItemProps) => {
+const ModeItem = React.memo(({ action, index, isSelected, onPress, isLast }: ModeItemProps) => {
   const { t } = useLanguage();
+  const { colorScheme } = useColorScheme();
   const translatedLabel = t(`quickActions.${action.id}`, { defaultValue: action.label });
 
-  const animatedContainerStyle = useAnimatedStyle(() => {
-    const distance = Math.abs(currentIndex.value - index);
-    
-    const scale = interpolate(
-      distance,
-      [0, 1, 2],
-      [1, 0.85, 0.75],
-      Extrapolation.CLAMP
-    );
-
-    const opacity = interpolate(
-      distance,
-      [0, 1, 2],
-      [1, 0.5, 0.3],
-      Extrapolation.CLAMP
-    );
-
-    return {
-      transform: [{ scale }],
-      opacity,
-    };
-  });
+  // Get icon color based on theme and selection state
+  // Primary: #121215 (light) / #F8F8F8 (dark)
+  // Foreground: #121215 (light) / #F8F8F8 (dark)
+  const iconColor = React.useMemo(() => {
+    if (isSelected) {
+      return colorScheme === 'dark' ? '#F8F8F8' : '#121215'; // primary
+    }
+    return colorScheme === 'dark' ? '#F8F8F8' : '#121215'; // foreground
+  }, [isSelected, colorScheme]);
 
   return (
-    <Pressable onPress={onPress}>
-      <Animated.View
-        style={[
-          {
-            width: ITEM_WIDTH,
-            marginHorizontal: ITEM_SPACING / 2,
-            alignItems: 'center',
-            justifyContent: 'center',
-          },
-          animatedContainerStyle,
-        ]}
+    <Pressable 
+      onPress={onPress} 
+      hitSlop={ANDROID_HIT_SLOP}
+      style={{
+        marginRight: isLast ? 0 : ITEM_SPACING, // Consistent spacing between items, no margin on last
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <View
+        style={{
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: isSelected ? 1 : 0.5,
+          transform: [{ scale: isSelected ? 1 : 0.9 }],
+        }}
       >
-        <View className="bg-muted/50 rounded-2xl px-3 py-2.5 flex-row items-center gap-2">
+        <View 
+          className="bg-muted/50 rounded-2xl py-2.5 flex-row items-center"
+          style={{
+            paddingHorizontal: 12,
+          }}
+        >
           <Icon 
             as={action.icon} 
             size={18} 
-            className="text-foreground"
+            color={iconColor}
+            className={isSelected ? 'text-primary' : 'text-foreground'}
             strokeWidth={2}
+            style={{ marginRight: 6, flexShrink: 0 }}
           />
-          <Text className="text-sm font-roobert-medium text-foreground">
+          <Text 
+            className={`text-sm font-roobert-medium ${isSelected ? 'text-primary' : 'text-foreground'}`}
+          >
             {translatedLabel}
           </Text>
         </View>
-      </Animated.View>
+      </View>
     </Pressable>
   );
 });
@@ -101,9 +97,7 @@ export function QuickActionBar({
   onActionPress,
   selectedActionId,
 }: QuickActionBarProps) {
-  // Current index as a continuous animated value for smooth transitions
-  const currentIndex = useSharedValue(0);
-  const startX = useSharedValue(0);
+  const scrollViewRef = React.useRef<ScrollView>(null);
   const lastHapticIndex = React.useRef(-1);
 
   // Find the index of the selected action
@@ -112,13 +106,26 @@ export function QuickActionBar({
     return index >= 0 ? index : 0;
   }, [actions, selectedActionId]);
 
-  // Sync currentIndex with selectedIndex
+  // Store item positions for scrolling
+  const itemPositions = React.useRef<number[]>([]);
+  const itemWidths = React.useRef<number[]>([]);
+
+  // Measure items and calculate positions
+  // x is relative to the contentContainer (which includes padding)
+  const measureItem = React.useCallback((index: number, width: number, x: number) => {
+    itemWidths.current[index] = width;
+    itemPositions.current[index] = x;
+  }, []);
+
+  // Scroll to selected item when it changes
   React.useEffect(() => {
-    currentIndex.value = withSpring(selectedIndex, { 
-      damping: 20, 
-      stiffness: 200,
-      mass: 0.8,
-    });
+    if (itemPositions.current[selectedIndex] !== undefined && itemWidths.current[selectedIndex] !== undefined) {
+      const itemX = itemPositions.current[selectedIndex];
+      const itemWidth = itemWidths.current[selectedIndex];
+      const itemCenter = itemX + (itemWidth / 2);
+      const offset = itemCenter - (SCREEN_WIDTH / 2);
+      scrollViewRef.current?.scrollTo({ x: Math.max(0, offset), animated: true });
+    }
   }, [selectedIndex]);
 
   // Handle mode change with haptic
@@ -134,85 +141,43 @@ export function QuickActionBar({
     }
   }, [actions, onActionPress]);
 
-  // Pan gesture for swiping
-  const panGesture = Gesture.Pan()
-    .activeOffsetX([-15, 15])
-    .failOffsetY([-30, 30])
-    .onStart(() => {
-      startX.value = currentIndex.value;
-    })
-    .onUpdate((event) => {
-      // Convert translation to index movement
-      const indexDelta = -event.translationX / TOTAL_ITEM_WIDTH;
-      const newIndex = startX.value + indexDelta;
-      // Clamp with some elasticity at edges
-      const clampedIndex = Math.max(-0.3, Math.min(actions.length - 0.7, newIndex));
-      currentIndex.value = clampedIndex;
-    })
-    .onEnd((event) => {
-      // Determine target index based on velocity and position
-      let targetIndex: number;
-      
-      if (Math.abs(event.velocityX) > 500) {
-        // Fast swipe - use velocity direction
-        targetIndex = event.velocityX < 0 
-          ? Math.ceil(currentIndex.value) 
-          : Math.floor(currentIndex.value);
-      } else {
-        // Slow swipe - snap to nearest
-        targetIndex = Math.round(currentIndex.value);
-      }
-      
-      // Clamp to valid range
-      targetIndex = Math.max(0, Math.min(targetIndex, actions.length - 1));
-      
-      // Animate to target
-      currentIndex.value = withSpring(targetIndex, { 
-        damping: 20, 
-        stiffness: 200,
-        mass: 0.8,
-      });
-      
-      // Update selection
-      runOnJS(handleModeChange)(targetIndex);
-    });
-
   // Handle direct tap on an item
   const handleItemPress = React.useCallback((index: number) => {
-    currentIndex.value = withSpring(index, { 
-      damping: 20, 
-      stiffness: 200,
-      mass: 0.8,
-    });
+    console.log('🎯 Quick action item pressed:', index, actions[index]?.id);
     handleModeChange(index);
-  }, [handleModeChange]);
-
-  // Calculate offset for centering
-  const animatedContainerStyle = useAnimatedStyle(() => {
-    const offset = (SCREEN_WIDTH / 2) - (TOTAL_ITEM_WIDTH / 2) - (currentIndex.value * TOTAL_ITEM_WIDTH);
-    return {
-      transform: [{ translateX: offset }],
-    };
-  });
+  }, [handleModeChange, actions]);
 
   return (
     <View className="w-full overflow-hidden">
-      <GestureDetector gesture={panGesture}>
-        <Animated.View 
-          className="flex-row"
-          style={animatedContainerStyle}
-        >
-          {actions.map((action, index) => (
+      <ScrollView
+        ref={scrollViewRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{
+          paddingHorizontal: CONTAINER_PADDING,
+          flexDirection: 'row',
+          alignItems: 'center',
+        }}
+        decelerationRate="fast"
+      >
+        {actions.map((action, index) => (
+          <View
+            key={action.id}
+            onLayout={(event) => {
+              const { width, x } = event.nativeEvent.layout;
+              measureItem(index, width, x);
+            }}
+          >
             <ModeItem
-              key={action.id}
               action={action}
               index={index}
-              currentIndex={currentIndex}
+              isSelected={index === selectedIndex}
               onPress={() => handleItemPress(index)}
+              isLast={index === actions.length - 1}
             />
-          ))}
-        </Animated.View>
-      </GestureDetector>
+          </View>
+        ))}
+      </ScrollView>
     </View>
   );
 }

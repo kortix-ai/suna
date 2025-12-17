@@ -15,26 +15,36 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { MemoryList } from './MemoryList';
-import { useMemories, useMemoryStats, useDeleteMemory, useDeleteAllMemories, useUpdateMemorySettings } from '@/hooks/memory/use-memory';
+import { useInfiniteMemories, useMemoryStats, useDeleteMemory, useDeleteAllMemories, useUpdateMemorySettings } from '@/hooks/memory/use-memory';
 import { useTranslations } from 'next-intl';
-import { cn } from '@/lib/utils';
+import { useMemo } from 'react';
 
 export function MemorySettings() {
   const t = useTranslations('settings.memory');
   const tCommon = useTranslations('common');
-  const [page, setPage] = useState(1);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
   const { data: stats, isLoading: statsLoading } = useMemoryStats();
-  const { data: memoriesData, isLoading: memoriesLoading, error: memoriesError } = useMemories(page);
+  const { 
+    data: memoriesData, 
+    isLoading: memoriesLoading, 
+    error: memoriesError,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage
+  } = useInfiniteMemories(10);
   const deleteMemory = useDeleteMemory();
   const deleteAllMemories = useDeleteAllMemories();
   const updateMemorySettings = useUpdateMemorySettings();
+
+  const allMemories = useMemo(() => {
+    if (!memoriesData?.pages) return [];
+    return memoriesData.pages.flatMap(page => page.memories);
+  }, [memoriesData?.pages]);
 
   const handleDeleteMemory = async (memoryId: string) => {
     setDeletingIds((prev) => new Set(prev).add(memoryId));
@@ -216,7 +226,7 @@ export function MemorySettings() {
         </div>
       </div>
 
-      {isEnabled && stats?.memory_enabled && memoriesData && memoriesData.memories.length > 0 && (
+      {isEnabled && stats?.memory_enabled && allMemories.length > 0 && (
         <div className="space-y-4 pt-2">
           <div className="flex items-center justify-between">
             <div>
@@ -257,13 +267,13 @@ export function MemorySettings() {
             </AlertDialog>
           </div>
           <MemoryList
-            memories={memoriesData.memories}
-            isLoading={memoriesLoading}
+            memories={allMemories}
+            isLoading={memoriesLoading || isFetchingNextPage}
             error={memoriesError?.message}
             onDelete={handleDeleteMemory}
             deletingIds={deletingIds}
-            hasMore={memoriesData.page < memoriesData.pages}
-            onLoadMore={() => setPage((p) => p + 1)}
+            hasMore={hasNextPage}
+            onLoadMore={() => fetchNextPage()}
           />
         </div>
       )}

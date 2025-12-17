@@ -187,10 +187,6 @@ export async function initializeRevenueCat(
       console.log('📧 Email:', email || 'No email provided');
       console.log('📊 Tracking allowed:', canTrack);
 
-      if (__DEV__) {
-        Purchases.setLogLevel(LOG_LEVEL.DEBUG);
-      }
-
       Purchases.configure({ apiKey, appUserID: userId });
 
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -467,6 +463,19 @@ export async function getCustomerInfo(): Promise<CustomerInfo> {
   }
 }
 
+/**
+ * Check if RevenueCat is actually initialized and ready to use
+ * This is more reliable than just checking for API keys
+ */
+export async function isRevenueCatInitialized(): Promise<boolean> {
+  try {
+    await Purchases.getCustomerInfo();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function getSubscriptionInfo(customerInfo: CustomerInfo): RevenueCatSubscriptionInfo {
   const entitlements = customerInfo.entitlements.active;
   const hasActiveEntitlement = Object.keys(entitlements).length > 0;
@@ -613,8 +622,15 @@ export async function presentPaywall(
       offering = await getOfferingById(paywallName, true);
 
       if (!offering) {
-        console.warn(`⚠️ Paywall '${paywallName}' not found, trying current offering`);
-        offering = await getOfferings(true);
+        // Log available offerings to help debug
+        const allOfferings = await Purchases.getOfferings();
+        const availableOfferingIds = Object.keys(allOfferings.all);
+        console.error(`❌ Paywall '${paywallName}' not found in RevenueCat!`);
+        console.log(`📦 Available offerings: ${availableOfferingIds.join(', ') || 'none'}`);
+        console.log(`📦 Current offering: ${allOfferings.current?.identifier || 'none'}`);
+
+        // Throw error instead of falling back - the paywall names must match RevenueCat
+        throw new Error(`Paywall '${paywallName}' not found. Available: ${availableOfferingIds.join(', ')}`);
       }
     } else {
       // Default to current offering
@@ -647,6 +663,26 @@ export async function presentPaywall(
     return { purchased, cancelled };
   } catch (error) {
     console.error('❌ Error presenting paywall:', error);
+    throw error;
+  }
+}
+
+/**
+ * Present RevenueCat Customer Info Portal
+ *
+ * Shows the native RevenueCat customer info screen where users can:
+ * - View subscription details
+ * - Manage payment methods
+ * - View purchase history
+ * - Restore purchases
+ */
+export async function presentCustomerInfo(): Promise<void> {
+  try {
+    console.log('📱 Presenting RevenueCat customer info portal...');
+    await RevenueCatUI.presentCustomerCenter();
+    console.log('✅ Customer info portal dismissed');
+  } catch (error) {
+    console.error('❌ Error presenting customer info portal:', error);
     throw error;
   }
 }

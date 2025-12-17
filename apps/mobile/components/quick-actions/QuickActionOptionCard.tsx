@@ -1,5 +1,6 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
+import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Image, Pressable, View } from 'react-native';
 import Animated, { 
@@ -33,6 +34,7 @@ interface QuickActionOptionCardProps {
  */
 export function QuickActionOptionCard({ option, actionId, onPress, isSelected = false, onPreview }: QuickActionOptionCardProps) {
   const { t } = useLanguage();
+  const { colorScheme } = useColorScheme();
   const scale = useSharedValue(1);
   const checkmarkScale = useSharedValue(0);
   const borderOpacity = useSharedValue(0);
@@ -89,6 +91,17 @@ export function QuickActionOptionCard({ option, actionId, onPress, isSelected = 
   const isSlideTemplate = actionId === 'slides';
   const cardWidth = isSlideTemplate ? 160 : 100;
   const cardHeight = isSlideTemplate ? 90 : 100; // 16:9 for slides, square for others
+
+  // Get icon color based on theme and selection state
+  // Primary: #121215 (light) / #F8F8F8 (dark)
+  // Foreground with 70% opacity: rgba(18, 18, 21, 0.7) (light) / rgba(248, 248, 248, 0.7) (dark)
+  const iconColor = React.useMemo(() => {
+    if (isSelected) {
+      return colorScheme === 'dark' ? '#F8F8F8' : '#121215'; // primary
+    }
+    // 70% opacity
+    return colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.7)' : 'rgba(18, 18, 21, 0.7)';
+  }, [isSelected, colorScheme]);
 
   return (
     <AnimatedPressable
@@ -177,6 +190,7 @@ export function QuickActionOptionCard({ option, actionId, onPress, isSelected = 
               <Icon 
                 as={option.icon} 
                 size={32} 
+                color={iconColor}
                 className={isSelected ? 'text-primary' : 'text-foreground/70'}
                 strokeWidth={2}
               />

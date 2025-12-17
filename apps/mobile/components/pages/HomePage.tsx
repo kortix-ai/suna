@@ -5,10 +5,9 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { ChatInputSection, ChatDrawers, type ChatInputSectionRef } from '@/components/chat';
 import { QUICK_ACTIONS, ModeThreadListView } from '@/components/quick-actions';
-import { TopNav } from '@/components/home';
+import { TopNav, BackgroundLogo } from '@/components/home';
 import { useRouter } from 'expo-router';
 import { UsageDrawer } from '@/components/settings/UsageDrawer';
-import { CreditsPurchasePage } from '@/components/settings/CreditsPurchasePage';
 import { useChatCommons } from '@/hooks';
 import type { UseChatReturn } from '@/hooks';
 import { usePricingModalStore } from '@/stores/billing-modal-store';
@@ -23,6 +22,7 @@ interface HomePageProps {
     workerId: string,
     view?: 'instructions' | 'tools' | 'integrations' | 'triggers'
   ) => void;
+  showThreadListView?: boolean; // Flag to show ModeThreadListView instead of BackgroundLogo
 }
 
 export interface HomePageRef {
@@ -30,13 +30,12 @@ export interface HomePageRef {
 }
 
 export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
-  ({ onMenuPress, chat, isAuthenticated, onOpenWorkerConfig: externalOpenWorkerConfig }, ref) => {
+  ({ onMenuPress, chat, isAuthenticated, onOpenWorkerConfig: externalOpenWorkerConfig, showThreadListView = false }, ref) => {
     const router = useRouter();
     const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
 
     const { creditsExhausted } = usePricingModalStore();
     const [isUsageDrawerOpen, setIsUsageDrawerOpen] = React.useState(false);
-    const [isCreditsPurchaseOpen, setIsCreditsPurchaseOpen] = React.useState(false);
     const [isWorkerConfigDrawerVisible, setIsWorkerConfigDrawerVisible] = React.useState(false);
     const [workerConfigWorkerId, setWorkerConfigWorkerId] = React.useState<string | null>(null);
     const [workerConfigInitialView, setWorkerConfigInitialView] = React.useState<
@@ -109,15 +108,6 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
 
     const handleCloseUsageDrawer = React.useCallback(() => {
       setIsUsageDrawerOpen(false);
-    }, []);
-
-    const handleTopUpPress = React.useCallback(() => {
-      setIsUsageDrawerOpen(false);
-      setIsCreditsPurchaseOpen(true);
-    }, []);
-
-    const handleCloseCreditsPurchase = React.useCallback(() => {
-      setIsCreditsPurchaseOpen(false);
     }, []);
 
     const handleUpgradeFromUsage = React.useCallback(() => {
@@ -222,13 +212,17 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
               onCreditsPress={handleCreditsPress}
             />
 
-            {/* Swipeable content area - Always show thread list for current mode */}
+            {/* Content Area - Show either thread list or background logo */}
             <GestureDetector gesture={panGesture}>
               <View className="flex-1">
-                <ModeThreadListView
-                  modeId={chat.selectedQuickAction || 'image'}
-                  onThreadPress={handleQuickActionThreadPress}
-                />
+                {showThreadListView ? (
+                  <ModeThreadListView
+                    modeId={chat.selectedQuickAction || 'slides'}
+                    onThreadPress={handleQuickActionThreadPress}
+                  />
+                ) : (
+                  <BackgroundLogo />
+                )}
               </View>
             </GestureDetector>
 
@@ -282,17 +276,14 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
             onChooseImages={chat.handleChooseImages}
             onChooseFiles={chat.handleChooseFiles}
           />
-          <UsageDrawer
-            visible={isUsageDrawerOpen}
-            onClose={handleCloseUsageDrawer}
-            onUpgradePress={handleUpgradeFromUsage}
-            onTopUpPress={handleTopUpPress}
-            onThreadPress={handleThreadPressFromUsage}
-          />
-          <CreditsPurchasePage
-            visible={isCreditsPurchaseOpen}
-            onClose={handleCloseCreditsPurchase}
-          />
+          {isUsageDrawerOpen && (
+            <UsageDrawer
+              visible={isUsageDrawerOpen}
+              onClose={handleCloseUsageDrawer}
+              onUpgradePress={handleUpgradeFromUsage}
+              onThreadPress={handleThreadPressFromUsage}
+            />
+          )}
         </KeyboardAvoidingView>
       </View>
     );

@@ -1,11 +1,11 @@
-name: EAS Update - Expo Go Testing
+name: EAS OTA Update
 
 on:
   push:
     branches:
       - main
       - staging
-      - production
+      - PRODUCTION
     paths:
       - 'apps/mobile/**'
       - '.github/workflows/mobile-eas-update.yml'
@@ -31,6 +31,14 @@ jobs:
   publish-update:
     name: Publish EAS Update
     runs-on: ubuntu-latest
+    outputs:
+      ios_success: ${{ steps.publish_update.outputs.ios_success }}
+      android_success: ${{ steps.publish_update.outputs.android_success }}
+      ios_update_id: ${{ steps.publish_update.outputs.ios_update_id }}
+      android_update_id: ${{ steps.publish_update.outputs.android_update_id }}
+      branch: ${{ steps.branch.outputs.branch }}
+      environment: ${{ steps.env_vars.outputs.environment }}
+      commit_sha: ${{ steps.commit.outputs.sha }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -78,34 +86,254 @@ jobs:
           echo "message=$(git log -1 --pretty=format:'%s')" >> $GITHUB_OUTPUT
           echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
+      - name: Check if native files changed
+        id: check_native
+        run: |
+          # Check if any native files changed (would require new build)
+          if git diff --name-only HEAD~1 HEAD | grep -E "(app\.json|eas\.json|ios/|android/|package\.json)" | grep -vE "(package-lock\.json|\.md$)" > /dev/null; then
+            echo "native_changed=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Native files changed - OTA update may not be sufficient"
+          else
+            echo "native_changed=false" >> $GITHUB_OUTPUT
+            echo "✅ Only JS/TS files changed - OTA update is appropriate"
+          fi
+
+      - name: Set environment variables based on branch
+        id: env_vars
+        run: |
+          BRANCH="${{ steps.branch.outputs.branch }}"
+          if [ "$BRANCH" == "PRODUCTION" ]; then
+            echo "EXPO_PUBLIC_SUPABASE_URL=https://supa.kortix.com" >> $GITHUB_ENV
+            echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impicml3YXNzZWJ4ZHdvaWVpa2dhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQzOTMzMjYsImV4cCI6MjA1OTk2OTMyNn0.1iYSZAYGOc0B0-64KzLKwMA3dYNn0enQteikh9_VnDc" >> $GITHUB_ENV
+            echo "EXPO_PUBLIC_BACKEND_URL=https://api.kortix.com/v1" >> $GITHUB_ENV
+            echo "environment=production" >> $GITHUB_OUTPUT
+          else
+            # Staging environment for main and staging branches
+            echo "EXPO_PUBLIC_SUPABASE_URL=https://heprlhlltebrxydgtsjs.supabase.co" >> $GITHUB_ENV
+            echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlcHJsaGxsdGVicnh5ZGd0c2pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxODcxNjQsImV4cCI6MjA2MDc2MzE2NH0.YRo1iZw06YSxqBhotBnD1d5jZxw7hHwswe1wKp8VpfA" >> $GITHUB_ENV
+            echo "EXPO_PUBLIC_BACKEND_URL=https://staging-api.suna.so/v1" >> $GITHUB_ENV
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Map git branch to EAS channel/branch
+        id: eas_branch
+        run: |
+          GIT_BRANCH="${{ steps.branch.outputs.branch }}"
+          # Map git branches to EAS branches/channels:
+          # - PRODUCTION git branch → production EAS branch/channel
+          # - main git branch → main EAS branch/channel  
+          # - staging git branch → main EAS branch/channel (staging uses main channel)
+          if [ "$GIT_BRANCH" == "PRODUCTION" ]; then
+            EAS_BRANCH="production"
+            EAS_CHANNEL="production"
+          elif [ "$GIT_BRANCH" == "main" ] || [ "$GIT_BRANCH" == "staging" ]; then
+            EAS_BRANCH="main"
+            EAS_CHANNEL="main"
+          else
+            # Default to main for any other branch
+            EAS_BRANCH="main"
+            EAS_CHANNEL="main"
+          fi
+          echo "branch=$EAS_BRANCH" >> $GITHUB_OUTPUT
+          echo "channel=$EAS_CHANNEL" >> $GITHUB_OUTPUT
+          echo "Mapped git branch '$GIT_BRANCH' to EAS branch '$EAS_BRANCH' (channel '$EAS_CHANNEL')"
+
       - name: Publish EAS Update
+        id: publish_update
         working-directory: apps/mobile
-        env:
-          EXPO_PUBLIC_SUPABASE_URL: https://heprlhlltebrxydgtsjs.supabase.co
-          EXPO_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlcHJsaGxsdGVicnh5ZGd0c2pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxODcxNjQsImV4cCI6MjA2MDc2MzE2NH0.YRo1iZw06YSxqBhotBnD1d5jZxw7hHwswe1wKp8VpfA
-          EXPO_PUBLIC_BACKEND_URL: https://staging-api.suna.so/v1
         run: |
           PLATFORM="${{ steps.platform.outputs.platform }}"
+          EAS_BRANCH="${{ steps.eas_branch.outputs.branch }}"
+          EAS_CHANNEL="${{ steps.eas_branch.outputs.channel }}"
+          GIT_BRANCH="${{ steps.branch.outputs.branch }}"
+          ENVIRONMENT="${{ steps.env_vars.outputs.environment }}"
+          MESSAGE="${{ steps.commit.outputs.message }} (${{ steps.commit.outputs.sha }})"
+          
+          echo "📦 Publishing to EAS branch: $EAS_BRANCH (channel: $EAS_CHANNEL)"
+          echo "📝 Git branch: $GIT_BRANCH"
+          echo "🌍 Environment: $ENVIRONMENT"
+          
+          IOS_SUCCESS=false
+          ANDROID_SUCCESS=false
+          IOS_UPDATE_ID=""
+          ANDROID_UPDATE_ID=""
+          
           if [ "$PLATFORM" == "all" ]; then
             # Publish for both iOS and Android
-            eas update \
-              --branch ${{ steps.branch.outputs.branch }} \
-              --message "${{ steps.commit.outputs.message }} (${{ steps.commit.outputs.sha }})" \
+            echo "📱 Publishing iOS update..."
+            IOS_OUTPUT=$(eas update \
+              --branch $EAS_BRANCH \
+              --message "$MESSAGE" \
               --platform ios \
-              --non-interactive
-            eas update \
-              --branch ${{ steps.branch.outputs.branch }} \
-              --message "${{ steps.commit.outputs.message }} (${{ steps.commit.outputs.sha }})" \
+              --non-interactive 2>&1) || IOS_EXIT_CODE=$?
+            
+            echo "$IOS_OUTPUT"
+            if [ -z "${IOS_EXIT_CODE:-}" ]; then
+              IOS_SUCCESS=true
+              # Extract Update ID if present (EAS CLI outputs "Update ID: <id>")
+              IOS_UPDATE_ID=$(echo "$IOS_OUTPUT" | grep -i "update id" | sed -E 's/.*[Uu]pdate [Ii][Dd]:[[:space:]]*([a-zA-Z0-9_-]+).*/\1/' | head -1 || echo "")
+              echo "✅ iOS update published successfully"
+              if [ -n "$IOS_UPDATE_ID" ]; then
+                echo "Update ID: $IOS_UPDATE_ID"
+              fi
+            else
+              echo "❌ iOS update failed with exit code $IOS_EXIT_CODE"
+            fi
+            
+            echo ""
+            echo "📱 Publishing Android update..."
+            ANDROID_OUTPUT=$(eas update \
+              --branch $EAS_BRANCH \
+              --message "$MESSAGE" \
               --platform android \
-              --non-interactive
+              --non-interactive 2>&1) || ANDROID_EXIT_CODE=$?
+            
+            echo "$ANDROID_OUTPUT"
+            if [ -z "${ANDROID_EXIT_CODE:-}" ]; then
+              ANDROID_SUCCESS=true
+              # Extract Update ID if present (EAS CLI outputs "Update ID: <id>")
+              ANDROID_UPDATE_ID=$(echo "$ANDROID_OUTPUT" | grep -i "update id" | sed -E 's/.*[Uu]pdate [Ii][Dd]:[[:space:]]*([a-zA-Z0-9_-]+).*/\1/' | head -1 || echo "")
+              echo "✅ Android update published successfully"
+              if [ -n "$ANDROID_UPDATE_ID" ]; then
+                echo "Update ID: $ANDROID_UPDATE_ID"
+              fi
+            else
+              echo "❌ Android update failed with exit code $ANDROID_EXIT_CODE"
+            fi
+            
+            # Set outputs
+            echo "ios_success=$IOS_SUCCESS" >> $GITHUB_OUTPUT
+            echo "android_success=$ANDROID_SUCCESS" >> $GITHUB_OUTPUT
+            echo "ios_update_id=$IOS_UPDATE_ID" >> $GITHUB_OUTPUT
+            echo "android_update_id=$ANDROID_UPDATE_ID" >> $GITHUB_OUTPUT
+            
+            # Fail if both failed
+            if [ "$IOS_SUCCESS" == "false" ] && [ "$ANDROID_SUCCESS" == "false" ]; then
+              echo "❌ Both iOS and Android updates failed"
+              exit 1
+            fi
           else
             # Single platform (workflow_dispatch)
-            eas update \
-              --branch ${{ steps.branch.outputs.branch }} \
-              --message "${{ steps.commit.outputs.message }} (${{ steps.commit.outputs.sha }})" \
+            echo "📱 Publishing $PLATFORM update..."
+            UPDATE_OUTPUT=$(eas update \
+              --branch $EAS_BRANCH \
+              --message "$MESSAGE" \
               --platform $PLATFORM \
-              --non-interactive
+              --non-interactive 2>&1) || UPDATE_EXIT_CODE=$?
+            
+            echo "$UPDATE_OUTPUT"
+            if [ -z "${UPDATE_EXIT_CODE:-}" ]; then
+              # Extract Update ID if present (EAS CLI outputs "Update ID: <id>")
+              UPDATE_ID=$(echo "$UPDATE_OUTPUT" | grep -i "update id" | sed -E 's/.*[Uu]pdate [Ii][Dd]:[[:space:]]*([a-zA-Z0-9_-]+).*/\1/' | head -1 || echo "")
+              echo "✅ $PLATFORM update published successfully"
+              if [ -n "$UPDATE_ID" ]; then
+                echo "Update ID: $UPDATE_ID"
+              fi
+              if [ "$PLATFORM" == "ios" ]; then
+                echo "ios_success=true" >> $GITHUB_OUTPUT
+                echo "ios_update_id=$UPDATE_ID" >> $GITHUB_OUTPUT
+              else
+                echo "android_success=true" >> $GITHUB_OUTPUT
+                echo "android_update_id=$UPDATE_ID" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "❌ $PLATFORM update failed with exit code $UPDATE_EXIT_CODE"
+              if [ "$PLATFORM" == "ios" ]; then
+                echo "ios_success=false" >> $GITHUB_OUTPUT
+              else
+                echo "android_success=false" >> $GITHUB_OUTPUT
+              fi
+              exit 1
+            fi
           fi
+
+      - name: Create deployment summary
+        run: |
+          GIT_BRANCH="${{ steps.branch.outputs.branch }}"
+          EAS_BRANCH="${{ steps.eas_branch.outputs.branch }}"
+          EAS_CHANNEL="${{ steps.eas_branch.outputs.channel }}"
+          ENVIRONMENT="${{ steps.env_vars.outputs.environment }}"
+          PLATFORM="${{ steps.platform.outputs.platform }}"
+          COMMIT_SHA="${{ steps.commit.outputs.sha }}"
+          COMMIT_MSG="${{ steps.commit.outputs.message }}"
+          
+          echo "## 📦 EAS Update Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Git Branch:** \`$GIT_BRANCH\`" >> $GITHUB_STEP_SUMMARY
+          echo "**EAS Branch:** \`$EAS_BRANCH\`" >> $GITHUB_STEP_SUMMARY
+          echo "**EAS Channel:** \`$EAS_CHANNEL\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** \`$ENVIRONMENT\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`$COMMIT_SHA\` - $COMMIT_MSG" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "$PLATFORM" == "all" ]; then
+            IOS_SUCCESS="${{ steps.publish_update.outputs.ios_success }}"
+            ANDROID_SUCCESS="${{ steps.publish_update.outputs.android_success }}"
+            IOS_UPDATE_ID="${{ steps.publish_update.outputs.ios_update_id }}"
+            ANDROID_UPDATE_ID="${{ steps.publish_update.outputs.android_update_id }}"
+            
+            echo "### iOS Update" >> $GITHUB_STEP_SUMMARY
+            if [ "$IOS_SUCCESS" == "true" ]; then
+              echo "✅ **Status:** Published successfully" >> $GITHUB_STEP_SUMMARY
+              if [ -n "$IOS_UPDATE_ID" ]; then
+                echo "**Update ID:** \`$IOS_UPDATE_ID\`" >> $GITHUB_STEP_SUMMARY
+              fi
+            else
+              echo "❌ **Status:** Failed" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            echo "### Android Update" >> $GITHUB_STEP_SUMMARY
+            if [ "$ANDROID_SUCCESS" == "true" ]; then
+              echo "✅ **Status:** Published successfully" >> $GITHUB_STEP_SUMMARY
+              if [ -n "$ANDROID_UPDATE_ID" ]; then
+                echo "**Update ID:** \`$ANDROID_UPDATE_ID\`" >> $GITHUB_STEP_SUMMARY
+              fi
+            else
+              echo "❌ **Status:** Failed" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            # For single platform, check both outputs (one will be empty)
+            IOS_SUCCESS="${{ steps.publish_update.outputs.ios_success }}"
+            ANDROID_SUCCESS="${{ steps.publish_update.outputs.android_success }}"
+            IOS_UPDATE_ID="${{ steps.publish_update.outputs.ios_update_id }}"
+            ANDROID_UPDATE_ID="${{ steps.publish_update.outputs.android_update_id }}"
+            
+            if [ "$PLATFORM" == "ios" ]; then
+              PLATFORM_SUCCESS="$IOS_SUCCESS"
+              PLATFORM_UPDATE_ID="$IOS_UPDATE_ID"
+            else
+              PLATFORM_SUCCESS="$ANDROID_SUCCESS"
+              PLATFORM_UPDATE_ID="$ANDROID_UPDATE_ID"
+            fi
+            
+            echo "### $PLATFORM Update" >> $GITHUB_STEP_SUMMARY
+            if [ "$PLATFORM_SUCCESS" == "true" ]; then
+              echo "✅ **Status:** Published successfully" >> $GITHUB_STEP_SUMMARY
+              if [ -n "$PLATFORM_UPDATE_ID" ]; then
+                echo "**Update ID:** \`$PLATFORM_UPDATE_ID\`" >> $GITHUB_STEP_SUMMARY
+              fi
+            else
+              echo "❌ **Status:** Failed" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment Variables Used:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`EXPO_PUBLIC_SUPABASE_URL\`: \`$EXPO_PUBLIC_SUPABASE_URL\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`EXPO_PUBLIC_BACKEND_URL\`: \`$EXPO_PUBLIC_BACKEND_URL\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Warning if native changes detected
+        if: steps.check_native.outputs.native_changed == 'true'
+        run: |
+          echo "::warning::Native files changed. You may need to create a new build instead of just OTA update."
+          echo "## ⚠️ Native Changes Detected" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Native files were changed. OTA update was published, but you may need to:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Build a new binary: Use 'Production Build' workflow" >> $GITHUB_STEP_SUMMARY
+          echo "2. Update runtimeVersion if needed" >> $GITHUB_STEP_SUMMARY
 
       - name: Comment on PR (if applicable)
         if: github.event_name == 'pull_request'

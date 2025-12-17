@@ -153,12 +153,9 @@ export const ThreadLayout = memo(function ThreadLayout({
     return (
       <>
         <div className="relative h-full">
-          {/* Main content - always full width */}
           <div className="flex flex-col h-full overflow-hidden">
             {children}
           </div>
-
-          {/* Kortix Computer - Full replacement overlay for compact */}
           {isSidePanelOpen && initialLoadCompleted && (
             <div className="absolute inset-0 bg-background z-40">
               <KortixComputer
@@ -256,7 +253,7 @@ export const ThreadLayout = memo(function ThreadLayout({
           ref={mainPanelRef}
           defaultSize={shouldShowPanel ? 50 : 100}
           minSize={shouldShowPanel ? 30 : 100}
-          maxSize={shouldShowPanel ? 95 : 100}
+          maxSize={shouldShowPanel ? 65 : 100}
           className="flex flex-col overflow-hidden relative bg-transparent"
         >
           <SiteHeader
@@ -293,7 +290,7 @@ export const ThreadLayout = memo(function ThreadLayout({
         <ResizablePanel
           ref={sidePanelRef}
           defaultSize={shouldShowPanel ? 50 : 0}
-          minSize={shouldShowPanel ? 20 : 0}
+          minSize={shouldShowPanel ? 35 : 0}
           maxSize={shouldShowPanel ? 70 : 0}
           collapsible={true}
           className={cn(

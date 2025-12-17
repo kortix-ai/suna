@@ -10,6 +10,7 @@ export async function signIn(prevState: any, formData: FormData) {
   const returnUrl = formData.get('returnUrl') as string | undefined;
   const origin = formData.get('origin') as string;
   const acceptedTerms = formData.get('acceptedTerms') === 'true';
+  const isDesktopApp = formData.get('isDesktopApp') === 'true';
 
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
@@ -18,9 +19,19 @@ export async function signIn(prevState: any, formData: FormData) {
   const supabase = await createClient();
 
   // Use magic link (passwordless) authentication
-  // Pass terms acceptance as query parameter so callback can save it
-  const termsParam = acceptedTerms ? `&terms_accepted=true` : '';
-  const emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}${termsParam}`;
+  // For desktop app, use custom protocol (kortix://auth/callback) - same as mobile
+  // For web, use standard origin (https://kortix.com/auth/callback)
+  let emailRedirectTo: string;
+  if (isDesktopApp && origin.startsWith('kortix://')) {
+    // Match mobile implementation - simple protocol URL with optional terms_accepted
+    const params = new URLSearchParams();
+    if (acceptedTerms) {
+      params.set('terms_accepted', 'true');
+    }
+    emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
+  } else {
+    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+  }
 
   const { error } = await supabase.auth.signInWithOtp({
     email: email.trim().toLowerCase(),
@@ -48,6 +59,7 @@ export async function signUp(prevState: any, formData: FormData) {
   const returnUrl = formData.get('returnUrl') as string | undefined;
   const acceptedTerms = formData.get('acceptedTerms') === 'true';
   const referralCode = formData.get('referralCode') as string | undefined;
+  const isDesktopApp = formData.get('isDesktopApp') === 'true';
 
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
@@ -60,9 +72,19 @@ export async function signUp(prevState: any, formData: FormData) {
   const supabase = await createClient();
 
   // Use magic link (passwordless) authentication - auto-creates account
-  // Pass terms acceptance as query parameter so callback can save it
-  const termsParam = acceptedTerms ? `&terms_accepted=true` : '';
-  const emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}${termsParam}`;
+  // For desktop app, use custom protocol (kortix://auth/callback) - same as mobile
+  // For web, use standard origin (https://kortix.com/auth/callback)
+  let emailRedirectTo: string;
+  if (isDesktopApp && origin.startsWith('kortix://')) {
+    // Match mobile implementation - simple protocol URL with optional terms_accepted
+    const params = new URLSearchParams();
+    if (acceptedTerms) {
+      params.set('terms_accepted', 'true');
+    }
+    emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
+  } else {
+    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+  }
 
   const { error } = await supabase.auth.signInWithOtp({
     email: email.trim().toLowerCase(),
@@ -144,6 +166,7 @@ export async function resendMagicLink(prevState: any, formData: FormData) {
   const returnUrl = formData.get('returnUrl') as string | undefined;
   const origin = formData.get('origin') as string;
   const acceptedTerms = formData.get('acceptedTerms') === 'true';
+  const isDesktopApp = formData.get('isDesktopApp') === 'true';
 
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
@@ -152,9 +175,19 @@ export async function resendMagicLink(prevState: any, formData: FormData) {
   const supabase = await createClient();
 
   // Use magic link (passwordless) authentication
-  // Pass terms acceptance as query parameter so callback can save it
-  const termsParam = acceptedTerms ? `&terms_accepted=true` : '';
-  const emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}${termsParam}`;
+  // For desktop app, use custom protocol (kortix://auth/callback) - same as mobile
+  // For web, use standard origin (https://kortix.com/auth/callback)
+  let emailRedirectTo: string;
+  if (isDesktopApp && origin.startsWith('kortix://')) {
+    // Match mobile implementation - simple protocol URL with optional terms_accepted
+    const params = new URLSearchParams();
+    if (acceptedTerms) {
+      params.set('terms_accepted', 'true');
+    }
+    emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
+  } else {
+    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+  }
 
   const { error } = await supabase.auth.signInWithOtp({
     email: email.trim().toLowerCase(),

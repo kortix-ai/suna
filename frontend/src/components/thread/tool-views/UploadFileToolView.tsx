@@ -20,6 +20,7 @@ import {
   Lock,
   Database,
   Table,
+  RefreshCw,
 } from 'lucide-react';
 import { ToolViewProps } from './types';
 import { formatTimestamp, getToolTitle } from './utils';
@@ -30,6 +31,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { LoadingState } from './shared/LoadingState';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { backendApi } from '@/lib/api-client';
 
 interface UploadResult {
   message?: string;
@@ -38,6 +40,7 @@ interface UploadResult {
   secure_url?: string;
   expires_at?: string;
   success?: boolean;
+  file_id?: string;
 }
 
 export function UploadFileToolView({
@@ -48,9 +51,11 @@ export function UploadFileToolView({
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
-  // All hooks must be called unconditionally at the top
   const [isCopyingUrl, setIsCopyingUrl] = useState(false);
   const [isCopyingPath, setIsCopyingPath] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [regeneratedUrl, setRegeneratedUrl] = useState<string | null>(null);
+  const [regeneratedExpiry, setRegeneratedExpiry] = useState<string | null>(null);
 
   // Defensive check - handle cases where toolCall might be undefined
   if (!toolCall) {
@@ -86,11 +91,13 @@ export function UploadFileToolView({
       const sizeMatch = output.match(/📏 Size: ([^\n]+)/);
       const urlMatch = output.match(/🔗 Secure Access URL: ([^\n]+)/);
       const expiresMatch = output.match(/⏰ URL expires: ([^\n]+)/);
+      const fileIdMatch = output.match(/📋 File ID: ([^\n]+)/);
 
       if (storageMatch) uploadResult.storage_path = storageMatch[1];
       if (sizeMatch) uploadResult.file_size = sizeMatch[1];
       if (urlMatch) uploadResult.secure_url = urlMatch[1];
       if (expiresMatch) uploadResult.expires_at = expiresMatch[1];
+      if (fileIdMatch) uploadResult.file_id = fileIdMatch[1];
     } else if (typeof output === 'object' && output !== null) {
       uploadResult = {
         message: (output as any).message || JSON.stringify(output),
@@ -121,6 +128,60 @@ export function UploadFileToolView({
       toast.success(`${type === 'url' ? 'Secure URL' : 'Storage path'} copied to clipboard!`);
     } catch (err) {
       toast.error('Failed to copy to clipboard');
+    }
+  };
+
+  const extractStoragePathFromUrl = (url: string): { storage_path: string; bucket_name: string } | null => {
+    try {
+      const match = url.match(/\/storage\/v1\/object\/sign\/([\w-]+)\/(.+?)\?/);
+      if (match) {
+        return {
+          bucket_name: match[1],
+          storage_path: decodeURIComponent(match[2]),
+        };
+      }
+    } catch (e) {
+      console.error('Failed to extract storage path from URL:', e);
+    }
+    return null;
+  };
+
+  const regenerateLink = async () => {
+    try {
+      setIsRegenerating(true);
+      
+      const body: any = {};
+      
+      if (uploadResult?.file_id) {
+        body.file_upload_id = uploadResult.file_id;
+      } else if (uploadResult?.secure_url) {
+        const pathInfo = extractStoragePathFromUrl(uploadResult.secure_url);
+        if (pathInfo) {
+          body.storage_path = pathInfo.storage_path;
+          body.bucket_name = pathInfo.bucket_name;
+        } else {
+          toast.error('Could not extract file information from URL');
+          return;
+        }
+      } else {
+        toast.error('No file information available');
+        return;
+      }
+      
+      const response = await backendApi.post('/file-uploads/regenerate-link', body);
+
+      if (!response.success || !response.data) {
+        throw new Error('Failed to regenerate link');
+      }
+
+      setRegeneratedUrl(response.data.signed_url);
+      setRegeneratedExpiry(response.data.expires_at);
+      toast.success('Link regenerated successfully!');
+    } catch (error) {
+      toast.error('Failed to regenerate link');
+      console.error('Error regenerating link:', error);
+    } finally {
+      setIsRegenerating(false);
     }
   };
 
@@ -255,18 +316,18 @@ export function UploadFileToolView({
 
                         <div className="bg-zinc-50 dark:bg-zinc-800 rounded p-2 mb-3">
                           <code className="text-xs font-mono text-zinc-700 dark:text-zinc-300 break-all">
-                            {uploadResult.secure_url}
+                            {regeneratedUrl || uploadResult.secure_url}
                           </code>
                         </div>
 
                         <div className="flex items-center justify-between mb-3">
                           <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                            🔐 Private
+                            {regeneratedExpiry ? `⏰ Expires: ${regeneratedExpiry}` : uploadResult.expires_at ? `⏰ Expires: ${uploadResult.expires_at}` : '🔐 Private'}
                           </span>
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => copyToClipboard(uploadResult.secure_url!, 'url')}
+                            onClick={() => copyToClipboard(regeneratedUrl || uploadResult.secure_url!, 'url')}
                             className="h-6 px-2 text-xs"
                           >
                             {isCopyingUrl ? (
@@ -278,13 +339,28 @@ export function UploadFileToolView({
                           </Button>
                         </div>
 
-                        <Button
-                          onClick={() => window.open(uploadResult.secure_url, '_blank')}
-                          size="sm"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                          Open File
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={() => window.open(regeneratedUrl || uploadResult.secure_url, '_blank')}
+                            size="sm"
+                            className="flex-1"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                            Open File
+                          </Button>
+                          {(uploadResult.file_id || uploadResult.secure_url) && (
+                            <Button
+                              onClick={regenerateLink}
+                              size="sm"
+                              variant="outline"
+                              disabled={isRegenerating}
+                              className="flex-1"
+                            >
+                              <RefreshCw className={cn("h-3.5 w-3.5", isRegenerating && "animate-spin")} />
+                              {isRegenerating ? 'Regenerating...' : 'Regenerate Link'}
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}

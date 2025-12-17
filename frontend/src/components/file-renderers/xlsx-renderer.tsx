@@ -68,48 +68,158 @@ interface ParsedWorkbook {
 }
 
 /**
- * Parse XLSX format using read-excel-file (no vulnerabilities)
+ * Parse XLSX format using xlsx library (fallback for files with inline strings)
  */
-async function parseXlsxFormat(file: File): Promise<ParsedWorkbook> {
+async function parseXlsxFormatWithXlsxLib(arrayBuffer: ArrayBuffer): Promise<ParsedWorkbook> {
+  const XLSX = await import('xlsx');
+  const workbook = XLSX.read(arrayBuffer, { type: 'array', cellText: false, cellDates: true });
+  
+  const sheetNames: string[] = workbook.SheetNames || [];
+  
+  if (!sheetNames || sheetNames.length === 0) {
+    console.warn('[XlsxRenderer] No sheets found in XLSX file (xlsx lib)');
+    return { sheets: [], sheetNames: [] };
+  }
+  
+  const sheets = sheetNames.map((name) => {
+    try {
+      const ws = workbook.Sheets[name];
+      const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false });
+      
+      console.log(`[XlsxRenderer] Parsing XLSX sheet "${name}" (xlsx lib): ${rows?.length || 0} rows`);
+      
+      if (!rows || rows.length === 0) {
+        console.warn(`[XlsxRenderer] XLSX sheet "${name}" has no rows`);
+        return { headers: [], data: [] };
+      }
+      
+      // Extract headers from first row
+      const firstRow = rows[0] || [];
+      const headers = (firstRow as any[]).map((h, idx) => {
+        const headerValue = h == null || h === '' ? `Column ${idx + 1}` : String(h);
+        return headerValue;
+      });
+      
+      // Filter out completely empty rows
+      const dataRows = rows.slice(1).filter((row) => {
+        return row && Array.isArray(row) && row.some((cell) => cell != null && cell !== '');
+      });
+      
+      console.log(`[XlsxRenderer] XLSX sheet "${name}" (xlsx lib): ${headers.length} headers, ${dataRows.length} data rows`);
+      
+      const data = dataRows.map((row) => {
+        const obj: Record<string, any> = {};
+        headers.forEach((header, i) => {
+          let value = (row as any[])[i];
+          if (value instanceof Date) {
+            value = value.toLocaleDateString();
+          }
+          obj[header] = value ?? '';
+        });
+        return obj;
+      });
+      
+      return { headers, data };
+    } catch (err) {
+      console.error(`[XlsxRenderer] Error parsing XLSX sheet "${name}" (xlsx lib):`, err);
+      return { headers: [], data: [] };
+    }
+  });
+  
+  console.log('[XlsxRenderer] Parsed XLSX workbook (xlsx lib):', {
+    sheetCount: sheets.length,
+    sheetsWithData: sheets.filter(s => s.headers.length > 0 || s.data.length > 0).length
+  });
+  
+  return { sheets, sheetNames };
+}
+
+/**
+ * Parse XLSX format using read-excel-file (no vulnerabilities)
+ * Falls back to xlsx library if inline strings are encountered
+ */
+async function parseXlsxFormat(file: File, arrayBuffer: ArrayBuffer): Promise<ParsedWorkbook> {
   const readXlsxFile = (await import('read-excel-file')).default;
   const readSheetNames = (await import('read-excel-file')).readSheetNames;
 
-  const sheetNames = await readSheetNames(file);
-  
-  const sheets = await Promise.all(
-    sheetNames.map(async (sheetName) => {
-      try {
-        const rows = await readXlsxFile(file, { sheet: sheetName });
-        
-        if (!rows || rows.length === 0) {
+  try {
+    const sheetNames = await readSheetNames(file);
+    
+    if (!sheetNames || sheetNames.length === 0) {
+      console.warn('[XlsxRenderer] No sheets found in file');
+      return { sheets: [], sheetNames: [] };
+    }
+    
+    const sheets = await Promise.all(
+      sheetNames.map(async (sheetName) => {
+        try {
+          const rows = await readXlsxFile(file, { sheet: sheetName });
+          
+          console.log(`[XlsxRenderer] Parsing sheet "${sheetName}": ${rows?.length || 0} rows`);
+          
+          if (!rows || rows.length === 0) {
+            console.warn(`[XlsxRenderer] Sheet "${sheetName}" has no rows`);
+            return { headers: [], data: [] };
+          }
+          
+          // Extract headers from first row
+          const firstRow = rows[0] || [];
+          const headers = firstRow.map((h, idx) => {
+            const headerValue = h == null || h === '' ? `Column ${idx + 1}` : String(h);
+            return headerValue;
+          });
+          
+          // Filter out completely empty rows (where all values are null/undefined/empty)
+          const dataRows = rows.slice(1).filter((row) => {
+            return row && row.some((cell) => cell != null && cell !== '');
+          });
+          
+          console.log(`[XlsxRenderer] Sheet "${sheetName}": ${headers.length} headers, ${dataRows.length} data rows`);
+          
+          const data = dataRows.map((row) => {
+            const obj: Record<string, any> = {};
+            headers.forEach((header, i) => {
+              let value = row[i];
+              if (value instanceof Date) {
+                value = value.toLocaleDateString();
+              }
+              // Preserve null/undefined as empty string for display
+              obj[header] = value ?? '';
+            });
+            return obj;
+          });
+          
+          return { headers, data };
+        } catch (err: any) {
+          // Check if it's an inline string error
+          const errorMessage = err?.message || String(err);
+          if (errorMessage.includes('inline string') || errorMessage.includes('inlineStr') || errorMessage.includes('inline string')) {
+            console.warn(`[XlsxRenderer] Inline string detected in sheet "${sheetName}", will fallback to xlsx library`);
+            // Throw a special error to trigger fallback
+            throw new Error('INLINE_STRING_ERROR');
+          }
+          console.error(`[XlsxRenderer] Error parsing sheet "${sheetName}":`, err);
           return { headers: [], data: [] };
         }
-        
-        const headers = rows[0].map((h, idx) => 
-          h == null || h === '' ? `Column ${idx + 1}` : String(h)
-        );
-        
-        const data = rows.slice(1).map((row) => {
-          const obj: Record<string, any> = {};
-          headers.forEach((header, i) => {
-            let value = row[i];
-            if (value instanceof Date) {
-              value = value.toLocaleDateString();
-            }
-            obj[header] = value ?? '';
-          });
-          return obj;
-        });
-        
-        return { headers, data };
-      } catch (err) {
-        console.error(`[XlsxRenderer] Error parsing sheet "${sheetName}":`, err);
-        return { headers: [], data: [] };
-      }
-    })
-  );
-  
-  return { sheets, sheetNames };
+      })
+    );
+    
+    console.log('[XlsxRenderer] Parsed workbook:', {
+      sheetCount: sheets.length,
+      sheetsWithData: sheets.filter(s => s.headers.length > 0 || s.data.length > 0).length
+    });
+    
+    return { sheets, sheetNames };
+  } catch (err: any) {
+    // Check if it's an inline string error - fallback to xlsx library
+    const errorMessage = err?.message || String(err);
+    if (errorMessage.includes('inline string') || errorMessage.includes('inlineStr') || errorMessage === 'INLINE_STRING_ERROR') {
+      console.warn('[XlsxRenderer] File contains inline strings, falling back to xlsx library');
+      return await parseXlsxFormatWithXlsxLib(arrayBuffer);
+    }
+    // Re-throw other errors
+    throw err;
+  }
 }
 
 /**
@@ -122,27 +232,56 @@ async function parseXlsFormat(arrayBuffer: ArrayBuffer): Promise<ParsedWorkbook>
   
   const sheetNames: string[] = workbook.SheetNames || [];
   
+  if (!sheetNames || sheetNames.length === 0) {
+    console.warn('[XlsxRenderer] No sheets found in XLS file');
+    return { sheets: [], sheetNames: [] };
+  }
+  
   const sheets = sheetNames.map((name) => {
-    const ws = workbook.Sheets[name];
-    const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
-    
-    if (!rows || rows.length === 0) {
+    try {
+      const ws = workbook.Sheets[name];
+      const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+      
+      console.log(`[XlsxRenderer] Parsing XLS sheet "${name}": ${rows?.length || 0} rows`);
+      
+      if (!rows || rows.length === 0) {
+        console.warn(`[XlsxRenderer] XLS sheet "${name}" has no rows`);
+        return { headers: [], data: [] };
+      }
+      
+      // Extract headers from first row
+      const firstRow = rows[0] || [];
+      const headers = (firstRow as any[]).map((h, idx) => {
+        const headerValue = h == null || h === '' ? `Column ${idx + 1}` : String(h);
+        return headerValue;
+      });
+      
+      // Filter out completely empty rows
+      const dataRows = rows.slice(1).filter((row) => {
+        return row && Array.isArray(row) && row.some((cell) => cell != null && cell !== '');
+      });
+      
+      console.log(`[XlsxRenderer] XLS sheet "${name}": ${headers.length} headers, ${dataRows.length} data rows`);
+      
+      const data = dataRows.map((row) => {
+        const obj: Record<string, any> = {};
+        headers.forEach((header, i) => {
+          const value = (row as any[])[i];
+          obj[header] = value ?? '';
+        });
+        return obj;
+      });
+      
+      return { headers, data };
+    } catch (err) {
+      console.error(`[XlsxRenderer] Error parsing XLS sheet "${name}":`, err);
       return { headers: [], data: [] };
     }
-    
-    const headers = (rows[0] as any[]).map((h, idx) => 
-      h == null || h === '' ? `Column ${idx + 1}` : String(h)
-    );
-    
-    const data = rows.slice(1).map((row) => {
-      const obj: Record<string, any> = {};
-      headers.forEach((header, i) => {
-        obj[header] = (row as any[])[i] ?? '';
-      });
-      return obj;
-    });
-    
-    return { headers, data };
+  });
+  
+  console.log('[XlsxRenderer] Parsed XLS workbook:', {
+    sheetCount: sheets.length,
+    sheetsWithData: sheets.filter(s => s.headers.length > 0 || s.data.length > 0).length
   });
   
   return { sheets, sheetNames };
@@ -228,10 +367,11 @@ export function XlsxRenderer({
         
         if (format === 'xlsx') {
           // Use read-excel-file for XLSX (modern format, no vulnerabilities)
+          // Falls back to xlsx library if inline strings are encountered
           const file = new File([arrayBuffer], fileName || 'spreadsheet.xlsx', { 
             type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
           });
-          result = await parseXlsxFormat(file);
+          result = await parseXlsxFormat(file, arrayBuffer);
         } else if (format === 'xls') {
           // Use xlsx library for XLS (old format, required for compatibility)
           result = await parseXlsFormat(arrayBuffer);
@@ -240,7 +380,21 @@ export function XlsxRenderer({
         }
 
         if (!cancelled) {
-          setParsed(result);
+          console.log('[XlsxRenderer] Parse result:', {
+            sheetCount: result.sheets.length,
+            sheetNames: result.sheetNames,
+            sheetsWithHeaders: result.sheets.filter(s => s.headers.length > 0).length,
+            sheetsWithData: result.sheets.filter(s => s.data.length > 0).length
+          });
+          
+          // Validate parsed result
+          if (!result.sheets || result.sheets.length === 0) {
+            console.warn('[XlsxRenderer] No sheets parsed from file');
+            setError('No sheets found in spreadsheet');
+            setParsed({ sheets: [], sheetNames: [] });
+          } else {
+            setParsed(result);
+          }
           setIsLoading(false);
         }
       } catch (e: any) {
@@ -319,7 +473,8 @@ export function XlsxRenderer({
     );
   }
 
-  if (error || (parsed.sheets.length === 0 || currentSheet.data.length === 0)) {
+  // Show error state if there's an error or no sheets were parsed
+  if (error || parsed.sheets.length === 0 || parsed.sheetNames.length === 0) {
     return (
       <div className={cn('w-full h-full flex items-center justify-center', className)}>
         <div className="text-center space-y-3">
@@ -328,8 +483,29 @@ export function XlsxRenderer({
           </div>
           <div>
             <h3 className="text-lg font-medium text-foreground">{error ? 'Failed to load spreadsheet' : 'No Data'}</h3>
-            {!error && <p className="text-sm text-muted-foreground">This sheet appears to be empty.</p>}
+            {!error && <p className="text-sm text-muted-foreground">This spreadsheet appears to be empty or could not be parsed.</p>}
             {error && <p className="text-xs text-muted-foreground">{error}</p>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show empty state only if current sheet has no headers AND no data
+  // If it has headers but no data, we should still show the table structure
+  const hasHeaders = currentSheet.headers.length > 0;
+  const hasData = currentSheet.data.length > 0;
+  
+  if (!hasHeaders && !hasData) {
+    return (
+      <div className={cn('w-full h-full flex items-center justify-center', className)}>
+        <div className="text-center space-y-3">
+          <div className="w-16 h-16 mx-auto rounded-full bg-muted flex items-center justify-center">
+            <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <div>
+            <h3 className="text-lg font-medium text-foreground">No Data</h3>
+            <p className="text-sm text-muted-foreground">This sheet appears to be empty.</p>
           </div>
         </div>
       </div>
@@ -338,7 +514,7 @@ export function XlsxRenderer({
 
   return (
     <div className={cn('w-full h-full flex flex-col bg-background', className)}>
-      <div className="flex-shrink-0 border-b bg-muted/30 p-4 space-y-3">
+      <div className="shrink-0 border-b bg-muted/30 p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5 text-primary" />
@@ -434,7 +610,7 @@ export function XlsxRenderer({
       </div>
 
       {totalPages > 1 && (
-        <div className="flex-shrink-0 border-t bg-muted/30 p-4">
+        <div className="shrink-0 border-t bg-muted/30 p-4">
           <div className="flex items-center justify-between">
             <div className="text-sm text-muted-foreground">
               Showing {startIndex + 1} to {Math.min(startIndex + rowsPerPage, processedData.length)} of {processedData.length.toLocaleString()} rows

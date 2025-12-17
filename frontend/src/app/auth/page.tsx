@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { ReferralCodeDialog } from '@/components/referrals/referral-code-dialog';
+import { isElectron, getAuthOrigin } from '@/lib/utils/is-electron';
 
 // Lazy load heavy components
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
@@ -94,8 +95,13 @@ function LoginContent() {
 
     const finalReturnUrl = returnUrl || '/dashboard';
     formData.append('returnUrl', finalReturnUrl);
-    formData.append('origin', window.location.origin);
+    // Use custom protocol for Electron, standard origin for web
+    formData.append('origin', isElectron() ? getAuthOrigin() : window.location.origin);
     formData.append('acceptedTerms', acceptedTerms.toString());
+    // Flag for Electron to use custom callback handling
+    if (isElectron()) {
+      formData.append('isDesktopApp', 'true');
+    }
 
     const result = await signUp(prevState, formData);
 
@@ -187,9 +193,14 @@ function LoginContent() {
     const finalReturnUrl = returnUrl || '/dashboard';
     formData.append('email', email);
     formData.append('returnUrl', finalReturnUrl);
-    formData.append('origin', window.location.origin);
+    // Use custom protocol for Electron, standard origin for web
+    formData.append('origin', isElectron() ? getAuthOrigin() : window.location.origin);
     // If email is already known from expired link, assume terms were already accepted
     formData.append('acceptedTerms', 'true');
+    // Flag for Electron to use custom callback handling
+    if (isElectron()) {
+      formData.append('isDesktopApp', 'true');
+    }
 
     const result = await resendMagicLink(prevState, formData);
 

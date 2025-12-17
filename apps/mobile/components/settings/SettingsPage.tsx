@@ -35,7 +35,6 @@ import { ThemePage } from './ThemePage';
 import { BetaPage } from './BetaPage';
 import { BillingPage } from './BillingPage';
 import { PlanPage } from './PlanPage';
-import { CreditsPurchasePage } from './CreditsPurchasePage';
 import { UsagePage } from './UsagePage';
 import { AccountDeletionPage } from './AccountDeletionPage';
 import { SettingsHeader } from './SettingsHeader';
@@ -64,7 +63,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const [isBetaPageVisible, setIsBetaPageVisible] = React.useState(false);
   const [isPlanPageVisible, setIsPlanPageVisible] = React.useState(false);
   const [isBillingPageVisible, setIsBillingPageVisible] = React.useState(false);
-  const [isCreditsPurchasePageVisible, setIsCreditsPurchasePageVisible] = React.useState(false);
   const [isUsagePageVisible, setIsUsagePageVisible] = React.useState(false);
   const [isAccountDeletionPageVisible, setIsAccountDeletionPageVisible] = React.useState(false);
   const [isIntegrationsPageVisible, setIsIntegrationsPageVisible] = React.useState(false);
@@ -254,8 +252,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
               onPress={handleBeta}
             />
 
-            {!isGuest && <View className="my-2 h-px bg-border" />}
-
             {!isGuest && (
               <SettingsItem
                 icon={Trash2}
@@ -266,7 +262,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
                 }
                 onPress={handleAccountDeletion}
                 showBadge={deletionStatus?.has_pending_deletion}
-                destructive
               />
             )}
             {!isGuest && (
@@ -275,7 +270,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
                 label={t('settings.signOut')}
                 onPress={handleSignOut}
                 isLoading={isSigningOut}
-                destructive
               />
             )}
           </View>
@@ -341,12 +335,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
             }
           }}
         />
-      </AnimatedPageWrapper>
-
-      <AnimatedPageWrapper
-        visible={isCreditsPurchasePageVisible}
-        onClose={() => setIsCreditsPurchasePageVisible(false)}>
-        <CreditsPurchasePage visible onClose={() => setIsCreditsPurchasePageVisible(false)} />
       </AnimatedPageWrapper>
 
       <AnimatedPageWrapper

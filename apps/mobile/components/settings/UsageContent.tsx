@@ -18,11 +18,11 @@ import { useThreadUsage } from '@/lib/billing';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { formatCredits } from '@/lib/utils/credit-formatter';
 import { DateRangePicker, type DateRange } from '@/components/billing/DateRangePicker';
+import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
 
 interface UsageContentProps {
   onThreadPress?: (threadId: string, projectId: string | null) => void;
   onUpgradePress?: () => void;
-  onTopUpPress?: () => void;
 }
 
 function formatDate(dateString: string): string {
@@ -91,9 +91,10 @@ function formatSingleDate(date: Date, formatStr: string): string {
   return `${month} ${day}`;
 }
 
-export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: UsageContentProps) {
+export function UsageContent({ onThreadPress, onUpgradePress }: UsageContentProps) {
   const { t } = useLanguage();
   const { subscriptionData, hasFreeTier } = useBillingContext();
+  const { useNativePaywall, presentUpgradePaywall } = useUpgradePaywall();
 
   // Thread Usage State
   const [threadOffset, setThreadOffset] = React.useState(0);
@@ -200,7 +201,17 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
             </Pressable>
           ) : isUltraTier ? (
             <Pressable
-              onPress={onTopUpPress}
+              onPress={async () => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                // Use RevenueCat paywall for top-ups
+                if (useNativePaywall) {
+                  console.log('📱 Using RevenueCat paywall for top-ups');
+                  await presentUpgradePaywall();
+                } else {
+                  // Fallback to upgrade press if RevenueCat not available
+                  onUpgradePress?.();
+                }
+              }}
               className="mt-4 rounded-full bg-primary px-6 py-2.5 active:opacity-80">
               <Text className="font-roobert-semibold text-sm text-primary-foreground">
                 {t('usage.topUp', 'Top Up')}
