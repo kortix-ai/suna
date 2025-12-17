@@ -426,6 +426,53 @@ export function AgentDrawer({
         )}
       </View>
 
+      {/* Integrations Button - Always visible */}
+      <AnimatedPressable
+        style={[
+          integrationsAnimatedStyle,
+          {
+            borderColor: hasFreeTier
+              ? colorScheme === 'dark'
+                ? '#22c55e'
+                : '#16a34a'
+              : colorScheme === 'dark'
+                ? '#454444'
+                : '#c2c2c2',
+            borderWidth: hasFreeTier ? 1.5 : 1,
+            backgroundColor: hasFreeTier
+              ? colorScheme === 'dark'
+                ? 'rgba(34, 197, 94, 0.1)'
+                : 'rgba(22, 163, 74, 0.1)'
+              : 'transparent',
+          },
+        ]}
+        className="mt-4 h-16 flex-1 flex-row items-center justify-center gap-2 rounded-2xl"
+        onPress={handleIntegrationsPress}
+        onPressIn={handleIntegrationsPressIn}
+        onPressOut={handleIntegrationsPressOut}>
+        {hasFreeTier ? (
+          <Lock size={18} color={colorScheme === 'dark' ? '#22c55e' : '#16a34a'} />
+        ) : (
+          <AppBubble />
+        )}
+        <Text
+          className="font-roobert-medium"
+          style={{
+            color: hasFreeTier
+              ? colorScheme === 'dark'
+                ? '#22c55e'
+                : '#16a34a'
+              : colorScheme === 'dark'
+                ? '#f8f8f8'
+                : '#121215',
+          }}>
+          {t('integrations.connectApps')}
+        </Text>
+      </AnimatedPressable>
+      <View
+        style={{ backgroundColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0' }}
+        className="my-3 h-px w-full"
+      />
       {advancedFeaturesEnabled && (
         <>
           <TouchableOpacity

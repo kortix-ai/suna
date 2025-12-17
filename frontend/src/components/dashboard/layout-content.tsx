@@ -41,6 +41,10 @@ const PresenceDebug = lazy(() =>
   import('@/components/debug/presence-debug').then(mod => ({ default: mod.PresenceDebug }))
 );
 
+const KortixDesktopBanner = lazy(() => 
+  import('@/components/announcements/kortix-desktop-banner').then(mod => ({ default: mod.KortixDesktopBanner }))
+);
+
 // Skeleton shell that renders immediately for FCP
 function DashboardSkeleton() {
   return (
@@ -179,6 +183,10 @@ export default function DashboardLayoutContent({
         </Suspense>
         <Suspense fallback={null}>
           <PresentationViewerWrapper />
+        </Suspense>
+        {/* Kortix Desktop announcement banner */}
+        <Suspense fallback={null}>
+          <KortixDesktopBanner />
         </Suspense>
       </div>
     </AppProviders>
