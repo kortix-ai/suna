@@ -69,14 +69,30 @@ async def list_users(
         
         pagination_params = PaginationParams(page=page, page_size=page_size)
         
+        tier_filtered_account_ids: Optional[List[str]] = None
+        if tier_filter:
+            tier_result = await client.from_('credit_accounts').select(
+                'account_id'
+            ).eq('tier', tier_filter).execute()
+            tier_filtered_account_ids = [item['account_id'] for item in tier_result.data or []]
+            
+            if not tier_filtered_account_ids:
+                return await PaginationService.paginate_with_total_count(
+                    items=[],
+                    total_count=0,
+                    params=pagination_params
+                )
+        
         if search_email:
-            # Escape special LIKE characters to prevent SQL injection
             safe_email = escape_like_pattern(search_email)
             email_result = await client.schema('basejump').from_('billing_customers').select(
                 'account_id'
             ).ilike('email', f'%{safe_email}%').limit(1000).execute()
             
             matching_account_ids = [item['account_id'] for item in email_result.data or []]
+            
+            if tier_filtered_account_ids is not None:
+                matching_account_ids = [aid for aid in matching_account_ids if aid in tier_filtered_account_ids]
             
             if not matching_account_ids:
                 return await PaginationService.paginate_with_total_count(
@@ -96,6 +112,18 @@ async def list_users(
             ).in_('id', matching_account_ids)
             
             total_count = len(matching_account_ids)
+        elif tier_filtered_account_ids is not None:
+            base_query = client.schema('basejump').from_('accounts').select(
+                '''
+                id,
+                created_at,
+                primary_owner_user_id,
+                billing_customers(email),
+                billing_subscriptions(status)
+                '''
+            ).in_('id', tier_filtered_account_ids)
+            
+            total_count = len(tier_filtered_account_ids)
         else:
             base_query = client.schema('basejump').from_('accounts').select(
                 '''
@@ -131,15 +159,6 @@ async def list_users(
             for credit in credit_result.data or []:
                 credit_accounts[credit['account_id']] = credit
         
-        if tier_filter:
-            filtered_data = []
-            for item in data_result.data or []:
-                credit_account = credit_accounts.get(item['id'])
-                if credit_account and credit_account.get('tier') == tier_filter:
-                    filtered_data.append(item)
-            data_result.data = filtered_data
-            total_count = len(filtered_data)
-        
         if sort_by in ["balance", "tier"]:
             def get_sort_value(item):
                 credit = credit_accounts.get(item['id'], {})
@@ -154,12 +173,8 @@ async def list_users(
                 key=get_sort_value,
                 reverse=not ascending
             )
-            if tier_filter:
-                paginated_data = data_result.data[offset:offset + pagination_params.page_size]
-            else:
-                paginated_data = data_result.data
-        else:
-            paginated_data = data_result.data or []
+        
+        paginated_data = data_result.data or []
         
         users = []
         for item in paginated_data:
