@@ -1820,9 +1820,12 @@ export default function AdminAnalyticsPage() {
   const dateString = format(distributionDate, 'yyyy-MM-dd');
   
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
-  const { data: distribution } = useMessageDistribution(dateString);
-  const { data: categoryDistribution } = useCategoryDistribution(dateString);
-  const { data: conversionFunnel, isLoading: funnelLoading } = useConversionFunnel(dateString, analyticsSource);
+  const { data: distribution, isFetching: distributionFetching } = useMessageDistribution(dateString);
+  const { data: categoryDistribution, isFetching: categoryFetching } = useCategoryDistribution(dateString);
+  const { data: conversionFunnel, isLoading: funnelLoading, isFetching: funnelFetching } = useConversionFunnel(dateString, analyticsSource);
+  
+  // Combined fetching state for the Daily Analytics card
+  const isDailyAnalyticsFetching = distributionFetching || categoryFetching || funnelFetching;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
@@ -1949,7 +1952,7 @@ export default function AdminAnalyticsPage() {
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className={`space-y-6 transition-opacity duration-200 ${isDailyAnalyticsFetching ? 'opacity-60' : 'opacity-100'}`}>
             {/* Conversion Funnel Section */}
             <div>
               <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
