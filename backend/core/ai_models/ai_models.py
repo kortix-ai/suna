@@ -20,6 +20,7 @@ class ModelCapability(Enum):
     WEB_SEARCH = "web_search"
     THINKING = "thinking"
     STRUCTURED_OUTPUT = "structured_output"
+    PROMPT_CACHING = "prompt_caching"
 
 
 @dataclass
@@ -80,9 +81,18 @@ class ModelConfig:
 
 @dataclass
 class Model:
+    # Registry ID - internal identifier (e.g., "kortix/basic")
     id: str
+    
+    # Display name - shown to users (e.g., "Kortix Basic")
     name: str
+    
     provider: ModelProvider
+    
+    # LiteLLM model ID - what gets passed to LiteLLM (e.g., Bedrock ARN or Anthropic API ID)
+    # If None, defaults to id
+    litellm_model_id: Optional[str] = None
+    
     aliases: List[str] = field(default_factory=list)
     context_window: int = 128_000
     max_output_tokens: Optional[int] = None
@@ -95,8 +105,13 @@ class Model:
     priority: int = 0
     recommended: bool = False
     
-    # NEW: Centralized model configuration
+    # Centralized model configuration
     config: Optional[ModelConfig] = None
+    
+    def __post_init__(self):
+        # Default litellm_model_id to id if not provided
+        if self.litellm_model_id is None:
+            self.litellm_model_id = self.id
     
     def __post_init__(self):        
         if ModelCapability.CHAT not in self.capabilities:
@@ -128,7 +143,7 @@ class Model:
         """Get complete LiteLLM parameters for this model, including all configuration."""
         # Start with intelligent defaults
         params = {
-            "model": self.id,
+            "model": self.litellm_model_id,
             "num_retries": 5,
         }
         
@@ -175,10 +190,10 @@ class Model:
         return params
     
     def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict for API responses. Excludes internal fields like litellm_model_id and provider."""
         return {
             "id": self.id,
             "name": self.name,
-            "provider": self.provider.value,
             "aliases": self.aliases,
             "context_window": self.context_window,
             "max_output_tokens": self.max_output_tokens,
@@ -186,14 +201,10 @@ class Model:
             "pricing": {
                 "input_cost_per_million_tokens": self.pricing.input_cost_per_million_tokens,
                 "output_cost_per_million_tokens": self.pricing.output_cost_per_million_tokens,
-                "cached_read_cost_per_million_tokens": self.pricing.cached_read_cost_per_million_tokens,
-                "cache_write_5m_cost_per_million_tokens": self.pricing.cache_write_5m_cost_per_million_tokens,
-                "cache_write_1h_cost_per_million_tokens": self.pricing.cache_write_1h_cost_per_million_tokens,
             } if self.pricing else None,
             "enabled": self.enabled,
             "beta": self.beta,
             "tier_availability": self.tier_availability,
-            "metadata": self.metadata,
             "priority": self.priority,
             "recommended": self.recommended,
         } 

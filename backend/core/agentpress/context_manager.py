@@ -211,10 +211,14 @@ class ContextManager:
             try:
                 bedrock_client = self._get_bedrock_client()
                 if bedrock_client:
+                    # Import Kimi K2 profile ID
+                    from core.ai_models.registry import KIMI_K2_PROFILE_ID
+                    
                     model_id_mapping = {
-                        "heol2zyy5v48": "anthropic.claude-haiku-4-5-20251001-v1:0",  # HAIKU 4.5 (Basic Mode)
+                        KIMI_K2_PROFILE_ID: "moonshot.kimi-k2-thinking",  # Kimi K2 (Basic Mode)
                         "few7z4l830xh": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",  # Sonnet 4.5 (Power Mode)
                         "tyj1ks3nj9qf": "anthropic.claude-sonnet-4-20250514-v1:0",  # Sonnet 4
+                        "heol2zyy5v48": "anthropic.claude-haiku-4-5-20251001-v1:0",  # HAIKU 4.5 (Legacy - replaced by Kimi K2)
                     }
                     
                     # Extract profile ID from ARN
@@ -224,7 +228,9 @@ class ContextManager:
                         bedrock_model_id = model_id_mapping.get(profile_id)
                     
                     if not bedrock_model_id:
-                        bedrock_model_id = "anthropic.claude-haiku-4-5-20251001-v1:0"  # Default to HAIKU 4.5
+                        # Import Kimi K2 profile ID for default
+                        from core.ai_models.registry import KIMI_K2_PROFILE_ID
+                        bedrock_model_id = model_id_mapping.get(KIMI_K2_PROFILE_ID, "moonshot.kimi-k2-thinking")  # Default to Kimi K2
                     
                     # Clean content blocks for Bedrock Converse API
                     def clean_content_for_bedrock(content):
