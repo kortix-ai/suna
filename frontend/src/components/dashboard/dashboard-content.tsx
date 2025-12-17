@@ -38,6 +38,8 @@ import { useTranslations } from 'next-intl';
 import { NotificationDropdown } from '../notifications/notification-dropdown';
 import { UsageLimitsPopover } from './usage-limits-popover';
 import { useSidebar } from '@/components/ui/sidebar';
+import { useWelcomeBannerStore } from '@/stores/welcome-banner-store';
+import { cn } from '@/lib/utils';
 
 // Lazy load heavy components that aren't immediately visible
 const PlanSelectionModal = lazy(() => 
@@ -164,6 +166,7 @@ export function DashboardContent() {
   const isMobile = useIsMobile();
   const { user } = useAuth();
   const { setOpen: setSidebarOpen } = useSidebar();
+  const { isVisible: isWelcomeBannerVisible } = useWelcomeBannerStore();
   const chatInputRef = React.useRef<ChatInputHandles>(null);
   const initiateAgentMutation = useInitiateAgentWithInvalidation();
   const pricingModalStore = usePricingModalStore();
@@ -635,7 +638,10 @@ export function DashboardContent() {
       </Suspense>
 
       <div className="flex flex-col h-screen w-full overflow-hidden relative">
-        <div className="absolute flex items-center gap-2 top-4 right-4">
+        <div className={cn(
+          "absolute flex items-center gap-2 right-4 transition-[top] duration-200",
+          isWelcomeBannerVisible ? "top-14" : "top-4"
+        )}>
         <NotificationDropdown />
           <Suspense fallback={<div className="h-8 w-20 bg-muted/30 rounded animate-pulse" />}>
             <CreditsDisplay />

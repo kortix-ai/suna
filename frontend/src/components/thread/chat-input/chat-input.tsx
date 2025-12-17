@@ -368,11 +368,8 @@ const IntegrationsDropdown = memo(function IntegrationsDropdown({
             className="h-10 w-10 p-0 bg-transparent border-[1.5px] border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
             disabled={loading || (disabled && !isAgentRunning)}
             onClick={() => {
-              if (!isFreeTier || isLocalMode()) {
-                onOpenRegistry(null);
-              } else {
-                onOpenPlanModal();
-              }
+              // Always open registry - free tier users will see "Upgrade" buttons instead of "Connect"
+              onOpenRegistry(null);
             }}
           >
             <IntegrationLogosCarousel enabled={isLoggedIn && !loading && !(disabled && !isAgentRunning)} />
