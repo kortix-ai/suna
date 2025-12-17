@@ -477,7 +477,7 @@ export function ThreadPage({
           <ScrollView
             ref={scrollViewRef}
             className="flex-1"
-            showsVerticalScrollIndicator={false}
+            showsVerticalScrollIndicator={true}
             contentContainerStyle={{
               flexGrow: 1,
               paddingTop: Math.max(insets.top, 16) + 80,
@@ -494,7 +494,7 @@ export function ThreadPage({
               autoscrollToTopThreshold: 100,
             }}
             removeClippedSubviews={false}
-            scrollsToTop={false}
+            scrollsToTop={true}
             refreshControl={
               <RefreshControl
                 refreshing={isRefreshing}
@@ -744,10 +744,10 @@ export function ThreadPage({
           project={
             fullThreadData?.project
               ? {
-                  id: fullThreadData.project.id,
-                  name: fullThreadData.project.name,
-                  sandbox: fullThreadData.project.sandbox,
-                }
+                id: fullThreadData.project.id,
+                name: fullThreadData.project.name,
+                sandbox: fullThreadData.project.sandbox,
+              }
               : undefined
           }
           isLoading={isLoading}
