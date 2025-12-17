@@ -125,6 +125,21 @@ function parseFilePath(path: string): FileAttachment {
   return { path, type, name, extension };
 }
 
+function normalizeSandboxWorkspacePath(inputPath: string): string {
+  const raw = (inputPath || '').trim();
+  if (!raw) return '/workspace/';
+  // If it already looks like a workspace path, just ensure leading slash.
+  if (raw.startsWith('/workspace/')) return raw;
+  if (raw.startsWith('workspace/')) return `/${raw}`;
+
+  // Ensure leading slash first.
+  const withLeadingSlash = raw.startsWith('/') ? raw : `/${raw}`;
+  // If it's not already under /workspace/, assume it's relative to the sandbox workspace.
+  return withLeadingSlash.startsWith('/workspace/')
+    ? withLeadingSlash
+    : `/workspace${withLeadingSlash}`;
+}
+
 /**
  * Main File Attachment Renderer Component
  */
@@ -230,51 +245,92 @@ function ImageAttachment({
   const [blobUrl, setBlobUrl] = useState<string | undefined>();
 
   useEffect(() => {
-    if (sandboxId && file.path) {
-      let filePath = file.path;
-      if (!filePath.startsWith('/')) {
-        filePath = '/workspace/' + filePath;
+    let isCancelled = false;
+    const abortController = new AbortController();
+
+    const run = async () => {
+      setHasError(false);
+
+      // Non-sandbox images can render directly
+      if (!sandboxId) {
+        setBlobUrl(file.path);
+        return;
       }
 
-      const fetchImage = async () => {
-        try {
-          const token = await getAuthToken();
-          const url = `${process.env.EXPO_PUBLIC_BACKEND_URL}/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(filePath)}`;
-          console.log('[ImageAttachment] Fetching image:', { url, filePath, sandboxId });
+      // If we already have a blob URL, don't refetch.
+      if (blobUrl) return;
 
-          const response = await fetch(url, {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-            },
-          });
+      const apiUrl = process.env.EXPO_PUBLIC_BACKEND_URL;
+      const normalizedPath = normalizeSandboxWorkspacePath(file.path);
+      const url = `${apiUrl}/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(normalizedPath)}`;
 
-          if (!response.ok) {
-            console.error('[ImageAttachment] Fetch failed:', response.status, response.statusText);
-            throw new Error(`Failed to fetch image: ${response.status}`);
-          }
+      if (__DEV__) {
+        // Per your rule: print the full data objects so you can paste them back.
+        console.log('[ImageAttachment] fetch context:', {
+          file,
+          originalPath: file.path,
+          normalizedPath,
+          sandboxId,
+          apiUrl,
+          url,
+        });
+      }
 
-          const blob = await response.blob();
-          console.log('[ImageAttachment] Blob received:', blob.size, blob.type);
+      try {
+        const token = await getAuthToken();
 
-          import('@/lib/files/hooks').then(({ blobToDataURL }) => {
-            blobToDataURL(blob).then((url) => {
-              console.log('[ImageAttachment] Blob URL created');
-              setBlobUrl(url);
-            }).catch((err) => {
-              console.error('[ImageAttachment] blobToDataURL failed:', err);
-            });
-          });
-        } catch (error) {
-          console.error('[ImageAttachment] Failed to fetch:', error);
-          setHasError(true);
+        const response = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: abortController.signal,
+        });
+
+        if (!response.ok) {
+          const errorInfo = {
+            status: response.status,
+            statusText: response.statusText,
+            url,
+            normalizedPath,
+            sandboxId,
+            file,
+          };
+          console.error('[ImageAttachment] Fetch failed:', errorInfo);
+          if (!isCancelled) setHasError(true);
+          return;
         }
-      };
 
-      fetchImage();
-    } else {
-      setBlobUrl(file.path);
-    }
-  }, [sandboxId, file.path]);
+        const blob = await response.blob();
+        if (__DEV__) {
+          console.log('[ImageAttachment] Blob received:', {
+            size: blob.size,
+            type: blob.type,
+            normalizedPath,
+          });
+        }
+
+        const { blobToDataURL } = await import('@/lib/files/hooks');
+        const dataUrl = await blobToDataURL(blob);
+        if (__DEV__) console.log('[ImageAttachment] Data URL created');
+        if (!isCancelled) setBlobUrl(dataUrl);
+      } catch (error) {
+        // Abort is expected on unmount; don't treat as an error.
+        if ((error as any)?.name === 'AbortError') return;
+        console.error('[ImageAttachment] Failed to fetch:', {
+          error,
+          url,
+          normalizedPath,
+          sandboxId,
+          file,
+        });
+        if (!isCancelled) setHasError(true);
+      }
+    };
+
+    run();
+    return () => {
+      isCancelled = true;
+      abortController.abort();
+    };
+  }, [sandboxId, file.path, blobUrl]);
 
   const imageUrl = blobUrl || file.path;
 

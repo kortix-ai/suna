@@ -1,12 +1,5 @@
 import * as React from 'react';
 import { View, Dimensions, Pressable, Platform, ScrollView } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  interpolate,
-  Extrapolation,
-  withSpring,
-} from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';

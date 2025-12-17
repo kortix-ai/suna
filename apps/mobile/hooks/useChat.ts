@@ -137,7 +137,7 @@ export function useChat(): UseChatReturn {
     initialIndex: number;
   } | null>(null);
   const [isAttachmentDrawerVisible, setIsAttachmentDrawerVisible] = useState(false);
-  const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>('image');
+  const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>('slides');
   const [selectedQuickActionOption, setSelectedQuickActionOption] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [modeViewState, setModeViewState] = useState<'thread-list' | 'thread'>('thread-list');

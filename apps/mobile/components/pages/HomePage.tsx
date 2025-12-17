@@ -5,7 +5,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { ChatInputSection, ChatDrawers, type ChatInputSectionRef } from '@/components/chat';
 import { QUICK_ACTIONS, ModeThreadListView } from '@/components/quick-actions';
-import { TopNav } from '@/components/home';
+import { TopNav, BackgroundLogo } from '@/components/home';
 import { useRouter } from 'expo-router';
 import { UsageDrawer } from '@/components/settings/UsageDrawer';
 import { useChatCommons } from '@/hooks';
@@ -22,6 +22,7 @@ interface HomePageProps {
     workerId: string,
     view?: 'instructions' | 'tools' | 'integrations' | 'triggers'
   ) => void;
+  showThreadListView?: boolean; // Flag to show ModeThreadListView instead of BackgroundLogo
 }
 
 export interface HomePageRef {
@@ -29,7 +30,7 @@ export interface HomePageRef {
 }
 
 export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
-  ({ onMenuPress, chat, isAuthenticated, onOpenWorkerConfig: externalOpenWorkerConfig }, ref) => {
+  ({ onMenuPress, chat, isAuthenticated, onOpenWorkerConfig: externalOpenWorkerConfig, showThreadListView = false }, ref) => {
     const router = useRouter();
     const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
 
@@ -211,13 +212,17 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
               onCreditsPress={handleCreditsPress}
             />
 
-            {/* Swipeable content area - Always show thread list for current mode */}
+            {/* Content Area - Show either thread list or background logo */}
             <GestureDetector gesture={panGesture}>
               <View className="flex-1">
-                <ModeThreadListView
-                  modeId={chat.selectedQuickAction || 'image'}
-                  onThreadPress={handleQuickActionThreadPress}
-                />
+                {showThreadListView ? (
+                  <ModeThreadListView
+                    modeId={chat.selectedQuickAction || 'slides'}
+                    onThreadPress={handleQuickActionThreadPress}
+                  />
+                ) : (
+                  <BackgroundLogo />
+                )}
               </View>
             </GestureDetector>
 

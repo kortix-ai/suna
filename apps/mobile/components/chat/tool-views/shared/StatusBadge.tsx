@@ -2,11 +2,11 @@ import React from 'react';
 import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { CheckCircle2, AlertCircle, Loader2, LucideIcon } from 'lucide-react-native';
+import { CheckCircle2, AlertCircle, Loader2, LucideIcon, AlertTriangle } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 
 interface StatusBadgeProps {
-  variant: 'success' | 'error' | 'streaming';
+  variant: 'success' | 'error' | 'streaming' | 'warning' | 'outline';
   label?: string;
   icon?: LucideIcon;
   className?: string;
@@ -46,7 +46,27 @@ export function StatusBadge({
           border: isDark ? 'border-blue-800/50' : 'border-blue-200',
           defaultIcon: Loader2,
         };
+      case 'warning':
+        return {
+          bg: isDark ? 'bg-amber-900/60' : 'bg-amber-100',
+          text: isDark ? 'text-amber-300' : 'text-amber-700',
+          border: isDark ? 'border-amber-800/50' : 'border-amber-200',
+          defaultIcon: AlertTriangle,
+        };
+      case 'outline':
+        return {
+          bg: isDark ? 'bg-white/0' : 'bg-black/0',
+          text: 'text-muted-foreground',
+          border: isDark ? 'border-white/15' : 'border-black/10',
+          defaultIcon: undefined,
+        };
     }
+    return {
+      bg: isDark ? 'bg-white/0' : 'bg-black/0',
+      text: 'text-muted-foreground',
+      border: isDark ? 'border-white/15' : 'border-black/10',
+      defaultIcon: undefined,
+    };
   };
 
   const styles = getVariantStyles();
@@ -68,13 +88,13 @@ export function StatusBadge({
             size={14}
             className={`${styles.text} animate-spin`}
           />
-        ) : (
+        ) : IconComponent ? (
           <Icon
             as={IconComponent}
             size={14}
             className={styles.text}
           />
-        )}
+        ) : null}
       </View>
     );
   }
@@ -89,13 +109,13 @@ export function StatusBadge({
           size={14}
           className={`${styles.text} animate-spin`}
         />
-      ) : (
+      ) : IconComponent ? (
         <Icon
           as={IconComponent}
           size={14}
           className={styles.text}
         />
-      )}
+      ) : null}
       {label && (
         <Text className={`text-xs font-roobert-medium ${styles.text}`}>
           {label}

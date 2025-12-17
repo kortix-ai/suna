@@ -174,6 +174,7 @@ export default function AppScreen() {
             chat={chat}
             isAuthenticated={canSendMessages}
             onOpenWorkerConfig={handleOpenWorkerConfigFromAgentDrawer}
+            showThreadListView={false}
           />
         )}
       </Drawer>
