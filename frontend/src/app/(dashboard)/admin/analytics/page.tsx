@@ -1447,17 +1447,20 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       {/* Visitors */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.visitors)}</td>
                       <td className={`text-right p-2 font-medium ${hasActual && actual.views >= month.visitors ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.views > 0 ? formatNumber(actual.views) : '—'}
+                        {actual.views > 0 ? formatNumber(actual.views + 78313) : '—'}
+                         {/* added dec 1 to 14 data to actual.views */}
                       </td>
                       {/* Signups */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.signups)}</td>
                       <td className={`text-right p-2 font-medium ${hasActual && actual.signups >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.signups > 0 ? formatNumber(actual.signups) : '—'}
+                        {actual.signups > 0 ? formatNumber(actual.signups + 18699) : '—'}
+                        {/* added dec 1 to 14 data to actual.signups */}
                       </td>
                       {/* New Paid */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.newPaid)}</td>
                       <td className={`text-right p-2 font-medium ${hasActual && actual.newPaid >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.newPaid > 0 ? formatNumber(actual.newPaid) : '—'}
+                        {actual.newPaid > 0 ? formatNumber(actual.newPaid + 233) : '—'}
+                        {/* added dec 1 to 14 data to actual.newPaid */}
                       </td>
                       {/* Total Subs */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.totalSubs)}</td>
