@@ -36,7 +36,8 @@ class JITConfig:
         elif isinstance(tool_config, dict):
             result = tool_config.get('enabled', True)
         else:
-            result = False
+            # Tool not in config - default to True (allow unless explicitly disabled)
+            result = True
         
         return result
     

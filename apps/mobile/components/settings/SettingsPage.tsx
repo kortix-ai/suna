@@ -246,8 +246,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
               onPress={handleBeta}
             />
 
-            {!isGuest && <View className="my-2 h-px bg-border" />}
-
             {!isGuest && (
               <SettingsItem
                 icon={Trash2}

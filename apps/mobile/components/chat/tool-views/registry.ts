@@ -54,6 +54,7 @@ import { LoadImageToolView } from './load-image-tool/LoadImageToolView';
 import { PresentationToolView } from './presentation-tool/PresentationToolView';
 import { ListPresentationsToolView } from './list-presentations-tool/ListPresentationsToolView';
 import { ExportToolView } from './export-tool/ExportToolView';
+import { RealityDefenderToolView } from './reality-defender-tool/RealityDefenderToolView';
 
 /**
  * Registry mapping tool names to their view components
@@ -245,6 +246,10 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'list-documents': DocsToolView,
   'delete-document': DocsToolView,
   'export-document': DocsToolView,
+  
+  // Deepfake detection
+  'detect-deepfake': RealityDefenderToolView,
+  'detect_deepfake': RealityDefenderToolView,
   
   // Default fallback
   'default': GenericToolView,

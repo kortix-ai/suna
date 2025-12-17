@@ -58,6 +58,7 @@ import { WaitForCallCompletionToolView } from '../vapi-call/WaitForCallCompletio
 import { createPresentationViewerToolContent, parsePresentationSlidePath } from '../utils/presentation-utils';
 import { KbToolView } from '../KbToolView';
 import { ExpandMessageToolView } from '../expand-message-tool/ExpandMessageToolView';
+import { RealityDefenderToolView } from '../reality-defender-tool/RealityDefenderToolView';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;
@@ -201,6 +202,9 @@ const defaultRegistry: ToolViewRegistryType = {
   'monitor-call': MonitorCallToolView,
   'wait_for_call_completion': WaitForCallCompletionToolView,
   'wait-for-call-completion': WaitForCallCompletionToolView,
+
+  'detect-deepfake': RealityDefenderToolView,
+  'detect_deepfake': RealityDefenderToolView,
 };
 
 class ToolViewRegistry {
