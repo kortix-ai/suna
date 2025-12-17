@@ -450,3 +450,33 @@ export function useViewsByDate(dateFrom: string, dateTo: string, source: Analyti
   });
 }
 
+// ============================================================================
+// ARR NEW PAID SUBSCRIPTIONS BY DATE (fetched from Stripe, excludes free tier)
+// ============================================================================
+
+export interface NewPaidByDateResponse {
+  date_from: string;
+  date_to: string;
+  new_paid_by_date: Record<string, number>;  // YYYY-MM-DD -> count
+  total: number;
+}
+
+export function useNewPaidByDate(dateFrom: string, dateTo: string) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'new-paid-by-date', dateFrom, dateTo],
+    queryFn: async (): Promise<NewPaidByDateResponse> => {
+      const response = await backendApi.get(
+        `/admin/analytics/arr/new-paid?date_from=${dateFrom}&date_to=${dateTo}`
+      );
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 60000, // 1 minute
+    enabled: !!dateFrom && !!dateTo,
+    retry: 1,
+  });
+}
+
+

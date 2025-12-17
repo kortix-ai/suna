@@ -9,7 +9,8 @@ Provides analytics data for the admin dashboard including:
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import Optional, List, Dict, Any, Literal
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from pydantic import BaseModel
 import asyncio
 import httpx
@@ -22,6 +23,7 @@ from core.utils.pagination import PaginationService, PaginationParams, Paginated
 from core.utils.config import config
 from core.utils.query_utils import batch_query_in
 import openai
+import stripe
 
 # Google Analytics imports
 try:
@@ -39,6 +41,9 @@ try:
 except ImportError:
     GA_AVAILABLE = False
     logger.warning("Google Analytics SDK not installed. Install with: pip install google-analytics-data")
+
+# Berlin timezone for consistent date handling (UTC+1 / UTC+2 with DST)
+BERLIN_TZ = ZoneInfo("Europe/Berlin")
 
 router = APIRouter(prefix="/admin/analytics", tags=["admin-analytics"])
 
@@ -147,6 +152,61 @@ def get_ga_client() -> "BetaAnalyticsDataClient":
             )
     
     return BetaAnalyticsDataClient(credentials=credentials)
+
+
+async def search_paid_subscriptions_count(start_date: datetime, end_date: datetime) -> int:
+    """
+    Search Stripe for active paid subscriptions created within a date range.
+    Excludes free tier subscriptions using metadata filter.
+    
+    Args:
+        start_date: Start of the date range (inclusive)
+        end_date: End of the date range (inclusive)
+    
+    Returns:
+        Count of active paid subscriptions created in the range
+    """
+    try:
+        # Ensure stripe API key is set
+        stripe.api_key = config.STRIPE_SECRET_KEY
+        
+        # Convert to Unix timestamps for Stripe Search API
+        start_ts = int(start_date.timestamp())
+        end_ts = int(end_date.timestamp())
+        
+        # Build search query:
+        # - status:'active' - only active subscriptions
+        # - -metadata['tier']:'free' - exclude free tier subscriptions
+        # - created>=start_ts AND created<=end_ts - within date range
+        query = f"status:'active' AND -metadata['tier']:'free' AND created>={start_ts} AND created<={end_ts}"
+        
+        count = 0
+        has_more = True
+        next_page = None
+        
+        while has_more:
+            search_params = {
+                'query': query,
+                'limit': 100,  # Max allowed by Stripe
+            }
+            if next_page:
+                search_params['page'] = next_page
+            
+            result = await stripe.Subscription.search_async(**search_params)
+            count += len(result.data)
+            
+            has_more = result.has_more
+            next_page = result.next_page if has_more else None
+        
+        logger.debug(f"Stripe subscription search: found {count} paid subscriptions between {start_date} and {end_date}")
+        return count
+        
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe error searching subscriptions: {e}", exc_info=True)
+        return 0
+    except Exception as e:
+        logger.error(f"Error searching Stripe subscriptions: {e}", exc_info=True)
+        return 0
 
 
 def query_google_analytics(date_str: str) -> Dict[str, int]:
@@ -265,7 +325,7 @@ async def get_analytics_summary(
         db = DBConnection()
         client = await db.client
         
-        now = datetime.now(timezone.utc)
+        now = datetime.now(BERLIN_TZ)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_start = today_start - timedelta(days=7)
         
@@ -276,14 +336,15 @@ async def get_analytics_summary(
             active_week_result,
             signups_today_result,
             signups_week_result,
-            subs_week_result,
+            new_subscriptions_week,
         ) = await asyncio.gather(
             client.schema('basejump').from_('accounts').select('id', count='exact').limit(1).execute(),
             client.from_('threads').select('thread_id', count='exact').limit(1).execute(),
             client.from_('threads').select('account_id').gte('updated_at', week_start.isoformat()).execute(),
             client.schema('basejump').from_('accounts').select('id', count='exact').gte('created_at', today_start.isoformat()).limit(1).execute(),
             client.schema('basejump').from_('accounts').select('id', count='exact').gte('created_at', week_start.isoformat()).limit(1).execute(),
-            client.schema('basejump').from_('billing_subscriptions').select('id', count='exact').gte('created', week_start.isoformat()).eq('status', 'active').limit(1).execute(),
+            # Use Stripe directly to count paid subscriptions (excludes free tier)
+            search_paid_subscriptions_count(week_start, now),
         )
         
         total_users = total_users_result.count or 0
@@ -291,7 +352,7 @@ async def get_analytics_summary(
         active_users_week = len(set(t['account_id'] for t in active_week_result.data or [] if t.get('account_id')))
         new_signups_today = signups_today_result.count or 0
         new_signups_week = signups_week_result.count or 0
-        new_subscriptions_week = subs_week_result.count or 0
+        # new_subscriptions_week is already an int from search_paid_subscriptions_count
         
         # Conversion rate
         conversion_rate_week = (new_subscriptions_week / new_signups_week * 100) if new_signups_week > 0 else 0
@@ -344,7 +405,7 @@ async def browse_threads(
         
         # If filtering by message count or category without date range, default to last 7 days
         if (has_message_filter or has_category_filter) and not date_from:
-            date_from = (datetime.now(timezone.utc) - timedelta(days=7)).strftime('%Y-%m-%d')
+            date_from = (datetime.now(BERLIN_TZ) - timedelta(days=7)).strftime('%Y-%m-%d')
         
         # SIMPLE PATH: No message/email/category filter - paginate directly from DB
         if not has_message_filter and not search_email and not has_category_filter:
@@ -659,7 +720,7 @@ async def get_retention_data(
         
         pagination_params = PaginationParams(page=page, page_size=page_size)
         
-        now = datetime.now(timezone.utc)
+        now = datetime.now(BERLIN_TZ)
         start_date = now - timedelta(weeks=weeks_back)
         
         # Get all threads in the period
@@ -804,11 +865,11 @@ async def get_message_distribution(
         # Parse date or default to today
         if date:
             try:
-                selected_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                selected_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
             except ValueError:
                 raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
         else:
-            selected_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            selected_date = datetime.now(BERLIN_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
         
         # Filter to selected day (start of day to end of day)
         start_of_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
@@ -863,11 +924,11 @@ async def get_category_distribution(
         # Parse date or default to today
         if date:
             try:
-                selected_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                selected_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
             except ValueError:
                 raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
         else:
-            selected_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            selected_date = datetime.now(BERLIN_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
         
         # Filter to selected day
         start_of_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
@@ -923,7 +984,7 @@ async def get_visitor_stats(
             except ValueError:
                 raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
         else:
-            selected_date = datetime.now(timezone.utc)
+            selected_date = datetime.now(BERLIN_TZ)
         
         date_str = selected_date.strftime("%Y-%m-%d")
         
@@ -961,11 +1022,11 @@ async def get_conversion_funnel(
         # Parse date or default to today
         if date:
             try:
-                selected_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                selected_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
             except ValueError:
                 raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
         else:
-            selected_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            selected_date = datetime.now(BERLIN_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
         
         date_str = selected_date.strftime("%Y-%m-%d")
         start_of_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
@@ -990,10 +1051,10 @@ async def get_conversion_funnel(
             return result.count or 0
         
         async def get_subscriptions():
-            result = await client.schema('basejump').from_('billing_subscriptions').select(
-                '*', count='exact'
-            ).gte('created', start_of_day).lte('created', end_of_day).eq('status', 'active').execute()
-            return result.count or 0
+            # Use Stripe directly to count paid subscriptions (excludes free tier)
+            start_dt = datetime.fromisoformat(start_of_day.replace('Z', '+00:00')) if isinstance(start_of_day, str) else start_of_day
+            end_dt = datetime.fromisoformat(end_of_day.replace('Z', '+00:00')) if isinstance(end_of_day, str) else end_of_day
+            return await search_paid_subscriptions_count(start_dt, end_dt)
         
         # Execute all queries in parallel
         visitors, signups, subscriptions = await asyncio.gather(
@@ -1150,6 +1211,71 @@ async def get_views_by_date(
     except Exception as e:
         logger.error(f"Failed to get views by date: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get views")
+
+
+@router.get("/arr/new-paid")
+async def get_new_paid_by_date(
+    date_from: str = Query(..., description="Start date YYYY-MM-DD"),
+    date_to: str = Query(..., description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """
+    Get new paid subscription counts grouped by date for a date range.
+    Uses Stripe Search API to find new subscriptions, excluding free tier.
+    Frontend can aggregate into weeks as needed.
+    Super admin only.
+    """
+    try:
+        stripe.api_key = config.STRIPE_SECRET_KEY
+        
+        # Parse dates (using Berlin timezone)
+        start_dt = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
+        end_dt = datetime.strptime(date_to, "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=BERLIN_TZ)
+        
+        # Convert to Unix timestamps
+        start_ts = int(start_dt.timestamp())
+        end_ts = int(end_dt.timestamp())
+        
+        # Search for active paid subscriptions created in range
+        query = f"status:'active' AND -metadata['tier']:'free' AND created>={start_ts} AND created<={end_ts}"
+        
+        new_paid_by_date: Dict[str, int] = {}
+        has_more = True
+        next_page = None
+        
+        while has_more:
+            search_params = {
+                'query': query,
+                'limit': 100,
+            }
+            if next_page:
+                search_params['page'] = next_page
+            
+            result = await stripe.Subscription.search_async(**search_params)
+            
+            for sub in result.data:
+                # Convert created timestamp to date (Berlin timezone)
+                created_date = datetime.fromtimestamp(sub.created, tz=BERLIN_TZ).strftime('%Y-%m-%d')
+                new_paid_by_date[created_date] = new_paid_by_date.get(created_date, 0) + 1
+            
+            has_more = result.has_more
+            next_page = result.next_page if has_more else None
+        
+        total = sum(new_paid_by_date.values())
+        
+        return {
+            "date_from": date_from,
+            "date_to": date_to,
+            "new_paid_by_date": new_paid_by_date,
+            "total": total
+        }
+        
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe error getting new paid by date: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get new paid subscriptions from Stripe")
+    except Exception as e:
+        logger.error(f"Failed to get new paid by date: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get new paid subscriptions")
 
 
 @router.get("/arr/actuals")

@@ -62,6 +62,7 @@ import {
   useUpdateARRSimulatorConfig,
   useSignupsByDate,
   useViewsByDate,
+  useNewPaidByDate,
   type SimulatorConfigData,
   type ThreadAnalytics,
   type RetentionData,
@@ -720,6 +721,9 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   // Fetch views (unique visitors) from analytics source
   const { data: viewsByDateData } = useViewsByDate(signupsDateFrom, signupsDateTo, analyticsSource);
   
+  // Fetch new paid subscriptions from Stripe (excludes free tier)
+  const { data: newPaidByDateData } = useNewPaidByDate(signupsDateFrom, signupsDateTo);
+  
   // Group signups by week number (frontend owns week logic)
   const signupsByWeek = useMemo((): Record<number, number> => {
     if (!signupsByDateData?.signups_by_date) return {};
@@ -757,6 +761,25 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     
     return result;
   }, [viewsByDateData]);
+
+  // Group new paid subscriptions by week number (from Stripe, excludes free tier)
+  const newPaidByWeek = useMemo((): Record<number, number> => {
+    if (!newPaidByDateData?.new_paid_by_date) return {};
+    
+    const startDate = new Date(2025, 11, 15); // Dec 15, 2025
+    const result: Record<number, number> = {};
+    
+    Object.entries(newPaidByDateData.new_paid_by_date).forEach(([dateStr, count]) => {
+      const date = new Date(dateStr);
+      const daysSinceStart = Math.floor((date.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      const weekNum = Math.floor(daysSinceStart / 7) + 1;
+      if (weekNum >= 1) {
+        result[weekNum] = (result[weekNum] || 0) + count;
+      }
+    });
+    
+    return result;
+  }, [newPaidByDateData]);
 
   // Weekly projections derived from monthly (matching HTML dashboard logic exactly)
   const weeklyProjections = useMemo((): SimulationWeek[] => {
@@ -906,8 +929,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     goalSignups: w.signups,
     actualSignups: signupsByWeek[w.week] || 0,
     goalNewPaid: w.newPaid,
-    actualNewPaid: actualData[w.week]?.newPaid || 0,
+    // Use Stripe data for new paid, fallback to manual entry
+    actualNewPaid: newPaidByWeek[w.week] || actualData[w.week]?.newPaid || 0,
     goalSubs: w.subscribers,
+    // Use manual entry for subscribers (Stripe gives current total, not weekly)
     actualSubs: actualData[w.week]?.subscribers || 0,
     goalMRR: w.mrr,
     actualMRR: actualData[w.week]?.mrr || 0,
@@ -924,6 +949,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       const weekActual = actualData[week.week];
       const autoSignups = signupsByWeek[week.week] || 0;
       const autoViews = viewsByWeek[week.week] || 0;
+      const autoNewPaid = newPaidByWeek[week.week] || 0;
       
       if (!result[monthIdx]) {
         result[monthIdx] = { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
@@ -931,11 +957,12 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       
       // Use auto-fetched signups from database
       result[monthIdx].signups += autoSignups;
-      // Use auto-fetched views from Google Analytics
+      // Use auto-fetched views from analytics
       result[monthIdx].views += autoViews;
+      // Use auto-fetched new paid from Stripe (fallback to manual)
+      result[monthIdx].newPaid += autoNewPaid || (weekActual?.newPaid || 0);
       
       if (weekActual) {
-        result[monthIdx].newPaid += weekActual.newPaid || 0;
         // For subscribers, MRR, ARR - take the last week's value as end-of-month value
         result[monthIdx].subscribers = weekActual.subscribers || result[monthIdx].subscribers;
         result[monthIdx].mrr = weekActual.mrr || result[monthIdx].mrr;
@@ -944,7 +971,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     });
     
     return result;
-  }, [weeklyProjections, actualData, signupsByWeek, viewsByWeek]);
+  }, [weeklyProjections, actualData, signupsByWeek, viewsByWeek, newPaidByWeek]);
 
   // View state
   const [simulatorView, setSimulatorView] = useState<'monthly' | 'weekly'>('monthly');
@@ -1605,9 +1632,12 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     // Get auto-fetched data
                     const autoViews = viewsByWeek[week.week] ?? 0;
                     const autoSignups = signupsByWeek[week.week] ?? 0;
+                    const autoNewPaid = newPaidByWeek[week.week] ?? 0;
                     const viewsVar = getVariance(autoViews, week.visitors);
                     const signupsVar = getVariance(autoSignups, week.signups);
-                    const newPaidVar = getVariance(actual.newPaid, week.newPaid);
+                    // Use Stripe data for new paid, fallback to manual entry
+                    const effectiveNewPaid = autoNewPaid || actual.newPaid || 0;
+                    const newPaidVar = getVariance(effectiveNewPaid, week.newPaid);
                     const subsVar = getVariance(actual.subscribers, week.subscribers);
                     const mrrVar = getVariance(actual.mrr, week.mrr);
                     const arrVar = getVariance(actual.arr, week.arr);
@@ -1636,20 +1666,15 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                         <td className={`text-right p-1 text-[10px] ${signupsVar.color}`}>
                           {autoSignups > 0 ? `${signupsVar.value >= 0 ? '+' : ''}${signupsVar.value.toFixed(1)}%` : '—'}
                         </td>
-                        {/* New Paid */}
+                        {/* New Paid - Auto-fetched from Stripe */}
                         <td className="text-right p-1">{formatNumber(week.newPaid)}</td>
                         <td className="text-right p-1">
-                          <Input
-                            type="number"
-                            value={getInputValue(week.week, 'newPaid')}
-                            onChange={(e) => handleInputChange(week.week, 'newPaid', e.target.value)}
-                            onBlur={() => handleInputBlur(week.week, 'newPaid')}
-                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            placeholder="—"
-                          />
+                          <span className={`text-[10px] font-medium ${effectiveNewPaid > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                            {effectiveNewPaid > 0 ? formatNumber(effectiveNewPaid) : '—'}
+                          </span>
                         </td>
                         <td className={`text-right p-1 text-[10px] ${newPaidVar.color}`}>
-                          {actual.newPaid ? `${newPaidVar.value >= 0 ? '+' : ''}${newPaidVar.value.toFixed(1)}%` : '—'}
+                          {effectiveNewPaid > 0 ? `${newPaidVar.value >= 0 ? '+' : ''}${newPaidVar.value.toFixed(1)}%` : '—'}
                         </td>
                         {/* Subscribers */}
                         <td className="text-right p-1 font-medium">{formatNumber(week.subscribers)}</td>
