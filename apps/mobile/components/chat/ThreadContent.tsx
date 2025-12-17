@@ -63,15 +63,17 @@ function renderStandaloneAttachments(
   if (validAttachments.length === 0) return null;
 
   return (
-    <View className={`my-4 w-full ${alignRight ? 'items-end' : 'items-start'}`}>
-      <FileAttachmentsGrid
-        filePaths={validAttachments}
-        sandboxId={sandboxId}
-        sandboxUrl={sandboxUrl}
-        compact={false}
-        showPreviews={true}
-        onFilePress={onFilePress}
-      />
+    <View className={`my-4 ${alignRight ? 'items-end' : 'items-start'}`} style={{ width: '100%' }}>
+      <View style={{ width: alignRight ? '85%' : '100%' }}>
+        <FileAttachmentsGrid
+          filePaths={validAttachments}
+          sandboxId={sandboxId}
+          sandboxUrl={sandboxUrl}
+          compact={false}
+          showPreviews={true}
+          onFilePress={onFilePress}
+        />
+      </View>
     </View>
   );
 }
