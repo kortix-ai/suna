@@ -439,9 +439,22 @@ export function FileOperationToolView({
 
   const isHtml = isFileType.html(fileExtension);
 
+  // Check if this is a presentation slide file
   const isPresentationSlide = processedFilePath ? isPresentationSlideFile(processedFilePath) : false;
   const presentationName = isPresentationSlide && processedFilePath ? extractPresentationName(processedFilePath) : null;
   const slideNumber = isPresentationSlide && processedFilePath ? extractSlideNumber(processedFilePath) : null;
+
+  // Log for debugging file operations (only when it's a presentation slide)
+  if (isPresentationSlide) {
+    console.log('[FileOperationToolView] Presentation slide detected:', {
+      operation,
+      processedFilePath,
+      presentationName,
+      slideNumber,
+      isStreaming,
+      hasSandboxUrl: !!project?.sandbox?.sandbox_url,
+    });
+  }
 
   const language = getLanguageFromFileName(fileName);
   const hasHighlighting = hasLanguageHighlighting(language);
@@ -454,99 +467,87 @@ export function FileOperationToolView({
 
   const FileIcon = getFileIcon(fileName);
 
+  // Auto-scroll refs for streaming
   const sourceScrollRef = React.useRef<HTMLDivElement>(null);
   const previewScrollRef = React.useRef<HTMLDivElement>(null);
-  const userScrolledSourceRef = React.useRef(false);
-  const userScrolledPreviewRef = React.useRef(false);
-  const lastScrollTopSourceRef = React.useRef(0);
-  const lastScrollTopPreviewRef = React.useRef(0);
-  const isAutoScrollingRef = React.useRef(false);
+  const lastLineCountRef = React.useRef<number>(0);
+  const isUserScrollingSourceRef = React.useRef<boolean>(false);
+  const isUserScrollingPreviewRef = React.useRef<boolean>(false);
+
+  const isNearBottom = (element: HTMLElement, threshold: number = 100): boolean => {
+    return element.scrollHeight - element.scrollTop - element.clientHeight < threshold;
+  };
 
   React.useEffect(() => {
+    const viewport = sourceScrollRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+    if (!viewport) return;
+
+    const handleScroll = () => {
+      // Only allow auto-scroll when user is near the bottom
+      // Don't use timeout - respect user's scroll position continuously
+      isUserScrollingSourceRef.current = !isNearBottom(viewport);
+    };
+
+    viewport.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      viewport.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
+  React.useEffect(() => {
+    const viewport = previewScrollRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+    if (!viewport) return;
+
+    const handleScroll = () => {
+      // Only allow auto-scroll when user is near the bottom
+      // Don't use timeout - respect user's scroll position continuously
+      isUserScrollingPreviewRef.current = !isNearBottom(viewport);
+    };
+
+    viewport.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      viewport.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
+  // Auto-scroll for source code view during streaming - simple and stable
+  React.useEffect(() => {
+    if (!isStreaming || !fileContent || !sourceScrollRef.current) return;
+    
+    const currentLineCount = contentLines.length;
+    if (currentLineCount <= lastLineCountRef.current) return;
+    lastLineCountRef.current = currentLineCount;
+
+    const viewport = sourceScrollRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+    if (!viewport) return;
+
+    if (isUserScrollingSourceRef.current) return;
+
+    viewport.scrollTop = viewport.scrollHeight;
+  }, [isStreaming, contentLines.length, fileContent]);
+
+  // Reset line count ref when streaming stops
+  React.useEffect(() => {
     if (!isStreaming) {
-      userScrolledSourceRef.current = false;
-      userScrolledPreviewRef.current = false;
+      lastLineCountRef.current = 0;
+      isUserScrollingSourceRef.current = false;
+      isUserScrollingPreviewRef.current = false;
     }
   }, [isStreaming]);
 
+  // Auto-scroll for preview tab during streaming - simple approach
   React.useEffect(() => {
-    if (!isStreaming) return;
+    if (!isStreaming || !fileContent || !previewScrollRef.current) return;
 
-    const getViewport = (ref: React.RefObject<HTMLDivElement>) => 
-      ref.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
+    const viewport = previewScrollRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+    if (!viewport) return;
 
-    const sourceViewport = getViewport(sourceScrollRef);
-    const previewViewport = getViewport(previewScrollRef);
+    if (isUserScrollingPreviewRef.current) return;
 
-    const handleSourceScroll = () => {
-      if (isAutoScrollingRef.current) return;
-      
-      const viewport = sourceViewport;
-      if (!viewport) return;
-
-      const currentScrollTop = viewport.scrollTop;
-      const maxScroll = viewport.scrollHeight - viewport.clientHeight;
-      const isAtBottom = maxScroll - currentScrollTop < 30;
-
-      if (currentScrollTop < lastScrollTopSourceRef.current && !isAtBottom) {
-        userScrolledSourceRef.current = true;
-      } else if (isAtBottom) {
-        userScrolledSourceRef.current = false;
-      }
-      
-      lastScrollTopSourceRef.current = currentScrollTop;
-    };
-
-    const handlePreviewScroll = () => {
-      if (isAutoScrollingRef.current) return;
-      
-      const viewport = previewViewport;
-      if (!viewport) return;
-
-      const currentScrollTop = viewport.scrollTop;
-      const maxScroll = viewport.scrollHeight - viewport.clientHeight;
-      const isAtBottom = maxScroll - currentScrollTop < 30;
-
-      if (currentScrollTop < lastScrollTopPreviewRef.current && !isAtBottom) {
-        userScrolledPreviewRef.current = true;
-      } else if (isAtBottom) {
-        userScrolledPreviewRef.current = false;
-      }
-      
-      lastScrollTopPreviewRef.current = currentScrollTop;
-    };
-
-    sourceViewport?.addEventListener('scroll', handleSourceScroll, { passive: true });
-    previewViewport?.addEventListener('scroll', handlePreviewScroll, { passive: true });
-
-    return () => {
-      sourceViewport?.removeEventListener('scroll', handleSourceScroll);
-      previewViewport?.removeEventListener('scroll', handlePreviewScroll);
-    };
-  }, [isStreaming]);
-
-  React.useLayoutEffect(() => {
-    if (!isStreaming) return;
-
-    const viewport = sourceScrollRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
-    if (!viewport || userScrolledSourceRef.current) return;
-
-    isAutoScrollingRef.current = true;
     viewport.scrollTop = viewport.scrollHeight;
-    setTimeout(() => { isAutoScrollingRef.current = false; }, 50);
-  }, [isStreaming, contentLines.length]);
-
-  React.useLayoutEffect(() => {
-    if (!isStreaming) return;
-
-    const viewport = previewScrollRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
-    if (!viewport || userScrolledPreviewRef.current) return;
-
-    isAutoScrollingRef.current = true;
-    viewport.scrollTop = viewport.scrollHeight;
-    setTimeout(() => { isAutoScrollingRef.current = false; }, 50);
   }, [isStreaming, fileContent]);
 
+  // Copy functions
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);

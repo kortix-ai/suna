@@ -8,7 +8,7 @@ from core.agentpress.tool import SchemaType
 from core.prompts.agent_builder_prompt import get_agent_builder_prompt
 from core.prompts.prompt import get_system_prompt
 from core.prompts.core_prompt import get_dynamic_system_prompt
-from core.tools.tool_guide_registry import get_minimal_tool_index
+from core.tools.tool_guide_registry import get_minimal_tool_index, get_tool_guide
 from core.utils.logger import logger
 
 class PromptManager:
@@ -44,6 +44,10 @@ If you need specialized tools, use initialize_tools() to load them.
 If relevant context seems missing, ask a clarifying question.
 
 """
+        
+        preloaded_guides = PromptManager._get_preloaded_tool_guides()
+        if preloaded_guides:
+            content += preloaded_guides
         
         content = await PromptManager._append_jit_mcp_info(content, mcp_loader)
         
@@ -103,12 +107,39 @@ If relevant context seems missing, ask a clarifying question.
             minimal_index = get_minimal_tool_index()
             default_system_content = get_dynamic_system_prompt(minimal_index)
             logger.info(f"📊 [DYNAMIC TOOLS] Core prompt + minimal index: {len(default_system_content):,} chars")
+            
+            preloaded_guides = PromptManager._get_preloaded_tool_guides()
+            if preloaded_guides:
+                default_system_content += preloaded_guides
+                logger.info(f"📖 [DYNAMIC TOOLS] Added preloaded tool guides: {len(preloaded_guides):,} chars")
         else:
             logger.info("⚠️  [LEGACY MODE] Using full embedded prompt (all tool documentation included)")
             default_system_content = get_system_prompt()
             logger.info(f"📊 [LEGACY MODE] Full prompt size: {len(default_system_content):,} chars")
         
         return default_system_content
+    
+    @staticmethod
+    def _get_preloaded_tool_guides() -> str:
+        from core.jit.loader import JITLoader
+        
+        core_tools = JITLoader.get_core_tools()
+        guides = []
+        
+        for tool_name in core_tools:
+            guide = get_tool_guide(tool_name)
+            if guide:
+                guides.append(guide)
+        
+        if not guides:
+            return ""
+        
+        guides_content = "\n\n# PRELOADED TOOL USAGE GUIDES\n"
+        guides_content += "The following tools are preloaded and ready to use immediately (no initialize_tools needed):\n\n"
+        guides_content += "\n\n".join(guides)
+        
+        logger.info(f"📖 [PRELOADED GUIDES] Loaded {len(guides)} guides for core tools")
+        return guides_content
     
     @staticmethod
     def _append_agent_system_prompt(system_content: str, agent_config: Optional[dict], use_dynamic_tools: bool) -> str:
