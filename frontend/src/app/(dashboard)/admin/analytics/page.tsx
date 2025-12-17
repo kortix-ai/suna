@@ -805,6 +805,12 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         const weekEnd = new Date(currentDate);
         weekEnd.setDate(weekEnd.getDate() + 6);
         
+        // Determine actual calendar month index based on week start date
+        // Dec 2025 = 0, Jan 2026 = 1, Feb 2026 = 2, etc.
+        const calendarMonthIndex = weekStart.getMonth() === 11 
+          ? 0  // December 2025
+          : weekStart.getMonth() + 1;  // Jan=1, Feb=2, etc.
+        
         // Update running subscriber count (matching HTML logic)
         totalSubs = Math.max(0, totalSubs + weeklyNewPaid - weeklyChurned);
         const weeklyMRR = totalSubs * arpu;
@@ -813,7 +819,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         weeks.push({
           week: weekNum,
           dateRange: `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
-          monthIndex: monthIdx,
+          monthIndex: calendarMonthIndex,
           visitors: weeklyViews,
           signups: weeklySignups,
           newPaid: weeklyNewPaid,
@@ -972,6 +978,49 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     
     return result;
   }, [weeklyProjections, actualData, signupsByWeek, viewsByWeek, newPaidByWeek]);
+
+  // Derive monthly goals from weekly projections (grouped by actual calendar month)
+  // This ensures the monthly table shows all months that have weeks, including June
+  const monthlyFromWeekly = useMemo(() => {
+    const monthNames = ['Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026', 'Jun 2026'];
+    const result: Record<number, { 
+      month: string;
+      monthIndex: number;
+      visitors: number; 
+      signups: number; 
+      newPaid: number;
+      totalSubs: number; 
+      mrr: number; 
+      arr: number;
+    }> = {};
+    
+    weeklyProjections.forEach((week) => {
+      const idx = week.monthIndex;
+      if (!result[idx]) {
+        result[idx] = {
+          month: monthNames[idx] || `Month ${idx}`,
+          monthIndex: idx,
+          visitors: 0,
+          signups: 0,
+          newPaid: 0,
+          totalSubs: 0,
+          mrr: 0,
+          arr: 0,
+        };
+      }
+      // Sum these values across weeks
+      result[idx].visitors += week.visitors;
+      result[idx].signups += week.signups;
+      result[idx].newPaid += week.newPaid;
+      // Take last week's values for these (end-of-month snapshot)
+      result[idx].totalSubs = week.subscribers;
+      result[idx].mrr = week.mrr;
+      result[idx].arr = week.arr;
+    });
+    
+    // Convert to sorted array
+    return Object.values(result).sort((a, b) => a.monthIndex - b.monthIndex);
+  }, [weeklyProjections]);
 
   // View state
   const [simulatorView, setSimulatorView] = useState<'monthly' | 'weekly'>('monthly');
@@ -1437,30 +1486,31 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                 </tr>
               </thead>
               <tbody>
-                {projections.map((month, i) => {
-                  const actual = monthlyActuals[i] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+                {monthlyFromWeekly.map((month, idx) => {
+                  const actual = monthlyActuals[month.monthIndex] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
                   const hasActual = actual.views > 0 || actual.signups > 0 || actual.subscribers > 0;
+                  const isLastMonth = idx === monthlyFromWeekly.length - 1;
                   
                   return (
-                    <tr key={month.month} className={`border-b ${i === projections.length - 1 ? 'bg-primary/5 font-medium' : ''}`}>
+                    <tr key={month.month} className={`border-b ${isLastMonth ? 'bg-primary/5 font-medium' : ''}`}>
                       <td className="p-3">{month.month}</td>
                       {/* Visitors */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.visitors)}</td>
                       <td className={`text-right p-2 font-medium ${hasActual && actual.views >= month.visitors ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.views > 0 ? formatNumber(actual.views + 78313) : '—'}
-                         {/* added dec 1 to 14 data to actual.views */}
+                        {actual.views > 0 ? formatNumber(actual.views + (month.monthIndex === 0 ? 78313 : 0)) : '—'}
+                         {/* added dec 1 to 14 data to actual.views for December */}
                       </td>
                       {/* Signups */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.signups)}</td>
                       <td className={`text-right p-2 font-medium ${hasActual && actual.signups >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.signups > 0 ? formatNumber(actual.signups + 18699) : '—'}
-                        {/* added dec 1 to 14 data to actual.signups */}
+                        {actual.signups > 0 ? formatNumber(actual.signups + (month.monthIndex === 0 ? 18699 : 0)) : '—'}
+                        {/* added dec 1 to 14 data to actual.signups for December */}
                       </td>
                       {/* New Paid */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.newPaid)}</td>
                       <td className={`text-right p-2 font-medium ${hasActual && actual.newPaid >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.newPaid > 0 ? formatNumber(actual.newPaid + 233) : '—'}
-                        {/* added dec 1 to 14 data to actual.newPaid */}
+                        {actual.newPaid > 0 ? formatNumber(actual.newPaid + (month.monthIndex === 0 ? 233 : 0)) : '—'}
+                        {/* added dec 1 to 14 data to actual.newPaid for December */}
                       </td>
                       {/* Total Subs */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.totalSubs)}</td>
