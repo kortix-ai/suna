@@ -15,11 +15,10 @@ interface UsageDrawerProps {
   visible: boolean;
   onClose: () => void;
   onUpgradePress?: () => void;
-  onTopUpPress?: () => void;
   onThreadPress?: (threadId: string, projectId: string | null) => void;
 }
 
-export function UsageDrawer({ visible, onClose, onUpgradePress, onTopUpPress, onThreadPress }: UsageDrawerProps) {
+export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }: UsageDrawerProps) {
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const isOpeningRef = React.useRef(false);
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
@@ -141,7 +140,6 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onTopUpPress, on
         <UsageContent
           onThreadPress={handleThreadPress}
           onUpgradePress={onUpgradePress}
-          onTopUpPress={onTopUpPress}
         />
       </BottomSheetScrollView>
     </BottomSheet>

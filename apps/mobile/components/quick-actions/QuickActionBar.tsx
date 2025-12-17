@@ -8,6 +8,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { QUICK_ACTIONS } from './quickActions';
@@ -40,7 +41,18 @@ interface ModeItemProps {
 
 const ModeItem = React.memo(({ action, index, isSelected, onPress, isLast }: ModeItemProps) => {
   const { t } = useLanguage();
+  const { colorScheme } = useColorScheme();
   const translatedLabel = t(`quickActions.${action.id}`, { defaultValue: action.label });
+
+  // Get icon color based on theme and selection state
+  // Primary: #121215 (light) / #F8F8F8 (dark)
+  // Foreground: #121215 (light) / #F8F8F8 (dark)
+  const iconColor = React.useMemo(() => {
+    if (isSelected) {
+      return colorScheme === 'dark' ? '#F8F8F8' : '#121215'; // primary
+    }
+    return colorScheme === 'dark' ? '#F8F8F8' : '#121215'; // foreground
+  }, [isSelected, colorScheme]);
 
   return (
     <Pressable 
@@ -69,6 +81,7 @@ const ModeItem = React.memo(({ action, index, isSelected, onPress, isLast }: Mod
           <Icon 
             as={action.icon} 
             size={18} 
+            color={iconColor}
             className={isSelected ? 'text-primary' : 'text-foreground'}
             strokeWidth={2}
             style={{ marginRight: 6, flexShrink: 0 }}

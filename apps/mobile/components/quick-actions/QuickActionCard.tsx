@@ -1,6 +1,7 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { useLanguage } from '@/contexts';
+import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Pressable, View } from 'react-native';
 import Animated, { 
@@ -25,6 +26,7 @@ interface QuickActionCardProps {
  */
 export function QuickActionCard({ action }: QuickActionCardProps) {
   const { t } = useLanguage();
+  const { colorScheme } = useColorScheme();
   const scale = useSharedValue(1);
   
   // Get translated label
@@ -41,6 +43,17 @@ export function QuickActionCard({ action }: QuickActionCardProps) {
   };
 
   const isSelected = action.isSelected ?? false;
+
+  // Get icon color based on theme and selection state
+  // Primary: #121215 (light) / #F8F8F8 (dark)
+  // Foreground with 70% opacity: rgba(18, 18, 21, 0.7) (light) / rgba(248, 248, 248, 0.7) (dark)
+  const iconColor = React.useMemo(() => {
+    if (isSelected) {
+      return colorScheme === 'dark' ? '#F8F8F8' : '#121215'; // primary
+    }
+    // 70% opacity
+    return colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.7)' : 'rgba(18, 18, 21, 0.7)';
+  }, [isSelected, colorScheme]);
 
   return (
     <AnimatedPressable
@@ -61,6 +74,7 @@ export function QuickActionCard({ action }: QuickActionCardProps) {
       <Icon 
         as={action.icon} 
         size={18} 
+        color={iconColor}
         className={isSelected ? 'text-primary mr-2' : 'text-foreground/70 mr-2'}
         strokeWidth={2}
       />
