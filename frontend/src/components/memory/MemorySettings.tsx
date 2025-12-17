@@ -36,7 +36,7 @@ export function MemorySettings() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage
-  } = useInfiniteMemories();
+  } = useInfiniteMemories(10);
   const deleteMemory = useDeleteMemory();
   const deleteAllMemories = useDeleteAllMemories();
   const updateMemorySettings = useUpdateMemorySettings();
