@@ -113,7 +113,7 @@ export function KortixDesktopBanner() {
                 Kortix for Desktop is here
               </h3>
               <p className="text-muted-foreground dark:text-white/60 text-xs leading-relaxed mb-3">
-                Hand it off to Kortix. From anywhere on your {platformLabel}. Download now.
+                Hand it off to Kortix. From anywhere on your {platform === 'mac' ? 'Mac' : 'Desktop'}. Download now.
               </p>
 
               {/* Download button */}
