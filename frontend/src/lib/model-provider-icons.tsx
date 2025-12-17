@@ -14,12 +14,12 @@ export type ModelProvider =
   | 'kortix';
 
 /**
- * Check if a model ID corresponds to a Kortix mode (Basic or Advanced)
+ * Check if a model ID corresponds to a Kortix mode (Basic, Advanced, or Test)
  */
 export function isKortixMode(modelId: string): boolean {
   // New Kortix registry IDs
-  if (modelId === 'kortix/basic' || modelId === 'kortix/power' ||
-      modelId === 'kortix-basic' || modelId === 'kortix-power') {
+  if (modelId === 'kortix/basic' || modelId === 'kortix/power' || modelId === 'kortix/test' ||
+      modelId === 'kortix-basic' || modelId === 'kortix-power' || modelId === 'kortix-test') {
     return true;
   }
   // Legacy: Kortix Basic (Haiku 4.5)

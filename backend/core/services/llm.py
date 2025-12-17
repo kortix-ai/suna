@@ -23,8 +23,6 @@ litellm.drop_params = True
 litellm.num_retries = 3
 
 provider_router = None
-
-
 class LLMError(Exception):
     """Exception for LLM-related errors."""
     pass
@@ -72,20 +70,20 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
     
     # Fallback chains: primary -> [fallbacks]
     fallbacks = [
-        {arns["haiku"]: [arns["sonnet45"]]},
+        # {arns["haiku"]: [arns["sonnet45"]]},
         {arns["sonnet45"]: [arns["haiku"]]},
     ]
     
     # Context window fallbacks: smaller context -> larger context
-    context_window_fallbacks = [
-        {arns["haiku"]: [arns["sonnet45"]]},  # 200k -> 1M
-    ]
+    # context_window_fallbacks = [
+    #     {arns["haiku"]: [arns["sonnet45"]]},  # 200k -> 1M
+    # ]
     
     provider_router = Router(
         model_list=model_list,
         num_retries=3,
         fallbacks=fallbacks,
-        context_window_fallbacks=context_window_fallbacks,
+        # context_window_fallbacks=context_window_fallbacks,
     )
     
     logger.info(f"LiteLLM Router configured with {len(fallbacks)} fallback rules")

@@ -112,8 +112,8 @@ class Model:
         # Default litellm_model_id to id if not provided
         if self.litellm_model_id is None:
             self.litellm_model_id = self.id
-    
-    def __post_init__(self):        
+        
+        # Ensure CHAT capability is always present
         if ModelCapability.CHAT not in self.capabilities:
             self.capabilities.insert(0, ModelCapability.CHAT)
     
@@ -189,22 +189,3 @@ class Model:
         
         return params
     
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dict for API responses. Excludes internal fields like litellm_model_id and provider."""
-        return {
-            "id": self.id,
-            "name": self.name,
-            "aliases": self.aliases,
-            "context_window": self.context_window,
-            "max_output_tokens": self.max_output_tokens,
-            "capabilities": [cap.value for cap in self.capabilities],
-            "pricing": {
-                "input_cost_per_million_tokens": self.pricing.input_cost_per_million_tokens,
-                "output_cost_per_million_tokens": self.pricing.output_cost_per_million_tokens,
-            } if self.pricing else None,
-            "enabled": self.enabled,
-            "beta": self.beta,
-            "tier_availability": self.tier_availability,
-            "priority": self.priority,
-            "recommended": self.recommended,
-        } 

@@ -3,8 +3,8 @@ from .ai_models import Model, ModelProvider, ModelCapability, ModelPricing, Mode
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 
-# Use Anthropic API directly only in local dev with API key configured
-SHOULD_USE_ANTHROPIC = config.ENV_MODE == EnvMode.LOCAL and bool(config.ANTHROPIC_API_KEY)
+# Use Bedrock for STAGING and PRODUCTION, LOCAL uses native APIs (Anthropic API, etc.)
+SHOULD_USE_BEDROCK = config.ENV_MODE in (EnvMode.STAGING, EnvMode.PRODUCTION)
 
 AWS_BEDROCK_REGION = "us-west-2"
 AWS_BEDROCK_ACCOUNT_ID = "935064898258"
@@ -29,7 +29,7 @@ class ModelRegistry:
     
     def _initialize_models(self):
         # Kortix Basic - uses Haiku 4.5 under the hood
-        basic_litellm_id = "anthropic/claude-haiku-4-5-20251001" if SHOULD_USE_ANTHROPIC else build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID)
+        basic_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
         
         self.register(Model(
             id="kortix/basic",
@@ -62,14 +62,14 @@ class ModelRegistry:
             )
         ))
         
-        power_litellm_id = "anthropic/claude-sonnet-4-5-20250929" if SHOULD_USE_ANTHROPIC else build_bedrock_profile_arn(SONNET_4_5_PROFILE_ID)
+        power_litellm_id = build_bedrock_profile_arn(SONNET_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-sonnet-4-5-20250929"
         
         self.register(Model(
             id="kortix/power",
-            name="Kortix POWER Mode",
+            name="Kortix Advanced Mode",
             litellm_model_id=power_litellm_id,
             provider=ModelProvider.ANTHROPIC,
-            aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power"],
+            aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
             context_window=1_000_000,
             capabilities=[
                 ModelCapability.CHAT,
@@ -95,6 +95,33 @@ class ModelRegistry:
                 },
             )
         ))
+        
+        # Kortix Test - uses Kimi K2 via Bedrock (only in LOCAL and STAGING, not PRODUCTION)
+        if config.ENV_MODE != EnvMode.PRODUCTION:
+            test_litellm_id = build_bedrock_profile_arn(KIMI_K2_PROFILE_ID)
+            
+            self.register(Model(
+                id="kortix/test",
+                name="Kortix Test",
+                litellm_model_id=test_litellm_id,
+                provider=ModelProvider.BEDROCK,
+                aliases=["kortix-test", "Kortix Test"],
+                context_window=200_000,
+                capabilities=[
+                    ModelCapability.CHAT,
+                    ModelCapability.FUNCTION_CALLING,
+                    ModelCapability.VISION,
+                ],
+                pricing=ModelPricing(
+                    input_cost_per_million_tokens=0.50,
+                    output_cost_per_million_tokens=2.50,
+                ),
+                tier_availability=["free", "paid"],
+                priority=100,
+                recommended=False,
+                enabled=True,
+                config=ModelConfig()
+            ))
     
     def register(self, model: Model) -> None:
         self._models[model.id] = model
