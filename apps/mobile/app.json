@@ -32,7 +32,7 @@
       "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#F0F0E9"
       },
       "package": "com.kortix.app",
       "intentFilters": [

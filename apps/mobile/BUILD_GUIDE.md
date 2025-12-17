@@ -7,11 +7,13 @@ eas login
 ```
 
 ## Android Development Setup
+
+**Default workflow (cloud build - recommended):**
 ```bash
 cd apps/mobile
 npm run android:setup
-npm run android:build
-npm run android:dev
+npm run android:build        # EAS cloud build (reliable, consistent)
+npm run android:dev          # Start dev server
 ```
 
 ## Build & Submit
