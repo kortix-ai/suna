@@ -6,6 +6,7 @@ import { X, Download, Smartphone, Monitor } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { isElectron } from '@/lib/utils/is-electron';
 
 const MOBILE_STORAGE_KEY = 'kortix-mobile-banner-dismissed';
 const DESKTOP_STORAGE_KEY = 'kortix-desktop-banner-dismissed';
@@ -16,8 +17,9 @@ const STORE_LINKS = {
 };
 
 const DOWNLOAD_LINKS = {
-  windows: 'https://github.com/kortix-ai/suna/actions/runs/20237335301/artifacts/4873354994',
-  mac: 'https://github.com/kortix-ai/suna/actions/runs/20237335301/artifacts/4873350547',
+  windows: 'https://download.kortix.com/desktop/latest/windows/Kortix%20Setup%201.0.0.exe',
+  macArm: 'https://download.kortix.com/desktop/latest/macos/Kortix-1.0.0-arm64.dmg',
+  macIntel: 'https://download.kortix.com/desktop/latest/macos/Kortix-1.0.0-x64.dmg',
 };
 
 type MobilePlatform = 'ios' | 'android';
@@ -54,6 +56,7 @@ function detectDesktopPlatform(): DesktopPlatform {
   return 'mac';
 }
 
+
 export function KortixAppBanners() {
   const [isVisible, setIsVisible] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -75,10 +78,11 @@ export function KortixAppBanners() {
     const desktopDismissed = localStorage.getItem(DESKTOP_STORAGE_KEY);
     
     setMobileVisible(!mobileDismissed);
-    setDesktopVisible(!desktopDismissed);
+    // Hide desktop banner if running in Electron
+    setDesktopVisible(!desktopDismissed && !isElectron());
     
     // Show banners after a short delay if at least one is not dismissed
-    if (!mobileDismissed || !desktopDismissed) {
+    if (!mobileDismissed || (!desktopDismissed && !isElectron())) {
       const timer = setTimeout(() => {
         setIsVisible(true);
       }, 1500);
@@ -99,11 +103,22 @@ export function KortixAppBanners() {
   };
 
   const handleDownload = () => {
-    window.open(DOWNLOAD_LINKS[desktopPlatform], '_blank');
+    let downloadUrl: string;
+    if (desktopPlatform === 'windows') {
+      downloadUrl = DOWNLOAD_LINKS.windows;
+    } else {
+      // Mac - default to ARM (M series)
+      downloadUrl = DOWNLOAD_LINKS.macArm;
+    }
+    window.open(downloadUrl, '_blank');
+  };
+
+  const handleDownloadIntel = () => {
+    window.open(DOWNLOAD_LINKS.macIntel, '_blank');
   };
 
   const currentStoreUrl = STORE_LINKS[selectedMobilePlatform];
-  const desktopPlatformLabel = desktopPlatform === 'windows' ? 'Windows' : 'Mac';
+  const desktopPlatformLabel = desktopPlatform === 'windows' ? 'Windows' : 'Mac (M series)';
 
   if (!mounted || !isVisible) return null;
   if (!mobileVisible && !desktopVisible) return null;
@@ -301,6 +316,15 @@ export function KortixAppBanners() {
                         <Download className="h-3.5 w-3.5" />
                         Download for {desktopPlatformLabel}
                       </Button>
+                      
+                      {desktopPlatform === 'mac' && (
+                        <button
+                          onClick={handleDownloadIntel}
+                          className="w-full mt-2 text-xs text-muted-foreground dark:text-white/60 hover:text-foreground dark:hover:text-white transition-colors underline"
+                        >
+                          Download for Intel Mac
+                        </button>
+                      )}
                     </div>
                   </div>
                 </motion.div>
