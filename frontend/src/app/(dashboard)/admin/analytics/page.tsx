@@ -842,11 +842,15 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         const weekEnd = new Date(currentDate);
         weekEnd.setDate(weekEnd.getDate() + 6);
         
-        // Determine actual calendar month index based on week start date
+        // Determine actual calendar month index based on week END date (with 1-day buffer)
+        // A week belongs to the month where it ends (last complete week logic)
+        // Buffer of 1 day: if week ends on 1st of month, count it as previous month
         // Dec 2025 = 0, Jan 2026 = 1, Feb 2026 = 2, etc.
-        const calendarMonthIndex = weekStart.getMonth() === 11 
+        const weekEndWithBuffer = new Date(weekEnd);
+        weekEndWithBuffer.setDate(weekEndWithBuffer.getDate() - 1);
+        const calendarMonthIndex = weekEndWithBuffer.getMonth() === 11 
           ? 0  // December 2025
-          : weekStart.getMonth() + 1;  // Jan=1, Feb=2, etc.
+          : weekEndWithBuffer.getMonth() + 1;  // Jan=1, Feb=2, etc.
         
         // Update running subscriber count (matching HTML logic)
         totalSubs = Math.max(0, totalSubs + weeklyNewPaid - weeklyChurned);
