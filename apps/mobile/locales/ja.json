@@ -153,6 +153,13 @@
         "researchingBrand": "ブランド調査中",
         "creatingLogo": "ロゴ作成中",
         "creatingBrandBoard": "ブランドボード作成中"
+      },
+      "imageEasterEgg": {
+        "title": "画像",
+        "description": "AIスタイルで写真を変換",
+        "userMessage": "私の画像をブロック状のピクセルアートスタイルに変換して",
+        "aiMessage": "もちろん！あなたの画像をスタイリッシュなブロック調に変換します...",
+        "creatingImage": "スタイル化画像を作成中"
       }
     },
     "slide1": {

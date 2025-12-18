@@ -51,12 +51,14 @@ const AnimatedView = Animated.createAnimatedComponent(View);
 
 // Actual showcase images from desktop
 const LOCAL_IMAGES = {
-  browser: require('@/assets/images/showcase-browser.png'),
-  slide1: require('@/assets/images/showcase-slide1.png'),
-  slide2: require('@/assets/images/showcase-slide2.png'),
-  dashboard: require('@/assets/images/showcase-dashboard.png'),
-  logo: require('@/assets/images/showcase-logo.png'),
-  mockup: require('@/assets/images/showcase-mockup.png'),
+  browser: require('@/assets/images/onboard-images/showcase-browser.png'),
+  slide1: require('@/assets/images/onboard-images/showcase-slide1.png'),
+  slide2: require('@/assets/images/onboard-images/showcase-slide2.png'),
+  dashboard: require('@/assets/images/onboard-images/showcase-dashboard.png'),
+  logo: require('@/assets/images/onboard-images/showcase-logo.png'),
+  mockup: require('@/assets/images/onboard-images/showcase-mockup.png'),
+  userImage: require('@/assets/images/onboard-images/user-image-1.png'),
+  userImageStylized: require('@/assets/images/onboard-images/user-image-stylized.png'),
 };
 
 // Types
@@ -80,11 +82,12 @@ interface ExampleShowcase {
   title: string;
   description: string;
   userMessage: string;
+  userImage?: keyof typeof LOCAL_IMAGES;
   steps: Step[];
 }
 
 // Function to get showcases with translations
-const getExampleShowcases = (t: (key: string) => string): ExampleShowcase[] => [
+const getExampleShowcases = (t: (key: string) => string, useEasterEgg: boolean): ExampleShowcase[] => [
   {
     id: 'slides',
     title: t('onboarding.examples.presentations.title'),
@@ -161,41 +164,64 @@ const getExampleShowcases = (t: (key: string) => string): ExampleShowcase[] => [
       },
     ],
   },
-  {
-    id: 'image',
-    title: t('onboarding.examples.image.title'),
-    description: t('onboarding.examples.image.description'),
-    userMessage: t('onboarding.examples.image.userMessage'),
-    steps: [
-      {
-        type: 'message',
-        aiText: t('onboarding.examples.image.aiMessage'),
-      },
-      {
-        type: 'toolcall',
-        title: t('onboarding.examples.image.researchingBrand'),
-        view: 'browser',
-        icon: 'search',
-        contentType: 'search',
-      },
-      {
-        type: 'toolcall',
-        title: t('onboarding.examples.image.creatingLogo'),
-        view: 'terminal',
-        icon: 'image',
-        contentType: 'image',
-        contentImage: 'logo',
-      },
-      {
-        type: 'toolcall',
-        title: t('onboarding.examples.image.creatingBrandBoard'),
-        view: 'terminal',
-        icon: 'presentation',
-        contentType: 'image',
-        contentImage: 'mockup',
-      },
-    ],
-  },
+  // 50/50 chance between logo flow and easter egg image stylization
+  useEasterEgg
+    ? {
+      id: 'image',
+      title: t('onboarding.examples.imageEasterEgg.title'),
+      description: t('onboarding.examples.imageEasterEgg.description'),
+      userMessage: t('onboarding.examples.imageEasterEgg.userMessage'),
+      userImage: 'userImage',
+      steps: [
+        {
+          type: 'message',
+          aiText: t('onboarding.examples.imageEasterEgg.aiMessage'),
+        },
+        {
+          type: 'toolcall',
+          title: t('onboarding.examples.imageEasterEgg.creatingImage'),
+          view: 'terminal',
+          icon: 'image',
+          contentType: 'image',
+          contentImage: 'userImageStylized',
+        },
+      ],
+    }
+    : {
+      id: 'image',
+      title: t('onboarding.examples.image.title'),
+      description: t('onboarding.examples.image.description'),
+      userMessage: t('onboarding.examples.image.userMessage'),
+      steps: [
+        {
+          type: 'message',
+          aiText: t('onboarding.examples.image.aiMessage'),
+        },
+        {
+          type: 'toolcall',
+          title: t('onboarding.examples.image.researchingBrand'),
+          view: 'browser',
+          icon: 'search',
+          contentType: 'search',
+        },
+        {
+          type: 'toolcall',
+          title: t('onboarding.examples.image.creatingLogo'),
+          view: 'terminal',
+          icon: 'image',
+          contentType: 'image',
+          contentImage: 'logo',
+        },
+        {
+          type: 'toolcall',
+          title: t('onboarding.examples.image.creatingBrandBoard'),
+          view: 'terminal',
+          icon: 'presentation',
+          contentType: 'image',
+          contentImage: 'mockup',
+        },
+      ],
+    },
 ];
 
 const getIconComponent = (iconType?: IconType) => {
@@ -232,10 +258,18 @@ export default function OnboardingScreen() {
   const queryClient = useQueryClient();
 
   const [currentExample, setCurrentExample] = React.useState(0);
+  const [useEasterEgg, setUseEasterEgg] = React.useState(Math.random() < 0.3);
   const scrollX = useSharedValue(0);
   const scrollViewRef = React.useRef<ScrollView>(null);
 
-  const exampleShowcases = React.useMemo(() => getExampleShowcases(t), [t]);
+  // 30% chance for easter egg, 70% for logo flow
+  React.useEffect(() => {
+    if (currentExample === 2) { // Image example (3rd one, index 2)
+      setUseEasterEgg(Math.random() < 0.3);
+    }
+  }, [currentExample]);
+
+  const exampleShowcases = React.useMemo(() => getExampleShowcases(t, useEasterEgg), [t, useEasterEgg]);
   const totalExamples = exampleShowcases.length;
   const isDark = colorScheme === 'dark';
 
@@ -761,15 +795,32 @@ function ExampleCard({ example, index, scrollX, isActive, isDark, t }: ExampleCa
         {/* Chat Section */}
         <View className="flex-1 p-4">
           {/* User Message */}
-          <View className="flex-row justify-end mb-4">
-            <View
-              className="max-w-[85%] px-4 py-3 border border-border bg-background"
-              style={{ borderRadius: 20, borderBottomRightRadius: 6 }}
-            >
-              <Text className="text-[14px] font-roobert text-foreground">
-                {example.userMessage}
-              </Text>
+          <View className="mb-4">
+            <View className="flex-row justify-end">
+              <View
+                className="max-w-[85%] px-4 py-3 border border-border bg-background"
+                style={{ borderRadius: 20, borderBottomRightRadius: 6 }}
+              >
+                <Text className="text-[14px] font-roobert text-foreground">
+                  {example.userMessage}
+                </Text>
+              </View>
             </View>
+
+            {example.userImage && (
+              <View className="flex-row justify-end mt-2">
+                <View
+                  className="max-w-[85%] border border-border bg-background overflow-hidden"
+                  style={{ borderRadius: 12 }}
+                >
+                  <RNImage
+                    source={LOCAL_IMAGES[example.userImage]}
+                    style={{ width: 200, height: 150 }}
+                    resizeMode="cover"
+                  />
+                </View>
+              </View>
+            )}
           </View>
 
           {/* AI Response */}

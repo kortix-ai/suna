@@ -153,6 +153,13 @@
         "researchingBrand": "Pesquisando marca",
         "creatingLogo": "Criando logo",
         "creatingBrandBoard": "Criando quadro de marca"
+      },
+      "imageEasterEgg": {
+        "title": "Imagem",
+        "description": "Transforme suas fotos com estilos de IA",
+        "userMessage": "Converta minha imagem para estilo pixel art blocky",
+        "aiMessage": "Claro! Vou transformar sua imagem em um visual estilizado blocky...",
+        "creatingImage": "Criando imagem estilizada"
       }
     },
     "slide1": {
