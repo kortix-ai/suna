@@ -347,7 +347,8 @@ async def health_check():
     return {
         "status": "ok", 
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "instance_id": instance_id
+        "instance_id": instance_id,
+        "preview_test": "✅ Preview deployment system is working! This is a test branch."
     }
 
 @api_router.get("/metrics/queue", summary="Queue Metrics", operation_id="queue_metrics", tags=["system"])
