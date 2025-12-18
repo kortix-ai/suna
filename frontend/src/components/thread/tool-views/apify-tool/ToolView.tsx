@@ -480,7 +480,81 @@ export function ApifyToolView({
                     </div>
                   </div>
 
-                  {/* Description from inputSchema */}
+                  {/* Actor Metadata */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {detailsData.username && (
+                      <div className="p-3 bg-zinc-50 dark:bg-zinc-900/50 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">Creator</p>
+                        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                          {detailsData.username}
+                        </p>
+                      </div>
+                    )}
+                    {detailsData.stats?.totalRuns !== undefined && (
+                      <div className="p-3 bg-zinc-50 dark:bg-zinc-900/50 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">Total Runs</p>
+                        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                          {detailsData.stats.totalRuns.toLocaleString()}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Pricing Information */}
+                  {detailsData.pricingInfos && detailsData.pricingInfos.length > 0 && (
+                    <div className="p-4 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                      <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-3 flex items-center gap-2">
+                        <DollarSign className="h-4 w-4" />
+                        Pricing
+                      </h4>
+                      <div className="space-y-2">
+                        {detailsData.pricingInfos.map((pricing: any, idx: number) => {
+                          const pricePerUnit = pricing.pricePerUnitUsd || 0;
+                          const pricePer1K = pricePerUnit * 1000;
+                          const model = pricing.pricingModel || 'Unknown';
+                          
+                          return (
+                            <div key={idx} className="p-3 bg-zinc-50 dark:bg-zinc-900/50 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                                  {pricing.unitName || 'Per Unit'}
+                                </span>
+                                <Badge variant="outline" className="text-xs">
+                                  {model.replace(/_/g, ' ')}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                                ${pricePer1K.toFixed(2)} / 1K {pricing.unitName?.toLowerCase() || 'units'}
+                                {pricePerUnit > 0 && (
+                                  <span className="text-xs text-zinc-500 dark:text-zinc-500 ml-1">
+                                    (${pricePerUnit.toFixed(6)} per unit)
+                                  </span>
+                                )}
+                              </p>
+                              {pricing.reasonForChange && (
+                                <p className="text-xs text-zinc-500 dark:text-zinc-500 mt-1 italic">
+                                  {pricing.reasonForChange}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Categories */}
+                  {detailsData.categories && detailsData.categories.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {detailsData.categories.map((category: string, idx: number) => (
+                        <Badge key={idx} variant="outline" className="text-xs">
+                          {category.replace(/_/g, ' ')}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Description */}
                   {detailsData.description && (
                     <div className="p-4 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
                       <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
@@ -490,6 +564,69 @@ export function ApifyToolView({
                         className="text-sm text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap"
                         dangerouslySetInnerHTML={{ __html: detailsData.description }}
                       />
+                    </div>
+                  )}
+
+                  {/* Stats */}
+                  {detailsData.stats && (
+                    <div className="p-4 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                      <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-3">
+                        Statistics
+                      </h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        {detailsData.stats.totalUsers !== undefined && (
+                          <div>
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400">Total Users</p>
+                            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                              {detailsData.stats.totalUsers.toLocaleString()}
+                            </p>
+                          </div>
+                        )}
+                        {detailsData.stats.actorReviewRating !== undefined && (
+                          <div>
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400">Rating</p>
+                            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                              {detailsData.stats.actorReviewRating.toFixed(1)} ⭐
+                              {detailsData.stats.actorReviewCount && (
+                                <span className="text-xs text-zinc-500 dark:text-zinc-500 ml-1">
+                                  ({detailsData.stats.actorReviewCount} reviews)
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        )}
+                        {detailsData.stats.publicActorRunStats30Days && (
+                          <div className="col-span-2">
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">Last 30 Days</p>
+                            <div className="grid grid-cols-4 gap-2 text-xs">
+                              <div>
+                                <p className="text-zinc-500 dark:text-zinc-400">Total</p>
+                                <p className="font-medium text-zinc-900 dark:text-zinc-100">
+                                  {detailsData.stats.publicActorRunStats30Days.TOTAL?.toLocaleString() || 0}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-emerald-600 dark:text-emerald-400">Succeeded</p>
+                                <p className="font-medium text-zinc-900 dark:text-zinc-100">
+                                  {detailsData.stats.publicActorRunStats30Days.SUCCEEDED?.toLocaleString() || 0}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-red-600 dark:text-red-400">Failed</p>
+                                <p className="font-medium text-zinc-900 dark:text-zinc-100">
+                                  {detailsData.stats.publicActorRunStats30Days.FAILED?.toLocaleString() || 0}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-yellow-600 dark:text-yellow-400">Aborted</p>
+                                <p className="font-medium text-zinc-900 dark:text-zinc-100">
+                                  {detailsData.stats.publicActorRunStats30Days.ABORTED?.toLocaleString() || 0}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -717,7 +854,7 @@ export function ApifyToolView({
                 </>
               )}
 
-              {/* Run Results View */}
+              {/* Run Results View - Always shows file saved to disk */}
               {viewType === 'results' && (
                 <>
                   <div className="flex items-center gap-4 p-4 bg-zinc-50 dark:bg-zinc-900/50 rounded-lg border border-zinc-200 dark:border-zinc-800">
@@ -733,27 +870,41 @@ export function ApifyToolView({
                         Run Results
                       </h3>
                       <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                        {resultsData.count} items retrieved (offset: {resultsData.offset})
+                        {resultsData.item_count > 0 
+                          ? `${resultsData.item_count.toLocaleString()} items saved to disk`
+                          : 'Results saved to disk'}
                       </p>
                     </div>
                   </div>
                   
-                  {resultsData.items.length > 0 ? (
-                    <div className="space-y-2">
-                      {resultsData.items.map((item, idx) => (
-                        <details key={idx} className="group">
-                          <summary className="flex items-center gap-2 text-sm cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors p-3 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
-                            <FileJson className="h-4 w-4 text-zinc-400" />
-                            <span className="text-zinc-600 dark:text-zinc-400">Item {idx + resultsData.offset + 1}</span>
-                            <ChevronRight className="h-3 w-3 ml-auto text-zinc-400 group-open:rotate-90 transition-transform" />
-                          </summary>
-                          <div className="mt-2 p-3 bg-zinc-900 dark:bg-zinc-950 rounded-lg border border-zinc-200 dark:border-zinc-800">
-                            <pre className="text-xs font-mono text-emerald-400 dark:text-emerald-300 overflow-x-auto">
-                              {JSON.stringify(item, null, 2)}
-                            </pre>
-                          </div>
-                        </details>
-                      ))}
+                  {/* File Saved to Disk - Show File Preview */}
+                  {resultsData.saved_to_disk && resultsData.file_path ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                        <FileJson className="h-4 w-4" />
+                        <span>Results File</span>
+                        {resultsData.item_count > 0 && (
+                          <Badge variant="outline" className="text-xs">
+                            {resultsData.item_count.toLocaleString()} items
+                          </Badge>
+                        )}
+                      </div>
+                      <FileAttachment
+                        filepath={resultsData.file_path}
+                        sandboxId={project?.sandbox?.id}
+                        showPreview={true}
+                        collapsed={false}
+                        project={project}
+                        onClick={onFileClick}
+                        className="w-full"
+                      />
+                      {resultsData.message && (
+                        <div className="p-3 bg-zinc-50 dark:bg-zinc-900/50 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                          <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                            {resultsData.message.replace(/^✅\s*/, '')}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -761,7 +912,7 @@ export function ApifyToolView({
                         <Database className="h-6 w-6 text-zinc-400" />
                       </div>
                       <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                        No items found
+                        {resultsData.message || 'No results file found'}
                       </p>
                     </div>
                   )}

@@ -578,31 +578,30 @@ class ApifyTool(Tool):
                 except Exception as e:
                     logger.warning(f"Exception fetching input schema from build endpoint: {e}", exc_info=True)
             
-            # Build minimal response - ONLY return inputSchema from build endpoint (and maybe image URL)
-            response_data = {}
+            # Build full response with all actor details from API + inputSchema from build endpoint
+            # Start with full actor_info response
+            if isinstance(actor_info, dict):
+                response_data = actor_info.copy()
+            elif hasattr(actor_info_response, '__dict__'):
+                response_data = actor_info_response.__dict__.copy()
+            else:
+                response_data = {}
             
-            # Get image URL if available (from actor_info)
-            image_url = None
-            if actor_info:
-                if isinstance(actor_info, dict):
-                    image_url = actor_info.get("imageUrl") or actor_info.get("image_url")
-                else:
-                    image_url = getattr(actor_info_response, 'imageUrl', None) or getattr(actor_info_response, 'image_url', None)
+            # Ensure actor_id is set
+            if not response_data.get("actor_id"):
+                response_data["actor_id"] = resolved_id
             
-            if image_url:
-                response_data["imageUrl"] = image_url
-            
-            # CRITICAL: Add input schema if available (this is the main purpose - return the full schema from build endpoint)
+            # CRITICAL: Add input schema if available (from build endpoint)
             if input_schema:
-                # Return the entire inputSchema as-is from the build endpoint
                 response_data["inputSchema"] = input_schema
                 logger.info(f"✅ Added inputSchema to response for actor {resolved_id}")
             else:
                 logger.warning(f"⚠️ No inputSchema available for actor {resolved_id} - agent may not know required inputs")
-                return self.fail_response(f"Could not fetch input schema for actor '{resolved_id}'. The actor may not have an input schema defined.")
+                # Don't fail - still return actor details even without input schema
             
-            # Remove None values to keep response clean (after adding all fields)
-            response_data = {k: v for k, v in response_data.items() if v is not None}
+            # Ensure imageUrl/pictureUrl is available (use pictureUrl from API if imageUrl not set)
+            if not response_data.get("imageUrl") and response_data.get("pictureUrl"):
+                response_data["imageUrl"] = response_data["pictureUrl"]
             
             # Serialize datetime objects to ISO strings for JSON compatibility
             response_data = serialize_datetime(response_data)
