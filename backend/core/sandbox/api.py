@@ -3,9 +3,10 @@ import shlex
 import asyncio
 import urllib.parse
 import uuid
+import json
 from typing import Optional, TypeVar, Callable, Awaitable
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, APIRouter, Form, Depends, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, APIRouter, Form, Depends, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from pydantic import BaseModel
 from daytona_sdk import AsyncSandbox, SessionExecuteRequest
@@ -1420,3 +1421,302 @@ async def revert_commit_or_files(
             f"Error handling snapshot revert in sandbox {sandbox_id}: {str(e)}"
         )
         raise HTTPException(status_code=500, detail=str(e))
+
+class TerminalCommandRequest(BaseModel):
+    command: str
+    cwd: Optional[str] = "/workspace"
+
+class TerminalCommandResponse(BaseModel):
+    output: str
+    exit_code: int
+    success: bool
+
+@router.post("/sandboxes/{sandbox_id}/terminal/execute")
+async def execute_terminal_command(
+    sandbox_id: str,
+    request_body: TerminalCommandRequest,
+    request: Request = None,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    logger.debug(f"Received terminal command request for sandbox {sandbox_id}, user_id: {user_id}")
+    client = await db.client
+    
+    await verify_sandbox_access(client, sandbox_id, user_id)
+    
+    try:
+        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        
+        session_id = f"terminal_{uuid.uuid4().hex}"
+        command = request_body.command
+        cwd = request_body.cwd or "/workspace"
+        
+        wrapped_command = f"cd {shlex.quote(cwd)} && {command}"
+        
+        try:
+            await sandbox.process.create_session(session_id)
+            result = await sandbox.process.execute_session_command(
+                session_id,
+                SessionExecuteRequest(
+                    command=f"bash -lc {shlex.quote(wrapped_command)}",
+                    var_async=False
+                )
+            )
+            
+            output = ""
+            exit_code = 0
+            
+            if hasattr(result, 'output'):
+                output = result.output or ""
+            elif hasattr(result, 'result'):
+                output = result.result or ""
+            elif isinstance(result, dict):
+                output = result.get('output', result.get('result', ''))
+            else:
+                output = str(result) if result else ""
+            
+            if hasattr(result, 'exit_code'):
+                exit_code = result.exit_code
+            elif isinstance(result, dict):
+                exit_code = result.get('exit_code', 0)
+            
+            return {
+                "output": output,
+                "exit_code": exit_code,
+                "success": exit_code == 0
+            }
+            
+        except Exception as exec_err:
+            logger.error(f"Error executing command in sandbox {sandbox_id}: {str(exec_err)}")
+            return {
+                "output": str(exec_err),
+                "exit_code": 1,
+                "success": False
+            }
+        finally:
+            try:
+                if hasattr(sandbox.process, 'delete_session'):
+                    await sandbox.process.delete_session(session_id)
+            except Exception:
+                pass
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in terminal command for sandbox {sandbox_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class SSHAccessRequest(BaseModel):
+    expires_in_minutes: int = 60
+
+
+class SSHAccessResponse(BaseModel):
+    token: str
+    ssh_command: str
+    expires_in_minutes: int
+
+
+@router.post("/sandboxes/{sandbox_id}/ssh/token", response_model=SSHAccessResponse)
+async def create_ssh_access_token(
+    sandbox_id: str,
+    request_body: SSHAccessRequest = SSHAccessRequest(),
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    logger.debug(f"Creating SSH access token for sandbox {sandbox_id}, user_id: {user_id}")
+    client = await db.client
+    
+    await verify_sandbox_access(client, sandbox_id, user_id)
+    
+    try:
+        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        
+        ssh_access = await sandbox.create_ssh_access(expires_in_minutes=request_body.expires_in_minutes)
+        
+        ssh_command = f"ssh {ssh_access.token}@ssh.app.daytona.io"
+        
+        logger.info(f"SSH access token created for sandbox {sandbox_id}")
+        return SSHAccessResponse(
+            token=ssh_access.token,
+            ssh_command=ssh_command,
+            expires_in_minutes=request_body.expires_in_minutes
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating SSH access token for sandbox {sandbox_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/sandboxes/{sandbox_id}/ssh/token")
+async def revoke_ssh_access_token(
+    sandbox_id: str,
+    token: Optional[str] = None,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    logger.debug(f"Revoking SSH access for sandbox {sandbox_id}, user_id: {user_id}")
+    client = await db.client
+    
+    await verify_sandbox_access(client, sandbox_id, user_id)
+    
+    try:
+        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        
+        if token:
+            await sandbox.revoke_ssh_access(token=token)
+            logger.info(f"SSH access token revoked for sandbox {sandbox_id}")
+        else:
+            await sandbox.revoke_ssh_access()
+            logger.info(f"All SSH access tokens revoked for sandbox {sandbox_id}")
+        
+        return {"success": True, "message": "SSH access revoked"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error revoking SSH access for sandbox {sandbox_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.websocket("/sandboxes/{sandbox_id}/terminal/ws")
+async def websocket_pty_terminal(
+    websocket: WebSocket,
+    sandbox_id: str,
+):
+    """WebSocket endpoint for interactive PTY terminal using Daytona's built-in PTY API."""
+    await websocket.accept()
+    
+    pty_handle = None
+    
+    try:
+        logger.info(f"[PTY WS] Waiting for auth message from sandbox {sandbox_id}")
+        
+        try:
+            message = await asyncio.wait_for(websocket.receive(), timeout=30.0)
+            
+            if message.get("type") == "websocket.receive":
+                if "text" in message:
+                    auth_message = json.loads(message["text"])
+                elif "bytes" in message:
+                    auth_message = json.loads(message["bytes"].decode())
+                else:
+                    await websocket.send_json({"type": "error", "message": "Unknown message format"})
+                    await websocket.close()
+                    return
+            elif message.get("type") == "websocket.disconnect":
+                return
+            else:
+                await websocket.send_json({"type": "error", "message": f"Unexpected message type"})
+                await websocket.close()
+                return
+                
+        except asyncio.TimeoutError:
+            logger.error(f"[PTY WS] Auth timeout for sandbox {sandbox_id}")
+            await websocket.send_json({"type": "error", "message": "Authentication timeout"})
+            await websocket.close()
+            return
+        except Exception as recv_err:
+            logger.error(f"[PTY WS] Error receiving auth: {recv_err}")
+            await websocket.send_json({"type": "error", "message": f"Error: {str(recv_err)}"})
+            await websocket.close()
+            return
+        
+        if auth_message.get("type") != "auth":
+            await websocket.send_json({"type": "error", "message": "Expected auth message"})
+            await websocket.close()
+            return
+        
+        access_token = auth_message.get("access_token")
+        if not access_token:
+            await websocket.send_json({"type": "error", "message": "No access token provided"})
+            await websocket.close()
+            return
+        
+        from core.utils.auth_utils import _decode_jwt_with_verification
+        try:
+            decoded = _decode_jwt_with_verification(access_token)
+            user_id = decoded.get("sub")
+            if not user_id:
+                raise ValueError("No user ID in token")
+        except Exception:
+            await websocket.send_json({"type": "error", "message": "Invalid access token"})
+            await websocket.close()
+            return
+        
+        client = await db.client
+        try:
+            await verify_sandbox_access(client, sandbox_id, user_id)
+        except HTTPException as e:
+            await websocket.send_json({"type": "error", "message": str(e.detail)})
+            await websocket.close()
+            return
+        
+        logger.info(f"[PTY WS] Auth successful, creating PTY session for sandbox {sandbox_id}")
+        await websocket.send_json({"type": "status", "message": "Creating terminal session..."})
+        
+        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        
+        from daytona_sdk.common.pty import PtySize
+        import uuid
+        
+        session_id = f"terminal-{uuid.uuid4().hex[:8]}"
+        
+        async def on_pty_data(data: bytes):
+            try:
+                text = data.decode("utf-8", errors="replace")
+                await websocket.send_json({"type": "output", "data": text})
+            except Exception as e:
+                logger.error(f"[PTY WS] Error sending PTY data: {e}")
+        
+        try:
+            pty_handle = await sandbox.process.create_pty_session(
+                id=session_id,
+                on_data=on_pty_data,
+                pty_size=PtySize(cols=120, rows=40)
+            )
+            logger.info(f"[PTY WS] PTY session created: {session_id}")
+        except Exception as e:
+            logger.error(f"[PTY WS] Failed to create PTY session: {e}")
+            await websocket.send_json({"type": "error", "message": f"Failed to create terminal: {str(e)}"})
+            await websocket.close()
+            return
+        
+        await websocket.send_json({"type": "connected", "message": "Terminal session established"})
+        
+        try:
+            while True:
+                message = await websocket.receive_json()
+                msg_type = message.get("type")
+                
+                if msg_type == "input":
+                    data = message.get("data", "")
+                    if data and pty_handle:
+                        await pty_handle.send_input(data)
+                elif msg_type == "resize":
+                    cols = message.get("cols", 120)
+                    rows = message.get("rows", 40)
+                    if pty_handle:
+                        await pty_handle.resize(PtySize(cols=cols, rows=rows))
+                elif msg_type == "ping":
+                    await websocket.send_json({"type": "pong"})
+                    
+        except WebSocketDisconnect:
+            logger.info(f"[PTY WS] WebSocket disconnected for sandbox {sandbox_id}")
+            
+    except Exception as e:
+        logger.error(f"[PTY WS] Error for sandbox {sandbox_id}: {str(e)}")
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except:
+            pass
+    finally:
+        if pty_handle:
+            try:
+                await pty_handle.kill()
+                logger.info(f"[PTY WS] PTY session killed for sandbox {sandbox_id}")
+            except Exception as e:
+                logger.warning(f"[PTY WS] Error killing PTY session: {e}")
+        try:
+            await websocket.close()
+        except:
+            pass

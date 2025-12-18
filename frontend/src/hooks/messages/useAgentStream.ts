@@ -30,6 +30,13 @@ export interface UseAgentStreamResult {
   stopStreaming: () => Promise<void>;
 }
 
+export interface ToolOutputStreamData {
+  tool_call_id: string;
+  tool_name: string;
+  output: string;
+  is_final: boolean;
+}
+
 // Define the callbacks the hook consumer can provide
 export interface AgentStreamCallbacks {
   onMessage: (message: UnifiedMessage) => void;
@@ -39,6 +46,7 @@ export interface AgentStreamCallbacks {
   onAssistantStart?: () => void;
   onAssistantChunk?: (chunk: { content: string }) => void;
   onToolCallChunk?: (message: UnifiedMessage) => void;
+  onToolOutputStream?: (data: ToolOutputStreamData) => void;
 }
 
 export function useAgentStream(
@@ -478,6 +486,16 @@ export function useAgentStream(
             finalizeStream('stopped', currentRunIdRef.current);
             return;
           }
+        }
+        // Handle tool_output_stream messages for real-time shell output
+        if (jsonData.type === 'tool_output_stream') {
+          callbacksRef.current.onToolOutputStream?.({
+            tool_call_id: jsonData.tool_call_id,
+            tool_name: jsonData.tool_name,
+            output: jsonData.output,
+            is_final: jsonData.is_final,
+          });
+          return;
         }
       } catch (jsonError) {
         // Not JSON or could not parse as JSON, continue processing
