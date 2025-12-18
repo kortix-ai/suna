@@ -195,6 +195,30 @@ class ModelRegistry:
             if model.litellm_model_id == litellm_model_id:
                 return model.id
         
+        # Handle Bedrock ARNs that may come in different formats
+        # Format 1: bedrock/converse/arn:aws:bedrock:.../profile_id
+        # Format 2: arn:aws:bedrock:.../profile_id
+        if "application-inference-profile" in litellm_model_id:
+            # Extract profile ID from ARN (last segment after final "/")
+            profile_id = None
+            if "/" in litellm_model_id:
+                profile_id = litellm_model_id.split("/")[-1]
+            
+            if profile_id:
+                # Map profile IDs to registry model IDs
+                profile_to_model = {
+                    HAIKU_4_5_PROFILE_ID: "kortix/basic",
+                    SONNET_4_5_PROFILE_ID: "kortix/power",
+                    KIMI_K2_PROFILE_ID: "kortix/test",
+                }
+                
+                registry_id = profile_to_model.get(profile_id)
+                if registry_id and self.get(registry_id):
+                    logger.debug(f"[MODEL_REGISTRY] Resolved Bedrock ARN profile '{profile_id}' to registry model '{registry_id}'")
+                    return registry_id
+                else:
+                    logger.debug(f"[MODEL_REGISTRY] Bedrock profile '{profile_id}' not found in mapping or model not registered")
+        
         # Check if this is already a registry ID
         if self.get(litellm_model_id):
             return litellm_model_id
