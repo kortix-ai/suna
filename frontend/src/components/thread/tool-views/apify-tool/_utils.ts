@@ -13,22 +13,14 @@ export interface ApifyActor {
 }
 
 export interface ApifyActorDetails {
-  actor_id: string;
-  name: string;
+  actor_id?: string;
+  name?: string;
   title?: string;
   description?: string;
   username?: string;
-  inputSchema?: any; // Full API response uses inputSchema (camelCase)
+  imageUrl?: string;
+  inputSchema?: any; // Full input schema from build endpoint (contains title, description, properties, etc.)
   input_schema?: any; // Fallback for snake_case
-  store_actor?: {
-    title?: string;
-    description?: string;
-    stats?: {
-      runsCounter?: number;
-    };
-    pricingModel?: string;
-    isPremium?: boolean;
-  };
   // All other fields from API response
   [key: string]: any;
 }
@@ -144,9 +136,9 @@ export function extractApifyActorDetails(
     title: '',
     description: '',
     username: '',
-    input_schema: {},
-    pricing_info: undefined,
-    stats: undefined,
+    imageUrl: undefined,
+    inputSchema: undefined,
+    input_schema: undefined,
     actualIsSuccess: isSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp,
@@ -175,23 +167,23 @@ export function extractApifyActorDetails(
     }
 
     if (output && typeof output === 'object' && output !== null) {
-      // Get input schema (API uses inputSchema, but we support both)
-      const inputSchema = output.inputSchema || output.input_schema || {};
+      // New simplified response structure: only inputSchema and optional imageUrl
+      const inputSchema = output.inputSchema || output.input_schema;
+      const imageUrl = output.imageUrl || output.image_url;
       
-      // Get title/description from store_actor if available, otherwise from actor
-      const storeActor = output.store_actor;
-      const title = storeActor?.title || output.title || output.name || '';
-      const description = storeActor?.description || output.description || '';
+      // Extract title/description from inputSchema if available
+      const schemaTitle = inputSchema?.title || '';
+      const schemaDescription = inputSchema?.description || '';
       
       return {
-        actor_id: output.actor_id || actor_id,
-        name: output.name || '',
-        title,
-        description,
-        username: output.username || '',
+        actor_id: actor_id,
+        name: schemaTitle || '',
+        title: schemaTitle,
+        description: schemaDescription,
+        username: undefined,
+        imageUrl: imageUrl,
         inputSchema: inputSchema,
         input_schema: inputSchema, // Keep both for compatibility
-        store_actor: storeActor,
         // Include all other fields from API response
         ...output,
         actualIsSuccess,

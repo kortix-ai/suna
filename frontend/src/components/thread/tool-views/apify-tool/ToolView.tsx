@@ -38,34 +38,34 @@ const VIEW_CONFIGS = {
   search: {
     title: 'Search Apify Actors',
     icon: Search,
-    color: 'from-blue-500 to-blue-600',
-    bgColor: 'bg-blue-50 dark:bg-blue-900/20',
-    textColor: 'text-blue-700 dark:text-blue-300',
-    borderColor: 'border-blue-200 dark:border-blue-800',
+    color: 'from-zinc-500 to-zinc-600',
+    bgColor: 'bg-zinc-50 dark:bg-zinc-900/20',
+    textColor: 'text-zinc-700 dark:text-zinc-300',
+    borderColor: 'border-zinc-200 dark:border-zinc-800',
   },
   details: {
     title: 'Actor Details',
     icon: Info,
-    color: 'from-indigo-500 to-indigo-600',
-    bgColor: 'bg-indigo-50 dark:bg-indigo-900/20',
-    textColor: 'text-indigo-700 dark:text-indigo-300',
-    borderColor: 'border-indigo-200 dark:border-indigo-800',
+    color: 'from-zinc-500 to-zinc-600',
+    bgColor: 'bg-zinc-50 dark:bg-zinc-900/20',
+    textColor: 'text-zinc-700 dark:text-zinc-300',
+    borderColor: 'border-zinc-200 dark:border-zinc-800',
   },
   run: {
     title: 'Run Apify Actor',
     icon: Play,
-    color: 'from-emerald-500 to-emerald-600',
-    bgColor: 'bg-emerald-50 dark:bg-emerald-900/20',
-    textColor: 'text-emerald-700 dark:text-emerald-300',
-    borderColor: 'border-emerald-200 dark:border-emerald-800',
+    color: 'from-zinc-500 to-zinc-600',
+    bgColor: 'bg-zinc-50 dark:bg-zinc-900/20',
+    textColor: 'text-zinc-700 dark:text-zinc-300',
+    borderColor: 'border-zinc-200 dark:border-zinc-800',
   },
   results: {
     title: 'Actor Results',
     icon: Database,
-    color: 'from-purple-500 to-purple-600',
-    bgColor: 'bg-purple-50 dark:bg-purple-900/20',
-    textColor: 'text-purple-700 dark:text-purple-300',
-    borderColor: 'border-purple-200 dark:border-purple-800',
+    color: 'from-zinc-500 to-zinc-600',
+    bgColor: 'bg-zinc-50 dark:bg-zinc-900/20',
+    textColor: 'text-zinc-700 dark:text-zinc-300',
+    borderColor: 'border-zinc-200 dark:border-zinc-800',
   },
 };
 
@@ -303,18 +303,18 @@ export function ApifyToolView({
               {viewType === 'run' && (
                 <div className="space-y-2 text-xs text-zinc-500 dark:text-zinc-400">
                   <div className="flex items-center gap-2 justify-center">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-pulse" />
                     <span>Initializing actor run...</span>
                   </div>
                   {elapsedTime > 5 && (
                     <div className="flex items-center gap-2 justify-center">
-                      <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-pulse" />
                       <span>Executing actor tasks...</span>
                     </div>
                   )}
                   {elapsedTime > 15 && (
                     <div className="flex items-center gap-2 justify-center">
-                      <div className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-pulse" />
                       <span>Collecting results...</span>
                     </div>
                   )}
@@ -380,12 +380,12 @@ export function ApifyToolView({
                                 </h3>
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   {actor.is_featured && (
-                                    <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700">
+                                    <Badge variant="outline" className="text-xs">
                                       Featured
                                     </Badge>
                                   )}
                                   {actor.is_premium && (
-                                    <Badge variant="outline" className="text-xs bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700">
+                                    <Badge variant="outline" className="text-xs">
                                       Premium
                                     </Badge>
                                   )}
@@ -450,10 +450,10 @@ export function ApifyToolView({
                 <>
                   {/* Actor Header */}
                   <div className="flex items-start gap-4 p-4 bg-zinc-50 dark:bg-zinc-900/50 rounded-lg border border-zinc-200 dark:border-zinc-800">
-                    {detailsData.pictureUrl ? (
+                    {detailsData.imageUrl ? (
                       <img
-                        src={detailsData.pictureUrl}
-                        alt={detailsData.title || detailsData.name}
+                        src={detailsData.imageUrl}
+                        alt={detailsData.title || detailsData.name || 'Actor'}
                         className="w-16 h-16 rounded-lg object-cover border-2 border-zinc-200 dark:border-zinc-700"
                         onError={(e) => {
                           (e.target as HTMLImageElement).style.display = 'none';
@@ -470,172 +470,106 @@ export function ApifyToolView({
                     )}
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 text-lg mb-1">
-                        {detailsData.title || detailsData.name || detailsData.actor_id}
+                        {detailsData.title || detailsData.name || detailsData.actor_id || 'Actor'}
                       </h3>
-                      <p className="text-sm text-zinc-500 dark:text-zinc-400 font-mono">
-                        {detailsData.actor_id}
-                      </p>
-                      {detailsData.username && (
-                        <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">
-                          by {detailsData.username}
+                      {detailsData.actor_id && (
+                        <p className="text-sm text-zinc-500 dark:text-zinc-400 font-mono">
+                          {detailsData.actor_id}
                         </p>
-                      )}
-                      {detailsData.categories && Array.isArray(detailsData.categories) && detailsData.categories.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                          {detailsData.categories.map((cat: string, idx: number) => (
-                            <Badge key={idx} variant="outline" className="text-xs">
-                              {cat.replace(/_/g, ' ')}
-                            </Badge>
-                          ))}
-                        </div>
                       )}
                     </div>
                   </div>
 
-                  {/* Description */}
+                  {/* Description from inputSchema */}
                   {detailsData.description && (
                     <div className="p-4 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
                       <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
                         Description
                       </h4>
-                      <p className="text-sm text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap">
-                        {detailsData.description}
-                      </p>
+                      <div 
+                        className="text-sm text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap"
+                        dangerouslySetInnerHTML={{ __html: detailsData.description }}
+                      />
                     </div>
                   )}
 
-                  {/* Stats */}
-                  {detailsData.stats && (
-                    <div className="p-4 bg-blue-50 dark:bg-blue-900/10 rounded-lg border border-blue-200 dark:border-blue-800">
-                      <h4 className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-3 flex items-center gap-2">
-                        <Database className="h-4 w-4" />
-                        Statistics
+                  {/* Input Schema Properties */}
+                  {detailsData.inputSchema && detailsData.inputSchema.properties && (
+                    <div className="p-4 bg-zinc-50 dark:bg-zinc-900/10 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                      <h4 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-3 flex items-center gap-2">
+                        <Settings className="h-4 w-4" />
+                        Input Schema Properties
                       </h4>
-                      <div className="grid grid-cols-2 gap-3">
-                        {detailsData.stats.totalRuns !== undefined && (
-                          <div>
-                            <div className="text-xs text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-1">
-                              Total Runs
-                            </div>
-                            <div className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-                              {detailsData.stats.totalRuns.toLocaleString()}
-                            </div>
-                          </div>
-                        )}
-                        {detailsData.stats.totalUsers !== undefined && (
-                          <div>
-                            <div className="text-xs text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-1">
-                              Users
-                            </div>
-                            <div className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-                              {detailsData.stats.totalUsers.toLocaleString()}
-                            </div>
-                          </div>
-                        )}
-                        {detailsData.stats.publicActorRunStats30Days && (
-                          <>
-                            <div>
-                              <div className="text-xs text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-1">
-                                Success Rate (30d)
-                              </div>
-                              <div className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">
-                                {detailsData.stats.publicActorRunStats30Days.SUCCEEDED > 0
-                                  ? Math.round(
-                                      (detailsData.stats.publicActorRunStats30Days.SUCCEEDED /
-                                        detailsData.stats.publicActorRunStats30Days.TOTAL) *
-                                        100
-                                    )
-                                  : 0}%
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-xs text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-1">
-                                Runs (30d)
-                              </div>
-                              <div className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-                                {detailsData.stats.publicActorRunStats30Days.TOTAL.toLocaleString()}
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Pricing Info */}
-                  {detailsData.pricingInfos && Array.isArray(detailsData.pricingInfos) && detailsData.pricingInfos.length > 0 && (
-                    <div className="p-4 bg-emerald-50 dark:bg-emerald-900/10 rounded-lg border border-emerald-200 dark:border-emerald-800">
-                      <h4 className="text-sm font-medium text-emerald-700 dark:text-emerald-300 mb-3 flex items-center gap-2">
-                        <DollarSign className="h-4 w-4" />
-                        Pricing
-                      </h4>
-                      {(() => {
-                        const latestPricing = detailsData.pricingInfos[detailsData.pricingInfos.length - 1] as any;
-                        const tieredPricing = latestPricing?.tieredPricing;
-                        if (tieredPricing) {
-                          const tieredPricingAny = tieredPricing as Record<string, { tieredPricePerUnitUsd?: number }>;
-                          const tiers = Object.entries(tieredPricingAny)
-                            .filter(([tier]) => tier !== 'FREE' || tieredPricingAny?.FREE?.tieredPricePerUnitUsd === 0)
-                            .sort(([, a], [, b]) => (a?.tieredPricePerUnitUsd || 0) - (b?.tieredPricePerUnitUsd || 0));
+                      <div className="space-y-3">
+                        {Object.entries(detailsData.inputSchema.properties).map(([key, prop]: [string, any]) => {
+                          const sectionCaption = prop.sectionCaption;
+                          const isNewSection = sectionCaption && 
+                            (key === Object.keys(detailsData.inputSchema.properties)[0] || 
+                             detailsData.inputSchema.properties[Object.keys(detailsData.inputSchema.properties)[Object.keys(detailsData.inputSchema.properties).indexOf(key) - 1]]?.sectionCaption !== sectionCaption);
                           
                           return (
-                            <div className="space-y-2">
-                              <div className="text-xs text-zinc-600 dark:text-zinc-400 mb-2">
-                                Per {latestPricing?.unitName || 'result'}:
-                              </div>
-                              <div className="grid grid-cols-2 gap-2">
-                                {tiers.map(([tier, pricing]: [string, any]) => (
-                                  <div key={tier} className="flex items-center justify-between p-2 bg-white dark:bg-zinc-900 rounded border border-zinc-200 dark:border-zinc-800">
-                                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                                      {tier}
-                                    </span>
-                                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                                      ${pricing?.tieredPricePerUnitUsd?.toFixed(4) || '0.0000'}
-                                    </span>
+                            <div key={key}>
+                              {isNewSection && sectionCaption && (
+                                <h5 className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-2 mt-3 first:mt-0">
+                                  {sectionCaption}
+                                </h5>
+                              )}
+                              <div className="p-3 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                                <div className="flex items-start justify-between gap-2 mb-1">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <code className="text-xs font-mono font-semibold text-zinc-900 dark:text-zinc-100">
+                                        {key}
+                                      </code>
+                                      {prop.type && (
+                                        <Badge variant="outline" className="text-xs">
+                                          {prop.type}
+                                        </Badge>
+                                      )}
+                                      {prop.required && (
+                                        <Badge variant="outline" className="text-xs bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700">
+                                          Required
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    {prop.title && (
+                                      <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                                        {prop.title}
+                                      </p>
+                                    )}
+                                    {prop.description && (
+                                      <div 
+                                        className="text-xs text-zinc-600 dark:text-zinc-400 mb-2"
+                                        dangerouslySetInnerHTML={{ __html: prop.description }}
+                                      />
+                                    )}
+                                    {prop.default !== undefined && (
+                                      <div className="text-xs text-zinc-500 dark:text-zinc-500 mt-1">
+                                        <span className="font-medium">Default:</span>{' '}
+                                        <code className="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">
+                                          {typeof prop.default === 'object' ? JSON.stringify(prop.default) : String(prop.default)}
+                                        </code>
+                                      </div>
+                                    )}
+                                    {prop.enum && Array.isArray(prop.enum) && (
+                                      <div className="text-xs text-zinc-500 dark:text-zinc-500 mt-1">
+                                        <span className="font-medium">Options:</span>{' '}
+                                        <span className="text-zinc-600 dark:text-zinc-400">
+                                          {prop.enum.join(', ')}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {prop.minimum !== undefined && (
+                                      <div className="text-xs text-zinc-500 dark:text-zinc-500 mt-1">
+                                        <span className="font-medium">Min:</span> {prop.minimum}
+                                      </div>
+                                    )}
                                   </div>
-                                ))}
+                                </div>
                               </div>
                             </div>
                           );
-                        }
-                        return (
-                          <div className="text-sm text-zinc-600 dark:text-zinc-400">
-                            {latestPricing?.pricingModel || 'No Apify cost'}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-
-                  {/* Store Actor Info (if available) */}
-                  {detailsData.store_actor && (
-                    <div className="p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-lg border border-indigo-200 dark:border-indigo-800">
-                      <h4 className="text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-3 flex items-center gap-2">
-                        <Globe className="h-4 w-4" />
-                        Store Information
-                      </h4>
-                      <div className="space-y-2">
-                        {detailsData.store_actor.stats?.runsCounter !== undefined && (
-                          <div className="flex items-center gap-2 text-sm">
-                            <Play className="h-4 w-4 text-indigo-500" />
-                            <span className="text-zinc-600 dark:text-zinc-400">
-                              {detailsData.store_actor.stats.runsCounter.toLocaleString()} runs
-                            </span>
-                          </div>
-                        )}
-                        {(detailsData.store_actor.pricingModel || detailsData.store_actor.isPremium) && (
-                          <div className="flex items-center gap-2 text-sm">
-                            <DollarSign className="h-4 w-4 text-indigo-500" />
-                            <span className="text-zinc-600 dark:text-zinc-400">
-                              {detailsData.store_actor.pricingModel || 'No Apify cost'}
-                              {detailsData.store_actor.isPremium && (
-                                <Badge variant="outline" className="ml-2 text-xs bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700">
-                                  Premium
-                                </Badge>
-                              )}
-                            </span>
-                          </div>
-                        )}
+                        })}
                       </div>
                     </div>
                   )}
@@ -672,34 +606,36 @@ export function ApifyToolView({
                   </div>
                   
                   {/* Cost and Summary */}
-                  <div className="grid grid-cols-2 gap-3">
-                    {runData.cost_deducted && (
-                      <div className="p-4 bg-emerald-50 dark:bg-emerald-900/10 rounded-lg border border-emerald-200 dark:border-emerald-800">
-                        <div className="flex items-center gap-2 mb-2">
-                          <DollarSign className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                          <h4 className="text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">
-                            Cost
-                          </h4>
+                  {(runData.cost_deducted || runData.total_items > 0) && (
+                    <div className="grid grid-cols-2 gap-3">
+                      {runData.cost_deducted && (
+                        <div className="p-3 bg-zinc-50 dark:bg-zinc-900/50 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                          <div className="flex items-center gap-2 mb-1">
+                            <DollarSign className="h-3.5 w-3.5 text-zinc-500 dark:text-zinc-400" />
+                            <h4 className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
+                              Cost
+                            </h4>
+                          </div>
+                          <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                            {runData.cost_deducted}
+                          </p>
                         </div>
-                        <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                          {runData.cost_deducted}
-                        </p>
-                      </div>
-                    )}
-                    {runData.total_items > 0 && (
-                      <div className="p-4 bg-blue-50 dark:bg-blue-900/10 rounded-lg border border-blue-200 dark:border-blue-800">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Database className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                          <h4 className="text-xs font-medium text-blue-700 dark:text-blue-300 uppercase tracking-wide">
-                            Items
-                          </h4>
+                      )}
+                      {runData.total_items > 0 && (
+                        <div className="p-3 bg-zinc-50 dark:bg-zinc-900/50 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Database className="h-3.5 w-3.5 text-zinc-500 dark:text-zinc-400" />
+                            <h4 className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
+                              Items
+                            </h4>
+                          </div>
+                          <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                            {runData.total_items.toLocaleString()}
+                          </p>
                         </div>
-                        <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                          {runData.total_items.toLocaleString()}
-                        </p>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* File Saved to Disk - Show File Preview */}
                   {runData.saved_to_disk && runData.file_path && (
@@ -721,9 +657,9 @@ export function ApifyToolView({
                         className="w-full"
                       />
                       {runData.message && (
-                        <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg border border-blue-200 dark:border-blue-800">
-                          <p className="text-xs text-blue-700 dark:text-blue-300">
-                            💡 {runData.message.replace(/^✅\s*/, '')}
+                        <div className="p-3 bg-zinc-50 dark:bg-zinc-900/50 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                          <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                            {runData.message.replace(/^✅\s*/, '')}
                           </p>
                         </div>
                       )}
@@ -762,8 +698,8 @@ export function ApifyToolView({
                   
                   {/* Show message if saved to disk but no file path yet */}
                   {runData.saved_to_disk && !runData.file_path && runData.message && (
-                    <div className="p-4 bg-blue-50 dark:bg-blue-900/10 rounded-lg border border-blue-200 dark:border-blue-800">
-                      <p className="text-sm text-blue-700 dark:text-blue-300">
+                    <div className="p-3 bg-zinc-50 dark:bg-zinc-900/50 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                      <p className="text-sm text-zinc-600 dark:text-zinc-400">
                         {runData.message}
                       </p>
                     </div>

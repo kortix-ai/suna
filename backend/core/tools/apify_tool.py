@@ -1,5 +1,6 @@
 import structlog
 import json
+import os
 from typing import Optional, Dict, Any, List, Union
 from decimal import Decimal
 from datetime import datetime
@@ -13,6 +14,7 @@ from core.utils.logger import logger
 from core.billing.credits.manager import CreditManager
 from core.billing.shared.config import TOKEN_PRICE_MULTIPLIER
 from core.services.supabase import DBConnection
+from core.sandbox.sandbox import get_or_start_sandbox
 
 # Popular actors for quick access
 POPULAR_ACTORS = {
@@ -103,7 +105,6 @@ class ApifyTool(Tool):
         self.thread_manager = thread_manager
         self.credit_manager = CreditManager()
         self.db = DBConnection()
-        self._deducted_runs = set()  # Track runs we've already deducted credits for
         
         if config.APIFY_API_TOKEN:
             # Initialize Apify client with token
@@ -207,6 +208,27 @@ class ApifyTool(Tool):
             logger.warning(f"Error extracting run cost: {e}")
             return Decimal("0")
     
+    async def _has_deduction_for_run(self, user_id: str, run_id: str) -> bool:
+        """Check if credits have already been deducted for this run_id (database check)."""
+        try:
+            client = await self.db.client
+            # Check if a deduction already exists for this run_id
+            # The description format is: "Apify: {actor_id} (run: {run_id})"
+            result = await client.from_('credit_ledger').select('id').eq(
+                'account_id', user_id
+            ).eq('type', 'apify_usage').like(
+                'description', f'%run: {run_id}%'
+            ).execute()
+            
+            has_deduction = result.data and len(result.data) > 0
+            if has_deduction:
+                logger.debug(f"Found existing deduction for run {run_id} in database")
+            return has_deduction
+        except Exception as e:
+            logger.warning(f"Error checking for existing deduction for run {run_id}: {e}")
+            # If we can't check, assume no deduction exists (safer to try deducting)
+            return False
+    
     async def _deduct_apify_credits(
         self, 
         user_id: str, 
@@ -215,9 +237,14 @@ class ApifyTool(Tool):
         run_id: str, 
         thread_id: Optional[str] = None
     ) -> bool:
-        """Deduct credits for Apify usage with markup."""
+        """Deduct credits for Apify usage with markup. Checks database first to avoid duplicate deductions."""
         if config.ENV_MODE == EnvMode.LOCAL:
             logger.info(f"LOCAL mode - skipping billing for Apify run {run_id}")
+            return True
+        
+        # Check if deduction already exists (database is source of truth)
+        if await self._has_deduction_for_run(user_id, run_id):
+            logger.info(f"Credits already deducted for run {run_id} (found in database), skipping duplicate deduction")
             return True
         
         marked_up_cost = cost * TOKEN_PRICE_MULTIPLIER
@@ -438,73 +465,144 @@ class ApifyTool(Tool):
                     f"Rental actors are automatically filtered out from search results."
                 )
             
-            # Get store actor details if available (has additional info like title, stats, pricing)
-            store_actor = None
-            try:
-                store_actor_response = self.client.store().get(resolved_id)
-                # Convert to dict if it's an object
-                if isinstance(store_actor_response, dict):
-                    store_actor = store_actor_response
-                elif hasattr(store_actor_response, '__dict__'):
-                    store_actor = store_actor_response.__dict__
-            except Exception as e:
-                logger.debug(f"Could not get actor from store: {e}, using actor API data only")
-                store_actor = None
-            
-            # Fetch input schema separately (not included in actor.get() response)
+            # Fetch input schema from actor build (ONLY WORKING METHOD)
+            # The documented endpoint GET /v2/actors/{ACTOR_ID}/input-schema returns 404 - it doesn't work.
+            # Working solution:
+            # 1. GET /v2/acts/{ACTOR_ID}?token={TOKEN} to get latest build ID from data.taggedBuilds.latest.buildId
+            # 2. GET /v2/actor-builds/{BUILD_ID}?token={TOKEN} to get inputSchema (JSON string) from data.inputSchema
+            # Note: inputSchema is returned as a JSON string, not a JSON object - must parse it.
             input_schema = None
-            try:
-                # Use the Apify API endpoint to get input schema
-                api_token = config.get("APIFY_API_TOKEN")
-                if api_token:
-                    schema_url = f"https://api.apify.com/v2/acts/{resolved_id}/input-schema"
-                    headers = {"Authorization": f"Bearer {api_token}"}
-                    schema_response = requests.get(schema_url, headers=headers, timeout=10)
-                    if schema_response.status_code == 200:
-                        input_schema = schema_response.json()
+            if not input_schema:
+                try:
+                    api_token = config.APIFY_API_TOKEN
+                    if not api_token:
+                        logger.warning("APIFY_API_TOKEN not configured - cannot fetch input schema")
                     else:
-                        logger.debug(f"Could not fetch input schema: HTTP {schema_response.status_code}")
-            except Exception as e:
-                logger.debug(f"Could not fetch input schema: {e}")
-                input_schema = None
+                        import urllib.parse
+                        # Ensure json module is accessible (imported at top of file)
+                        # Reference it here to avoid scoping issues
+                        _json_module = json
+                        
+                        # Extract username/name from actor_info
+                        username = None
+                        name = None
+                        
+                        if actor_info:
+                            if isinstance(actor_info, dict):
+                                username = actor_info.get("username")
+                                name = actor_info.get("name")
+                            else:
+                                username = getattr(actor_info_response, 'username', None)
+                                name = getattr(actor_info_response, 'name', None)
+                        
+                        # Build actor identifier candidates (try both slash and tilde formats)
+                        actor_id_candidates = []
+                        if username and name:
+                            actor_id_candidates.append(f"{username}/{name}")  # e.g., "lukaskrivka/google-maps-with-contact-details"
+                            actor_id_candidates.append(f"{username}~{name}")  # e.g., "lukaskrivka~google-maps-with-contact-details"
+                        actor_id_candidates.append(resolved_id)  # Fallback to original ID
+                        
+                        logger.info(f"Fetching input schema via build endpoint - resolved_id: {resolved_id}, username: {username}, name: {name}")
+                        
+                        # Step 1: Get actor info to extract latest build ID
+                        # Try each actor ID format until one works
+                        build_id = None
+                        for actor_id_attempt in actor_id_candidates:
+                            if not actor_id_attempt:
+                                continue
+                            
+                            encoded_actor_id = urllib.parse.quote(actor_id_attempt, safe='/~')
+                            actor_url = f"https://api.apify.com/v2/acts/{encoded_actor_id}?token={api_token}"
+                            logger.info(f"Trying to get actor info: {actor_url}")
+                            
+                            try:
+                                actor_response = requests.get(actor_url, timeout=10)
+                                
+                                if actor_response.status_code == 200:
+                                    actor_data = actor_response.json()
+                                    # Extract build ID from data.taggedBuilds.latest.buildId
+                                    if isinstance(actor_data, dict) and actor_data.get("data"):
+                                        tagged_builds = actor_data.get("data", {}).get("taggedBuilds", {})
+                                        if tagged_builds and tagged_builds.get("latest"):
+                                            build_id = tagged_builds.get("latest", {}).get("buildId")
+                                            if build_id:
+                                                logger.info(f"✅ Found latest build ID: {build_id} for actor: {actor_id_attempt}")
+                                                break
+                                
+                                elif actor_response.status_code == 404:
+                                    logger.debug(f"Actor endpoint returned 404 for {actor_id_attempt}, trying next format")
+                                    continue
+                                else:
+                                    logger.warning(f"Actor endpoint returned HTTP {actor_response.status_code} for {actor_id_attempt}")
+                            except Exception as e:
+                                logger.debug(f"Error fetching actor info for {actor_id_attempt}: {e}")
+                                continue
+                        
+                        # Step 2: Get input schema from build if we found a build ID
+                        if build_id:
+                            build_url = f"https://api.apify.com/v2/actor-builds/{build_id}?token={api_token}"
+                            logger.info(f"Fetching input schema from build: {build_url}")
+                            
+                            try:
+                                build_response = requests.get(build_url, timeout=10)
+                                
+                                if build_response.status_code == 200:
+                                    build_data = build_response.json()
+                                    # Extract inputSchema from data.inputSchema (it's a JSON string)
+                                    if isinstance(build_data, dict) and build_data.get("data"):
+                                        input_schema_str = build_data.get("data", {}).get("inputSchema")
+                                        if input_schema_str:
+                                            try:
+                                                # Parse the JSON string to get the actual schema object
+                                                if isinstance(input_schema_str, str):
+                                                    input_schema = _json_module.loads(input_schema_str)
+                                                else:
+                                                    input_schema = input_schema_str
+                                                logger.info(f"✅ Successfully fetched and parsed input schema from build {build_id}")
+                                            except ValueError as e:
+                                                # json.JSONDecodeError is a subclass of ValueError
+                                                logger.warning(f"Failed to parse inputSchema JSON string: {e}")
+                                        else:
+                                            logger.debug(f"Build {build_id} does not have inputSchema field")
+                                    else:
+                                        logger.warning(f"Unexpected build response structure: {build_response.text[:200]}")
+                                elif build_response.status_code == 404:
+                                    logger.warning(f"Build endpoint returned 404 for build ID: {build_id}")
+                                else:
+                                    logger.warning(f"Build endpoint returned HTTP {build_response.status_code} - Response: {build_response.text[:200]}")
+                            except Exception as e:
+                                logger.warning(f"Error fetching build info: {e}")
+                        else:
+                            logger.warning(f"Could not find latest build ID for actor {resolved_id} - input schema not available")
+                            
+                except Exception as e:
+                    logger.warning(f"Exception fetching input schema from build endpoint: {e}", exc_info=True)
             
-            # Return full responses as-is, just add actor_id and merge store data
-            response_data = dict(actor_info)  # Full actor API response
-            response_data["actor_id"] = resolved_id  # Add resolved ID for convenience
+            # Build minimal response - ONLY return inputSchema from build endpoint (and maybe image URL)
+            response_data = {}
             
-            # Add store actor data if available (keep it separate so all info is visible)
-            if store_actor:
-                response_data["store_actor"] = store_actor  # Full store API response
-                
-                # Check if actor is a rental actor and warn
-                store_pricing_model = None
-                current_pricing_info = None
-                pricing_infos = None
-                
-                if isinstance(store_actor, dict):
-                    store_pricing_model = store_actor.get("pricingModel")
-                    current_pricing_info = store_actor.get("currentPricingInfo", {})
-                    if isinstance(current_pricing_info, dict):
-                        store_pricing_model = current_pricing_info.get("pricingModel") or store_pricing_model
-                    pricing_infos = store_actor.get("pricingInfos", [])
+            # Get image URL if available (from actor_info)
+            image_url = None
+            if actor_info:
+                if isinstance(actor_info, dict):
+                    image_url = actor_info.get("imageUrl") or actor_info.get("image_url")
                 else:
-                    store_pricing_model = getattr(store_actor, 'pricingModel', None)
-                    current_pricing_info = getattr(store_actor, 'currentPricingInfo', None)
-                    if current_pricing_info:
-                        if isinstance(current_pricing_info, dict):
-                            store_pricing_model = current_pricing_info.get("pricingModel") or store_pricing_model
-                        elif hasattr(current_pricing_info, 'pricingModel'):
-                            store_pricing_model = getattr(current_pricing_info, 'pricingModel', None) or store_pricing_model
-                    pricing_infos = getattr(store_actor, 'pricingInfos', [])
-                
-                # Use centralized rental check function
-                if self._is_rental_actor(store_pricing_model, pricing_infos, current_pricing_info):
-                    response_data["_is_rental"] = True
-                    response_data["_rental_warning"] = "⚠️ This actor requires a rental subscription (FLAT_PRICE_PER_MONTH) and cannot be run programmatically. Use search_apify_actors() to find actors that don't require rentals."
+                    image_url = getattr(actor_info_response, 'imageUrl', None) or getattr(actor_info_response, 'image_url', None)
             
-            # Add input schema if available
+            if image_url:
+                response_data["imageUrl"] = image_url
+            
+            # CRITICAL: Add input schema if available (this is the main purpose - return the full schema from build endpoint)
             if input_schema:
-                response_data["inputSchema"] = input_schema  # Use camelCase to match API conventions
+                # Return the entire inputSchema as-is from the build endpoint
+                response_data["inputSchema"] = input_schema
+                logger.info(f"✅ Added inputSchema to response for actor {resolved_id}")
+            else:
+                logger.warning(f"⚠️ No inputSchema available for actor {resolved_id} - agent may not know required inputs")
+                return self.fail_response(f"Could not fetch input schema for actor '{resolved_id}'. The actor may not have an input schema defined.")
+            
+            # Remove None values to keep response clean (after adding all fields)
+            response_data = {k: v for k, v in response_data.items() if v is not None}
             
             # Serialize datetime objects to ISO strings for JSON compatibility
             response_data = serialize_datetime(response_data)
@@ -640,10 +738,10 @@ class ApifyTool(Tool):
             
             logger.info(f"Running Apify actor: {resolved_id} (blocking, 60s timeout)")
             
-            # Run the actor with 60 second timeout - waits for completion or times out
+            # Start the actor run
             try:
-                run = self.client.actor(resolved_id).call(run_input=run_input, wait_secs=60)
-                logger.info(f"Apify run completed or timed out, response keys: {list(run.keys()) if isinstance(run, dict) else 'object'}")
+                run = self.client.actor(resolved_id).start(run_input=run_input)
+                logger.info(f"Apify run started, response keys: {list(run.keys()) if isinstance(run, dict) else 'object'}")
                 
             except Exception as e:
                 error_message = str(e)
@@ -684,20 +782,56 @@ class ApifyTool(Tool):
             if not run_id:
                 return self.fail_response("Actor run started but no run ID returned")
             
-            logger.info(f"✅ Apify run ID: {run_id}, status: {status}")
+            logger.info(f"✅ Apify run ID: {run_id}, initial status: {status}")
             
-            # Get cost info - need to fetch full run info for cost
+            # Poll for completion with 60 second timeout
+            import asyncio
+            import time
+            start_time = time.time()
+            timeout_seconds = 60
+            poll_interval = 2  # Check every 2 seconds
+            
+            while time.time() - start_time < timeout_seconds:
+                try:
+                    run_info = self.client.run(run_id).get()
+                    if isinstance(run_info, dict):
+                        status = run_info.get("status")
+                    else:
+                        status = getattr(run_info, 'status', status)
+                    
+                    # If run finished, break out of loop
+                    if status in ["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"]:
+                        logger.info(f"Run {run_id} finished with status: {status}")
+                        break
+                    
+                    # Wait before next poll
+                    await asyncio.sleep(poll_interval)
+                except Exception as e:
+                    logger.warning(f"Error polling run status: {e}")
+                    await asyncio.sleep(poll_interval)
+            
+            # Check if we timed out
+            elapsed = time.time() - start_time
+            timed_out = elapsed >= timeout_seconds and status == "RUNNING"
+            
+            if timed_out:
+                logger.warning(f"Run {run_id} timed out after {elapsed:.1f}s (still RUNNING)")
+            
+            # Get final run info and cost
             try:
-                run_info_for_cost = self.client.run(run_id).get()
-                actual_cost = await self._get_run_cost(run_info_for_cost if isinstance(run_info_for_cost, dict) else run_info_for_cost.__dict__ if hasattr(run_info_for_cost, '__dict__') else {})
+                run_info_final = self.client.run(run_id).get()
+                if isinstance(run_info_final, dict):
+                    status = run_info_final.get("status")
+                else:
+                    status = getattr(run_info_final, 'status', status)
+                actual_cost = await self._get_run_cost(run_info_final if isinstance(run_info_final, dict) else (run_info_final.__dict__ if hasattr(run_info_final, '__dict__') else {}))
             except Exception as e:
-                logger.debug(f"Could not get run cost: {e}")
+                logger.debug(f"Could not get final run info: {e}")
                 actual_cost = Decimal("0")
             
-            # Get logs if run timed out (still RUNNING) or failed
+            # Get logs (always fetch for timeout or failures)
             log_text = ""
-            if status == "RUNNING":
-                # Run timed out - fetch logs
+            if timed_out or status in ["FAILED", "ABORTED", "TIMED-OUT"]:
                 try:
                     log_response = self.client.log(run_id).get()
                     if isinstance(log_response, str):
@@ -706,35 +840,34 @@ class ApifyTool(Tool):
                         log_text = log_response.decode('utf-8', errors='ignore')
                     elif log_response is not None:
                         log_text = str(log_response)
-                    logger.info(f"Fetched logs for timed-out run {run_id}")
+                    logger.info(f"Fetched logs for run {run_id} (status: {status})")
                 except Exception as e:
-                    logger.debug(f"Could not fetch logs for timed-out run: {e}")
+                    logger.debug(f"Could not fetch logs: {e}")
             
-            # Deduct credits if run finished successfully
-            if status in ["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"] and actual_cost > 0 and run_id not in self._deducted_runs:
+            # Deduct credits if run finished successfully (database check prevents duplicates)
+            if status in ["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"] and actual_cost > 0:
                 if user_id:
-                    success = await self._deduct_apify_credits(
+                    await self._deduct_apify_credits(
                         user_id=user_id,
                         cost=actual_cost,
                         actor_id=resolved_id,
                         run_id=run_id,
                         thread_id=thread_id
                     )
-                    if success:
-                        self._deducted_runs.add(run_id)
-                        logger.info(f"✅ Deducted ${actual_cost:.6f} for completed run {run_id}")
             
             # Build response message
-            if status == "SUCCEEDED":
+            if timed_out:
+                message = f"⏱️ Run timed out after 60 seconds (still RUNNING). Check logs below. Use get_actor_run_status(run_id='{run_id}') to check progress."
+            elif status == "SUCCEEDED":
                 message = f"✅ Run completed successfully! Use get_actor_run_results(run_id='{run_id}') to get the data."
-            elif status == "RUNNING":
-                message = f"⏱️ Run timed out after 60 seconds (still running). Check logs below. Use get_actor_run_status(run_id='{run_id}') to check progress."
             elif status == "FAILED":
                 message = f"❌ Run failed. Check logs for details."
             elif status == "ABORTED":
                 message = "🛑 Run was aborted/cancelled."
             elif status == "TIMED-OUT":
                 message = "⏰ Run timed out before completion."
+            elif status == "RUNNING":
+                message = f"⏳ Run is still in progress. Use get_actor_run_status(run_id='{run_id}') to check progress."
             else:
                 message = f"Run status: {status}"
             
@@ -763,7 +896,7 @@ class ApifyTool(Tool):
         "type": "function",
         "function": {
             "name": "get_actor_run_results",
-            "description": "Retrieve results from a completed actor run. Use if run_apify_actor returned partial results.",
+            "description": "Retrieve ALL results from a completed actor run and save them to a file in /workspace/apify_results/. Results are saved as JSON and can be accessed via terminal commands or Python. Use this after run_apify_actor completes successfully.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -773,12 +906,12 @@ class ApifyTool(Tool):
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Max items to retrieve (default: 100)",
-                        "default": 100
+                        "description": "DEPRECATED: All items are now saved to disk. This parameter is ignored.",
+                        "default": None
                     },
                     "offset": {
                         "type": "integer",
-                        "description": "Offset for pagination",
+                        "description": "DEPRECATED: All items are now saved to disk. This parameter is ignored.",
                         "default": 0
                     }
                 },
@@ -789,10 +922,10 @@ class ApifyTool(Tool):
     async def get_actor_run_results(
         self, 
         run_id: str, 
-        limit: int = 100, 
+        limit: Optional[int] = None, 
         offset: int = 0
     ) -> ToolResult:
-        """Retrieve results from a completed actor run."""
+        """Retrieve results from a completed actor run and save to file."""
         try:
             if not self.client:
                 return self.fail_response("Apify API token not configured")
@@ -803,47 +936,107 @@ class ApifyTool(Tool):
                 # Handle both dict and object responses
                 if isinstance(run_info_response, dict):
                     dataset_id = run_info_response.get("defaultDatasetId")
+                    actor_id = run_info_response.get("actId")
                 elif hasattr(run_info_response, 'defaultDatasetId'):
                     dataset_id = run_info_response.defaultDatasetId
+                    actor_id = getattr(run_info_response, 'actId', None)
                 else:
                     dataset_id = None
+                    actor_id = None
             except Exception as e:
                 return self.fail_response(f"Failed to get run info: {str(e)}")
             
             if not dataset_id:
                 return self.fail_response(f"Run {run_id} has no dataset")
             
-            # Get dataset items with pagination
+            # Get ALL dataset items (not paginated - save everything to file)
             dataset_client = self.client.dataset(dataset_id)
-            items = []
+            all_items = []
             
             try:
-                # Use list_items for pagination (supports limit and offset)
-                response = dataset_client.list_items(limit=limit, offset=offset)
-                # Handle both dict response and object response
-                if hasattr(response, 'items'):
-                    items = list(response.items)
-                elif isinstance(response, dict):
-                    items = response.get("items", [])
-                else:
-                    # Fallback: use iterate_items
-                    items = list(dataset_client.iterate_items(limit=limit))
+                # Fetch all items using iterate_items (no limit)
+                logger.info(f"Fetching all items from dataset {dataset_id} for run {run_id}")
+                all_items = list(dataset_client.iterate_items())
+                logger.info(f"Retrieved {len(all_items)} items from dataset")
             except Exception as e:
                 logger.error(f"Error fetching dataset items: {e}")
-                # Try alternative method
-                try:
-                    items = list(dataset_client.iterate_items(limit=limit))
-                except Exception as e2:
-                    return self.fail_response(f"Failed to retrieve dataset items: {str(e2)}")
+                return self.fail_response(f"Failed to retrieve dataset items: {str(e)}")
             
-            return self.success_response({
-                "run_id": run_id,
-                "dataset_id": dataset_id,
-                "items": items,
-                "count": len(items),
-                "offset": offset,
-                "limit": limit,
-            })
+            if not all_items:
+                return self.success_response({
+                    "run_id": run_id,
+                    "dataset_id": dataset_id,
+                    "saved_to_disk": False,
+                    "file_path": None,
+                    "item_count": 0,
+                    "message": "No items found in dataset"
+                })
+            
+            # Save results to file in sandbox workspace
+            try:
+                # Get project_id from thread_manager
+                project_id = self.thread_manager.project_id if self.thread_manager else None
+                if not project_id:
+                    return self.fail_response("No project context available - cannot save results to disk")
+                
+                # Get sandbox_id from project
+                project_result = await self.db.client.table('projects').select('sandbox').eq('project_id', project_id).execute()
+                if not project_result.data or not project_result.data[0].get('sandbox') or not project_result.data[0]['sandbox'].get('id'):
+                    return self.fail_response("Project has no sandbox - cannot save results to disk")
+                
+                sandbox_id = project_result.data[0]['sandbox']['id']
+                
+                # Get sandbox for this project
+                sandbox = await get_or_start_sandbox(sandbox_id)
+                if not sandbox:
+                    return self.fail_response("Could not access sandbox - cannot save results to disk")
+                
+                # Create apify_results directory
+                results_dir = "/workspace/apify_results"
+                await sandbox.fs.create_folder(results_dir, "755")
+                
+                # Generate filename with timestamp and run_id
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                safe_actor_id = (actor_id or "unknown").replace("/", "_").replace("~", "_") if actor_id else "unknown"
+                filename = f"apify_results_{safe_actor_id}_{run_id[:12]}_{timestamp}.json"
+                file_path = f"{results_dir}/{filename}"
+                
+                # Serialize items to JSON
+                json_content = json.dumps(all_items, indent=2, ensure_ascii=False, default=str)
+                json_bytes = json_content.encode('utf-8')
+                
+                # Save to file
+                await sandbox.fs.upload_file(json_bytes, file_path)
+                logger.info(f"✅ Saved {len(all_items)} items to {file_path} ({len(json_bytes)} bytes)")
+                
+                # Return relative path (without /workspace prefix) for frontend
+                relative_path = file_path.replace("/workspace/", "")
+                
+                return self.success_response({
+                    "run_id": run_id,
+                    "actor_id": actor_id,
+                    "dataset_id": dataset_id,
+                    "saved_to_disk": True,
+                    "file_path": relative_path,
+                    "item_count": len(all_items),
+                    "message": f"✅ Retrieved {len(all_items)} items and saved to {relative_path}. Use terminal commands or Python to read the file."
+                })
+                
+            except Exception as e:
+                logger.error(f"Error saving results to disk: {e}")
+                # Fallback: return items in context if file save fails (but warn)
+                logger.warning(f"Failed to save to disk, returning items in context as fallback")
+                return self.success_response({
+                    "run_id": run_id,
+                    "dataset_id": dataset_id,
+                    "saved_to_disk": False,
+                    "file_path": None,
+                    "items": all_items[:limit] if limit else all_items,  # Limit items if limit specified
+                    "count": len(all_items),
+                    "offset": offset,
+                    "limit": limit,
+                    "message": f"⚠️ Failed to save to disk: {str(e)}. Returning {len(all_items[:limit] if limit else all_items)} items in context."
+                })
             
         except Exception as e:
             error_message = str(e)
@@ -913,22 +1106,18 @@ class ApifyTool(Tool):
             # Get cost info
             actual_cost = await self._get_run_cost(run_info_response if isinstance(run_info_response, dict) else (run_info_response.__dict__ if hasattr(run_info_response, '__dict__') else {}))
             
-            # Deduct credits if run is finished and has cost
-            # Only deduct once per run (when status changes to finished)
-            if status in ["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"] and actual_cost > 0 and run_id not in self._deducted_runs:
+            # Deduct credits if run is finished and has cost (database check prevents duplicates)
+            if status in ["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"] and actual_cost > 0:
                 # Get user context for billing
                 thread_id, user_id = await self._get_current_thread_and_user()
                 if user_id:
-                    success = await self._deduct_apify_credits(
+                    await self._deduct_apify_credits(
                         user_id=user_id,
                         cost=actual_cost,
                         actor_id=actor_id or "unknown",
                         run_id=run_id,
                         thread_id=thread_id
                     )
-                    if success:
-                        self._deducted_runs.add(run_id)
-                        logger.info(f"✅ Deducted ${actual_cost:.6f} for completed run {run_id}")
             
             # Get logs (plain text from Apify API)
             log_text = ""
