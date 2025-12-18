@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useState, useRef, useCallback, useEffect } from 'react';
+import { memo, useState, useRef, useCallback } from 'react';
 import { motion, useDragControls, PanInfo } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { Minus, Square, X } from 'lucide-react';
@@ -142,17 +142,11 @@ export const AppWindow = memo(function AppWindow({
       dragMomentum={false}
       onDragEnd={handleDragEnd}
       onMouseDown={onFocus}
-      style={{ 
-        zIndex,
-        transformOrigin: 'center center',
-        boxShadow: isActive 
-          ? '0 25px 50px -12px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.1) inset' 
-          : '0 10px 40px -10px rgba(0,0,0,0.2), 0 0 0 1px rgba(255,255,255,0.1) inset'
-      }}
+      style={{ zIndex }}
       className={cn(
         "absolute flex flex-col rounded-2xl overflow-hidden",
-        "backdrop-blur-2xl backdrop-saturate-150",
-        "border border-neutral-300/20"
+        "border border-border",
+        isActive ? "shadow-2xl" : "shadow-xl"
       )}
     >
       <div
@@ -164,8 +158,7 @@ export const AppWindow = memo(function AppWindow({
         onDoubleClick={handleMaximize}
         className={cn(
           "flex items-center h-9 px-2.5 gap-3 select-none flex-shrink-0",
-          "border-b border-black/5",
-          isActive ? "bg-background" : "bg-background"
+          "border-b border-border bg-background/60 backdrop-blur-2xl"
         )}
       >
         <div className="flex items-center gap-1.5">
@@ -174,7 +167,7 @@ export const AppWindow = memo(function AppWindow({
               e.stopPropagation();
               onClose();
             }}
-            className="group w-6 h-6 rounded-md bg-muted hover:bg-destructive/20 flex items-center justify-center transition-colors"
+            className="group w-6 h-6 rounded-md bg-muted/50 hover:bg-destructive/20 flex items-center justify-center transition-colors"
           >
             <X className="w-3.5 h-3.5 text-muted-foreground group-hover:text-destructive transition-colors" strokeWidth={2} />
           </button>
@@ -183,7 +176,7 @@ export const AppWindow = memo(function AppWindow({
               e.stopPropagation();
               onMinimize?.();
             }}
-            className="group w-6 h-6 rounded-md bg-muted hover:bg-muted-foreground/20 flex items-center justify-center transition-colors"
+            className="group w-6 h-6 rounded-md bg-muted/50 hover:bg-accent flex items-center justify-center transition-colors"
           >
             <Minus className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground transition-colors" strokeWidth={2} />
           </button>
@@ -192,7 +185,7 @@ export const AppWindow = memo(function AppWindow({
               e.stopPropagation();
               handleMaximize();
             }}
-            className="group w-6 h-6 rounded-md bg-muted hover:bg-muted-foreground/20 flex items-center justify-center transition-colors"
+            className="group w-6 h-6 rounded-md bg-muted/50 hover:bg-accent flex items-center justify-center transition-colors"
           >
             <Square className="w-3 h-3 text-muted-foreground group-hover:text-foreground transition-colors" strokeWidth={2} />
           </button>
@@ -200,9 +193,7 @@ export const AppWindow = memo(function AppWindow({
 
         <div className="flex-1 flex items-center justify-center gap-2">
           {icon && <div className="w-4 h-4 flex-shrink-0">{icon}</div>}
-          <span className={cn(
-            "text-[13px] font-semibold truncate text-muted-foreground",
-          )}>
+          <span className="text-[13px] font-semibold truncate text-muted-foreground">
             {title}
           </span>
         </div>
@@ -210,7 +201,7 @@ export const AppWindow = memo(function AppWindow({
         <div className="w-[52px]" />
       </div>
 
-      <div className="flex-1 overflow-hidden bg-background">
+      <div className="flex-1 overflow-hidden">
         {children}
       </div>
 

@@ -15,6 +15,10 @@ import { ApiMessageType } from '@/components/thread/types';
 import { ViewType } from '@/stores/kortix-computer-store';
 import { cn } from '@/lib/utils';
 import { useSandboxDetails } from '@/hooks/files/use-sandbox-details';
+import { useDirectoryQuery } from '@/hooks/files/use-file-queries';
+import { DesktopContextMenu } from './DesktopContextMenu';
+import { SpotlightSearch } from './SpotlightSearch';
+import { DesktopIcons } from './DesktopIcons';
 
 const convertToolName = (toolName: string) => {
   if (toolName.includes('_')) {
@@ -141,8 +145,35 @@ export const SandboxDesktop = memo(function SandboxDesktop({
   const [openWindows, setOpenWindows] = useState<OpenWindow[]>([]);
   const [maxZIndex, setMaxZIndex] = useState(1);
   const [activeWindowId, setActiveWindowId] = useState<string | null>(null);
+  const [isSpotlightOpen, setIsSpotlightOpen] = useState(false);
+  const [sandboxInfoOpen, setSandboxInfoOpen] = useState(false);
 
   const { data: sandboxDetails, isLoading: sandboxLoading, error: sandboxError } = useSandboxDetails(project_id);
+  
+  const sandboxId = project?.sandbox?.id;
+  const { data: workspaceFiles = [] } = useDirectoryQuery(sandboxId, '/workspace', {
+    enabled: !!sandboxId,
+    staleTime: 30000,
+  });
+
+  const spotlightFiles = workspaceFiles.map(file => ({
+    name: file.name,
+    path: file.path || `/workspace/${file.name}`,
+    type: file.is_dir ? 'directory' as const : 'file' as const,
+    extension: file.name.includes('.') ? file.name.split('.').pop() : undefined,
+  }));
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+        e.preventDefault();
+        setIsSpotlightOpen(true);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const getInitialPosition = useCallback((index: number) => {
     const baseX = 60 + (index % 5) * 40;
@@ -354,11 +385,38 @@ export const SandboxDesktop = memo(function SandboxDesktop({
   const visibleWindows = openWindows.filter(w => !w.isMinimized);
   const isDesktopEmpty = visibleWindows.length === 0;
 
+  const desktopFiles = workspaceFiles.map(file => ({
+    name: file.name,
+    path: file.path || `/workspace/${file.name}`,
+    is_dir: file.is_dir,
+    extension: file.name.includes('.') ? file.name.split('.').pop() : undefined,
+  }));
+
+  const handleDesktopFileOpen = useCallback((path: string, isDirectory: boolean) => {
+    if (isDirectory) {
+      openSystemWindow('files');
+    } else {
+      onFileClick?.(path);
+    }
+  }, [openSystemWindow, onFileClick]);
+
+  const handleDesktopFileEdit = useCallback((path: string) => {
+    onFileClick?.(path);
+  }, [onFileClick]);
+
   const renderDesktop = () => (
     <>
       <div className="absolute inset-0 top-14">
+        {!sandboxInfoOpen && desktopFiles.length > 0 && (
+          <DesktopIcons 
+            files={desktopFiles}
+            onFileOpen={handleDesktopFileOpen}
+            onFileEdit={handleDesktopFileEdit}
+          />
+        )}
+        
         <AnimatePresence>
-          {isDesktopEmpty && (
+          {sandboxInfoOpen && (
             <SandboxInfoCard
               sandboxDetails={sandboxDetails}
               isLoading={sandboxLoading}
@@ -488,40 +546,60 @@ export const SandboxDesktop = memo(function SandboxDesktop({
   );
 
   return (
-    <div className="relative w-full h-full overflow-hidden flex flex-col">
-      <div className="absolute inset-0">
-        <img 
-          src="https://heprlhlltebrxydgtsjs.supabase.co/storage/v1/object/public/image-uploads/backgrounds/computer-bg-dark.jpg"
-          alt="Desktop wallpaper"
-          className="absolute inset-0 w-full h-full object-cover dark:block"
-        />
-        <img 
-          src="https://heprlhlltebrxydgtsjs.supabase.co/storage/v1/object/public/image-uploads/backgrounds/computer-bg-light.jpg"
-          alt="Desktop wallpaper"
-          className="absolute inset-0 w-full h-full object-cover dark:hidden"
-        />
-        <div className="absolute inset-0 bg-black/10" />
-      </div>
+    <DesktopContextMenu
+      onRefresh={() => window.location.reload()}
+      onOpenFiles={() => handleSystemAppClick('files')}
+      onOpenBrowser={() => handleSystemAppClick('browser')}
+    >
+      <div className="relative w-full h-full overflow-hidden flex flex-col">
+        <div className="absolute inset-0">
+          <img 
+            src="https://heprlhlltebrxydgtsjs.supabase.co/storage/v1/object/public/image-uploads/backgrounds/computer-bg-dark.jpg"
+            alt="Desktop wallpaper"
+            className="absolute inset-0 w-full h-full object-cover dark:block"
+          />
+          <img 
+            src="https://heprlhlltebrxydgtsjs.supabase.co/storage/v1/object/public/image-uploads/backgrounds/computer-bg-light.jpg"
+            alt="Desktop wallpaper"
+            className="absolute inset-0 w-full h-full object-cover dark:hidden"
+          />
+          <div className="absolute inset-0 bg-black/10" />
+        </div>
 
-      <div className="relative z-50 flex-shrink-0">
-        <PanelHeader
-          onClose={onClose}
-          onMinimize={onClose}
-          onMaximize={() => {}}
-          isStreaming={isStreaming}
-          variant="motion"
-          currentView={currentView}
-          onViewChange={onViewChange}
-          showFilesTab={false}
-          isMaximized={true}
-          hideViewToggle={true}
+        <div className="relative z-50 flex-shrink-0">
+          <PanelHeader
+            sandboxInfoOpen={sandboxInfoOpen}
+            setSandboxInfoOpen={setSandboxInfoOpen}
+            onClose={onClose}
+            onMinimize={onClose}
+            onMaximize={() => {}}
+            isStreaming={isStreaming}
+            variant="motion"
+            currentView={currentView}
+            onViewChange={onViewChange}
+            showFilesTab={false}
+            isMaximized={true}
+            hideViewToggle={true}
+          />
+        </div>
+
+        <div className="relative flex-1 overflow-hidden">
+          {renderDesktop()}
+        </div>
+
+        <SpotlightSearch
+          isOpen={isSpotlightOpen}
+          onClose={() => setIsSpotlightOpen(false)}
+          onOpenFiles={() => handleSystemAppClick('files')}
+          onOpenBrowser={() => handleSystemAppClick('browser')}
+          onFileSelect={(path) => {
+            onFileClick?.(path);
+            setIsSpotlightOpen(false);
+          }}
+          files={spotlightFiles}
         />
       </div>
-
-      <div className="relative flex-1 overflow-hidden">
-        {renderDesktop()}
-      </div>
-    </div>
+    </DesktopContextMenu>
   );
 });
 
