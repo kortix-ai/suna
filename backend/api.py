@@ -265,7 +265,7 @@ if config.ENV_MODE == EnvMode.STAGING:
     allowed_origins.append("https://staging.suna.so")
     allowed_origins.append("http://localhost:3000")
     # Allow Vercel preview deployments
-    allow_origin_regex = r"https://kortix-.*-prjcts\.vercel\.app"
+    allow_origin_regex = r"https://.*-kortixai\.vercel\.app"
 
 app.add_middleware(
     CORSMiddleware,
