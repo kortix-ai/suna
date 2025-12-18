@@ -138,9 +138,50 @@
     }
   },
   "onboarding": {
+    "welcome": "See what Kortix can do",
+    "welcomeSubtitle": "Your AI assistant that takes action",
     "skip": "Skip",
     "next": "Next",
     "getStarted": "Get Started",
+    "kortixComputer": "Kortix Computer",
+    "ready": "Ready",
+    "examples": {
+      "presentations": {
+        "title": "Presentations",
+        "description": "See how it can create amazing presentations",
+        "userMessage": "Research and create presentation about neural networks",
+        "aiMessage": "I'll research neural networks and create a presentation for you...",
+        "researching": "Researching",
+        "creatingFile": "Creating File",
+        "creatingSlides": "Creating Slides"
+      },
+      "dataAnalysis": {
+        "title": "Data Analysis",
+        "description": "Watch it analyze data and create visual reports",
+        "userMessage": "Analyze Q4 sales performance from Google Drive",
+        "aiMessage": "I'll load your sales data and create a comprehensive analysis...",
+        "loadingFromDrive": "Loading from Google Drive",
+        "creatingVisualization": "Creating Visualization",
+        "researchingMarket": "Researching Market",
+        "creatingReport": "Creating Report"
+      },
+      "image": {
+        "title": "Image",
+        "description": "Experience AI-powered logo and brand design",
+        "userMessage": "Create logo for our company",
+        "aiMessage": "I see you mentioned LUXY before. I'll create a professional logo for your brand...",
+        "researchingBrand": "Researching Brand",
+        "creatingLogo": "Creating Logo",
+        "creatingBrandBoard": "Creating Brand Board"
+      },
+      "imageEasterEgg": {
+        "title": "Image",
+        "description": "Transform your photos with AI-powered styles",
+        "userMessage": "Convert my image to a blocky pixel art style",
+        "aiMessage": "Sure! I'll transform your image into a stylized blocky look...",
+        "creatingImage": "Creating Stylized Image"
+      }
+    },
     "slide1": {
       "title": "Chat with AI",
       "description": "Have natural conversations with powerful AI assistants that understand context and provide helpful responses"
