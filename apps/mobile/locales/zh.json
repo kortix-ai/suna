@@ -158,6 +158,13 @@
         "researchingBrand": "研究品牌",
         "creatingLogo": "创建标志",
         "creatingBrandBoard": "创建品牌板"
+      },
+      "imageEasterEgg": {
+        "title": "图像",
+        "description": "用AI风格转换您的照片",
+        "userMessage": "将我的图像转换为像素艺术风格",
+        "aiMessage": "当然！我将把您的图像转换为风格化的像素艺术风格...",
+        "creatingImage": "创建风格化图像"
       }
     },
     "slide1": {

@@ -158,6 +158,13 @@
         "researchingBrand": "Recherchiere Marke",
         "creatingLogo": "Erstelle Logo",
         "creatingBrandBoard": "Erstelle Markenboard"
+      },
+      "imageEasterEgg": {
+        "title": "Bild",
+        "description": "Verwandeln Sie Ihre Fotos mit KI-Stilen",
+        "userMessage": "Wandle mein Bild in einen blockigen Pixel-Art-Stil um",
+        "aiMessage": "Klar! Ich verwandle Ihr Bild in einen stilisierten blockigen Look...",
+        "creatingImage": "Erstelle stilisiertes Bild"
       }
     },
     "slide1": {

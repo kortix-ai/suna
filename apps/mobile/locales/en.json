@@ -173,6 +173,13 @@
         "researchingBrand": "Researching Brand",
         "creatingLogo": "Creating Logo",
         "creatingBrandBoard": "Creating Brand Board"
+      },
+      "imageEasterEgg": {
+        "title": "Image",
+        "description": "Transform your photos with AI-powered styles",
+        "userMessage": "Convert my image to a blocky pixel art style",
+        "aiMessage": "Sure! I'll transform your image into a stylized blocky look...",
+        "creatingImage": "Creating Stylized Image"
       }
     },
     "slide1": {
