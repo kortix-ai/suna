@@ -111,37 +111,38 @@ jobs:
             echo "=== Deployment complete ==="
             docker compose ps
             df -h / | tail -1
-      - name: Deploy preview
-        if: steps.get_tag_name.outputs.is_preview == 'true'
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.AWS_STAGING_HOST }}
-          username: ${{ secrets.AWS_STAGING_USERNAME }}
-          key: ${{ secrets.AWS_STAGING_KEY }}
-          script: |
-            BRANCH_NAME="${{ steps.get_tag_name.outputs.branch_name }}"
-            IMAGE_TAG="${{ steps.get_tag_name.outputs.branch }}"
+      # Temporarily disabled preview deployments
+      # - name: Deploy preview
+      #   if: steps.get_tag_name.outputs.is_preview == 'true'
+      #   uses: appleboy/ssh-action@v1
+#         with:
+#           host: ${{ secrets.AWS_STAGING_HOST }}
+#           username: ${{ secrets.AWS_STAGING_USERNAME }}
+#           key: ${{ secrets.AWS_STAGING_KEY }}
+#           script: |
+#             BRANCH_NAME="${{ steps.get_tag_name.outputs.branch_name }}"
+#             IMAGE_TAG="${{ steps.get_tag_name.outputs.branch }}"
             
-            echo "=== Deploying preview for branch: $BRANCH_NAME ==="
+#             echo "=== Deploying preview for branch: $BRANCH_NAME ==="
             
             # Ensure scripts directory exists and has latest scripts
-            mkdir -p /home/ubuntu/scripts
-            cd /home/ubuntu
+#             mkdir -p /home/ubuntu/scripts
+#             cd /home/ubuntu
             
             # Pull latest scripts from repo if they exist
-            if [ -d /home/ubuntu/suna/infra/staging/scripts ]; then
-              cp -r /home/ubuntu/suna/infra/staging/scripts/* /home/ubuntu/scripts/ || true
-              chmod +x /home/ubuntu/scripts/*.sh || true
-            fi
+#             if [ -d /home/ubuntu/suna/infra/staging/scripts ]; then
+#               cp -r /home/ubuntu/suna/infra/staging/scripts/* /home/ubuntu/scripts/ || true
+#               chmod +x /home/ubuntu/scripts/*.sh || true
+#             fi
             
             # Run deployment script
-            /home/ubuntu/scripts/deploy-preview.sh "$BRANCH_NAME" "$IMAGE_TAG" || {
-              echo "Preview deployment failed"
-              exit 1
-            }
+#             /home/ubuntu/scripts/deploy-preview.sh "$BRANCH_NAME" "$IMAGE_TAG" || {
+#               echo "Preview deployment failed"
+#               exit 1
+#             }
             
-            echo "=== Preview deployment complete ==="
-            echo "Preview URL: https://$(echo "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g').api-staging.suna.so/v1"
+#             echo "=== Preview deployment complete ==="
+#             echo "Preview URL: https://$(echo "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g').api-staging.suna.so/v1"
 
 
       # - name: Deploy to staging [legacy]
