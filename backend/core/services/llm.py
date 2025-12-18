@@ -141,7 +141,7 @@ async def make_llm_api_call(
     stop: Optional[List[str]] = None,
 ) -> Union[Dict[str, Any], AsyncGenerator, ModelResponse]:
     """Make an API call to a language model using LiteLLM."""
-    logger.info(f"LLM API call: {model_name} ({len(messages)} messages)")
+    logger.debug(f"LLM API call: {model_name} ({len(messages)} messages)")
     
     # Configure OpenAI-compatible if needed
     _configure_openai_compatible(model_name, api_key, api_base)

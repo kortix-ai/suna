@@ -84,7 +84,7 @@ async def store_threshold(thread_id: str, threshold: int, model: str, reason: st
         # Write back
         await client.table('threads').update({'metadata': metadata}).eq('thread_id', thread_id).execute()
         
-        logger.info(f"💾 Stored cache threshold: {threshold} tokens (reason: {reason})")
+        logger.debug(f"💾 Stored cache threshold: {threshold} tokens (reason: {reason})")
     except Exception as e:
         logger.warning(f"Failed to store threshold: {e}")
 
@@ -235,7 +235,7 @@ def calculate_optimal_cache_threshold(
     final_threshold = max(min_threshold, min(optimal_threshold, max_threshold))
     
     from core.utils.logger import logger
-    logger.info(f"🧮 Calculated optimal cache threshold: {final_threshold} tokens")
+    logger.debug(f"🧮 Calculated optimal cache threshold: {final_threshold} tokens")
     logger.debug(f"   Context: {context_window}, Messages: {message_count}, Current: {current_tokens}")
     logger.debug(f"   Factors - Stage: {stage_multiplier:.1f}, Context: {context_multiplier:.1f}, Density: {density_multiplier:.1f}")
     
@@ -322,7 +322,7 @@ async def apply_anthropic_caching_strategy(
             logger.debug(f"🔧 Filtered out {len(conversation_messages) - len(filtered_conversation)} system messages")
         return [working_system_prompt] + filtered_conversation
     
-    logger.info(f"🆕 Building cache structure for {len(conversation_messages)} messages")
+    logger.debug(f"🆕 Building cache structure for {len(conversation_messages)} messages")
     
     # Check if we should use stored threshold and system prompt tokens
     stored_config = None
@@ -335,12 +335,12 @@ async def apply_anthropic_caching_strategy(
         if stored_config:
             cache_threshold_tokens = stored_config['threshold']
             system_prompt_tokens = stored_config.get('system_prompt_tokens')  # Reuse if available
-            logger.info(f"♻️ Reusing stored threshold: {cache_threshold_tokens} tokens (last calc: turn {stored_config['last_calc_turn']}, reason: {stored_config['last_calc_reason']})")
+            logger.debug(f"♻️ Reusing stored threshold: {cache_threshold_tokens} tokens (last calc: turn {stored_config['last_calc_turn']}, reason: {stored_config['last_calc_reason']})")
             if system_prompt_tokens:
                 logger.debug(f"♻️ Reusing stored system prompt tokens: {system_prompt_tokens}")
         else:
             should_recalculate = True
-            logger.info(f"🆕 No stored threshold - will calculate and store")
+            logger.debug(f"🆕 No stored threshold - will calculate and store")
     
     # Get context window from model registry
     if context_window_tokens is None:
@@ -381,7 +381,7 @@ async def apply_anthropic_caching_strategy(
     if system_msgs_in_conversation:
         original_count = len(conversation_messages)
         conversation_messages = [msg for msg in conversation_messages if msg.get('role') != 'system']
-        logger.info(f"🔧 Filtered out {original_count - len(conversation_messages)} system messages to prevent duplication")
+        logger.debug(f"🔧 Filtered out {original_count - len(conversation_messages)} system messages to prevent duplication")
     
     prepared_messages = []
     
@@ -407,7 +407,7 @@ async def apply_anthropic_caching_strategy(
         return prepared_messages
     
     total_conversation_tokens = get_messages_token_count(conversation_messages, model_name)
-    logger.info(f"📊 Processing {len(conversation_messages)} messages ({total_conversation_tokens} tokens)")
+    logger.debug(f"📊 Processing {len(conversation_messages)} messages ({total_conversation_tokens} tokens)")
     
     # Check if we have enough tokens to start caching
     if total_conversation_tokens < 1024:  # Below minimum cacheable size
@@ -437,14 +437,14 @@ async def apply_anthropic_caching_strategy(
             if optimal_chunk_size > cache_threshold_tokens * 1.8:
                 max_chunk_size = int(context_window_tokens * 0.15)
                 adjusted_threshold = min(optimal_chunk_size, max_chunk_size)
-                logger.info(f"🔄 Redistributing cache blocks: {total_conversation_tokens} tokens across {max_conversation_blocks} blocks (~{adjusted_threshold} tokens/block), max chunk size: {max_chunk_size} tokens")
+                logger.debug(f"🔄 Redistributing cache blocks: {total_conversation_tokens} tokens across {max_conversation_blocks} blocks (~{adjusted_threshold} tokens/block), max chunk size: {max_chunk_size} tokens")
                 logger.debug(f"   Previous threshold: {cache_threshold_tokens} tokens, new: {adjusted_threshold} tokens")
                 cache_threshold_tokens = adjusted_threshold
                 
                 # Save the adjusted threshold to prevent constant redistribution
                 if thread_id:
                     await store_threshold(thread_id, cache_threshold_tokens, model_name, "dynamic_adjustment", turn_number, system_prompt_tokens)
-                    logger.info(f"💾 Saved adjusted threshold to prevent cache churn")
+                    logger.debug(f"💾 Saved adjusted threshold to prevent cache churn")
         
         # Conversation fits within cache limits - use chunked approach
         chunks_created, last_cached_message_id = create_conversation_chunks(
@@ -455,7 +455,7 @@ async def apply_anthropic_caching_strategy(
             model_name
         )
         blocks_used += chunks_created
-        logger.info(f"✅ Created {chunks_created} conversation cache blocks")
+        logger.debug(f"✅ Created {chunks_created} conversation cache blocks")
     else:
         # Conversation too large - need summarization or truncation
         logger.warning(f"Conversation ({total_conversation_tokens} tokens) exceeds cache limit ({max_cacheable_tokens})")
@@ -463,9 +463,9 @@ async def apply_anthropic_caching_strategy(
         recent_token_limit = min(cache_threshold_tokens * 2, max_cacheable_tokens)
         recent_messages = get_recent_messages_within_token_limit(conversation_messages, recent_token_limit, model_name)
         prepared_messages.extend(recent_messages)
-        logger.info(f"Added {len(recent_messages)} recent messages ({get_messages_token_count(recent_messages, model_name)} tokens)")
+        logger.debug(f"Added {len(recent_messages)} recent messages ({get_messages_token_count(recent_messages, model_name)} tokens)")
     
-    logger.info(f"🎯 Total cache blocks used: {blocks_used}/4")
+    logger.debug(f"🎯 Total cache blocks used: {blocks_used}/4")
     
     # Log final structure
     cache_count = sum(1 for msg in prepared_messages 
@@ -474,7 +474,7 @@ async def apply_anthropic_caching_strategy(
                      isinstance(msg['content'][0], dict) and 
                      'cache_control' in msg['content'][0])
     
-    logger.info(f"✅ Final structure: {cache_count} cache breakpoints, {len(prepared_messages)} total blocks")
+    logger.debug(f"✅ Final structure: {cache_count} cache breakpoints, {len(prepared_messages)} total blocks")
     
     return prepared_messages
 
@@ -663,7 +663,7 @@ def create_conversation_chunks(
                             prepared_messages.append(chunk_msg)
                     
                     chunks_created += 1
-                    logger.info(f"🔥 Block {chunks_created + 1}: Cached chunk ({current_chunk_tokens} tokens, {len(all_chunk_messages)} messages from {len(current_chunk_groups)} groups)")
+                    logger.debug(f"🔥 Block {chunks_created + 1}: Cached chunk ({current_chunk_tokens} tokens, {len(all_chunk_messages)} messages from {len(current_chunk_groups)} groups)")
                     
                     # Reset for next chunk
                     current_chunk_groups = []

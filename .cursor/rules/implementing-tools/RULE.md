@@ -361,3 +361,10 @@ See `reality_defender_tool` implementation for a complete example:
 - Backend: `backend/core/tools/reality_defender_tool.py`
 - Frontend: `frontend/src/components/thread/tool-views/reality-defender-tool/`
 - Mobile: `apps/mobile/components/chat/tool-views/reality-defender-tool/`
+
+**IMPORTANT: Use UV for package management:**
+- Always use `uv` instead of `pip` for installing Python packages
+- Example: `uv add your-package>=1.0.0` or `uv pip install your-package>=1.0.0`
+- UV is faster and provides better dependency resolution
+- When updating dependencies, use `uv sync` or `uv pip sync` instead of `pip install`
+- See `.cursor/rules/package-management.md` for detailed UV usage guidelines

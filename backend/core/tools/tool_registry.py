@@ -33,6 +33,7 @@ UTILITY_TOOLS = [
     ('browser_tool', 'core.tools.browser_tool', 'BrowserTool'),
     ('vapi_voice_tool', 'core.tools.vapi_voice_tool', 'VapiVoiceTool'),
     ('reality_defender_tool', 'core.tools.reality_defender_tool', 'RealityDefenderTool'),
+    ('apify_tool', 'core.tools.apify_tool', 'ApifyTool'),
 ]
 
 AGENT_BUILDER_TOOLS = [

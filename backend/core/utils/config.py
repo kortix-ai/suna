@@ -342,6 +342,9 @@ class Configuration:
     # Reality Defender deepfake detection
     REALITY_DEFENDER_API_KEY: Optional[str] = None
     
+    # Apify integration
+    APIFY_API_TOKEN: Optional[str] = None
+    
     VAPI_PRIVATE_KEY: Optional[str] = None
     VAPI_PHONE_NUMBER_ID: Optional[str] = None
     VAPI_SERVER_URL: Optional[str] = None

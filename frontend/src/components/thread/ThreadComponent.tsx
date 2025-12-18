@@ -117,6 +117,12 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const pendingMessageRef = useRef<string | null>(null);
   const chatInputRef = useRef<ChatInputHandles>(null);
 
+  // Helper to check if user has active text selection - prevents scroll from disrupting copy
+  const hasActiveSelection = useCallback((): boolean => {
+    const selection = window.getSelection();
+    return selection !== null && selection.toString().trim().length > 0;
+  }, []);
+
   // Message queue for when agent is running - using Zustand store
   const queueMessage = useMessageQueueStore((state) => state.queueMessage);
   const removeQueuedMessage = useMessageQueueStore((state) => state.removeMessage);
@@ -367,10 +373,12 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   }, [configuredAgentId, setSelectedAgent]);
 
   const scrollToBottom = useCallback(() => {
+    // Don't scroll if user has text selected - preserves copy ability during streaming
+    if (hasActiveSelection()) return;
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }, []);
+  }, [hasActiveSelection]);
 
   const handlePromptFill = useCallback((message: string) => {
     chatInputRef.current?.setValue(message);
@@ -420,12 +428,14 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       }
 
       setTimeout(() => {
+        // Don't scroll if user has text selected - preserves copy ability during streaming
+        if (hasActiveSelection()) return;
         if (scrollContainerRef.current) {
           scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
         }
       }, 100);
     },
-    [setMessages, setAutoOpenedPanel],
+    [setMessages, setAutoOpenedPanel, hasActiveSelection],
   );
 
   const handleStreamStatusChange = useCallback(
@@ -476,6 +486,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
             pendingMessageRef.current = null;
 
             setTimeout(() => {
+              // Don't scroll if user has text selected - preserves copy ability during streaming
+              if (hasActiveSelection()) return;
               if (scrollContainerRef.current) {
                 scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
               }
@@ -487,7 +499,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           break;
       }
     },
-    [setAgentStatus, setAgentRunId, setAutoOpenedPanel, threadId, setMessages, queuedMessages, removeQueuedMessage],
+    [setAgentStatus, setAgentRunId, setAutoOpenedPanel, threadId, setMessages, queuedMessages, removeQueuedMessage, hasActiveSelection],
   );
 
   const handleStreamError = useCallback((errorMessage: string) => {
@@ -992,6 +1004,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
       if (isNearBottom) {
         const timeoutId = setTimeout(() => {
+          // Don't scroll if user has text selected - preserves copy ability during streaming
+          if (hasActiveSelection()) return;
           if (scrollContainerRef.current) {
             scrollContainerRef.current.scrollTo({ top: 0, behavior: 'auto' });
           }
@@ -999,7 +1013,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         return () => clearTimeout(timeoutId);
       }
     }
-  }, [initialLoadCompleted, messages.length]);
+  }, [initialLoadCompleted, messages.length, hasActiveSelection]);
 
   const optimisticMessages: UnifiedMessage[] = useMemo(() => {
     if (!showOptimisticUI || !optimisticPrompt) return [];

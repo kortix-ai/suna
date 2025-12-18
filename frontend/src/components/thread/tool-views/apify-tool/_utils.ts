@@ -1,0 +1,352 @@
+import { ToolCallData, ToolResultData } from '../types';
+
+export interface ApifyActor {
+  actor_id: string;
+  name: string;
+  title: string;
+  username: string;
+  description: string;
+  pricing_model?: string;
+  run_count: number;
+  is_featured: boolean;
+  is_premium: boolean;
+}
+
+export interface ApifyActorDetails {
+  actor_id: string;
+  name: string;
+  title?: string;
+  description?: string;
+  username?: string;
+  inputSchema?: any; // Full API response uses inputSchema (camelCase)
+  input_schema?: any; // Fallback for snake_case
+  store_actor?: {
+    title?: string;
+    description?: string;
+    stats?: {
+      runsCounter?: number;
+    };
+    pricingModel?: string;
+    isPremium?: boolean;
+  };
+  // All other fields from API response
+  [key: string]: any;
+}
+
+export interface ApifyRunResult {
+  run_id: string;
+  actor_id: string;
+  status: string;
+  cost_usd: number;
+  cost_with_markup_usd: number;
+  cost_deducted: string;
+  results: any[];
+  result_count: number;
+  total_items: number;
+  has_more: boolean;
+  dataset_id?: string;
+  saved_to_disk?: boolean;
+  file_path?: string;
+  message?: string;
+}
+
+export interface ApifySearchData {
+  actors: ApifyActor[];
+  total: number;
+  query: string;
+  actualIsSuccess: boolean;
+  actualToolTimestamp?: string;
+  actualAssistantTimestamp?: string;
+}
+
+export interface ApifyRunResultsData {
+  run_id: string;
+  dataset_id: string;
+  items: any[];
+  count: number;
+  offset: number;
+  limit: number;
+  actualIsSuccess: boolean;
+  actualToolTimestamp?: string;
+  actualAssistantTimestamp?: string;
+}
+
+export function extractApifySearchData(
+  toolCall: ToolCallData | undefined,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true,
+  toolTimestamp?: string,
+  assistantTimestamp?: string
+): ApifySearchData {
+  const defaultReturn: ApifySearchData = {
+    actors: [],
+    total: 0,
+    query: '',
+    actualIsSuccess: isSuccess,
+    actualToolTimestamp: toolTimestamp,
+    actualAssistantTimestamp: assistantTimestamp,
+  };
+
+  try {
+    if (!toolCall) {
+      return defaultReturn;
+    }
+
+    const args = toolCall.arguments || {};
+    const query: string = args.query || '';
+
+    let output: any = null;
+    let actualIsSuccess = isSuccess;
+    let actualToolTimestamp = toolTimestamp;
+
+    if (toolResult?.output) {
+      output = toolResult.output;
+      if (toolResult.success !== undefined) {
+        actualIsSuccess = toolResult.success;
+      }
+      if (toolResult.timestamp) {
+        actualToolTimestamp = toolResult.timestamp;
+      }
+    }
+
+    if (output && typeof output === 'object' && output !== null) {
+      return {
+        query,
+        actors: output.actors || [],
+        total: output.total || 0,
+        actualIsSuccess,
+        actualToolTimestamp,
+        actualAssistantTimestamp: assistantTimestamp,
+      };
+    }
+
+    return defaultReturn;
+  } catch (error) {
+    console.error('extractApifySearchData error:', error);
+    return defaultReturn;
+  }
+}
+
+export function extractApifyActorDetails(
+  toolCall: ToolCallData | undefined,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true,
+  toolTimestamp?: string,
+  assistantTimestamp?: string
+): ApifyActorDetails & {
+  actualIsSuccess: boolean;
+  actualToolTimestamp?: string;
+  actualAssistantTimestamp?: string;
+} {
+  const defaultReturn = {
+    actor_id: '',
+    name: '',
+    title: '',
+    description: '',
+    username: '',
+    input_schema: {},
+    pricing_info: undefined,
+    stats: undefined,
+    actualIsSuccess: isSuccess,
+    actualToolTimestamp: toolTimestamp,
+    actualAssistantTimestamp: assistantTimestamp,
+  };
+
+  try {
+    if (!toolCall) {
+      return defaultReturn;
+    }
+
+    const args = toolCall.arguments || {};
+    const actor_id: string = args.actor_id || '';
+
+    let output: any = null;
+    let actualIsSuccess = isSuccess;
+    let actualToolTimestamp = toolTimestamp;
+
+    if (toolResult?.output) {
+      output = toolResult.output;
+      if (toolResult.success !== undefined) {
+        actualIsSuccess = toolResult.success;
+      }
+      if (toolResult.timestamp) {
+        actualToolTimestamp = toolResult.timestamp;
+      }
+    }
+
+    if (output && typeof output === 'object' && output !== null) {
+      // Get input schema (API uses inputSchema, but we support both)
+      const inputSchema = output.inputSchema || output.input_schema || {};
+      
+      // Get title/description from store_actor if available, otherwise from actor
+      const storeActor = output.store_actor;
+      const title = storeActor?.title || output.title || output.name || '';
+      const description = storeActor?.description || output.description || '';
+      
+      return {
+        actor_id: output.actor_id || actor_id,
+        name: output.name || '',
+        title,
+        description,
+        username: output.username || '',
+        inputSchema: inputSchema,
+        input_schema: inputSchema, // Keep both for compatibility
+        store_actor: storeActor,
+        // Include all other fields from API response
+        ...output,
+        actualIsSuccess,
+        actualToolTimestamp,
+        actualAssistantTimestamp: assistantTimestamp,
+      };
+    }
+
+    return defaultReturn;
+  } catch (error) {
+    console.error('extractApifyActorDetails error:', error);
+    return defaultReturn;
+  }
+}
+
+export function extractApifyRunData(
+  toolCall: ToolCallData | undefined,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true,
+  toolTimestamp?: string,
+  assistantTimestamp?: string
+): ApifyRunResult & {
+  actualIsSuccess: boolean;
+  actualToolTimestamp?: string;
+  actualAssistantTimestamp?: string;
+  run_input?: any;
+} {
+  const defaultReturn = {
+    run_id: '',
+    actor_id: '',
+    status: '',
+    cost_usd: 0,
+    cost_with_markup_usd: 0,
+    cost_deducted: '',
+    results: [],
+    result_count: 0,
+    total_items: 0,
+    has_more: false,
+    dataset_id: undefined,
+    actualIsSuccess: isSuccess,
+    actualToolTimestamp: toolTimestamp,
+    actualAssistantTimestamp: assistantTimestamp,
+    run_input: undefined,
+  };
+
+  try {
+    if (!toolCall) {
+      return defaultReturn;
+    }
+
+    const args = toolCall.arguments || {};
+    const run_input = args.run_input;
+
+    let output: any = null;
+    let actualIsSuccess = isSuccess;
+    let actualToolTimestamp = toolTimestamp;
+
+    if (toolResult?.output) {
+      output = toolResult.output;
+      if (toolResult.success !== undefined) {
+        actualIsSuccess = toolResult.success;
+      }
+      if (toolResult.timestamp) {
+        actualToolTimestamp = toolResult.timestamp;
+      }
+    }
+
+    if (output && typeof output === 'object' && output !== null) {
+      return {
+        run_id: output.run_id || '',
+        actor_id: output.actor_id || '',
+        status: output.status || '',
+        cost_usd: output.cost_usd || 0,
+        cost_with_markup_usd: output.cost_with_markup_usd || 0,
+        cost_deducted: output.cost_deducted || '',
+        results: output.results || [],
+        result_count: output.result_count || 0,
+        total_items: output.total_items || 0,
+        has_more: output.has_more || false,
+        dataset_id: output.dataset_id,
+        saved_to_disk: output.saved_to_disk || false,
+        file_path: output.file_path,
+        message: output.message,
+        actualIsSuccess,
+        actualToolTimestamp,
+        actualAssistantTimestamp: assistantTimestamp,
+        run_input,
+      };
+    }
+
+    return defaultReturn;
+  } catch (error) {
+    console.error('extractApifyRunData error:', error);
+    return defaultReturn;
+  }
+}
+
+export function extractApifyRunResultsData(
+  toolCall: ToolCallData | undefined,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true,
+  toolTimestamp?: string,
+  assistantTimestamp?: string
+): ApifyRunResultsData {
+  const defaultReturn: ApifyRunResultsData = {
+    run_id: '',
+    dataset_id: '',
+    items: [],
+    count: 0,
+    offset: 0,
+    limit: 0,
+    actualIsSuccess: isSuccess,
+    actualToolTimestamp: toolTimestamp,
+    actualAssistantTimestamp: assistantTimestamp,
+  };
+
+  try {
+    if (!toolCall) {
+      return defaultReturn;
+    }
+
+    const args = toolCall.arguments || {};
+    const run_id: string = args.run_id || '';
+
+    let output: any = null;
+    let actualIsSuccess = isSuccess;
+    let actualToolTimestamp = toolTimestamp;
+
+    if (toolResult?.output) {
+      output = toolResult.output;
+      if (toolResult.success !== undefined) {
+        actualIsSuccess = toolResult.success;
+      }
+      if (toolResult.timestamp) {
+        actualToolTimestamp = toolResult.timestamp;
+      }
+    }
+
+    if (output && typeof output === 'object' && output !== null) {
+      return {
+        run_id: output.run_id || run_id,
+        dataset_id: output.dataset_id || '',
+        items: output.items || [],
+        count: output.count || 0,
+        offset: output.offset || 0,
+        limit: output.limit || 0,
+        actualIsSuccess,
+        actualToolTimestamp,
+        actualAssistantTimestamp: assistantTimestamp,
+      };
+    }
+
+    return defaultReturn;
+  } catch (error) {
+    console.error('extractApifyRunResultsData error:', error);
+    return defaultReturn;
+  }
+}

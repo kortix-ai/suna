@@ -329,7 +329,8 @@ async def process_agent_responses(
 
         response_json = json.dumps(response)
         
-        if redis_streaming_enabled and redis.is_redis_healthy():
+        redis_healthy = redis.is_redis_healthy()
+        if redis_streaming_enabled and redis_healthy:
             pending_redis_operations.append(
                 asyncio.create_task(redis.publish(pubsub_channel, response_json))
             )
@@ -341,6 +342,12 @@ async def process_agent_responses(
                     approximate=True
                 ))
             )
+        elif total_responses == 0:
+            # Log on first response if streaming is disabled - this indicates a problem
+            if not redis_healthy:
+                logger.error(f"🔴 Redis circuit breaker OPEN - responses NOT being streamed for {agent_run_id}. Circuit state: {redis.get_circuit_breaker_state()}")
+            elif not redis_streaming_enabled:
+                logger.warning(f"⚠️ Redis streaming disabled (backpressure) - responses NOT being streamed for {agent_run_id}")
         
         total_responses += 1
         stop_signal_checker_state['total_responses'] = total_responses
@@ -512,6 +519,12 @@ async def run_agent_background(
         cancellation_event = asyncio.Event()
 
         redis_keys = create_redis_keys(agent_run_id, instance_id)
+        
+        # Log Redis health at job start - critical for debugging streaming issues
+        redis_health = redis.is_redis_healthy()
+        circuit_state = redis.get_circuit_breaker_state()
+        logger.info(f"📡 Redis health check: healthy={redis_health}, circuit={circuit_state['state']}, failures={circuit_state['failures']}")
+        
         trace = langfuse.trace(
             name="agent_run",
             id=agent_run_id,
