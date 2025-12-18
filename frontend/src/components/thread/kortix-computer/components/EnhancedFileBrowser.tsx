@@ -239,7 +239,7 @@ export const EnhancedFileBrowser = memo(function EnhancedFileBrowser({
                     <motion.button
                       initial={{ opacity: 0, y: 0 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.02 }}
+                      transition={{ delay: 0.05 }}
                       onDoubleClick={() => handleFileAction(file)}
                       className={cn(
                         "flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-accent/60 transition-all text-left group",
@@ -280,7 +280,7 @@ export const EnhancedFileBrowser = memo(function EnhancedFileBrowser({
                     <motion.button
                       initial={{ opacity: 0, x: 0 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.01 }}
+                      transition={{ delay: 0.05 }}
                       onDoubleClick={() => handleFileAction(file)}
                       className={cn(
                         "flex items-center gap-4 px-3 py-2 rounded-lg hover:bg-accent/60 transition-all text-left w-full",

@@ -11,8 +11,10 @@ import {
   Loader,
   ChevronDown,
   AlertTriangle,
+  File,
+  FileText,
+  Presentation,
 } from 'lucide-react';
-import { getFileIconByName, FolderIcon, PresentationFileIcon } from './components/Icons';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -467,11 +469,18 @@ export function FileBrowserView({
   const getFileIcon = useCallback((file: FileInfo) => {
     if (file.is_dir) {
       if (isPresentationFolder(file)) {
-        return <div className="w-full h-full"><PresentationFileIcon /></div>;
+        return <Presentation className="h-9 w-9 text-orange-500" />;
       }
-      return <div className="w-full h-full"><FolderIcon /></div>;
+      return <Folder className="h-9 w-9 text-blue-500" />;
     }
-    return <div className="w-full h-full">{getFileIconByName(file.name, false)}</div>;
+    
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    
+    if (['md', 'txt', 'doc'].includes(extension || '')) {
+      return <FileText className="h-8 w-8 text-muted-foreground" />;
+    }
+    
+    return <File className="h-8 w-8 text-muted-foreground" />;
   }, [isPresentationFolder]);
 
   // Load workspace version history

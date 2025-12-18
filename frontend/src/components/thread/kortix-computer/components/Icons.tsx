@@ -140,8 +140,7 @@ export const MarkdownFileIcon = () => (
       </linearGradient>
     </defs>
     <rect x="6" y="10" width="52" height="44" rx="6" fill="url(#mdModern)"/>
-    <path d="M14 38 L14 26 L20 32 L26 26 L26 38" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-    <path d="M34 38 L34 26 L44 26 L44 38 M44 32 L50 38 L44 32 L50 26" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+    <text x="32" y="40" textAnchor="middle" fill="white" fontSize="14" fontWeight="bold" fontFamily="system-ui">MD</text>
   </svg>
 );
 

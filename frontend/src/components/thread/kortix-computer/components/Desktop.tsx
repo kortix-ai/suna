@@ -2,7 +2,7 @@
 
 import { memo, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { Folder, Globe, TerminalSquare } from 'lucide-react';
+import { Folder, Globe, TerminalSquare, Info } from 'lucide-react';
 import { AppWindow } from './AppWindow';
 import { AppDock } from './Dock';
 import { PanelHeader } from './PanelHeader';
@@ -16,10 +16,18 @@ import { ViewType } from '@/stores/kortix-computer-store';
 import { cn } from '@/lib/utils';
 import { useSandboxDetails } from '@/hooks/files/use-sandbox-details';
 import { useDirectoryQuery } from '@/hooks/files/use-file-queries';
+import { useFileUpload } from '@/hooks/files/use-file-mutations';
 import { DesktopContextMenu } from './DesktopContextMenu';
 import { QuickLaunch } from './QuickLaunch';
 import { DesktopIcons } from './DesktopIcons';
-import { Terminal } from './Terminal';
+import { SSHTerminal } from './SSHTerminal';
+import { FileViewerView } from '../FileViewerView';
+import { EnhancedFileBrowser } from './EnhancedFileBrowser';
+import { getFileIconByName } from './Icons';
+import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
+import { fileQueryKeys } from '@/hooks/files/use-file-queries';
+import { useAuth } from '@/components/AuthProvider';
 
 const convertToolName = (toolName: string) => {
   if (toolName.includes('_')) {
@@ -88,13 +96,87 @@ const getToolColorScheme = (toolName: string): { bg: string; iconColor: string }
 
 interface OpenWindow {
   id: string;
-  type: 'tool' | 'files' | 'browser' | 'terminal';
+  type: 'tool' | 'files' | 'browser' | 'terminal' | 'file-viewer' | 'folder-browser' | 'info';
   toolIndex?: number;
+  filePath?: string;
+  fileName?: string;
   zIndex: number;
   position: { x: number; y: number };
   size: { width: number; height: number };
   isMinimized: boolean;
 }
+
+interface FolderWindowProps {
+  window: OpenWindow;
+  sandboxId: string;
+  isActive: boolean;
+  onFocus: () => void;
+  onClose: () => void;
+  onMinimize: () => void;
+  onOpenFile: (path: string, isDir: boolean) => void;
+}
+
+const FolderWindow = memo(function FolderWindow({
+  window,
+  sandboxId,
+  isActive,
+  onFocus,
+  onClose,
+  onMinimize,
+  onOpenFile,
+}: FolderWindowProps) {
+  const [currentPath, setCurrentPath] = useState(window.filePath || '/workspace');
+  const { data: files = [] } = useDirectoryQuery(sandboxId, currentPath, { enabled: !!sandboxId });
+
+  const folderFiles = files.map(f => ({
+    name: f.name,
+    path: f.path || `${currentPath}/${f.name}`,
+    is_dir: f.is_dir,
+    size: f.size || 0,
+    mod_time: f.mod_time || '',
+  }));
+
+  const pathSegments = currentPath.split('/').filter(Boolean);
+  const parentPath = pathSegments.length > 1 
+    ? '/' + pathSegments.slice(0, -1).join('/') 
+    : '/workspace';
+
+  const folderName = currentPath.split('/').pop() || 'Folder';
+
+  return (
+    <AppWindow
+      key={window.id}
+      id={window.id}
+      title={folderName}
+      icon={
+        <div className="w-4 h-4 rounded flex items-center justify-center bg-gradient-to-br from-[#89A8C8] to-[#6B8DB5]">
+          <Folder className="w-2.5 h-2.5 text-white" />
+        </div>
+      }
+      isActive={isActive}
+      initialPosition={window.position}
+      initialSize={window.size}
+      onFocus={onFocus}
+      onClose={onClose}
+      onMinimize={onMinimize}
+      zIndex={window.zIndex}
+    >
+      <EnhancedFileBrowser
+        files={folderFiles}
+        currentPath={currentPath}
+        onNavigate={setCurrentPath}
+        onFileOpen={(path) => {
+          const file = folderFiles.find(f => f.path === path);
+          if (file) {
+            onOpenFile(path, file.is_dir);
+          }
+        }}
+        onBack={() => setCurrentPath(parentPath)}
+        sandboxId={sandboxId}
+      />
+    </AppWindow>
+  );
+});
 
 interface SandboxDesktopProps {
   toolCalls: ToolCallInput[];
@@ -148,6 +230,12 @@ export const SandboxDesktop = memo(function SandboxDesktop({
   const [activeWindowId, setActiveWindowId] = useState<string | null>(null);
   const [isSpotlightOpen, setIsSpotlightOpen] = useState(false);
   const [sandboxInfoOpen, setSandboxInfoOpen] = useState(false);
+  const [isCreatingNewFolder, setIsCreatingNewFolder] = useState(false);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
+  const fileUploadMutation = useFileUpload();
+  const { session } = useAuth();
 
   const { data: sandboxDetails, isLoading: sandboxLoading, error: sandboxError } = useSandboxDetails(project_id);
   
@@ -258,6 +346,25 @@ export const SandboxDesktop = memo(function SandboxDesktop({
       onViewChange(type);
     }
   }, [maxZIndex, getInitialPosition, onViewChange]);
+
+  const openFileWindow = useCallback((path: string, isDirectory: boolean) => {
+    const fileName = path.split('/').pop() || path;
+    const windowId = `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    setOpenWindows(prev => [...prev, {
+      id: windowId,
+      type: isDirectory ? 'folder-browser' : 'file-viewer',
+      filePath: path,
+      fileName,
+      zIndex: maxZIndex + 1,
+      position: getInitialPosition(prev.length),
+      size: isDirectory ? { width: 800, height: 500 } : { width: 700, height: 500 },
+      isMinimized: false,
+    }]);
+    
+    setMaxZIndex(prev => prev + 1);
+    setActiveWindowId(windowId);
+  }, [maxZIndex, getInitialPosition]);
 
   const closeWindow = useCallback((windowId: string) => {
     setOpenWindows(prev => prev.filter(w => w.id !== windowId));
@@ -401,25 +508,151 @@ export const SandboxDesktop = memo(function SandboxDesktop({
   }));
 
   const handleDesktopFileOpen = useCallback((path: string, isDirectory: boolean) => {
-    if (isDirectory) {
-      openSystemWindow('files');
-    } else {
-      onFileClick?.(path);
-    }
-  }, [openSystemWindow, onFileClick]);
+    openFileWindow(path, isDirectory);
+  }, [openFileWindow]);
 
   const handleDesktopFileEdit = useCallback((path: string) => {
-    onFileClick?.(path);
-  }, [onFileClick]);
+    openFileWindow(path, false);
+  }, [openFileWindow]);
+
+  const handleUploadFiles = useCallback((files: FileList | File[]) => {
+    if (!sandboxId) {
+      toast.error('No sandbox available');
+      return;
+    }
+    
+    const fileArray = Array.from(files);
+    fileArray.forEach(file => {
+      const targetPath = `/workspace/${file.name}`;
+      fileUploadMutation.mutate({
+        sandboxId,
+        file,
+        targetPath,
+      });
+    });
+  }, [sandboxId, fileUploadMutation]);
+
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      handleUploadFiles(e.target.files);
+      e.target.value = '';
+    }
+  }, [handleUploadFiles]);
+
+  const handleStartNewFolder = useCallback(() => {
+    // Small delay to let context menu close first
+    setTimeout(() => {
+      setIsCreatingNewFolder(true);
+    }, 50);
+  }, []);
+
+  const handleCreateNewFolder = useCallback(async (folderName: string) => {
+    setIsCreatingNewFolder(false);
+    
+    if (!sandboxId || !session?.access_token) {
+      toast.error('Cannot create folder');
+      return;
+    }
+    
+    if (workspaceFiles.some(f => f.name === folderName)) {
+      toast.error(`"${folderName}" already exists`);
+      return;
+    }
+    
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${sandboxId}/terminal/execute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          command: `mkdir -p "/workspace/${folderName}"`,
+        }),
+      });
+      
+      if (response.ok) {
+        toast.success(`Created "${folderName}"`);
+        queryClient.invalidateQueries({ queryKey: fileQueryKeys.directories() });
+      } else {
+        toast.error('Failed to create folder');
+      }
+    } catch (error) {
+      toast.error('Failed to create folder');
+    }
+  }, [sandboxId, session?.access_token, workspaceFiles, queryClient]);
+
+  const handleCancelNewFolder = useCallback(() => {
+    setIsCreatingNewFolder(false);
+  }, []);
+
+  const handleOpenInfoWindow = useCallback(() => {
+    const windowId = 'system-info';
+    
+    setOpenWindows(prev => {
+      const existing = prev.find(w => w.id === windowId);
+      if (existing) {
+        if (existing.isMinimized) {
+          return prev.map(w => 
+            w.id === windowId 
+              ? { ...w, isMinimized: false, zIndex: maxZIndex + 1 }
+              : w
+          );
+        }
+        return prev.map(w => 
+          w.id === windowId 
+            ? { ...w, zIndex: maxZIndex + 1 }
+            : w
+        );
+      }
+
+      return [...prev, {
+        id: windowId,
+        type: 'info' as const,
+        zIndex: maxZIndex + 1,
+        position: getInitialPosition(prev.length),
+        size: { width: 400, height: 500 },
+        isMinimized: false,
+      }];
+    });
+    
+    setMaxZIndex(prev => prev + 1);
+    setActiveWindowId(windowId);
+  }, [maxZIndex, getInitialPosition]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleUploadFiles(e.dataTransfer.files);
+    }
+  }, [handleUploadFiles]);
+
+  const handleDownloadAll = useCallback(async () => {
+    if (!sandboxId) {
+      toast.error('No sandbox available');
+      return;
+    }
+    toast.info('Download all functionality coming soon');
+  }, [sandboxId]);
 
   const renderDesktop = () => (
     <>
       <div className="absolute inset-0 top-14">
-        {!sandboxInfoOpen && desktopFiles.length > 0 && (
+        {!sandboxInfoOpen && (desktopFiles.length > 0 || isCreatingNewFolder) && (
           <DesktopIcons 
             files={desktopFiles}
             onFileOpen={handleDesktopFileOpen}
             onFileEdit={handleDesktopFileEdit}
+            isCreatingNewFolder={isCreatingNewFolder}
+            onNewFolderCreate={handleCreateNewFolder}
+            onNewFolderCancel={handleCancelNewFolder}
           />
         )}
         
@@ -546,7 +779,80 @@ export const SandboxDesktop = memo(function SandboxDesktop({
                     onMinimize={() => minimizeWindow(window.id)}
                     zIndex={window.zIndex}
                   >
-                    <Terminal sandboxId={sandboxId} />
+                    <SSHTerminal sandboxId={sandboxId} />
+                  </AppWindow>
+                );
+              }
+
+              if (window.type === 'file-viewer' && window.filePath && sandboxId) {
+                return (
+                  <AppWindow
+                    key={window.id}
+                    id={window.id}
+                    title={window.fileName || 'File'}
+                    icon={
+                      <div className="w-4 h-4 flex items-center justify-center">
+                        {getFileIconByName(window.fileName || '', false)}
+                      </div>
+                    }
+                    isActive={activeWindowId === window.id}
+                    initialPosition={window.position}
+                    initialSize={window.size}
+                    onFocus={() => focusWindow(window.id)}
+                    onClose={() => closeWindow(window.id)}
+                    onMinimize={() => minimizeWindow(window.id)}
+                    zIndex={window.zIndex}
+                  >
+                    <FileViewerView
+                      sandboxId={sandboxId}
+                      filePath={window.filePath}
+                      project={project}
+                      projectId={project_id}
+                    />
+                  </AppWindow>
+                );
+              }
+
+              if (window.type === 'folder-browser' && window.filePath && sandboxId) {
+                return (
+                  <FolderWindow
+                    key={window.id}
+                    window={window}
+                    sandboxId={sandboxId}
+                    isActive={activeWindowId === window.id}
+                    onFocus={() => focusWindow(window.id)}
+                    onClose={() => closeWindow(window.id)}
+                    onMinimize={() => minimizeWindow(window.id)}
+                    onOpenFile={(path, isDir) => openFileWindow(path, isDir)}
+                  />
+                );
+              }
+
+              if (window.type === 'info') {
+                return (
+                  <AppWindow
+                    key={window.id}
+                    id={window.id}
+                    title="Sandbox Info"
+                    icon={
+                      <div className="w-4 h-4 rounded flex items-center justify-center bg-gradient-to-br from-[#64748B] to-[#475569]">
+                        <Info className="w-2.5 h-2.5 text-white" />
+                      </div>
+                    }
+                    isActive={activeWindowId === window.id}
+                    initialPosition={window.position}
+                    initialSize={window.size}
+                    onFocus={() => focusWindow(window.id)}
+                    onClose={() => closeWindow(window.id)}
+                    onMinimize={() => minimizeWindow(window.id)}
+                    zIndex={window.zIndex}
+                  >
+                    <div className="h-full overflow-auto bg-background p-4">
+                      <SandboxInfoCard
+                        sandboxDetails={sandboxDetails}
+                        isLoading={sandboxLoading}
+                      />
+                    </div>
                   </AppWindow>
                 );
               }
@@ -580,12 +886,31 @@ export const SandboxDesktop = memo(function SandboxDesktop({
 
   return (
     <DesktopContextMenu
-      onRefresh={() => window.location.reload()}
+      onRefresh={() => {
+        queryClient.invalidateQueries({ queryKey: fileQueryKeys.directories() });
+        toast.success('Refreshed');
+      }}
       onOpenFiles={() => handleSystemAppClick('files')}
       onOpenBrowser={() => handleSystemAppClick('browser')}
       onOpenTerminal={() => handleSystemAppClick('terminal')}
+      onNewFolder={handleStartNewFolder}
+      onUpload={() => fileInputRef.current?.click()}
+      onDownloadAll={handleDownloadAll}
+      onShowInfo={handleOpenInfoWindow}
     >
-      <div className="relative w-full h-full overflow-hidden flex flex-col">
+      <div 
+        className="relative w-full h-full overflow-hidden flex flex-col"
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={handleFileInputChange}
+        />
+        
         <div className="absolute inset-0">
           <img 
             src="https://heprlhlltebrxydgtsjs.supabase.co/storage/v1/object/public/image-uploads/backgrounds/computer-bg-dark.jpg"
@@ -628,7 +953,8 @@ export const SandboxDesktop = memo(function SandboxDesktop({
           onOpenBrowser={() => handleSystemAppClick('browser')}
           onOpenTerminal={() => handleSystemAppClick('terminal')}
           onFileSelect={(path) => {
-            onFileClick?.(path);
+            const isDir = spotlightFiles.find(f => f.path === path)?.type === 'directory';
+            openFileWindow(path, isDir);
             setIsSpotlightOpen(false);
           }}
           files={spotlightFiles}

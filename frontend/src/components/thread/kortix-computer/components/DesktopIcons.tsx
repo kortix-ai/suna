@@ -1,9 +1,9 @@
 'use client';
 
-import { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { getFileIcon } from './Icons';
+import { getFileIcon, FolderIcon } from './Icons';
 import { FileContextMenu } from './FileContextMenu';
 import { ContextMenuTrigger } from '@/components/ui/context-menu';
 import { toast } from 'sonner';
@@ -21,6 +21,23 @@ interface DesktopIconsProps {
   onFileEdit?: (path: string) => void;
   onFileDownload?: (path: string) => void;
   onFileDelete?: (path: string) => void;
+  isCreatingNewFolder?: boolean;
+  onNewFolderCreate?: (name: string) => void;
+  onNewFolderCancel?: () => void;
+}
+
+function getNextFolderName(files: DesktopFile[]): string {
+  const existingNames = new Set(files.filter(f => f.is_dir).map(f => f.name.toLowerCase()));
+  
+  if (!existingNames.has('new folder')) {
+    return 'New Folder';
+  }
+  
+  let counter = 2;
+  while (existingNames.has(`new folder ${counter}`)) {
+    counter++;
+  }
+  return `New Folder ${counter}`;
 }
 
 export const DesktopIcons = memo(function DesktopIcons({
@@ -29,20 +46,87 @@ export const DesktopIcons = memo(function DesktopIcons({
   onFileEdit,
   onFileDownload,
   onFileDelete,
+  isCreatingNewFolder,
+  onNewFolderCreate,
+  onNewFolderCancel,
 }: DesktopIconsProps) {
   const [activeContextPath, setActiveContextPath] = useState<string | null>(null);
+  const [newFolderName, setNewFolderName] = useState('New Folder');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const wasCreatingRef = useRef(false);
+
+  useEffect(() => {
+    // Only run when transitioning from false to true
+    if (isCreatingNewFolder && !wasCreatingRef.current) {
+      const suggestedName = getNextFolderName(files);
+      setNewFolderName(suggestedName);
+      
+      const timer = setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          inputRef.current.select();
+        }
+      }, 150);
+      
+      wasCreatingRef.current = true;
+      return () => clearTimeout(timer);
+    } else if (!isCreatingNewFolder) {
+      wasCreatingRef.current = false;
+    }
+  }, [isCreatingNewFolder, files]);
 
   const handleCopyPath = useCallback((path: string) => {
     navigator.clipboard.writeText(path);
     toast.success('Path copied to clipboard');
   }, []);
 
+  const handleNewFolderKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const trimmedName = newFolderName.trim();
+      if (trimmedName) {
+        onNewFolderCreate?.(trimmedName);
+      } else {
+        onNewFolderCancel?.();
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      onNewFolderCancel?.();
+    }
+  }, [newFolderName, onNewFolderCreate, onNewFolderCancel]);
+
+
   return (
     <div className="absolute right-2 -top-12 bottom-20 pointer-events-none overflow-visible px-2">
       <div 
         className="flex flex-col flex-wrap-reverse gap-0.5 h-full content-start items-start justify-start"
       >
-        {files.map((file, index) => (
+        {isCreatingNewFolder && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            className={cn(
+              "flex flex-col items-center justify-start gap-1.5 p-2 rounded-xl pointer-events-auto w-[84px]",
+              "bg-white/20 ring-2 ring-white/30 backdrop-blur-sm"
+            )}
+          >
+            <div className="w-[52px] h-[52px] flex items-center justify-center shrink-0 drop-shadow-md">
+              <FolderIcon />
+            </div>
+            <input
+              ref={inputRef}
+              type="text"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyDown={handleNewFolderKeyDown}
+              className="text-[11px] font-medium text-white text-center w-full leading-tight bg-black/40 rounded px-1 py-0.5 outline-none border border-white/30 focus:border-white/60"
+              style={{ textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}
+            />
+          </motion.div>
+        )}
+        {files.map((file) => (
           <FileContextMenu
             key={file.path}
             fileName={file.name}
@@ -71,7 +155,6 @@ export const DesktopIcons = memo(function DesktopIcons({
                 drag
                 dragMomentum={false}
                 dragElastic={0}
-                whileHover={{ scale: 1.04 }}
                 whileTap={{ scale: 0.96 }}
                 whileDrag={{ scale: 1.1, zIndex: 1000 }}
               >
