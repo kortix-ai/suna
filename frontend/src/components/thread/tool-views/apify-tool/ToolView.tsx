@@ -780,9 +780,11 @@ export function ApifyToolView({
                       <div className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
                         <FileJson className="h-4 w-4" />
                         <span>Results File</span>
-                        <Badge variant="outline" className="text-xs">
-                          {runData.total_items.toLocaleString()} items
-                        </Badge>
+                        {runData.total_items > 0 && (
+                          <Badge variant="outline" className="text-xs">
+                            {runData.total_items.toLocaleString()} items
+                          </Badge>
+                        )}
                       </div>
                       <FileAttachment
                         filepath={runData.file_path}
@@ -791,7 +793,11 @@ export function ApifyToolView({
                         collapsed={false}
                         project={project}
                         onClick={onFileClick}
-                        className="w-full"
+                        className="w-full min-h-[240px] max-h-[400px] overflow-auto"
+                        customStyle={{
+                          gridColumn: '1 / -1',
+                          width: '100%'
+                        }}
                       />
                       {runData.message && (
                         <div className="p-3 bg-zinc-50 dark:bg-zinc-900/50 rounded-lg border border-zinc-200 dark:border-zinc-800">
@@ -896,7 +902,11 @@ export function ApifyToolView({
                         collapsed={false}
                         project={project}
                         onClick={onFileClick}
-                        className="w-full"
+                        className="w-full min-h-[240px] max-h-[400px] overflow-auto"
+                        customStyle={{
+                          gridColumn: '1 / -1',
+                          width: '100%'
+                        }}
                       />
                       {resultsData.message && (
                         <div className="p-3 bg-zinc-50 dark:bg-zinc-900/50 rounded-lg border border-zinc-200 dark:border-zinc-800">

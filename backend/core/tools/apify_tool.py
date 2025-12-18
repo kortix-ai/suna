@@ -971,71 +971,60 @@ class ApifyTool(Tool):
                     "message": "No items found in dataset"
                 })
             
-            # Save results to file in sandbox workspace
-            try:
-                # Get project_id from thread_manager
-                project_id = self.thread_manager.project_id if self.thread_manager else None
-                if not project_id:
-                    return self.fail_response("No project context available - cannot save results to disk")
-                
-                # Get sandbox_id from project
-                project_result = await self.db.client.table('projects').select('sandbox').eq('project_id', project_id).execute()
-                if not project_result.data or not project_result.data[0].get('sandbox') or not project_result.data[0]['sandbox'].get('id'):
-                    return self.fail_response("Project has no sandbox - cannot save results to disk")
-                
-                sandbox_id = project_result.data[0]['sandbox']['id']
-                
-                # Get sandbox for this project
-                sandbox = await get_or_start_sandbox(sandbox_id)
-                if not sandbox:
-                    return self.fail_response("Could not access sandbox - cannot save results to disk")
-                
-                # Create apify_results directory
-                results_dir = "/workspace/apify_results"
-                await sandbox.fs.create_folder(results_dir, "755")
-                
-                # Generate filename with timestamp and run_id
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                safe_actor_id = (actor_id or "unknown").replace("/", "_").replace("~", "_") if actor_id else "unknown"
-                filename = f"apify_results_{safe_actor_id}_{run_id[:12]}_{timestamp}.json"
-                file_path = f"{results_dir}/{filename}"
-                
-                # Serialize items to JSON
-                json_content = json.dumps(all_items, indent=2, ensure_ascii=False, default=str)
-                json_bytes = json_content.encode('utf-8')
-                
-                # Save to file
-                await sandbox.fs.upload_file(json_bytes, file_path)
-                logger.info(f"✅ Saved {len(all_items)} items to {file_path} ({len(json_bytes)} bytes)")
-                
-                # Return relative path (without /workspace prefix) for frontend
-                relative_path = file_path.replace("/workspace/", "")
-                
-                return self.success_response({
-                    "run_id": run_id,
-                    "actor_id": actor_id,
-                    "dataset_id": dataset_id,
-                    "saved_to_disk": True,
-                    "file_path": relative_path,
-                    "item_count": len(all_items),
-                    "message": f"✅ Retrieved {len(all_items)} items and saved to {relative_path}. Use terminal commands or Python to read the file."
-                })
-                
-            except Exception as e:
-                logger.error(f"Error saving results to disk: {e}")
-                # Fallback: return items in context if file save fails (but warn)
-                logger.warning(f"Failed to save to disk, returning items in context as fallback")
-                return self.success_response({
-                    "run_id": run_id,
-                    "dataset_id": dataset_id,
-                    "saved_to_disk": False,
-                    "file_path": None,
-                    "items": all_items[:limit] if limit else all_items,  # Limit items if limit specified
-                    "count": len(all_items),
-                    "offset": offset,
-                    "limit": limit,
-                    "message": f"⚠️ Failed to save to disk: {str(e)}. Returning {len(all_items[:limit] if limit else all_items)} items in context."
-                })
+            # Save results to file in sandbox workspace - NO FALLBACKS, MUST SUCCEED
+            # Use same pattern as SandboxToolsBase for consistency
+            if not self.thread_manager:
+                return self.fail_response("No thread manager available - cannot save results to disk")
+            
+            project_id = self.thread_manager.project_id
+            if not project_id:
+                return self.fail_response("No project context available - cannot save results to disk")
+            
+            # Get database client from thread_manager (same pattern as SandboxToolsBase)
+            client = await self.thread_manager.db.client
+            
+            # Get sandbox_id from project
+            project_result = await client.table('projects').select('sandbox').eq('project_id', project_id).execute()
+            if not project_result.data or not project_result.data[0].get('sandbox') or not project_result.data[0]['sandbox'].get('id'):
+                return self.fail_response("Project has no sandbox - cannot save results to disk")
+            
+            sandbox_id = project_result.data[0]['sandbox']['id']
+            
+            # Get sandbox for this project (same pattern as SandboxToolsBase)
+            sandbox = await get_or_start_sandbox(sandbox_id)
+            if not sandbox:
+                return self.fail_response("Could not access sandbox - cannot save results to disk")
+            
+            # Create apify_results directory
+            results_dir = "/workspace/apify_results"
+            await sandbox.fs.create_folder(results_dir, "755")
+            
+            # Generate filename with timestamp and run_id
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_actor_id = (actor_id or "unknown").replace("/", "_").replace("~", "_") if actor_id else "unknown"
+            filename = f"apify_results_{safe_actor_id}_{run_id[:12]}_{timestamp}.json"
+            file_path = f"{results_dir}/{filename}"
+            
+            # Serialize items to JSON
+            json_content = json.dumps(all_items, indent=2, ensure_ascii=False, default=str)
+            json_bytes = json_content.encode('utf-8')
+            
+            # Save to file - this is a regular sandbox operation, should always work
+            await sandbox.fs.upload_file(json_bytes, file_path)
+            logger.info(f"✅ Saved {len(all_items)} items to {file_path} ({len(json_bytes)} bytes)")
+            
+            # Return relative path (without /workspace prefix) for frontend
+            relative_path = file_path.replace("/workspace/", "")
+            
+            return self.success_response({
+                "run_id": run_id,
+                "actor_id": actor_id,
+                "dataset_id": dataset_id,
+                "saved_to_disk": True,
+                "file_path": relative_path,
+                "item_count": len(all_items),
+                "message": f"✅ Retrieved {len(all_items)} items and saved to {relative_path}. Use terminal commands or Python to read the file."
+            })
             
         except Exception as e:
             error_message = str(e)
