@@ -29,6 +29,7 @@ import {
   FileText,
   TrendingDown,
   Heart,
+  LifeBuoy,
 } from 'lucide-react';
 import { useAccounts } from '@/hooks/account';
 import { useAccountState } from '@/hooks/billing';
@@ -364,6 +365,12 @@ export function NavUserWithTeams({
                   <Link href="/knowledge" className="gap-2 p-2">
                     <FileText className="h-4 w-4" />
                     <span>Knowledge Base</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/support" className="gap-2 p-2">
+                    <LifeBuoy className="h-4 w-4" />
+                    <span>Support</span>
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem
