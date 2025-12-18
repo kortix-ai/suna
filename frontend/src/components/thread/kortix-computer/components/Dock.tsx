@@ -2,7 +2,7 @@
 
 import { memo, ReactNode, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Folder, Globe } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Folder, Globe, TerminalSquare } from 'lucide-react';
 import { getUserFriendlyToolName, getToolIcon } from '@/components/thread/utils';
 import { cn } from '@/lib/utils';
 import { ToolCallInput } from '../KortixComputer';
@@ -261,10 +261,11 @@ interface AppDockProps {
   onJumpToLatest: () => void;
   isMaximized?: boolean;
   currentView?: ViewType;
-  onViewChange?: (view: 'files' | 'browser') => void;
+  onViewChange?: (view: 'files' | 'browser' | 'terminal') => void;
   showFilesTab?: boolean;
   isFilesWindowOpen?: boolean;
   isBrowserWindowOpen?: boolean;
+  isTerminalWindowOpen?: boolean;
 }
 
 export const AppDock = memo(function AppDock({
@@ -284,6 +285,7 @@ export const AppDock = memo(function AppDock({
   showFilesTab = true,
   isFilesWindowOpen = false,
   isBrowserWindowOpen = false,
+  isTerminalWindowOpen = false,
 }: AppDockProps) {
   const [scrollOffset, setScrollOffset] = useState(0);
   const maxVisibleIcons = 12;
@@ -378,6 +380,14 @@ export const AppDock = memo(function AppDock({
                 iconColor="text-white"
                 isActive={isBrowserWindowOpen}
                 onClick={() => onViewChange?.('browser')}
+              />
+              <SystemDockCard
+                icon={TerminalSquare}
+                label="Terminal"
+                bgClass="bg-gradient-to-br from-[#3f3f46] to-[#18181b]"
+                iconColor="text-[#4ade80]"
+                isActive={isTerminalWindowOpen}
+                onClick={() => onViewChange?.('terminal')}
               />
               <div className="w-px h-10 bg-white/20 mx-1 self-center" />
             </>

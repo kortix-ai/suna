@@ -3,7 +3,7 @@
 import { memo, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { CodeFileIcon, DocumentFileIcon, FolderIcon, GenericFileIcon, ImageFileIcon } from './Icons';
+import { getFileIcon } from './Icons';
 import { FileContextMenu } from './FileContextMenu';
 import { ContextMenuTrigger } from '@/components/ui/context-menu';
 import { toast } from 'sonner';
@@ -22,47 +22,6 @@ interface DesktopIconsProps {
   onFileDownload?: (path: string) => void;
   onFileDelete?: (path: string) => void;
 }
-
-const getFileIcon = (file: DesktopFile) => {
-  if (file.is_dir) {
-    return <FolderIcon />;
-  }
-  
-  const ext = file.extension?.toLowerCase() || '';
-  
-  if (['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'ico'].includes(ext)) {
-    return <ImageFileIcon />;
-  }
-  if (['zip', 'tar', 'gz', 'rar', '7z'].includes(ext)) {
-    return <DocumentFileIcon />;
-  }
-  if (['js', 'ts', 'jsx', 'tsx', 'css', 'scss', 'html', 'java', 'c', 'cpp', 'h', 'rb', 'go', 'rs'].includes(ext)) {
-    return <CodeFileIcon />;
-  }
-  if (['py'].includes(ext)) {
-    return <CodeFileIcon />;
-  }
-  if (['md'].includes(ext)) {
-    return <DocumentFileIcon />;
-  }
-  if (['json'].includes(ext)) {
-    return <DocumentFileIcon />;
-  }
-  if (['txt'].includes(ext)) {
-    return <DocumentFileIcon />;
-  }
-  if (['yaml', 'yml'].includes(ext)) {
-    return <DocumentFileIcon />;
-  } 
-  if (['xml'].includes(ext)) {
-    return <DocumentFileIcon />;
-  }
-  if (['csv'].includes(ext)) {
-    return <DocumentFileIcon />;
-  }
-  
-  return <GenericFileIcon />;
-};
 
 export const DesktopIcons = memo(function DesktopIcons({
   files,
@@ -99,9 +58,9 @@ export const DesktopIcons = memo(function DesktopIcons({
           >
             <ContextMenuTrigger asChild>
               <motion.button
-                initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                initial={{ opacity: 0, scale: 1, y: 0 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                transition={{ delay: index * 0.02, type: 'spring', stiffness: 500, damping: 30 }}
+                transition={{ delay: 0.05, type: 'spring', stiffness: 500, damping: 30 }}
                 onDoubleClick={() => onFileOpen?.(file.path, file.is_dir)}
                 className={cn(
                   "flex flex-col items-center justify-start gap-1.5 p-2 rounded-xl pointer-events-auto w-[84px]",

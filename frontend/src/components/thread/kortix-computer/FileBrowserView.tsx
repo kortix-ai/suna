@@ -3,18 +3,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import {
-  File,
   Folder,
   Upload,
   Download,
   ChevronRight,
   Home,
   Loader,
-  FileText,
-  Presentation,
   ChevronDown,
   AlertTriangle,
 } from 'lucide-react';
+import { getFileIconByName, FolderIcon, PresentationFileIcon } from './components/Icons';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -466,23 +464,14 @@ export function FileBrowserView({
     [sandboxId, refetchFiles],
   );
 
-  // Get file icon based on type
   const getFileIcon = useCallback((file: FileInfo) => {
     if (file.is_dir) {
       if (isPresentationFolder(file)) {
-        return <Presentation className="h-9 w-9 text-orange-500" />;
+        return <div className="w-full h-full"><PresentationFileIcon /></div>;
       }
-      return <Folder className="h-9 w-9 text-blue-500" />;
+      return <div className="w-full h-full"><FolderIcon /></div>;
     }
-    
-    const extension = file.name.split('.').pop()?.toLowerCase();
-    
-    // Check for specific file types
-    if (['md', 'txt', 'doc'].includes(extension || '')) {
-      return <FileText className="h-8 w-8 text-muted-foreground" />;
-    }
-    
-    return <File className="h-8 w-8 text-muted-foreground" />;
+    return <div className="w-full h-full">{getFileIconByName(file.name, false)}</div>;
   }, [isPresentationFolder]);
 
   // Load workspace version history

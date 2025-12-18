@@ -1420,3 +1420,86 @@ async def revert_commit_or_files(
             f"Error handling snapshot revert in sandbox {sandbox_id}: {str(e)}"
         )
         raise HTTPException(status_code=500, detail=str(e))
+
+class TerminalCommandRequest(BaseModel):
+    command: str
+    cwd: Optional[str] = "/workspace"
+
+class TerminalCommandResponse(BaseModel):
+    output: str
+    exit_code: int
+    success: bool
+
+@router.post("/sandboxes/{sandbox_id}/terminal/execute")
+async def execute_terminal_command(
+    sandbox_id: str,
+    request_body: TerminalCommandRequest,
+    request: Request = None,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    logger.debug(f"Received terminal command request for sandbox {sandbox_id}, user_id: {user_id}")
+    client = await db.client
+    
+    await verify_sandbox_access(client, sandbox_id, user_id)
+    
+    try:
+        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        
+        session_id = f"terminal_{uuid.uuid4().hex}"
+        command = request_body.command
+        cwd = request_body.cwd or "/workspace"
+        
+        wrapped_command = f"cd {shlex.quote(cwd)} && {command}"
+        
+        try:
+            await sandbox.process.create_session(session_id)
+            result = await sandbox.process.execute_session_command(
+                session_id,
+                SessionExecuteRequest(
+                    command=f"bash -lc {shlex.quote(wrapped_command)}",
+                    var_async=False
+                )
+            )
+            
+            output = ""
+            exit_code = 0
+            
+            if hasattr(result, 'output'):
+                output = result.output or ""
+            elif hasattr(result, 'result'):
+                output = result.result or ""
+            elif isinstance(result, dict):
+                output = result.get('output', result.get('result', ''))
+            else:
+                output = str(result) if result else ""
+            
+            if hasattr(result, 'exit_code'):
+                exit_code = result.exit_code
+            elif isinstance(result, dict):
+                exit_code = result.get('exit_code', 0)
+            
+            return {
+                "output": output,
+                "exit_code": exit_code,
+                "success": exit_code == 0
+            }
+            
+        except Exception as exec_err:
+            logger.error(f"Error executing command in sandbox {sandbox_id}: {str(exec_err)}")
+            return {
+                "output": str(exec_err),
+                "exit_code": 1,
+                "success": False
+            }
+        finally:
+            try:
+                if hasattr(sandbox.process, 'delete_session'):
+                    await sandbox.process.delete_session(session_id)
+            except Exception:
+                pass
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in terminal command for sandbox {sandbox_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

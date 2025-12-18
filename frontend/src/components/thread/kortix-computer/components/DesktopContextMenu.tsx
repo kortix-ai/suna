@@ -7,9 +7,6 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-  ContextMenuSub,
-  ContextMenuSubContent,
-  ContextMenuSubTrigger,
   ContextMenuShortcut,
 } from '@/components/ui/context-menu';
 import { 
@@ -17,16 +14,10 @@ import {
   FolderPlus, 
   Upload, 
   Download,
-  Grid3X3,
-  List,
-  SortAsc,
-  SortDesc,
-  Calendar,
-  FileText,
-  HardDrive,
   Info,
   Folder,
   Globe,
+  TerminalSquare,
 } from 'lucide-react';
 
 interface DesktopContextMenuProps {
@@ -37,6 +28,7 @@ interface DesktopContextMenuProps {
   onDownloadAll?: () => void;
   onOpenFiles?: () => void;
   onOpenBrowser?: () => void;
+  onOpenTerminal?: () => void;
   onShowInfo?: () => void;
 }
 
@@ -48,6 +40,7 @@ export const DesktopContextMenu = memo(function DesktopContextMenu({
   onDownloadAll,
   onOpenFiles,
   onOpenBrowser,
+  onOpenTerminal,
   onShowInfo,
 }: DesktopContextMenuProps) {
   return (
@@ -69,6 +62,13 @@ export const DesktopContextMenu = memo(function DesktopContextMenu({
         >
           <Globe className="h-4 w-4" />
           Open Browser
+        </ContextMenuItem>
+        <ContextMenuItem 
+          onClick={onOpenTerminal}
+          className="focus:bg-accent rounded-lg"
+        >
+          <TerminalSquare className="h-4 w-4" />
+          Open Terminal
         </ContextMenuItem>
         
         <ContextMenuSeparator className="bg-border" />
@@ -125,4 +125,3 @@ export const DesktopContextMenu = memo(function DesktopContextMenu({
 });
 
 DesktopContextMenu.displayName = 'DesktopContextMenu';
-

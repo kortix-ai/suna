@@ -3,7 +3,6 @@
 import { memo, useState, useCallback } from 'react';
 import { 
   Folder, 
-  File, 
   ChevronRight,
   Home,
   HardDrive,
@@ -14,7 +13,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
-import { CodeFileIcon, DocumentFileIcon, FolderIcon, GenericFileIcon, ImageFileIcon } from './Icons';
+import { getFileIconByName } from './Icons';
 import { FileContextMenu } from './FileContextMenu';
 import { ContextMenuTrigger } from '@/components/ui/context-menu';
 import { toast } from 'sonner';
@@ -26,26 +25,6 @@ interface FileItem {
   size: number;
   mod_time: string;
 }
-
-const getFileIcon = (file: FileItem) => {
-  if (file.is_dir) {
-    return <FolderIcon />;
-  }
-  
-  const ext = file.name.split('.').pop()?.toLowerCase() || '';
-  
-  if (['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'ico'].includes(ext)) {
-    return <ImageFileIcon />;
-  }
-  if (['js', 'ts', 'jsx', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'css', 'scss', 'html', 'json', 'yaml', 'yml'].includes(ext)) {
-    return <CodeFileIcon />;
-  }
-  if (['md', 'txt', 'doc', 'docx', 'pdf'].includes(ext)) {
-    return <DocumentFileIcon />;
-  }
-  
-  return <GenericFileIcon />;
-};
 
 interface EnhancedFileBrowserProps {
   files: FileItem[];
@@ -268,7 +247,7 @@ export const EnhancedFileBrowser = memo(function EnhancedFileBrowser({
                       )}
                     >
                       <div className="w-14 h-14 flex items-center justify-center group-hover:scale-105 transition-transform drop-shadow-sm">
-                        {getFileIcon(file)}
+                        {getFileIconByName(file.name, file.is_dir)}
                       </div>
                       <span className="text-xs text-center line-clamp-2 w-full font-medium">{file.name}</span>
                     </motion.button>
@@ -309,11 +288,9 @@ export const EnhancedFileBrowser = memo(function EnhancedFileBrowser({
                       )}
                     >
                       <div className="flex items-center gap-2 flex-1 min-w-0">
-                        {file.is_dir ? (
-                          <Folder className="h-4 w-4 text-blue-500 shrink-0" />
-                        ) : (
-                          <File className="h-4 w-4 text-muted-foreground shrink-0" />
-                        )}
+                        <div className="w-5 h-5 shrink-0">
+                          {getFileIconByName(file.name, file.is_dir)}
+                        </div>
                         <span className="text-sm truncate">{file.name}</span>
                       </div>
                       <div className="w-24 text-right text-sm text-muted-foreground">

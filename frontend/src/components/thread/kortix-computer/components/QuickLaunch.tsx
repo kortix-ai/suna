@@ -4,14 +4,7 @@ import { memo, useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, 
-  File, 
   Folder, 
-  FileText, 
-  FileCode, 
-  FileImage,
-  FileVideo,
-  FileAudio,
-  FileArchive,
   Globe,
   Terminal,
   ArrowRight,
@@ -19,6 +12,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
+import { getFileIconByName } from './Icons';
 
 interface FileResult {
   name: string;
@@ -27,43 +21,15 @@ interface FileResult {
   extension?: string;
 }
 
-interface SpotlightSearchProps {
+interface QuickLaunchProps {
   isOpen: boolean;
   onClose: () => void;
   onFileSelect?: (path: string) => void;
   onOpenFiles?: () => void;
   onOpenBrowser?: () => void;
+  onOpenTerminal?: () => void;
   files?: FileResult[];
 }
-
-const getFileIcon = (file: FileResult) => {
-  if (file.type === 'directory') {
-    return <Folder className="h-5 w-5 text-blue-500" />;
-  }
-  
-  const ext = file.extension?.toLowerCase() || '';
-  
-  if (['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'ico'].includes(ext)) {
-    return <FileImage className="h-5 w-5 text-pink-500" />;
-  }
-  if (['mp4', 'webm', 'mov', 'avi'].includes(ext)) {
-    return <FileVideo className="h-5 w-5 text-purple-500" />;
-  }
-  if (['mp3', 'wav', 'ogg', 'flac'].includes(ext)) {
-    return <FileAudio className="h-5 w-5 text-green-500" />;
-  }
-  if (['zip', 'tar', 'gz', 'rar', '7z'].includes(ext)) {
-    return <FileArchive className="h-5 w-5 text-yellow-500" />;
-  }
-  if (['js', 'ts', 'jsx', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'css', 'scss', 'html'].includes(ext)) {
-    return <FileCode className="h-5 w-5 text-emerald-500" />;
-  }
-  if (['md', 'txt', 'json', 'yaml', 'yml', 'xml', 'csv'].includes(ext)) {
-    return <FileText className="h-5 w-5 text-orange-500" />;
-  }
-  
-  return <File className="h-5 w-5 text-muted-foreground" />;
-};
 
 const quickActions = [
   { id: 'files', name: 'Open Files', icon: Folder, shortcut: '⌘1' },
@@ -71,14 +37,15 @@ const quickActions = [
   { id: 'terminal', name: 'Open Terminal', icon: Terminal, shortcut: '⌘3' },
 ];
 
-export const SpotlightSearch = memo(function SpotlightSearch({
+export const QuickLaunch = memo(function QuickLaunch({
   isOpen,
   onClose,
   onFileSelect,
   onOpenFiles,
   onOpenBrowser,
+  onOpenTerminal,
   files = [],
-}: SpotlightSearchProps) {
+}: QuickLaunchProps) {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -123,12 +90,13 @@ export const SpotlightSearch = memo(function SpotlightSearch({
     if (item.type === 'action') {
       if (item.id === 'files') onOpenFiles?.();
       if (item.id === 'browser') onOpenBrowser?.();
+      if (item.id === 'terminal') onOpenTerminal?.();
       onClose();
     } else if (item.type === 'file') {
       onFileSelect?.(item.path);
       onClose();
     }
-  }, [allResults, onClose, onFileSelect, onOpenFiles, onOpenBrowser]);
+  }, [allResults, onClose, onFileSelect, onOpenFiles, onOpenBrowser, onOpenTerminal]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     switch (e.key) {
@@ -261,8 +229,8 @@ export const SpotlightSearch = memo(function SpotlightSearch({
                               isSelected ? "bg-accent" : "hover:bg-accent/50"
                             )}
                           >
-                            <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center">
-                              {getFileIcon(file)}
+                            <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center p-2">
+                              {getFileIconByName(file.name, file.type === 'directory')}
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="font-medium text-foreground truncate">{file.name}</div>
@@ -311,4 +279,6 @@ export const SpotlightSearch = memo(function SpotlightSearch({
   );
 });
 
-SpotlightSearch.displayName = 'SpotlightSearch';
+QuickLaunch.displayName = 'QuickLaunch';
+
+export { QuickLaunch as SpotlightSearch };

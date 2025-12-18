@@ -2,7 +2,7 @@
 
 import { memo, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { Folder, Globe } from 'lucide-react';
+import { Folder, Globe, TerminalSquare } from 'lucide-react';
 import { AppWindow } from './AppWindow';
 import { AppDock } from './Dock';
 import { PanelHeader } from './PanelHeader';
@@ -17,8 +17,9 @@ import { cn } from '@/lib/utils';
 import { useSandboxDetails } from '@/hooks/files/use-sandbox-details';
 import { useDirectoryQuery } from '@/hooks/files/use-file-queries';
 import { DesktopContextMenu } from './DesktopContextMenu';
-import { SpotlightSearch } from './SpotlightSearch';
+import { QuickLaunch } from './QuickLaunch';
 import { DesktopIcons } from './DesktopIcons';
+import { Terminal } from './Terminal';
 
 const convertToolName = (toolName: string) => {
   if (toolName.includes('_')) {
@@ -87,7 +88,7 @@ const getToolColorScheme = (toolName: string): { bg: string; iconColor: string }
 
 interface OpenWindow {
   id: string;
-  type: 'tool' | 'files' | 'browser';
+  type: 'tool' | 'files' | 'browser' | 'terminal';
   toolIndex?: number;
   zIndex: number;
   position: { x: number; y: number };
@@ -217,7 +218,7 @@ export const SandboxDesktop = memo(function SandboxDesktop({
     onNavigate(toolIndex);
   }, [maxZIndex, getInitialPosition, onNavigate]);
 
-  const openSystemWindow = useCallback((type: 'files' | 'browser') => {
+  const openSystemWindow = useCallback((type: 'files' | 'browser' | 'terminal') => {
     const windowId = `system-${type}`;
     
     setOpenWindows(prev => {
@@ -237,19 +238,25 @@ export const SandboxDesktop = memo(function SandboxDesktop({
         );
       }
 
+      const windowSize = type === 'terminal' 
+        ? { width: 800, height: 500 }
+        : { width: 900, height: 600 };
+
       return [...prev, {
         id: windowId,
         type,
         zIndex: maxZIndex + 1,
         position: getInitialPosition(prev.length),
-        size: { width: 900, height: 600 },
+        size: windowSize,
         isMinimized: false,
       }];
     });
     
     setMaxZIndex(prev => prev + 1);
     setActiveWindowId(windowId);
-    onViewChange(type);
+    if (type !== 'terminal') {
+      onViewChange(type);
+    }
   }, [maxZIndex, getInitialPosition, onViewChange]);
 
   const closeWindow = useCallback((windowId: string) => {
@@ -368,12 +375,13 @@ export const SandboxDesktop = memo(function SandboxDesktop({
     onViewChange('tools');
   }, [openToolWindow, onViewChange]);
 
-  const handleSystemAppClick = useCallback((type: 'files' | 'browser') => {
+  const handleSystemAppClick = useCallback((type: 'files' | 'browser' | 'terminal') => {
     openSystemWindow(type);
   }, [openSystemWindow]);
 
   const isFilesWindowOpen = openWindows.some(w => w.id === 'system-files' && !w.isMinimized);
   const isBrowserWindowOpen = openWindows.some(w => w.id === 'system-browser' && !w.isMinimized);
+  const isTerminalWindowOpen = openWindows.some(w => w.id === 'system-terminal' && !w.isMinimized);
 
   const getActualSuccess = (toolCall: ToolCallInput): boolean => {
     if (toolCall?.toolResult?.success !== undefined) {
@@ -519,6 +527,30 @@ export const SandboxDesktop = memo(function SandboxDesktop({
                 );
               }
 
+              if (window.type === 'terminal' && sandboxId) {
+                return (
+                  <AppWindow
+                    key={window.id}
+                    id={window.id}
+                    title="Terminal"
+                    icon={
+                      <div className="w-4 h-4 rounded flex items-center justify-center bg-gradient-to-br from-[#3f3f46] to-[#18181b]">
+                        <TerminalSquare className="w-2.5 h-2.5 text-[#4ade80]" />
+                      </div>
+                    }
+                    isActive={activeWindowId === window.id}
+                    initialPosition={window.position}
+                    initialSize={window.size}
+                    onFocus={() => focusWindow(window.id)}
+                    onClose={() => closeWindow(window.id)}
+                    onMinimize={() => minimizeWindow(window.id)}
+                    zIndex={window.zIndex}
+                  >
+                    <Terminal sandboxId={sandboxId} />
+                  </AppWindow>
+                );
+              }
+
               return null;
             })}
         </AnimatePresence>
@@ -541,6 +573,7 @@ export const SandboxDesktop = memo(function SandboxDesktop({
         showFilesTab={true}
         isFilesWindowOpen={isFilesWindowOpen}
         isBrowserWindowOpen={isBrowserWindowOpen}
+        isTerminalWindowOpen={isTerminalWindowOpen}
       />
     </>
   );
@@ -550,6 +583,7 @@ export const SandboxDesktop = memo(function SandboxDesktop({
       onRefresh={() => window.location.reload()}
       onOpenFiles={() => handleSystemAppClick('files')}
       onOpenBrowser={() => handleSystemAppClick('browser')}
+      onOpenTerminal={() => handleSystemAppClick('terminal')}
     >
       <div className="relative w-full h-full overflow-hidden flex flex-col">
         <div className="absolute inset-0">
@@ -587,11 +621,12 @@ export const SandboxDesktop = memo(function SandboxDesktop({
           {renderDesktop()}
         </div>
 
-        <SpotlightSearch
+        <QuickLaunch
           isOpen={isSpotlightOpen}
           onClose={() => setIsSpotlightOpen(false)}
           onOpenFiles={() => handleSystemAppClick('files')}
           onOpenBrowser={() => handleSystemAppClick('browser')}
+          onOpenTerminal={() => handleSystemAppClick('terminal')}
           onFileSelect={(path) => {
             onFileClick?.(path);
             setIsSpotlightOpen(false);
