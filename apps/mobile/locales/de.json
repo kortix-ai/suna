@@ -561,7 +561,7 @@
   },
   "models": {
     "selectModel": "Modell wählen",
-    "chooseModelFor": "Wähle ein Modell für {{agent}}"
+    "chooseModelFor": "Wähle ein Modell für Worker {{agent}}"
   },
   "placeholders": {
     "default": "Gib Kortix eine Aufgabe...",
@@ -633,7 +633,7 @@
   },
   "integrations": {
     "title": "Integrationen",
-    "description": "Verbinde deine Lieblings-Apps und -Dienste, um Workflows zu automatisieren und die Fähigkeiten deines Agenten zu erweitern.",
+    "description": "Verbinde deine Lieblings-Apps und -Dienste, um Workflows zu automatisieren und die Fähigkeiten deines Workers zu erweitern.",
     "connectApps": "Verbinde deine Apps",
     "externalApps": "Externe Apps",
     "externalAppsDescription": "Beliebte Apps & Dienste verbinden",
@@ -811,7 +811,7 @@
     "core": "Kern",
     "capabilitiesEnabled": "{{enabled}} / {{total}} Fähigkeiten aktiviert",
     "toolConfiguration": "Tool-Konfiguration",
-    "configureToolsDescription": "Konfigurieren Sie Tools und ihre einzelnen Fähigkeiten für Ihren Agenten",
+    "configureToolsDescription": "Konfigurieren Sie Tools und ihre einzelnen Fähigkeiten für Ihren Worker",
     "toolsEnabled": "{{enabled}} / {{total}} aktiviert",
     "loadingTools": "Tools werden geladen...",
     "noToolsAvailable": "Keine Tools verfügbar",

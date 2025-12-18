@@ -55,7 +55,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
         <View className="w-6 h-6 bg-muted rounded-full items-center justify-center">
           <Text className="text-muted-foreground text-xs font-roobert-bold">?</Text>
         </View>
-        <Text className="text-muted-foreground text-sm font-roobert-medium">Select Agent</Text>
+        <Text className="text-muted-foreground text-sm font-roobert-medium">Select Worker</Text>
         <Icon
           as={ChevronDown}
           size={13}

@@ -295,8 +295,8 @@ export function AgentDrawer({
 
     if (!selectedAgent) {
       Alert.alert(
-        'No Agent Selected',
-        'Please select an agent first before configuring integrations.',
+        'No Worker Selected',
+        'Please select a worker first before configuring integrations.',
         [{ text: 'OK' }]
       );
       return;

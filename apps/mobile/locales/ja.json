@@ -554,7 +554,7 @@
   },
   "models": {
     "selectModel": "モデルを選択",
-    "chooseModelFor": "{{agent}}のモデルを選択"
+    "chooseModelFor": "Worker {{agent}} のモデルを選択"
   },
   "placeholders": {
     "default": "Kortixにタスクを...",

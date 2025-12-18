@@ -288,7 +288,7 @@ export function useAgentStream(
       // Early exit for non-JSON completion messages
       if (
         processedData ===
-        '{"type": "status", "status": "completed", "message": "Agent run completed successfully"}'
+        '{"type": "status", "status": "completed", "message": "Worker run completed successfully"}'
       ) {
         finalizeStream('completed', currentRunIdRef.current);
         return;
@@ -397,7 +397,7 @@ export function useAgentStream(
               // Don't finalize here, wait for thread_run_end or completion message
               break;
             case 'error':
-              setError(parsedContent.message || 'Agent run failed');
+              setError(parsedContent.message || 'Worker run failed');
               finalizeStream('error', currentRunIdRef.current);
               break;
             default:
