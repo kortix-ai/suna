@@ -27,6 +27,7 @@ jobs:
           host: ${{ secrets.AWS_STAGING_HOST }}
           username: ${{ secrets.AWS_STAGING_USERNAME }}
           key: ${{ secrets.AWS_STAGING_KEY }}
+          envs: CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID
           script: |
             BRANCH_NAME="${{ steps.branch.outputs.branch_name }}"
             
@@ -34,6 +35,10 @@ jobs:
             
             # Ensure scripts directory exists
             mkdir -p /home/ubuntu/scripts
+            
+            # Export Cloudflare API credentials for cleanup script
+            export CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}"
+            export CLOUDFLARE_ACCOUNT_ID="${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
             
             # Pull latest scripts from repo if they exist
             if [ -d /home/ubuntu/suna/infra/staging/scripts ]; then

@@ -118,6 +118,7 @@ jobs:
           host: ${{ secrets.AWS_STAGING_HOST }}
           username: ${{ secrets.AWS_STAGING_USERNAME }}
           key: ${{ secrets.AWS_STAGING_KEY }}
+          envs: CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID
           script: |
             BRANCH_NAME="${{ steps.get_tag_name.outputs.branch_name }}"
             IMAGE_TAG="${{ steps.get_tag_name.outputs.branch }}"
@@ -126,6 +127,10 @@ jobs:
             
             # Ensure scripts directory exists
             mkdir -p /home/ubuntu/scripts
+            
+            # Export Cloudflare API credentials for deploy script
+            export CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}"
+            export CLOUDFLARE_ACCOUNT_ID="${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
             
             # Note: Scripts should already be on the instance from setup.mts
             # If they need updating, we'll update them via the workflow
