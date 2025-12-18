@@ -13,6 +13,8 @@ interface DesktopFile {
   path: string;
   is_dir: boolean;
   extension?: string;
+  size?: number;
+  mod_time?: string;
 }
 
 interface DesktopIconsProps {
@@ -21,6 +23,7 @@ interface DesktopIconsProps {
   onFileEdit?: (path: string) => void;
   onFileDownload?: (path: string) => void;
   onFileDelete?: (path: string) => void;
+  onGetFileInfo?: (file: DesktopFile) => void;
   isCreatingNewFolder?: boolean;
   onNewFolderCreate?: (name: string) => void;
   onNewFolderCancel?: () => void;
@@ -46,6 +49,7 @@ export const DesktopIcons = memo(function DesktopIcons({
   onFileEdit,
   onFileDownload,
   onFileDelete,
+  onGetFileInfo,
   isCreatingNewFolder,
   onNewFolderCreate,
   onNewFolderCancel,
@@ -137,7 +141,7 @@ export const DesktopIcons = memo(function DesktopIcons({
             onDownload={() => onFileDownload?.(file.path)}
             onDelete={() => onFileDelete?.(file.path)}
             onCopyPath={() => handleCopyPath(file.path)}
-            onGetInfo={() => toast.info(`${file.name}\n${file.path}`)}
+            onGetInfo={() => onGetFileInfo?.(file)}
             onOpenChange={(open) => setActiveContextPath(open ? file.path : null)}
           >
             <ContextMenuTrigger asChild>

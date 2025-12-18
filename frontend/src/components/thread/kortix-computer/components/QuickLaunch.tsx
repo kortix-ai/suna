@@ -9,6 +9,7 @@ import {
   Terminal,
   ArrowRight,
   Command,
+  Info,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
@@ -28,6 +29,7 @@ interface QuickLaunchProps {
   onOpenFiles?: () => void;
   onOpenBrowser?: () => void;
   onOpenTerminal?: () => void;
+  onOpenSystemInfo?: () => void;
   files?: FileResult[];
 }
 
@@ -35,6 +37,7 @@ const quickActions = [
   { id: 'files', name: 'Open Files', icon: Folder, shortcut: '⌘1' },
   { id: 'browser', name: 'Open Browser', icon: Globe, shortcut: '⌘2' },
   { id: 'terminal', name: 'Open Terminal', icon: Terminal, shortcut: '⌘3' },
+  { id: 'info', name: 'System Info', icon: Info, shortcut: '⌘I' },
 ];
 
 export const QuickLaunch = memo(function QuickLaunch({
@@ -44,6 +47,7 @@ export const QuickLaunch = memo(function QuickLaunch({
   onOpenFiles,
   onOpenBrowser,
   onOpenTerminal,
+  onOpenSystemInfo,
   files = [],
 }: QuickLaunchProps) {
   const [query, setQuery] = useState('');
@@ -91,12 +95,13 @@ export const QuickLaunch = memo(function QuickLaunch({
       if (item.id === 'files') onOpenFiles?.();
       if (item.id === 'browser') onOpenBrowser?.();
       if (item.id === 'terminal') onOpenTerminal?.();
+      if (item.id === 'info') onOpenSystemInfo?.();
       onClose();
     } else if (item.type === 'file') {
       onFileSelect?.(item.path);
       onClose();
     }
-  }, [allResults, onClose, onFileSelect, onOpenFiles, onOpenBrowser, onOpenTerminal]);
+  }, [allResults, onClose, onFileSelect, onOpenFiles, onOpenBrowser, onOpenTerminal, onOpenSystemInfo]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     switch (e.key) {
@@ -202,9 +207,6 @@ export const QuickLaunch = memo(function QuickLaunch({
                           <div className="flex-1 min-w-0">
                             <div className="font-medium text-foreground">{action.name}</div>
                           </div>
-                          <kbd className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md">
-                            {action.shortcut}
-                          </kbd>
                         </button>
                       );
                     })}

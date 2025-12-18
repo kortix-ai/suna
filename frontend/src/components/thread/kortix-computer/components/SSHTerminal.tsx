@@ -9,7 +9,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { useAuth } from '@/components/AuthProvider';
-import { Loader2, RefreshCw, Copy, Check } from 'lucide-react';
+import { Loader2, RefreshCw, Copy, Check, TerminalSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { backendApi } from '@/lib/api-client';
 import { fileQueryKeys } from '@/hooks/files/use-file-queries';
@@ -22,51 +22,51 @@ interface SSHTerminalProps {
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 const darkTheme: ITheme = {
-  background: '#1a1b26',
-  foreground: '#a9b1d6',
-  cursor: '#c0caf5',
-  cursorAccent: '#1a1b26',
-  selectionBackground: '#33467c',
-  black: '#32344a',
-  red: '#f7768e',
-  green: '#9ece6a',
-  yellow: '#e0af68',
-  blue: '#7aa2f7',
-  magenta: '#ad8ee6',
-  cyan: '#449dab',
-  white: '#787c99',
-  brightBlack: '#444b6a',
-  brightRed: '#ff7a93',
-  brightGreen: '#b9f27c',
-  brightYellow: '#ff9e64',
-  brightBlue: '#7da6ff',
-  brightMagenta: '#bb9af7',
-  brightCyan: '#0db9d7',
-  brightWhite: '#acb0d0',
+  background: 'rgba(15, 15, 20, 0.85)',
+  foreground: '#e4e4e7',
+  cursor: '#a78bfa',
+  cursorAccent: '#0f0f14',
+  selectionBackground: 'rgba(139, 92, 246, 0.3)',
+  black: '#27272a',
+  red: '#f87171',
+  green: '#4ade80',
+  yellow: '#fbbf24',
+  blue: '#60a5fa',
+  magenta: '#c084fc',
+  cyan: '#22d3ee',
+  white: '#e4e4e7',
+  brightBlack: '#52525b',
+  brightRed: '#fca5a5',
+  brightGreen: '#86efac',
+  brightYellow: '#fde047',
+  brightBlue: '#93c5fd',
+  brightMagenta: '#d8b4fe',
+  brightCyan: '#67e8f9',
+  brightWhite: '#fafafa',
 };
 
 const lightTheme: ITheme = {
-  background: '#fafafa',
-  foreground: '#383a42',
-  cursor: '#526eff',
-  cursorAccent: '#fafafa',
-  selectionBackground: '#bfceff',
-  black: '#383a42',
-  red: '#e45649',
-  green: '#50a14f',
-  yellow: '#c18401',
-  blue: '#4078f2',
-  magenta: '#a626a4',
-  cyan: '#0184bc',
-  white: '#a0a1a7',
-  brightBlack: '#696c77',
-  brightRed: '#e06c75',
-  brightGreen: '#98c379',
-  brightYellow: '#d19a66',
-  brightBlue: '#61afef',
-  brightMagenta: '#c678dd',
-  brightCyan: '#56b6c2',
-  brightWhite: '#ffffff',
+  background: 'rgba(250, 250, 252, 0.9)',
+  foreground: '#18181b',
+  cursor: '#7c3aed',
+  cursorAccent: '#fafafc',
+  selectionBackground: 'rgba(124, 58, 237, 0.15)',
+  black: '#18181b',
+  red: '#dc2626',
+  green: '#16a34a',
+  yellow: '#ca8a04',
+  blue: '#2563eb',
+  magenta: '#9333ea',
+  cyan: '#0891b2',
+  white: '#a1a1aa',
+  brightBlack: '#52525b',
+  brightRed: '#ef4444',
+  brightGreen: '#22c55e',
+  brightYellow: '#eab308',
+  brightBlue: '#3b82f6',
+  brightMagenta: '#a855f7',
+  brightCyan: '#06b6d4',
+  brightWhite: '#fafafa',
 };
 
 const getWebSocketUrl = () => {
@@ -265,9 +265,9 @@ export const SSHTerminal = memo(function SSHTerminal({ sandboxId, className }: S
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    term.writeln('\x1b[1;34m╔════════════════════════════════════════╗\x1b[0m');
-    term.writeln('\x1b[1;34m║\x1b[0m         \x1b[1;36mKortix Terminal\x1b[0m                \x1b[1;34m║\x1b[0m');
-    term.writeln('\x1b[1;34m╚════════════════════════════════════════╝\x1b[0m');
+    term.writeln('\x1b[38;5;141m┌──────────────────────────────────────────┐\x1b[0m');
+    term.writeln('\x1b[38;5;141m│\x1b[0m   \x1b[1;38;5;183m◉\x1b[0m \x1b[1;37mKortix\x1b[0m \x1b[38;5;245m• Terminal\x1b[0m               \x1b[38;5;141m│\x1b[0m');
+    term.writeln('\x1b[38;5;141m└──────────────────────────────────────────┘\x1b[0m');
     term.writeln('');
 
     term.onData((data) => {
@@ -328,56 +328,18 @@ export const SSHTerminal = memo(function SSHTerminal({ sandboxId, className }: S
   }, [session?.access_token, sandboxId, getSSHCommand, connectWebSocket]);
 
   return (
-    <div className={cn("flex flex-col h-full overflow-hidden", className)}>
-      <div className="flex items-center justify-between h-8 px-3 bg-zinc-100 dark:bg-[#24283b] border-b border-zinc-200 dark:border-[#414868] flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <div className={cn(
-            "w-2 h-2 rounded-full",
-            status === 'connected' && "bg-green-500",
-            status === 'connecting' && "bg-yellow-500 animate-pulse",
-            status === 'disconnected' && "bg-zinc-400 dark:bg-zinc-500",
-            status === 'error' && "bg-red-500"
-          )} />
-          <span className="text-zinc-500 dark:text-[#565f89] text-xs">
-            {status === 'connected' && 'Connected'}
-            {status === 'connecting' && 'Connecting...'}
-            {status === 'disconnected' && 'Disconnected'}
-            {status === 'error' && 'Connection Error'}
-          </span>
-        </div>
-        
-        <div className="flex items-center gap-1">
-          {sshCommand && (
-            <button
-              onClick={copySSHCommand}
-              className="flex items-center gap-1.5 px-2 py-1 text-xs text-blue-600 dark:text-[#7aa2f7] hover:bg-zinc-200 dark:hover:bg-[#414868] rounded transition-colors"
-              title="Copy SSH command for local terminal"
-            >
-              {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-              <span className="hidden sm:inline">SSH</span>
-            </button>
-          )}
-          
-          {status === 'connecting' && (
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600 dark:text-[#7aa2f7]" />
-          )}
-          
-          {(status === 'disconnected' || status === 'error') && (
-            <button
-              onClick={reconnect}
-              className="p-1 hover:bg-zinc-200 dark:hover:bg-[#414868] rounded transition-colors"
-              title="Reconnect"
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-blue-600 dark:text-[#7aa2f7]" />
-            </button>
-          )}
-        </div>
-      </div>
-      
+    <div className={cn(
+      "flex flex-col h-full overflow-hidden",
+      "bg-white/50 dark:bg-zinc-900/50",
+      className
+    )}>
       <div 
         ref={terminalRef}
-        className="flex-1 bg-[#fafafa] dark:bg-[#1a1b26] overflow-hidden"
-        style={{ padding: '8px' }}
+        className={cn(
+          "flex-1 overflow-hidden",
+          "bg-gradient-to-b from-zinc-50 to-white dark:from-[#0f0f14] dark:to-[#0a0a0d]"
+        )}
+        style={{ padding: '12px 16px' }}
       />
     </div>
   );

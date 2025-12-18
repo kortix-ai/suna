@@ -51,21 +51,21 @@ export const DesktopContextMenu = memo(function DesktopContextMenu({
       <ContextMenuContent className="w-56 bg-background/60 backdrop-blur-xl border-border/20 rounded-xl overflow-hidden">
         <ContextMenuItem 
           onClick={onOpenFiles}
-          className="focus:bg-accent rounded-lg gap-2"
+          className="focus:bg-background/10 focus:backdrop-blur-xl rounded-lg gap-2"
         >
           <Folder className="h-4 w-4" />
           Open Files
         </ContextMenuItem>
         <ContextMenuItem 
           onClick={onOpenBrowser}
-          className="focus:bg-accent rounded-lg gap-2"
+          className="focus:bg-background/10 focus:backdrop-blur-xl rounded-lg gap-2"
         >
           <Globe className="h-4 w-4" />
           Open Browser
         </ContextMenuItem>
         <ContextMenuItem 
           onClick={onOpenTerminal}
-          className="focus:bg-accent rounded-lg gap-2"
+          className="focus:bg-background/10 focus:backdrop-blur-xl rounded-lg gap-2"
         >
           <TerminalSquare className="h-4 w-4" />
           Open Terminal
@@ -75,46 +75,21 @@ export const DesktopContextMenu = memo(function DesktopContextMenu({
         
         <ContextMenuItem 
           onClick={onNewFolder}
-          className="focus:bg-accent rounded-lg gap-2"
+          className="focus:bg-background/10 focus:backdrop-blur-xl rounded-lg gap-2"
         >
           <FolderPlus className="h-4 w-4" />
           New Folder
           <ContextMenuShortcut>⇧⌘N</ContextMenuShortcut>
         </ContextMenuItem>
         
-        <ContextMenuItem 
-          onClick={onUpload}
-          className="focus:bg-accent rounded-lg gap-2"
-        >
-          <Upload className="h-4 w-4" />
-          Upload Files
-        </ContextMenuItem>
-        
-        <ContextMenuItem 
-          onClick={onDownloadAll}
-          className="focus:bg-accent rounded-lg gap-2"
-        >
-          <Download className="h-4 w-4" />
-          Download All
-        </ContextMenuItem>
-        
         <ContextMenuSeparator className="bg-border/50" />
-        
-        <ContextMenuItem 
-          onClick={onRefresh}
-          className="focus:bg-accent rounded-lg gap-2"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Refresh
-          <ContextMenuShortcut>⌘R</ContextMenuShortcut>
-        </ContextMenuItem>
     
         <ContextMenuItem 
           onClick={onShowInfo}
-          className="focus:bg-accent rounded-lg gap-2"
+          className="focus:bg-background/10 focus:backdrop-blur-xl rounded-lg gap-2"
         >
           <Info className="h-4 w-4" />
-          Get Info
+          System Info
           <ContextMenuShortcut>⌘I</ContextMenuShortcut>
         </ContextMenuItem>
       </ContextMenuContent>

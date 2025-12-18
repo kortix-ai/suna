@@ -331,9 +331,13 @@ export const KortixComputer = memo(function KortixComputer({
   const isCurrentToolStreaming = currentToolCall != null && currentToolCall.toolResult === undefined;
 
   const currentToolName = currentToolCall?.toolCall?.function_name?.replace(/_/g, '-').toLowerCase();
-  const isFileOperation = currentToolName && ['create-file', 'edit-file', 'full-file-rewrite', 'read-file', 'delete-file'].includes(currentToolName);
 
-  if (isCurrentToolStreaming && totalCompletedCalls > 0 && !isFileOperation) {
+  const showDuringStreaming = currentToolName && [
+    'create-file', 'edit-file', 'full-file-rewrite', 'read-file', 'delete-file',
+    'execute-command', 'check-command-output', 'terminate-command'
+  ].includes(currentToolName);
+
+  if (isCurrentToolStreaming && totalCompletedCalls > 0 && !showDuringStreaming) {
     const lastCompletedSnapshot = completedToolCalls[completedToolCalls.length - 1];
     if (lastCompletedSnapshot?.toolCall?.toolCall) {
       displayToolCall = lastCompletedSnapshot.toolCall;

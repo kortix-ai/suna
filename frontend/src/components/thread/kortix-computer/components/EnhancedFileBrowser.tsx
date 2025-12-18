@@ -34,6 +34,7 @@ interface EnhancedFileBrowserProps {
   onFileEdit?: (path: string) => void;
   onFileDownload?: (path: string) => void;
   onFileDelete?: (path: string) => void;
+  onGetFileInfo?: (file: FileItem) => void;
   onBack?: () => void;
   sandboxId?: string;
 }
@@ -75,6 +76,7 @@ export const EnhancedFileBrowser = memo(function EnhancedFileBrowser({
   onFileEdit,
   onFileDownload,
   onFileDelete,
+  onGetFileInfo,
   onBack,
 }: EnhancedFileBrowserProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -232,7 +234,7 @@ export const EnhancedFileBrowser = memo(function EnhancedFileBrowser({
                   onDownload={() => onFileDownload?.(file.path)}
                   onDelete={() => onFileDelete?.(file.path)}
                   onCopyPath={() => handleCopyPath(file.path)}
-                  onGetInfo={() => toast.info(`${file.name}\nSize: ${formatFileSize(file.size)}\nModified: ${formatDate(file.mod_time)}`)}
+                  onGetInfo={() => onGetFileInfo?.(file)}
                   onOpenChange={(open) => setActiveContextPath(open ? file.path : null)}
                 >
                   <ContextMenuTrigger asChild>
@@ -273,7 +275,7 @@ export const EnhancedFileBrowser = memo(function EnhancedFileBrowser({
                   onDownload={() => onFileDownload?.(file.path)}
                   onDelete={() => onFileDelete?.(file.path)}
                   onCopyPath={() => handleCopyPath(file.path)}
-                  onGetInfo={() => toast.info(`${file.name}\nSize: ${formatFileSize(file.size)}\nModified: ${formatDate(file.mod_time)}`)}
+                  onGetInfo={() => onGetFileInfo?.(file)}
                   onOpenChange={(open) => setActiveContextPath(open ? file.path : null)}
                 >
                   <ContextMenuTrigger asChild>

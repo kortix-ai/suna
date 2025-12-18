@@ -2,12 +2,11 @@
 
 import { memo, ReactNode, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Folder, Globe, TerminalSquare } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Folder, Globe, TerminalSquare, Info } from 'lucide-react';
 import { getUserFriendlyToolName, getToolIcon } from '@/components/thread/utils';
 import { cn } from '@/lib/utils';
 import { ToolCallInput } from '../KortixComputer';
 import { AppIcon } from '../../tool-views/shared/AppIcon';
-import { LiquidGlass } from '@liquidglass/react';
 import { ViewType } from '@/stores/kortix-computer-store';
 
 const convertToolName = (toolName: string) => {
@@ -103,19 +102,10 @@ export function Dock({ children, className }: DockProps) {
   return (
     <div className="relative isolate">
       <div className="absolute inset-x-0 bottom-0 h-[68px] pointer-events-none" style={{ zIndex: -1 }}>
-        <LiquidGlass
-          className={cn("h-full w-full border border-neutral-300/20 bg-neutral-300/20", className)}
-          borderRadius={22}
-          blur={5}
-          contrast={1.3}
-          brightness={1.15}
-          saturation={1.2}
-          shadowIntensity={0}
-          elasticity={0.5}
-          displacementScale={0.5}
+        <div
+          className={cn("h-full w-full border bg-background/30 backdrop-blur-xl rounded-2xl", className)}
         >
-          <div className="h-full w-full" />
-        </LiquidGlass>
+        </div>
       </div>
       <div className="relative flex h-[68px] items-end gap-2 px-3 pb-2" style={{ zIndex: 1 }}>
         {children}
@@ -151,7 +141,6 @@ export const DockCard = memo(function DockCard({
             : cn(colorScheme.bg, "border border-white/20"),
           isActive && "ring-2 ring-white/40"
         )}
-        whileHover={{ scale: 1.08, y: -4 }}
         whileTap={{ scale: 0.95 }}
       >
         {isExternalApp ? (
@@ -220,11 +209,10 @@ export const SystemDockCard = memo(function SystemDockCard({
         style={{ width: ICON_SIZE, height: ICON_SIZE }}
         className={cn(
           "flex items-center justify-center relative cursor-pointer p-2 rounded-xl",
-          "transition-transform duration-150 shadow-lg border border-white/20",
+          "transition-transform duration-150 border border-white/20",
           bgClass,
           isActive && "ring-2 ring-white/40"
         )}
-        whileHover={{ scale: 1.08, y: -4 }}
         whileTap={{ scale: 0.95 }}
       >
         <Icon className={cn("w-3/5 h-3/5 pointer-events-none drop-shadow-md", iconColor)} />
@@ -261,11 +249,12 @@ interface AppDockProps {
   onJumpToLatest: () => void;
   isMaximized?: boolean;
   currentView?: ViewType;
-  onViewChange?: (view: 'files' | 'browser' | 'terminal') => void;
+  onViewChange?: (view: 'files' | 'browser' | 'terminal' | 'info') => void;
   showFilesTab?: boolean;
   isFilesWindowOpen?: boolean;
   isBrowserWindowOpen?: boolean;
   isTerminalWindowOpen?: boolean;
+  isInfoWindowOpen?: boolean;
 }
 
 export const AppDock = memo(function AppDock({
@@ -286,6 +275,7 @@ export const AppDock = memo(function AppDock({
   isFilesWindowOpen = false,
   isBrowserWindowOpen = false,
   isTerminalWindowOpen = false,
+  isInfoWindowOpen = false,
 }: AppDockProps) {
   const [scrollOffset, setScrollOffset] = useState(0);
   const maxVisibleIcons = 12;
@@ -336,16 +326,8 @@ export const AppDock = memo(function AppDock({
           whileTap={canNavigateLeft ? { scale: 0.92 } : undefined}
           className="absolute left-4"
         >
-          <LiquidGlass
-            borderRadius={50}
-            blur={1}
-            contrast={1.3}
-            brightness={2}
-            saturation={1.2}
-            shadowIntensity={0.3}
-            elasticity={0.5}
-            displacementScale={1}
-            className='border border-neutral-300/20 bg-neutral-300/20'
+          <div
+            className='border bg-background/30 backdrop-blur-xl rounded-full hover:bg-background/50 transition-colors duration-150'
           >
             <button
               type="button"
@@ -358,7 +340,7 @@ export const AppDock = memo(function AppDock({
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-          </LiquidGlass>
+          </div>
         </motion.div>
         <Dock>
           {isMaximized && (
@@ -389,6 +371,14 @@ export const AppDock = memo(function AppDock({
                 isActive={isTerminalWindowOpen}
                 onClick={() => onViewChange?.('terminal')}
               />
+              <SystemDockCard
+                icon={Info}
+                label="System Info"
+                bgClass="bg-gradient-to-br from-[#64748B] to-[#475569]"
+                iconColor="text-white"
+                isActive={isInfoWindowOpen}
+                onClick={() => onViewChange?.('info')}
+              />
               <div className="w-px h-10 bg-white/20 mx-1 self-center" />
             </>
           )}
@@ -415,15 +405,8 @@ export const AppDock = memo(function AppDock({
             animate={{ opacity: canNavigateRight ? 1 : 0.4, scale: 1 }}
             whileTap={canNavigateRight ? { scale: 0.92 } : undefined}
           >
-            <LiquidGlass
-              borderRadius={50}
-              blur={1}
-              contrast={1.3}
-              brightness={2}
-              saturation={1.2}
-              shadowIntensity={0.3}
-              elasticity={0.5}
-              className='border border-neutral-300/20 bg-neutral-300/20'
+            <div
+              className='border bg-background/30 backdrop-blur-xl rounded-full hover:bg-background/50 transition-colors duration-150'
             >
               <button
                 type="button"
@@ -436,7 +419,7 @@ export const AppDock = memo(function AppDock({
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
-            </LiquidGlass>
+            </div>
           </motion.div>
           {showJumpButton && (
             <motion.div
@@ -444,15 +427,8 @@ export const AppDock = memo(function AppDock({
               animate={{ opacity: 1, scale: 1 }}
               whileTap={{ scale: 0.95 }}
             >
-              <LiquidGlass
-                borderRadius={50}
-                blur={1}
-                contrast={1.3}
-                brightness={2}
-                saturation={1.2}
-                shadowIntensity={0.3}
-                elasticity={0.5}
-                className='border border-neutral-300/20 bg-neutral-300/20'
+              <div
+                className='border bg-background/30 backdrop-blur-xl rounded-full hover:bg-background/50 transition-colors duration-150'
               >
                 <button
                   type="button"
@@ -465,7 +441,7 @@ export const AppDock = memo(function AppDock({
                   )} />
                   <span>{agentStatus === 'running' ? 'Jump to Live' : 'Jump to Latest'}</span>
                 </button>
-              </LiquidGlass>
+              </div>
             </motion.div>
           )}
         </div>

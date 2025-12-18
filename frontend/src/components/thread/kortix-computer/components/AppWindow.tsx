@@ -157,7 +157,7 @@ export const AppWindow = memo(function AppWindow({
         }}
         onDoubleClick={handleMaximize}
         className={cn(
-          "flex items-center h-9 px-2.5 gap-3 select-none flex-shrink-0",
+          "flex items-center h-11 px-2.5 gap-3 select-none flex-shrink-0",
           "border-b border-border bg-background/60 backdrop-blur-2xl"
         )}
       >
@@ -167,27 +167,27 @@ export const AppWindow = memo(function AppWindow({
               e.stopPropagation();
               onClose();
             }}
-            className="group w-6 h-6 rounded-md bg-muted/50 hover:bg-destructive/20 flex items-center justify-center transition-colors"
+            className="group w-4 h-4 rounded-sm bg-red-500 hover:opacity-80 flex items-center justify-center transition-colors"
           >
-            <X className="w-3.5 h-3.5 text-muted-foreground group-hover:text-destructive transition-colors" strokeWidth={2} />
+            <X className="w-2.5 h-2.5 text-white transition-colors" strokeWidth={2} />
           </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
               onMinimize?.();
             }}
-            className="group w-6 h-6 rounded-md bg-muted/50 hover:bg-accent flex items-center justify-center transition-colors"
+            className="group w-4 h-4 rounded-sm bg-yellow-500 hover:opacity-80 flex items-center justify-center transition-colors"
           >
-            <Minus className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground transition-colors" strokeWidth={2} />
+            <Minus className="w-2.5 h-2.5 text-white transition-colors" strokeWidth={2} />
           </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
               handleMaximize();
             }}
-            className="group w-6 h-6 rounded-md bg-muted/50 hover:bg-accent flex items-center justify-center transition-colors"
+            className="group w-4 h-4 rounded-md bg-green-500 hover:opacity-80 flex items-center justify-center transition-colors"
           >
-            <Square className="w-3 h-3 text-muted-foreground group-hover:text-foreground transition-colors" strokeWidth={2} />
+            <Square className="w-2.5 h-2.5 text-white transition-colors" strokeWidth={2} />
           </button>
         </div>
 
@@ -201,7 +201,7 @@ export const AppWindow = memo(function AppWindow({
         <div className="w-[52px]" />
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden bg-background/60 backdrop-blur-xl">
         {children}
       </div>
 

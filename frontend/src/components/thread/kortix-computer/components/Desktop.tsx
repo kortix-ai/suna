@@ -15,7 +15,7 @@ import { ApiMessageType } from '@/components/thread/types';
 import { ViewType } from '@/stores/kortix-computer-store';
 import { cn } from '@/lib/utils';
 import { useSandboxDetails } from '@/hooks/files/use-sandbox-details';
-import { useDirectoryQuery } from '@/hooks/files/use-file-queries';
+import { useDirectoryQuery, fetchFileContent, fileQueryKeys } from '@/hooks/files/use-file-queries';
 import { useFileUpload } from '@/hooks/files/use-file-mutations';
 import { DesktopContextMenu } from './DesktopContextMenu';
 import { QuickLaunch } from './QuickLaunch';
@@ -24,9 +24,10 @@ import { SSHTerminal } from './SSHTerminal';
 import { FileViewerView } from '../FileViewerView';
 import { EnhancedFileBrowser } from './EnhancedFileBrowser';
 import { getFileIconByName } from './Icons';
+import { SystemInfoContent } from './SystemInfoContent';
+import { FileInfoContent, FileInfo } from './FileInfoContent';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
-import { fileQueryKeys } from '@/hooks/files/use-file-queries';
 import { useAuth } from '@/components/AuthProvider';
 
 const convertToolName = (toolName: string) => {
@@ -96,10 +97,11 @@ const getToolColorScheme = (toolName: string): { bg: string; iconColor: string }
 
 interface OpenWindow {
   id: string;
-  type: 'tool' | 'files' | 'browser' | 'terminal' | 'file-viewer' | 'folder-browser' | 'info';
+  type: 'tool' | 'files' | 'browser' | 'terminal' | 'file-viewer' | 'folder-browser' | 'info' | 'file-info';
   toolIndex?: number;
   filePath?: string;
   fileName?: string;
+  fileInfo?: FileInfo;
   zIndex: number;
   position: { x: number; y: number };
   size: { width: number; height: number };
@@ -114,6 +116,8 @@ interface FolderWindowProps {
   onClose: () => void;
   onMinimize: () => void;
   onOpenFile: (path: string, isDir: boolean) => void;
+  onGetFileInfo: (fileInfo: FileInfo) => void;
+  onFileDownload: (path: string) => void;
 }
 
 const FolderWindow = memo(function FolderWindow({
@@ -124,6 +128,8 @@ const FolderWindow = memo(function FolderWindow({
   onClose,
   onMinimize,
   onOpenFile,
+  onGetFileInfo,
+  onFileDownload,
 }: FolderWindowProps) {
   const [currentPath, setCurrentPath] = useState(window.filePath || '/workspace');
   const { data: files = [] } = useDirectoryQuery(sandboxId, currentPath, { enabled: !!sandboxId });
@@ -171,6 +177,14 @@ const FolderWindow = memo(function FolderWindow({
             onOpenFile(path, file.is_dir);
           }
         }}
+        onFileDownload={onFileDownload}
+        onGetFileInfo={(file) => onGetFileInfo({
+          name: file.name,
+          path: file.path,
+          isDirectory: file.is_dir,
+          size: file.size,
+          modTime: file.mod_time,
+        })}
         onBack={() => setCurrentPath(parentPath)}
         sandboxId={sandboxId}
       />
@@ -366,6 +380,25 @@ export const SandboxDesktop = memo(function SandboxDesktop({
     setActiveWindowId(windowId);
   }, [maxZIndex, getInitialPosition]);
 
+  const openFileInfoWindow = useCallback((fileInfo: FileInfo) => {
+    const windowId = `file-info-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    setOpenWindows(prev => [...prev, {
+      id: windowId,
+      type: 'file-info',
+      fileInfo,
+      fileName: fileInfo.name,
+      filePath: fileInfo.path,
+      zIndex: maxZIndex + 1,
+      position: getInitialPosition(prev.length),
+      size: { width: 380, height: 500 },
+      isMinimized: false,
+    }]);
+    
+    setMaxZIndex(prev => prev + 1);
+    setActiveWindowId(windowId);
+  }, [maxZIndex, getInitialPosition]);
+
   const closeWindow = useCallback((windowId: string) => {
     setOpenWindows(prev => prev.filter(w => w.id !== windowId));
     setActiveWindowId(prev => {
@@ -482,13 +515,52 @@ export const SandboxDesktop = memo(function SandboxDesktop({
     onViewChange('tools');
   }, [openToolWindow, onViewChange]);
 
-  const handleSystemAppClick = useCallback((type: 'files' | 'browser' | 'terminal') => {
-    openSystemWindow(type);
-  }, [openSystemWindow]);
+  const handleOpenInfoWindow = useCallback(() => {
+    const windowId = 'system-info';
+    
+    setOpenWindows(prev => {
+      const existing = prev.find(w => w.id === windowId);
+      if (existing) {
+        if (existing.isMinimized) {
+          return prev.map(w => 
+            w.id === windowId 
+              ? { ...w, isMinimized: false, zIndex: maxZIndex + 1 }
+              : w
+          );
+        }
+        return prev.map(w => 
+          w.id === windowId 
+            ? { ...w, zIndex: maxZIndex + 1 }
+            : w
+        );
+      }
+
+      return [...prev, {
+        id: windowId,
+        type: 'info' as const,
+        zIndex: maxZIndex + 1,
+        position: getInitialPosition(prev.length),
+        size: { width: 400, height: 500 },
+        isMinimized: false,
+      }];
+    });
+    
+    setMaxZIndex(prev => prev + 1);
+    setActiveWindowId(windowId);
+  }, [maxZIndex, getInitialPosition]);
+
+  const handleSystemAppClick = useCallback((type: 'files' | 'browser' | 'terminal' | 'info') => {
+    if (type === 'info') {
+      handleOpenInfoWindow();
+    } else {
+      openSystemWindow(type);
+    }
+  }, [openSystemWindow, handleOpenInfoWindow]);
 
   const isFilesWindowOpen = openWindows.some(w => w.id === 'system-files' && !w.isMinimized);
   const isBrowserWindowOpen = openWindows.some(w => w.id === 'system-browser' && !w.isMinimized);
   const isTerminalWindowOpen = openWindows.some(w => w.id === 'system-terminal' && !w.isMinimized);
+  const isInfoWindowOpen = openWindows.some(w => w.id === 'system-info' && !w.isMinimized);
 
   const getActualSuccess = (toolCall: ToolCallInput): boolean => {
     if (toolCall?.toolResult?.success !== undefined) {
@@ -505,6 +577,8 @@ export const SandboxDesktop = memo(function SandboxDesktop({
     path: file.path || `/workspace/${file.name}`,
     is_dir: file.is_dir,
     extension: file.name.includes('.') ? file.name.split('.').pop() : undefined,
+    size: file.size,
+    mod_time: file.mod_time,
   }));
 
   const handleDesktopFileOpen = useCallback((path: string, isDirectory: boolean) => {
@@ -514,6 +588,35 @@ export const SandboxDesktop = memo(function SandboxDesktop({
   const handleDesktopFileEdit = useCallback((path: string) => {
     openFileWindow(path, false);
   }, [openFileWindow]);
+
+  const handleFileDownload = useCallback(async (filePath: string) => {
+    if (!sandboxId || !session?.access_token) {
+      toast.error('Cannot download file');
+      return;
+    }
+
+    const fileName = filePath.split('/').pop() || 'download';
+    
+    try {
+      toast.loading(`Downloading ${fileName}...`, { id: 'download' });
+      
+      const blob = await fetchFileContent(sandboxId, filePath, 'blob', session.access_token);
+      
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast.success(`Downloaded ${fileName}`, { id: 'download' });
+    } catch (error) {
+      console.error('Download failed:', error);
+      toast.error(`Failed to download ${fileName}`, { id: 'download' });
+    }
+  }, [sandboxId, session?.access_token]);
 
   const handleUploadFiles = useCallback((files: FileList | File[]) => {
     if (!sandboxId) {
@@ -586,40 +689,6 @@ export const SandboxDesktop = memo(function SandboxDesktop({
     setIsCreatingNewFolder(false);
   }, []);
 
-  const handleOpenInfoWindow = useCallback(() => {
-    const windowId = 'system-info';
-    
-    setOpenWindows(prev => {
-      const existing = prev.find(w => w.id === windowId);
-      if (existing) {
-        if (existing.isMinimized) {
-          return prev.map(w => 
-            w.id === windowId 
-              ? { ...w, isMinimized: false, zIndex: maxZIndex + 1 }
-              : w
-          );
-        }
-        return prev.map(w => 
-          w.id === windowId 
-            ? { ...w, zIndex: maxZIndex + 1 }
-            : w
-        );
-      }
-
-      return [...prev, {
-        id: windowId,
-        type: 'info' as const,
-        zIndex: maxZIndex + 1,
-        position: getInitialPosition(prev.length),
-        size: { width: 400, height: 500 },
-        isMinimized: false,
-      }];
-    });
-    
-    setMaxZIndex(prev => prev + 1);
-    setActiveWindowId(windowId);
-  }, [maxZIndex, getInitialPosition]);
-
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -650,6 +719,15 @@ export const SandboxDesktop = memo(function SandboxDesktop({
             files={desktopFiles}
             onFileOpen={handleDesktopFileOpen}
             onFileEdit={handleDesktopFileEdit}
+            onFileDownload={handleFileDownload}
+            onGetFileInfo={(file) => openFileInfoWindow({
+              name: file.name,
+              path: file.path,
+              isDirectory: file.is_dir,
+              size: file.size,
+              modTime: file.mod_time,
+              extension: file.extension,
+            })}
             isCreatingNewFolder={isCreatingNewFolder}
             onNewFolderCreate={handleCreateNewFolder}
             onNewFolderCancel={handleCancelNewFolder}
@@ -824,6 +902,8 @@ export const SandboxDesktop = memo(function SandboxDesktop({
                     onClose={() => closeWindow(window.id)}
                     onMinimize={() => minimizeWindow(window.id)}
                     onOpenFile={(path, isDir) => openFileWindow(path, isDir)}
+                    onGetFileInfo={(fileInfo) => openFileInfoWindow(fileInfo)}
+                    onFileDownload={handleFileDownload}
                   />
                 );
               }
@@ -833,7 +913,7 @@ export const SandboxDesktop = memo(function SandboxDesktop({
                   <AppWindow
                     key={window.id}
                     id={window.id}
-                    title="Sandbox Info"
+                    title="System Info"
                     icon={
                       <div className="w-4 h-4 rounded flex items-center justify-center bg-gradient-to-br from-[#64748B] to-[#475569]">
                         <Info className="w-2.5 h-2.5 text-white" />
@@ -847,12 +927,33 @@ export const SandboxDesktop = memo(function SandboxDesktop({
                     onMinimize={() => minimizeWindow(window.id)}
                     zIndex={window.zIndex}
                   >
-                    <div className="h-full overflow-auto bg-background p-4">
-                      <SandboxInfoCard
-                        sandboxDetails={sandboxDetails}
-                        isLoading={sandboxLoading}
-                      />
-                    </div>
+                    <SystemInfoContent
+                      sandboxDetails={sandboxDetails}
+                      isLoading={sandboxLoading}
+                    />
+                  </AppWindow>
+                );
+              }
+              if (window.type === 'file-info' && window.fileInfo) {
+                return (
+                  <AppWindow
+                    key={window.id}
+                    id={window.id}
+                    title={`${window.fileInfo.name} Info`}
+                    icon={
+                      <div className="w-4 h-4 flex items-center justify-center">
+                        {getFileIconByName(window.fileInfo.name, window.fileInfo.isDirectory)}
+                      </div>
+                    }
+                    isActive={activeWindowId === window.id}
+                    initialPosition={window.position}
+                    initialSize={window.size}
+                    onFocus={() => focusWindow(window.id)}
+                    onClose={() => closeWindow(window.id)}
+                    onMinimize={() => minimizeWindow(window.id)}
+                    zIndex={window.zIndex}
+                  >
+                    <FileInfoContent fileInfo={window.fileInfo} />
                   </AppWindow>
                 );
               }
@@ -880,6 +981,7 @@ export const SandboxDesktop = memo(function SandboxDesktop({
         isFilesWindowOpen={isFilesWindowOpen}
         isBrowserWindowOpen={isBrowserWindowOpen}
         isTerminalWindowOpen={isTerminalWindowOpen}
+        isInfoWindowOpen={isInfoWindowOpen}
       />
     </>
   );
@@ -952,6 +1054,7 @@ export const SandboxDesktop = memo(function SandboxDesktop({
           onOpenFiles={() => handleSystemAppClick('files')}
           onOpenBrowser={() => handleSystemAppClick('browser')}
           onOpenTerminal={() => handleSystemAppClick('terminal')}
+          onOpenSystemInfo={() => handleSystemAppClick('info')}
           onFileSelect={(path) => {
             const isDir = spotlightFiles.find(f => f.path === path)?.type === 'directory';
             openFileWindow(path, isDir);

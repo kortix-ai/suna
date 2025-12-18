@@ -456,6 +456,7 @@ async def cleanup_pubsub(pubsub, agent_run_id: str):
         logger.warning(f"Error closing pubsub for {agent_run_id}: {str(e)}")
 
 from core import thread_init_service
+from core.streaming_context import set_streaming_context, clear_streaming_context
 
 @dramatiq.actor
 async def run_agent_background(
@@ -609,6 +610,13 @@ async def run_agent_background(
 
         agent_config = await load_agent_config(agent_id, account_id)
 
+        # Set streaming context for tools to publish real-time output
+        set_streaming_context(
+            agent_run_id=agent_run_id,
+            pubsub_channel=redis_keys['response_pubsub'],
+            stream_key=redis_keys['response_stream']
+        )
+
         agent_gen = run_agent(
             thread_id=thread_id,
             project_id=project_id,
@@ -688,6 +696,9 @@ async def run_agent_background(
             logger.warning(f"Failed to publish ERROR signal: {str(e)}")
 
     finally:
+        # Clear streaming context
+        clear_streaming_context()
+        
         if stop_checker and not stop_checker.done():
             stop_checker.cancel()
             try:

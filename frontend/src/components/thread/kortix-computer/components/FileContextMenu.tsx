@@ -49,7 +49,7 @@ export const FileContextMenu = memo(function FileContextMenu({
       <ContextMenuContent className="w-52 bg-background/60 backdrop-blur-2xl border-border/20 rounded-xl overflow-hidden shadow-2xl">
         <ContextMenuItem 
           onClick={onOpen}
-          className="focus:bg-accent rounded-lg mx-1 gap-2"
+          className="focus:bg-background/10 focus:backdrop-blur-xl rounded-lg"
         >
           {isDirectory ? (
             <FolderOpen className="h-4 w-4 text-muted-foreground" />
@@ -63,7 +63,7 @@ export const FileContextMenu = memo(function FileContextMenu({
         {!isDirectory && (
           <ContextMenuItem 
             onClick={onDownload}
-            className="focus:bg-accent rounded-lg mx-1 gap-2"
+            className="focus:bg-background/10 focus:backdrop-blur-xl rounded-lg"
           >
             <Download className="h-4 w-4 text-muted-foreground" />
             Download
@@ -73,7 +73,7 @@ export const FileContextMenu = memo(function FileContextMenu({
         
         <ContextMenuItem 
           onClick={onGetInfo}
-          className="focus:bg-accent rounded-lg mx-1 gap-2"
+          className="focus:bg-background/10 focus:backdrop-blur-xl rounded-lg"
         >
           <Info className="h-4 w-4 text-muted-foreground" />
           Get Info
