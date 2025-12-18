@@ -154,7 +154,6 @@ export function ThreadActionsDrawer({
 
   const handleSheetChange = React.useCallback(
     (index: number) => {
-      console.log('🧵 [ThreadActionsDrawer] Sheet index changed:', index);
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
@@ -175,12 +174,15 @@ export function ThreadActionsDrawer({
 
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => {
-        console.log('🧵 [ThreadActionsDrawer] Fallback timeout - resetting guard');
         isOpeningRef.current = false;
       }, 500);
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      bottomSheetRef.current?.snapToIndex(0);
+
+      // Use setTimeout to ensure ref is ready
+      setTimeout(() => {
+        bottomSheetRef.current?.snapToIndex(0);
+      }, 50);
     } else if (!visible) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       bottomSheetRef.current?.close();
@@ -222,6 +224,9 @@ export function ThreadActionsDrawer({
         width: 36,
         height: 5,
         borderRadius: 3,
+      }}
+      style={{
+        zIndex: 1000,
       }}>
       <BottomSheetScrollView
         showsVerticalScrollIndicator={false}
