@@ -28,6 +28,7 @@ import {
   ArrowDownRight,
   ChevronLeft,
   ChevronRight,
+  CreditCard,
 } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -70,6 +71,37 @@ import {
   type WeeklyActualData,
   type AnalyticsSource,
 } from '@/hooks/admin/use-admin-analytics';
+import { AdminUserTable } from '@/components/admin/admin-user-table';
+import { AdminUserDetailsDialog } from '@/components/admin/admin-user-details-dialog';
+import { useAdminUserList, useRefreshUserData, type UserSummary } from '@/hooks/admin/use-admin-users';
+
+// ============================================================================
+// CLICKABLE USER EMAIL COMPONENT
+// ============================================================================
+
+interface UserEmailLinkProps {
+  email: string | null | undefined;
+  onUserClick: (email: string) => void;
+  className?: string;
+}
+
+function UserEmailLink({ email, onUserClick, className = '' }: UserEmailLinkProps) {
+  if (!email) {
+    return <span className="text-muted-foreground">Unknown user</span>;
+  }
+  
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onUserClick(email);
+      }}
+      className={`text-primary hover:underline hover:text-primary/80 transition-colors text-left ${className}`}
+    >
+      {email}
+    </button>
+  );
+}
 
 // ============================================================================
 // STAT CARD COMPONENT
@@ -120,9 +152,10 @@ interface ThreadBrowserProps {
   categoryFilter?: string | null;
   filterDate?: string | null;  // Date string in YYYY-MM-DD format for filtering when category is selected
   onClearCategory?: () => void;
+  onUserClick: (email: string) => void;
 }
 
-function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBrowserProps) {
+function ThreadBrowser({ categoryFilter, filterDate, onClearCategory, onUserClick }: ThreadBrowserProps) {
   const [params, setParams] = useState<ThreadBrowseParams>({
     page: 1,
     page_size: 15,
@@ -223,9 +256,9 @@ function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBr
               <Badge variant="outline" className="text-xs">Public</Badge>
             )}
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {thread.user_email || 'Unknown user'}
-          </p>
+          <div className="text-xs mt-1">
+            <UserEmailLink email={thread.user_email} onUserClick={onUserClick} />
+          </div>
           <p className="text-xs text-muted-foreground font-mono">
             {thread.thread_id.slice(0, 8)}...
           </p>
@@ -314,7 +347,7 @@ function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBr
       ),
       width: 'w-24',
     },
-  ], [translations, translateMutation.isPending]);
+  ], [translations, translateMutation.isPending, onUserClick]);
 
   return (
     <div className="space-y-4">
@@ -412,7 +445,11 @@ function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBr
 // RETENTION TAB COMPONENT
 // ============================================================================
 
-function RetentionTab() {
+interface RetentionTabProps {
+  onUserClick: (email: string) => void;
+}
+
+function RetentionTab({ onUserClick }: RetentionTabProps) {
   const [params, setParams] = useState({
     page: 1,
     page_size: 15,
@@ -436,7 +473,7 @@ function RetentionTab() {
       header: 'User',
       cell: (user) => (
         <div>
-          <p className="font-medium">{user.email || 'Unknown'}</p>
+          <UserEmailLink email={user.email} onUserClick={onUserClick} className="font-medium" />
           <p className="text-xs text-muted-foreground font-mono">{user.user_id.slice(0, 8)}...</p>
         </div>
       ),
@@ -481,7 +518,7 @@ function RetentionTab() {
       ),
       width: 'w-32',
     },
-  ], []);
+  ], [onUserClick]);
 
   return (
     <div className="space-y-4">
@@ -1816,6 +1853,58 @@ export default function AdminAnalyticsPage() {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('vercel');
   
+  // User details dialog state
+  const [selectedUser, setSelectedUser] = useState<UserSummary | null>(null);
+  const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
+  const [pendingUserEmail, setPendingUserEmail] = useState<string | null>(null);
+  
+  // Fetch user by email when clicked
+  const { data: userSearchResult, isLoading: isSearchingUser, isFetching: isUserFetching } = useAdminUserList({
+    page: 1,
+    page_size: 1,
+    search_email: pendingUserEmail || undefined,
+  });
+  
+  const { refreshUserList, refreshUserStats } = useRefreshUserData();
+  
+  // When user search completes, open the dialog
+  useEffect(() => {
+    // Only process results when we have a pending email and the query is done fetching
+    if (!pendingUserEmail || isSearchingUser || isUserFetching) {
+      return;
+    }
+    
+    if (userSearchResult?.data && userSearchResult.data.length > 0) {
+      setSelectedUser(userSearchResult.data[0]);
+      setIsUserDialogOpen(true);
+      setPendingUserEmail(null);
+    } else if (userSearchResult?.data && userSearchResult.data.length === 0) {
+      toast.error(`User not found: ${pendingUserEmail}`);
+      setPendingUserEmail(null);
+    }
+  }, [pendingUserEmail, userSearchResult, isSearchingUser, isUserFetching]);
+  
+  // Handle user email click from anywhere in the app
+  const handleUserEmailClick = (email: string) => {
+    setPendingUserEmail(email);
+  };
+  
+  // Handle user selection from the Users tab table
+  const handleUserSelect = (user: UserSummary) => {
+    setSelectedUser(user);
+    setIsUserDialogOpen(true);
+  };
+  
+  const handleCloseUserDialog = () => {
+    setIsUserDialogOpen(false);
+    setSelectedUser(null);
+  };
+  
+  const handleRefreshUserData = () => {
+    refreshUserList();
+    refreshUserStats();
+  };
+  
   const utcToday = getUTCToday();
   const dateString = format(distributionDate, 'yyyy-MM-dd');
   
@@ -1992,9 +2081,9 @@ export default function AdminAnalyticsPage() {
                           {conversionFunnel.subscriber_emails && conversionFunnel.subscriber_emails.length > 0 ? (
                             <ul className="space-y-1">
                               {conversionFunnel.subscriber_emails.map((email, idx) => (
-                                <li key={idx} className="text-sm text-muted-foreground flex items-center gap-2">
+                                <li key={idx} className="text-sm flex items-center gap-2">
                                   <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">{idx + 1}</span>
-                                  <a href={`mailto:${email}`} className="hover:text-primary hover:underline">{email}</a>
+                                  <UserEmailLink email={email} onUserClick={handleUserEmailClick} />
                                 </li>
                               ))}
                             </ul>
@@ -2102,6 +2191,10 @@ export default function AdminAnalyticsPage() {
               <MessageSquare className="h-4 w-4" />
               All Threads
             </TabsTrigger>
+            <TabsTrigger value="users" className="flex items-center gap-2">
+              <CreditCard className="h-4 w-4" />
+              Users & Billing
+            </TabsTrigger>
             <TabsTrigger value="retention" className="flex items-center gap-2">
               <UserCheck className="h-4 w-4" />
               Retention
@@ -2117,17 +2210,51 @@ export default function AdminAnalyticsPage() {
               categoryFilter={categoryFilter}
               filterDate={dateString}
               onClearCategory={() => setCategoryFilter(null)}
+              onUserClick={handleUserEmailClick}
             />
           </TabsContent>
 
+          <TabsContent value="users">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  User Management
+                </CardTitle>
+                <CardDescription>
+                  Search users, view billing details, and manage credits
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <AdminUserTable onUserSelect={handleUserSelect} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="retention">
-            <RetentionTab />
+            <RetentionTab onUserClick={handleUserEmailClick} />
           </TabsContent>
 
           <TabsContent value="simulator">
             <ARRSimulator analyticsSource={analyticsSource} />
           </TabsContent>
         </Tabs>
+        
+        {/* User Details Dialog - accessible from anywhere */}
+        <AdminUserDetailsDialog
+          user={selectedUser}
+          isOpen={isUserDialogOpen}
+          onClose={handleCloseUserDialog}
+          onRefresh={handleRefreshUserData}
+        />
+        
+        {/* Loading indicator when searching for user */}
+        {isSearchingUser && pendingUserEmail && (
+          <div className="fixed bottom-4 right-4 bg-background border rounded-lg shadow-lg p-3 flex items-center gap-2">
+            <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm">Loading user: {pendingUserEmail}</span>
+          </div>
+        )}
       </div>
     </div>
   );
