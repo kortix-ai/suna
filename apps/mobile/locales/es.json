@@ -123,9 +123,43 @@
     }
   },
   "onboarding": {
+    "welcome": "Descubre lo que Kortix puede hacer",
+    "welcomeSubtitle": "Tu asistente IA que toma acción",
     "skip": "Saltar",
     "next": "Siguiente",
     "getStarted": "Comenzar",
+    "kortixComputer": "Kortix Computer",
+    "ready": "Listo",
+    "examples": {
+      "presentations": {
+        "title": "Presentaciones",
+        "description": "Mira cómo crea presentaciones increíbles",
+        "userMessage": "Investiga y crea una presentación sobre redes neuronales",
+        "aiMessage": "Investigaré las redes neuronales y crearé una presentación para ti...",
+        "researching": "Investigando",
+        "creatingFile": "Creando archivo",
+        "creatingSlides": "Creando diapositivas"
+      },
+      "dataAnalysis": {
+        "title": "Análisis de datos",
+        "description": "Observa cómo analiza datos y crea reportes visuales",
+        "userMessage": "Analiza el rendimiento de ventas Q4 desde Google Drive",
+        "aiMessage": "Cargaré tus datos de ventas y crearé un análisis completo...",
+        "loadingFromDrive": "Cargando desde Google Drive",
+        "creatingVisualization": "Creando visualización",
+        "researchingMarket": "Investigando mercado",
+        "creatingReport": "Creando reporte"
+      },
+      "image": {
+        "title": "Imagen",
+        "description": "Experimenta el diseño de logos y marcas con IA",
+        "userMessage": "Crea un logo para nuestra empresa",
+        "aiMessage": "Veo que mencionaste LUXY. Crearé un logo profesional para tu marca...",
+        "researchingBrand": "Investigando marca",
+        "creatingLogo": "Creando logo",
+        "creatingBrandBoard": "Creando tablero de marca"
+      }
+    },
     "slide1": {
       "title": "Chat con IA",
       "description": "Ten conversaciones naturales con asistentes IA poderosos que entienden el contexto y brindan respuestas útiles"
