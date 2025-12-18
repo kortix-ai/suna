@@ -31,6 +31,9 @@ jobs:
           BRANCH_NAME="${GITHUB_REF#refs/heads/}"
           echo "Branch: $BRANCH_NAME"
           
+          # Sanitize branch name for Docker tag (replace / with -, remove invalid chars)
+          SANITIZED_BRANCH=$(echo "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
+          
           if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
             echo "Triggered by repository dispatch - setting prod environment"
             echo "branch=prod" >> $GITHUB_OUTPUT
@@ -46,7 +49,7 @@ jobs:
             echo "is_preview=false" >> $GITHUB_OUTPUT
           else
             # Preview deployment for non-main/PRODUCTION branches
-            echo "branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
+            echo "branch=$SANITIZED_BRANCH" >> $GITHUB_OUTPUT
             echo "environment=preview" >> $GITHUB_OUTPUT
             echo "is_preview=true" >> $GITHUB_OUTPUT
             echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
