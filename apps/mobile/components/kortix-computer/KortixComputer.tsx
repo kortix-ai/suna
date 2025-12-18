@@ -141,6 +141,13 @@ export function KortixComputer({
   const effectiveSandboxId = sandboxId || project?.sandbox?.id || '';
   const showFilesTab = !!effectiveSandboxId;
 
+  // If files tab is hidden and we're on files view, switch to tools
+  React.useEffect(() => {
+    if (!showFilesTab && activeView === 'files') {
+      setActiveView('tools');
+    }
+  }, [showFilesTab, activeView, setActiveView]);
+
   if (!isOpen) {
     return null;
   }

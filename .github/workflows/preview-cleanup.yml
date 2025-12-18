@@ -1,0 +1,53 @@
+name: Cleanup Preview Deployment
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get branch name
+        id: branch
+        run: |
+          BRANCH_NAME="${{ github.head_ref }}"
+          if [ -z "$BRANCH_NAME" ]; then
+            BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          fi
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "Cleaning up preview for branch: $BRANCH_NAME"
+
+      - name: Cleanup preview deployment
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.AWS_STAGING_HOST }}
+          username: ${{ secrets.AWS_STAGING_USERNAME }}
+          key: ${{ secrets.AWS_STAGING_KEY }}
+          script: |
+            BRANCH_NAME="${{ steps.branch.outputs.branch_name }}"
+            
+            echo "=== Cleaning up preview for branch: $BRANCH_NAME ==="
+            
+            # Ensure scripts directory exists
+            mkdir -p /home/ubuntu/scripts
+            
+            # Pull latest scripts from repo if they exist
+            if [ -d /home/ubuntu/suna/infra/staging/scripts ]; then
+              cp -r /home/ubuntu/suna/infra/staging/scripts/* /home/ubuntu/scripts/ || true
+              chmod +x /home/ubuntu/scripts/*.sh || true
+            fi
+            
+            # Run cleanup script
+            if [ -f /home/ubuntu/scripts/cleanup-preview.sh ]; then
+              /home/ubuntu/scripts/cleanup-preview.sh "$BRANCH_NAME" || {
+                echo "Warning: Preview cleanup encountered errors, but continuing..."
+              }
+            else
+              echo "Warning: cleanup-preview.sh not found. Skipping cleanup."
+            fi
+            
+            echo "=== Preview cleanup complete ==="

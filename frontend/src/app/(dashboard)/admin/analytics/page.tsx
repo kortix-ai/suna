@@ -28,6 +28,7 @@ import {
   ArrowDownRight,
   ChevronLeft,
   ChevronRight,
+  CreditCard,
 } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -70,6 +71,37 @@ import {
   type WeeklyActualData,
   type AnalyticsSource,
 } from '@/hooks/admin/use-admin-analytics';
+import { AdminUserTable } from '@/components/admin/admin-user-table';
+import { AdminUserDetailsDialog } from '@/components/admin/admin-user-details-dialog';
+import { useAdminUserList, useRefreshUserData, type UserSummary } from '@/hooks/admin/use-admin-users';
+
+// ============================================================================
+// CLICKABLE USER EMAIL COMPONENT
+// ============================================================================
+
+interface UserEmailLinkProps {
+  email: string | null | undefined;
+  onUserClick: (email: string) => void;
+  className?: string;
+}
+
+function UserEmailLink({ email, onUserClick, className = '' }: UserEmailLinkProps) {
+  if (!email) {
+    return <span className="text-muted-foreground">Unknown user</span>;
+  }
+  
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onUserClick(email);
+      }}
+      className={`text-primary hover:underline hover:text-primary/80 transition-colors text-left ${className}`}
+    >
+      {email}
+    </button>
+  );
+}
 
 // ============================================================================
 // STAT CARD COMPONENT
@@ -120,9 +152,10 @@ interface ThreadBrowserProps {
   categoryFilter?: string | null;
   filterDate?: string | null;  // Date string in YYYY-MM-DD format for filtering when category is selected
   onClearCategory?: () => void;
+  onUserClick: (email: string) => void;
 }
 
-function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBrowserProps) {
+function ThreadBrowser({ categoryFilter, filterDate, onClearCategory, onUserClick }: ThreadBrowserProps) {
   const [params, setParams] = useState<ThreadBrowseParams>({
     page: 1,
     page_size: 15,
@@ -223,9 +256,9 @@ function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBr
               <Badge variant="outline" className="text-xs">Public</Badge>
             )}
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {thread.user_email || 'Unknown user'}
-          </p>
+          <div className="text-xs mt-1">
+            <UserEmailLink email={thread.user_email} onUserClick={onUserClick} />
+          </div>
           <p className="text-xs text-muted-foreground font-mono">
             {thread.thread_id.slice(0, 8)}...
           </p>
@@ -314,7 +347,7 @@ function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBr
       ),
       width: 'w-24',
     },
-  ], [translations, translateMutation.isPending]);
+  ], [translations, translateMutation.isPending, onUserClick]);
 
   return (
     <div className="space-y-4">
@@ -412,7 +445,11 @@ function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBr
 // RETENTION TAB COMPONENT
 // ============================================================================
 
-function RetentionTab() {
+interface RetentionTabProps {
+  onUserClick: (email: string) => void;
+}
+
+function RetentionTab({ onUserClick }: RetentionTabProps) {
   const [params, setParams] = useState({
     page: 1,
     page_size: 15,
@@ -436,7 +473,7 @@ function RetentionTab() {
       header: 'User',
       cell: (user) => (
         <div>
-          <p className="font-medium">{user.email || 'Unknown'}</p>
+          <UserEmailLink email={user.email} onUserClick={onUserClick} className="font-medium" />
           <p className="text-xs text-muted-foreground font-mono">{user.user_id.slice(0, 8)}...</p>
         </div>
       ),
@@ -481,7 +518,7 @@ function RetentionTab() {
       ),
       width: 'w-32',
     },
-  ], []);
+  ], [onUserClick]);
 
   return (
     <div className="space-y-4">
@@ -805,6 +842,16 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         const weekEnd = new Date(currentDate);
         weekEnd.setDate(weekEnd.getDate() + 6);
         
+        // Determine actual calendar month index based on week END date (with 1-day buffer)
+        // A week belongs to the month where it ends (last complete week logic)
+        // Buffer of 1 day: if week ends on 1st of month, count it as previous month
+        // Dec 2025 = 0, Jan 2026 = 1, Feb 2026 = 2, etc.
+        const weekEndWithBuffer = new Date(weekEnd);
+        weekEndWithBuffer.setDate(weekEndWithBuffer.getDate() - 1);
+        const calendarMonthIndex = weekEndWithBuffer.getMonth() === 11 
+          ? 0  // December 2025
+          : weekEndWithBuffer.getMonth() + 1;  // Jan=1, Feb=2, etc.
+        
         // Update running subscriber count (matching HTML logic)
         totalSubs = Math.max(0, totalSubs + weeklyNewPaid - weeklyChurned);
         const weeklyMRR = totalSubs * arpu;
@@ -813,7 +860,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         weeks.push({
           week: weekNum,
           dateRange: `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
-          monthIndex: monthIdx,
+          monthIndex: calendarMonthIndex,
           visitors: weeklyViews,
           signups: weeklySignups,
           newPaid: weeklyNewPaid,
@@ -972,6 +1019,49 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     
     return result;
   }, [weeklyProjections, actualData, signupsByWeek, viewsByWeek, newPaidByWeek]);
+
+  // Derive monthly goals from weekly projections (grouped by actual calendar month)
+  // This ensures the monthly table shows all months that have weeks, including June
+  const monthlyFromWeekly = useMemo(() => {
+    const monthNames = ['Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026', 'Jun 2026'];
+    const result: Record<number, { 
+      month: string;
+      monthIndex: number;
+      visitors: number; 
+      signups: number; 
+      newPaid: number;
+      totalSubs: number; 
+      mrr: number; 
+      arr: number;
+    }> = {};
+    
+    weeklyProjections.forEach((week) => {
+      const idx = week.monthIndex;
+      if (!result[idx]) {
+        result[idx] = {
+          month: monthNames[idx] || `Month ${idx}`,
+          monthIndex: idx,
+          visitors: 0,
+          signups: 0,
+          newPaid: 0,
+          totalSubs: 0,
+          mrr: 0,
+          arr: 0,
+        };
+      }
+      // Sum these values across weeks
+      result[idx].visitors += week.visitors;
+      result[idx].signups += week.signups;
+      result[idx].newPaid += week.newPaid;
+      // Take last week's values for these (end-of-month snapshot)
+      result[idx].totalSubs = week.subscribers;
+      result[idx].mrr = week.mrr;
+      result[idx].arr = week.arr;
+    });
+    
+    // Convert to sorted array
+    return Object.values(result).sort((a, b) => a.monthIndex - b.monthIndex);
+  }, [weeklyProjections]);
 
   // View state
   const [simulatorView, setSimulatorView] = useState<'monthly' | 'weekly'>('monthly');
@@ -1437,30 +1527,31 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                 </tr>
               </thead>
               <tbody>
-                {projections.map((month, i) => {
-                  const actual = monthlyActuals[i] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+                {monthlyFromWeekly.map((month, idx) => {
+                  const actual = monthlyActuals[month.monthIndex] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
                   const hasActual = actual.views > 0 || actual.signups > 0 || actual.subscribers > 0;
+                  const isLastMonth = idx === monthlyFromWeekly.length - 1;
                   
                   return (
-                    <tr key={month.month} className={`border-b ${i === projections.length - 1 ? 'bg-primary/5 font-medium' : ''}`}>
+                    <tr key={month.month} className={`border-b ${isLastMonth ? 'bg-primary/5 font-medium' : ''}`}>
                       <td className="p-3">{month.month}</td>
                       {/* Visitors */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.visitors)}</td>
                       <td className={`text-right p-2 font-medium ${hasActual && actual.views >= month.visitors ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.views > 0 ? formatNumber(actual.views + 78313) : '—'}
-                         {/* added dec 1 to 14 data to actual.views */}
+                        {actual.views > 0 ? formatNumber(actual.views + (month.monthIndex === 0 ? 78313 : 0)) : '—'}
+                         {/* added dec 1 to 14 data to actual.views for December */}
                       </td>
                       {/* Signups */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.signups)}</td>
                       <td className={`text-right p-2 font-medium ${hasActual && actual.signups >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.signups > 0 ? formatNumber(actual.signups + 18699) : '—'}
-                        {/* added dec 1 to 14 data to actual.signups */}
+                        {actual.signups > 0 ? formatNumber(actual.signups + (month.monthIndex === 0 ? 18699 : 0)) : '—'}
+                        {/* added dec 1 to 14 data to actual.signups for December */}
                       </td>
                       {/* New Paid */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.newPaid)}</td>
                       <td className={`text-right p-2 font-medium ${hasActual && actual.newPaid >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.newPaid > 0 ? formatNumber(actual.newPaid + 233) : '—'}
-                        {/* added dec 1 to 14 data to actual.newPaid */}
+                        {actual.newPaid > 0 ? formatNumber(actual.newPaid + (month.monthIndex === 0 ? 233 : 0)) : '—'}
+                        {/* added dec 1 to 14 data to actual.newPaid for December */}
                       </td>
                       {/* Total Subs */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.totalSubs)}</td>
@@ -1766,13 +1857,68 @@ export default function AdminAnalyticsPage() {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('vercel');
   
+  // User details dialog state
+  const [selectedUser, setSelectedUser] = useState<UserSummary | null>(null);
+  const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
+  const [pendingUserEmail, setPendingUserEmail] = useState<string | null>(null);
+  
+  // Fetch user by email when clicked
+  const { data: userSearchResult, isLoading: isSearchingUser, isFetching: isUserFetching } = useAdminUserList({
+    page: 1,
+    page_size: 1,
+    search_email: pendingUserEmail || undefined,
+  });
+  
+  const { refreshUserList, refreshUserStats } = useRefreshUserData();
+  
+  // When user search completes, open the dialog
+  useEffect(() => {
+    // Only process results when we have a pending email and the query is done fetching
+    if (!pendingUserEmail || isSearchingUser || isUserFetching) {
+      return;
+    }
+    
+    if (userSearchResult?.data && userSearchResult.data.length > 0) {
+      setSelectedUser(userSearchResult.data[0]);
+      setIsUserDialogOpen(true);
+      setPendingUserEmail(null);
+    } else if (userSearchResult?.data && userSearchResult.data.length === 0) {
+      toast.error(`User not found: ${pendingUserEmail}`);
+      setPendingUserEmail(null);
+    }
+  }, [pendingUserEmail, userSearchResult, isSearchingUser, isUserFetching]);
+  
+  // Handle user email click from anywhere in the app
+  const handleUserEmailClick = (email: string) => {
+    setPendingUserEmail(email);
+  };
+  
+  // Handle user selection from the Users tab table
+  const handleUserSelect = (user: UserSummary) => {
+    setSelectedUser(user);
+    setIsUserDialogOpen(true);
+  };
+  
+  const handleCloseUserDialog = () => {
+    setIsUserDialogOpen(false);
+    setSelectedUser(null);
+  };
+  
+  const handleRefreshUserData = () => {
+    refreshUserList();
+    refreshUserStats();
+  };
+  
   const utcToday = getUTCToday();
   const dateString = format(distributionDate, 'yyyy-MM-dd');
   
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
-  const { data: distribution } = useMessageDistribution(dateString);
-  const { data: categoryDistribution } = useCategoryDistribution(dateString);
-  const { data: conversionFunnel, isLoading: funnelLoading } = useConversionFunnel(dateString, analyticsSource);
+  const { data: distribution, isFetching: distributionFetching } = useMessageDistribution(dateString);
+  const { data: categoryDistribution, isFetching: categoryFetching } = useCategoryDistribution(dateString);
+  const { data: conversionFunnel, isLoading: funnelLoading, isFetching: funnelFetching } = useConversionFunnel(dateString, analyticsSource);
+  
+  // Combined fetching state for the Daily Analytics card
+  const isDailyAnalyticsFetching = distributionFetching || categoryFetching || funnelFetching;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
@@ -1899,7 +2045,7 @@ export default function AdminAnalyticsPage() {
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className={`space-y-6 transition-opacity duration-200 ${isDailyAnalyticsFetching ? 'opacity-60' : 'opacity-100'}`}>
             {/* Conversion Funnel Section */}
             <div>
               <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
@@ -1939,9 +2085,9 @@ export default function AdminAnalyticsPage() {
                           {conversionFunnel.subscriber_emails && conversionFunnel.subscriber_emails.length > 0 ? (
                             <ul className="space-y-1">
                               {conversionFunnel.subscriber_emails.map((email, idx) => (
-                                <li key={idx} className="text-sm text-muted-foreground flex items-center gap-2">
+                                <li key={idx} className="text-sm flex items-center gap-2">
                                   <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">{idx + 1}</span>
-                                  <a href={`mailto:${email}`} className="hover:text-primary hover:underline">{email}</a>
+                                  <UserEmailLink email={email} onUserClick={handleUserEmailClick} />
                                 </li>
                               ))}
                             </ul>
@@ -2049,6 +2195,10 @@ export default function AdminAnalyticsPage() {
               <MessageSquare className="h-4 w-4" />
               All Threads
             </TabsTrigger>
+            <TabsTrigger value="users" className="flex items-center gap-2">
+              <CreditCard className="h-4 w-4" />
+              Users & Billing
+            </TabsTrigger>
             <TabsTrigger value="retention" className="flex items-center gap-2">
               <UserCheck className="h-4 w-4" />
               Retention
@@ -2064,17 +2214,51 @@ export default function AdminAnalyticsPage() {
               categoryFilter={categoryFilter}
               filterDate={dateString}
               onClearCategory={() => setCategoryFilter(null)}
+              onUserClick={handleUserEmailClick}
             />
           </TabsContent>
 
+          <TabsContent value="users">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  User Management
+                </CardTitle>
+                <CardDescription>
+                  Search users, view billing details, and manage credits
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <AdminUserTable onUserSelect={handleUserSelect} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="retention">
-            <RetentionTab />
+            <RetentionTab onUserClick={handleUserEmailClick} />
           </TabsContent>
 
           <TabsContent value="simulator">
             <ARRSimulator analyticsSource={analyticsSource} />
           </TabsContent>
         </Tabs>
+        
+        {/* User Details Dialog - accessible from anywhere */}
+        <AdminUserDetailsDialog
+          user={selectedUser}
+          isOpen={isUserDialogOpen}
+          onClose={handleCloseUserDialog}
+          onRefresh={handleRefreshUserData}
+        />
+        
+        {/* Loading indicator when searching for user */}
+        {isSearchingUser && pendingUserEmail && (
+          <div className="fixed bottom-4 right-4 bg-background border rounded-lg shadow-lg p-3 flex items-center gap-2">
+            <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm">Loading user: {pendingUserEmail}</span>
+          </div>
+        )}
       </div>
     </div>
   );

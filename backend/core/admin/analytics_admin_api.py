@@ -418,25 +418,116 @@ async def browse_threads(
         has_message_filter = min_messages is not None or max_messages is not None
         has_category_filter = category is not None
         
+        # EMAIL SEARCH PATH: Query threads directly by account_id (no limit)
+        # This must come first to avoid the 1000 thread limit in filtered path
+        if search_email:
+            return await _browse_threads_by_email(
+                client, pagination_params, search_email,
+                min_messages, max_messages, date_from, date_to, sort_by, sort_order
+            )
+        
         # If filtering by message count or category without date range, default to last 7 days
         if (has_message_filter or has_category_filter) and not date_from:
             date_from = (datetime.now(BERLIN_TZ) - timedelta(days=7)).strftime('%Y-%m-%d')
         
         # SIMPLE PATH: No message/email/category filter - paginate directly from DB
-        if not has_message_filter and not search_email and not has_category_filter:
+        if not has_message_filter and not has_category_filter:
             return await _browse_threads_simple(
                 client, pagination_params, date_from, date_to, sort_by, sort_order
             )
         
-        # FILTERED PATH: Need to check message counts, email, or category
+        # FILTERED PATH: Need to check message counts or category
         return await _browse_threads_filtered(
             client, pagination_params, min_messages, max_messages,
-            search_email, category, date_from, date_to, sort_by, sort_order
+            None, category, date_from, date_to, sort_by, sort_order  # search_email already handled above
         )
         
     except Exception as e:
         logger.error(f"Failed to browse threads: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve threads")
+
+
+async def _browse_threads_by_email(
+    client, params: PaginationParams, search_email: str,
+    min_messages: Optional[int], max_messages: Optional[int],
+    date_from: Optional[str], date_to: Optional[str],
+    sort_by: str, sort_order: str
+) -> PaginatedResponse[ThreadAnalytics]:
+    """Email search path: Find account by email, then query ALL threads for that account."""
+    
+    # First, find the account_id for this email using auth.users
+    try:
+        account_result = await client.rpc('get_user_account_by_email', {'email_input': search_email}).execute()
+        if not account_result.data:
+            # No user found with this email
+            return await PaginationService.paginate_with_total_count(
+                items=[], total_count=0, params=params
+            )
+        
+        target_account_id = account_result.data.get('id')
+        if not target_account_id:
+            return await PaginationService.paginate_with_total_count(
+                items=[], total_count=0, params=params
+            )
+    except Exception as e:
+        logger.warning(f"Failed to find account by email '{search_email}': {e}")
+        return await PaginationService.paginate_with_total_count(
+            items=[], total_count=0, params=params
+        )
+    
+    # Build query for threads by this account (no arbitrary limit!)
+    base_query = client.from_('threads').select(
+        'thread_id, project_id, account_id, is_public, created_at, updated_at, user_message_count, total_message_count'
+    ).eq('account_id', target_account_id)
+    
+    if date_from:
+        base_query = base_query.gte('created_at', date_from)
+    if date_to:
+        base_query = base_query.lte('created_at', date_to)
+    
+    # Apply message count filters if specified
+    if min_messages is not None:
+        base_query = base_query.gte('user_message_count', min_messages)
+    if max_messages is not None:
+        base_query = base_query.lte('user_message_count', max_messages)
+    
+    # Get total count for this user
+    count_query = client.from_('threads').select('thread_id', count='exact').eq('account_id', target_account_id)
+    if date_from:
+        count_query = count_query.gte('created_at', date_from)
+    if date_to:
+        count_query = count_query.lte('created_at', date_to)
+    if min_messages is not None:
+        count_query = count_query.gte('user_message_count', min_messages)
+    if max_messages is not None:
+        count_query = count_query.lte('user_message_count', max_messages)
+    
+    count_result = await count_query.execute()
+    total_count = count_result.count or 0
+    
+    if total_count == 0:
+        return await PaginationService.paginate_with_total_count(
+            items=[], total_count=0, params=params
+        )
+    
+    # Get paginated threads for this user
+    offset = (params.page - 1) * params.page_size
+    
+    if sort_by == 'created_at':
+        base_query = base_query.order('created_at', desc=(sort_order == 'desc'))
+    elif sort_by == 'updated_at':
+        base_query = base_query.order('updated_at', desc=(sort_order == 'desc'))
+    
+    base_query = base_query.range(offset, offset + params.page_size - 1)
+    threads_result = await base_query.execute()
+    page_threads = threads_result.data or []
+    
+    # Enrich and return
+    result = await _enrich_threads(client, page_threads)
+    
+    return await PaginationService.paginate_with_total_count(
+        items=result, total_count=total_count, params=params
+    )
 
 
 async def _browse_threads_simple(
@@ -541,17 +632,8 @@ async def _browse_threads_filtered(
         logger.debug(f"Category filter via RPC: category={category}, page={params.page}, fetched {len(page_threads)} of {total_count} total")
         
         # Enrich threads with project/user data and return directly
+        # Note: Email search is handled separately in _browse_threads_by_email before this function
         enriched_threads = await _enrich_threads(client, page_threads)
-        
-        # Handle email search if specified (filter enriched results)
-        if search_email and enriched_threads:
-            search_lower = search_email.lower()
-            enriched_threads = [
-                t for t in enriched_threads
-                if t.user_email and search_lower in t.user_email.lower()
-            ]
-            # Adjust total count for email filter (approximate)
-            total_count = len(enriched_threads) if len(enriched_threads) < params.page_size else total_count
         
         return await PaginationService.paginate_with_total_count(
             items=enriched_threads, total_count=total_count, params=params
@@ -582,6 +664,7 @@ async def _browse_threads_filtered(
         )
     
     # Filter by message count only (category already filtered via JOIN)
+    # Note: Email search is handled separately in _browse_threads_by_email
     filtered_threads = []
     for thread in all_threads:
         user_msg_count = thread.get('user_message_count') or 0
@@ -592,27 +675,6 @@ async def _browse_threads_filtered(
             continue
         
         filtered_threads.append(thread)
-    
-    # Filter by email if specified
-    if search_email:
-        account_ids = list(set(t['account_id'] for t in filtered_threads if t.get('account_id')))
-        if account_ids:
-            emails_data = await batch_query_in(
-                client=client,
-                table_name='billing_customers',
-                select_fields='account_id, email',
-                in_field='account_id',
-                in_values=account_ids,
-                schema='basejump'
-            )
-            account_emails = {e['account_id']: e['email'] for e in emails_data}
-            
-            search_lower = search_email.lower()
-            filtered_threads = [
-                t for t in filtered_threads
-                if t.get('account_id') and 
-                   account_emails.get(t['account_id'], '').lower().find(search_lower) >= 0
-            ]
     
     total_count = len(filtered_threads)
     
@@ -656,11 +718,33 @@ async def _enrich_threads(client, threads: List[Dict]) -> List[ThreadAnalytics]:
     
     async def fetch_emails():
         if not account_ids:
-            return []
-        result = await client.schema('basejump').from_('billing_customers').select(
+            return {}
+        
+        # First try billing_customers (fast path for users with billing)
+        billing_result = await client.schema('basejump').from_('billing_customers').select(
             'account_id, email'
         ).in_('account_id', account_ids).execute()
-        return result.data or []
+        
+        account_emails = {e['account_id']: e['email'] for e in (billing_result.data or [])}
+        
+        # For accounts without billing email, get from auth.users via RPC
+        missing_account_ids = [aid for aid in account_ids if aid not in account_emails]
+        if missing_account_ids:
+            # Get primary_owner_user_id for missing accounts
+            accounts_result = await client.schema('basejump').from_('accounts').select(
+                'id, primary_owner_user_id'
+            ).in_('id', missing_account_ids).execute()
+            
+            for acc in (accounts_result.data or []):
+                if acc.get('primary_owner_user_id'):
+                    try:
+                        email_result = await client.rpc('get_user_email', {'user_id': acc['primary_owner_user_id']}).execute()
+                        if email_result.data:
+                            account_emails[acc['id']] = email_result.data
+                    except Exception as e:
+                        logger.debug(f"Could not get email for account {acc['id']}: {e}")
+        
+        return account_emails
     
     async def fetch_projects():
         if not project_ids:
@@ -688,7 +772,8 @@ async def _enrich_threads(client, threads: List[Dict]) -> List[ThreadAnalytics]:
             elif isinstance(content, str):
                 thread_first_messages[tid] = content
     
-    account_emails = {e['account_id']: e['email'] for e in emails_data}
+    # emails_data is already a dict {account_id: email} from fetch_emails()
+    account_emails = emails_data
     
     project_names = {}
     project_categories = {}

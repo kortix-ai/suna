@@ -113,7 +113,8 @@ export function ThreadHeader({
       style={{
         paddingTop: Math.max(insets.top, 16) + 8,
         paddingBottom: 8,
-        zIndex: 0,
+        zIndex: 10,
+        elevation: 10,
       }}
     >
       <View className="px-3 flex-row items-center gap-3">
