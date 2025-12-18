@@ -353,7 +353,7 @@ export function useAgentStream(
       // Early exit for non-JSON completion messages
       if (
         processedData ===
-        '{"type": "status", "status": "completed", "message": "Agent run completed successfully"}'
+        '{"type": "status", "status": "completed", "message": "Worker run completed successfully"}'
       ) {
         finalizeStream('completed', currentRunIdRef.current);
         return;
@@ -569,7 +569,7 @@ export function useAgentStream(
               break;
             case 'error':
               React.startTransition(() => {
-                setError(parsedContent.message || 'Agent run failed');
+                setError(parsedContent.message || 'Worker run failed');
               });
               finalizeStream('error', currentRunIdRef.current);
               break;
@@ -667,7 +667,7 @@ export function useAgentStream(
         if (agentStatus.status === 'running') {
           setError('Stream closed unexpectedly while agent was running.');
           finalizeStream('error', runId);
-          toast.warning('Stream disconnected. Agent might still be running.');
+          toast.warning('Stream disconnected. Worker might still be running.');
         } else if (agentStatus.status === 'stopped') {
           // Check if agent stopped due to billing error
           const errorMessage = agentStatus.error || '';
@@ -901,7 +901,7 @@ export function useAgentStream(
 
     try {
       await stopAgent(runIdToStop);
-      toast.success('Agent stopped.');
+      toast.success('Worker stopped.');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.error(

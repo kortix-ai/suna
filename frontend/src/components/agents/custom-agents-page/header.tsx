@@ -9,7 +9,7 @@ export const AgentsPageHeader = () => {
     <PageHeader icon={Bot}>
       <div className="space-y-4">
         <div className="text-4xl font-semibold tracking-tight">
-          <span className="text-primary">AI Agents</span>
+          <span className="text-primary">AI Workers</span>
         </div>
       </div>
     </PageHeader>

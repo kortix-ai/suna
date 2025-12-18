@@ -14,7 +14,7 @@ const agentTabs: TabConfig[] = [
   {
     value: 'my-agents',
     icon: Bot,
-    label: 'My Agents',
+    label: 'My Workers',
   },
 ]; 
 

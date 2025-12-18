@@ -393,7 +393,7 @@ async def handle_normal_completion(
 ) -> Dict[str, str]:
     duration = (datetime.now(timezone.utc) - start_time).total_seconds()
     logger.info(f"Agent run {agent_run_id} completed normally (duration: {duration:.2f}s, responses: {total_responses})")
-    completion_message = {"type": "status", "status": "completed", "message": "Agent run completed successfully"}
+    completion_message = {"type": "status", "status": "completed", "message": "Worker run completed successfully"}
     trace.span(name="agent_run_completed").end(status_message="agent_run_completed")
     completion_json = json.dumps(completion_message)
     try:

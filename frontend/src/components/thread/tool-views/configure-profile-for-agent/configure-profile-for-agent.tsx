@@ -114,7 +114,7 @@ export function ConfigureProfileForAgentToolView({
             icon={Settings}
             iconColor="text-violet-500 dark:text-violet-400"
             bgColor="bg-gradient-to-b from-violet-100 to-violet-50 shadow-inner dark:from-violet-800/40 dark:to-violet-900/60 dark:shadow-violet-950/20"
-            title="Configuring profile for agent"
+            title="Configuring profile for worker"
             filePath={display_name ? `"${display_name}"` : undefined}
             showProgress={true}
           />
@@ -128,7 +128,7 @@ export function ConfigureProfileForAgentToolView({
                   </div>
                   <div>
                     <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">
-                      {display_name || 'Agent Profile'}
+                      {display_name || 'Worker Profile'}
                     </h3>
                     <p className="text-sm text-zinc-600 dark:text-zinc-400">
                       Configuration updated successfully
