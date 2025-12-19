@@ -797,10 +797,13 @@ async def start_agent_run(
 async def unified_agent_start(
     request: Request,
     thread_id: Optional[str] = Form(None),
+    project_id: Optional[str] = Form(None),
     prompt: Optional[str] = Form(None),
     model_name: Optional[str] = Form(None),
     agent_id: Optional[str] = Form(None),
     files: List[UploadFile] = File(default=[]),
+    optimistic: Optional[str] = Form(None),
+    memory_enabled: Optional[str] = Form(None),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """
@@ -811,8 +814,13 @@ async def unified_agent_start(
     - File uploads (preprocessing before calling internal function)
     - HTTP-specific validation and error responses
     - Thread access authorization
+    - Optimistic mode (when optimistic=true, client provides thread_id and project_id)
     
-    Delegates core logic to start_agent_run().
+    Modes:
+    - Regular: Creates thread on server, returns agent_run_id
+    - Optimistic: Client provides thread_id/project_id, returns immediately with status="pending"
+    
+    Delegates core logic to start_agent_run() or create_thread_optimistically().
     """
     import time
     api_request_start = time.time()
@@ -823,7 +831,82 @@ async def unified_agent_start(
     client = await utils.db.client
     account_id = user_id
     
-    logger.debug(f"Received agent start request: thread_id={thread_id!r}, prompt={prompt[:100] if prompt else None!r}, model_name={model_name!r}, agent_id={agent_id!r}, files_count={len(files)}")
+    # Check if optimistic mode
+    is_optimistic = optimistic and optimistic.lower() == 'true'
+    
+    logger.debug(f"Received agent start request: optimistic={is_optimistic}, thread_id={thread_id!r}, project_id={project_id!r}, prompt={prompt[:100] if prompt else None!r}, model_name={model_name!r}, agent_id={agent_id!r}, files_count={len(files)}")
+    
+    # ================================================================
+    # OPTIMISTIC MODE: Client provides thread_id and project_id
+    # ================================================================
+    if is_optimistic:
+        if not thread_id or not project_id:
+            raise HTTPException(status_code=400, detail="thread_id and project_id are required for optimistic mode")
+        
+        if not prompt or not prompt.strip():
+            raise HTTPException(status_code=400, detail="prompt is required for optimistic mode")
+        
+        try:
+            import uuid
+            try:
+                uuid.UUID(thread_id)
+                uuid.UUID(project_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid UUID format for thread_id or project_id")
+            
+            resolved_model = model_name
+            if resolved_model is None:
+                resolved_model = await model_manager.get_default_model_for_user(client, account_id)
+            else:
+                resolved_model = model_manager.resolve_model_id(resolved_model)
+            
+            t_billing = time.time()
+            await _check_billing_and_limits(client, account_id, resolved_model, check_project_limit=True, check_thread_limit=True)
+            logger.debug(f"⏱️ [TIMING] Optimistic billing check: {(time.time() - t_billing) * 1000:.1f}ms")
+            
+            structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id, account_id=account_id)
+            
+            from core.thread_init_service import create_thread_optimistically
+            
+            memory_enabled_bool = None
+            if memory_enabled is not None:
+                memory_enabled_bool = memory_enabled.lower() == 'true'
+            
+            result = await create_thread_optimistically(
+                thread_id=thread_id,
+                project_id=project_id,
+                account_id=account_id,
+                prompt=prompt,
+                agent_id=agent_id,
+                model_name=resolved_model,
+                files=files if len(files) > 0 else None,
+                memory_enabled=memory_enabled_bool,
+            )
+            
+            logger.info(f"⏱️ [TIMING] 🎯 Optimistic API Request Total: {(time.time() - api_request_start) * 1000:.1f}ms")
+            
+            return {
+                "thread_id": result["thread_id"],
+                "project_id": result["project_id"],
+                "agent_run_id": None,
+                "status": "pending"
+            }
+        
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error in optimistic agent start: {str(e)}\n{traceback.format_exc()}")
+            error_details = {
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "traceback": traceback.format_exc()
+            }
+            logger.error(f"Full error details: {error_details}")
+            raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
+    
+    # ================================================================
+    # REGULAR MODE: Server creates thread
+    # ================================================================
     
     # Validation
     if not thread_id and (not prompt or not prompt.strip()):
@@ -925,8 +1008,10 @@ async def unified_agent_start(
         logger.error(f"Full error details: {error_details}")
         raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
 
-@router.post("/agent/start-optimistic", summary="Start Agent (Optimistic)", operation_id="optimistic_agent_start")
-async def optimistic_agent_start(
+# DEPRECATED: Old optimistic route - now use /agent/start with optimistic=true parameter
+# Kept for backwards compatibility for a short period
+@router.post("/agent/start-optimistic", summary="Start Agent (Optimistic) [DEPRECATED]", operation_id="optimistic_agent_start_deprecated", deprecated=True)
+async def optimistic_agent_start_deprecated(
     request: Request,
     thread_id: str = Form(...),
     project_id: str = Form(...),
@@ -937,77 +1022,26 @@ async def optimistic_agent_start(
     memory_enabled: Optional[str] = Form(None),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    import time
-    api_request_start = time.time()
+    """
+    DEPRECATED: Use /agent/start with optimistic=true parameter instead.
     
-    if not utils.instance_id:
-        raise HTTPException(status_code=500, detail="Agent API not initialized with instance ID")
+    This endpoint will be removed in a future version.
+    """
+    logger.warning("⚠️ DEPRECATED: /agent/start-optimistic called. Use /agent/start with optimistic=true instead")
     
-    client = await utils.db.client
-    account_id = user_id
-    
-    logger.debug(f"Received optimistic agent start request: thread_id={thread_id}, project_id={project_id}, prompt={prompt[:100] if prompt else None!r}, model_name={model_name!r}, agent_id={agent_id!r}, files_count={len(files)}")
-    
-    if not prompt or not prompt.strip():
-        raise HTTPException(status_code=400, detail="prompt is required when creating a new thread")
-    
-    try:
-        import uuid
-        try:
-            uuid.UUID(thread_id)
-            uuid.UUID(project_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid UUID format")
-        
-        resolved_model = model_name
-        if resolved_model is None:
-            resolved_model = await model_manager.get_default_model_for_user(client, account_id)
-        else:
-            resolved_model = model_manager.resolve_model_id(resolved_model)
-        
-        t_billing = time.time()
-        await _check_billing_and_limits(client, account_id, resolved_model, check_project_limit=True, check_thread_limit=True)
-        logger.debug(f"⏱️ [TIMING] Optimistic billing check: {(time.time() - t_billing) * 1000:.1f}ms")
-        
-        structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id, account_id=account_id)
-        
-        from core.thread_init_service import create_thread_optimistically
-        
-        memory_enabled_bool = None
-        if memory_enabled is not None:
-            memory_enabled_bool = memory_enabled.lower() == 'true'
-        
-        result = await create_thread_optimistically(
-            thread_id=thread_id,
-            project_id=project_id,
-            account_id=account_id,
-            prompt=prompt,
-            agent_id=agent_id,
-            model_name=resolved_model,
-            files=files if len(files) > 0 else None,
-            memory_enabled=memory_enabled_bool,
-        )
-        
-        logger.info(f"⏱️ [TIMING] 🎯 Optimistic API Request Total: {(time.time() - api_request_start) * 1000:.1f}ms")
-        
-        return {
-            "thread_id": result["thread_id"],
-            "project_id": result["project_id"],
-            "agent_run_id": None,
-            "status": "pending"
-        }
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in optimistic agent start: {str(e)}\n{traceback.format_exc()}")
-        error_details = {
-            "error": str(e),
-            "error_type": type(e).__name__,
-            "traceback": traceback.format_exc()
-        }
-        logger.error(f"Full error details: {error_details}")
-        raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
+    # Forward to the unified endpoint
+    return await unified_agent_start(
+        request=request,
+        thread_id=thread_id,
+        project_id=project_id,
+        prompt=prompt,
+        model_name=model_name,
+        agent_id=agent_id,
+        files=files,
+        optimistic="true",
+        memory_enabled=memory_enabled,
+        user_id=user_id
+    )
 
 @router.post("/thread/{thread_id}/start-agent", summary="Start Agent on Initialized Thread", operation_id="start_agent_on_thread")
 async def start_agent_on_thread(
