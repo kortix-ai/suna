@@ -140,8 +140,8 @@ async def make_llm_api_call(
     extra_headers: Optional[Dict[str, str]] = None,
     stop: Optional[List[str]] = None,
 ) -> Union[Dict[str, Any], AsyncGenerator, ModelResponse]:
-    """Make an API call to a language model using LiteLLM."""
-    logger.info(f"LLM API call: {model_name} ({len(messages)} messages)")
+    """
+    Make an API call to a language model using LiteLLM.
     
     Args:
         messages: List of message dictionaries
@@ -160,6 +160,7 @@ async def make_llm_api_call(
         extra_headers: Optional extra headers to send with request
         stop: Optional list of stop sequences
     """
+    logger.info(f"LLM API call: {model_name} ({len(messages)} messages)")
     # Handle mock AI for stress testing
     if model_name == "mock-ai":
         logger.info(f"🎭 Using mock LLM provider for testing")
