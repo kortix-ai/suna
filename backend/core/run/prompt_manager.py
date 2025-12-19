@@ -2,7 +2,7 @@ import os
 import json
 import asyncio
 import datetime
-from typing import Optional
+from typing import Optional, Tuple
 from core.tools.mcp_tool_wrapper import MCPToolWrapper
 from core.agentpress.tool import SchemaType
 from core.prompts.agent_builder_prompt import get_agent_builder_prompt
@@ -12,7 +12,7 @@ from core.utils.logger import logger
 
 class PromptManager:
     @staticmethod
-    async def build_minimal_prompt(agent_config: Optional[dict], tool_registry=None, mcp_loader=None, user_id: Optional[str] = None, thread_id: Optional[str] = None, client=None) -> dict:
+    async def build_minimal_prompt(agent_config: Optional[dict], tool_registry=None, mcp_loader=None, user_id: Optional[str] = None, thread_id: Optional[str] = None, client=None) -> Tuple[dict, Optional[dict]]:
         if agent_config and agent_config.get('system_prompt'):
             content = agent_config['system_prompt'].strip()
         else:
@@ -67,7 +67,7 @@ If relevant context seems missing, ask a clarifying question.
                                   xml_tool_calling: bool = False,
                                   user_id: Optional[str] = None,
                                   use_dynamic_tools: bool = True,
-                                  mcp_loader=None) -> dict:
+                                  mcp_loader=None) -> Tuple[dict, Optional[dict]]:
         
         if agent_config and agent_config.get('system_prompt'):
             system_content = agent_config['system_prompt'].strip()
