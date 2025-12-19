@@ -1537,19 +1537,19 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       <td className="p-3">{month.month}</td>
                       {/* Visitors */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.visitors)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actual.views >= month.visitors ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                      <td className={`text-right p-2 font-medium ${hasActual && (actual.views + (month.monthIndex === 0 ? 78313 : 0)) >= month.visitors ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
                         {actual.views > 0 ? formatNumber(actual.views + (month.monthIndex === 0 ? 78313 : 0)) : '—'}
                          {/* added dec 1 to 14 data to actual.views for December */}
                       </td>
                       {/* Signups */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.signups)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actual.signups >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                      <td className={`text-right p-2 font-medium ${hasActual && (actual.signups + (month.monthIndex === 0 ? 18699 : 0)) >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
                         {actual.signups > 0 ? formatNumber(actual.signups + (month.monthIndex === 0 ? 18699 : 0)) : '—'}
                         {/* added dec 1 to 14 data to actual.signups for December */}
                       </td>
                       {/* New Paid */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.newPaid)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actual.newPaid >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                      <td className={`text-right p-2 font-medium ${hasActual && (actual.newPaid + (month.monthIndex === 0 ? 233 : 0)) >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
                         {actual.newPaid > 0 ? formatNumber(actual.newPaid + (month.monthIndex === 0 ? 233 : 0)) : '—'}
                         {/* added dec 1 to 14 data to actual.newPaid for December */}
                       </td>
