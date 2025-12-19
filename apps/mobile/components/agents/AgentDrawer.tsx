@@ -121,6 +121,7 @@ export function AgentDrawer({
     selectAgent,
     selectModel,
     isLoading,
+    hasInitialized,
     loadAgents,
   } = agentContext;
 
@@ -379,7 +380,7 @@ export function AgentDrawer({
                   colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
               }}
               className="font-roobert text-sm">
-              {isLoading ? t('loading.threads') : 'No worker selected'}
+              {isLoading || !hasInitialized ? t('loading.threads') : 'No worker selected'}
             </Text>
           </View>
         )}

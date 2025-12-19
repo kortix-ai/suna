@@ -20,6 +20,7 @@ from core.utils.retry import retry
 import time
 
 from core.services.redis import get_redis_config as _get_redis_config
+import os
 
 redis_config = _get_redis_config()
 redis_host = redis_config["host"]
@@ -27,12 +28,23 @@ redis_port = redis_config["port"]
 redis_password = redis_config["password"]
 redis_username = redis_config["username"]
 
+# Get queue prefix from environment (for preview deployments)
+QUEUE_PREFIX = os.getenv("DRAMATIQ_QUEUE_PREFIX", "")
+
+def get_queue_name(base_name: str) -> str:
+    """Get queue name with optional prefix for preview deployments."""
+    if QUEUE_PREFIX:
+        return f"{QUEUE_PREFIX}{base_name}"
+    return base_name
+
 if redis_config["url"]:
     auth_info = f" (user={redis_username})" if redis_username else ""
-    logger.info(f"🔧 Configuring Dramatiq broker with Redis at {redis_host}:{redis_port}{auth_info}")
+    queue_info = f" (queue prefix: '{QUEUE_PREFIX}')" if QUEUE_PREFIX else ""
+    logger.info(f"🔧 Configuring Dramatiq broker with Redis at {redis_host}:{redis_port}{auth_info}{queue_info}")
     redis_broker = RedisBroker(url=redis_config["url"], middleware=[dramatiq.middleware.AsyncIO()])
 else:
-    logger.info(f"🔧 Configuring Dramatiq broker with Redis at {redis_host}:{redis_port}")
+    queue_info = f" (queue prefix: '{QUEUE_PREFIX}')" if QUEUE_PREFIX else ""
+    logger.info(f"🔧 Configuring Dramatiq broker with Redis at {redis_host}:{redis_port}{queue_info}")
     redis_broker = RedisBroker(host=redis_host, port=redis_port, middleware=[dramatiq.middleware.AsyncIO()])
 
 dramatiq.set_broker(redis_broker)
@@ -113,7 +125,7 @@ async def initialize():
     _initialized = True
     logger.info(f"✅ Worker async resources initialized successfully (instance: {instance_id})")
 
-@dramatiq.actor
+@dramatiq.actor(queue_name=get_queue_name("default"))
 async def check_health(key: str):
     structlog.contextvars.clear_contextvars()
     await redis.set(key, "healthy", ex=redis.REDIS_KEY_TTL)
@@ -456,8 +468,9 @@ async def cleanup_pubsub(pubsub, agent_run_id: str):
         logger.warning(f"Error closing pubsub for {agent_run_id}: {str(e)}")
 
 from core import thread_init_service
+from core.streaming_context import set_streaming_context, clear_streaming_context
 
-@dramatiq.actor
+@dramatiq.actor(queue_name=get_queue_name("default"))
 async def run_agent_background(
     agent_run_id: str,
     thread_id: str,
@@ -609,6 +622,13 @@ async def run_agent_background(
 
         agent_config = await load_agent_config(agent_id, account_id)
 
+        # Set streaming context for tools to publish real-time output
+        set_streaming_context(
+            agent_run_id=agent_run_id,
+            pubsub_channel=redis_keys['response_pubsub'],
+            stream_key=redis_keys['response_stream']
+        )
+
         agent_gen = run_agent(
             thread_id=thread_id,
             project_id=project_id,
@@ -688,6 +708,9 @@ async def run_agent_background(
             logger.warning(f"Failed to publish ERROR signal: {str(e)}")
 
     finally:
+        # Clear streaming context
+        clear_streaming_context()
+        
         if stop_checker and not stop_checker.done():
             stop_checker.cancel()
             try:

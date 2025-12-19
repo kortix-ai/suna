@@ -118,9 +118,50 @@
     }
   },
   "onboarding": {
+    "welcome": "Veja o que o Kortix pode fazer",
+    "welcomeSubtitle": "Seu assistente IA que age",
     "skip": "Pular",
     "next": "Próximo",
     "getStarted": "Começar",
+    "kortixComputer": "Kortix Computer",
+    "ready": "Pronto",
+    "examples": {
+      "presentations": {
+        "title": "Apresentações",
+        "description": "Veja como ele cria apresentações incríveis",
+        "userMessage": "Pesquise e crie uma apresentação sobre redes neurais",
+        "aiMessage": "Vou pesquisar redes neurais e criar uma apresentação para você...",
+        "researching": "Pesquisando",
+        "creatingFile": "Criando arquivo",
+        "creatingSlides": "Criando slides"
+      },
+      "dataAnalysis": {
+        "title": "Análise de dados",
+        "description": "Veja como ele analisa dados e cria relatórios visuais",
+        "userMessage": "Analise o desempenho de vendas Q4 do Google Drive",
+        "aiMessage": "Vou carregar seus dados de vendas e criar uma análise completa...",
+        "loadingFromDrive": "Carregando do Google Drive",
+        "creatingVisualization": "Criando visualização",
+        "researchingMarket": "Pesquisando mercado",
+        "creatingReport": "Criando relatório"
+      },
+      "image": {
+        "title": "Imagem",
+        "description": "Experimente o design de logos e marcas com IA",
+        "userMessage": "Crie um logo para nossa empresa",
+        "aiMessage": "Vejo que você mencionou LUXY. Vou criar um logo profissional para sua marca...",
+        "researchingBrand": "Pesquisando marca",
+        "creatingLogo": "Criando logo",
+        "creatingBrandBoard": "Criando quadro de marca"
+      },
+      "imageEasterEgg": {
+        "title": "Imagem",
+        "description": "Transforme suas fotos com estilos de IA",
+        "userMessage": "Converta minha imagem para estilo pixel art blocky",
+        "aiMessage": "Claro! Vou transformar sua imagem em um visual estilizado blocky...",
+        "creatingImage": "Criando imagem estilizada"
+      }
+    },
     "slide1": {
       "title": "Chat com IA",
       "description": "Tenha conversas naturais com assistentes IA poderosos que entendem o contexto e fornecem respostas úteis"

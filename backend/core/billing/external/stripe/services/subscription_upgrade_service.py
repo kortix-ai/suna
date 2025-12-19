@@ -24,30 +24,37 @@ class SubscriptionUpgradeService:
             logger.error(f"[UPGRADE] Cannot process upgrade - price_id {price_id} not recognized")
             raise ValueError(f"Unrecognized price_id: {price_id}")
         
+        # Get subscription status - handle both object and dict access
+        subscription_status = getattr(subscription, 'status', None) or subscription.get('status')
+        
         billing_dates = self._calculate_billing_dates(subscription)
         plan_type = get_plan_type(price_id)
         
-        if subscription.status == 'incomplete':
-            logger.info(f"[UPGRADE] User {account_id} upgrading from {current_tier} to {tier_info.name} (payment pending)")
+        # Block tier setting for ANY non-active status (incomplete, incomplete_expired, canceled, etc.)
+        # Only set tier when subscription is definitely active and payment succeeded
+        if subscription_status != 'active':
+            # Payment is pending or failed - do NOT set tier yet
+            # Tier will be set when subscription becomes 'active' via subscription.updated webhook
+            logger.info(f"[UPGRADE] Subscription status '{subscription_status}' is not active - storing pending subscription without setting tier for {account_id}")
             
+            # Only store the pending subscription reference, NOT the tier
             await self.subscription_repo.update_subscription_metadata(account_id, {
-                'tier': tier_info.name,
-                'plan_type': plan_type,
                 'stripe_subscription_id': subscription['id'],
-                'billing_cycle_anchor': billing_dates['billing_anchor_iso'],
-                'next_credit_grant': billing_dates['next_grant_date_iso']
+                'stripe_subscription_status': subscription_status or 'unknown',
+                'payment_status': 'pending'
             })
-            
-        elif subscription.status == 'active':
-            logger.info(f"[UPGRADE] User {account_id} upgrading from {current_tier} - metadata updated, credits handled by lifecycle/invoice")
-            
-            await self.subscription_repo.update_subscription_metadata(account_id, {
-                'tier': tier_info.name,
-                'plan_type': plan_type,
-                'stripe_subscription_id': subscription['id'],
-                'billing_cycle_anchor': billing_dates['billing_anchor_iso'],
-                'next_credit_grant': billing_dates['next_grant_date_iso']
-            })
+            return  # Don't proceed further until payment succeeds
+        
+        # subscription_status == 'active' - safe to set tier
+        logger.info(f"[UPGRADE] User {account_id} upgrading from {current_tier} to {tier_info.name}")
+        
+        await self.subscription_repo.update_subscription_metadata(account_id, {
+            'tier': tier_info.name,
+            'plan_type': plan_type,
+            'stripe_subscription_id': subscription['id'],
+            'billing_cycle_anchor': billing_dates['billing_anchor_iso'],
+            'next_credit_grant': billing_dates['next_grant_date_iso']
+        })
     
     async def handle_incomplete_to_active_upgrade(
         self, 

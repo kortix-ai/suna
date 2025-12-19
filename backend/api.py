@@ -36,6 +36,7 @@ from core.billing.api import router as billing_router
 from core.setup import router as setup_router, webhook_router
 from core.admin.admin_api import router as admin_router
 from core.admin.billing_admin_api import router as billing_admin_router
+from core.admin.feedback_admin_api import router as feedback_admin_router
 from core.admin.notification_admin_api import router as notification_admin_router
 from core.admin.analytics_admin_api import router as analytics_admin_router
 from core.services import transcription as transcription_api
@@ -288,6 +289,7 @@ api_router.include_router(webhook_router)  # Webhooks at /api/webhooks/*
 api_router.include_router(api_keys_api.router)
 api_router.include_router(billing_admin_router)
 api_router.include_router(admin_router)
+api_router.include_router(feedback_admin_router)
 api_router.include_router(notification_admin_router)
 api_router.include_router(analytics_admin_router)
 
@@ -345,9 +347,9 @@ async def health_check():
         )
     
     return {
-        "status": "ok", 
+        "status": "ok",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "instance_id": instance_id
+        "instance_id": instance_id,
     }
 
 @api_router.get("/metrics/queue", summary="Queue Metrics", operation_id="queue_metrics", tags=["system"])

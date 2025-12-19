@@ -26,6 +26,7 @@ from core.agentpress.xml_tool_parser import (
     extract_xml_chunks,
     parse_xml_tool_calls_with_ids
 )
+from core.streaming_context import set_current_tool_call_id
 from core.agentpress.native_tool_parser import (
     extract_tool_call_chunk_data,
     is_tool_call_complete,
@@ -1827,6 +1828,11 @@ class ResponseProcessor:
         span = self.trace.span(name=f"execute_tool.{tool_call['function_name']}", input=tool_call["arguments"])
         function_name = "unknown"
         try:
+            # Set the tool_call_id for streaming context (used by shell tool for real-time output)
+            tool_call_id = tool_call.get("tool_call_id", tool_call.get("id", ""))
+            if tool_call_id:
+                set_current_tool_call_id(tool_call_id)
+            
             function_name = tool_call["function_name"]
             arguments = tool_call["arguments"]
 
