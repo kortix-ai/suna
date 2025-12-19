@@ -752,6 +752,14 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   const signupsDateFrom = '2025-12-15';
   const signupsDateTo = '2026-06-15';
   
+  // Week 0 (Dec 8-14) baseline data for Week 1 growth calculation
+  // From spreadsheet: used only for % Growth, not displayed
+  const week0Baseline = {
+    views: 44592,    // 4506+4851+7504+8722+7941+6263+4805
+    signups: 10056,  // 1171+1191+1046+2058+2101+1289+1200
+    newPaid: 120,    // 9+14+15+17+26+22+17
+  };
+  
   // Fetch signups grouped by date
   const { data: signupsByDateData } = useSignupsByDate(signupsDateFrom, signupsDateTo);
   
@@ -1503,7 +1511,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="text-left p-3 font-medium">Month</th>
-                  <th className="text-center p-3 font-medium" colSpan={2}>Visitors</th>
+                  <th className="text-center p-3 font-medium" colSpan={3}>Visitors</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>Signups</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>New Paid</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>Total Subs</th>
@@ -1514,6 +1522,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <th></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">% Growth</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
@@ -1529,29 +1538,54 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               <tbody>
                 {monthlyFromWeekly.map((month, idx) => {
                   const actual = monthlyActuals[month.monthIndex] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+                  const prevMonth = idx > 0 ? monthlyFromWeekly[idx - 1] : null;
+                  const prevActual = prevMonth ? (monthlyActuals[prevMonth.monthIndex] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 }) : null;
                   const hasActual = actual.views > 0 || actual.signups > 0 || actual.subscribers > 0;
                   const isLastMonth = idx === monthlyFromWeekly.length - 1;
+                  
+                  // Calculate actual values with Dec 1-14 adjustments
+                  const actualViews = actual.views + (month.monthIndex === 0 ? 78313 : 0);
+                  const actualSignups = actual.signups + (month.monthIndex === 0 ? 18699 : 0);
+                  const actualNewPaid = actual.newPaid + (month.monthIndex === 0 ? 233 : 0);
+                  
+                  // Calculate previous month actual values with Dec 1-14 adjustments
+                  const prevActualViews = prevActual ? (prevActual.views + (prevMonth?.monthIndex === 0 ? 78313 : 0)) : 0;
+                  
+                  // Calculate views % growth (month-over-month)
+                  const viewsGrowth = prevActualViews > 0 && actualViews > 0 ? ((actualViews / prevActualViews) - 1) * 100 : null;
+                  
+                  // Helper to format growth
+                  const formatGrowth = (value: number | null) => {
+                    if (value === null) return '—';
+                    const sign = value >= 0 ? '+' : '';
+                    return `${sign}${value.toFixed(1)}%`;
+                  };
+                  
+                  const getGrowthColor = (value: number | null) => {
+                    if (value === null) return 'text-muted-foreground';
+                    return value >= 0 ? 'text-green-600' : 'text-red-500';
+                  };
                   
                   return (
                     <tr key={month.month} className={`border-b ${isLastMonth ? 'bg-primary/5 font-medium' : ''}`}>
                       <td className="p-3">{month.month}</td>
                       {/* Visitors */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.visitors)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && (actual.views + (month.monthIndex === 0 ? 78313 : 0)) >= month.visitors ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.views > 0 ? formatNumber(actual.views + (month.monthIndex === 0 ? 78313 : 0)) : '—'}
-                         {/* added dec 1 to 14 data to actual.views for December */}
+                      <td className={`text-right p-2 font-medium ${hasActual && actualViews >= month.visitors ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.views > 0 ? formatNumber(actualViews) : '—'}
+                      </td>
+                      <td className={`text-right p-2 text-xs ${getGrowthColor(viewsGrowth)}`}>
+                        {formatGrowth(viewsGrowth)}
                       </td>
                       {/* Signups */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.signups)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && (actual.signups + (month.monthIndex === 0 ? 18699 : 0)) >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.signups > 0 ? formatNumber(actual.signups + (month.monthIndex === 0 ? 18699 : 0)) : '—'}
-                        {/* added dec 1 to 14 data to actual.signups for December */}
+                      <td className={`text-right p-2 font-medium ${hasActual && actualSignups >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.signups > 0 ? formatNumber(actualSignups) : '—'}
                       </td>
                       {/* New Paid */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.newPaid)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && (actual.newPaid + (month.monthIndex === 0 ? 233 : 0)) >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.newPaid > 0 ? formatNumber(actual.newPaid + (month.monthIndex === 0 ? 233 : 0)) : '—'}
-                        {/* added dec 1 to 14 data to actual.newPaid for December */}
+                      <td className={`text-right p-2 font-medium ${hasActual && actualNewPaid >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.newPaid > 0 ? formatNumber(actualNewPaid) : '—'}
                       </td>
                       {/* Total Subs */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.totalSubs)}</td>
@@ -1688,7 +1722,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <tr className="border-b bg-muted/50">
                     <th className="text-left p-2 font-medium">Week</th>
                     <th className="text-left p-2 font-medium">Date Range</th>
-                    <th className="text-center p-2 font-medium" colSpan={3}>Views</th>
+                    <th className="text-center p-2 font-medium" colSpan={4}>Views</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>Signups</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>New Paid</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>Subscribers</th>
@@ -1702,6 +1736,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">% Growth</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
@@ -1736,6 +1771,26 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     const mrrVar = getVariance(actual.mrr, week.mrr);
                     const arrVar = getVariance(actual.arr, week.arr);
                     
+                    // Get previous week's views for % Growth calculation
+                    const prevWeekNum = week.week - 1;
+                    // For Week 1, use week0Baseline; otherwise use fetched data
+                    const prevAutoViews = prevWeekNum === 0 ? week0Baseline.views : (prevWeekNum >= 1 ? (viewsByWeek[prevWeekNum] ?? 0) : 0);
+                    
+                    // Calculate views % growth (week-over-week)
+                    const viewsGrowth = prevAutoViews > 0 && autoViews > 0 ? ((autoViews / prevAutoViews) - 1) * 100 : null;
+                    
+                    // Helper to format growth
+                    const formatGrowth = (value: number | null) => {
+                      if (value === null) return '—';
+                      const sign = value >= 0 ? '+' : '';
+                      return `${sign}${value.toFixed(0)}%`;
+                    };
+                    
+                    const getGrowthColor = (value: number | null) => {
+                      if (value === null) return 'text-muted-foreground';
+                      return value >= 0 ? 'text-green-600' : 'text-red-500';
+                    };
+                    
                     return (
                       <tr key={week.week} className={`border-b hover:bg-muted/30 ${week.week === weeklyProjections.length ? 'bg-primary/5 font-medium' : ''}`}>
                         <td className="p-2 font-medium">W{week.week}</td>
@@ -1749,6 +1804,9 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                         </td>
                         <td className={`text-right p-1 text-[10px] ${viewsVar.color}`}>
                           {autoViews > 0 ? `${viewsVar.value >= 0 ? '+' : ''}${viewsVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        <td className={`text-right p-1 text-[10px] ${getGrowthColor(viewsGrowth)}`}>
+                          {formatGrowth(viewsGrowth)}
                         </td>
                         {/* Signups - Auto-fetched from database */}
                         <td className="text-right p-1">{formatNumber(week.signups)}</td>
