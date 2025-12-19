@@ -437,6 +437,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
             buttonIconSize={buttonIconSize}
             buttonIconClass={buttonIconClass}
             isAuthenticated={isAuthenticated}
+            hasAgent={hasAgent}
           />
         )}
       </View>
