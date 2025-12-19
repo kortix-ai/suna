@@ -427,7 +427,6 @@ export function NavUserWithTeams({
                   <span>{t('theme')}</span>
                 </DropdownMenuItem>
               </DropdownMenuGroup>
-
               {(user.isAdmin || isLocalMode()) && (
                 <>
                   <DropdownMenuSeparator className="my-1" />
@@ -449,6 +448,10 @@ export function NavUserWithTeams({
                           <MessageSquare className="h-4 w-4" />
                           <span>User Feedback</span>
                         </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {user.isAdmin && (
+                      <DropdownMenuItem asChild>
                         <Link href="/admin/analytics" className="gap-2 p-2">
                           <BarChart3 className="h-4 w-4" />
                           <span>Analytics</span>
@@ -478,7 +481,6 @@ export function NavUserWithTeams({
                   </DropdownMenuGroup>
                 </>
               )}
-
               <DropdownMenuSeparator className="my-1" />
               <DropdownMenuItem onClick={handleLogout} className="gap-2 p-2">
                 <LogOut className="h-4 w-4" />
