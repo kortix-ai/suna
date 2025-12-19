@@ -11,7 +11,7 @@ interface AgentContextType {
   isLoading: boolean;
   error: Error | null;
   hasInitialized: boolean;
-  
+
   selectAgent: (agentId: string) => Promise<void>;
   selectModel: (modelId: string) => Promise<void>;
   loadAgents: () => Promise<void>;
@@ -25,13 +25,13 @@ const AgentContext = React.createContext<AgentContextType | undefined>(undefined
 
 export function AgentProvider({ children }: { children: React.ReactNode }) {
   const { session } = useAuthContext();
-  
+
   const [selectedAgentId, setSelectedAgentId] = React.useState<string | undefined>(undefined);
   const [selectedModelId, setSelectedModelId] = React.useState<string | undefined>(undefined);
   const [hasInitialized, setHasInitialized] = React.useState(false);
-  
+
   const prevSessionRef = React.useRef(session);
-  
+
   const { data: agentsResponse, isLoading, error, refetch } = useAgents(
     {
       limit: 100,
@@ -47,27 +47,36 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       refetchOnReconnect: false,
     }
   );
-  
+
   const agents = React.useMemo(() => agentsResponse?.agents || [], [agentsResponse?.agents]);
-  
+
+  // Handle error state - if agents fail to load, still mark as initialized
+  React.useEffect(() => {
+    if (error && !hasInitialized) {
+      console.error('❌ Failed to load agents, marking as initialized to unblock UI:', error);
+      setHasInitialized(true);
+    }
+  }, [error, hasInitialized]);
+
   React.useEffect(() => {
     const hadSession = !!prevSessionRef.current;
     const hasSession = !!session;
     const prevUserId = prevSessionRef.current?.user?.id;
     const currentUserId = session?.user?.id;
-    
+
     // Only refetch when user actually changes (login/logout/user switch)
     if ((!hadSession && hasSession) || (hadSession && hasSession && prevUserId !== currentUserId)) {
       console.log('🔄 Session changed, refetching agents...');
+      setHasInitialized(false); // Reset initialization when session changes
       refetch();
     }
-    
+
     prevSessionRef.current = session;
   }, [session, refetch]);
-  
+
   const AGENT_STORAGE_KEY = '@selected_agent_id';
   const MODEL_STORAGE_KEY = '@selected_model_id';
-  
+
   React.useEffect(() => {
     const loadStoredSelections = async () => {
       try {
@@ -75,7 +84,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
           AsyncStorage.getItem(AGENT_STORAGE_KEY),
           AsyncStorage.getItem(MODEL_STORAGE_KEY),
         ]);
-        
+
         if (storedAgentId) {
           setSelectedAgentId(storedAgentId);
         }
@@ -86,33 +95,44 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         console.error('Failed to load stored selections:', error);
       }
     };
-    
+
     loadStoredSelections();
   }, []);
-  
+
   React.useEffect(() => {
-    if (agents.length > 0 && !hasInitialized) {
+    // Only auto-select if we have agents loaded and haven't initialized yet
+    if (agents.length > 0 && !hasInitialized && !isLoading) {
       const autoSelectDefaultAgent = () => {
+        console.log('🔄 Auto-selecting agent...', {
+          selectedAgentId,
+          agentsCount: agents.length,
+          hasInitialized,
+        });
+
+        // If we have a stored agent ID and it exists in our agents list, we're good
         if (selectedAgentId && agents.some(agent => agent.agent_id === selectedAgentId)) {
+          console.log('✅ Stored agent found in agents list:', selectedAgentId);
           setHasInitialized(true);
           return;
         }
-        
+
+        // No valid stored agent - select default
         const sunaAgent = agents.find(agent => agent.metadata?.is_suna_default);
         const defaultAgent = sunaAgent || agents[0];
-        
+
         if (defaultAgent) {
+          console.log('✅ Auto-selected default agent:', defaultAgent.name);
           setSelectedAgentId(defaultAgent.agent_id);
           AsyncStorage.setItem(AGENT_STORAGE_KEY, defaultAgent.agent_id).catch(console.error);
         }
-        
+
         setHasInitialized(true);
       };
-      
+
       autoSelectDefaultAgent();
     }
-  }, [agents, selectedAgentId, hasInitialized]);
-  
+  }, [agents, selectedAgentId, hasInitialized, isLoading]);
+
   const selectAgent = React.useCallback(async (agentId: string) => {
     try {
       setSelectedAgentId(agentId);
@@ -122,7 +142,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       console.error('Failed to store selected agent:', error);
     }
   }, []);
-  
+
   const selectModel = React.useCallback(async (modelId: string) => {
     try {
       setSelectedModelId(modelId);
@@ -132,7 +152,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       console.error('Failed to store selected model:', error);
     }
   }, []);
-  
+
   const loadAgents = React.useCallback(async () => {
     try {
       await refetch();
@@ -140,24 +160,25 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       console.error('Failed to load agents:', error);
     }
   }, [refetch]);
-  
+
   const getDefaultAgent = React.useCallback((): Agent | null => {
     const sunaAgent = agents.find(agent => agent.metadata?.is_suna_default);
     return sunaAgent || agents[0] || null;
   }, [agents]);
-  
+
   const getCurrentAgent = React.useCallback((): Agent | null => {
     if (!selectedAgentId) return null;
     return agents.find(agent => agent.agent_id === selectedAgentId) || null;
   }, [selectedAgentId, agents]);
-  
+
   const isSunaAgent = React.useCallback((): boolean => {
     const currentAgent = getCurrentAgent();
     return currentAgent?.metadata?.is_suna_default || false;
   }, [getCurrentAgent]);
-  
+
   const clearSelection = React.useCallback(async () => {
     try {
+      console.log('🧹 Clearing agent selection...');
       setSelectedAgentId(undefined);
       setSelectedModelId(undefined);
       setHasInitialized(false);
@@ -169,7 +190,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       console.error('Failed to clear selections:', error);
     }
   }, []);
-  
+
   const value: AgentContextType = React.useMemo(() => ({
     selectedAgentId,
     selectedModelId,
@@ -199,7 +220,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     isSunaAgent,
     clearSelection,
   ]);
-  
+
   return (
     <AgentContext.Provider value={value}>
       {children}
@@ -209,11 +230,11 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
 export function useAgent() {
   const context = React.useContext(AgentContext);
-  
+
   if (context === undefined) {
     throw new Error('useAgent must be used within an AgentProvider');
   }
-  
+
   return context;
 }
 
