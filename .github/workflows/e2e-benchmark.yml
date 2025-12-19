@@ -1,0 +1,182 @@
+name: E2E Benchmark Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: 'staging'
+      mode:
+        description: 'Test mode'
+        required: true
+        type: choice
+        options:
+          - core_test
+          - stress_test
+      concurrency:
+        description: 'Concurrency level'
+        required: false
+        default: '5'
+      num_executions:
+        description: 'Number of executions (stress test only)'
+        required: false
+        default: '100'
+      prompt_ids:
+        description: 'Comma-separated prompt IDs (empty = all prompts)'
+        required: false
+        default: ''
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set Environment URL
+        id: set-url
+        run: |
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            echo "API_URL=${{ secrets.PRODUCTION_API_URL }}" >> $GITHUB_OUTPUT
+          else
+            echo "API_URL=${{ secrets.STAGING_API_URL }}" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Run E2E Benchmark
+        env:
+          API_URL: ${{ steps.set-url.outputs.API_URL }}
+          ADMIN_API_KEY: ${{ secrets.KORTIX_ADMIN_API_KEY }}
+        run: |
+          set -e
+          
+          # Mask secrets
+          echo "::add-mask::$API_URL"
+          echo "::add-mask::$ADMIN_API_KEY"
+          
+          echo "🧪 Starting ${{ inputs.mode }} on ${{ inputs.environment }}"
+          echo ""
+          
+          # Build prompt_ids array
+          PROMPT_IDS_JSON="null"
+          if [ -n "${{ inputs.prompt_ids }}" ]; then
+            PROMPT_IDS_JSON=$(echo "${{ inputs.prompt_ids }}" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$";""))')
+          fi
+          
+          # Build metadata
+          METADATA=$(jq -n \
+            --arg branch "${{ github.ref_name }}" \
+            --arg commit "${{ github.sha }}" \
+            --arg env "${{ inputs.environment }}" \
+            --arg workflow "${{ github.run_id }}" \
+            '{
+              branch: $branch,
+              commit: $commit,
+              environment: $env,
+              workflow_run_id: $workflow,
+              triggered_by: "${{ github.actor }}"
+            }')
+          
+          # Start test
+          REQUEST_BODY=$(jq -n \
+            --arg mode "${{ inputs.mode }}" \
+            --argjson concurrency "${{ inputs.concurrency }}" \
+            --argjson num_executions "${{ inputs.num_executions }}" \
+            --argjson prompt_ids "$PROMPT_IDS_JSON" \
+            --argjson metadata "$METADATA" \
+            '{
+              mode: $mode,
+              concurrency: $concurrency,
+              num_executions: $num_executions,
+              prompt_ids: $prompt_ids,
+              metadata: $metadata
+            }')
+          
+          echo "📤 Request payload:"
+          echo "$REQUEST_BODY" | jq '.'
+          echo ""
+          
+          START_RESPONSE=$(curl -sf -X POST "$API_URL/v1/admin/test-harness/run" \
+            -H "X-Admin-Api-Key: $ADMIN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$REQUEST_BODY" 2>&1) || {
+            echo "❌ Failed to start test"
+            echo "$START_RESPONSE"
+            exit 1
+          }
+          
+          RUN_ID=$(echo "$START_RESPONSE" | jq -r '.run_id')
+          echo "✅ Test started: $RUN_ID"
+          echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
+          echo ""
+          
+          # Monitor test
+          MAX_WAIT=1800  # 30 minutes
+          WAIT_INTERVAL=10
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            sleep $WAIT_INTERVAL
+            ELAPSED=$((ELAPSED + WAIT_INTERVAL))
+            
+            RESULT=$(curl -sf "$API_URL/v1/admin/test-harness/runs/$RUN_ID" \
+              -H "X-Admin-Api-Key: $ADMIN_API_KEY" 2>&1) || {
+              echo "⚠️  Failed to fetch status (retry $((ELAPSED/WAIT_INTERVAL)))"
+              continue
+            }
+            
+            STATUS=$(echo "$RESULT" | jq -r '.status // "unknown"')
+            SUCCESS=$(echo "$RESULT" | jq -r '.summary.successful // 0')
+            TOTAL=$(echo "$RESULT" | jq -r '.summary.total_prompts // 0')
+            
+            echo "[$ELAPSED/${MAX_WAIT}s] Status: $STATUS | Progress: $SUCCESS/$TOTAL"
+            
+            if [ "$STATUS" = "completed" ]; then
+              echo ""
+              echo "✅ Test completed successfully!"
+              echo "$RESULT" | jq '.'
+              echo "$RESULT" > benchmark-results.json
+              
+              # Create summary
+              echo "## ✅ Benchmark Test Results" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "- **Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+              echo "- **Mode**: ${{ inputs.mode }}" >> $GITHUB_STEP_SUMMARY
+              echo "- **Run ID**: \`$RUN_ID\`" >> $GITHUB_STEP_SUMMARY
+              echo "- **Success Rate**: $SUCCESS/$TOTAL prompts" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### Summary:" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+              echo "$RESULT" | jq '.summary' >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              
+              exit 0
+            elif [ "$STATUS" = "failed" ]; then
+              echo ""
+              echo "❌ Test failed"
+              echo "$RESULT" | jq '.'
+              echo "$RESULT" > benchmark-results.json
+              
+              # Create summary
+              echo "## ❌ Benchmark Test Failed" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "- **Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+              echo "- **Mode**: ${{ inputs.mode }}" >> $GITHUB_STEP_SUMMARY
+              echo "- **Run ID**: \`$RUN_ID\`" >> $GITHUB_STEP_SUMMARY
+              
+              exit 1
+            fi
+          done
+          
+          echo ""
+          echo "❌ Test timed out after ${MAX_WAIT}s"
+          exit 1
+      
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results-${{ inputs.environment }}-${{ inputs.mode }}
+          path: benchmark-results.json

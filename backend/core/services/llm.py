@@ -223,7 +223,7 @@ async def make_llm_api_call(
     
     Args:
         messages: List of message dictionaries
-        model_name: Name of the model to use
+        model_name: Name of the model to use (or "mock-ai" for testing)
         response_format: Optional response format specification
         temperature: Temperature for sampling (0-1)
         max_tokens: Maximum tokens to generate
@@ -238,6 +238,20 @@ async def make_llm_api_call(
         extra_headers: Optional extra headers to send with request
         stop: Optional list of stop sequences
     """
+    # Handle mock AI for stress testing
+    if model_name == "mock-ai":
+        logger.info(f"🎭 Using mock LLM provider for testing")
+        from core.test_harness.mock_llm import get_mock_provider
+        mock_provider = get_mock_provider(delay_ms=20)
+        return await mock_provider.acompletion(
+            messages=messages,
+            model=model_name,
+            stream=stream,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+    
     logger.info(f"Making LLM API call to model: {model_name} with {len(messages)} messages")
     
     # Prepare parameters using centralized model configuration
