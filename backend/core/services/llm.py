@@ -166,7 +166,8 @@ async def make_llm_api_call(
         logger.info(f"🎭 Using mock LLM provider for testing")
         from core.test_harness.mock_llm import get_mock_provider
         mock_provider = get_mock_provider(delay_ms=20)
-        return await mock_provider.acompletion(
+        # Return generator directly (don't await it!)
+        return mock_provider.acompletion(
             messages=messages,
             model=model_name,
             stream=stream,
