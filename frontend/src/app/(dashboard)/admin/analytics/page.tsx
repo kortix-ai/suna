@@ -64,6 +64,7 @@ import {
   useSignupsByDate,
   useViewsByDate,
   useNewPaidByDate,
+  useChurnByDate,
   type SimulatorConfigData,
   type ThreadAnalytics,
   type RetentionData,
@@ -769,6 +770,9 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   // Fetch new paid subscriptions from Stripe (excludes free tier)
   const { data: newPaidByDateData } = useNewPaidByDate(signupsDateFrom, signupsDateTo);
   
+  // Fetch churn data from Stripe Events
+  const { data: churnByDateData } = useChurnByDate(signupsDateFrom, signupsDateTo);
+  
   // Group signups by week number (frontend owns week logic)
   const signupsByWeek = useMemo((): Record<number, number> => {
     if (!signupsByDateData?.signups_by_date) return {};
@@ -825,6 +829,25 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     
     return result;
   }, [newPaidByDateData]);
+
+  // Group churn by week number (from Stripe Events)
+  const churnByWeek = useMemo((): Record<number, number> => {
+    if (!churnByDateData?.churn_by_date) return {};
+    
+    const startDate = new Date(2025, 11, 15); // Dec 15, 2025
+    const result: Record<number, number> = {};
+    
+    Object.entries(churnByDateData.churn_by_date).forEach(([dateStr, count]) => {
+      const date = new Date(dateStr);
+      const daysSinceStart = Math.floor((date.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      const weekNum = Math.floor(daysSinceStart / 7) + 1;
+      if (weekNum >= 1) {
+        result[weekNum] = (result[weekNum] || 0) + count;
+      }
+    });
+    
+    return result;
+  }, [churnByDateData]);
 
   // Weekly projections derived from monthly (matching HTML dashboard logic exactly)
   const weeklyProjections = useMemo((): SimulationWeek[] => {
@@ -997,7 +1020,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
 
   // Aggregate weekly actuals into monthly actuals for comparison
   const monthlyActuals = useMemo(() => {
-    const result: Record<number, { views: number; signups: number; newPaid: number; subscribers: number; mrr: number; arr: number }> = {};
+    const result: Record<number, { views: number; signups: number; newPaid: number; churn: number; subscribers: number; mrr: number; arr: number }> = {};
     
     weeklyProjections.forEach((week) => {
       const monthIdx = week.monthIndex;
@@ -1005,9 +1028,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       const autoSignups = signupsByWeek[week.week] || 0;
       const autoViews = viewsByWeek[week.week] || 0;
       const autoNewPaid = newPaidByWeek[week.week] || 0;
+      const autoChurn = churnByWeek[week.week] || 0;
       
       if (!result[monthIdx]) {
-        result[monthIdx] = { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+        result[monthIdx] = { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0 };
       }
       
       // Use auto-fetched signups from database
@@ -1016,6 +1040,8 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       result[monthIdx].views += autoViews;
       // Use auto-fetched new paid from Stripe (fallback to manual)
       result[monthIdx].newPaid += autoNewPaid || (weekActual?.newPaid || 0);
+      // Use auto-fetched churn from Stripe
+      result[monthIdx].churn += autoChurn;
       
       if (weekActual) {
         // For subscribers, MRR, ARR - take the last week's value as end-of-month value
@@ -1026,7 +1052,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     });
     
     return result;
-  }, [weeklyProjections, actualData, signupsByWeek, viewsByWeek, newPaidByWeek]);
+  }, [weeklyProjections, actualData, signupsByWeek, viewsByWeek, newPaidByWeek, churnByWeek]);
 
   // Derive monthly goals from weekly projections (grouped by actual calendar month)
   // This ensures the monthly table shows all months that have weeks, including June
@@ -1517,6 +1543,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <th className="text-center p-3 font-medium">Conv</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>New Paid</th>
                   <th className="text-center p-3 font-medium">Conv</th>
+                  <th className="text-center p-3 font-medium">Churn</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>Total Subs</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>MRR</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>ARR</th>
@@ -1532,6 +1559,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
                   <th className="text-right p-2 text-muted-foreground font-normal"></th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
@@ -1542,7 +1570,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               </thead>
               <tbody>
                 {monthlyFromWeekly.map((month, idx) => {
-                  const actual = monthlyActuals[month.monthIndex] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+                  const actual = monthlyActuals[month.monthIndex] || { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0 };
                   const prevMonth = idx > 0 ? monthlyFromWeekly[idx - 1] : null;
                   const prevActual = prevMonth ? (monthlyActuals[prevMonth.monthIndex] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 }) : null;
                   const hasActual = actual.views > 0 || actual.signups > 0 || actual.subscribers > 0;
@@ -1606,6 +1634,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       {/* Paid Conv */}
                       <td className="text-right p-2 font-medium text-muted-foreground">
                         {paidConvRate !== null ? `${paidConvRate.toFixed(1)}%` : '—'}
+                      </td>
+                      {/* Churn */}
+                      <td className={`text-right p-2 font-medium ${actual.churn > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.churn > 0 ? formatNumber(actual.churn) : '—'}
                       </td>
                       {/* Total Subs */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.totalSubs)}</td>
@@ -1748,6 +1780,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     <th className="text-center p-2 font-medium">Conv</th>
                     <th className="text-center p-2 font-medium" colSpan={2}>New Paid</th>
                     <th className="text-center p-2 font-medium">Conv</th>
+                    <th className="text-center p-2 font-medium">Churn</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>Subscribers</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>MRR</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>ARR</th>
@@ -1765,6 +1798,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
@@ -1852,6 +1886,12 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                         {/* Paid Conv */}
                         <td className="text-right p-1 text-[10px] font-medium text-muted-foreground">
                           {paidConvRate !== null ? `${paidConvRate.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* Churn */}
+                        <td className="text-right p-1">
+                          <span className={`text-[10px] font-medium ${(churnByWeek[week.week] || 0) > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                            {(churnByWeek[week.week] || 0) > 0 ? formatNumber(churnByWeek[week.week]) : '—'}
+                          </span>
                         </td>
                         {/* Subscribers */}
                         <td className="text-right p-1 font-medium">{formatNumber(week.subscribers)}</td>
