@@ -1516,6 +1516,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <th className="text-center p-3 font-medium" colSpan={2}>Signups</th>
                   <th className="text-center p-3 font-medium">Conv</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>New Paid</th>
+                  <th className="text-center p-3 font-medium">Conv</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>Total Subs</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>MRR</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>ARR</th>
@@ -1530,6 +1531,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <th className="text-right p-2 text-muted-foreground font-normal"></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal"></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
@@ -1560,6 +1562,9 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   // Calculate signup conversion rate (signups / views)
                   const signupConvRate = actualViews > 0 && actualSignups > 0 ? (actualSignups / actualViews) * 100 : null;
                   
+                  // Calculate new paid conversion rate (new paid / signups)
+                  const paidConvRate = actualSignups > 0 && actualNewPaid > 0 ? (actualNewPaid / actualSignups) * 100 : null;
+                  
                   // Helper to format growth
                   const formatGrowth = (value: number | null) => {
                     if (value === null) return '—';
@@ -1589,7 +1594,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       <td className={`text-right p-2 font-medium ${hasActual && actualSignups >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
                         {actual.signups > 0 ? formatNumber(actualSignups) : '—'}
                       </td>
-                      {/* Conv to Signup */}
+                      {/* Signup Conv */}
                       <td className="text-right p-2 font-medium text-muted-foreground">
                         {signupConvRate !== null ? `${signupConvRate.toFixed(1)}%` : '—'}
                       </td>
@@ -1597,6 +1602,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.newPaid)}</td>
                       <td className={`text-right p-2 font-medium ${hasActual && actualNewPaid >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
                         {actual.newPaid > 0 ? formatNumber(actualNewPaid) : '—'}
+                      </td>
+                      {/* Paid Conv */}
+                      <td className="text-right p-2 font-medium text-muted-foreground">
+                        {paidConvRate !== null ? `${paidConvRate.toFixed(1)}%` : '—'}
                       </td>
                       {/* Total Subs */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.totalSubs)}</td>
@@ -1734,10 +1743,11 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     <th className="text-left p-2 font-medium">Week</th>
                     <th className="text-left p-2 font-medium">Date Range</th>
                     <th className="text-center p-2 font-medium" colSpan={2}>Views</th>
-                    <th className="text-center p-2 font-medium">% Growth</th>
+                    <th className="text-center p-2 font-medium">Growth</th>
                     <th className="text-center p-2 font-medium" colSpan={2}>Signups</th>
-                    <th className="text-center p-2 font-medium">Conv to Signup</th>
+                    <th className="text-center p-2 font-medium">Conv</th>
                     <th className="text-center p-2 font-medium" colSpan={2}>New Paid</th>
+                    <th className="text-center p-2 font-medium">Conv</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>Subscribers</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>MRR</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>ARR</th>
@@ -1754,6 +1764,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
@@ -1790,6 +1801,9 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     // Calculate signup conversion rate (signups / views)
                     const signupConvRate = autoViews > 0 && autoSignups > 0 ? (autoSignups / autoViews) * 100 : null;
                     
+                    // Calculate new paid conversion rate (new paid / signups)
+                    const paidConvRate = autoSignups > 0 && effectiveNewPaid > 0 ? (effectiveNewPaid / autoSignups) * 100 : null;
+                    
                     // Helper to format growth
                     const formatGrowth = (value: number | null) => {
                       if (value === null) return '—';
@@ -1824,7 +1838,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                             {autoSignups > 0 ? formatNumber(autoSignups) : '—'}
                           </span>
                         </td>
-                        {/* Conv to Signup */}
+                        {/* Signup Conv */}
                         <td className="text-right p-1 text-[10px] font-medium text-muted-foreground">
                           {signupConvRate !== null ? `${signupConvRate.toFixed(1)}%` : '—'}
                         </td>
@@ -1834,6 +1848,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           <span className={`text-[10px] font-medium ${effectiveNewPaid > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
                             {effectiveNewPaid > 0 ? formatNumber(effectiveNewPaid) : '—'}
                           </span>
+                        </td>
+                        {/* Paid Conv */}
+                        <td className="text-right p-1 text-[10px] font-medium text-muted-foreground">
+                          {paidConvRate !== null ? `${paidConvRate.toFixed(1)}%` : '—'}
                         </td>
                         {/* Subscribers */}
                         <td className="text-right p-1 font-medium">{formatNumber(week.subscribers)}</td>
