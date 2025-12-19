@@ -108,25 +108,42 @@ async def list_feedback(
             offset, offset + pagination_params.page_size - 1
         ).execute()
         
+        account_ids = list(set(f.get('account_id') for f in data_result.data or [] if f.get('account_id')))
+        email_map = {}
+        
+        if account_ids:
+            try:
+                billing_result = await client.schema('basejump').from_('billing_customers').select('account_id, email').in_('account_id', account_ids).execute()
+                for row in billing_result.data or []:
+                    if row.get('email'):
+                        email_map[row['account_id']] = row['email']
+                
+                missing_account_ids = [aid for aid in account_ids if aid not in email_map]
+                if missing_account_ids:
+                    accounts_result = await client.schema('basejump').from_('accounts').select('id, primary_owner_user_id').in_('id', missing_account_ids).execute()
+                    user_ids = []
+                    user_id_to_account = {}
+                    for row in accounts_result.data or []:
+                        user_id = row.get('primary_owner_user_id')
+                        if user_id:
+                            user_ids.append(user_id)
+                            user_id_to_account[user_id] = row['id']
+                    
+                    if user_ids:
+                        for user_id in user_ids:
+                            try:
+                                email_result = await client.rpc('get_user_email', {'user_id': user_id}).execute()
+                                if email_result.data:
+                                    email_map[user_id_to_account[user_id]] = email_result.data
+                            except Exception as e:
+                                logger.warning(f"Failed to get email for user {user_id}: {e}")
+            except Exception as e:
+                logger.warning(f"Failed to batch fetch emails: {e}")
+        
         feedback_list = []
         for feedback in data_result.data or []:
-            user_email = 'N/A'
             account_id = feedback.get('account_id')
-            
-            if account_id:
-                try:
-                    user_result = await client.schema('basejump').from_('billing_customers').select('email').eq('account_id', account_id).limit(1).execute()
-                    if user_result.data and user_result.data[0].get('email'):
-                        user_email = user_result.data[0]['email']
-                    else:
-                        account_result = await client.schema('basejump').from_('accounts').select('primary_owner_user_id').eq('id', account_id).limit(1).execute()
-                        if account_result.data and account_result.data[0].get('primary_owner_user_id'):
-                            user_id = account_result.data[0]['primary_owner_user_id']
-                            email_result = await client.rpc('get_user_email', {'user_id': user_id}).execute()
-                            if email_result.data:
-                                user_email = email_result.data
-                except Exception as e:
-                    logger.warning(f"Failed to get email for account {account_id}: {e}")
+            user_email = email_map.get(account_id, 'N/A') if account_id else 'N/A'
             
             feedback_list.append(FeedbackWithUser(
                 feedback_id=feedback['feedback_id'],

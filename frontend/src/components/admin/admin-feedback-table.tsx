@@ -1,26 +1,16 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { DataTable, DataTableColumn } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Pagination } from '@/components/agents/pagination';
 import { Skeleton } from '@/components/ui/skeleton';
-import { 
-  Star, 
-  Mail, 
-  MessageSquare,
-  Filter,
-  SortAsc,
-  SortDesc,
-  Calendar,
-  ExternalLink
-} from 'lucide-react';
+import { Star, Mail, ExternalLink } from 'lucide-react';
 import { useAdminFeedbackList } from '@/hooks/admin/use-admin-feedback';
 import type { FeedbackWithUser } from '@/hooks/admin/use-admin-feedback';
 
@@ -185,7 +175,7 @@ export function AdminFeedbackTable() {
       <div className="flex flex-col md:flex-row gap-4">
         <div className="flex-1 space-y-2">
           <Label className="text-sm font-medium text-muted-foreground">Filter by Rating</Label>
-          <Select value={ratingFilter} onValueChange={(value) => { setRatingFilter(value === 'all' ? '' : value); setPage(1); }}>
+          <Select value={ratingFilter} onValueChange={(value) => { setRatingFilter(value); setPage(1); }}>
             <SelectTrigger>
               <SelectValue placeholder="All ratings" />
             </SelectTrigger>
@@ -207,7 +197,7 @@ export function AdminFeedbackTable() {
 
         <div className="flex-1 space-y-2">
           <Label className="text-sm font-medium text-muted-foreground">Filter by Feedback Text</Label>
-          <Select value={hasTextFilter} onValueChange={(value) => { setHasTextFilter(value === 'all' ? '' : value); setPage(1); }}>
+          <Select value={hasTextFilter} onValueChange={(value) => { setHasTextFilter(value); setPage(1); }}>
             <SelectTrigger>
               <SelectValue placeholder="All feedback" />
             </SelectTrigger>
