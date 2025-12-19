@@ -365,8 +365,8 @@ async def get_agent_tools(
     client = await utils.db.client
 
     agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).execute()
-        if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Worker not found")
+    if not agent_result.data:
+        raise HTTPException(status_code=404, detail="Worker not found")
     agent = agent_result.data[0]
     if agent['account_id'] != user_id and not agent.get('is_public', False):
         raise HTTPException(status_code=403, detail="Access denied")

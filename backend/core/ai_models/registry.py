@@ -99,7 +99,8 @@ class ModelRegistry:
         
         # Kortix Test - uses Kimi K2 via Bedrock (only in LOCAL and STAGING, not PRODUCTION)
         if config.ENV_MODE != EnvMode.PRODUCTION:
-            test_litellm_id = build_bedrock_profile_arn(KIMI_K2_PROFILE_ID)
+            # test_litellm_id = build_bedrock_profile_arn(KIMI_K2_PROFILE_ID)
+            test_litellm_id = "openai/gpt-5.2"
             
             self.register(Model(
                 id="kortix/test",

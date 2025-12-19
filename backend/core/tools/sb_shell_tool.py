@@ -5,7 +5,7 @@ from uuid import uuid4
 from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
-from core.streaming_context import stream_tool_output, get_streaming_context, get_current_tool_call_id
+from core.tool_output_streaming_context import stream_tool_output, get_tool_output_streaming_context, get_current_tool_call_id
 from core.utils.logger import logger
 
 @tool_metadata(
@@ -157,7 +157,7 @@ class SandboxShellTool(SandboxToolsBase):
             
             if blocking:
                 # Use PTY for blocking commands with real-time streaming
-                streaming_ctx = get_streaming_context()
+                tool_output_ctx = get_tool_output_streaming_context()
                 # Use the actual tool_call_id from LLM, or generate fallback
                 tool_call_id = get_current_tool_call_id() or f"cmd_{str(uuid4())[:8]}"
                 logger.debug(f"[SHELL STREAMING] Using tool_call_id: {tool_call_id}")
@@ -174,8 +174,8 @@ class SandboxShellTool(SandboxToolsBase):
                         text = data.decode("utf-8", errors="replace")
                         output_buffer.append(text)
                         
-                        # Stream output to frontend if we have a streaming context
-                        if streaming_ctx:
+                        # Stream output to frontend if we have a tool output streaming context
+                        if tool_output_ctx:
                             await stream_tool_output(
                                 tool_call_id=tool_call_id,
                                 output_chunk=text,
@@ -254,7 +254,7 @@ class SandboxShellTool(SandboxToolsBase):
                     final_output = ansi_escape.sub('', final_output)
                     
                     # Stream final message
-                    if streaming_ctx:
+                    if tool_output_ctx:
                         await stream_tool_output(
                             tool_call_id=tool_call_id,
                             output_chunk="",
@@ -267,7 +267,7 @@ class SandboxShellTool(SandboxToolsBase):
                         "cwd": cwd,
                         "completed": True,
                         "exit_code": exit_code,
-                        "streamed": streaming_ctx is not None
+                        "streamed": tool_output_ctx is not None
                     })
                     
                 except Exception as pty_error:

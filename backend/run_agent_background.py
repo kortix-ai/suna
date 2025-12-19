@@ -58,7 +58,8 @@ _initialized = False
 db = DBConnection()
 instance_id = ""
 
-REDIS_RESPONSE_LIST_TTL = 3600
+# TTL for Redis stream keys - ensures cleanup even if process crashes
+REDIS_STREAM_TTL_SECONDS = 3600  # 1 hour
 
 _STATIC_CORE_PROMPT = None
 
@@ -304,6 +305,8 @@ def create_redis_keys(agent_run_id: str, instance_id: str) -> Dict[str, str]:
     }
 
 
+
+
 MAX_PENDING_REDIS_OPS = 500
 
 async def process_agent_responses(
@@ -324,6 +327,7 @@ async def process_agent_responses(
     
     stream_key = redis_keys['response_stream']
     pubsub_channel = redis_keys['response_pubsub']
+    stream_ttl_set = False  # Track if we've set initial TTL on the stream
     
     async for response in agent_gen:
         if not first_response_logged:
@@ -353,6 +357,15 @@ async def process_agent_responses(
                     approximate=True
                 ))
             )
+            
+            # Set initial TTL on stream after first entry is added (safety net if cleanup fails)
+            if not stream_ttl_set:
+                try:
+                    await asyncio.wait_for(redis.expire(stream_key, REDIS_STREAM_TTL_SECONDS), timeout=2.0)
+                    stream_ttl_set = True
+                    logger.debug(f"Set initial TTL ({REDIS_STREAM_TTL_SECONDS}s) on stream {stream_key}")
+                except (asyncio.TimeoutError, Exception) as e:
+                    logger.debug(f"Failed to set initial TTL on stream (non-critical): {e}")
         
         total_responses += 1
         stop_signal_checker_state['total_responses'] = total_responses
@@ -370,7 +383,7 @@ async def process_agent_responses(
             
             if redis_streaming_enabled and redis.is_redis_healthy():
                 try:
-                    await asyncio.wait_for(redis.expire(stream_key, 3600), timeout=2.0)
+                    await asyncio.wait_for(redis.expire(stream_key, REDIS_STREAM_TTL_SECONDS), timeout=2.0)
                 except (asyncio.TimeoutError, Exception):
                     pass
 
@@ -468,7 +481,7 @@ async def cleanup_pubsub(pubsub, agent_run_id: str):
         logger.warning(f"Error closing pubsub for {agent_run_id}: {str(e)}")
 
 from core import thread_init_service
-from core.streaming_context import set_streaming_context, clear_streaming_context
+from core.tool_output_streaming_context import set_tool_output_streaming_context, clear_tool_output_streaming_context
 
 @dramatiq.actor(queue_name=get_queue_name("default"))
 async def run_agent_background(
@@ -506,6 +519,7 @@ async def run_agent_background(
         client = await db.client
         lock_acquired = await acquire_run_lock(agent_run_id, instance_id, client)
         if not lock_acquired:
+            # No cleanup needed - we didn't acquire the lock, another instance has it
             return
 
         sentry.sentry.set_tag("thread_id", thread_id)
@@ -542,6 +556,11 @@ async def run_agent_background(
             await update_agent_run_status(client, agent_run_id, "failed", error=f"Worker setup failed: {str(e)}", account_id=account_id)
         except Exception as inner_e:
             logger.error(f"Failed to update status after setup error: {inner_e}")
+        # Clean up any Redis keys that might have been created (e.g., lock key)
+        try:
+            await cleanup_redis_keys_for_agent_run(agent_run_id, instance_id)
+        except Exception as cleanup_err:
+            logger.warning(f"Failed to clean up Redis keys after setup error: {cleanup_err}")
         return
     try:
         try:
@@ -622,8 +641,8 @@ async def run_agent_background(
 
         agent_config = await load_agent_config(agent_id, account_id)
 
-        # Set streaming context for tools to publish real-time output
-        set_streaming_context(
+        # Set tool output streaming context for tools to publish real-time output
+        set_tool_output_streaming_context(
             agent_run_id=agent_run_id,
             pubsub_channel=redis_keys['response_pubsub'],
             stream_key=redis_keys['response_stream']
@@ -708,8 +727,8 @@ async def run_agent_background(
             logger.warning(f"Failed to publish ERROR signal: {str(e)}")
 
     finally:
-        # Clear streaming context
-        clear_streaming_context()
+        # Clear tool output streaming context
+        clear_tool_output_streaming_context()
         
         if stop_checker and not stop_checker.done():
             stop_checker.cancel()
@@ -721,9 +740,9 @@ async def run_agent_background(
                 logger.warning(f"Error during stop_checker cancellation: {e}")
 
         await cleanup_pubsub(pubsub, agent_run_id)
-        await _cleanup_redis_response_stream(agent_run_id)
-        await _cleanup_redis_instance_key(agent_run_id, instance_id)
-        await _cleanup_redis_run_lock(agent_run_id)
+        
+        # Comprehensive cleanup of all Redis keys for this agent run
+        await cleanup_redis_keys_for_agent_run(agent_run_id, instance_id)
 
         if final_status == "completed" and account_id:
             try:
@@ -747,32 +766,65 @@ async def run_agent_background(
 
         logger.debug(f"Agent run background task fully completed for: {agent_run_id} (Instance: {instance_id}) with final status: {final_status}")
 
-async def _cleanup_redis_instance_key(agent_run_id: str, instance_id: str):
-    if not instance_id:
-        logger.warning("Instance ID not set, cannot clean up instance key.")
-        return
-    key = f"active_run:{instance_id}:{agent_run_id}"
-    try:
-        await redis.delete(key)
-    except Exception as e:
-        logger.warning(f"Failed to clean up Redis key {key}: {str(e)}")
-
-
-async def _cleanup_redis_run_lock(agent_run_id: str):
-    run_lock_key = f"agent_run_lock:{agent_run_id}"
-    try:
-        await redis.delete(run_lock_key)
-    except Exception as e:
-        logger.warning(f"Failed to clean up Redis run lock key {run_lock_key}: {str(e)}")
-
-
-async def _cleanup_redis_response_stream(agent_run_id: str):
-    """Set TTL on the response stream so it gets cleaned up after the run."""
+async def cleanup_redis_keys_for_agent_run(agent_run_id: str, instance_id: Optional[str] = None):
+    """
+    Comprehensive cleanup of all Redis keys associated with an agent run.
+    
+    This function cleans up:
+    - Response stream (deleted immediately)
+    - Run lock key
+    - Instance active key (if instance_id provided)
+    - Any other instance active keys for this agent run
+    
+    Args:
+        agent_run_id: The ID of the agent run to clean up
+        instance_id: Optional instance ID for instance-specific cleanup
+    """
+    logger.debug(f"Cleaning up Redis keys for agent run: {agent_run_id}")
+    
+    # List of keys to delete
+    keys_to_delete = []
+    
+    # Response stream - delete immediately
     stream_key = f"agent_run:{agent_run_id}:stream"
+    keys_to_delete.append(stream_key)
+    
+    # Run lock key
+    run_lock_key = f"agent_run_lock:{agent_run_id}"
+    keys_to_delete.append(run_lock_key)
+    
+    # Instance-specific active key (if instance_id provided)
+    if instance_id:
+        instance_active_key = f"active_run:{instance_id}:{agent_run_id}"
+        keys_to_delete.append(instance_active_key)
+    
+    # Delete all keys
+    for key in keys_to_delete:
+        try:
+            deleted = await redis.delete(key)
+            if deleted:
+                logger.debug(f"Deleted Redis key: {key}")
+        except Exception as e:
+            logger.warning(f"Failed to delete Redis key {key}: {str(e)}")
+    
+    # Also find and clean up any other instance active keys for this agent run
+    # (in case there are stale keys from other instances)
     try:
-        await redis.expire(stream_key, REDIS_RESPONSE_LIST_TTL)
+        instance_keys = await redis.keys(f"active_run:*:{agent_run_id}")
+        for key in instance_keys:
+            # Decode bytes if needed
+            key_str = key.decode('utf-8') if isinstance(key, bytes) else key
+            if key_str not in keys_to_delete:
+                try:
+                    await redis.delete(key_str)
+                    logger.debug(f"Deleted stale instance active key: {key_str}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete stale instance active key {key_str}: {str(e)}")
     except Exception as e:
-        logger.warning(f"Failed to set TTL on response stream {stream_key}: {str(e)}")
+        logger.warning(f"Failed to find and clean up instance active keys for {agent_run_id}: {str(e)}")
+    
+    logger.debug(f"Completed Redis cleanup for agent run: {agent_run_id}")
+
 
 async def update_agent_run_status(
     client,

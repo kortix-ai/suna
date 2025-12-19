@@ -8,50 +8,56 @@ from core.utils.logger import logger
 
 
 @dataclass
-class StreamingContext:
+class ToolOutputStreamingContext:
+    """Context for streaming tool output during agent run execution."""
     agent_run_id: str
     pubsub_channel: str
     stream_key: str
     tool_call_id: Optional[str] = None
 
 
-_streaming_context: ContextVar[Optional[StreamingContext]] = ContextVar(
-    'streaming_context', 
+_tool_output_streaming_context: ContextVar[Optional[ToolOutputStreamingContext]] = ContextVar(
+    'tool_output_streaming_context', 
     default=None
 )
 
 
-def set_streaming_context(
+def set_tool_output_streaming_context(
     agent_run_id: str,
     pubsub_channel: str,
     stream_key: str,
     tool_call_id: Optional[str] = None
 ) -> None:
-    ctx = StreamingContext(
+    """Set the tool output streaming context for the current execution."""
+    ctx = ToolOutputStreamingContext(
         agent_run_id=agent_run_id,
         pubsub_channel=pubsub_channel,
         stream_key=stream_key,
         tool_call_id=tool_call_id
     )
-    _streaming_context.set(ctx)
+    _tool_output_streaming_context.set(ctx)
 
 
-def get_streaming_context() -> Optional[StreamingContext]:
-    return _streaming_context.get()
+def get_tool_output_streaming_context() -> Optional[ToolOutputStreamingContext]:
+    """Get the current tool output streaming context."""
+    return _tool_output_streaming_context.get()
 
 
-def clear_streaming_context() -> None:
-    _streaming_context.set(None)
+def clear_tool_output_streaming_context() -> None:
+    """Clear the tool output streaming context."""
+    _tool_output_streaming_context.set(None)
 
 
 def set_current_tool_call_id(tool_call_id: str) -> None:
-    ctx = get_streaming_context()
+    """Set the current tool call ID in the tool output streaming context."""
+    ctx = get_tool_output_streaming_context()
     if ctx:
         ctx.tool_call_id = tool_call_id
 
 
 def get_current_tool_call_id() -> Optional[str]:
-    ctx = get_streaming_context()
+    """Get the current tool call ID from the tool output streaming context."""
+    ctx = get_tool_output_streaming_context()
     return ctx.tool_call_id if ctx else None
 
 
@@ -61,9 +67,10 @@ async def stream_tool_output(
     is_final: bool = False,
     tool_name: str = "execute_command"
 ) -> None:
-    ctx = get_streaming_context()
+    """Stream tool output to the agent run's pubsub channel and stream."""
+    ctx = get_tool_output_streaming_context()
     if not ctx:
-        logger.debug(f"[STREAM] No streaming context available, skipping output stream")
+        logger.debug(f"[STREAM] No tool output streaming context available, skipping output stream")
         return
     
     try:
@@ -80,7 +87,7 @@ async def stream_tool_output(
         
         message_json = json.dumps(message)
         
-        logger.debug(f"[STREAM] Publishing to {ctx.pubsub_channel}: tool_call_id={tool_call_id}, chunk_len={len(output_chunk)}, is_final={is_final}")
+        logger.debug(f"[TOOL OUTPUT] Publishing to {ctx.pubsub_channel}: tool_call_id={tool_call_id}, chunk_len={len(output_chunk)}, is_final={is_final}")
         
         await redis.publish(ctx.pubsub_channel, message_json)
         await redis.xadd(
@@ -92,4 +99,3 @@ async def stream_tool_output(
         
     except Exception as e:
         logger.warning(f"Failed to stream tool output: {e}")
-
