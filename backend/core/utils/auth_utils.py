@@ -337,7 +337,7 @@ async def verify_and_get_agent_authorization(client, agent_id: str, user_id: str
         agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', user_id).execute()
         
         if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Agent not found or access denied")
+            raise HTTPException(status_code=404, detail="Worker not found or access denied")
         
         return agent_result.data[0]
         

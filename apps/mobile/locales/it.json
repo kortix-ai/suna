@@ -210,7 +210,7 @@
     "superworker": {
       "title": "Il Tuo Super Worker IA",
       "description": "Combina tutte le funzionalità per costruire worker IA personalizzati per qualsiasi attività di cui hai bisogno.",
-      "example": "Crea un agente di supporto clienti"
+      "example": "Crea un worker di supporto clienti"
     }
   },
   "settings": {
@@ -573,7 +573,7 @@
     "actionCannotBeUndone": "Questa azione non può essere annullata",
     "accountWillBeDeleted": "Il tuo account sarà eliminato permanentemente",
     "whatWillBeDeleted": "Cosa Sarà Eliminato",
-    "allAgents": "Tutti i tuoi agenti e versioni degli agenti",
+    "allAgents": "Tutti i tuoi worker e versioni dei worker",
     "allThreads": "Tutti i tuoi thread e conversazioni",
     "allCredentials": "Tutte le tue credenziali e integrazioni",
     "subscriptionData": "I tuoi dati di abbonamento e fatturazione",
@@ -596,7 +596,7 @@
   },
   "models": {
     "selectModel": "Seleziona Modello",
-    "chooseModelFor": "Scegli un modello per {{agent}}"
+    "chooseModelFor": "Scegli un modello per il worker {{agent}}"
   },
   "placeholders": {
     "default": "Dai a Kortix un compito...",
@@ -668,7 +668,7 @@
   },
   "integrations": {
     "title": "Integrazioni",
-    "description": "Connetti le tue app e servizi preferiti per automatizzare i flussi di lavoro ed estendere le capacità del tuo agente.",
+    "description": "Connetti le tue app e servizi preferiti per automatizzare i flussi di lavoro ed estendere le capacità del tuo worker.",
     "connectApps": "Connetti le tue App",
     "externalApps": "App Esterne",
     "externalAppsDescription": "Connetti app e servizi popolari",
@@ -677,7 +677,7 @@
     "composioApps": "App Composio",
     "composioAppsDescription": "Connettiti a centinaia di applicazioni aziendali",
     "connected": "Connesso",
-    "connectedToAgent": "Connesso a questo agente",
+    "connectedToAgent": "Connesso a questo worker",
     "available": "App Disponibili",
     "connect": "Connetti",
     "setup": "Configura",
@@ -734,7 +734,7 @@
     },
     "toolsSelector": {
       "configureTools": "Configura Strumenti {{app}}",
-      "selectTools": "Seleziona strumenti da aggiungere al tuo agente",
+      "selectTools": "Seleziona strumenti da aggiungere al tuo worker",
       "readyToConfigureTools": "Pronto per configurare",
       "selected": "{{count}} di {{total}} selezionati",
       "selectAll": "Seleziona Tutti",
@@ -846,7 +846,7 @@
     "core": "Principale",
     "capabilitiesEnabled": "{{enabled}} / {{total}} capacità abilitate",
     "toolConfiguration": "Configurazione strumenti",
-    "configureToolsDescription": "Configura gli strumenti e le loro capacità individuali per il tuo agente",
+    "configureToolsDescription": "Configura gli strumenti e le loro capacità individuali per il tuo worker",
     "toolsEnabled": "{{enabled}} / {{total}} abilitati",
     "loadingTools": "Caricamento strumenti...",
     "noToolsAvailable": "Nessuno strumento disponibile",

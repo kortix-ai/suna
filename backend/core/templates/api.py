@@ -130,7 +130,7 @@ async def validate_agent_ownership(agent_id: str, user_id: str) -> Dict[str, Any
     
     if not agent:
         logger.warning(f"Agent {agent_id} not found")
-        raise HTTPException(status_code=404, detail="Agent not found")
+        raise HTTPException(status_code=404, detail="Worker not found")
     
     if agent['account_id'] != user_id:
         logger.warning(f"User {user_id} attempted to access agent {agent_id} owned by {agent['account_id']}")

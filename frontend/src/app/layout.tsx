@@ -119,7 +119,7 @@ export default function RootLayout({
         {/* Static SEO meta tags - rendered in initial HTML */}
         <title>Kortix: Your Autonomous AI Worker</title>
         <meta name="description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
-        <meta name="keywords" content="Kortix, AI Agent, Agentic AI, Autonomous AI Agent, AI Automation, AI Workflow Automation, AI Assistant, AI Worker, Task Automation" />
+        <meta name="keywords" content="Kortix, AI Worker, Agentic AI, Autonomous AI Worker, AI Automation, AI Workflow Automation, AI Assistant, Task Automation" />
         <meta property="og:title" content="Kortix: Your Autonomous AI Worker" />
         <meta property="og:description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
         <meta property="og:image" content="https://kortix.com/banner.png" />

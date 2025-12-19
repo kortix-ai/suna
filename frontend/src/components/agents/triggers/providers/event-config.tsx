@@ -153,7 +153,7 @@ export const EventTriggerConfigForm: React.FC<EventTriggerConfigFormProps> = ({
               <div>
                 <h3 className="text-sm font-medium mb-4 flex items-center gap-2">
                   <Zap className="h-4 w-4" />
-                  Agent Instructions
+                  Worker Instructions
                 </h3>
                 <div className="space-y-3">
                   <Label htmlFor="agent-prompt" className="text-sm">What should the agent do when this event occurs?</Label>

@@ -59,7 +59,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
           <Text className="text-muted-foreground text-xs font-roobert-bold">?</Text>
         </View>
         <Text className="text-muted-foreground text-sm font-roobert-medium">
-          {error ? 'Error loading' : 'Select Agent'}
+          {error ? 'Error loading' : 'Select Worker'}
         </Text>
         <Icon
           as={ChevronDown}

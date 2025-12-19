@@ -129,7 +129,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
         // First check thread metadata for is_agent_builder flag
         if (threadMetadata?.is_agent_builder) {
             return {
-                name: 'Agent Builder',
+                name: 'Worker Builder',
                 avatar: (
                     <div className="h-5 w-5 flex items-center justify-center rounded text-xs">
                         <span className="text-lg">🤖</span>
@@ -143,9 +143,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
             msg.type === 'assistant' && msg.agents?.name
         );
 
-        if (recentAssistantWithAgent?.agents?.name === 'Agent Builder') {
+        if (recentAssistantWithAgent?.agents?.name === 'Worker Builder') {
             return {
-                name: 'Agent Builder',
+                name: 'Worker Builder',
                 avatar: (
                     <div className="h-5 w-5 flex items-center justify-center rounded text-xs">
                         <span className="text-lg">🤖</span>

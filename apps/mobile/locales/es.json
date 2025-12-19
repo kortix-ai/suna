@@ -216,7 +216,7 @@
     "superworker": {
       "title": "Tu Super Worker IA",
       "description": "Combina todas las características para construir workers de IA personalizados para cualquier tarea que necesites.",
-      "example": "Crear un agente de soporte al cliente"
+      "example": "Crear un worker de soporte al cliente"
     }
   },
   "settings": {
@@ -593,7 +593,7 @@
     "actionCannotBeUndone": "Esta acción no se puede deshacer",
     "accountWillBeDeleted": "Tu cuenta será eliminada permanentemente",
     "whatWillBeDeleted": "Qué será Eliminado",
-    "allAgents": "Todos tus agentes y versiones de agentes",
+    "allAgents": "Todos tus workers y versiones de workers",
     "allThreads": "Todos tus hilos y conversaciones",
     "allCredentials": "Todas tus credenciales e integraciones",
     "subscriptionData": "Tu suscripción y datos de facturación",
@@ -616,7 +616,7 @@
   },
   "models": {
     "selectModel": "Elegir Modelo",
-    "chooseModelFor": "Elige un modelo para {{agent}}"
+    "chooseModelFor": "Elige un modelo para el worker {{agent}}"
   },
   "placeholders": {
     "default": "Dale a Kortix una tarea...",
@@ -688,7 +688,7 @@
   },
   "integrations": {
     "title": "Integraciones",
-    "description": "Conecta tus aplicaciones y servicios favoritos para automatizar flujos de trabajo y ampliar las capacidades de tu agente.",
+    "description": "Conecta tus aplicaciones y servicios favoritos para automatizar flujos de trabajo y ampliar las capacidades de tu worker.",
     "connectApps": "Conecta tus Apps",
     "externalApps": "Aplicaciones Externas",
     "externalAppsDescription": "Conecta aplicaciones y servicios populares",
@@ -697,7 +697,7 @@
     "composioApps": "Aplicaciones Composio",
     "composioAppsDescription": "Conéctate a cientos de aplicaciones empresariales y servicios",
     "connected": "Conectado",
-    "connectedToAgent": "Conectado a este agente",
+    "connectedToAgent": "Conectado a este worker",
     "available": "Aplicaciones Disponibles",
     "connect": "Conectar",
     "setup": "Configurar",
@@ -754,7 +754,7 @@
     },
     "toolsSelector": {
       "configureTools": "Configurar Herramientas de {{app}}",
-      "selectTools": "Selecciona herramientas para agregar a tu agente",
+      "selectTools": "Selecciona herramientas para agregar a tu worker",
       "readyToConfigureTools": "Listo para configurar herramientas",
       "selected": "{{count}} de {{total}} seleccionadas",
       "selectAll": "Seleccionar Todas",
@@ -769,7 +769,7 @@
       "addingTools": "Agregando Herramientas...",
       "addTool": "Agregar {{count}} Herramienta",
       "addTools": "Agregar {{count}} Herramientas",
-      "toolsAddedSuccess": "¡Agregadas {{count}} herramientas de {{app}} a tu agente!",
+      "toolsAddedSuccess": "¡Agregadas {{count}} herramientas de {{app}} a tu worker!",
       "failedToSaveTools": "Error al guardar herramientas. Revisa la consola para más detalles."
     },
     "customMcp": {
@@ -866,7 +866,7 @@
     "core": "Principal",
     "capabilitiesEnabled": "{{enabled}} / {{total}} capacidades habilitadas",
     "toolConfiguration": "Configuración de herramientas",
-    "configureToolsDescription": "Configura las herramientas y sus capacidades individuales para tu agente",
+    "configureToolsDescription": "Configura las herramientas y sus capacidades individuales para tu worker",
     "toolsEnabled": "{{enabled}} / {{total}} habilitadas",
     "loadingTools": "Cargando herramientas...",
     "noToolsAvailable": "No hay herramientas disponibles",
