@@ -28,6 +28,34 @@ class MockLLMProvider:
         """
         self.delay_ms = delay_ms
     
+    async def acompletion(
+        self,
+        messages: List[Dict[str, Any]],
+        model: str = "mock-ai",
+        stream: bool = True,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        temperature: float = 0,
+        max_tokens: Optional[int] = None,
+        **kwargs
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        LiteLLM-compatible async completion interface
+        
+        Args:
+            messages: List of conversation messages
+            model: Model name (ignored in mock)
+            stream: Whether to stream (always True for mock)
+            tools: Available tools for the agent
+            temperature: Temperature (ignored in mock)
+            max_tokens: Max tokens (ignored in mock)
+            **kwargs: Additional parameters (ignored)
+        
+        Yields:
+            Stream chunks simulating real LLM response
+        """
+        async for chunk in self.get_mock_response(messages, tools or [], model):
+            yield chunk
+    
     async def get_mock_response(
         self,
         messages: List[Dict[str, Any]],

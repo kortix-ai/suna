@@ -577,7 +577,7 @@ class TestHarnessRunner:
             error_message=error_message,
             metadata={
                 'model': model,
-                'mock_mode': mock_mode,
+                'mock_mode': model == 'mock-ai',
                 'expected_tools': prompt.expected_tools,
                 'category': prompt.category,
             }
