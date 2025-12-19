@@ -1580,6 +1580,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   const actualViews = actual.views + (month.monthIndex === 0 ? 78313 : 0);
                   const actualSignups = actual.signups + (month.monthIndex === 0 ? 18699 : 0);
                   const actualNewPaid = actual.newPaid + (month.monthIndex === 0 ? 233 : 0);
+                  const actualChurn = actual.churn + (month.monthIndex === 0 ? 98 : 0);
                   
                   // Calculate previous month actual values with Dec 1-14 adjustments
                   const prevActualViews = prevActual ? (prevActual.views + (prevMonth?.monthIndex === 0 ? 78313 : 0)) : 0;
@@ -1636,8 +1637,8 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                         {paidConvRate !== null ? `${paidConvRate.toFixed(1)}%` : '—'}
                       </td>
                       {/* Churn */}
-                      <td className={`text-right p-2 font-medium ${actual.churn > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.churn > 0 ? formatNumber(actual.churn) : '—'}
+                      <td className={`text-right p-2 font-medium ${actualChurn > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actualChurn > 0 ? formatNumber(actualChurn) : '—'}
                       </td>
                       {/* Total Subs */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.totalSubs)}</td>
