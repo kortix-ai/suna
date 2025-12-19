@@ -469,7 +469,7 @@ Agent ID: {agent_id}
             # Get agent's account ID
             agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).execute()
             if not agent_result.data:
-                return self.fail_response("Agent not found")
+                return self.fail_response("Worker not found")
             
             account_id = agent_result.data[0]['account_id']
             
@@ -559,7 +559,7 @@ Agent ID: {agent_id}
             # Get agent's account ID
             agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).execute()
             if not agent_result.data:
-                return self.fail_response("Agent not found")
+                return self.fail_response("Worker not found")
             
             account_id = agent_result.data[0]['account_id']
             
@@ -680,7 +680,7 @@ Agent ID: {agent_id}
             # Get agent's account ID
             agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).execute()
             if not agent_result.data:
-                return self.fail_response("Agent not found")
+                return self.fail_response("Worker not found")
             
             account_id = agent_result.data[0]['account_id']
             
@@ -768,7 +768,7 @@ Agent ID: {agent_id}
             # Get agent's account ID
             agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).execute()
             if not agent_result.data:
-                return self.fail_response("Agent not found")
+                return self.fail_response("Worker not found")
             
             account_id = agent_result.data[0]['account_id']
             
@@ -840,7 +840,7 @@ Agent ID: {agent_id}
             # Get agent's account ID
             agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).execute()
             if not agent_result.data:
-                return self.fail_response("Agent not found")
+                return self.fail_response("Worker not found")
             
             account_id = agent_result.data[0]['account_id']
             

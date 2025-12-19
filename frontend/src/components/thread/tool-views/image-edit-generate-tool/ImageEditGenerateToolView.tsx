@@ -220,13 +220,13 @@ export function ImageEditGenerateToolView({
   const shortPrompt = prompt && prompt.length > 60 ? `${prompt.substring(0, 60)}...` : prompt;
 
   return (
-    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-zinc-900">
+    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       {/* Header */}
       <div className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 flex items-center justify-between flex-shrink-0 max-w-full min-w-0">
         <div className="flex items-center gap-3 overflow-x-auto min-w-0 scrollbar-hide max-w-full">
           <div className={cn(
             "relative p-2 rounded-lg border flex-shrink-0 transition-colors",
-            "bg-zinc-900 border-zinc-700"
+            "bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
           )}>
             {isGenerate ? (
               <Sparkles className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />

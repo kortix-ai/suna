@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 import traceback
+import os
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from fastapi import UploadFile
@@ -10,9 +11,18 @@ from core.utils.logger import logger, structlog
 from core.services.supabase import DBConnection
 from core.utils.project_helpers import generate_and_update_project_name
 
+# Get queue prefix from environment (for preview deployments)
+QUEUE_PREFIX = os.getenv("DRAMATIQ_QUEUE_PREFIX", "")
+
+def get_queue_name(base_name: str) -> str:
+    """Get queue name with optional prefix for preview deployments."""
+    if QUEUE_PREFIX:
+        return f"{QUEUE_PREFIX}{base_name}"
+    return base_name
+
 db = DBConnection()
 
-@dramatiq.actor
+@dramatiq.actor(queue_name=get_queue_name("default"))
 async def initialize_thread_background(
     thread_id: str,
     project_id: str,

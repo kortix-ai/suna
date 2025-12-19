@@ -7,6 +7,7 @@ import { useAccountState, accountStateSelectors } from '@/hooks/billing';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { usePathname } from 'next/navigation';
+import { useWelcomeBannerStore } from '@/stores/welcome-banner-store';
 
 const BANNER_DISMISSED_KEY = 'welcome-bonus-banner-dismissed';
 
@@ -17,10 +18,20 @@ export function WelcomeBonusBanner() {
   const { data: accountState, isLoading } = useAccountState();
   const { openPricingModal } = usePricingModalStore();
   const pathname = usePathname();
+  const { setIsVisible } = useWelcomeBannerStore();
   
   const tierKey = accountStateSelectors.tierKey(accountState)?.toLowerCase();
   const isFreeTier = !tierKey || tierKey === 'free' || tierKey === 'none';
   const isDashboardPage = pathname === '/dashboard';
+
+  // Compute whether banner should be visible
+  const shouldShow = mounted && !isDismissed && isDashboardPage && !isLoading && isFreeTier;
+
+  // Update the store whenever visibility changes
+  useEffect(() => {
+    setIsVisible(shouldShow);
+    return () => setIsVisible(false);
+  }, [shouldShow, setIsVisible]);
 
   useEffect(() => {
     setMounted(true);
@@ -62,9 +73,7 @@ export function WelcomeBonusBanner() {
 
   // Only show on /dashboard, for confirmed free tier users, and if not dismissed
   // Don't show during loading - wait until we confirm user is on free tier
-  if (!mounted || isDismissed || !isDashboardPage) return null;
-  if (isLoading) return null;
-  if (!isFreeTier) return null;
+  if (!shouldShow) return null;
 
   const formatTime = (value: number) => value.toString().padStart(2, '0');
 

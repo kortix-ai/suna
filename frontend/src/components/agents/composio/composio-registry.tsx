@@ -270,8 +270,8 @@ const AppCard = ({ app, profiles, onConnect, onConfigure, isConnectedToAgent, cu
       </p>
 
       <Button
-        variant={isBlocked ? "outline" : "default"}
-        className={cn("w-full", isBlocked && "border-primary text-primary hover:bg-primary hover:text-primary-foreground")}
+        variant={isBlocked ? "secondary" : "default"}
+        className={cn("w-full", isBlocked && "bg-white text-black hover:bg-white/90 border-white/20")}
         disabled={!canConnect && !isBlocked}
       >
         {isBlocked ? (

@@ -30,6 +30,13 @@ export interface UseAgentStreamResult {
   stopStreaming: () => Promise<void>;
 }
 
+export interface ToolOutputStreamData {
+  tool_call_id: string;
+  tool_name: string;
+  output: string;
+  is_final: boolean;
+}
+
 // Define the callbacks the hook consumer can provide
 export interface AgentStreamCallbacks {
   onMessage: (message: UnifiedMessage) => void;
@@ -39,6 +46,7 @@ export interface AgentStreamCallbacks {
   onAssistantStart?: () => void;
   onAssistantChunk?: (chunk: { content: string }) => void;
   onToolCallChunk?: (message: UnifiedMessage) => void;
+  onToolOutputStream?: (data: ToolOutputStreamData) => void;
 }
 
 export function useAgentStream(
@@ -353,7 +361,7 @@ export function useAgentStream(
       // Early exit for non-JSON completion messages
       if (
         processedData ===
-        '{"type": "status", "status": "completed", "message": "Agent run completed successfully"}'
+        '{"type": "status", "status": "completed", "message": "Worker run completed successfully"}'
       ) {
         finalizeStream('completed', currentRunIdRef.current);
         return;
@@ -479,6 +487,16 @@ export function useAgentStream(
             return;
           }
         }
+        // Handle tool_output_stream messages for real-time shell output
+        if (jsonData.type === 'tool_output_stream') {
+          callbacksRef.current.onToolOutputStream?.({
+            tool_call_id: jsonData.tool_call_id,
+            tool_name: jsonData.tool_name,
+            output: jsonData.output,
+            is_final: jsonData.is_final,
+          });
+          return;
+        }
       } catch (jsonError) {
         // Not JSON or could not parse as JSON, continue processing
       }
@@ -569,7 +587,7 @@ export function useAgentStream(
               break;
             case 'error':
               React.startTransition(() => {
-                setError(parsedContent.message || 'Agent run failed');
+                setError(parsedContent.message || 'Worker run failed');
               });
               finalizeStream('error', currentRunIdRef.current);
               break;
@@ -667,7 +685,7 @@ export function useAgentStream(
         if (agentStatus.status === 'running') {
           setError('Stream closed unexpectedly while agent was running.');
           finalizeStream('error', runId);
-          toast.warning('Stream disconnected. Agent might still be running.');
+          toast.warning('Stream disconnected. Worker might still be running.');
         } else if (agentStatus.status === 'stopped') {
           // Check if agent stopped due to billing error
           const errorMessage = agentStatus.error || '';
@@ -901,7 +919,7 @@ export function useAgentStream(
 
     try {
       await stopAgent(runIdToStop);
-      toast.success('Agent stopped.');
+      toast.success('Worker stopped.');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.error(

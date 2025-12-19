@@ -61,7 +61,7 @@ const extractErrorMessage = (error: any): string => {
   }
 
   if (error instanceof AgentRunLimitError) {
-    return error.detail?.message || error.message || 'Agent run limit exceeded';
+    return error.detail?.message || error.message || 'Worker run limit exceeded';
   }
 
   if (error instanceof ProjectLimitError) {
@@ -69,7 +69,7 @@ const extractErrorMessage = (error: any): string => {
   }
 
   if (error instanceof AgentCountLimitError) {
-    return error.detail?.message || error.message || 'Agent limit exceeded';
+    return error.detail?.message || error.message || 'Worker limit exceeded';
   }
 
   if (error instanceof TriggerLimitError) {
@@ -169,7 +169,7 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   if (error instanceof AgentRunLimitError) {
     // Note: Translations should be handled in components that use this handler
     // This is a fallback for non-component contexts
-    const upgradeMessage = `You've reached your limits. Agent Run Limit (${error.detail.running_count}/${error.detail.limit})`;
+    const upgradeMessage = `You've reached your limits. Worker Run Limit (${error.detail.running_count}/${error.detail.limit})`;
     usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
     return;
   }

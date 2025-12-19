@@ -71,6 +71,7 @@ export interface ConversionFunnel {
   visitors: number;
   signups: number;
   subscriptions: number;
+  subscriber_emails: string[];  // Emails of new paid subscribers for this date
   visitor_to_signup_rate: number;
   signup_to_subscription_rate: number;
   overall_conversion_rate: number;
@@ -449,4 +450,63 @@ export function useViewsByDate(dateFrom: string, dateTo: string, source: Analyti
     retry: 1,
   });
 }
+
+// ============================================================================
+// ARR NEW PAID SUBSCRIPTIONS BY DATE (fetched from Stripe, excludes free tier)
+// ============================================================================
+
+export interface NewPaidByDateResponse {
+  date_from: string;
+  date_to: string;
+  new_paid_by_date: Record<string, number>;  // YYYY-MM-DD -> count
+  total: number;
+}
+
+export function useNewPaidByDate(dateFrom: string, dateTo: string) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'new-paid-by-date', dateFrom, dateTo],
+    queryFn: async (): Promise<NewPaidByDateResponse> => {
+      const response = await backendApi.get(
+        `/admin/analytics/arr/new-paid?date_from=${dateFrom}&date_to=${dateTo}`
+      );
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 60000, // 1 minute
+    enabled: !!dateFrom && !!dateTo,
+    retry: 1,
+  });
+}
+
+// ============================================================================
+// ARR CHURN BY DATE (fetched from Stripe Events, grouped by frontend)
+// ============================================================================
+
+export interface ChurnByDateResponse {
+  date_from: string;
+  date_to: string;
+  churn_by_date: Record<string, number>;  // YYYY-MM-DD -> count
+  total: number;
+}
+
+export function useChurnByDate(dateFrom: string, dateTo: string) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'churn-by-date', dateFrom, dateTo],
+    queryFn: async (): Promise<ChurnByDateResponse> => {
+      const response = await backendApi.get(
+        `/admin/analytics/arr/churn?date_from=${dateFrom}&date_to=${dateTo}`
+      );
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 60000, // 1 minute
+    enabled: !!dateFrom && !!dateTo,
+    retry: 1,
+  });
+}
+
 

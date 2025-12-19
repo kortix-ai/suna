@@ -258,16 +258,7 @@ class TaskListTool(SandboxToolsBase):
                         "items": {"type": "string"}
                     }
                 },
-                "anyOf": [
-                    {"required": ["sections"]},
-                    {
-                        "required": ["task_contents"],
-                        "anyOf": [
-                            {"required": ["section_title"]},
-                            {"required": ["section_id"]}
-                        ]
-                    }
-                ]
+                "required": []
             }
         }
     })
@@ -513,10 +504,7 @@ class TaskListTool(SandboxToolsBase):
                         "description": "Must be true to confirm deletion of sections (required when deleting sections)"
                     }
                 },
-                "anyOf": [
-                    {"required": ["task_ids"]},
-                    {"required": ["section_ids", "confirm"]}
-                ]
+                "required": []
             }
         }
     })

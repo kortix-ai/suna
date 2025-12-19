@@ -602,7 +602,7 @@
   },
   "models": {
     "selectModel": "选择模型",
-    "chooseModelFor": "为 {{agent}} 选择模型"
+    "chooseModelFor": "为 Worker {{agent}} 选择模型"
   },
   "placeholders": {
     "default": "给 Kortix 一个任务...",

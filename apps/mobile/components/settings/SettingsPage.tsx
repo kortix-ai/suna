@@ -26,6 +26,7 @@ import {
   Loader2,
   Wallet,
   BarChart3,
+  Plug,
 } from 'lucide-react-native';
 import type { UserProfile } from '../menu/types';
 import { LanguagePage } from './LanguagePage';
@@ -37,6 +38,7 @@ import { PlanPage } from './PlanPage';
 import { UsagePage } from './UsagePage';
 import { AccountDeletionPage } from './AccountDeletionPage';
 import { SettingsHeader } from './SettingsHeader';
+import { IntegrationsPage } from './IntegrationsPage';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import * as Haptics from 'expo-haptics';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
@@ -231,6 +233,12 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
             />
 
             <SettingsItem
+              icon={Plug}
+              label={t('integrations.title', 'Integrations')}
+              onPress={handleIntegrations}
+            />
+
+            <SettingsItem
               icon={colorScheme === 'dark' ? Sun : Moon}
               label={t('settings.themeTitle') || 'Theme'}
               onPress={handleTheme}
@@ -339,6 +347,12 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
         visible={isAccountDeletionPageVisible}
         onClose={() => setIsAccountDeletionPageVisible(false)}>
         <AccountDeletionPage visible onClose={() => setIsAccountDeletionPageVisible(false)} />
+      </AnimatedPageWrapper>
+
+      <AnimatedPageWrapper
+        visible={isIntegrationsPageVisible}
+        onClose={() => setIsIntegrationsPageVisible(false)}>
+        <IntegrationsPage visible onClose={() => setIsIntegrationsPageVisible(false)} />
       </AnimatedPageWrapper>
     </View>
   );

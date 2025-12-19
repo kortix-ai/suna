@@ -228,7 +228,7 @@ export const stopAgent = async (agentRunId: string): Promise<void> => {
 
 export const getAgentStatus = async (agentRunId: string): Promise<AgentRun> => {
   if (nonRunningAgentRuns.has(agentRunId)) {
-    throw new Error(`Agent run ${agentRunId} is not running`);
+    throw new Error(`Worker run ${agentRunId} is not running`);
   }
 
   try {
@@ -509,7 +509,7 @@ export const streamAgent = (
 ): (() => void) => {
   if (nonRunningAgentRuns.has(agentRunId)) {
     setTimeout(() => {
-      callbacks.onError(`Agent run ${agentRunId} is not running`);
+      callbacks.onError(`Worker run ${agentRunId} is not running`);
       callbacks.onClose();
     }, 0);
 
@@ -528,7 +528,7 @@ export const streamAgent = (
         if (status.status !== 'running') {
           nonRunningAgentRuns.add(agentRunId);
           callbacks.onError(
-            `Agent run ${agentRunId} is not running (status: ${status.status})`,
+            `Worker run ${agentRunId} is not running (status: ${status.status})`,
           );
           callbacks.onClose();
           return;
@@ -597,7 +597,7 @@ export const streamAgent = (
             rawData.includes('not found in active runs')
           ) {
             nonRunningAgentRuns.add(agentRunId);
-            callbacks.onError('Agent run not found in active runs');
+            callbacks.onError('Worker run not found in active runs');
             cleanupEventSource(agentRunId, 'agent run not found');
             callbacks.onClose();
             return;

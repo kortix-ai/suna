@@ -4,7 +4,7 @@ from typing import Optional, List
 from fastapi import HTTPException
 from core.services import redis
 from ..utils.logger import logger
-from run_agent_background import update_agent_run_status, _cleanup_redis_response_stream
+from run_agent_background import update_agent_run_status, cleanup_redis_keys_for_agent_run
 
 
 async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional[str] = None, stop_source: str = "api_request"):
@@ -76,8 +76,8 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
             else:
                  logger.warning(f"Unexpected key format found: {key}")
 
-        # Clean up the response stream immediately on stop/fail
-        await _cleanup_redis_response_stream(agent_run_id)
+        # Comprehensive cleanup of all Redis keys for this agent run
+        await cleanup_redis_keys_for_agent_run(agent_run_id)
 
     except Exception as e:
         logger.error(f"Failed to find or signal active instances for {agent_run_id}: {str(e)}")

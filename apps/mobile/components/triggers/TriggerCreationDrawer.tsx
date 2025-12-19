@@ -1309,7 +1309,7 @@ export function TriggerCreationDrawer({
                     onTriggerSelect={(trigger) => {
                       setSelectedTrigger(trigger);
                       setEventConfig({});
-                      setTriggerName(`${selectedApp.name} → Agent`);
+                      setTriggerName(`${selectedApp.name} → Worker`);
                       setEventStep('config');
                     }}
                   />

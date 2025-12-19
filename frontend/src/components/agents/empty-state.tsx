@@ -21,13 +21,13 @@ export const EmptyState = ({ hasAgents, onCreateAgent, onClearFilters }: EmptySt
         </div>
         <div className="space-y-3">
           <h2 className="text-2xl font-semibold text-foreground">
-            {!hasAgents ? 'No agents yet' : 'No agents found'}
+            {!hasAgents ? 'No workers yet' : 'No workers found'}
           </h2>
           <p className="text-muted-foreground leading-relaxed">
             {!hasAgents ? (
-              'Create your first agent to start automating tasks with custom instructions and tools. Configure custom AgentPress capabilities to fine tune agent according to your needs.'
+              'Create your first worker to start automating tasks with custom instructions and tools. Configure custom AgentPress capabilities to fine tune a worker according to your needs.'
             ) : (
-              'No agents match your current search and filter criteria. Try adjusting your filters or search terms.'
+              'No workers match your current search and filter criteria. Try adjusting your filters or search terms.'
             )}
           </p>
         </div>
@@ -38,7 +38,7 @@ export const EmptyState = ({ hasAgents, onCreateAgent, onClearFilters }: EmptySt
             className="mt-4"
           >
             <Plus className="h-5 w-5" />
-            Create your first agent
+            Create your first worker
           </Button>
         ) : (
           <Button 

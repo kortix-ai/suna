@@ -1,11 +1,12 @@
 import asyncio
 from typing import Optional, Dict, Any
 import time
-import asyncio
 from uuid import uuid4
 from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
+from core.tool_output_streaming_context import stream_tool_output, get_tool_output_streaming_context, get_current_tool_call_id
+from core.utils.logger import logger
 
 @tool_metadata(
     display_name="Terminal & Commands",
@@ -155,50 +156,154 @@ class SandboxShellTool(SandboxToolsBase):
             wrapped_command = command.replace('"', '\\"')
             
             if blocking:
-                # For blocking execution, use a more reliable approach
-                # Add a unique marker to detect command completion
-                marker = f"COMMAND_DONE_{str(uuid4())[:8]}"
-                completion_command = self._format_completion_command(command, marker)
-                wrapped_completion_command = completion_command.replace('"', '\\"')
+                # Use PTY for blocking commands with real-time streaming
+                tool_output_ctx = get_tool_output_streaming_context()
+                # Use the actual tool_call_id from LLM, or generate fallback
+                tool_call_id = get_current_tool_call_id() or f"cmd_{str(uuid4())[:8]}"
+                logger.debug(f"[SHELL STREAMING] Using tool_call_id: {tool_call_id}")
                 
-                # Send the command with completion marker
-                await self._execute_raw_command(f'tmux send-keys -t {session_name} "{wrapped_completion_command}" Enter')
+                # Track output for streaming
+                output_buffer = []
+                last_streamed_len = 0
+                command_completed = asyncio.Event()
+                exit_code = 0
                 
-                start_time = time.time()
-                final_output = ""
-                
-                while (time.time() - start_time) < timeout:
-                    # Wait a shorter interval for more responsive checking
-                    await asyncio.sleep(0.5)
-                    
-                    # Check if session still exists (command might have exited)
-                    check_result = await self._execute_raw_command(f"tmux has-session -t {session_name} 2>/dev/null || echo 'ended'")
-                    if "ended" in check_result.get("output", ""):
-                        break
+                async def on_pty_data(data: bytes):
+                    nonlocal last_streamed_len
+                    try:
+                        text = data.decode("utf-8", errors="replace")
+                        output_buffer.append(text)
                         
-                    # Get current output and check for our completion marker
-                    output_result = await self._execute_raw_command(f"tmux capture-pane -t {session_name} -p -S - -E -")
-                    current_output = output_result.get("output", "")
-
-                    if self._is_command_completed(current_output, marker):
-                        final_output = current_output
-                        break
+                        # Stream output to frontend if we have a tool output streaming context
+                        if tool_output_ctx:
+                            await stream_tool_output(
+                                tool_call_id=tool_call_id,
+                                output_chunk=text,
+                                is_final=False,
+                                tool_name="execute_command"
+                            )
+                    except Exception as e:
+                        logger.warning(f"Error processing PTY output: {e}")
                 
-                # If we didn't get the marker, capture whatever output we have
-                if not final_output:
-                    output_result = await self._execute_raw_command(f"tmux capture-pane -t {session_name} -p -S - -E -")
-                    final_output = output_result.get("output", "")
-                
-                # Kill the session after capture
-                await self._execute_raw_command(f"tmux kill-session -t {session_name}")
-                
-                # For blocking commands, do NOT return session_name since it's already cleaned up
-                # This prevents the LLM from incorrectly trying to call check_command_output
-                return self.success_response({
-                    "output": final_output,
-                    "cwd": cwd,
-                    "completed": True
-                })
+                try:
+                    from daytona_sdk.common.pty import PtySize
+                    
+                    pty_session_id = f"cmd-{str(uuid4())[:8]}"
+                    
+                    # Create PTY session with output callback
+                    pty_handle = await self.sandbox.process.create_pty_session(
+                        id=pty_session_id,
+                        on_data=on_pty_data,
+                        pty_size=PtySize(cols=120, rows=40)
+                    )
+                    
+                    # Send cd command first if needed
+                    if cwd != self.workspace_path:
+                        await pty_handle.send_input(f"cd {cwd}\n")
+                        await asyncio.sleep(0.1)
+                    
+                    # Add marker to detect completion
+                    marker = f"__CMD_DONE_{str(uuid4())[:8]}__"
+                    full_command = f"{command}; echo '{marker}' $?\n"
+                    
+                    # Send the command
+                    await pty_handle.send_input(full_command)
+                    
+                    # Wait for completion or timeout
+                    # Note: marker appears TWICE in output:
+                    # 1. When the terminal echoes the typed command
+                    # 2. When the echo command actually executes after completion
+                    # We need to wait for the SECOND occurrence
+                    start_time = time.time()
+                    while (time.time() - start_time) < timeout:
+                        await asyncio.sleep(0.1)
+                        
+                        # Check if marker appeared in output (need 2 occurrences)
+                        current_output = "".join(output_buffer)
+                        marker_count = current_output.count(marker)
+                        if marker_count >= 2:
+                            # Extract exit code from the LAST marker line (the actual output)
+                            try:
+                                marker_idx = current_output.rfind(marker)
+                                after_marker = current_output[marker_idx + len(marker):].strip().split()[0]
+                                exit_code = int(after_marker) if after_marker.isdigit() else 0
+                            except:
+                                exit_code = 0
+                            break
+                    
+                    # Kill PTY session
+                    try:
+                        await pty_handle.kill()
+                    except:
+                        pass
+                    
+                    # Clean output (remove marker line and control sequences)
+                    final_output = "".join(output_buffer)
+                    
+                    # Remove the marker line from output
+                    if marker in final_output:
+                        marker_idx = final_output.rfind(marker)
+                        # Find the start of the line containing the marker
+                        line_start = final_output.rfind('\n', 0, marker_idx)
+                        if line_start != -1:
+                            final_output = final_output[:line_start]
+                    
+                    # Strip ANSI escape sequences for cleaner output
+                    import re
+                    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+                    final_output = ansi_escape.sub('', final_output)
+                    
+                    # Stream final message
+                    if tool_output_ctx:
+                        await stream_tool_output(
+                            tool_call_id=tool_call_id,
+                            output_chunk="",
+                            is_final=True,
+                            tool_name="execute_command"
+                        )
+                    
+                    return self.success_response({
+                        "output": final_output.strip(),
+                        "cwd": cwd,
+                        "completed": True,
+                        "exit_code": exit_code,
+                        "streamed": tool_output_ctx is not None
+                    })
+                    
+                except Exception as pty_error:
+                    logger.warning(f"PTY execution failed, falling back to tmux: {pty_error}")
+                    # Fall back to tmux approach
+                    marker = f"COMMAND_DONE_{str(uuid4())[:8]}"
+                    completion_command = self._format_completion_command(command, marker)
+                    wrapped_completion_command = completion_command.replace('"', '\\"')
+                    
+                    await self._execute_raw_command(f'tmux send-keys -t {session_name} "{wrapped_completion_command}" Enter')
+                    
+                    start_time = time.time()
+                    final_output = ""
+                    
+                    while (time.time() - start_time) < timeout:
+                        await asyncio.sleep(0.5)
+                        check_result = await self._execute_raw_command(f"tmux has-session -t {session_name} 2>/dev/null || echo 'ended'")
+                        if "ended" in check_result.get("output", ""):
+                            break
+                        output_result = await self._execute_raw_command(f"tmux capture-pane -t {session_name} -p -S - -E -")
+                        current_output = output_result.get("output", "")
+                        if self._is_command_completed(current_output, marker):
+                            final_output = current_output
+                            break
+                    
+                    if not final_output:
+                        output_result = await self._execute_raw_command(f"tmux capture-pane -t {session_name} -p -S - -E -")
+                        final_output = output_result.get("output", "")
+                    
+                    await self._execute_raw_command(f"tmux kill-session -t {session_name}")
+                    
+                    return self.success_response({
+                        "output": final_output,
+                        "cwd": cwd,
+                        "completed": True
+                    })
             else:
                 # Send command to tmux session for non-blocking execution
                 await self._execute_raw_command(f'tmux send-keys -t {session_name} "{wrapped_command}" Enter')

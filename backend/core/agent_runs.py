@@ -40,7 +40,7 @@ async def _get_agent_run_with_access_check(client, agent_run_id: str, user_id: s
     
     agent_run = await client.table('agent_runs').select('*, threads(account_id)').eq('id', agent_run_id).execute()
     if not agent_run.data:
-        raise HTTPException(status_code=404, detail="Agent run not found")
+        raise HTTPException(status_code=404, detail="Worker run not found")
 
     agent_run_data = agent_run.data[0]
     thread_id = agent_run_data['thread_id']
@@ -826,7 +826,7 @@ async def unified_agent_start(
     api_request_start = time.time()
     
     if not utils.instance_id:
-        raise HTTPException(status_code=500, detail="Agent API not initialized with instance ID")
+        raise HTTPException(status_code=500, detail="Worker API not initialized with instance ID")
     
     client = await utils.db.client
     account_id = user_id
@@ -1028,6 +1028,8 @@ async def optimistic_agent_start_deprecated(
     This endpoint will be removed in a future version.
     """
     logger.warning("⚠️ DEPRECATED: /agent/start-optimistic called. Use /agent/start with optimistic=true instead")
+    if not utils.instance_id:
+        raise HTTPException(status_code=500, detail="Worker API not initialized with instance ID")
     
     # Forward to the unified endpoint
     return await unified_agent_start(
@@ -1054,7 +1056,7 @@ async def start_agent_on_thread(
     api_request_start = time.time()
     
     if not utils.instance_id:
-        raise HTTPException(status_code=500, detail="Agent API not initialized with instance ID")
+        raise HTTPException(status_code=500, detail="Worker API not initialized with instance ID")
     
     client = await utils.db.client
     account_id = user_id
@@ -1264,7 +1266,7 @@ async def get_thread_agent(thread_id: str, user_id: str = Depends(verify_and_get
             return {
                 "agent": None,
                 "source": "none",
-                "message": "No agent has been used in this thread yet. Threads are agent-agnostic - use /agent/start to select an agent."
+                "message": "No worker has been used in this thread yet. Threads are worker-agnostic - use /agent/start to select a worker."
             }
         
         # Fetch the agent details
@@ -1275,7 +1277,7 @@ async def get_thread_agent(thread_id: str, user_id: str = Depends(verify_and_get
             return {
                 "agent": None,
                 "source": "missing",
-                "message": f"Agent {effective_agent_id} not found or was deleted. You can select a different agent."
+                "message": f"Worker {effective_agent_id} not found or was deleted. You can select a different worker."
             }
         
         agent_data = agent_result.data[0]

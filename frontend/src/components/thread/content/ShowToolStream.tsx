@@ -50,12 +50,12 @@ const STREAMABLE_TOOLS = {
         'Creating Presentation Outline',
         'Creating Presentation',
         'Exposing Port',
-        'Getting Agent Config',
+        'Getting Worker Config',
         'Searching MCP Servers',
         'Creating Credential Profile',
         'Connecting Credential Profile',
         'Checking Profile Connection',
-        'Configuring Profile For Agent',
+        'Configuring Profile For Worker',
         'Getting Credential Profiles',
     ])
 };

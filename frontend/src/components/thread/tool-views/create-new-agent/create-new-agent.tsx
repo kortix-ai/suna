@@ -100,7 +100,7 @@ export function CreateNewAgentToolView({
               ) : (
                 <AlertTriangle className="h-3 w-3" />
               )}
-              {actualIsSuccess ? 'Agent created' : 'Creation failed'}
+              {actualIsSuccess ? 'Worker created' : 'Creation failed'}
             </Badge>
           )}
         </div>
@@ -111,7 +111,7 @@ export function CreateNewAgentToolView({
             icon={Bot}
             iconColor="text-blue-500 dark:text-blue-400"
             bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
-            title="Creating agent"
+            title="Creating worker"
             filePath={agentName ? `"${agentName}"` : undefined}
             showProgress={true}
           />
@@ -133,7 +133,7 @@ export function CreateNewAgentToolView({
                         {agentName}
                       </h3>
                       <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                        Custom AI Agent
+                        Custom AI Worker
                       </p>
                     </div>
                   </div>
