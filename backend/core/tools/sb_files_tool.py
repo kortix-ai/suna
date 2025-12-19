@@ -19,7 +19,43 @@ from typing import Optional
     color="bg-blue-100 dark:bg-blue-800/50",
     is_core=True,
     weight=10,
-    visible=True
+    visible=True,
+    usage_guide="""
+### FILE OPERATIONS
+
+**CORE CAPABILITIES:**
+- Creating, reading, modifying, and deleting files
+- Organizing files into directories/folders
+- Converting between file formats
+- Searching through file contents
+- Batch processing multiple files
+- AI-powered intelligent file editing with natural language instructions using `edit_file` tool exclusively
+
+**MANDATORY FILE EDITING TOOL:**
+- **MUST use `edit_file` for ALL file modifications**
+- This is a powerful AI tool that handles everything from simple replacements to complex refactoring
+- NEVER use `echo` or `sed` to modify files - always use `edit_file`
+- Provide clear natural language instructions and the code changes
+
+**FILE MANAGEMENT BEST PRACTICES:**
+- Use file tools for reading, writing, appending, and editing
+- Actively save intermediate results
+- Create organized file structures with clear naming conventions
+- Store different types of data in appropriate formats
+
+**ONE FILE PER REQUEST RULE:**
+- For a single user request, create ONE file and edit it throughout the process
+- Treat the file as a living document that you continuously update
+- Edit existing files rather than creating multiple new files
+- Build one comprehensive file that contains all related content
+
+**CSS & STYLE GUIDELINES:**
+- **KORTIX BRAND COLORS:** Always use Kortix on-brand black/white color scheme
+- **NO GRADIENTS WHATSOEVER:** Absolutely forbidden - use solid colors only (black, white, or shades of gray)
+- **NO PURPLE COLORS:** Purple is absolutely forbidden in any form - no purple backgrounds, no purple text, no purple accents, no purple anything
+- **NO GENERIC AI/TECH GRADIENTS:** Explicitly forbidden: purple-to-blue gradients, blue-to-purple gradients, any purple/blue/teal gradient combinations, or any other generic "AI tech" gradient schemes
+- **SOLID COLORS ONLY:** Use only solid black, white, or shades of gray - no gradients, no color transitions, no fancy effects, NO PURPLE
+"""
 )
 class SandboxFilesTool(SandboxToolsBase):
     """Tool for executing file system operations in a Daytona sandbox. All operations are performed relative to the /workspace directory."""
@@ -79,7 +115,6 @@ class SandboxFilesTool(SandboxToolsBase):
             print(f"Error getting workspace state: {str(e)}")
             return {}
 
-
     # def _get_preview_url(self, file_path: str) -> Optional[str]:
     #     """Get the preview URL for a file if it's an HTML file."""
     #     if file_path.lower().endswith('.html') and self._sandbox_url:
@@ -137,15 +172,17 @@ class SandboxFilesTool(SandboxToolsBase):
             
             message = f"File '{file_path}' created successfully."
             
-            # Check if index.html was created and add 8080 server info (only in root workspace)
-            if file_path.lower() == 'index.html':
+            if file_path.lower().endswith('.html'):
                 try:
                     website_link = await self.sandbox.get_preview_link(8080)
                     website_url = website_link.url if hasattr(website_link, 'url') else str(website_link).split("url='")[1].split("'")[0]
-                    message += f"\n\n[Auto-detected index.html - HTTP server available at: {website_url}]"
-                    message += "\n[Note: Use the provided HTTP server URL above instead of starting a new server]"
+                    if not website_url.endswith('/'):
+                        website_url += '/'
+                    full_preview_url = f"{website_url}{file_path}"
+                    message += f"\n\n✓ HTML file preview available at: {full_preview_url}"
+                    message += "\n[Note: Port 8080 is auto-exposed. Just share this URL with the user - no need to start servers or expose ports manually]"
                 except Exception as e:
-                    logger.warning(f"Failed to get website URL for index.html: {str(e)}")
+                    logger.warning(f"Failed to get preview URL for HTML file: {str(e)}")
             
             return self.success_response(message)
         except Exception as e:
@@ -197,23 +234,15 @@ class SandboxFilesTool(SandboxToolsBase):
                 lines = [i+1 for i, line in enumerate(content.split('\n')) if old_str in line]
                 return self.fail_response(f"Multiple occurrences found in lines {lines}. Please ensure string is unique")
             
-            # Perform replacement
             new_content = content.replace(old_str, new_str)
             await self.sandbox.fs.upload_file(new_content.encode(), full_path)
             
-            # Show snippet around the edit
-            replacement_line = content.split(old_str)[0].count('\n')
-            start_line = max(0, replacement_line - self.SNIPPET_LINES)
-            end_line = replacement_line + self.SNIPPET_LINES + new_str.count('\n')
-            snippet = '\n'.join(new_content.split('\n')[start_line:end_line + 1])
-            
-            # Get preview URL if it's an HTML file
-            # preview_url = self._get_preview_url(file_path)
-            message = f"Replacement successful."
-            # if preview_url:
-            #     message += f"\n\nYou can preview this HTML file at: {preview_url}"
-            
-            return self.success_response(message)
+            return ToolResult(success=True, output=json.dumps({
+                "message": f"Replacement successful.",
+                "file_path": file_path,
+                "original_content": content,
+                "updated_content": new_content
+            }))
             
         except Exception as e:
             return self.fail_response(f"Error replacing string: {str(e)}")
@@ -259,15 +288,17 @@ class SandboxFilesTool(SandboxToolsBase):
             
             message = f"File '{file_path}' completely rewritten successfully."
             
-            # Check if index.html was rewritten and add 8080 server info (only in root workspace)
-            if file_path.lower() == 'index.html':
+            if file_path.lower().endswith('.html'):
                 try:
                     website_link = await self.sandbox.get_preview_link(8080)
                     website_url = website_link.url if hasattr(website_link, 'url') else str(website_link).split("url='")[1].split("'")[0]
-                    message += f"\n\n[Auto-detected index.html - HTTP server available at: {website_url}]"
-                    message += "\n[Note: Use the provided HTTP server URL above instead of starting a new server]"
+                    if not website_url.endswith('/'):
+                        website_url += '/'
+                    full_preview_url = f"{website_url}{file_path}"
+                    message += f"\n\n✓ HTML file preview available at: {full_preview_url}"
+                    message += "\n[Note: Port 8080 is auto-exposed. Just share this URL with the user - no need to start servers or expose ports manually]"
                 except Exception as e:
-                    logger.warning(f"Failed to get website URL for index.html: {str(e)}")
+                    logger.warning(f"Failed to get preview URL for HTML file: {str(e)}")
             
             # Auto-validate presentation slides
             slide_pattern = r'^presentations/([^/]+)/slide_(\d+)\.html$'
@@ -311,22 +342,32 @@ class SandboxFilesTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "delete_file",
-            "description": "Delete a file at the given path. The path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py)",
+            "description": "Delete a file at the given path. **IMPORTANT**: You MUST use the `ask` tool to get explicit user confirmation before calling this tool. Never delete files without user permission. The path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). Before using this tool: 1) Use `ask` to request confirmation with a clear message like 'Do you want me to delete [file_path]?'. 2) Only proceed with deletion if the user confirms.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
                         "description": "Path to the file to be deleted, relative to /workspace (e.g., 'src/main.py')"
+                    },
+                    "user_confirmed": {
+                        "type": "boolean",
+                        "description": "Set to true only after receiving explicit user confirmation via the `ask` tool. Do not set to true without confirmation.",
+                        "default": False
                     }
                 },
-                "required": ["file_path"]
+                "required": ["file_path", "user_confirmed"]
             }
         }
     })
-    async def delete_file(self, file_path: str) -> ToolResult:
+    async def delete_file(self, file_path: str, user_confirmed: bool = False) -> ToolResult:
         try:
-            # Ensure sandbox is initialized
+            if not user_confirmed:
+                return self.fail_response(
+                    f"Cannot delete '{file_path}' without user confirmation. "
+                    f"Please use the `ask` tool to request user permission first, then call this tool again with user_confirmed=true."
+                )
+            
             await self._ensure_sandbox()
             
             file_path = self.clean_path(file_path)
@@ -540,105 +581,4 @@ class SandboxFilesTool(SandboxToolsBase):
                 "original_content": original_content_on_error,
                 "updated_content": None
             }))
-
-    # @openapi_schema({
-    #     "type": "function",
-    #     "function": {
-    #         "name": "read_file",
-    #         "description": "Read and return the contents of a file. This tool is essential for verifying data, checking file contents, and analyzing information. Always use this tool to read file contents before processing or analyzing data. The file path must be relative to /workspace.",
-    #         "parameters": {
-    #             "type": "object",
-    #             "properties": {
-    #                 "file_path": {
-    #                     "type": "string",
-    #                     "description": "Path to the file to read, relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). Must be a valid file path within the workspace."
-    #                 },
-    #                 "start_line": {
-    #                     "type": "integer",
-    #                     "description": "Optional starting line number (1-based). Use this to read specific sections of large files. If not specified, reads from the beginning of the file.",
-    #                     "default": 1
-    #                 },
-    #                 "end_line": {
-    #                     "type": "integer",
-    #                     "description": "Optional ending line number (inclusive). Use this to read specific sections of large files. If not specified, reads to the end of the file.",
-    #                     "default": None
-    #                 }
-    #             },
-    #             "required": ["file_path"]
-    #         }
-    #     }
-    # })
-    # @xml_schema(
-    #     tag_name="read-file",
-    #     mappings=[
-    #         {"param_name": "file_path", "node_type": "attribute", "path": "."},
-    #         {"param_name": "start_line", "node_type": "attribute", "path": ".", "required": False},
-    #         {"param_name": "end_line", "node_type": "attribute", "path": ".", "required": False}
-    #     ],
-    #     example='''
-    #     <!-- Example 1: Read entire file -->
-    #     <read-file file_path="src/main.py">
-    #     </read-file>
-
-    #     <!-- Example 2: Read specific lines (lines 10-20) -->
-    #     <read-file file_path="src/main.py" start_line="10" end_line="20">
-    #     </read-file>
-
-    #     <!-- Example 3: Read from line 5 to end -->
-    #     <read-file file_path="config.json" start_line="5">
-    #     </read-file>
-
-    #     <!-- Example 4: Read last 10 lines -->
-    #     <read-file file_path="logs/app.log" start_line="-10">
-    #     </read-file>
-    #     '''
-    # )
-    # async def read_file(self, file_path: str, start_line: int = 1, end_line: Optional[int] = None) -> ToolResult:
-    #     """Read file content with optional line range specification.
-        
-    #     Args:
-    #         file_path: Path to the file relative to /workspace
-    #         start_line: Starting line number (1-based), defaults to 1
-    #         end_line: Ending line number (inclusive), defaults to None (end of file)
             
-    #     Returns:
-    #         ToolResult containing:
-    #         - Success: File content and metadata
-    #         - Failure: Error message if file doesn't exist or is binary
-    #     """
-    #     try:
-    #         file_path = self.clean_path(file_path)
-    #         full_path = f"{self.workspace_path}/{file_path}"
-            
-    #         if not await self._file_exists(full_path):
-    #             return self.fail_response(f"File '{file_path}' does not exist")
-            
-    #         # Download and decode file content
-    #         content = await self.sandbox.fs.download_file(full_path).decode()
-            
-    #         # Split content into lines
-    #         lines = content.split('\n')
-    #         total_lines = len(lines)
-            
-    #         # Handle line range if specified
-    #         if start_line > 1 or end_line is not None:
-    #             # Convert to 0-based indices
-    #             start_idx = max(0, start_line - 1)
-    #             end_idx = end_line if end_line is not None else total_lines
-    #             end_idx = min(end_idx, total_lines)  # Ensure we don't exceed file length
-                
-    #             # Extract the requested lines
-    #             content = '\n'.join(lines[start_idx:end_idx])
-            
-    #         return self.success_response({
-    #             "content": content,
-    #             "file_path": file_path,
-    #             "start_line": start_line,
-    #             "end_line": end_line if end_line is not None else total_lines,
-    #             "total_lines": total_lines
-    #         })
-            
-    #     except UnicodeDecodeError:
-    #         return self.fail_response(f"File '{file_path}' appears to be binary and cannot be read as text")
-    #     except Exception as e:
-    #         return self.fail_response(f"Error reading file: {str(e)}")

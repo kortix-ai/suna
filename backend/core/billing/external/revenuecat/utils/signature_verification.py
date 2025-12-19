@@ -1,5 +1,3 @@
-import hmac
-import hashlib
 from core.utils.logger import logger
 from core.utils.config import config
 
@@ -8,16 +6,29 @@ class SignatureVerifier:
     def __init__(self):
         self.webhook_secret = getattr(config, 'REVENUECAT_WEBHOOK_SECRET', None)
     
-    def verify_signature(self, request_body: bytes, signature: str) -> bool:
+    def verify_authorization(self, authorization_header: str) -> bool:
         if not self.webhook_secret:
-            logger.warning("[REVENUECAT] No webhook secret configured, skipping verification")
-            return True
+            logger.error(
+                "[REVENUECAT] ❌ No webhook secret configured. "
+                "Set REVENUECAT_WEBHOOK_SECRET to enable authorization verification."
+            )
+            return False
         
-        expected_signature = hmac.new(
-            self.webhook_secret.encode('utf-8'),
-            request_body,
-            hashlib.sha256
-        ).hexdigest()
+        if not authorization_header:
+            logger.warning("[REVENUECAT] No Authorization header provided in webhook request")
+            return False
         
-        return hmac.compare_digest(signature, expected_signature)
+        # RevenueCat sends Authorization header with the configured value
+        # Remove "Bearer " prefix if present
+        auth_value = authorization_header.replace('Bearer ', '').strip()
+        
+        is_valid = auth_value == self.webhook_secret
+        
+        if not is_valid:
+            logger.warning(
+                f"[REVENUECAT] ⚠️ Authorization verification failed. "
+                f"Received: {auth_value[:16]}..., Expected: {self.webhook_secret[:16]}..."
+            )
+        
+        return is_valid
 

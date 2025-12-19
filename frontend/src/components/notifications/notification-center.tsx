@@ -61,7 +61,7 @@ export function SimpleNotificationBell() {
   const { user } = useAuth();
   const applicationIdentifier = process.env.NEXT_PUBLIC_NOVU_APP_IDENTIFIER;
 
-  if (!isStagingMode() || !user?.id || !applicationIdentifier) {
+  if (!user?.id || !applicationIdentifier) {
     return null;
   }
 

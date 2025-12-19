@@ -230,6 +230,39 @@ export class NoAccessTokenAvailableError extends Error {
   name = 'NoAccessTokenAvailableError';
 }
 
+/**
+ * Error thrown when HTTP request headers are too large (HTTP 431).
+ * This typically happens when:
+ * - Uploading many files at once in a single request
+ * - JWT tokens are very large
+ * - Too many cookies are being sent
+ */
+export class RequestTooLargeError extends Error {
+  status: number;
+  detail: {
+    message: string;
+    suggestion: string;
+  };
+
+  constructor(
+    status: number = 431,
+    detail?: { message?: string; suggestion?: string },
+    message?: string,
+  ) {
+    const defaultMessage = 'Request headers are too large';
+    const defaultSuggestion = 'Try uploading files one at a time, or reduce the number of files in a single request.';
+    
+    super(message || detail?.message || defaultMessage);
+    this.name = 'RequestTooLargeError';
+    this.status = status;
+    this.detail = {
+      message: detail?.message || defaultMessage,
+      suggestion: detail?.suggestion || defaultSuggestion,
+    };
+    Object.setPrototypeOf(this, RequestTooLargeError.prototype);
+  }
+}
+
 export function parseTierRestrictionError(error: any): Error {
   const status = error.response?.status || error.status;
   const errorData = error.response?.data || error.data || error.detail || {};
@@ -263,7 +296,14 @@ export function parseTierRestrictionError(error: any): Error {
     case 'THREAD_LIMIT_EXCEEDED':
       return new ThreadLimitError(status, detail);
     
+    case 'INSUFFICIENT_CREDITS':
+      return new BillingError(status, detail);
+    
     default:
+      // For 402 errors without a specific code, treat as billing error
+      if (status === 402) {
+        return new BillingError(status, detail);
+      }
       return error;
   }
 }

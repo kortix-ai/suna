@@ -1,6 +1,6 @@
 /**
  * Unified Billing API Client & Types
- * 
+ *
  * Single endpoint for all billing state
  */
 
@@ -200,13 +200,12 @@ export interface TokenUsage {
 // API Helper
 // =============================================================================
 
-async function fetchApi<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> {
+async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const headers = await getAuthHeaders();
-  
-  const response = await fetch(`${API_URL}${endpoint}`, {
+  const fullUrl = `${API_URL}${endpoint}`;
+  console.log('🌐 Fetching:', fullUrl);
+
+  const response = await fetch(fullUrl, {
     ...options,
     headers: {
       ...headers,
@@ -217,7 +216,7 @@ async function fetchApi<T>(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ message: response.statusText }));
-    
+
     // Only log non-auth errors (401/403 are expected when not authenticated)
     if (response.status !== 401 && response.status !== 403) {
       console.error('❌ Billing API Error:', {
@@ -226,8 +225,9 @@ async function fetchApi<T>(
         error: errorData,
       });
     }
-    
-    const errorMessage = errorData.detail?.message || errorData.detail || errorData.message || response.statusText;
+
+    const errorMessage =
+      errorData.detail?.message || errorData.detail || errorData.message || response.statusText;
     throw new Error(`HTTP ${response.status}: ${errorMessage}`);
   }
 
@@ -250,13 +250,10 @@ export const billingApi = {
   async createCheckoutSession(
     request: CreateCheckoutSessionRequest
   ): Promise<CreateCheckoutSessionResponse> {
-    return fetchApi<CreateCheckoutSessionResponse>(
-      '/billing/create-checkout-session',
-      {
-        method: 'POST',
-        body: JSON.stringify(request),
-      }
-    );
+    return fetchApi<CreateCheckoutSessionResponse>('/billing/create-checkout-session', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
   },
 
   async cancelSubscription(
@@ -290,7 +287,9 @@ export const billingApi = {
     });
   },
 
-  async createPortalSession(request: CreatePortalSessionRequest): Promise<CreatePortalSessionResponse> {
+  async createPortalSession(
+    request: CreatePortalSessionRequest
+  ): Promise<CreatePortalSessionResponse> {
     return fetchApi('/billing/create-portal-session', {
       method: 'POST',
       body: JSON.stringify(request),
@@ -329,7 +328,10 @@ export const billingApi = {
     return fetchApi('/billing/trial/status');
   },
 
-  async startTrial(request: { success_url: string; cancel_url: string }): Promise<{ checkout_url: string; session_id: string }> {
+  async startTrial(request: {
+    success_url: string;
+    cancel_url: string;
+  }): Promise<{ checkout_url: string; session_id: string }> {
     return fetchApi('/billing/trial/start', {
       method: 'POST',
       body: JSON.stringify(request),
@@ -352,24 +354,20 @@ export const accountStateSelectors = {
   canRun: (state: AccountState | undefined) => state?.credits.can_run ?? false,
   totalCredits: (state: AccountState | undefined) => state?.credits.total ?? 0,
   tierKey: (state: AccountState | undefined) => state?.subscription.tier_key ?? 'none',
-  tierDisplayName: (state: AccountState | undefined) => 
+  tierDisplayName: (state: AccountState | undefined) =>
     state?.subscription.tier_display_name ?? 'No Plan',
   isTrial: (state: AccountState | undefined) => state?.subscription.is_trial ?? false,
   isCancelled: (state: AccountState | undefined) => state?.subscription.is_cancelled ?? false,
-  allowedModels: (state: AccountState | undefined) => 
-    state?.models.filter(m => m.allowed) ?? [],
+  allowedModels: (state: AccountState | undefined) => state?.models.filter((m) => m.allowed) ?? [],
   isModelAllowed: (state: AccountState | undefined, modelId: string) =>
-    state?.models.find(m => m.id === modelId)?.allowed ?? false,
+    state?.models.find((m) => m.id === modelId)?.allowed ?? false,
   scheduledChange: (state: AccountState | undefined) => state?.subscription.scheduled_change,
-  hasScheduledChange: (state: AccountState | undefined) => 
+  hasScheduledChange: (state: AccountState | undefined) =>
     state?.subscription.has_scheduled_change ?? false,
-  canPurchaseCredits: (state: AccountState | undefined) => 
+  canPurchaseCredits: (state: AccountState | undefined) =>
     state?.subscription.can_purchase_credits ?? false,
   dailyCreditsInfo: (state: AccountState | undefined) => state?.credits.daily_refresh,
 };
-
-// Re-export types for backward compatibility
-export type { SubscriptionInfo, CreditBalance, BillingStatus } from './hooks';
 
 // Re-export types for backward compatibility
 export type { SubscriptionInfo, CreditBalance, BillingStatus } from './hooks';

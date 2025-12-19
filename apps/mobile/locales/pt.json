@@ -2,6 +2,8 @@
   "common": {
     "cancel": "Cancelar",
     "save": "Salvar",
+    "saving": "Salvando...",
+    "success": "Sucesso",
     "done": "Pronto",
     "close": "Fechar",
     "ok": "OK",
@@ -12,11 +14,16 @@
     "search": "Buscar",
     "loading": "Carregando...",
     "error": "Erro",
+    "errorOccurred": "Ocorreu um erro. Por favor, tente novamente.",
     "retry": "Tentar de novo",
     "send": "Enviar",
     "back": "Voltar",
     "new": "Novo",
-    "create": "Criar"
+    "create": "Criar",
+    "continue": "Continuar",
+    "loadMore": "Carregar mais",
+    "previous": "Anterior",
+    "next": "Próximo"
   },
   "auth": {
     "signIn": "Entrar",
@@ -111,9 +118,50 @@
     }
   },
   "onboarding": {
+    "welcome": "Veja o que o Kortix pode fazer",
+    "welcomeSubtitle": "Seu assistente IA que age",
     "skip": "Pular",
     "next": "Próximo",
     "getStarted": "Começar",
+    "kortixComputer": "Kortix Computer",
+    "ready": "Pronto",
+    "examples": {
+      "presentations": {
+        "title": "Apresentações",
+        "description": "Veja como ele cria apresentações incríveis",
+        "userMessage": "Pesquise e crie uma apresentação sobre redes neurais",
+        "aiMessage": "Vou pesquisar redes neurais e criar uma apresentação para você...",
+        "researching": "Pesquisando",
+        "creatingFile": "Criando arquivo",
+        "creatingSlides": "Criando slides"
+      },
+      "dataAnalysis": {
+        "title": "Análise de dados",
+        "description": "Veja como ele analisa dados e cria relatórios visuais",
+        "userMessage": "Analise o desempenho de vendas Q4 do Google Drive",
+        "aiMessage": "Vou carregar seus dados de vendas e criar uma análise completa...",
+        "loadingFromDrive": "Carregando do Google Drive",
+        "creatingVisualization": "Criando visualização",
+        "researchingMarket": "Pesquisando mercado",
+        "creatingReport": "Criando relatório"
+      },
+      "image": {
+        "title": "Imagem",
+        "description": "Experimente o design de logos e marcas com IA",
+        "userMessage": "Crie um logo para nossa empresa",
+        "aiMessage": "Vejo que você mencionou LUXY. Vou criar um logo profissional para sua marca...",
+        "researchingBrand": "Pesquisando marca",
+        "creatingLogo": "Criando logo",
+        "creatingBrandBoard": "Criando quadro de marca"
+      },
+      "imageEasterEgg": {
+        "title": "Imagem",
+        "description": "Transforme suas fotos com estilos de IA",
+        "userMessage": "Converta minha imagem para estilo pixel art blocky",
+        "aiMessage": "Claro! Vou transformar sua imagem em um visual estilizado blocky...",
+        "creatingImage": "Criando imagem estilizada"
+      }
+    },
     "slide1": {
       "title": "Chat com IA",
       "description": "Tenha conversas naturais com assistentes IA poderosos que entendem o contexto e fornecem respostas úteis"
@@ -136,7 +184,7 @@
       "example": "Crie um pitch deck para minha startup"
     },
     "research": {
-      "title": "Pesquisa Profunda",
+      "title": "Deep Research",
       "description": "Pesquisa web abrangente com insights instantâneos, resumos e análises.",
       "example": "Pesquise tendências de IA na saúde"
     },
@@ -155,6 +203,11 @@
       "description": "Configure triggers para automatizar fluxos de trabalho. Agende tarefas e monitore eventos.",
       "example": "Enviar relatórios diários às 9h"
     },
+    "final": {
+      "title": "Tudo Pronto!",
+      "description": "Construído para tarefas complexas, projetado para tudo. O que você quer realizar?",
+      "example": "Descreva a tarefa que você quer que seu Worker complete..."
+    },
     "superworker": {
       "title": "Seu Super Worker IA",
       "description": "Combine todos os recursos para construir workers IA personalizados para qualquer tarefa que você precisar.",
@@ -164,7 +217,9 @@
   "settings": {
     "title": "Configurações",
     "name": "Nome",
+    "plan": "Plano",
     "billing": "Cobrança",
+    "usage": "Uso",
     "integrations": "Integrações",
     "theme": "Tema & Ícone",
     "language": "Idioma",
@@ -178,6 +233,7 @@
   "chat": {
     "newChat": "Novo Chat",
     "placeholder": "Dê uma tarefa para o Kortix...",
+    "inputPlaceholder": "Pergunte qualquer coisa ao Kortix...",
     "recording": "Gravando...",
     "cancelRecording": "Cancelar gravação",
     "stopRecording": "Parar gravação",
@@ -225,11 +281,11 @@
   },
   "quickActions": {
     "image": "Imagem",
-    "slides": "Slides",
+    "slides": "Apresentações",
     "data": "Dados",
-    "docs": "Docs",
+    "docs": "Documentos",
     "people": "Pessoas",
-    "research": "Research",
+    "research": "Pesquisa",
     "chooseStyle": "Escolhe estilo de {{action}}",
     "imageStyles": {
       "abstract": "Abstrato",
@@ -297,6 +353,61 @@
       "articles": "Artigos",
       "papers": "Papers",
       "database": "Banco de dados"
+    },
+    "examplePrompts": "Exemplos de Prompts",
+    "chooseTemplate": "Escolher modelo",
+    "selected": "Selecionado",
+    "starterPrompts": {
+      "image": [
+        "Uma águia dourada majestosa voando através de picos montanhosos nebulosos ao nascer do sol",
+        "Retrato em close-up de uma modelo de moda com maquiagem avant-garde e iluminação de estúdio",
+        "Sala de estar escandinava aconchegante com móveis de madeira natural e plantas de interior",
+        "Mercado de rua cyberpunk futurista à noite com letreiros de néon e displays holográficos",
+        "Fotografia elegante de produto de garrafa de perfume de luxo em superfície de mármore",
+        "Ilhas flutuantes caprichosas conectadas por pontes de corda em um céu pastel",
+        "Close-up macro de gotas de orvalho matinal em pétalas de flores vibrantes",
+        "Configuração moderna de mesa de trabalho com laptop, café e plantas suculentas de cima"
+      ],
+      "slides": [
+        "Crie um pitch deck Série A com tamanho de mercado, tração e projeções financeiras",
+        "Construa uma revisão de negócios Q4 mostrando KPIs, vitórias e iniciativas estratégicas",
+        "Projete uma apresentação de lançamento de produto com vídeos demo e depoimentos de clientes",
+        "Desenvolva um deck de habilitação de vendas explicando nossa proposta de valor e vantagens competitivas",
+        "Crie uma atualização para investidores destacando métricas-chave e marcos próximos",
+        "Construa uma apresentação de estudo de caso do cliente mostrando ROI e métricas de sucesso"
+      ],
+      "data": [
+        "Construa um modelo financeiro projetando crescimento ARR com diferentes cenários de preços",
+        "Crie um dashboard de vendas interativo rastreando métricas por região e trimestre",
+        "Analise avaliações de clientes e visualize tendências de sentimento ao longo do tempo",
+        "Projete um calendário de conteúdo rastreando campanhas com gráficos de ROI e engajamento",
+        "Construa uma análise de coorte mostrando padrões de retenção e perda de usuários",
+        "Crie um modelo de atribuição de marketing comparando desempenho de canais"
+      ],
+      "docs": [
+        "Escreva um PRD abrangente para um motor de recomendação alimentado por IA",
+        "Redija um documento de arquitetura técnica para uma plataforma de microsserviços escalável",
+        "Crie um documento de estratégia go-to-market para nosso lançamento de produto Q2",
+        "Desenvolva um playbook de onboarding de 90 dias para gerentes de engenharia",
+        "Escreva um guia de documentação de API com exemplos e melhores práticas",
+        "Crie um manual da empresa cobrindo cultura, políticas e benefícios"
+      ],
+      "people": [
+        "Encontre candidatos VP de Engenharia em startups Série B+ IA/ML em San Francisco",
+        "Construa uma lista de leads de CMOs em empresas B2B SaaS que recentemente levantaram Série A/B",
+        "Pesquise Engenheiros Blockchain Sênior com experiência em Solidity",
+        "Gere uma lista de prospects de fundadores técnicos em startups Seed-Série A em Enterprise IA",
+        "Identifique Gerentes de Produto Sênior em empresas fintech com experiência FAANG",
+        "Encontre CIOs em empresas de TI de saúde de médio porte planejando migração para nuvem"
+      ],
+      "research": [
+        "Analise tendências emergentes em computação quântica e aplicações comerciais potenciais",
+        "Pesquise os 10 principais concorrentes no espaço CRM alimentado por IA com comparação de recursos",
+        "Investigue requisitos regulatórios para lançar um app fintech na UE",
+        "Compile uma análise de mercado sobre taxas de adoção de veículos elétricos nos principais mercados",
+        "Estude o impacto do trabalho remoto na demanda de imóveis comerciais",
+        "Pesquise padrões de adoção Web3 entre empresas Fortune 500"
+      ]
     }
   },
   "menu": {
@@ -404,7 +515,29 @@
     "plus": "mais",
     "addCredits": "Adicionar Créditos",
     "needMoreCredits": "Precisa de mais créditos?",
-    "purchaseAdditional": "Compre créditos adicionais a qualquer momento"
+    "purchaseAdditional": "Compre créditos adicionais a qualquer momento",
+    "pickPlan": "Escolha o plano que funciona para você",
+    "billingStatus": "Status de Cobrança",
+    "manageCredits": "Gerencie seus créditos e assinatura",
+    "checkoutMode": "Método de Pagamento",
+    "nativeCheckout": "Nativo",
+    "webCheckout": "Web",
+    "nativeCheckoutDescription": "Pagamento através da App Store/Play Store",
+    "webCheckoutDescription": "Pagamento através do navegador web",
+    "monthlyCredits": "Créditos Mensais",
+    "extraCredits": "Créditos Extras",
+    "renews": "Renova em {date}",
+    "allCredits": "Todos os créditos",
+    "creditTransactions": "Transações de Créditos",
+    "loadingTransactionHistory": "Carregando histórico de transações...",
+    "noTransactions": "Nenhuma transação encontrada",
+    "transactionHistoryAppearHere": "Seu histórico de transações aparecerá aqui",
+    "balanceAfter": "Saldo após",
+    "noDescription": "Sem descrição",
+    "popular": "Popular",
+    "subscription": "Assinatura",
+    "subscriptionDisclaimerIos": "O pagamento será cobrado na sua conta Apple ID na confirmação da compra. A assinatura renova automaticamente, a menos que a renovação automática seja desativada pelo menos 24 horas antes do final do período atual. Sua conta será cobrada pela renovação dentro de 24 horas antes do final do período atual. Você pode gerenciar e cancelar suas assinaturas acessando as configurações da sua conta na App Store após a compra.",
+    "subscriptionDisclaimerAndroid": "O pagamento será cobrado na sua conta Google na confirmação da compra. A assinatura renova automaticamente, a menos que a renovação automática seja desativada pelo menos 24 horas antes do final do período atual. Você pode gerenciar e cancelar suas assinaturas acessando a Google Play Store."
   },
   "theme": {
     "title": "Aparência",
@@ -425,17 +558,13 @@
   },
   "beta": {
     "title": "Recursos Beta",
-    "experimentalFeatures": "Recursos Experimentais",
-    "earlyAccess": "Tenha acesso antecipado a novas capacidades",
+    "webSupportTitle": "Totalmente Suportado na Web",
+    "webSupportDescription": "Disponível em Kortix.com. Em breve no mobile—ainda em desenvolvimento aqui.",
+    "visitKortix": "Visitar Kortix.com",
     "advancedFeatures": "Recursos Avançados",
-    "advancedDescription": "Acesse recursos experimentais e ferramentas avançadas antes de serem lançados para todos",
-    "whatsIncluded": "O que Está Incluído",
-    "experimentalTools": "Ferramentas Experimentais",
-    "experimentalToolsDescription": "Experimente novas capacidades antes do lançamento oficial",
-    "advancedSettings": "Configurações Avançadas",
-    "advancedSettingsDescription": "Ajuste sua experiência com opções de usuário avançado",
+    "mobileBeta": "Beta Mobile",
     "pleaseNote": "Observação",
-    "betaWarning": "Recursos beta podem ser instáveis e mudar sem aviso prévio. Use por sua conta e risco."
+    "mobileWarning": "Em desenvolvimento no mobile e pode ter problemas. Para a melhor experiência, use Kortix.com."
   },
   "accountDeletion": {
     "title": "Excluir Conta",
@@ -475,6 +604,8 @@
     "search": "Buscar...",
     "searchConversations": "Buscar chats",
     "searchAgents": "Buscar workers",
+    "searchWorkers": "Buscar workers",
+    "searchTriggers": "Buscar triggers",
     "imageGeneration": "Descreve a imagem que você quer criar...",
     "imageWithStyle": "Descreve sua imagem {{style}}...",
     "slidesGeneration": "Que apresentação você precisa?",
@@ -561,7 +692,9 @@
     "connecting": "Conectando...",
     "disconnect": "Desconectar",
     "noAppsFound": "Nenhum aplicativo encontrado",
+    "noAppsAvailable": "Nenhum aplicativo disponível",
     "tryDifferentSearch": "Tente um termo de busca diferente",
+    "appsAppearHere": "Os aplicativos aparecerão aqui quando disponíveis",
     "loadingIntegrations": "Carregando integrações...",
     "failedToLoad": "Falha ao carregar",
     "retry": "Tentar novamente",
@@ -610,7 +743,10 @@
       "loadingTools": "Carregando ferramentas...",
       "failedToLoadTools": "Falha ao Carregar",
       "noToolsAvailable": "Nenhuma Ferramenta Disponível",
+      "noToolsFound": "Nenhuma ferramenta encontrada",
       "noToolsDescription": "Esta integração não possui ferramentas",
+      "tryAdjustingSearch": "Tente ajustar sua busca",
+      "toolsAppearHere": "As ferramentas aparecerão aqui quando disponíveis",
       "addingTools": "Adicionando Ferramentas...",
       "addTool": "Adicionar {{count}} Ferramenta",
       "addTools": "Adicionar {{count}} Ferramentas",
@@ -633,6 +769,116 @@
       "toolsConfigured": "MCP Personalizado Adicionado",
       "toolsConfiguredMessage": "{{count}} ferramentas configuradas"
     }
+  },
+  "threadHeader": {
+    "goBack": "Voltar",
+    "openMenu": "Abrir menu",
+    "enterTitle": "Digite o título",
+    "threadActions": "Ações da conversa",
+    "untitled": "Sem título"
+  },
+  "threadActions": {
+    "title": "Ações da Conversa",
+    "upgradeRequired": "Upgrade Necessário",
+    "upgradeRequiredMessage": "Compartilhar conversas está disponível em planos pagos. Faça upgrade para desbloquear esta funcionalidade.",
+    "upgrade": "Fazer Upgrade",
+    "shareThread": "Compartilhar Conversa",
+    "shareThreadUpgrade": "Compartilhar Conversa (Upgrade)",
+    "availableOnPaidPlans": "Disponível em planos pagos",
+    "createPublicLink": "Criar link público",
+    "manageFiles": "Gerenciar Arquivos",
+    "viewManageAttachments": "Ver e gerenciar anexos",
+    "deleteThread": "Excluir Conversa",
+    "permanentlyDelete": "Excluir permanentemente esta conversa"
+  },
+  "triggers": {
+    "title": "Triggers",
+    "createTrigger": "Criar Trigger",
+    "editTrigger": "Editar Trigger",
+    "deleteTrigger": "Excluir Trigger",
+    "updateTrigger": "Atualizar Trigger",
+    "scheduleTrigger": "Trigger Agendado",
+    "eventTrigger": "Trigger de Evento",
+    "runOnSchedule": "Executar por agendamento",
+    "fromExternalApps": "De apps externos",
+    "selectApplication": "Selecionar Aplicativo",
+    "configureTrigger": "Configurar Trigger",
+    "loadingTriggerConfig": "Carregando configuração...",
+    "loadingTriggers": "Carregando triggers...",
+    "loadingApps": "Carregando apps...",
+    "loadingProfiles": "Carregando perfis...",
+    "noTriggersAvailable": "Nenhum trigger disponível",
+    "noAppsFound": "Nenhum app encontrado",
+    "connected": "Conectado",
+    "notConnected": "Não conectado",
+    "setupRequired": "Configuração necessária",
+    "retry": "Tentar novamente",
+    "back": "Voltar",
+    "creating": "Criando...",
+    "updating": "Atualizando...",
+    "triggerDetails": "Detalhes do Trigger",
+    "active": "Ativo",
+    "inactive": "Inativo",
+    "noTriggersConfigured": "Nenhum trigger configurado",
+    "setupTriggersToAutomate": "Configure triggers para automatizar este worker"
+  },
+  "files": {
+    "title": "Arquivos",
+    "loadingFiles": "Carregando arquivos...",
+    "failedToLoad": "Falha ao carregar",
+    "retry": "Tentar novamente",
+    "folderEmpty": "Esta pasta está vazia",
+    "uploadOrCreate": "Envie arquivos ou crie pastas",
+    "createFolder": "Criar Pasta",
+    "folderName": "Nome da pasta",
+    "cancel": "Cancelar",
+    "create": "Criar"
+  },
+  "workers": {
+    "title": "Workers",
+    "instructions": {
+      "title": "Prompt do Sistema",
+      "description": "Defina como seu worker deve se comportar",
+      "loading": "Carregando instruções...",
+      "saving": "Salvando...",
+      "saveChanges": "Salvar Alterações"
+    },
+    "loadingWorker": "Carregando worker...",
+    "core": "Principal",
+    "capabilitiesEnabled": "{{enabled}} / {{total}} capacidades habilitadas",
+    "toolConfiguration": "Configuração de ferramentas",
+    "configureToolsDescription": "Configure as ferramentas e suas capacidades individuais para seu agente",
+    "toolsEnabled": "{{enabled}} / {{total}} habilitadas",
+    "loadingTools": "Carregando ferramentas...",
+    "noToolsAvailable": "Nenhuma ferramenta disponível",
+    "toolsWillAppear": "As ferramentas aparecerão aqui quando disponíveis",
+    "sunaToolsManaged": "As ferramentas do Suna são gerenciadas centralmente e não podem ser editadas.",
+    "toolsNotEditable": "Estas ferramentas não podem ser editadas.",
+    "cannotEditTools": "Não é possível editar",
+    "sunaToolsManagedAlert": "As ferramentas do Suna são gerenciadas centralmente.",
+    "savingChanges": "Salvando...",
+    "saveChanges": "Salvar alterações"
+  },
+  "tools": {
+    "executing": "Executando ferramenta",
+    "input": "Entrada",
+    "output": "Saída",
+    "noContentAvailable": "Nenhum conteúdo disponível",
+    "processing": "Processando",
+    "loading": "Carregando",
+    "searching": "Pesquisando",
+    "completed": "Concluído",
+    "failed": "Falhou"
+  },
+  "composio": {
+    "noAppsFound": "Nenhum app encontrado",
+    "noAppsAvailable": "Nenhum app disponível",
+    "searchApps": "Pesquisar apps...",
+    "searchTools": "Pesquisar ferramentas...",
+    "failedToLoadTools": "Falha ao carregar ferramentas",
+    "retry": "Tentar novamente",
+    "noToolsFound": "Nenhuma ferramenta encontrada",
+    "saving": "Salvando...",
+    "selectTools": "Selecionar Ferramentas"
   }
 }
-

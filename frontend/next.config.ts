@@ -1,7 +1,44 @@
 import type { NextConfig } from 'next';
 
+// Dynamically determine backend URL based on Vercel environment
+const getBackendUrl = (): string => {
+  // If explicitly set via Vercel dashboard/env, use that (highest priority)
+  const explicitUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  if (explicitUrl && explicitUrl.trim() !== '') {
+    return explicitUrl;
+  }
+  
+  // Vercel environment detection
+  const vercelEnv = process.env.VERCEL_ENV; // 'production', 'preview', or 'development'
+  const gitRef = process.env.VERCEL_GIT_COMMIT_REF || ''; // Branch name
+  
+  // Production environment
+  if (vercelEnv === 'production') {
+    return 'https://api.kortix.com/v1';
+  }
+  
+  // Preview deployments (non-main branches)
+  if (vercelEnv === 'preview' && gitRef && gitRef !== 'main') {
+    // Sanitize branch name for URL
+    const sanitizedBranch = gitRef
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+    return `https://${sanitizedBranch}.api-staging.suna.so/v1`;
+  }
+  
+  // Main branch / staging (default)
+  return 'https://staging-api.suna.so/v1';
+};
+
 const nextConfig = (): NextConfig => ({
   output: (process.env.NEXT_OUTPUT as 'standalone') || undefined,
+  
+  // Set environment variables
+  env: {
+    NEXT_PUBLIC_BACKEND_URL: getBackendUrl(),
+  },
   
   // Performance optimizations
   experimental: {
@@ -25,6 +62,7 @@ const nextConfig = (): NextConfig => ({
     formats: ['image/avif', 'image/webp'],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920],
     imageSizes: [16, 32, 48, 64, 96, 128, 256],
+    qualities: [75, 100],
   },
   
   async rewrites() {

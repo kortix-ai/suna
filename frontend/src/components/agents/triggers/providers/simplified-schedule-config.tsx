@@ -34,6 +34,7 @@ import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { TriggerProvider, ScheduleTriggerConfig } from '../types';
 import { AgentSelector } from '@/components/agents/agent-selector';
+import { AgentModelSelector } from '@/components/agents/config/model-selector';
 
 interface SimplifiedScheduleConfigProps {
   provider: TriggerProvider;
@@ -220,6 +221,27 @@ const WEEKDAYS = [
   { value: '6', label: 'Saturday', short: 'Sat' },
   { value: '0', label: 'Sunday', short: 'Sun' },
 ];
+
+const isCronTooFrequent = (cronExpression: string): boolean => {
+  if (!cronExpression) return false;
+  const parts = cronExpression.trim().split(/\s+/);
+  if (parts.length !== 5) return false;
+  
+  const [minute, hour] = parts;
+  
+  if (hour === '*' && (minute === '*' || minute.startsWith('*/'))) {
+    return true;
+  }
+  
+  if (minute.startsWith('*/')) {
+    const interval = parseInt(minute.slice(2), 10);
+    if (!isNaN(interval) && interval < 60) {
+      return true;
+    }
+  }
+  
+  return false;
+};
 
 const ProgressStepper = ({ currentStep }: { currentStep: 'setup' | 'schedule' | 'execute' }) => {
   const steps = [
@@ -861,11 +883,15 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
                               value={config.cron_expression || ''}
                               onChange={(e) => onChange({ ...config, cron_expression: e.target.value })}
                               placeholder="0 9 * * 1-5"
-                              className="font-mono"
+                              className={cn("font-mono", isCronTooFrequent(config.cron_expression || '') && "border-destructive")}
                             />
+                            {isCronTooFrequent(config.cron_expression || '') && (
+                              <p className="text-sm text-destructive">
+                                Schedules that run more frequently than once per hour are not allowed. Minimum interval is 1 hour.
+                              </p>
+                            )}
                           </div>
 
-                          {/* Cron Format Info */}
                           <div className="bg-muted/50 p-4 rounded-lg border">
                             <div className="font-medium text-sm mb-2">Cron Format</div>
                             <div className="space-y-2 text-sm">
@@ -878,6 +904,9 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
                                   Use <code className="bg-background px-1 rounded">*</code> for any value,
                                   <code className="bg-background px-1 rounded">*/5</code> for every 5 units
                                 </div>
+                              </div>
+                              <div className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                                Note: Minimum interval is 1 hour. Schedules like <code className="bg-background px-1 rounded">*/5 * * * *</code> are not allowed.
                               </div>
                             </div>
                           </div>
@@ -945,7 +974,7 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
                   </Button>
                   <Button
                     onClick={() => setCurrentStep('execute')}
-                    disabled={!config.cron_expression && !selectedPreset}
+                    disabled={(!config.cron_expression && !selectedPreset) || isCronTooFrequent(config.cron_expression || '')}
                     size="sm"
                   >
                     Next: Choose Execution Method
@@ -1021,6 +1050,18 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
                       </div>
                     </div>
                   )}
+
+                  {/* Model Selection */}
+                  <div className="border rounded-lg p-4 space-y-4">
+                    <div>
+                      <h3 className="font-medium mb-1">Model</h3>
+                      <p className="text-sm text-muted-foreground">Choose which model to use for this scheduled task</p>
+                    </div>
+                    <AgentModelSelector
+                      value={config.model || 'kortix/basic'}
+                      onChange={(model) => onChange({ ...config, model })}
+                    />
+                  </div>
 
                 </div>
               </div>

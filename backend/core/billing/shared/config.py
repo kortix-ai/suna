@@ -1,6 +1,8 @@
 from decimal import Decimal
 from typing import Dict, List, Optional
 from dataclasses import dataclass
+
+from click.decorators import R
 from core.utils.config import config
 
 TRIAL_ENABLED = False
@@ -30,6 +32,7 @@ class Tier:
     custom_workers_limit: int
     scheduled_triggers_limit: int
     app_triggers_limit: int
+    memory_config: Optional[Dict] = None
     daily_credit_config: Optional[Dict] = None
     monthly_refill_enabled: Optional[bool] = True
 
@@ -47,6 +50,11 @@ TIERS: Dict[str, Tier] = {
         custom_workers_limit=0,
         scheduled_triggers_limit=0,
         app_triggers_limit=0,
+        memory_config={
+            'enabled': False,
+            'max_memories': 0,
+            'retrieval_limit': 0
+        },
     ),
     'free': Tier(
         name='free',
@@ -55,12 +63,17 @@ TIERS: Dict[str, Tier] = {
         display_name='Basic',
         can_purchase_credits=False,
         models=['haiku'],
-        project_limit=3,
+        project_limit=20,  # 2x thread_limit (safety buffer for orphan projects)
         thread_limit=10,
         concurrent_runs=1,
         custom_workers_limit=0,
         scheduled_triggers_limit=0,
         app_triggers_limit=0,
+        memory_config={
+            'enabled': True,
+            'max_memories': 10,
+            'retrieval_limit': 2
+        },
         daily_credit_config={
             'enabled': True,
             'amount': Decimal('2.00'),
@@ -76,15 +89,20 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_2_17_YEARLY_COMMITMENT_ID
         ],
         monthly_credits=Decimal('40.00'),
-        display_name='Starter',
+        display_name='Plus',
         can_purchase_credits=False,
         models=['all'],
-        project_limit=100,
+        project_limit=200,  # 2x thread_limit
         thread_limit=100,
         concurrent_runs=3,
         custom_workers_limit=5,
         scheduled_triggers_limit=5,
         app_triggers_limit=10,
+        memory_config={
+            'enabled': True,
+            'max_memories': 100,
+            'retrieval_limit': 15
+        },
         daily_credit_config={
             'enabled': True,
             'amount': Decimal('2.00'),
@@ -100,15 +118,20 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_6_42_YEARLY_COMMITMENT_ID
         ],
         monthly_credits=Decimal('100.00'),
-        display_name='Professional',
+        display_name='Pro',
         can_purchase_credits=False,
         models=['all'],
-        project_limit=500,
+        project_limit=1000,  # 2x thread_limit
         thread_limit=500,
         concurrent_runs=5,
         custom_workers_limit=20,
         scheduled_triggers_limit=10,
         app_triggers_limit=25,
+        memory_config={
+            'enabled': True,
+            'max_memories': 500,
+            'retrieval_limit': 25
+        },
         daily_credit_config={
             'enabled': True,
             'amount': Decimal('2.00'),
@@ -124,15 +147,20 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_25_170_YEARLY_COMMITMENT_ID
         ],
         monthly_credits=Decimal('400.00'),
-        display_name='Business',
+        display_name='Ultra',
         can_purchase_credits=True,
         models=['all'],
-        project_limit=2500,
+        project_limit=5000,  # 2x thread_limit
         thread_limit=2500,
         concurrent_runs=20,
         custom_workers_limit=100,
         scheduled_triggers_limit=50,
         app_triggers_limit=100,
+        memory_config={
+            'enabled': True,
+            'max_memories': 2000,
+            'retrieval_limit': 40
+        },
         daily_credit_config={
             'enabled': True,
             'amount': Decimal('2.00'),
@@ -149,12 +177,17 @@ TIERS: Dict[str, Tier] = {
         display_name='Legacy Pro',
         can_purchase_credits=True,
         models=['all'],
-        project_limit=1000,
+        project_limit=2000,  # 2x thread_limit
         thread_limit=1000,
         concurrent_runs=10,
         custom_workers_limit=20,
         scheduled_triggers_limit=20,
         app_triggers_limit=50,
+        memory_config={
+            'enabled': True,
+            'max_memories': 1000,
+            'retrieval_limit': 30
+        },
         daily_credit_config={
             'enabled': True,
             'amount': Decimal('2.00'),
@@ -169,17 +202,22 @@ TIERS: Dict[str, Tier] = {
         display_name='Legacy Business',
         can_purchase_credits=True,
         models=['all'],
-        project_limit=5000,
+        project_limit=10000,  # 2x thread_limit
         thread_limit=5000,
         concurrent_runs=30,
         custom_workers_limit=100,
+        scheduled_triggers_limit=100,
+        app_triggers_limit=200,
+        memory_config={
+            'enabled': True,
+            'max_memories': 5000,
+            'retrieval_limit': 50
+        },
         daily_credit_config={
             'enabled': True,
             'amount': Decimal('2.00'),
             'refresh_interval_hours': 24
         },
-        scheduled_triggers_limit=100,
-        app_triggers_limit=200,
         monthly_refill_enabled=True
     ),
     'tier_125_800': Tier(
@@ -189,12 +227,17 @@ TIERS: Dict[str, Tier] = {
         display_name='Legacy Enterprise',
         can_purchase_credits=True,
         models=['all'],
-        project_limit=10000,
+        project_limit=20000,  # 2x thread_limit
         thread_limit=10000,
         concurrent_runs=50,
         custom_workers_limit=200,
         scheduled_triggers_limit=200,
         app_triggers_limit=500,
+        memory_config={
+            'enabled': True,
+            'max_memories': 10000,
+            'retrieval_limit': 60
+        },
         daily_credit_config={
             'enabled': True,
             'amount': Decimal('2.00'),
@@ -209,12 +252,17 @@ TIERS: Dict[str, Tier] = {
         display_name='Legacy Enterprise Plus',
         can_purchase_credits=True,
         models=['all'],
-        project_limit=25000,
+        project_limit=50000,  # 2x thread_limit
         thread_limit=25000,
         concurrent_runs=100,
         custom_workers_limit=500,
         scheduled_triggers_limit=500,
         app_triggers_limit=1000,
+        memory_config={
+            'enabled': True,
+            'max_memories': 25000,
+            'retrieval_limit': 80
+        },
         daily_credit_config={
             'enabled': True,
             'amount': Decimal('2.00'),
@@ -229,12 +277,17 @@ TIERS: Dict[str, Tier] = {
         display_name='Legacy Enterprise Max',
         can_purchase_credits=True,
         models=['all'],
-        project_limit=25000,
+        project_limit=50000,  # 2x thread_limit
         thread_limit=25000,
         concurrent_runs=100,
         custom_workers_limit=500,
         scheduled_triggers_limit=500,
         app_triggers_limit=1000,
+        memory_config={
+            'enabled': True,
+            'max_memories': 30000,
+            'retrieval_limit': 100
+        },
         daily_credit_config={
             'enabled': True,
             'amount': Decimal('2.00'),
@@ -314,7 +367,7 @@ def is_model_allowed(tier_name: str, model: str) -> bool:
 
 def get_project_limit(tier_name: str) -> int:
     tier = TIERS.get(tier_name)
-    return tier.project_limit if tier else 3
+    return tier.project_limit if tier else 20  # Default to 2x free thread_limit
 
 def is_commitment_price_id(price_id: str) -> bool:
     commitment_price_ids = [
@@ -379,5 +432,24 @@ def get_tier_limits(tier_name: str) -> Dict:
         'app_triggers_limit': tier.app_triggers_limit,
         'agent_limit': tier.custom_workers_limit,
         'can_purchase_credits': tier.can_purchase_credits,
-        'models': tier.models
+        'models': tier.models,
+        'memory_config': tier.memory_config or {'enabled': False, 'max_memories': 0, 'retrieval_limit': 0}
     }
+
+def get_memory_config(tier_name: str) -> Dict:
+    tier = TIERS.get(tier_name, TIERS['free'])
+    if tier.memory_config:
+        return tier.memory_config
+    return {'enabled': False, 'max_memories': 0, 'retrieval_limit': 0}
+
+def is_memory_enabled(tier_name: str) -> bool:
+    config = get_memory_config(tier_name)
+    return config.get('enabled', False)
+
+def get_max_memories(tier_name: str) -> int:
+    config = get_memory_config(tier_name)
+    return config.get('max_memories', 0)
+
+def get_memory_retrieval_limit(tier_name: str) -> int:
+    config = get_memory_config(tier_name)
+    return config.get('retrieval_limit', 0)

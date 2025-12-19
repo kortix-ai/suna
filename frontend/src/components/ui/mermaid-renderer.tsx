@@ -264,7 +264,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
         const mermaid = (await import('mermaid')).default;
         await mermaid.initialize({
           startOnLoad: false,
-          securityLevel: 'loose',
+          securityLevel: 'strict',
           theme: 'base',
           fontFamily: 'ui-sans-serif, system-ui, sans-serif',
           // Enable experimental features including gitgraph
@@ -392,7 +392,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
           const mermaid = (await import('mermaid')).default;
           await mermaid.initialize({
             startOnLoad: false,
-            securityLevel: 'loose',
+            securityLevel: 'strict',
             theme: 'base',
             fontFamily: 'ui-sans-serif, system-ui, sans-serif',
             // Enable experimental features including gitgraph
@@ -486,7 +486,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
   if (isLoading) {
     return (
       <div className={cn(
-        'flex items-center justify-center p-8 bg-muted/30 rounded-md border border-dashed',
+        'flex items-center justify-center p-8 bg-muted/30 rounded-2xl border border-dashed',
         className
       )}>
         <div className="text-center">
@@ -506,7 +506,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
             <span>⚠️</span>
             <span>Unsupported diagram type (not available in Mermaid 11.x)</span>
           </div>
-          <pre className="text-xs p-3 bg-muted/50 border rounded-md overflow-x-auto whitespace-pre-wrap font-mono">
+          <pre className="text-xs p-3 bg-muted/50 border rounded-2xl overflow-x-auto whitespace-pre-wrap font-mono">
             {chart}
           </pre>
         </div>
@@ -516,7 +516,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
     // For other errors, show the full error UI
     return (
       <div className={cn(
-        'p-4 bg-destructive/10 border border-destructive/20 rounded-md',
+        'p-4 bg-destructive/10 border border-destructive/20 rounded-2xl',
         className
       )}>
         <div className="text-sm text-destructive font-medium mb-2">
@@ -549,21 +549,21 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
           }
           .mermaid-container .node {
             fill: hsl(var(--card)) !important;
-            stroke: hsl(var(--border)) !important;
+            stroke: hsl(var(--foreground)) !important;
           }
           .mermaid-container .cluster {
             fill: hsl(var(--muted)) !important;
-            stroke: hsl(var(--border)) !important;
+            stroke: hsl(var(--foreground)) !important;
           }
           .mermaid-container text {
             fill: hsl(var(--foreground)) !important;
             font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif !important;
           }
           .mermaid-container .edgePath {
-            stroke: hsl(var(--border)) !important;
+            stroke: hsl(var(--foreground)) !important;
           }
           .mermaid-container .marker {
-            fill: hsl(var(--border)) !important;
+            fill: hsl(var(--foreground)) !important;
           }
 
           /* Fullscreen modal specific styles */
@@ -595,7 +595,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
       }} />
       <div
         className={cn(
-          'mermaid-container my-4 rounded-md border overflow-auto bg-background relative group cursor-pointer',
+          'mermaid-container my-4 rounded-2xl border overflow-auto bg-background relative group cursor-pointer',
           enableFullscreen && 'hover:ring-2 hover:ring-primary/20',
           className
         )}
@@ -610,7 +610,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
           dangerouslySetInnerHTML={{ __html: renderedContent }}
         />
         {enableFullscreen && (
-          <div className="absolute inset-0 bg-black/0 hover:bg-black/5 transition-colors rounded-md flex items-center justify-center opacity-0 hover:opacity-100 pointer-events-none">
+          <div className="absolute inset-0 bg-black/0 hover:bg-black/5 transition-colors rounded-2xl flex items-center justify-center opacity-0 hover:opacity-100 pointer-events-none">
             <Button
               variant="secondary"
               size="sm"
@@ -723,7 +723,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
               )}
 
               {/* Canvas instructions */}
-              <div className="absolute bottom-4 left-4 bg-background/80 backdrop-blur-sm rounded-md px-3 py-2 text-xs text-muted-foreground shadow-sm">
+              <div className="absolute bottom-4 left-4 bg-background/80 backdrop-blur-sm rounded-2xl px-3 py-2 text-xs text-muted-foreground shadow-sm">
                 <div>Drag to pan • Scroll to zoom • Pinch to zoom</div>
                 <div className="mt-1 opacity-75">Esc: close • +/-: zoom • 0: reset • F: fit</div>
               </div>

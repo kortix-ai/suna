@@ -2,7 +2,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { ChevronDown } from 'lucide-react-native';
 import * as React from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, View, Platform, TouchableOpacity } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -13,7 +13,11 @@ import { useAgent } from '@/contexts/AgentContext';
 import { KortixLogo } from '@/components/ui/KortixLogo';
 import { useColorScheme } from 'nativewind';
 
+// NOTE: AnimatedPressable blocks touches on Android - use TouchableOpacity instead
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+// Android hit slop for better touch targets
+const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 10, bottom: 10, left: 10, right: 10 } : undefined;
 
 interface AgentSelectorProps {
   onPress?: () => void;
@@ -42,16 +46,11 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
 
   if (!agent) {
     return (
-      <AnimatedPressable
-        onPressIn={() => {
-          scale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
-        }}
-        onPressOut={() => {
-          scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-        }}
+      <TouchableOpacity
         onPress={onPress}
-        className="flex-row items-center gap-1.5 rounded-full px-3.5 py-2"
-        style={animatedStyle}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8 }}
+        hitSlop={ANDROID_HIT_SLOP}
+        activeOpacity={0.7}
       >
         <View className="w-6 h-6 bg-muted rounded-full items-center justify-center">
           <Text className="text-muted-foreground text-xs font-roobert-bold">?</Text>
@@ -63,22 +62,16 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
           className="text-foreground/60"
           strokeWidth={2}
         />
-      </AnimatedPressable>
+      </TouchableOpacity>
     );
   }
 
   if (compact) {
     return (
-      <AnimatedPressable
-        onPressIn={() => {
-          scale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
-        }}
-        onPressOut={() => {
-          scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-        }}
+      <TouchableOpacity
         onPress={onPress}
-        className="relative"
-        style={animatedStyle}
+        hitSlop={ANDROID_HIT_SLOP}
+        activeOpacity={0.7}
       >
         <AgentAvatar agent={agent} size={26} />
         <View className="absolute -bottom-0.5 -right-0.5 rounded-full items-center justify-center" style={{ width: 13, height: 13 }}>
@@ -89,21 +82,16 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
             strokeWidth={2.5}
           />
         </View>
-      </AnimatedPressable>
+      </TouchableOpacity>
     );
   }
 
   return (
-    <AnimatedPressable
-      onPressIn={() => {
-        scale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
-      }}
-      onPressOut={() => {
-        scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-      }}
+    <TouchableOpacity
       onPress={onPress}
-      className="flex-row items-center gap-1.5 rounded-2xl px-3.5 py-2"
-      style={animatedStyle}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 8 }}
+      hitSlop={ANDROID_HIT_SLOP}
+      activeOpacity={0.7}
     >
       <AgentAvatar agent={agent} size={19} />
       <Text className="text-foreground text-sm font-roobert-medium">{agent.name}</Text>
@@ -113,7 +101,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
         className="text-foreground/60 pt-0.5"
         strokeWidth={2}
       />
-    </AnimatedPressable>
+    </TouchableOpacity>
   );
 }
 

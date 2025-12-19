@@ -281,7 +281,29 @@ def validate_call_safety(phone_number: str, first_message: str, system_prompt: O
     icon="Phone",
     color="bg-indigo-100 dark:bg-indigo-800/50",
     weight=280,
-    visible=True
+    visible=True,
+    usage_guide="""
+### VOICE CALL CAPABILITIES
+
+**CORE FUNCTIONS:**
+- Create AI voice agents for phone calls
+- Configure voice, personality, and conversation flow
+- Make outbound calls to phone numbers
+- Handle inbound calls with AI responses
+
+**USE CASES:**
+- Customer service automation
+- Appointment scheduling
+- Survey collection
+- Lead qualification
+- Information delivery via phone
+
+**BEST PRACTICES:**
+- Configure clear voice instructions
+- Test with small batches first
+- Provide fallback options
+- Respect calling regulations
+"""
 )
 class VapiVoiceTool(Tool):
     
@@ -729,7 +751,7 @@ class VapiVoiceTool(Tool):
 
 **Status**: {status}
 **Duration**: {duration} seconds
-**Credits Used**: ${credits_deducted:.4f}
+**Credits Used**: {int(credits_deducted * 100)} credits
 **Call ID**: `{call_id[:8]}...`
 
 The voice call has ended. You can continue with any follow-up actions."""

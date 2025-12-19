@@ -1,6 +1,6 @@
 /**
  * Trigger API Hooks
- * 
+ *
  * React Query hooks for trigger CRUD operations
  * Following patterns from useApiQueries.ts
  */
@@ -15,16 +15,17 @@ import type {
   TriggerUpdateRequest,
   TriggerResponse,
   ProviderResponse,
+  TriggerAppsResponse,
 } from '@/api/types';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000/v1';
 
 // ===== QUERY FUNCTIONS =====
 
 const fetchAllTriggers = async (token: string): Promise<TriggerWithAgent[]> => {
   const response = await fetch(`${API_BASE_URL}/triggers/all`, {
     headers: {
-      'Authorization': `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
   });
@@ -36,10 +37,13 @@ const fetchAllTriggers = async (token: string): Promise<TriggerWithAgent[]> => {
   return response.json();
 };
 
-const fetchAgentTriggers = async (agentId: string, token: string): Promise<TriggerConfiguration[]> => {
+const fetchAgentTriggers = async (
+  agentId: string,
+  token: string
+): Promise<TriggerConfiguration[]> => {
   const response = await fetch(`${API_BASE_URL}/triggers/agents/${agentId}/triggers`, {
     headers: {
-      'Authorization': `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
   });
@@ -54,7 +58,7 @@ const fetchAgentTriggers = async (agentId: string, token: string): Promise<Trigg
 const fetchTriggerProviders = async (token: string): Promise<TriggerProvider[]> => {
   const response = await fetch(`${API_BASE_URL}/triggers/providers`, {
     headers: {
-      'Authorization': `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
   });
@@ -69,13 +73,28 @@ const fetchTriggerProviders = async (token: string): Promise<TriggerProvider[]> 
 const fetchTrigger = async (triggerId: string, token: string): Promise<TriggerResponse> => {
   const response = await fetch(`${API_BASE_URL}/triggers/${triggerId}`, {
     headers: {
-      'Authorization': `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
   });
 
   if (!response.ok) {
     throw new Error(`Failed to fetch trigger: ${response.statusText}`);
+  }
+
+  return response.json();
+};
+
+const fetchTriggerApps = async (token: string): Promise<TriggerAppsResponse> => {
+  const response = await fetch(`${API_BASE_URL}/composio/triggers/apps`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch trigger apps: ${response.statusText}`);
   }
 
   return response.json();
@@ -95,7 +114,7 @@ const createTrigger = async ({
   const response = await fetch(`${API_BASE_URL}/triggers/agents/${agentId}/triggers`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(data),
@@ -121,7 +140,7 @@ const updateTrigger = async ({
   const response = await fetch(`${API_BASE_URL}/triggers/${triggerId}`, {
     method: 'PUT',
     headers: {
-      'Authorization': `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(data),
@@ -147,7 +166,7 @@ const deleteTrigger = async ({
   const response = await fetch(`${API_BASE_URL}/triggers/${triggerId}`, {
     method: 'DELETE',
     headers: {
-      'Authorization': `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
   });
@@ -233,9 +252,12 @@ export const useCreateTrigger = () => {
       createTrigger({ agentId, data, token: session?.access_token || '' }),
     onSuccess: (data, variables) => {
       // Invalidate and refetch triggers
-      queryClient.invalidateQueries({ queryKey: ['triggers', 'all'] });
-      queryClient.invalidateQueries({ queryKey: ['triggers', 'agent', variables.agentId] });
-      
+      queryClient.invalidateQueries({ queryKey: ['triggers', 'all'], refetchType: 'active' });
+      queryClient.invalidateQueries({
+        queryKey: ['triggers', 'agent', variables.agentId],
+        refetchType: 'active',
+      });
+
       // Add the new trigger to the cache
       queryClient.setQueryData(['triggers', data.trigger_id], data);
     },
@@ -252,10 +274,13 @@ export const useUpdateTrigger = () => {
     onSuccess: (data) => {
       // Update the specific trigger in cache
       queryClient.setQueryData(['triggers', data.trigger_id], data);
-      
+
       // Invalidate lists to ensure consistency
-      queryClient.invalidateQueries({ queryKey: ['triggers', 'all'] });
-      queryClient.invalidateQueries({ queryKey: ['triggers', 'agent', data.agent_id] });
+      queryClient.invalidateQueries({ queryKey: ['triggers', 'all'], refetchType: 'active' });
+      queryClient.invalidateQueries({
+        queryKey: ['triggers', 'agent', data.agent_id],
+        refetchType: 'active',
+      });
     },
   });
 };
@@ -270,10 +295,13 @@ export const useDeleteTrigger = () => {
     onSuccess: (_, variables) => {
       // Remove from cache
       queryClient.removeQueries({ queryKey: ['triggers', variables.triggerId] });
-      
+
       // Invalidate lists
-      queryClient.invalidateQueries({ queryKey: ['triggers', 'all'] });
-      queryClient.invalidateQueries({ queryKey: ['triggers', 'agent', variables.agentId] });
+      queryClient.invalidateQueries({ queryKey: ['triggers', 'all'], refetchType: 'active' });
+      queryClient.invalidateQueries({
+        queryKey: ['triggers', 'agent', variables.agentId],
+        refetchType: 'active',
+      });
     },
   });
 };
@@ -288,10 +316,162 @@ export const useToggleTrigger = () => {
     onSuccess: (data) => {
       // Update the specific trigger in cache
       queryClient.setQueryData(['triggers', data.trigger_id], data);
-      
+
       // Invalidate lists to ensure consistency
-      queryClient.invalidateQueries({ queryKey: ['triggers', 'all'] });
-      queryClient.invalidateQueries({ queryKey: ['triggers', 'agent', data.agent_id] });
+      queryClient.invalidateQueries({ queryKey: ['triggers', 'all'], refetchType: 'active' });
+      queryClient.invalidateQueries({
+        queryKey: ['triggers', 'agent', data.agent_id],
+        refetchType: 'active',
+      });
+    },
+  });
+};
+
+export const useTriggerApps = () => {
+  const { session } = useAuthContext();
+
+  return useQuery({
+    queryKey: ['triggers', 'apps'],
+    queryFn: () => fetchTriggerApps(session?.access_token || ''),
+    enabled: !!session?.access_token,
+  });
+};
+
+// ===== COMPOSIO EVENT TRIGGER HOOKS =====
+
+import type {
+  ComposioAppsWithTriggersResponse,
+  ComposioAppTriggersResponse,
+  CreateComposioEventTriggerRequest,
+  CreateComposioEventTriggerResponse,
+} from '@/api/types';
+
+const fetchComposioAppsWithTriggers = async (
+  token: string
+): Promise<ComposioAppsWithTriggersResponse> => {
+  const response = await fetch(`${API_BASE_URL}/composio/triggers/apps`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch Composio apps with triggers: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data;
+};
+
+const fetchComposioAppTriggers = async (
+  toolkitSlug: string,
+  token: string
+): Promise<ComposioAppTriggersResponse> => {
+  const response = await fetch(`${API_BASE_URL}/composio/triggers/apps/${toolkitSlug}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch triggers for app ${toolkitSlug}: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data;
+};
+
+const createComposioEventTrigger = async ({
+  data,
+  token,
+}: {
+  data: CreateComposioEventTriggerRequest;
+  token: string;
+}): Promise<CreateComposioEventTriggerResponse> => {
+  const response = await fetch(`${API_BASE_URL}/composio/triggers/create`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    let errorMessage = `Failed to create event trigger: ${response.statusText}`;
+    try {
+      const errorData = await response.json();
+      // Handle different error response formats (matching frontend error handling)
+      // Check for nested error structure: { error: { message: ... } }
+      if (errorData.error?.message) {
+        errorMessage = errorData.error.message;
+      } else if (errorData.message) {
+        errorMessage = errorData.message;
+      } else if (errorData.detail) {
+        // detail can be a string or an object
+        if (typeof errorData.detail === 'string') {
+          errorMessage = errorData.detail;
+        } else if (errorData.detail.message) {
+          errorMessage = errorData.detail.message;
+        } else {
+          // If detail is an object without message, try to extract meaningful info
+          errorMessage = errorData.detail.message || JSON.stringify(errorData.detail);
+        }
+      }
+    } catch (parseError) {
+      // If JSON parsing fails, use default error message
+      console.error('Failed to parse error response:', parseError);
+    }
+
+    // Create error with clean message (not JSON stringified)
+    throw new Error(errorMessage);
+  }
+
+  return response.json();
+};
+
+export const useComposioAppsWithTriggers = () => {
+  const { session } = useAuthContext();
+
+  return useQuery({
+    queryKey: ['composio', 'apps-with-triggers'],
+    queryFn: () => fetchComposioAppsWithTriggers(session?.access_token || ''),
+    enabled: !!session?.access_token,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+};
+
+export const useComposioAppTriggers = (toolkitSlug?: string, enabled: boolean = true) => {
+  const { session } = useAuthContext();
+
+  return useQuery({
+    queryKey: ['composio', 'app-triggers', toolkitSlug],
+    queryFn: () => fetchComposioAppTriggers(toolkitSlug!, session?.access_token || ''),
+    enabled: enabled && !!toolkitSlug && !!session?.access_token,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+};
+
+export const useCreateComposioEventTrigger = () => {
+  const { session } = useAuthContext();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: CreateComposioEventTriggerRequest) =>
+      createComposioEventTrigger({ data, token: session?.access_token || '' }),
+    onSuccess: (data) => {
+      // Invalidate trigger queries
+      queryClient.invalidateQueries({ queryKey: ['triggers', 'all'], refetchType: 'active' });
+      queryClient.invalidateQueries({
+        queryKey: ['triggers', 'agent', data.agent_id],
+        refetchType: 'active',
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['composio', 'app-triggers'],
+        refetchType: 'active',
+      });
     },
   });
 };

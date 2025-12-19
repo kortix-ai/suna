@@ -4,7 +4,6 @@ from .cancellation import CancellationHandler
 from .expiration import ExpirationHandler
 from .product_change import ProductChangeHandler
 from .topup import TopupHandler
-from .transfer import TransferHandler
 from .billing_issue import BillingIssueHandler
 
 __all__ = [
@@ -14,6 +13,5 @@ __all__ = [
     'ExpirationHandler',
     'ProductChangeHandler',
     'TopupHandler',
-    'TransferHandler',
     'BillingIssueHandler',
 ]

@@ -4,13 +4,14 @@
  * Centralized exports for all API clients and hooks
  * 
  * Organization:
- * - lib/chat/       - Threads, messages, agent runs
- * - lib/agents/     - Agent management
- * - lib/triggers/   - Trigger management
- * - lib/models/     - Available models
- * - lib/files/      - File/sandbox operations
- * - lib/billing/    - Billing, subscriptions, credits
- * - lib/utils/      - Utilities, helpers, formatters
+ * - lib/chat/          - Threads, messages, agent runs
+ * - lib/agents/        - Agent management
+ * - lib/triggers/      - Trigger management
+ * - lib/models/        - Available models
+ * - lib/files/         - File/sandbox operations
+ * - lib/billing/       - Billing, subscriptions, credits
+ * - lib/notifications/ - Push notifications, device tokens
+ * - lib/utils/         - Utilities, helpers, formatters
  */
 
 // Chat
@@ -30,6 +31,9 @@ export * from './files';
 
 // Billing
 export * from './billing';
+
+// Notifications
+export * from './notifications';
 
 // Utils
 export * from './utils';

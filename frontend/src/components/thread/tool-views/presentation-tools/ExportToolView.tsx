@@ -9,18 +9,15 @@ import {
   LucideIcon,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
-import {
-  getToolTitle,
-} from '../utils';
+import { formatTimestamp } from '../utils';
 import { downloadPresentation, DownloadFormat } from '../utils/presentation-utils';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Markdown } from '@/components/ui/markdown';
-import { FileAttachment } from '../../file-attachment';
 import { useAuth } from '@/components/AuthProvider';
+import { useDownloadRestriction } from '@/hooks/billing';
+import { cn } from '@/lib/utils';
 
 interface ExportToolViewProps extends ToolViewProps {
   onFileClick?: (filePath: string) => void;
@@ -30,47 +27,29 @@ type ExportFormat = 'pptx' | 'pdf';
 
 interface FormatConfig {
   icon: LucideIcon;
-  iconColor: string;
-  badgeColor: string;
-  noteBgColor: string;
-  noteBorderColor: string;
-  noteTextColor: string;
+  label: string;
+  description: string;
   defaultExtension: string;
   fileProperty: string;
   downloadFormat: DownloadFormat;
 }
 
-// Shared color scheme for all export formats
-const exportColors = {
-  iconColor: 'text-blue-500 dark:text-blue-400',
-  badgeColor: 'bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300',
-  noteBgColor: 'bg-blue-50 dark:bg-blue-900/20',
-  noteBorderColor: 'border-blue-200 dark:border-blue-800',
-  noteTextColor: 'text-blue-800 dark:text-blue-200',
-};
-
 const formatConfigs: Record<ExportFormat, FormatConfig> = {
-  pptx: {
-    icon: Presentation,
-    iconColor: exportColors.iconColor,
-    badgeColor: exportColors.badgeColor,
-    noteBgColor: exportColors.noteBgColor,
-    noteBorderColor: exportColors.noteBorderColor,
-    noteTextColor: exportColors.noteTextColor,
-    defaultExtension: '.pptx',
-    fileProperty: 'pptx_file',
-    downloadFormat: DownloadFormat.PPTX,
-  },
   pdf: {
     icon: FileText,
-    iconColor: exportColors.iconColor,
-    badgeColor: exportColors.badgeColor,
-    noteBgColor: exportColors.noteBgColor,
-    noteBorderColor: exportColors.noteBorderColor,
-    noteTextColor: exportColors.noteTextColor,
+    label: 'PDF',
+    description: 'Best for sharing & printing',
     defaultExtension: '.pdf',
     fileProperty: 'pdf_file',
     downloadFormat: DownloadFormat.PDF,
+  },
+  pptx: {
+    icon: Presentation,
+    label: 'PowerPoint',
+    description: 'Editable presentation',
+    defaultExtension: '.pptx',
+    fileProperty: 'pptx_file',
+    downloadFormat: DownloadFormat.PPTX,
   },
 };
 
@@ -81,73 +60,76 @@ export function ExportToolView({
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
-  onFileClick,
   project,
 }: ExportToolViewProps) {
-  // All hooks must be called unconditionally at the top
-  // Auth for file downloads
   const { session } = useAuth();
+  const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
+    featureName: 'exports',
+  });
   
-  // Download state
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadingFormat, setDownloadingFormat] = useState<ExportFormat | null>(null);
 
-  // Determine format from function name (handle undefined case)
-  const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'export-to-pptx';
-  const format: ExportFormat = name.includes('pdf') ? 'pdf' : 'pptx';
-  const config = formatConfigs[format];
-
-  // Extract the export data from tool result (must be before early return)
+  const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'export-presentation';
+  const isUnifiedExport = name === 'export-presentation' || name === 'export_presentation';
+  
   const {
     presentationName,
-    filePath,
-    downloadUrl,
+    exports,
     totalSlides,
-    storedLocally,
-    message,
-    note
+    partialSuccess
   } = useMemo(() => {
     if (toolResult?.output) {
       try {
         const output = toolResult.output;
-        const parsed = typeof output === 'string' 
-          ? JSON.parse(output) 
-          : output;
+        const parsed = typeof output === 'string' ? JSON.parse(output) : output;
+        
+        if (isUnifiedExport && parsed.exports) {
+          return {
+            presentationName: parsed.presentation_name || toolCall?.arguments?.presentation_name,
+            exports: parsed.exports,
+            totalSlides: parsed.total_slides,
+            partialSuccess: parsed.partial_success
+          };
+        }
+        
+        const format: ExportFormat = name.includes('pdf') ? 'pdf' : 'pptx';
+        const config = formatConfigs[format];
         return {
           presentationName: parsed.presentation_name || toolCall?.arguments?.presentation_name,
-          filePath: parsed[config.fileProperty] || parsed.pptx_file || parsed.pdf_file,
-          downloadUrl: parsed.download_url,
+          exports: {
+            [format]: {
+              file: parsed[config.fileProperty] || parsed.pptx_file || parsed.pdf_file,
+              download_url: parsed.download_url,
+              stored_locally: parsed.stored_locally
+            }
+          },
           totalSlides: parsed.total_slides,
-          storedLocally: parsed.stored_locally,
-          message: parsed.message,
-          note: parsed.note
         };
       } catch (e) {
         console.error('Error parsing tool result:', e);
-        // Fallback: try to extract from arguments
-        return {
-          presentationName: toolCall?.arguments?.presentation_name,
-        };
+        return { presentationName: toolCall?.arguments?.presentation_name };
       }
     }
-    // Fallback: extract from arguments
-    return {
-      presentationName: toolCall?.arguments?.presentation_name,
-    };
-  }, [toolResult, config.fileProperty, toolCall?.arguments]);
+    return { presentationName: toolCall?.arguments?.presentation_name };
+  }, [toolResult, name, isUnifiedExport, toolCall?.arguments]);
+  
+  const availableExports = exports ? Object.keys(exports) as ExportFormat[] : [];
+  const hasPptx = availableExports.includes('pptx');
+  const hasPdf = availableExports.includes('pdf');
 
-  // Defensive check - handle cases where toolCall might be undefined
   if (!toolCall) {
-    console.warn('ExportToolView: toolCall is undefined. Tool views should use structured props.');
+    console.warn('ExportToolView: toolCall is undefined.');
     return null;
   }
 
-  const IconComponent = config.icon;
-
-  // Download handlers
-  const handleDownload = async (downloadFormat: DownloadFormat) => {
+  const handleDownload = async (downloadFormat: DownloadFormat, format: ExportFormat) => {
+    if (isDownloadRestricted) {
+      openUpgradeModal();
+      return;
+    }
     if (!project?.sandbox?.sandbox_url || !presentationName) return;
 
-    setIsDownloading(true);
+    setDownloadingFormat(format);
     try {
       await downloadPresentation(
         downloadFormat,
@@ -155,38 +137,42 @@ export function ExportToolView({
         `/workspace/presentations/${presentationName}`, 
         presentationName
       );
+      toast.success(`Downloaded ${format.toUpperCase()} successfully`);
     } catch (error) {
       console.error(`Error downloading ${downloadFormat}:`, error);
-      toast.error(`Failed to download ${downloadFormat}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(`Failed to download: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
-      setIsDownloading(false);
+      setDownloadingFormat(null);
     }
   };
 
-  // Handle direct file download for stored files
-  // Uses backend API which auto-starts sandbox if needed
-  const handleDirectDownload = async () => {
-    if (!downloadUrl || !project?.sandbox?.id) return;
+  const handleDirectDownload = async (format: ExportFormat) => {
+    if (isDownloadRestricted) {
+      openUpgradeModal();
+      return;
+    }
+    
+    const exportData = exports?.[format];
+    if (!exportData?.download_url || !project?.sandbox?.id) return;
     
     try {
-      setIsDownloading(true);
+      setDownloadingFormat(format);
       
-      // Extract filename from downloadUrl
-      const filename = downloadUrl.split('/').pop() || `presentation${config.defaultExtension}`;
+      const config = formatConfigs[format];
+      const filename = exportData.download_url.split('/').pop() || `presentation${config.defaultExtension}`;
       
-      // Use backend file endpoint which handles sandbox startup automatically
       const headers: Record<string, string> = {};
       if (session?.access_token) {
         headers['Authorization'] = `Bearer ${session.access_token}`;
       }
       
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${project.sandbox.id}/files/content?path=${encodeURIComponent(downloadUrl)}`,
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${project.sandbox.id}/files/content?path=${encodeURIComponent(exportData.download_url)}`,
         { headers }
       );
       
       if (!response.ok) {
-        throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
+        throw new Error(`Failed to download: ${response.status}`);
       }
       
       const blob = await response.blob();
@@ -194,192 +180,144 @@ export function ExportToolView({
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
-      
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
       
-      toast.success(`Downloaded ${filename}`, {
-        duration: 3000,
-      });
+      toast.success(`Downloaded ${filename}`);
     } catch (error) {
       console.error('Error downloading file:', error);
-      toast.error(`Failed to download file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(`Failed to download: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
-      setIsDownloading(false);
+      setDownloadingFormat(null);
     }
   };
 
-  return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
-        <div className="flex flex-row items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl border bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-blue-500/20">
-              <IconComponent className={`w-5 h-5 ${config.iconColor}`} />
-            </div>
-            <div>
-              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-                {getToolTitle(name)}
+  const renderDownloadButton = (format: ExportFormat) => {
+    const config = formatConfigs[format];
+    const Icon = config.icon;
+    const exportData = exports?.[format];
+    const isLoading = downloadingFormat === format;
+    
+    return (
+      <Button
+        key={format}
+        variant="outline"
+        onClick={() => exportData?.download_url ? handleDirectDownload(format) : handleDownload(config.downloadFormat, format)}
+        disabled={!!downloadingFormat || !exportData}
+        className={cn(
+          "h-auto py-3 px-4 flex items-center gap-3 justify-start w-full",
+          "bg-background hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors",
+          "border border-border"
+        )}
+      >
+        <div className="w-9 h-9 rounded-md bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center flex-shrink-0">
+          {isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin text-foreground" />
+          ) : (
+            <Icon className="h-4 w-4 text-foreground" />
+          )}
+        </div>
+        <div className="flex-1 text-left">
+          <div className="font-medium text-sm text-foreground">
+            {isLoading ? 'Downloading...' : `Download ${config.label}`}
+          </div>
+          <div className="text-xs text-muted-foreground font-normal">
+            {config.description}
+          </div>
+        </div>
+        <Download className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+      </Button>
+    );
+  };
+
+  // Streaming state
+  if (isStreaming) {
+    return (
+      <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col overflow-hidden bg-card">
+        <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4">
+          <div className="flex flex-row items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="relative p-2 rounded-lg bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20">
+                <Presentation className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
+              </div>
+              <CardTitle className="text-base font-medium">
+                {presentationName || 'Export Presentation'}
               </CardTitle>
             </div>
-          </div>
-
-          {!isStreaming && (
-            <Badge
-              variant="secondary"
-              className={
-                isSuccess
-                  ? config.badgeColor
-                  : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              }
-            >
-              {isSuccess ? (
-                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-              ) : (
-                <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-              )}
-              {isSuccess ? 'Completed' : 'Failed'}
-            </Badge>
-          )}
-
-          {isStreaming && (
-            <Badge className={config.badgeColor}>
-              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+            <Badge className="h-6 bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300 border-0">
+              <Loader2 className="h-3 w-3 animate-spin mr-1" />
               Exporting
             </Badge>
-          )}
+          </div>
+        </CardHeader>
+        <CardContent className="p-6">
+          <div className="flex items-center justify-center gap-3 py-4">
+            <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
+            <span className="text-sm text-muted-foreground">
+              {presentationName || 'Processing...'}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col overflow-hidden bg-card">
+      <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4">
+        <div className="flex flex-row items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="relative p-2 rounded-lg bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20">
+              <Presentation className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
+            </div>
+            <CardTitle className="text-base font-medium">
+              {presentationName || 'Export Presentation'}
+            </CardTitle>
+          </div>
+          <Badge
+            className={cn(
+              "h-6 border-0",
+              isSuccess
+                ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
+                : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
+            )}
+          >
+            {isSuccess ? (
+              <CheckCircle className="h-3 w-3 mr-1" />
+            ) : (
+              <AlertTriangle className="h-3 w-3 mr-1" />
+            )}
+            {partialSuccess ? 'Partial' : (isSuccess ? 'Exported' : 'Failed')}
+          </Badge>
         </div>
       </CardHeader>
 
-      <CardContent className="p-0 flex-1 overflow-hidden relative">
-        <ScrollArea className="h-full w-full">
-          <div className="p-4 space-y-4">
-            {/* Export Info */}
-            {(presentationName || totalSlides) && (
-              <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center space-x-2 mb-3">
-                  <FileText className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-                  <h3 className="font-semibold text-gray-800 dark:text-gray-200">Export Details</h3>
-                </div>
-                <div className="space-y-2 text-sm">
-                  {presentationName && (
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium text-gray-700 dark:text-gray-300">Presentation:</span>
-                      <span className="text-gray-900 dark:text-gray-100">{presentationName}</span>
-                    </div>
-                  )}
-                  {totalSlides && (
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium text-gray-700 dark:text-gray-300">Slides:</span>
-                      <span className="text-gray-900 dark:text-gray-100">{totalSlides} slide{totalSlides !== 1 ? 's' : ''}</span>
-                    </div>
-                  )}
-                  {storedLocally !== undefined && (
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium text-gray-700 dark:text-gray-300">Storage:</span>
-                      <span className="text-gray-900 dark:text-gray-100">
-                        {storedLocally ? 'Stored locally for repeated downloads' : 'Direct download only'}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            <div className="flex flex-wrap gap-3">
-              {storedLocally && downloadUrl ? (
-                // Direct download button for stored files
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  className="border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-950"
-                  onClick={handleDirectDownload}
-                  disabled={isDownloading}
-                  title={`Download stored ${format.toUpperCase()} file`}
-                >
-                  {isDownloading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4 mr-2" />
-                  )}
-                  Download {format.toUpperCase()}
-                </Button>
-              ) : (
-                // Direct download button for conversion
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  className="border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-950"
-                  onClick={() => handleDownload(config.downloadFormat)}
-                  disabled={isDownloading}
-                  title={`Download presentation as ${format.toUpperCase()}`}
-                >
-                  {isDownloading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4 mr-2" />
-                  )}
-                  Download {format.toUpperCase()}
-                </Button>
-              )}
+      <CardContent className="p-4">
+        <div className="space-y-2">
+          {hasPdf && renderDownloadButton('pdf')}
+          {hasPptx && renderDownloadButton('pptx')}
+          
+          {!hasPdf && !hasPptx && (
+            <div className="text-center py-6 text-muted-foreground">
+              <AlertTriangle className="h-5 w-5 mx-auto mb-2" />
+              <p className="text-sm">No exports available</p>
             </div>
-
-            {/* Message */}
-            {message && (
-              <div className="space-y-2">
-                <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                  <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3">
-                    {message}
-                  </Markdown>
-                </div>
-              </div>
-            )}
-
-
-            {/* File Attachment for stored files */}
-            {filePath && storedLocally && (
-              <div className="space-y-3">
-                <div className="flex items-center space-x-2">
-                  <IconComponent className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-                  <h3 className="font-semibold text-gray-800 dark:text-gray-200">Exported File</h3>
-                </div>
-                <div className="grid gap-2">
-                  <FileAttachment
-                    filepath={filePath}
-                    onClick={onFileClick}
-                    sandboxId={project?.sandbox_id}
-                    project={project}
-                    className="bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        </ScrollArea>
+          )}
+        </div>
       </CardContent>
+
+      {/* Footer */}
+      <div className="px-4 py-2 h-10 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 border-t border-zinc-200 dark:border-zinc-800 flex justify-end items-center">
+        <div className="text-xs text-zinc-500 dark:text-zinc-400">
+          {toolTimestamp && !isStreaming
+            ? formatTimestamp(toolTimestamp)
+            : assistantTimestamp
+              ? formatTimestamp(assistantTimestamp)
+              : ''}
+        </div>
+      </div>
     </Card>
   );
 }
-
-// Export convenience wrappers
-export function ExportToPptxToolView(props: ExportToolViewProps) {
-  // Create modified toolCall with correct function_name
-  const modifiedToolCall = props.toolCall ? {
-    ...props.toolCall,
-    function_name: 'export_to_pptx'
-  } : props.toolCall;
-  return <ExportToolView {...props} toolCall={modifiedToolCall} />;
-}
-
-export function ExportToPdfToolView(props: ExportToolViewProps) {
-  // Create modified toolCall with correct function_name
-  const modifiedToolCall = props.toolCall ? {
-    ...props.toolCall,
-    function_name: 'export_to_pdf'
-  } : props.toolCall;
-  return <ExportToolView {...props} toolCall={modifiedToolCall} />;
-}
-

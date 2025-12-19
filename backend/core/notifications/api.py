@@ -27,7 +27,7 @@ class NotificationSettingsUpdate(BaseModel):
 class DeviceTokenRequest(BaseModel):
     device_token: str
     device_type: str = "mobile"
-    provider: str = "fcm"
+    provider: str = "expo"
 
 
 class TestNotificationRequest(BaseModel):
@@ -130,6 +130,7 @@ async def register_device_token(
 @router.delete("/device-token/{device_token}")
 async def unregister_device_token(
     device_token: str,
+    provider: str = "expo",
     current_user: dict = Depends(get_current_user)
 ):
     check_notifications_enabled()
@@ -138,7 +139,8 @@ async def unregister_device_token(
         
         success = await notification_service.unregister_device_token(
             account_id=account_id,
-            device_token=device_token
+            device_token=device_token,
+            provider=provider
         )
         
         if not success:
@@ -153,63 +155,6 @@ async def unregister_device_token(
         raise
     except Exception as e:
         logger.error(f"Error unregistering device token: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/test")
-async def send_test_notification(
-    test_request: TestNotificationRequest,
-    current_user: dict = Depends(get_current_user)
-):
-    check_notifications_enabled()
-    try:
-        account_id = current_user.get('user_id')
-        
-        result = await notification_service.send_notification(
-            event_type=test_request.event_type,
-            account_id=account_id,
-            data={
-                "title": test_request.title,
-                "message": test_request.message,
-            },
-            channels=test_request.channels,
-            priority=NotificationPriority.MEDIUM
-        )
-        
-        return {
-            "success": result.get("success", False),
-            "message": "Test notification sent" if result.get("success") else "Failed to send test notification",
-            "details": result
-        }
-        
-    except Exception as e:
-        logger.error(f"Error sending test notification: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/send", dependencies=[Depends(get_current_user)])
-async def send_notification_admin(
-    notification_request: SendNotificationRequest,
-    current_user: dict = Depends(get_current_user)
-):
-    check_notifications_enabled()
-    try:
-        result = await notification_service.send_notification(
-            event_type=notification_request.event_type,
-            account_id=notification_request.account_id,
-            data=notification_request.data,
-            channels=notification_request.channels,
-            priority=notification_request.priority
-        )
-        
-        return {
-            "success": result.get("success", False),
-            "message": "Notification sent" if result.get("success") else "Failed to send notification",
-            "details": result
-        }
-        
-    except Exception as e:
-        logger.error(f"Error sending notification: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -171,6 +171,12 @@ class SubscriptionLifecycleHandler:
         
         logger.debug(f"[SUBSCRIPTION] Account: {account_id}, Price: {price_id}, Billing anchor: {billing_anchor}")
         
+        if subscription.get('status') == 'past_due':
+            logger.info(f"[GRACE PERIOD] Subscription {subscription.get('id')} is past_due - updating metadata only, NO CREDITS granted (credits only granted on invoice.payment_succeeded)")
+            await self._update_subscription_metadata_only(account_id, subscription, price_id, payment_status='past_due')
+            await self.lifecycle_service.invalidate_caches(account_id)
+            return
+        
         if await self._is_already_processed(account_id, period_start):
             return
         
@@ -350,7 +356,7 @@ class SubscriptionLifecycleHandler:
 
 
 
-    async def _update_subscription_metadata_only(self, account_id: str, subscription: Dict, price_id: str):
+    async def _update_subscription_metadata_only(self, account_id: str, subscription: Dict, price_id: str, payment_status: str = 'active'):
         logger.info(f"[SUBSCRIPTION] Updating metadata only (no credit grants) for {account_id}")
         
         tier_info = get_tier_by_price_id(price_id)
@@ -369,7 +375,8 @@ class SubscriptionLifecycleHandler:
             'plan_type': plan_type,
             'stripe_subscription_id': subscription['id'],
             'billing_cycle_anchor': billing_anchor.isoformat(),
-            'next_credit_grant': next_grant_date.isoformat()
+            'next_credit_grant': next_grant_date.isoformat(),
+            'payment_status': payment_status
         })
         
         await self._track_commitment_if_needed(account_id, price_id, subscription)

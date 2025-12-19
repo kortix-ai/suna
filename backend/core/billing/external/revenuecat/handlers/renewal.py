@@ -11,6 +11,11 @@ class RenewalHandler:
         app_user_id = event.get('app_user_id')
         product_id = event.get('product_id')
         
+        # SECURITY: Reject renewals from anonymous users
+        if not app_user_id or app_user_id.startswith('$RCAnonymousID:'):
+            logger.error(f"[REVENUECAT RENEWAL] 🚫 REJECTED - Anonymous user: {app_user_id}")
+            return
+        
         if not ProductMapper.validate_product_id(product_id):
             logger.error(f"[REVENUECAT] Skipping RENEWAL for invalid product: {product_id}")
             return

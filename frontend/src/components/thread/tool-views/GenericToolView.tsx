@@ -18,6 +18,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from '@/components/ui/button';
 import { LoadingState } from './shared/LoadingState';
 import { toast } from 'sonner';
+import { AppIcon } from './shared/AppIcon';
+import { SmartJsonViewer } from './shared/SmartJsonViewer';
 
 export function GenericToolView({
   toolCall,
@@ -27,28 +29,78 @@ export function GenericToolView({
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
-  // All hooks must be called unconditionally at the top
-  const formatContent = (content: any) => {
+  const parseContent = React.useCallback((content: any): any => {
     if (!content) return null;
 
-    // Handle object content - format it nicely
-    if (typeof content === 'object' && content !== null) {
-      return JSON.stringify(content, null, 2);
+    if (typeof content === 'object') {
+      return content;
     }
 
-    return String(content);
-  };
+    if (typeof content === 'string') {
+      const textContentMatch = content.match(/text=(['"])((?:(?!\1|\\).|\\.)*)\1/);
+      
+      if (textContentMatch) {
+         try {
+           let jsonStr = textContentMatch[2];
+           if (textContentMatch[1] === "'") {
+             jsonStr = jsonStr.replace(/\\'/g, "'").replace(/\\\\/g, "\\");
+           } else {
+             jsonStr = jsonStr.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+           }
+           
+           try {
+             return JSON.parse(jsonStr);
+           } catch {
+             return jsonStr;
+           }
+         } catch (e) {
+         }
+      }
 
-  // Format arguments from toolCall (use optional chaining for safety)
-  const formattedAssistantContent = React.useMemo(
-    () => formatContent(toolCall?.arguments),
-    [toolCall?.arguments],
+      try {
+        const parsed = JSON.parse(content);
+        if (typeof parsed === 'string') {
+           try {
+             return JSON.parse(parsed);
+           } catch {
+             return parsed;
+           }
+        }
+        return parsed;
+      } catch (e) {
+      }
+    }
+    
+    return content;
+  }, []);
+
+  // Format arguments from toolCall
+  const parsedAssistantContent = React.useMemo(
+    () => parseContent(toolCall?.arguments),
+    [toolCall?.arguments, parseContent],
   );
   
   // Format output from toolResult
+  const parsedToolContent = React.useMemo(
+    () => toolResult ? parseContent(toolResult.output) : null,
+    [toolResult, parseContent],
+  );
+
+  const formatAsString = (content: any) => {
+    if (typeof content === 'object' && content !== null) {
+      return JSON.stringify(content, null, 2);
+    }
+    return String(content);
+  };
+
+  const formattedAssistantContent = React.useMemo(
+    () => parsedAssistantContent ? formatAsString(parsedAssistantContent) : null,
+    [parsedAssistantContent]
+  );
+
   const formattedToolContent = React.useMemo(
-    () => toolResult ? formatContent(toolResult.output) : null,
-    [toolResult],
+    () => parsedToolContent ? formatAsString(parsedToolContent) : null,
+    [parsedToolContent]
   );
 
   // Add copy functionality state
@@ -96,7 +148,7 @@ export function GenericToolView({
   if (!toolCall || !toolCall.function_name) {
     console.warn('GenericToolView: toolCall is undefined or missing function_name. Tool views should use structured props.');
     return (
-      <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
+      <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4">
           <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
             Tool View Error
@@ -112,15 +164,15 @@ export function GenericToolView({
   }
 
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
-  const toolTitle = getToolTitle(name);
+  const toolTitle = (toolCall as any)._display_hint || getToolTitle(name);
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
+    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-lg bg-gradient-to-br from-orange-500/20 to-orange-600/10 border border-orange-500/20">
-              <Wrench className="w-5 h-5 text-orange-500 dark:text-orange-400" />
+            <div className="relative p-2 rounded-lg border bg-muted/10">
+              <AppIcon toolCall={toolCall} size={20} className="w-5 h-5" />
             </div>
             <div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
@@ -162,7 +214,7 @@ export function GenericToolView({
             icon={Wrench}
             iconColor="text-orange-500 dark:text-orange-400"
             bgColor="bg-gradient-to-b from-orange-100 to-orange-50 shadow-inner dark:from-orange-800/40 dark:to-orange-900/60 dark:shadow-orange-950/20"
-            title="Executing tool"
+            title={toolTitle}
             filePath={name}
             showProgress={true}
           />
@@ -192,9 +244,13 @@ export function GenericToolView({
                   </div>
                   <div className="border-muted bg-muted/20 rounded-lg overflow-hidden border">
                     <div className="p-4">
-                      <pre className="text-xs text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words font-mono">
-                        {formattedAssistantContent}
-                      </pre>
+                      {typeof parsedAssistantContent === 'object' && parsedAssistantContent !== null ? (
+                        <SmartJsonViewer data={parsedAssistantContent} />
+                      ) : (
+                        <pre className="text-xs text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words font-mono">
+                          {formattedAssistantContent}
+                        </pre>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -223,9 +279,13 @@ export function GenericToolView({
                   </div>
                   <div className="border-muted bg-muted/20 rounded-lg overflow-hidden border">
                     <div className="p-4">
-                      <pre className="text-xs text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words font-mono">
-                        {formattedToolContent}
-                      </pre>
+                      {typeof parsedToolContent === 'object' && parsedToolContent !== null ? (
+                        <SmartJsonViewer data={parsedToolContent} />
+                      ) : (
+                        <pre className="text-xs text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words font-mono">
+                          {formattedToolContent}
+                        </pre>
+                      )}
                     </div>
                   </div>
                 </div>

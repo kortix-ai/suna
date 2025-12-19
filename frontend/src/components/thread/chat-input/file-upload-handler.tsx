@@ -1,6 +1,6 @@
 'use client';
 
-import React, { forwardRef, useEffect } from 'react';
+import React, { forwardRef, useEffect, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Paperclip, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -10,7 +10,6 @@ import { fileQueryKeys } from '@/hooks/files/use-file-queries';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { UploadedFile } from './chat-input';
@@ -102,6 +101,10 @@ const uploadFiles = async (
       });
 
       if (!response.ok) {
+        // Handle HTTP 431 - Request Header Fields Too Large
+        if (response.status === 431) {
+          throw new Error('Request is too large. Try uploading one file at a time.');
+        }
         throw new Error(`Upload failed: ${response.statusText}`);
       }
 
@@ -209,6 +212,10 @@ const uploadFilesToProject = async (
       });
 
       if (!response.ok) {
+        // Handle HTTP 431 - Request Header Fields Too Large
+        if (response.status === 431) {
+          throw new Error('Request is too large. Try uploading one file at a time.');
+        }
         throw new Error(`Upload failed: ${response.statusText}`);
       }
 
@@ -287,7 +294,7 @@ interface FileUploadHandlerProps {
   isLoggedIn?: boolean;
 }
 
-export const FileUploadHandler = forwardRef<
+export const FileUploadHandler = memo(forwardRef<
   HTMLInputElement,
   FileUploadHandlerProps
 >(
@@ -352,33 +359,31 @@ export const FileUploadHandler = forwardRef<
 
     return (
       <>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-block">
-                <Button
-                  type="button"
-                  onClick={handleFileUpload}
-                  variant="outline"
-                  size="sm"
-                  className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
-                  disabled={
-                    !isLoggedIn || loading || (disabled && !isAgentRunning) || isUploading
-                  }
-                >
-                  {isUploading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Paperclip className="h-4 w-4" />
-                  )}
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              <p>{isLoggedIn ? 'Attach files' : 'Please login to attach files'}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-block">
+              <Button
+                type="button"
+                onClick={handleFileUpload}
+                variant="outline"
+                size="sm"
+                className="h-10 w-10 p-0 bg-transparent border-[1.5px] border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
+                disabled={
+                  !isLoggedIn || loading || (disabled && !isAgentRunning) || isUploading
+                }
+              >
+                {isUploading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Paperclip className="h-5 w-5" />
+                )}
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p>{isLoggedIn ? 'Attach files' : 'Please login to attach files'}</p>
+          </TooltipContent>
+        </Tooltip>
 
         <input
           type="file"
@@ -390,7 +395,7 @@ export const FileUploadHandler = forwardRef<
       </>
     );
   },
-);
+));
 
 FileUploadHandler.displayName = 'FileUploadHandler';
 export { handleFiles, handleLocalFiles, uploadFiles };

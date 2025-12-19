@@ -2,6 +2,8 @@
   "common": {
     "cancel": "Annulla",
     "save": "Salva",
+    "saving": "Salvataggio...",
+    "success": "Successo",
     "done": "Fatto",
     "close": "Chiudi",
     "ok": "OK",
@@ -12,11 +14,16 @@
     "search": "Cerca",
     "loading": "Caricamento...",
     "error": "Errore",
+    "errorOccurred": "Si è verificato un errore. Per favore riprova.",
     "retry": "Riprova",
     "send": "Invia",
     "back": "Indietro",
     "new": "Nuovo",
-    "create": "Crea"
+    "create": "Crea",
+    "continue": "Continua",
+    "loadMore": "Carica altro",
+    "previous": "Precedente",
+    "next": "Successivo"
   },
   "auth": {
     "signIn": "Accedi",
@@ -110,9 +117,50 @@
     }
   },
   "onboarding": {
+    "welcome": "Scopri cosa può fare Kortix",
+    "welcomeSubtitle": "Il tuo assistente IA che agisce",
     "skip": "Salta",
     "next": "Avanti",
     "getStarted": "Inizia",
+    "kortixComputer": "Kortix Computer",
+    "ready": "Pronto",
+    "examples": {
+      "presentations": {
+        "title": "Presentazioni",
+        "description": "Guarda come crea presentazioni straordinarie",
+        "userMessage": "Ricerca e crea una presentazione sulle reti neurali",
+        "aiMessage": "Ricercherò le reti neurali e creerò una presentazione per te...",
+        "researching": "Ricerca in corso",
+        "creatingFile": "Creazione file",
+        "creatingSlides": "Creazione diapositive"
+      },
+      "dataAnalysis": {
+        "title": "Analisi dati",
+        "description": "Guardalo analizzare i dati e creare report visivi",
+        "userMessage": "Analizza le prestazioni di vendita Q4 da Google Drive",
+        "aiMessage": "Caricherò i tuoi dati di vendita e creerò un'analisi completa...",
+        "loadingFromDrive": "Caricamento da Google Drive",
+        "creatingVisualization": "Creazione visualizzazione",
+        "researchingMarket": "Ricerca mercato",
+        "creatingReport": "Creazione report"
+      },
+      "image": {
+        "title": "Immagine",
+        "description": "Sperimenta la progettazione di loghi e brand con IA",
+        "userMessage": "Crea un logo per la nostra azienda",
+        "aiMessage": "Vedo che hai menzionato LUXY. Creerò un logo professionale per il tuo brand...",
+        "researchingBrand": "Ricerca brand",
+        "creatingLogo": "Creazione logo",
+        "creatingBrandBoard": "Creazione board brand"
+      },
+      "imageEasterEgg": {
+        "title": "Immagine",
+        "description": "Trasforma le tue foto con stili IA",
+        "userMessage": "Converti la mia immagine in stile pixel art blocky",
+        "aiMessage": "Certo! Trasformerò la tua immagine in un look stilizzato blocky...",
+        "creatingImage": "Creazione immagine stilizzata"
+      }
+    },
     "slide1": {
       "title": "Chat con IA",
       "description": "Abbi conversazioni naturali con potenti assistenti IA che comprendono il contesto e forniscono risposte utili"
@@ -135,7 +183,7 @@
       "example": "Crea un pitch deck per la mia startup"
     },
     "research": {
-      "title": "Ricerca Approfondita",
+      "title": "Deep Research",
       "description": "Ricerca web completa con insights istantanei, riassunti e analisi.",
       "example": "Ricerca le tendenze IA nella sanità"
     },
@@ -154,6 +202,11 @@
       "description": "Imposta trigger per automatizzare i flussi di lavoro. Programma attività e monitora eventi.",
       "example": "Invia report giornalieri alle 9:00"
     },
+    "final": {
+      "title": "Tutto Pronto!",
+      "description": "Costruito per compiti complessi, progettato per tutto. Cosa vuoi realizzare?",
+      "example": "Descrivi il compito che vuoi che il tuo Worker completi..."
+    },
     "superworker": {
       "title": "Il Tuo Super Worker IA",
       "description": "Combina tutte le funzionalità per costruire worker IA personalizzati per qualsiasi attività di cui hai bisogno.",
@@ -163,7 +216,9 @@
   "settings": {
     "title": "Impostazioni",
     "name": "Nome",
+    "plan": "Piano",
     "billing": "Fatturazione",
+    "usage": "Utilizzo",
     "integrations": "Integrazioni",
     "theme": "Tema & Icona",
     "language": "Lingua",
@@ -177,6 +232,7 @@
   "chat": {
     "newChat": "Nuova Chat",
     "placeholder": "Dai a Kortix un compito...",
+    "inputPlaceholder": "Chiedi qualsiasi cosa a Kortix...",
     "recording": "Registrazione...",
     "cancelRecording": "Annulla registrazione",
     "stopRecording": "Interrompi registrazione",
@@ -224,11 +280,11 @@
   },
   "quickActions": {
     "image": "Immagine",
-    "slides": "Slides",
+    "slides": "Presentazioni",
     "data": "Dati",
-    "docs": "Docs",
+    "docs": "Documenti",
     "people": "Persone",
-    "research": "Research",
+    "research": "Ricerca",
     "chooseStyle": "Scegli stile {{action}}",
     "imageStyles": {
       "abstract": "Astratto",
@@ -296,6 +352,61 @@
       "articles": "Articoli",
       "papers": "Papers",
       "database": "Database"
+    },
+    "examplePrompts": "Esempi di Prompt",
+    "chooseTemplate": "Scegli modello",
+    "selected": "Selezionato",
+    "starterPrompts": {
+      "image": [
+        "Un'aquila dorata maestosa che vola attraverso picchi montuosi nebbiosi all'alba",
+        "Ritratto ravvicinato di una modella con trucco avant-garde e illuminazione da studio",
+        "Soggiorno scandinavo accogliente con mobili in legno naturale e piante d'appartamento",
+        "Mercato stradale cyberpunk futuristico di notte con insegne al neon e display olografici",
+        "Fotografia di prodotto elegante di una bottiglia di profumo di lusso su superficie di marmo",
+        "Isole galleggianti capricciose collegate da ponti di corda in un cielo pastello",
+        "Primo piano macro di gocce di rugiada mattutina su petali di fiori vibranti",
+        "Setup moderno di scrivania con laptop, caffè e piante grasse dall'alto"
+      ],
+      "slides": [
+        "Crea un pitch deck Serie A con dimensione del mercato, trazione e proiezioni finanziarie",
+        "Costruisci una revisione aziendale Q4 che mostra KPI, vittorie e iniziative strategiche",
+        "Progetta una presentazione di lancio prodotto con video demo e testimonianze clienti",
+        "Sviluppa un deck di abilitazione vendite che spiega la nostra proposta di valore e vantaggi competitivi",
+        "Crea un aggiornamento investitori evidenziando metriche chiave e traguardi imminenti",
+        "Costruisci una presentazione case study cliente che mostra ROI e metriche di successo"
+      ],
+      "data": [
+        "Costruisci un modello finanziario che proietta la crescita ARR con diversi scenari di prezzo",
+        "Crea una dashboard vendite interattiva che traccia metriche per regione e trimestre",
+        "Analizza recensioni clienti e visualizza tendenze di sentimento nel tempo",
+        "Progetta un calendario contenuti che traccia campagne con grafici ROI e coinvolgimento",
+        "Costruisci un'analisi di coorte che mostra modelli di fidelizzazione e abbandono utenti",
+        "Crea un modello di attribuzione marketing che confronta le prestazioni dei canali"
+      ],
+      "docs": [
+        "Scrivi un PRD completo per un motore di raccomandazione alimentato da IA",
+        "Redigi un documento di architettura tecnica per una piattaforma di microservizi scalabile",
+        "Crea un documento di strategia go-to-market per il nostro lancio prodotto Q2",
+        "Sviluppa un playbook di onboarding di 90 giorni per manager di ingegneria",
+        "Scrivi una guida di documentazione API con esempi e best practice",
+        "Crea un manuale aziendale che copre cultura, politiche e benefici"
+      ],
+      "people": [
+        "Trova candidati VP Ingegneria presso startup Serie B+ IA/ML a San Francisco",
+        "Costruisci una lista lead di CMO presso aziende B2B SaaS che hanno recentemente raccolto Serie A/B",
+        "Ricerca Ingegneri Blockchain Senior con esperienza Solidity",
+        "Genera una lista prospect di fondatori tecnici presso startup Seed-Serie A in Enterprise IA",
+        "Identifica Product Manager Senior presso aziende fintech con esperienza FAANG",
+        "Trova CIO presso aziende IT sanità mid-market che pianificano migrazione cloud"
+      ],
+      "research": [
+        "Analizza tendenze emergenti nel calcolo quantistico e applicazioni commerciali potenziali",
+        "Ricerca i top 10 concorrenti nello spazio CRM alimentato da IA con confronto funzionalità",
+        "Investiga requisiti normativi per lanciare un'app fintech nell'UE",
+        "Compila un'analisi di mercato sui tassi di adozione veicoli elettrici nei mercati principali",
+        "Studia l'impatto del lavoro remoto sulla domanda di immobili commerciali",
+        "Ricerca modelli di adozione Web3 tra aziende Fortune 500"
+      ]
     }
   },
   "menu": {
@@ -403,7 +514,29 @@
     "plus": "più",
     "addCredits": "Aggiungi Crediti",
     "needMoreCredits": "Hai bisogno di più crediti?",
-    "purchaseAdditional": "Acquista crediti aggiuntivi in qualsiasi momento"
+    "purchaseAdditional": "Acquista crediti aggiuntivi in qualsiasi momento",
+    "pickPlan": "Scegli il piano che fa per te",
+    "billingStatus": "Stato Fatturazione",
+    "manageCredits": "Gestisci i tuoi crediti e abbonamento",
+    "checkoutMode": "Metodo di Pagamento",
+    "nativeCheckout": "Nativo",
+    "webCheckout": "Web",
+    "nativeCheckoutDescription": "Pagamento tramite App Store/Play Store",
+    "webCheckoutDescription": "Pagamento tramite browser web",
+    "monthlyCredits": "Crediti Mensili",
+    "extraCredits": "Crediti Extra",
+    "renews": "Si rinnova il {date}",
+    "allCredits": "Tutti i crediti",
+    "creditTransactions": "Transazioni Crediti",
+    "loadingTransactionHistory": "Caricamento storico transazioni...",
+    "noTransactions": "Nessuna transazione trovata",
+    "transactionHistoryAppearHere": "Il tuo storico transazioni apparirà qui",
+    "balanceAfter": "Saldo dopo",
+    "noDescription": "Nessuna descrizione",
+    "popular": "Popolare",
+    "subscription": "Abbonamento",
+    "subscriptionDisclaimerIos": "Il pagamento verrà addebitato sul tuo account Apple ID al momento della conferma dell'acquisto. L'abbonamento si rinnova automaticamente a meno che il rinnovo automatico non sia disattivato almeno 24 ore prima della fine del periodo corrente. Il tuo account verrà addebitato per il rinnovo entro 24 ore prima della fine del periodo corrente. Puoi gestire e cancellare i tuoi abbonamenti andando alle impostazioni del tuo account sull'App Store dopo l'acquisto.",
+    "subscriptionDisclaimerAndroid": "Il pagamento verrà addebitato sul tuo account Google al momento della conferma dell'acquisto. L'abbonamento si rinnova automaticamente a meno che il rinnovo automatico non sia disattivato almeno 24 ore prima della fine del periodo corrente. Puoi gestire e cancellare i tuoi abbonamenti andando su Google Play Store."
   },
   "theme": {
     "title": "Aspetto",
@@ -424,17 +557,13 @@
   },
   "beta": {
     "title": "Funzionalità Beta",
-    "experimentalFeatures": "Funzionalità Sperimentali",
-    "earlyAccess": "Ottieni accesso anticipato alle nuove funzionalità",
+    "webSupportTitle": "Completamente Supportato sul Web",
+    "webSupportDescription": "Disponibile su Kortix.com. In arrivo su mobile presto—ancora in sviluppo qui.",
+    "visitKortix": "Visita Kortix.com",
     "advancedFeatures": "Funzionalità Avanzate",
-    "advancedDescription": "Accedi a funzionalità sperimentali e strumenti avanzati prima che vengano rilasciati a tutti",
-    "whatsIncluded": "Cosa è Incluso",
-    "experimentalTools": "Strumenti Sperimentali",
-    "experimentalToolsDescription": "Prova nuove funzionalità prima del rilascio ufficiale",
-    "advancedSettings": "Impostazioni Avanzate",
-    "advancedSettingsDescription": "Personalizza la tua esperienza con opzioni per utenti avanzati",
+    "mobileBeta": "Beta Mobile",
     "pleaseNote": "Nota Bene",
-    "betaWarning": "Le funzionalità beta potrebbero essere instabili e cambiare senza preavviso. Usa a tua discrezione."
+    "mobileWarning": "In sviluppo su mobile e potrebbe avere problemi. Per la migliore esperienza, usa Kortix.com."
   },
   "accountDeletion": {
     "title": "Elimina Account",
@@ -474,6 +603,8 @@
     "search": "Cerca...",
     "searchConversations": "Cerca chat",
     "searchAgents": "Cerca workers",
+    "searchWorkers": "Cerca workers",
+    "searchTriggers": "Cerca triggers",
     "imageGeneration": "Descrivi l'immagine che vuoi creare...",
     "imageWithStyle": "Descrivi la tua immagine {{style}}...",
     "slidesGeneration": "Che presentazione ti serve?",
@@ -560,7 +691,9 @@
     "connecting": "Connessione...",
     "disconnect": "Disconnetti",
     "noAppsFound": "Nessuna app trovata",
+    "noAppsAvailable": "Nessuna app disponibile",
     "tryDifferentSearch": "Prova un termine di ricerca diverso",
+    "appsAppearHere": "Le app appariranno qui quando disponibili",
     "loadingIntegrations": "Caricamento integrazioni...",
     "failedToLoad": "Caricamento fallito",
     "retry": "Riprova",
@@ -609,7 +742,10 @@
       "loadingTools": "Caricamento strumenti...",
       "failedToLoadTools": "Caricamento Fallito",
       "noToolsAvailable": "Nessuno Strumento Disponibile",
+      "noToolsFound": "Nessuno strumento trovato",
       "noToolsDescription": "Questa integrazione non ha strumenti",
+      "tryAdjustingSearch": "Prova a modificare la tua ricerca",
+      "toolsAppearHere": "Gli strumenti appariranno qui quando disponibili",
       "addingTools": "Aggiunta Strumenti...",
       "addTool": "Aggiungi {{count}} Strumento",
       "addTools": "Aggiungi {{count}} Strumenti",
@@ -632,6 +768,116 @@
       "toolsConfigured": "MCP Personalizzato Aggiunto",
       "toolsConfiguredMessage": "{{count}} strumenti configurati"
     }
+  },
+  "threadHeader": {
+    "goBack": "Torna indietro",
+    "openMenu": "Apri menu",
+    "enterTitle": "Inserisci titolo",
+    "threadActions": "Azioni thread",
+    "untitled": "Senza titolo"
+  },
+  "threadActions": {
+    "title": "Azioni Thread",
+    "upgradeRequired": "Upgrade Richiesto",
+    "upgradeRequiredMessage": "La condivisione dei thread è disponibile nei piani a pagamento. Aggiorna per sbloccare questa funzione.",
+    "upgrade": "Aggiorna",
+    "shareThread": "Condividi Thread",
+    "shareThreadUpgrade": "Condividi Thread (Upgrade)",
+    "availableOnPaidPlans": "Disponibile nei piani a pagamento",
+    "createPublicLink": "Crea link pubblico",
+    "manageFiles": "Gestisci File",
+    "viewManageAttachments": "Visualizza e gestisci allegati",
+    "deleteThread": "Elimina Thread",
+    "permanentlyDelete": "Elimina definitivamente questa conversazione"
+  },
+  "triggers": {
+    "title": "Trigger",
+    "createTrigger": "Crea Trigger",
+    "editTrigger": "Modifica Trigger",
+    "deleteTrigger": "Elimina Trigger",
+    "updateTrigger": "Aggiorna Trigger",
+    "scheduleTrigger": "Trigger Programmato",
+    "eventTrigger": "Trigger Evento",
+    "runOnSchedule": "Esegui secondo programma",
+    "fromExternalApps": "Da app esterne",
+    "selectApplication": "Seleziona Applicazione",
+    "configureTrigger": "Configura Trigger",
+    "loadingTriggerConfig": "Caricamento configurazione...",
+    "loadingTriggers": "Caricamento trigger...",
+    "loadingApps": "Caricamento app...",
+    "loadingProfiles": "Caricamento profili...",
+    "noTriggersAvailable": "Nessun trigger disponibile",
+    "noAppsFound": "Nessuna app trovata",
+    "connected": "Connesso",
+    "notConnected": "Non connesso",
+    "setupRequired": "Configurazione richiesta",
+    "retry": "Riprova",
+    "back": "Indietro",
+    "creating": "Creazione...",
+    "updating": "Aggiornamento...",
+    "triggerDetails": "Dettagli Trigger",
+    "active": "Attivo",
+    "inactive": "Inattivo",
+    "noTriggersConfigured": "Nessun trigger configurato",
+    "setupTriggersToAutomate": "Configura i trigger per automatizzare questo worker"
+  },
+  "files": {
+    "title": "File",
+    "loadingFiles": "Caricamento file...",
+    "failedToLoad": "Caricamento fallito",
+    "retry": "Riprova",
+    "folderEmpty": "Questa cartella è vuota",
+    "uploadOrCreate": "Carica file o crea cartelle",
+    "createFolder": "Crea Cartella",
+    "folderName": "Nome cartella",
+    "cancel": "Annulla",
+    "create": "Crea"
+  },
+  "workers": {
+    "title": "Worker",
+    "instructions": {
+      "title": "Prompt di Sistema",
+      "description": "Definisci come il tuo worker deve comportarsi",
+      "loading": "Caricamento istruzioni...",
+      "saving": "Salvataggio...",
+      "saveChanges": "Salva Modifiche"
+    },
+    "loadingWorker": "Caricamento worker...",
+    "core": "Principale",
+    "capabilitiesEnabled": "{{enabled}} / {{total}} capacità abilitate",
+    "toolConfiguration": "Configurazione strumenti",
+    "configureToolsDescription": "Configura gli strumenti e le loro capacità individuali per il tuo agente",
+    "toolsEnabled": "{{enabled}} / {{total}} abilitati",
+    "loadingTools": "Caricamento strumenti...",
+    "noToolsAvailable": "Nessuno strumento disponibile",
+    "toolsWillAppear": "Gli strumenti appariranno qui una volta disponibili",
+    "sunaToolsManaged": "Gli strumenti di Suna sono gestiti centralmente e non possono essere modificati.",
+    "toolsNotEditable": "Questi strumenti non possono essere modificati.",
+    "cannotEditTools": "Impossibile modificare",
+    "sunaToolsManagedAlert": "Gli strumenti di Suna sono gestiti centralmente.",
+    "savingChanges": "Salvataggio...",
+    "saveChanges": "Salva modifiche"
+  },
+  "tools": {
+    "executing": "Esecuzione strumento",
+    "input": "Input",
+    "output": "Output",
+    "noContentAvailable": "Nessun contenuto disponibile",
+    "processing": "Elaborazione",
+    "loading": "Caricamento",
+    "searching": "Ricerca",
+    "completed": "Completato",
+    "failed": "Fallito"
+  },
+  "composio": {
+    "noAppsFound": "Nessuna app trovata",
+    "noAppsAvailable": "Nessuna app disponibile",
+    "searchApps": "Cerca app...",
+    "searchTools": "Cerca strumenti...",
+    "failedToLoadTools": "Caricamento strumenti fallito",
+    "retry": "Riprova",
+    "noToolsFound": "Nessuno strumento trovato",
+    "saving": "Salvataggio...",
+    "selectTools": "Seleziona Strumenti"
   }
 }
-

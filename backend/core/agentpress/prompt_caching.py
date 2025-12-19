@@ -89,8 +89,6 @@ async def store_threshold(thread_id: str, threshold: int, model: str, reason: st
         logger.warning(f"Failed to store threshold: {e}")
 
 
-
-
 def get_resolved_model_id(model_name: str) -> str:
     """Resolve model name to its canonical ID through the model registry."""
     try:
@@ -109,39 +107,21 @@ def get_resolved_model_id(model_name: str) -> str:
         logger.warning(f"Error resolving model name: {e}")
         return model_name
 
-def is_anthropic_model(model_name: str) -> bool:
-    """Check if model supports Anthropic prompt caching (including Bedrock-served Claude models).
-    
-    This checks:
-    1. Model ID/name contains known Anthropic keywords
-    2. Model's registered provider is ANTHROPIC
-    3. Model resolves to a Bedrock ARN (which serves Claude)
-    """
-    resolved_model = get_resolved_model_id(model_name).lower()
-    
-    # Check 1: Model ID contains known keywords
-    keyword_match = any(provider in resolved_model for provider in ['anthropic', 'claude', 'sonnet', 'haiku', 'opus', 'bedrock'])
-    if keyword_match:
-        return True
-    
-    # Check 2: Model's registered provider is ANTHROPIC (handles kortix/basic, kortix/power, etc.)
+def supports_prompt_caching(model_name: str) -> bool:
+    """Check if model supports prompt caching via PROMPT_CACHING capability."""
     try:
-        from core.ai_models.registry import ModelRegistry, ModelProvider
-        registry = ModelRegistry()
+        from core.ai_models.registry import registry
+        from core.ai_models.ai_models import ModelCapability
+        
         model = registry.get(model_name)
-        if model and model.provider == ModelProvider.ANTHROPIC:
-            logger.debug(f"Model '{model_name}' detected as Anthropic via provider registration")
+        if model and ModelCapability.PROMPT_CACHING in model.capabilities:
+            logger.debug(f"Model '{model_name}' supports prompt caching")
             return True
         
-        # Check 3: Model resolves to a Bedrock ARN via get_litellm_model_id
-        llm_model_id = registry.get_litellm_model_id(model_name).lower()
-        if 'bedrock' in llm_model_id or 'anthropic' in llm_model_id:
-            logger.debug(f"Model '{model_name}' detected as Anthropic via LLM model ID: {llm_model_id}")
-            return True
+        return False
     except Exception as e:
-        logger.debug(f"Could not check model provider for '{model_name}': {e}")
-    
-    return False
+        logger.debug(f"Could not check prompt caching capability for '{model_name}': {e}")
+        return False
 
 def estimate_token_count(text: str, model: str = "claude-3-5-sonnet-20240620") -> int:
     """
@@ -334,8 +314,7 @@ async def apply_anthropic_caching_strategy(
     if not conversation_messages:
         conversation_messages = []
     
-    # Return early for non-Anthropic models
-    if not is_anthropic_model(model_name):
+    if not supports_prompt_caching(model_name):
         logger.debug(f"Model {model_name} doesn't support Anthropic caching")
         # Filter out system messages to prevent duplication
         filtered_conversation = [msg for msg in conversation_messages if msg.get('role') != 'system']
@@ -343,8 +322,6 @@ async def apply_anthropic_caching_strategy(
             logger.debug(f"🔧 Filtered out {len(conversation_messages) - len(filtered_conversation)} system messages")
         return [working_system_prompt] + filtered_conversation
     
-    # Build cache blocks from scratch each time - Anthropic handles caching automatically
-    # Note: Caller should skip calling this function for first message (len <= 2)
     logger.info(f"🆕 Building cache structure for {len(conversation_messages)} messages")
     
     # Check if we should use stored threshold and system prompt tokens
@@ -458,10 +435,9 @@ async def apply_anthropic_caching_strategy(
             # This prevents leaving large portions uncached
             # Use 1.8x multiplier to balance cache efficiency and stability
             if optimal_chunk_size > cache_threshold_tokens * 1.8:
-                # Use optimal size, cap at 15% of context window to leave room for new messages
                 max_chunk_size = int(context_window_tokens * 0.15)
                 adjusted_threshold = min(optimal_chunk_size, max_chunk_size)
-                logger.info(f"🔄 Redistributing cache blocks: {total_conversation_tokens} tokens across {max_conversation_blocks} blocks (~{adjusted_threshold} tokens/block)")
+                logger.info(f"🔄 Redistributing cache blocks: {total_conversation_tokens} tokens across {max_conversation_blocks} blocks (~{adjusted_threshold} tokens/block), max chunk size: {max_chunk_size} tokens")
                 logger.debug(f"   Previous threshold: {cache_threshold_tokens} tokens, new: {adjusted_threshold} tokens")
                 cache_threshold_tokens = adjusted_threshold
                 
@@ -526,7 +502,9 @@ def group_messages_by_tool_calls_for_caching(messages: List[Dict[str, Any]]) -> 
         """Extract tool_call IDs from an assistant message."""
         if msg.get('role') != 'assistant':
             return []
-        tool_calls = msg.get('tool_calls', [])
+        tool_calls = msg.get('tool_calls') or []
+        if not isinstance(tool_calls, list):
+            return []
         return [tc.get('id') for tc in tool_calls if isinstance(tc, dict) and tc.get('id')]
     
     def get_tool_call_id(msg: Dict[str, Any]) -> Optional[str]:
@@ -741,7 +719,7 @@ def validate_cache_blocks(messages: List[Dict[str, Any]], model_name: str, max_b
     Validate cache block count stays within Anthropic's 4-block limit.
     With our 2-block strategy, this should never be an issue.
     """
-    if not is_anthropic_model(model_name):
+    if not supports_prompt_caching(model_name):
         return messages
     
     cache_count = sum(1 for msg in messages 

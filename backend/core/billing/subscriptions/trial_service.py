@@ -295,7 +295,7 @@ class TrialService:
                         'currency': 'usd',
                         'product_data': {
                             'name': f'{TRIAL_DURATION_DAYS}-Day Trial',
-                            'description': f'Start your {TRIAL_DURATION_DAYS}-day free trial with ${TRIAL_CREDITS} in credits'
+                            'description': f'Start your {TRIAL_DURATION_DAYS}-day free trial with {int(TRIAL_CREDITS * 100)} credits'
                         },
                         'unit_amount': 2000,
                         'recurring': {

@@ -20,6 +20,7 @@ import { StrReplaceToolView } from './str-replace-tool/StrReplaceToolView';
 import { FileOperationToolView } from './file-operation/FileOperationToolView';
 import { CheckCommandOutputToolView } from './check-command-output-tool/CheckCommandOutputToolView';
 import { TerminateCommandToolView } from './terminate-command-tool/TerminateCommandToolView';
+import { ListCommandsToolView } from './list-commands-tool/ListCommandsToolView';
 import { AskToolView } from './ask-tool/AskToolView';
 import { CompleteToolView } from './complete-tool/CompleteToolView';
 import { DataProviderToolView } from './data-provider-tool/DataProviderToolView';
@@ -53,6 +54,7 @@ import { LoadImageToolView } from './load-image-tool/LoadImageToolView';
 import { PresentationToolView } from './presentation-tool/PresentationToolView';
 import { ListPresentationsToolView } from './list-presentations-tool/ListPresentationsToolView';
 import { ExportToolView } from './export-tool/ExportToolView';
+import { RealityDefenderToolView } from './reality-defender-tool/RealityDefenderToolView';
 
 /**
  * Registry mapping tool names to their view components
@@ -69,6 +71,8 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'execute-command': CommandToolView,
   'check-command-output': CheckCommandOutputToolView,
   'terminate-command': TerminateCommandToolView,
+  'list-commands': ListCommandsToolView,
+  'list_commands': ListCommandsToolView,
   
   // Task management
   'create-tasks': TaskListToolView,
@@ -94,6 +98,7 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'browser-act': BrowserToolView,
   'browser_act': BrowserToolView,
   'browser-navigate-to': BrowserToolView,
+  'browser-navigate_to': BrowserToolView,
   'browser-click-element': BrowserToolView,
   'browser-input-text': BrowserToolView,
   'browser-scroll-down': BrowserToolView,
@@ -108,6 +113,10 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'browser-select-dropdown-option': BrowserToolView,
   'browser-drag-drop': BrowserToolView,
   'browser-click-coordinates': BrowserToolView,
+  'browser-extract-content': BrowserToolView,
+  'browser_extract_content': BrowserToolView,
+  'browser-screenshot': BrowserToolView,
+  'browser_screenshot': BrowserToolView,
   
   // Wait tool
   'wait': WaitToolView,
@@ -221,6 +230,9 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'delete-slide': PresentationToolView,
   'delete-presentation': PresentationToolView,
   'validate-slide': PresentationToolView,
+  'export_presentation': ExportToolView,
+  'export-presentation': ExportToolView,
+  // Legacy support for old tool names (backward compatibility)
   'export-to-pdf': ExportToolView,
   'export_to_pdf': ExportToolView,
   'export-to-pptx': ExportToolView,
@@ -234,6 +246,10 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'list-documents': DocsToolView,
   'delete-document': DocsToolView,
   'export-document': DocsToolView,
+  
+  // Deepfake detection
+  'detect-deepfake': RealityDefenderToolView,
+  'detect_deepfake': RealityDefenderToolView,
   
   // Default fallback
   'default': GenericToolView,

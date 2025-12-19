@@ -226,7 +226,7 @@ export function AgentConfigurationDialog({
       }
 
       setOriginalFormData(formData);
-      toast.success('Agent configuration saved successfully');
+      toast.success('Worker configuration saved successfully');
     } catch (error) {
       console.error('Failed to save changes:', error);
       toast.error('Failed to save changes');
@@ -245,7 +245,7 @@ export function AgentConfigurationDialog({
     if (!isNameEditable) {
       if (isSunaAgent) {
         toast.error("Name cannot be edited", {
-          description: "Suna's name is managed centrally and cannot be changed.",
+          description: "Kortix's name is managed centrally and cannot be changed.",
         });
       }
       setEditName(formData.name);
@@ -261,7 +261,7 @@ export function AgentConfigurationDialog({
     if (!isSystemPromptEditable) {
       if (isSunaAgent) {
         toast.error("System prompt cannot be edited", {
-          description: "Suna's system prompt is managed centrally.",
+          description: "Kortix's system prompt is managed centrally.",
         });
       }
       return;
@@ -278,7 +278,7 @@ export function AgentConfigurationDialog({
     if (!areToolsEditable) {
       if (isSunaAgent) {
         toast.error("Tools cannot be edited", {
-          description: "Suna's tools are managed centrally.",
+          description: "Kortix's tools are managed centrally.",
         });
       }
       return;
@@ -351,10 +351,10 @@ export function AgentConfigurationDialog({
       queryClient.invalidateQueries({ queryKey: ['agents', 'detail', agentId] });
       queryClient.invalidateQueries({ queryKey: ['versions', 'list', agentId] });
       
-      toast.success('Agent icon updated successfully!');
+      toast.success('Worker icon updated successfully!');
     } catch (error) {
       console.error('Failed to update agent icon:', error);
-      toast.error('Failed to update agent icon. Please try again.');
+      toast.error('Failed to update Worker icon. Please try again.');
       
       // Revert the local state on error
       setFormData(prev => ({
@@ -482,9 +482,9 @@ export function AgentConfigurationDialog({
                       <div className="flex items-center gap-2 min-w-0 flex-1">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <button className="flex items-center gap-2 hover:bg-muted/50 rounded-md px-2 py-1 transition-colors group">
+                            <button className="flex items-center gap-2 hover:bg-muted/50 rounded-2xl px-2 py-1 transition-colors group">
                               <DialogTitle className="text-xl font-semibold truncate">
-                                {isLoading ? 'Loading...' : formData.name || 'Agent'}
+                                {isLoading ? 'Loading...' : formData.name || 'Worker'}
                               </DialogTitle>
                               <ChevronDown className="h-4 w-4 opacity-60 group-hover:opacity-100 transition-opacity flex-shrink-0" />
                             </button>
@@ -652,7 +652,7 @@ export function AgentConfigurationDialog({
                       <Alert className="mb-4 bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-900">
                         <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                         <AlertDescription className="text-sm text-blue-800 dark:text-blue-300">
-                          You can't edit the main Kortix Super Worker, but you can create a new AI Worker that you can modify as you wish.
+                          You can't edit the main Kortix, but you can create a new AI Worker that you can modify as you wish.
                         </AlertDescription>
                       </Alert>
                     )}
@@ -661,7 +661,7 @@ export function AgentConfigurationDialog({
                       value={formData.system_prompt}
                       onSave={handleSystemPromptChange}
                       disabled={!isSystemPromptEditable}
-                      placeholder="Define how your agent should behave..."
+                      placeholder="Define how your Worker should behave..."
                       className="flex-1 h-[90%]"
                     />
                   </div>
@@ -673,7 +673,7 @@ export function AgentConfigurationDialog({
                       <Alert className="mb-4 bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-900">
                         <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                         <AlertDescription className="text-sm text-blue-800 dark:text-blue-300">
-                          You can't edit the main Kortix Super Worker, but you can create a new AI Worker that you can modify as you wish.
+                          You can't edit the main Kortix, but you can create a new AI Worker that you can modify as you wish.
                         </AlertDescription>
                       </Alert>
                     )}
@@ -738,7 +738,7 @@ export function AgentConfigurationDialog({
 
                 <TabsContent value="knowledge" className="p-6 mt-0 flex flex-col h-full">
                   <div className="flex flex-col flex-1 min-h-0 h-full relative">
-                    <AgentKnowledgeBaseManager agentId={agentId} agentName={formData.name || 'Agent'} />
+                    <AgentKnowledgeBaseManager agentId={agentId} agentName={formData.name || 'Worker'} />
                     {isFreeTier && (
                       <div className="absolute inset-0 z-10">
                         <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" />

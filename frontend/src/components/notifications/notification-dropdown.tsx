@@ -1,14 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { Inbox } from '@novu/nextjs';
 import { Circle, Check } from 'lucide-react';
 import { Button } from '../ui/button';
-import { useTheme } from 'next-themes';
 import { Badge } from '../ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
-import { Markdown } from '../ui/markdown';
+import { UnifiedMarkdown } from '@/components/markdown';
+import { useAnnouncementStore, AnnouncementData } from '@/stores/announcement-store';
 
 type ChannelType = 'in_app' | 'email' | 'sms' | 'push' | 'chat';
 
@@ -82,10 +82,14 @@ const getRelativeTime = (dateString: string) => {
 };
 
 const NotificationItem = (notification: Notification) => {
+  const { openAnnouncement } = useAnnouncementStore();
+  
   const handleNavigation = (url: string, target?: '_blank' | '_self' | '_parent' | '_top') => {
-    if (url.startsWith('/internal/dialog/')) {
-      const dialogType = url.replace('/internal/dialog/', '');
-      console.log('Open dialog:', dialogType, notification.data);
+    if (url.startsWith('/internal/announcement')) {
+      const data = notification.data as unknown as AnnouncementData | undefined;
+      if (data?.component) {
+        openAnnouncement(data);
+      }
       return;
     }
 
@@ -127,7 +131,7 @@ const NotificationItem = (notification: Notification) => {
      <div onClick={handleClick} className='p-2 flex items-center justify-center'>
          <div
          className={`
-             relative px-4 py-3 rounded-xl transition-all cursor-pointer group
+             relative px-4 py-3 rounded-xl w-full transition-all cursor-pointer group
              ${notification.isRead ? 'bg-card' : 'bg-muted/30'}
              hover:bg-accent/50
          `}
@@ -164,11 +168,10 @@ const NotificationItem = (notification: Notification) => {
                         {notification.subject}
                     </h4>
                 )}
-                <Markdown
+                <UnifiedMarkdown
+                    content={notification.body}
                     className={`text-xs text-muted-foreground line-clamp-2 ${notification.isRead ? 'text-muted-foreground font-normal' : 'text-foreground font-medium'}`}
-                >
-                    {notification.body}
-                </Markdown>
+                />
                 </div>
                 
                 {!notification.isRead && (
@@ -244,7 +247,11 @@ const NotificationItem = (notification: Notification) => {
 export function NotificationDropdown() {
   const { user } = useAuth();
   const applicationIdentifier = process.env.NEXT_PUBLIC_NOVU_APP_IDENTIFIER;
-  
+
+  if (!applicationIdentifier) {
+    return null;
+  }
+
   const appearance = {
     variables: {
       colorBackground: 'var(--card)',

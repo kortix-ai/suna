@@ -1,81 +1,261 @@
-import React from 'react';
-import { View, ScrollView } from 'react-native';
+import React, { useState } from 'react';
+import { View, ScrollView, TouchableOpacity, ActivityIndicator, Linking } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Upload, CheckCircle2, AlertCircle, FileText, HardDrive } from 'lucide-react-native';
+import { RefreshCw, ExternalLink } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractUploadFileData } from './_utils';
+import { ToolViewCard, StatusBadge, LoadingState } from '../shared';
+import { getToolMetadata } from '../tool-metadata';
+import { API_URL, getAuthHeaders } from '@/api/config';
+import { useToast } from '@/components/ui/toast-provider';
 
-export function UploadFileToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
-  const { filePath, fileName, fileSize, message, success } = extractUploadFileData({ toolCall, toolResult });
+function formatTimestamp(isoString?: string): string {
+  if (!isoString) return '';
+  try {
+    const date = new Date(isoString);
+    return isNaN(date.getTime()) ? 'Invalid date' : date.toLocaleString();
+  } catch (e) {
+    return 'Invalid date';
+  }
+}
 
-  const formatFileSize = (bytes?: number): string => {
-    if (!bytes) return '';
-    const kb = bytes / 1024;
-    if (kb < 1024) return `${kb.toFixed(1)} KB`;
-    return `${(kb / 1024).toFixed(1)} MB`;
+function formatFileSize(bytes?: number): string {
+  if (!bytes) return '';
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+}
+
+export function UploadFileToolView({ toolCall, toolResult, isStreaming = false, assistantTimestamp, toolTimestamp }: ToolViewProps) {
+  const { filePath, fileName, fileSize, message, success, fileId, secureUrl, expiresAt } = extractUploadFileData({ toolCall, toolResult });
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [regeneratedUrl, setRegeneratedUrl] = useState<string | null>(null);
+  const [regeneratedExpiry, setRegeneratedExpiry] = useState<string | null>(null);
+  const toast = useToast();
+
+  if (!toolCall) {
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolMetadata = getToolMetadata(name, toolCall.arguments);
+  const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : (success !== false);
+
+  const extractStoragePathFromUrl = (url: string): { storage_path: string; bucket_name: string } | null => {
+    try {
+      const match = url.match(/\/storage\/v1\/object\/sign\/([\w-]+)\/(.+?)\?/);
+      if (match) {
+        return {
+          bucket_name: match[1],
+          storage_path: decodeURIComponent(match[2]),
+        };
+      }
+    } catch (e) {
+      console.error('Failed to extract storage path from URL:', e);
+    }
+    return null;
+  };
+
+  const regenerateLink = async () => {
+    try {
+      setIsRegenerating(true);
+      
+      const headers = await getAuthHeaders();
+      const body: any = {};
+      
+      if (fileId) {
+        body.file_upload_id = fileId;
+      } else if (secureUrl) {
+        const pathInfo = extractStoragePathFromUrl(secureUrl);
+        if (pathInfo) {
+          body.storage_path = pathInfo.storage_path;
+          body.bucket_name = pathInfo.bucket_name;
+        } else {
+          toast.error('Could not extract file information from URL');
+          return;
+        }
+      } else {
+        toast.error('No file information available');
+        return;
+      }
+      
+      const response = await fetch(`${API_URL}/file-uploads/regenerate-link`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to regenerate link');
+      }
+
+      const data = await response.json();
+      setRegeneratedUrl(data.signed_url);
+      setRegeneratedExpiry(data.expires_at);
+      toast.success('Link regenerated!');
+    } catch (error) {
+      toast.error('Failed to regenerate link');
+      console.error('Error regenerating link:', error);
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
+  const handleOpenUrl = async () => {
+    const url = regeneratedUrl || secureUrl;
+    if (url) {
+      await Linking.openURL(url);
+    }
   };
 
   if (isStreaming) {
     return (
-      <View className="flex-1 items-center justify-center py-12 px-6">
-        <View className="bg-blue-500/10 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
-          <Icon as={Upload} size={40} className="text-blue-500 animate-pulse" />
+      <ToolViewCard
+        header={{
+          icon: toolMetadata.icon,
+          iconColor: toolMetadata.iconColor,
+          iconBgColor: toolMetadata.iconBgColor,
+          subtitle: toolMetadata.subtitle.toUpperCase(),
+          title: toolMetadata.title,
+          isSuccess: actualIsSuccess,
+          isStreaming: true,
+          rightContent: <StatusBadge variant="streaming" label="Uploading" />,
+        }}
+      >
+        <View className="flex-1 w-full">
+          <LoadingState
+            icon={toolMetadata.icon}
+            iconColor={toolMetadata.iconColor}
+            bgColor={toolMetadata.iconBgColor}
+            title="Uploading File"
+            filePath={fileName || undefined}
+            showProgress={false}
+          />
         </View>
-        <Text className="text-xl font-roobert-semibold text-foreground mb-2">
-          Uploading File
-        </Text>
-        {fileName && (
-          <View className="bg-card border border-border rounded-2xl px-4 py-3 mt-3">
-            <Text className="text-sm font-roobert text-foreground/60 text-center" numberOfLines={2}>
-              {fileName}
-            </Text>
-          </View>
-        )}
-      </View>
+      </ToolViewCard>
     );
   }
 
   return (
-    <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 gap-6">
-        {filePath && (
-          <View className="bg-card border border-border rounded-xl p-4 gap-3">
-            <View className="flex-row items-center gap-2">
-              <Icon as={FileText} size={16} className="text-muted-foreground" />
-              <Text className="text-sm font-roobert-medium text-muted-foreground">
-                File Path
-              </Text>
-            </View>
-            <Text className="text-sm font-roobert-mono text-foreground" selectable>
+    <ToolViewCard
+      header={{
+        icon: toolMetadata.icon,
+        iconColor: toolMetadata.iconColor,
+        iconBgColor: toolMetadata.iconBgColor,
+        subtitle: toolMetadata.subtitle.toUpperCase(),
+        title: toolMetadata.title,
+        isSuccess: actualIsSuccess,
+        isStreaming: false,
+        rightContent: (
+          <StatusBadge
+            variant={actualIsSuccess ? 'success' : 'error'}
+            label={actualIsSuccess ? 'Uploaded' : 'Failed'}
+          />
+        ),
+      }}
+      footer={
+        <View className="flex-row items-center justify-between w-full">
+          {filePath && (
+            <Text className="text-xs text-muted-foreground flex-1 font-roobert-mono" numberOfLines={1}>
               {filePath}
             </Text>
-          </View>
-        )}
+          )}
+          {(toolTimestamp || assistantTimestamp) && (
+            <Text className="text-xs text-muted-foreground ml-2">
+              {toolTimestamp ? formatTimestamp(toolTimestamp) : assistantTimestamp ? formatTimestamp(assistantTimestamp) : ''}
+            </Text>
+          )}
+        </View>
+      }
+    >
+      <ScrollView className="flex-1 w-full" showsVerticalScrollIndicator={false}>
+        <View className="px-4 py-4 gap-6">
+          {filePath && (
+            <View className="gap-2">
+              <Text className="text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
+                File Path
+              </Text>
+              <View className="bg-card border border-border rounded-2xl p-4">
+                <Text className="text-sm font-roobert-mono text-foreground" selectable>
+                  {filePath}
+                </Text>
+              </View>
+            </View>
+          )}
 
-        {fileSize && (
-          <View className="bg-muted/30 rounded-xl p-3 border border-border">
-            <View className="flex-row items-center gap-2 mb-1">
-              <Icon as={HardDrive} size={14} className="text-muted-foreground" />
-              <Text className="text-xs font-roobert-medium text-muted-foreground">
+          {fileSize && (
+            <View className="gap-2">
+              <Text className="text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
                 File Size
               </Text>
+              <View className="bg-card border border-border rounded-2xl p-4">
+                <Text className="text-lg font-roobert-semibold text-foreground">
+                  {formatFileSize(fileSize)}
+                </Text>
+              </View>
             </View>
-            <Text className="text-lg font-roobert-semibold text-foreground">
-              {formatFileSize(fileSize)}
-            </Text>
-          </View>
-        )}
+          )}
 
-        {message && (
-          <View className="bg-muted/50 rounded-xl p-4 border border-border">
-            <Text className="text-sm font-roobert text-foreground">
-              {message}
-            </Text>
-          </View>
-        )}
-      </View>
-    </ScrollView>
+          {message && (
+            <View className="gap-2">
+              <Text className="text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
+                Message
+              </Text>
+              <View className="bg-card border border-border rounded-2xl p-4">
+                <Text className="text-sm font-roobert text-foreground" selectable>
+                  {message}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {(secureUrl || regeneratedUrl) && (
+            <View className="gap-2">
+              <Text className="text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
+                Secure Access URL
+              </Text>
+              <View className="bg-card border border-border rounded-2xl p-4 gap-3">
+                <Text className="text-xs font-roobert-mono text-foreground" selectable>
+                  {regeneratedUrl || secureUrl}
+                </Text>
+                {(regeneratedExpiry || expiresAt) && (
+                  <Text className="text-xs text-muted-foreground">
+                    ⏰ Expires: {regeneratedExpiry || expiresAt}
+                  </Text>
+                )}
+                <View className="flex-row gap-2">
+                  <TouchableOpacity
+                    onPress={handleOpenUrl}
+                    className="flex-1 bg-primary rounded-xl p-3 flex-row items-center justify-center gap-2"
+                  >
+                    <Icon as={ExternalLink} className="text-primary-foreground" size={16} />
+                    <Text className="text-sm font-roobert-medium text-primary-foreground">
+                      Open File
+                    </Text>
+                  </TouchableOpacity>
+                  {(fileId || secureUrl) && (
+                    <TouchableOpacity
+                      onPress={regenerateLink}
+                      disabled={isRegenerating}
+                      className="flex-1 bg-secondary rounded-xl p-3 flex-row items-center justify-center gap-2"
+                    >
+                      {isRegenerating ? (
+                        <ActivityIndicator size="small" />
+                      ) : (
+                        <Icon as={RefreshCw} className="text-secondary-foreground" size={16} />
+                      )}
+                      <Text className="text-sm font-roobert-medium text-secondary-foreground">
+                        {isRegenerating ? 'Regenerating...' : 'Regenerate'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </ToolViewCard>
   );
 }
-

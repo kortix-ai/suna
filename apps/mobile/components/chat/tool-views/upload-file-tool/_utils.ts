@@ -6,6 +6,9 @@ export interface UploadFileData {
   fileSize?: number;
   message?: string;
   success: boolean;
+  fileId?: string | null;
+  secureUrl?: string | null;
+  expiresAt?: string | null;
 }
 
 const parseContent = (content: any): any => {
@@ -25,6 +28,9 @@ export function extractUploadFileData({ toolCall, toolResult }: { toolCall: Tool
   let filePath = args?.file_path || args?.filepath || null;
   let message: string | undefined;
   let fileSize: number | undefined;
+  let fileId: string | null = null;
+  let secureUrl: string | null = null;
+  let expiresAt: string | null = null;
   
   if (toolResult?.output) {
     const output = typeof toolResult.output === 'string' 
@@ -37,6 +43,14 @@ export function extractUploadFileData({ toolCall, toolResult }: { toolCall: Tool
       fileSize = output.file_size || output.size;
     } else if (typeof output === 'string') {
       message = output;
+      
+      const fileIdMatch = output.match(/📋 File ID: ([^\n]+)/);
+      const urlMatch = output.match(/🔗 Secure Access URL: ([^\n]+)/);
+      const expiresMatch = output.match(/⏰ URL expires: ([^\n]+)/);
+      
+      if (fileIdMatch) fileId = fileIdMatch[1];
+      if (urlMatch) secureUrl = urlMatch[1];
+      if (expiresMatch) expiresAt = expiresMatch[1];
     }
   }
   
@@ -47,7 +61,10 @@ export function extractUploadFileData({ toolCall, toolResult }: { toolCall: Tool
     fileName,
     fileSize,
     message,
-    success: toolResult?.success ?? true
+    success: toolResult?.success ?? true,
+    fileId,
+    secureUrl,
+    expiresAt,
   };
 }
 

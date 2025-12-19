@@ -1,6 +1,7 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple, Any, Dict, List
 from core.utils.logger import logger
+from core.utils.config import config
 from core.services.supabase import DBConnection
 
 class PresenceService:
@@ -65,6 +66,9 @@ class PresenceService:
         client_timestamp: Optional[str] = None,
         device_info: Optional[Dict] = None
     ) -> bool:
+        if config.DISABLE_PRESENCE:
+            return True
+        
         try:
             existing = await self._fetch_session(session_id)
             existing_data = existing.data if existing and existing.data else None
@@ -102,6 +106,9 @@ class PresenceService:
             return False
     
     async def clear_presence(self, session_id: str, account_id: str) -> bool:
+        if config.DISABLE_PRESENCE:
+            return True
+        
         try:
             await self._delete_session(session_id)
             logger.debug(f"Presence cleared for session {session_id}, account {account_id}")
@@ -111,6 +118,9 @@ class PresenceService:
             return False
     
     async def cleanup_stale_sessions(self, account_id: Optional[str] = None) -> int:
+        if config.DISABLE_PRESENCE:
+            return 0
+        
         try:
             client = await self.db.client
             threshold = datetime.now(timezone.utc) - timedelta(minutes=self.stale_session_threshold_minutes)
@@ -136,6 +146,9 @@ class PresenceService:
             return 0
     
     async def is_account_viewing_thread(self, account_id: str, thread_id: str) -> bool:
+        if config.DISABLE_PRESENCE:
+            return False
+        
         try:
             client = await self.db.client
             result = await client.table('user_presence_sessions').select('*').eq(
@@ -155,6 +168,9 @@ class PresenceService:
             return False
     
     async def get_thread_viewers(self, thread_id: str) -> List[Dict[str, Any]]:
+        if config.DISABLE_PRESENCE:
+            return []
+        
         try:
             client = await self.db.client
             result = await client.rpc('get_thread_viewers', {'thread_id_param': thread_id}).execute()
@@ -164,6 +180,9 @@ class PresenceService:
             return []
     
     async def get_account_active_threads(self, account_id: str) -> List[Dict[str, Any]]:
+        if config.DISABLE_PRESENCE:
+            return []
+        
         try:
             client = await self.db.client
             result = await client.rpc('get_account_active_threads', {'account_id_param': account_id}).execute()
@@ -178,6 +197,9 @@ class PresenceService:
         thread_id: Optional[str] = None,
         channel: str = "email"
     ) -> bool:
+        if config.DISABLE_PRESENCE:
+            return True
+        
         if not thread_id:
             return True
         

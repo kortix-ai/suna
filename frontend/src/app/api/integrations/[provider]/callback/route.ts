@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000/v1';
 
 export async function GET(
   request: NextRequest,
@@ -34,7 +34,7 @@ export async function GET(
       );
     }
     
-    const backendUrl = new URL(`/api/integrations/${provider}/callback`, BACKEND_URL);
+    const backendUrl = new URL(`/integrations/${provider}/callback`, BACKEND_URL);
     backendUrl.searchParams.set('code', code);
     backendUrl.searchParams.set('state', state);
     

@@ -14,6 +14,7 @@ import { renderAttachments } from '@/components/thread/content/ThreadContent';
 import { TaskCompletedFeedback } from '@/components/thread/tool-views/shared/TaskCompletedFeedback';
 import { PromptExamples } from '@/components/shared/prompt-examples';
 import type { Project } from '@/lib/api/threads';
+import { AppIcon } from '@/components/thread/tool-views/shared/AppIcon';
 
 export interface AssistantMessageRendererProps {
   message: UnifiedMessage;
@@ -87,14 +88,14 @@ function renderAskToolCall(
   const followUpAnswers = normalizeArrayValue(toolCall.arguments?.follow_up_answers);
 
   return (
-    <div key={`ask-${index}`} className="space-y-3">
+    <div key={`ask-${index}`} className="space-y-3 my-1.5">
       <ComposioUrlDetector 
         content={askText} 
         className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3" 
       />
       {renderAttachments(attachments, onFileClick, sandboxId, project)}
       {isLatestMessage && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 mt-3">
           <Clock className="h-4 w-4 text-orange-500 flex-shrink-0" />
           <p className="text-sm text-muted-foreground">
             {t ? t('thread.waitingForUserResponse') : 'Kortix will proceed to work autonomously after you answer.'}
@@ -128,7 +129,7 @@ function renderCompleteToolCall(
   const followUpPrompts = normalizeArrayValue(toolCall.arguments?.follow_up_prompts);
 
   return (
-    <div key={`complete-${index}`} className="space-y-3">
+    <div key={`complete-${index}`} className="space-y-3 my-1.5">
       <ComposioUrlDetector 
         content={completeText} 
         className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3" 
@@ -158,17 +159,20 @@ function renderRegularToolCall(
   const { message, onToolClick } = props;
   const IconComponent = getToolIcon(toolName);
   const paramDisplay = getToolCallDisplayParam(toolCall);
+  
+  // Use display hint if available, otherwise fallback to friendly name
+  const displayName = (toolCall as any)._display_hint || getUserFriendlyToolName(toolName);
 
   return (
-    <div key={`tool-${index}`} className="my-1">
+    <div key={`tool-${index}`} className="my-1.5">
       <button
         onClick={() => onToolClick(message.message_id, toolName)}
-        className="inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs text-muted-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50"
+        className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
       >
-        <div className='border-2 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center p-0.5 rounded-sm border-neutral-400/20 dark:border-neutral-600'>
-          <IconComponent className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+        <div className='flex items-center justify-center'>
+          <AppIcon toolCall={toolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fallbackIcon={IconComponent} />
         </div>
-        <span className="font-mono text-xs text-foreground">{getUserFriendlyToolName(toolName)}</span>
+        <span className="font-mono text-xs text-foreground">{displayName}</span>
         {paramDisplay && (
           <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>
             {paramDisplay}
@@ -179,12 +183,6 @@ function renderRegularToolCall(
   );
 }
 
-/**
- * Renders assistant message content from metadata
- * 
- * Extracts tool calls and text content from message metadata and renders
- * them appropriately (ask/complete tools inline, regular tools as buttons).
- */
 export function renderAssistantMessage(props: AssistantMessageRendererProps): React.ReactNode {
   const { message } = props;
   const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
@@ -197,11 +195,12 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
   // Render text content first (if any)
   if (textContent.trim()) {
     contentParts.push(
-      <ComposioUrlDetector 
-        key="text-content" 
-        content={textContent} 
-        className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words" 
-      />
+      <div key="text-content" className="my-1.5">
+        <ComposioUrlDetector 
+          content={textContent} 
+          className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words" 
+        />
+      </div>
     );
   }
   

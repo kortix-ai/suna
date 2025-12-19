@@ -7,6 +7,7 @@ from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 from collections import OrderedDict
+from time import time
 
 from mcp import ClientSession
 from mcp.client.sse import sse_client
@@ -14,6 +15,8 @@ from mcp.client.streamable_http import streamablehttp_client
 
 from core.utils.logger import logger
 from core.credentials import EncryptionService
+from core.utils.config import config as app_config, EnvMode
+from core.tools.utils.mcp_tool_executor import is_safe_url
 
 
 class MCPException(Exception):
@@ -98,8 +101,11 @@ class ToolExecutionResult:
 class MCPService:
     def __init__(self):
         self._logger = logger
-        self._connections: Dict[str, MCPConnection] = {}
+        # LRU cache: Dict[name, (connection, created_at_timestamp)]
+        self._connections: OrderedDict[str, Tuple[MCPConnection, float]] = OrderedDict()
         self._encryption_service = EncryptionService()
+        self._max_connections = 100  # Maximum connections to keep in memory
+        self._connection_ttl = 3600  # 1 hour TTL for connections
 
     async def connect_server(self, mcp_config: Dict[str, Any], external_user_id: Optional[str] = None) -> MCPConnection:
         # Determine provider from type field
@@ -147,8 +153,14 @@ class MCPService:
                         tools=tools
                     )
                     
-                    self._connections[request.qualified_name] = connection
+                    # Store with timestamp for TTL tracking
+                    self._connections[request.qualified_name] = (connection, time())
+                    # Move to end (most recently used)
+                    self._connections.move_to_end(request.qualified_name)
                     self._logger.debug(f"Connected to {request.qualified_name} ({len(tools)} tools available)")
+                    
+                    # Cleanup old connections
+                    await self._cleanup_old_connections()
                     
                     return connection
                     
@@ -183,14 +195,35 @@ class MCPService:
                 self._logger.error(f"Failed to connect to {request.qualified_name}: {str(e)}")
                 continue
     
+    async def _cleanup_old_connections(self) -> None:
+        """Remove connections older than TTL or if over limit (LRU eviction)"""
+        now = time()
+        expired_names = []
+        
+        # Find expired connections
+        for name, (conn, created_at) in self._connections.items():
+            if now - created_at > self._connection_ttl:
+                expired_names.append(name)
+        
+        # Remove expired connections
+        for name in expired_names:
+            await self.disconnect_server(name)
+        
+        # Enforce LRU limit (remove oldest if over limit)
+        while len(self._connections) > self._max_connections:
+            oldest_name = next(iter(self._connections))
+            await self.disconnect_server(oldest_name)
+    
     async def disconnect_server(self, qualified_name: str) -> None:
-        connection = self._connections.get(qualified_name)
-        if connection and connection.session:
-            try:
-                await connection.session.close()
-                self._logger.debug(f"Disconnected from {qualified_name}")
-            except Exception as e:
-                self._logger.warning(f"Error disconnecting from {qualified_name}: {str(e)}")
+        connection_data = self._connections.get(qualified_name)
+        if connection_data:
+            connection, _ = connection_data
+            if connection and connection.session:
+                try:
+                    await connection.session.close()
+                    self._logger.debug(f"Disconnected from {qualified_name}")
+                except Exception as e:
+                    self._logger.warning(f"Error disconnecting from {qualified_name}: {str(e)}")
         
         self._connections.pop(qualified_name, None)
     
@@ -201,10 +234,16 @@ class MCPService:
         self._logger.debug("Disconnected from all MCP servers")
     
     def get_connection(self, qualified_name: str) -> Optional[MCPConnection]:
-        return self._connections.get(qualified_name)
+        """Get connection, moving it to end (most recently used) for LRU"""
+        if qualified_name in self._connections:
+            connection_data = self._connections[qualified_name]
+            self._connections.move_to_end(qualified_name)  # Mark as recently used
+            return connection_data[0]  # Return connection, not tuple
+        return None
     
     def get_all_connections(self) -> List[MCPConnection]:
-        return list(self._connections.values())
+        """Get all connections (without timestamps)"""
+        return [conn for conn, _ in self._connections.values()]
 
     def get_all_tools_openapi(self) -> List[Dict[str, Any]]:
         tools = []
@@ -246,6 +285,8 @@ class MCPService:
         
         if not connection.session:
             raise MCPToolExecutionError(f"No active session for tool: {request.tool_name}")
+        
+        # Note: _find_tool_connection already marks connection as recently used (LRU)
         
         if request.tool_name not in connection.enabled_tools:
             raise MCPToolExecutionError(f"Tool not enabled: {request.tool_name}")
@@ -306,6 +347,20 @@ class MCPService:
         if not url:
             raise CustomMCPError("URL is required for HTTP MCP connections")
         
+        # Validate URL safety (only block private URLs in non-local environments)
+        if app_config.ENV_MODE != EnvMode.LOCAL:
+            is_safe, error_msg = is_safe_url(url)
+            if not is_safe:
+                return CustomMCPConnectionResult(
+                    success=False,
+                    qualified_name="",
+                    display_name="",
+                    tools=[],
+                    config=config,
+                    url=url,
+                    message=f"Private/local MCP servers are not allowed in production: {error_msg}"
+                )
+        
         try:
             async with streamablehttp_client(url) as (read_stream, write_stream, _):
                 async with ClientSession(read_stream, write_stream) as session:
@@ -346,6 +401,20 @@ class MCPService:
         url = config.get("url")
         if not url:
             raise CustomMCPError("URL is required for SSE MCP connections")
+        
+        # Validate URL safety (only block private URLs in non-local environments)
+        if app_config.ENV_MODE != EnvMode.LOCAL:
+            is_safe, error_msg = is_safe_url(url)
+            if not is_safe:
+                return CustomMCPConnectionResult(
+                    success=False,
+                    qualified_name="",
+                    display_name="",
+                    tools=[],
+                    config=config,
+                    url=url,
+                    message=f"Private/local MCP servers are not allowed in production: {error_msg}"
+                )
         
         try:
             async with sse_client(url) as (read_stream, write_stream):

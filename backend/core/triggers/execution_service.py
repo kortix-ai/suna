@@ -11,6 +11,7 @@ from typing import Dict, Any, Optional
 from core.services.supabase import DBConnection
 from core.services import redis
 from core.utils.logger import logger, structlog
+from core.utils.config import config, EnvMode
 from .trigger_service import TriggerEvent, TriggerResult
 
 
@@ -34,7 +35,6 @@ class ExecutionService:
         try:
             logger.debug(f"Executing trigger for agent {agent_id}")
             
-            # Get account_id from agent
             client = await self._db.client
             agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).single().execute()
             if not agent_result.data:
@@ -45,26 +45,48 @@ class ExecutionService:
                 }
             account_id = agent_result.data['account_id']
             
-            # Build the rendered prompt with trigger variables
+            if config.ENV_MODE != EnvMode.LOCAL:
+                from core.utils.limits_checker import check_project_count_limit, check_thread_limit
+                
+                project_limit = await check_project_count_limit(client, account_id)
+                if not project_limit['can_create']:
+                    logger.warning(f"Trigger execution blocked: project limit reached for account {account_id} ({project_limit['current_count']}/{project_limit['limit']})")
+                    return {
+                        "success": False,
+                        "error": f"Project limit reached ({project_limit['current_count']}/{project_limit['limit']}). Upgrade your plan to run more triggers.",
+                        "message": "Failed to execute trigger - project limit exceeded"
+                    }
+                
+                thread_limit = await check_thread_limit(client, account_id)
+                if not thread_limit['can_create']:
+                    logger.warning(f"Trigger execution blocked: thread limit reached for account {account_id} ({thread_limit['current_count']}/{thread_limit['limit']})")
+                    return {
+                        "success": False,
+                        "error": f"Thread limit reached ({thread_limit['current_count']}/{thread_limit['limit']}). Upgrade your plan to run more triggers.",
+                        "message": "Failed to execute trigger - thread limit exceeded"
+                    }
+            
             rendered_prompt = self._render_prompt(
                 trigger_result.agent_prompt,
                 trigger_result.execution_variables,
                 trigger_event
             )
             
-            # Use the existing agent start infrastructure
             from core.agent_runs import start_agent_run
+            
+            model_name = trigger_result.model if hasattr(trigger_result, 'model') and trigger_result.model else None
             
             result = await start_agent_run(
                 account_id=account_id,
                 prompt=rendered_prompt,
                 agent_id=agent_id,
+                model_name=model_name,
                 metadata={
                     "trigger_execution": True,
                     "trigger_id": trigger_event.trigger_id,
                     "trigger_variables": trigger_result.execution_variables
                 },
-                skip_limits_check=True  # Triggers have their own limits via trigger system
+                skip_limits_check=True
             )
             
             return {

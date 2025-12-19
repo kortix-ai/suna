@@ -148,21 +148,57 @@ class WebhookLock:
     async def check_and_mark_webhook_processing(
         event_id: str,
         event_type: str,
-        payload: dict = None
+        payload: dict = None,
+        force_reprocess: bool = False
     ) -> tuple[bool, Optional[str]]:
         db = DBConnection()
         client = await db.client
         
-        existing = await client.from_('webhook_events').select('id, status, processed_at').eq(
+        existing = await client.from_('webhook_events').select('id, status, processed_at, processing_started_at, retry_count').eq(
             'event_id', event_id
         ).execute()
         
         if existing.data:
             event = existing.data[0]
             if event['status'] == 'completed':
+                if force_reprocess:
+                    logger.warning(f"[WEBHOOK] Event {event_id} marked as completed but force_reprocess=True - resetting to processing")
+                    await client.from_('webhook_events').update({
+                        'status': 'processing',
+                        'processing_started_at': datetime.now(timezone.utc).isoformat(),
+                        'retry_count': event.get('retry_count', 0) + 1,
+                        'error_message': None  # Clear any previous error
+                    }).eq('id', event['id']).execute()
+                    return True, None
                 logger.info(f"[WEBHOOK] Event {event_id} already completed at {event['processed_at']}")
                 return False, 'already_completed'
             elif event['status'] == 'processing':
+                # Check if webhook is stuck (processing for more than 5 minutes)
+                processing_started = event.get('processing_started_at')
+                if processing_started:
+                    try:
+                        started_at = datetime.fromisoformat(processing_started.replace('Z', '+00:00'))
+                        timeout_threshold = datetime.now(timezone.utc) - timedelta(minutes=5)
+                        if started_at < timeout_threshold:
+                            logger.warning(
+                                f"[WEBHOOK] Event {event_id} stuck in processing since {processing_started}, "
+                                f"resetting to allow retry"
+                            )
+                            await client.from_('webhook_events').update({
+                                'status': 'failed',
+                                'error_message': 'Webhook processing timeout - stuck in processing for >5 minutes',
+                                'retry_count': event.get('retry_count', 0) + 1
+                            }).eq('id', event['id']).execute()
+                            # Now retry it
+                            await client.from_('webhook_events').update({
+                                'status': 'processing',
+                                'processing_started_at': datetime.now(timezone.utc).isoformat(),
+                                'retry_count': event.get('retry_count', 0) + 1
+                            }).eq('id', event['id']).execute()
+                            return True, None
+                    except Exception as e:
+                        logger.error(f"[WEBHOOK] Error checking timeout for event {event_id}: {e}")
+                
                 logger.warning(f"[WEBHOOK] Event {event_id} is currently being processed")
                 return False, 'in_progress'
             elif event['status'] == 'failed':
@@ -186,8 +222,60 @@ class WebhookLock:
                 return True, None
             except Exception as e:
                 if 'duplicate key' in str(e).lower() or 'unique' in str(e).lower():
-                    logger.warning(f"[WEBHOOK] Race condition detected for event {event_id}, another process started first")
-                    return False, 'race_condition'
+                    logger.warning(f"[WEBHOOK] Race condition detected for event {event_id}, checking if existing event is stuck...")
+                    # Race condition - another process inserted first, check if it's stuck
+                    existing_after_race = await client.from_('webhook_events').select(
+                        'id, status, processing_started_at, retry_count'
+                    ).eq('event_id', event_id).execute()
+                    
+                    if existing_after_race.data:
+                        race_event = existing_after_race.data[0]
+                        
+                        # If the winner already completed, we're done
+                        if race_event['status'] == 'completed':
+                            logger.info(f"[WEBHOOK] Race condition resolved - event {event_id} already completed")
+                            return False, 'already_completed'
+                        
+                        # If the winner already failed, we can retry
+                        if race_event['status'] == 'failed':
+                            logger.info(f"[WEBHOOK] Race condition resolved - event {event_id} failed, retrying")
+                            await client.from_('webhook_events').update({
+                                'status': 'processing',
+                                'processing_started_at': datetime.now(timezone.utc).isoformat(),
+                                'retry_count': race_event.get('retry_count', 0) + 1
+                            }).eq('id', race_event['id']).execute()
+                            return True, None
+                        
+                        # Winner is still processing - wait briefly and check again
+                        if race_event['status'] == 'processing':
+                            logger.info(f"[WEBHOOK] Race condition - event {event_id} being processed, waiting to verify...")
+                            await asyncio.sleep(3)  # Wait 3 seconds for the other process
+                            
+                            # Re-check status
+                            recheck = await client.from_('webhook_events').select(
+                                'id, status, processing_started_at, retry_count'
+                            ).eq('event_id', event_id).execute()
+                            
+                            if recheck.data:
+                                final_status = recheck.data[0]['status']
+                                if final_status == 'completed':
+                                    logger.info(f"[WEBHOOK] Race condition resolved - event {event_id} completed while waiting")
+                                    return False, 'already_completed'
+                                elif final_status == 'failed':
+                                    logger.info(f"[WEBHOOK] Race condition resolved - event {event_id} failed, retrying")
+                                    await client.from_('webhook_events').update({
+                                        'status': 'processing',
+                                        'processing_started_at': datetime.now(timezone.utc).isoformat(),
+                                        'retry_count': recheck.data[0].get('retry_count', 0) + 1
+                                    }).eq('id', recheck.data[0]['id']).execute()
+                                    return True, None
+                            
+                            # Still processing after wait - tell caller to signal retry
+                            logger.warning(f"[WEBHOOK] Event {event_id} still processing after wait, signaling retry needed")
+                            return False, 'processing_retry_later'
+                    
+                    logger.warning(f"[WEBHOOK] Race condition detected for event {event_id}, signaling retry needed")
+                    return False, 'processing_retry_later'
                 raise
         
         return True, None

@@ -6,11 +6,10 @@ import { Button } from '@/components/ui/button';
 import type { UnifiedMessage } from '@/api/types';
 import { extractToolCallAndResult } from '@/lib/utils/tool-data-extractor';
 import { getToolViewComponent } from './tool-views';
-import { ToolHeader } from './tool-views/ToolHeader';
+import { ToolHeader } from './tool-views/shared/ToolHeader';
 import { getToolMetadata } from './tool-views/tool-metadata';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
-import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react-native';
@@ -35,6 +34,8 @@ interface ToolCallPanelProps {
       pass?: string;
     };
   };
+  /** Handler to auto-fill chat input with a prompt (closes panel and fills input) */
+  onPromptFill?: (prompt: string) => void;
 }
 
 export function ToolCallPanel({
@@ -43,10 +44,10 @@ export function ToolCallPanel({
   toolMessages,
   initialIndex = 0,
   project,
+  onPromptFill,
 }: ToolCallPanelProps) {
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const snapPoints = React.useMemo(() => ['85%'], []);
-  const { colorScheme } = useColorScheme();
   const insets = useSafeAreaInsets();
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
 
@@ -117,7 +118,13 @@ export function ToolCallPanel({
     onClose();
   }, [onClose]);
 
-  const isDark = colorScheme === 'dark';
+  // Handler to auto-fill chat input - closes panel and fills input
+  const handlePromptFill = useCallback((prompt: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    console.log('📝 Prompt fill triggered:', prompt);
+    onClose(); // Close the panel first
+    onPromptFill?.(prompt); // Then fill the chat input
+  }, [onClose, onPromptFill]);
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -125,11 +132,11 @@ export function ToolCallPanel({
         {...props}
         disappearsOnIndex={-1}
         appearsOnIndex={0}
-        opacity={isDark ? 0.8 : 0.5}
+        opacity={0.7}
         pressBehavior="close"
       />
     ),
-    [isDark]
+    []
   );
 
   const handleSheetChange = useCallback((index: number) => {
@@ -149,11 +156,7 @@ export function ToolCallPanel({
       enablePanDownToClose
       onChange={handleSheetChange}
       backdropComponent={renderBackdrop}
-      backgroundStyle={{
-        backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
-      }}
       handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3a3a3c' : '#d1d1d6',
         width: 36,
         height: 5,
         borderRadius: 3,
@@ -165,23 +168,21 @@ export function ToolCallPanel({
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
         overflow: 'hidden',
-        backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
       }}
     >
       <BottomSheetScrollView
-        className="flex-1"
+        className="flex-1 bg-background"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
           paddingBottom: 20,
-          backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
         }}
       >
         {!currentPair || !toolCall || !toolCall.function_name ? (
           <View className="flex-1 justify-center items-center px-6 py-12">
-            <Text className="text-foreground font-roobert-semibold text-lg mb-4">
+            <Text className="text-primary font-roobert-semibold text-lg mb-4">
               Error Loading Tool Data
             </Text>
-            <Text className="text-foreground/60 text-center font-roobert">
+            <Text className="text-primary opacity-50 text-center font-roobert">
               Unable to parse tool execution data
             </Text>
           </View>
@@ -215,6 +216,7 @@ export function ToolCallPanel({
               currentIndex={currentIndex}
               totalCalls={toolMessages.length}
               project={project}
+              onPromptFill={handlePromptFill}
             />
           </View>
         )}
@@ -222,12 +224,9 @@ export function ToolCallPanel({
 
       {toolMessages.length > 1 && (
         <View
-          className="px-6 border-t border-border"
+          className="px-6 pt-3 border-t border-border bg-background"
           style={{
-            paddingTop: 12,
             paddingBottom: Math.max(insets.bottom, 12),
-            backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
-            borderTopColor: isDark ? '#2a2a2c' : '#e5e5e7',
           }}
         >
           <View className="flex-row items-center justify-between gap-3">
@@ -241,15 +240,15 @@ export function ToolCallPanel({
               <Icon
                 as={ChevronLeft}
                 size={14}
-                className="text-primary-foreground"
+                className="text-background"
               />
-              <Text className="text-sm font-roobert-medium text-primary-foreground">
+              <Text className="text-sm font-roobert-medium text-background">
                 Prev
               </Text>
             </Button>
 
             <View className="px-2">
-              <Text className="text-sm font-roobert-semibold text-foreground tabular-nums">
+              <Text className="text-sm font-roobert-semibold text-primary tabular-nums">
                 {currentIndex + 1}/{toolMessages.length}
               </Text>
             </View>
@@ -261,13 +260,13 @@ export function ToolCallPanel({
               size="sm"
               className="rounded-2xl px-4"
             >
-              <Text className="text-sm font-roobert-medium text-primary-foreground">
+              <Text className="text-sm font-roobert-medium text-background">
                 Next
               </Text>
               <Icon
                 as={ChevronRight}
                 size={14}
-                className="text-primary-foreground"
+                className="text-background"
               />
             </Button>
           </View>

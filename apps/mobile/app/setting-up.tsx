@@ -12,12 +12,15 @@ import { useColorScheme } from 'nativewind';
 import LogomarkBlack from '@/assets/brand/Logomark-Black.svg';
 import LogomarkWhite from '@/assets/brand/Logomark-White.svg';
 import * as Haptics from 'expo-haptics';
+import { useQueryClient } from '@tanstack/react-query';
+import { agentKeys } from '@/lib/agents/hooks';
 
 export default function SettingUpScreen() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuthContext();
   const { colorScheme } = useColorScheme();
   const { refetchAll, hasActiveSubscription, subscriptionData, subscriptionLoading } = useBillingContext();
+  const queryClient = useQueryClient();
   const [status, setStatus] = React.useState<'checking' | 'initializing' | 'success' | 'error'>('checking');
   const initializeMutation = useAccountInitialization();
 
@@ -62,6 +65,8 @@ export default function SettingUpScreen() {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         console.log('🔄 Refetching billing data...');
         refetchAll();
+        console.log('🔄 Refetching agents data...');
+        queryClient.invalidateQueries({ queryKey: agentKeys.all });
         setTimeout(() => {
           router.replace('/onboarding');
         }, 500);
@@ -80,6 +85,8 @@ export default function SettingUpScreen() {
           setStatus('success');
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           refetchAll();
+          console.log('🔄 Refetching agents data...');
+          queryClient.invalidateQueries({ queryKey: agentKeys.all });
           setTimeout(() => {
             router.replace('/onboarding');
           }, 500);
@@ -90,7 +97,7 @@ export default function SettingUpScreen() {
         }
       },
     });
-  }, [user, status, hasActiveSubscription, subscriptionLoading, initializeMutation, refetchAll, router]);
+  }, [user, status, hasActiveSubscription, subscriptionLoading, initializeMutation, refetchAll, router, queryClient]);
 
   const handleContinue = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

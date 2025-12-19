@@ -1,10 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, Header, BackgroundTasks
+import hmac
+import hashlib
+import json
+from fastapi import APIRouter, Depends, HTTPException, Header, BackgroundTasks, Request
 from pydantic import BaseModel
 from typing import Dict, Optional
+from datetime import datetime, timezone
 import os
 import concurrent.futures
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
+from core.utils.config import config
 from core.billing.subscriptions import free_tier_service
 from core.utils.suna_default_agent_service import SunaDefaultAgentService
 from core.services.supabase import DBConnection
@@ -13,7 +18,6 @@ from core.services.email import email_service
 # Main setup router (prefix="/setup")
 router = APIRouter(prefix="/setup", tags=["setup"])
 
-# Webhook router (no prefix - webhooks are at /api/webhooks/*)
 webhook_router = APIRouter(tags=["webhooks"])
 
 # ============================================================================
@@ -38,13 +42,14 @@ class SupabaseWebhookPayload(BaseModel):
 # ============================================================================
 
 def verify_webhook_secret(x_webhook_secret: str = Header(...)):
-    """Verify the webhook secret from Supabase"""
+    """Verify the webhook secret from Supabase using constant-time comparison."""
     expected_secret = os.getenv('SUPABASE_WEBHOOK_SECRET')
     if not expected_secret:
         logger.error("SUPABASE_WEBHOOK_SECRET not configured")
         raise HTTPException(status_code=500, detail="Webhook secret not configured")
     
-    if x_webhook_secret != expected_secret:
+    # Use constant-time comparison to prevent timing attacks
+    if not hmac.compare_digest(x_webhook_secret.encode('utf-8'), expected_secret.encode('utf-8')):
         logger.warning("Invalid webhook secret received")
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
     
@@ -99,6 +104,48 @@ async def initialize_user_account(account_id: str, email: Optional[str] = None, 
         if not agent_id:
             logger.warning(f"[SETUP] Failed to install Suna agent for {account_id}, but continuing")
         
+        if user_record:
+            raw_user_metadata = user_record.get('raw_user_meta_data', {})
+            referral_code = raw_user_metadata.get('referral_code')
+            
+            logger.info(f"[SETUP] User metadata: {raw_user_metadata}")
+            logger.info(f"[SETUP] Referral code from metadata: {referral_code}")
+            
+            if referral_code:
+                logger.info(f"[SETUP] Processing referral code for {account_id}: {referral_code}")
+                try:
+                    from core.referrals.service import ReferralService
+                    
+                    referral_service = ReferralService(db)
+                    referrer_id = await referral_service.validate_referral_code(referral_code)
+                    logger.info(f"[SETUP] Validated referral code {referral_code} -> referrer_id: {referrer_id}")
+                    
+                    if referrer_id and referrer_id != account_id:
+                        referral_result = await referral_service.process_referral(
+                            referrer_id=referrer_id,
+                            referred_account_id=account_id,
+                            referral_code=referral_code
+                        )
+                        
+                        logger.info(f"[SETUP] Referral processing result: {referral_result}")
+                        
+                        if referral_result.get('success'):
+                            logger.info(
+                                f"[SETUP] ✅ Referral processed: {referrer_id} referred {account_id}, "
+                                f"awarded {referral_result.get('credits_awarded')} credits"
+                            )
+                        else:
+                            logger.warning(
+                                f"[SETUP] Failed to process referral: {referral_result.get('message')}"
+                            )
+                    else:
+                        logger.warning(
+                            f"[SETUP] Invalid referral code or self-referral: {referral_code}, "
+                            f"referrer_id={referrer_id}, new_user_id={account_id}"
+                        )
+                except Exception as ref_error:
+                    logger.error(f"[SETUP] Error processing referral: {ref_error}", exc_info=True)
+        
         logger.info(f"[SETUP] ✅ Account initialization complete for {account_id}")
         
         return {
@@ -144,11 +191,27 @@ def _send_welcome_email_async(email: str, user_name: str):
 async def initialize_account(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    """
-    API endpoint for account initialization (fallback/retry).
-    Most users will be initialized automatically via webhook on signup.
-    """
-    result = await initialize_user_account(account_id)
+    db = DBConnection()
+    await db.initialize()
+    client = await db.client
+    
+    email = None
+    user_record = None
+    
+    try:
+        user_response = await client.auth.admin.get_user_by_id(account_id)
+        if user_response and hasattr(user_response, 'user') and user_response.user:
+            user = user_response.user
+            email = user.email
+            user_record = {
+                'id': user.id,
+                'email': user.email,
+                'raw_user_meta_data': user.user_metadata or {}
+            }
+    except Exception as e:
+        logger.warning(f"[SETUP] Could not fetch user for initialization: {e}")
+    
+    result = await initialize_user_account(account_id, email, user_record)
     
     if not result.get('success'):
         raise HTTPException(status_code=500, detail=result.get('message', 'Failed to initialize account'))
@@ -230,3 +293,109 @@ async def handle_user_created_webhook(
             success=False,
             message=str(e)
         )
+
+
+# ============================================================================
+# Vercel Analytics Drain Webhook
+# ============================================================================
+
+def verify_vercel_signature(payload: bytes, signature: str, secret: str) -> bool:
+    """Verify Vercel Log Drain signature (HMAC-SHA1)."""
+    if not secret:
+        return False
+    expected = hmac.new(secret.encode(), payload, hashlib.sha1).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+@webhook_router.post("/webhooks/vercel-drain")
+async def receive_vercel_drain(
+    request: Request,
+    x_vercel_signature: Optional[str] = Header(None, alias="x-vercel-signature")
+):
+    """
+    Webhook endpoint for Vercel Analytics drains.
+    Receives pageview events and stores device IDs for unique visitor counting.
+    """
+    body = await request.body()
+    
+    # Verify signature if secret is configured
+    drain_secret = config.VERCEL_DRAIN_SECRET
+    if drain_secret:
+        if not x_vercel_signature:
+            raise HTTPException(status_code=401, detail="Missing signature")
+        if not verify_vercel_signature(body, x_vercel_signature, drain_secret):
+            raise HTTPException(status_code=401, detail="Invalid signature")
+    
+    try:
+        # Parse the payload - Vercel sends NDJSON (newline-delimited JSON)
+        payload_str = body.decode('utf-8')
+        
+        # Log payload length and sample
+        logger.debug(f"Vercel drain payload: {payload_str}")
+        
+        # Parse all lines
+        parsed_items = []
+        for line in payload_str.strip().split('\n'):
+            if line:
+                parsed_items.append(json.loads(line))
+        
+        # Flatten: each line could be a dict (single event) or list (array of events)
+        events = []
+        for item in parsed_items:
+            if isinstance(item, list):
+                events.extend(item)
+            elif isinstance(item, dict):
+                events.append(item)
+        
+        db = DBConnection()
+        client = await db.client
+        
+        # Process each event
+        processed = 0
+        skipped = 0
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            
+            # Only track pageview events
+            if event.get('eventType') != 'pageview':
+                skipped += 1
+                continue
+            
+            # Use deviceId for unique visitor tracking (it's numeric, convert to string)
+            raw_device_id = event.get('deviceId')
+            if raw_device_id is None:
+                continue
+            
+            device_id = str(raw_device_id)
+            
+            if not device_id:
+                continue
+            
+            # Get timestamp and convert to date
+            timestamp = event.get('timestamp') or event.get('time') or event.get('ts')
+            if timestamp:
+                if isinstance(timestamp, (int, float)):
+                    dt = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
+                else:
+                    dt = datetime.fromisoformat(str(timestamp).replace('Z', '+00:00'))
+                event_date = dt.strftime('%Y-%m-%d')
+            else:
+                event_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+            
+            # Upsert the pageview (add device_id to array if not exists)
+            await client.rpc('upsert_vercel_pageview', {
+                'p_date': event_date,
+                'p_device_id': device_id
+            }).execute()
+            processed += 1
+        
+        logger.info(f"Vercel drain: {processed} pageviews processed, {skipped} non-pageview skipped, {len(events)} total events")
+        return {"status": "ok", "processed": processed}
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Vercel drain payload: {e}")
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+    except Exception as e:
+        logger.error(f"Failed to process Vercel drain: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to process events")

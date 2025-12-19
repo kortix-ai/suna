@@ -3,6 +3,7 @@ import { CircleDashed } from 'lucide-react';
 import { getToolIcon, getUserFriendlyToolName, extractPrimaryParam } from '@/components/thread/utils';
 import { CodeBlockCode } from '@/components/ui/code-block';
 import { getLanguageFromFileName } from '../tool-views/file-operation/_utils';
+import { AppIcon } from '../tool-views/shared/AppIcon';
 
 // Define tool categories for different streaming behaviors
 const STREAMABLE_TOOLS = {
@@ -68,8 +69,9 @@ interface ShowToolStreamProps {
     content: string;
     messageId?: string | null;
     onToolClick?: (messageId: string | null, toolName: string) => void;
-    showExpanded?: boolean; // Whether to show expanded streaming view
-    startTime?: number; // When the tool started running
+    showExpanded?: boolean;
+    startTime?: number;
+    toolCall?: any;
 }
 
 export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
@@ -77,7 +79,8 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     messageId,
     onToolClick,
     showExpanded = false,
-    startTime
+    startTime,
+    toolCall
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [shouldShowContent, setShouldShowContent] = useState(false);
@@ -90,17 +93,20 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
         stableStartTimeRef.current = Date.now();
     }
 
-    // Extract tool name from content - try JSON first, then fallback to simple extraction
     let rawToolName: string | null = null;
+    let parsedToolCall: any = null;
+    
     try {
       const parsed = JSON.parse(content);
+      parsedToolCall = parsed;
       if (parsed.function?.name) {
         rawToolName = parsed.function.name;
       } else if (parsed.tool_name) {
         rawToolName = parsed.tool_name;
+      } else if (parsed.function_name) {
+        rawToolName = parsed.function_name;
       }
     } catch (e) {
-      // Not JSON, try simple regex extraction
       const match = content.match(/(?:function|tool)[_\-]?name["']?\s*[:=]\s*["']?([^"'\s]+)/i);
       if (match) {
         rawToolName = match[1];
@@ -110,6 +116,8 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     const isEditFile = toolName === 'AI File Edit';
     const isCreateFile = toolName === 'Creating File';
     const isFullFileRewrite = toolName === 'Rewriting File';
+    
+    const effectiveToolCall = toolCall || parsedToolCall;
 
     // Extract content from JSON or plain text
     const extractContent = (rawContent: string): { html: string; plainText: string } => {
@@ -257,21 +265,22 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     // Always show tool button, conditionally show content below for streamable tools
     if (showExpanded && isToolStreamable) {
         return (
-            <div className="my-1">
+            <div className="my-1.5">
                 {/* Always render the container for smooth transitions */}
                 <div className={`border border-neutral-200 dark:border-neutral-700/50 rounded-2xl overflow-hidden transition-all duration-500 ease-in-out transform-gpu ${shouldShowContent ? 'bg-zinc-100 dark:bg-neutral-900' : 'bg-muted scale-95 opacity-80'
                     }`}>
                     {/* Tool name header */}
                     <button
                         onClick={() => onToolClick?.(messageId, toolName)}
-                        className={`w-full flex items-center gap-1.5 py-1 px-2 text-xs text-muted-foreground hover:bg-muted/80 transition-all duration-400 ease-in-out cursor-pointer ${shouldShowContent ? 'bg-muted' : 'bg-muted rounded-2xl'
+                        className={`w-full flex items-center gap-1.5 py-1 px-2 text-xs text-muted-foreground hover:bg-muted/80 transition-all duration-400 ease-in-out cursor-pointer ${shouldShowContent ? 'bg-muted' : 'bg-muted rounded-lg'
                             }`}
                     >
-                        <div className=' flex items-center justify-center p-1 rounded-sm'>
-                            <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000" />
+                        <div className='flex items-center justify-center p-1 rounded-sm'>
+                            <AppIcon toolCall={effectiveToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                         </div>
-                        <span className="font-mono text-xs text-foreground">{displayName}</span>
+                        <span className="font-mono text-xs text-foreground flex-1">{displayName}</span>
                         {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
+                        <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-auto" />
                     </button>
 
                     {/* Streaming content below - smooth height transition */}
@@ -354,18 +363,18 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
         );
     }
 
-    // Show normal tool button (non-streamable tools or non-expanded case)
     return (
-        <div className="my-1">
+        <div className="my-1.5">
             <button
                 onClick={() => onToolClick?.(messageId, toolName)}
-                className="animate-shimmer inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs text-muted-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50"
+                className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
             >
                 <div className='border-2 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center p-0.5 rounded-sm border-neutral-400/20 dark:border-neutral-600'>
-                    <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000" />
+                    <AppIcon toolCall={effectiveToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                 </div>
                 <span className="font-mono text-xs text-foreground">{displayName}</span>
                 {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
+                <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-1" />
             </button>
         </div>
     );

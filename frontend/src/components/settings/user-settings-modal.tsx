@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import {
     Dialog,
     DialogContent,
@@ -27,11 +28,22 @@ import {
     Mail,
     Smartphone,
     AppWindow,
+    Users,
+    Key,
+    Camera,
+    Loader2,
+    Upload,
+    Brain,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import { isLocalMode } from '@/lib/config';
+import { isLocalMode, isProductionMode } from '@/lib/config';
 import { backendApi } from '@/lib/api-client';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Switch } from '@/components/ui/switch';
@@ -78,20 +90,25 @@ import {
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 import { getPlanName, getPlanIcon } from '../billing/plan-utils';
 import { TierBadge } from '../billing/tier-badge';
-import { siteConfig } from '@/lib/home';
+import { siteConfig } from '@/lib/site-config';
 import ThreadUsage from '@/components/billing/thread-usage';
 import { formatCredits } from '@/lib/utils/credit-formatter';
 import { LanguageSwitcher } from './language-switcher';
 import { useTranslations } from 'next-intl';
+import { ReferralsTab } from '@/components/referrals/referrals-tab';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { MemorySettings } from '@/components/memory/MemorySettings';
 
-type TabId = 'general' | 'plan' | 'billing' | 'usage' | 'env-manager' | 'knowledge-base' | 'integrations';
+type TabId = 'general' | 'plan' | 'billing' | 'usage' | 'memory' | 'env-manager' | 'knowledge-base' | 'integrations' | 'api-keys' | 'referrals';
 
 interface Tab {
     id: TabId;
     label: string;
     icon: React.ElementType;
     disabled?: boolean;
-}interface UserSettingsModalProps {
+}
+
+interface UserSettingsModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void; 
     defaultTab?: TabId;
@@ -104,17 +121,22 @@ export function UserSettingsModal({
     defaultTab = 'general',
     returnUrl = typeof window !== 'undefined' ? window?.location?.href || '/' : '/',
 }: UserSettingsModalProps) {
+    const router = useRouter();
     const isMobile = useIsMobile();
     const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
     const [showPlanModal, setShowPlanModal] = useState(false);
     const isLocal = isLocalMode();
+    const isProduction = isProductionMode();
     const tabs: Tab[] = [
         { id: 'general', label: 'General', icon: Settings },
         { id: 'plan', label: 'Plan', icon: Zap },
         { id: 'billing', label: 'Billing', icon: CreditCard },
         { id: 'usage', label: 'Usage', icon: TrendingDown },
+        { id: 'memory', label: 'Memory', icon: Brain },
+        ...(!isProduction ? [{ id: 'referrals' as TabId, label: 'Referrals', icon: Users }] : []),
         { id: 'knowledge-base', label: 'Knowledge Base', icon: FileText },
         { id: 'integrations', label: 'Integrations', icon: Plug },
+        { id: 'api-keys', label: 'API Keys', icon: Key },
         ...(isLocal ? [{ id: 'env-manager' as TabId, label: 'Env Manager', icon: KeyRound }] : []),
     ];
     
@@ -126,9 +148,15 @@ export function UserSettingsModal({
         if (tabId === 'plan') {
             setShowPlanModal(true);
         } else if (tabId === 'knowledge-base') {
-            window.open('/knowledge', '_blank');
+            // Close modal first for instant feel, then navigate
+            onOpenChange(false);
+            router.push('/knowledge');
         } else if (tabId === 'integrations') {
-            window.open('/settings/credentials', '_blank');
+            onOpenChange(false);
+            router.push('/settings/credentials');
+        } else if (tabId === 'api-keys') {
+            onOpenChange(false);
+            router.push('/settings/api-keys');
         } else {
             setActiveTab(tabId);
         }
@@ -138,33 +166,77 @@ export function UserSettingsModal({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 className={cn(
-                    "p-0 gap-0 overflow-hidden",
-                    isMobile ? "w-full h-full max-w-full rounded-none" : "max-w-6xl max-h-[90vh]"
+                    "p-0 gap-0",
+                    isMobile 
+                        ? "fixed inset-0 w-screen h-screen max-w-none max-h-none rounded-none m-0 translate-x-0 translate-y-0 left-0 top-0" 
+                        : "max-w-6xl max-h-[90vh] overflow-hidden"
                 )}
                 hideCloseButton={true}
             >
                 <DialogTitle className="sr-only">Settings</DialogTitle>
-                {isMobile && (
-                    <DialogHeader className="p-4 border-b border-border">
-                        <div className="flex items-center justify-between">
-                            <div className="text-lg font-semibold">Settings</div>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => onOpenChange(false)}
-                            >
-                                <X className="h-4 w-4" />
-                            </Button>
+                
+                {isMobile ? (
+                    /* Mobile Layout - Full Screen */
+                    <div className="flex flex-col h-screen w-screen overflow-hidden">
+                        {/* Mobile Header */}
+                        <div className="px-4 py-3 border-b border-border flex-shrink-0 bg-background">
+                            <div className="flex items-center justify-between">
+                                <div className="text-lg font-semibold">Settings</div>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => onOpenChange(false)}
+                                >
+                                    <X className="h-4 w-4" />
+                                </Button>
+                            </div>
                         </div>
-                    </DialogHeader>
-                )}                
-                <div className={cn("flex", isMobile ? "flex-col h-full" : "flex-row  h-[700px]")}>
-                    <div className={cn(
-                        "bg-background",
-                        isMobile ? "p-2" : "w-56 p-4"
-                    )}>
-                        {!isMobile && (
+                        
+                        {/* Mobile Tabs - Horizontal Scroll */}
+                        <div className="px-3 py-2.5 border-b border-border flex-shrink-0 bg-background">
+                            <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-3 px-3 scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                                {tabs.map((tab) => {
+                                    const Icon = tab.icon;
+                                    const isActive = activeTab === tab.id;
+
+                                    return (
+                                        <button
+                                            key={tab.id}
+                                            onClick={() => handleTabClick(tab.id)}
+                                            disabled={tab.disabled}
+                                            className={cn(
+                                                "flex items-center gap-2 px-3 py-2 text-sm rounded-lg whitespace-nowrap flex-shrink-0 transition-colors",
+                                                isActive
+                                                    ? "bg-muted text-foreground font-medium"
+                                                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                                            )}
+                                        >
+                                            <Icon className="h-4 w-4 flex-shrink-0" />
+                                            <span>{tab.label}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                        
+                        {/* Mobile Content - Scrollable */}
+                        <div className="flex-1 overflow-x-hidden overflow-y-auto">
+                            <div className="w-full max-w-full">
+                                {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
+                                {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} onOpenPlanModal={() => setShowPlanModal(true)} isActive={activeTab === 'billing'} />}
+                                {activeTab === 'usage' && <UsageTab />}
+                                {activeTab === 'memory' && <MemorySettings />}
+                                {activeTab === 'referrals' && <ReferralsTab />}
+                                {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    /* Desktop Layout - Side by Side */
+                    <div className="flex flex-row h-[700px]">
+                        {/* Desktop Sidebar */}
+                        <div className="bg-background flex-shrink-0 w-56 p-4 border-r border-border">
                             <div className="flex justify-start mb-3">
                                 <Button
                                     variant="ghost"
@@ -175,50 +247,44 @@ export function UserSettingsModal({
                                     <X className="h-4 w-4" />
                                 </Button>
                             </div>
-                        )}
-                        <div className={cn(
-                            "flex gap-2",
-                            isMobile ? "flex-row overflow-x-auto" : "flex-col"
-                        )}>
-                            {tabs.map((tab) => {
-                                const Icon = tab.icon;
-                                const isActive = activeTab === tab.id;
+                            
+                            {/* Desktop Tabs */}
+                            <div className="flex flex-col gap-1.5">
+                                {tabs.map((tab) => {
+                                    const Icon = tab.icon;
+                                    const isActive = activeTab === tab.id;
 
-                                return (
-                                    <SpotlightCard
-                                        key={tab.id}
-                                        className={cn(
-                                            "transition-colors cursor-pointer",
-                                            isActive ? "bg-muted" : "bg-transparent"
-                                        )}
-                                    >
+                                    return (
                                         <button
+                                            key={tab.id}
                                             onClick={() => handleTabClick(tab.id)}
                                             disabled={tab.disabled}
                                             className={cn(
-                                                "w-full flex items-center gap-3 px-4 py-3 text-sm",
+                                                "w-full flex items-center gap-3 px-4 py-3 text-sm rounded-lg transition-colors",
                                                 isActive
-                                                    ? "text-foreground"
-                                                    : "text-muted-foreground"
+                                                    ? "bg-muted text-foreground"
+                                                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                                             )}
                                         >
-                                            <Icon className="h-4 w-4" />
-                                            {tab.label}
+                                            <Icon className="h-4 w-4 flex-shrink-0" />
+                                            <span>{tab.label}</span>
                                         </button>
-                                    </SpotlightCard>
-                                );
-                            })}
+                                    );
+                                })}
+                            </div>
+                        </div>
+                        
+                        {/* Desktop Content */}
+                        <div className="flex-1 overflow-y-auto min-h-0 w-full max-w-full">
+                            {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
+                            {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} onOpenPlanModal={() => setShowPlanModal(true)} isActive={activeTab === 'billing'} />}
+                            {activeTab === 'usage' && <UsageTab />}
+                            {activeTab === 'memory' && <MemorySettings />}
+                            {activeTab === 'referrals' && <ReferralsTab />}
+                            {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
                         </div>
                     </div>
-                    <div className="flex-1 overflow-y-auto">
-                        {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
-                        {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} onOpenPlanModal={() => setShowPlanModal(true)} isActive={activeTab === 'billing'} />}
-                        {activeTab === 'usage' && <UsageTab />}
-                        {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
-                        {activeTab === 'knowledge-base' && <KnowledgeBaseTab />}
-                        {activeTab === 'integrations' && <IntegrationsTab />}
-                    </div>
-                </div>
+                )}
 
                 {/* Full-screen Plan Selection Modal */}
                 <PlanSelectionModal
@@ -231,74 +297,30 @@ export function UserSettingsModal({
     );
 }
 
-interface NotificationSettings {
-    email_enabled: boolean;
-    push_enabled: boolean;
-    in_app_enabled: boolean;
-}
 
 function GeneralTab({ onClose }: { onClose: () => void }) {
     const t = useTranslations('settings.general');
-    const tNotifications = useTranslations('notifications');
     const tCommon = useTranslations('common');
     const [userName, setUserName] = useState('');
     const [userEmail, setUserEmail] = useState('');
+    const [avatarUrl, setAvatarUrl] = useState('');
+    const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+    const [avatarFile, setAvatarFile] = useState<File | null>(null);
+    const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [showCancelDialog, setShowCancelDialog] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [deletionType, setDeletionType] = useState<'grace-period' | 'immediate'>('grace-period');
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const supabase = createClient();
     const queryClient = useQueryClient();
-    const [localSettings, setLocalSettings] = useState<NotificationSettings | null>(null);
 
     const { data: deletionStatus, isLoading: isCheckingStatus } = useAccountDeletionStatus();
     const requestDeletion = useRequestAccountDeletion();
     const cancelDeletion = useCancelAccountDeletion();
     const deleteImmediately = useDeleteAccountImmediately();
-
-    const { data: notificationSettings } = useQuery({
-        queryKey: ['notification-settings'],
-        queryFn: async () => {
-            const response = await backendApi.get<{ settings: NotificationSettings }>('/notifications/settings');
-            if (!response.success || !response.data) {
-                throw new Error('Failed to fetch notification settings');
-            }
-            return response.data.settings;
-        },
-    });
-
-    useEffect(() => {
-        if (notificationSettings) {
-            setLocalSettings(notificationSettings);
-        }
-    }, [notificationSettings]);
-
-    const updateNotificationsMutation = useMutation({
-        mutationFn: async (updates: Partial<NotificationSettings>) => {
-            const response = await backendApi.put('/notifications/settings', updates);
-            if (!response.success) {
-                throw new Error('Failed to update notification settings');
-            }
-            return response.data;
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notification-settings'] });
-            toast.success(tNotifications('settingsUpdated'));
-        },
-        onError: () => {
-            toast.error(tNotifications('settingsFailed'));
-            if (notificationSettings) {
-                setLocalSettings(notificationSettings);
-            }
-        },
-    });
-
-    const handleNotificationToggle = (key: keyof NotificationSettings, value: boolean) => {
-        setLocalSettings(prev => prev ? { ...prev, [key]: value } : null);
-        updateNotificationsMutation.mutate({ [key]: value });
-    };
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -307,6 +329,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
             if (data.user) {
                 setUserName(data.user.user_metadata?.name || data.user.email?.split('@')[0] || '');
                 setUserEmail(data.user.email || '');
+                setAvatarUrl(data.user.user_metadata?.avatar_url || '');
             }
             setIsLoading(false);
         };
@@ -314,14 +337,103 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
         fetchUserData();
     }, []);
 
+    const getInitials = (name: string) => {
+        return name
+            .split(' ')
+            .map(part => part[0])
+            .join('')
+            .toUpperCase()
+            .slice(0, 2) || 'U';
+    };
+
+    const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            // Validate file type
+            if (!file.type.startsWith('image/')) {
+                toast.error(t('profilePicture.invalidType'));
+                return;
+            }
+            // Validate file size (max 5MB)
+            if (file.size > 5 * 1024 * 1024) {
+                toast.error(t('profilePicture.tooLarge'));
+                return;
+            }
+            setAvatarFile(file);
+            const previewUrl = URL.createObjectURL(file);
+            setAvatarPreview(previewUrl);
+        }
+    };
+
+    const uploadAvatar = async (userId: string): Promise<string | null> => {
+        if (!avatarFile) return avatarUrl;
+
+        setIsUploadingAvatar(true);
+        try {
+            const fileExt = avatarFile.name.split('.').pop();
+            const fileName = `${userId}-${Date.now()}.${fileExt}`;
+
+            // Upload to Supabase Storage
+            const { error: uploadError } = await supabase.storage
+                .from('avatars')
+                .upload(fileName, avatarFile, {
+                    cacheControl: '3600',
+                    upsert: true,
+                });
+
+            if (uploadError) {
+                console.error('Upload error:', uploadError);
+                throw uploadError;
+            }
+
+            // Get public URL
+            const { data: { publicUrl } } = supabase.storage
+                .from('avatars')
+                .getPublicUrl(fileName);
+
+            return publicUrl;
+        } catch (error) {
+            console.error('Avatar upload failed:', error);
+            toast.error(t('profilePicture.uploadFailed'));
+            return null;
+        } finally {
+            setIsUploadingAvatar(false);
+        }
+    };
+
     const handleSave = async () => {
         setIsSaving(true);
         try {
+            const { data: userData } = await supabase.auth.getUser();
+            const userId = userData.user?.id;
+            
+            if (!userId) throw new Error('User not found');
+
+            // Upload avatar if a new one was selected
+            let newAvatarUrl = avatarUrl;
+            if (avatarFile) {
+                const uploadedUrl = await uploadAvatar(userId);
+                if (uploadedUrl) {
+                    newAvatarUrl = uploadedUrl;
+                }
+            }
+
             const { data, error } = await supabase.auth.updateUser({
-                data: { name: userName }
+                data: { 
+                    name: userName,
+                    avatar_url: newAvatarUrl,
+                }
             });
 
             if (error) throw error;
+
+            // Clean up preview URL
+            if (avatarPreview) {
+                URL.revokeObjectURL(avatarPreview);
+                setAvatarPreview(null);
+            }
+            setAvatarFile(null);
+            setAvatarUrl(newAvatarUrl);
 
             toast.success(t('profileUpdated'));
 
@@ -363,7 +475,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
 
     if (isLoading) {
         return (
-            <div className="p-6 space-y-6">
+            <div className="p-4 sm:p-6 space-y-5 sm:space-y-6 min-w-0 max-w-full">
                 <Skeleton className="h-8 w-32" />
                 <div className="space-y-4">
                     <Skeleton className="h-20 w-full" />
@@ -374,7 +486,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     }
 
     return (
-        <div className="p-6 space-y-6">
+        <div className="p-4 sm:p-6 pb-12 sm:pb-6 space-y-5 sm:space-y-6 min-w-0 max-w-full overflow-x-hidden">
             <div>
                 <h3 className="text-lg font-semibold mb-1">{t('title')}</h3>
                 <p className="text-sm text-muted-foreground">
@@ -383,6 +495,58 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="space-y-4">
+                {/* Profile Picture Section */}
+                <div className="space-y-3">
+                    <Label>{t('profilePicture.title')}</Label>
+                    <div className="flex items-center gap-4">
+                        <div className="relative group">
+                            <Avatar className="h-16 w-16 border-2 border-border">
+                                <AvatarImage 
+                                    src={avatarPreview || avatarUrl} 
+                                    alt={userName} 
+                                />
+                                <AvatarFallback className="text-base bg-muted">
+                                    {getInitials(userName)}
+                                </AvatarFallback>
+                            </Avatar>
+                            <button
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={isUploadingAvatar}
+                                className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                            >
+                                {isUploadingAvatar ? (
+                                    <Loader2 className="h-5 w-5 text-white animate-spin" />
+                                ) : (
+                                    <Camera className="h-5 w-5 text-white" />
+                                )}
+                            </button>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*"
+                                onChange={handleAvatarChange}
+                                className="hidden"
+                            />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={isUploadingAvatar}
+                                className="w-full sm:w-auto"
+                            >
+                                <Upload className="h-4 w-4 mr-1.5" />
+                                {t('profilePicture.upload')}
+                            </Button>
+                            <p className="text-xs text-muted-foreground">
+                                {t('profilePicture.hint')}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
                 <div className="space-y-2">
                     <Label htmlFor="name">{t('name')}</Label>
                     <Input
@@ -396,70 +560,38 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
 
                 <div className="space-y-2">
                     <Label htmlFor="email">{t('email')}</Label>
-                    <Input
-                        id="email"
-                        value={userEmail}
-                        disabled
-                        className="bg-muted/50 cursor-not-allowed shadow-none"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                        {t('emailCannotChange')}
-                    </p>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Input
+                                id="email"
+                                value={userEmail}
+                                disabled
+                                className="bg-muted/50 cursor-not-allowed shadow-none"
+                            />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            {t('emailCannotChange')}
+                        </TooltipContent>
+                    </Tooltip>
                 </div>
 
-                <div className="space-y-2 pt-4">
+                <div className="space-y-2">
                     <LanguageSwitcher />
                 </div>
             </div>
 
-            {localSettings && (
-                <div className="space-y-4 pt-6 border-t">
-                    <div>
-                        <div className="flex items-center gap-2 mb-2">
-                            <Bell className="h-4 w-4 text-muted-foreground" />
-                            <h4 className="text-sm font-medium">{tNotifications('title')}</h4>
-                        </div>
-                        <p className="text-xs text-muted-foreground mb-4">
-                            {tNotifications('description')}
-                        </p>
-                    </div>
-                    
-                    <div className="space-y-4">
-                        <NotificationToggle
-                            icon={Mail}
-                            label={tNotifications('emailNotifications')}
-                            description={tNotifications('emailDescription')}
-                            enabled={localSettings.email_enabled}
-                            onToggle={(value) => handleNotificationToggle('email_enabled', value)}
-                        />
-                        <NotificationToggle
-                            icon={Smartphone}
-                            label={tNotifications('pushNotifications')}
-                            description={tNotifications('pushDescription')}
-                            enabled={localSettings.push_enabled}
-                            onToggle={(value) => handleNotificationToggle('push_enabled', value)}
-                        />
-                        <NotificationToggle
-                            icon={AppWindow}
-                            label={tNotifications('inAppNotifications')}
-                            description={tNotifications('inAppDescription')}
-                            enabled={localSettings.in_app_enabled}
-                            onToggle={(value) => handleNotificationToggle('in_app_enabled', value)}
-                        />
-                    </div>
-                </div>
-            )}
-
-            <div className="flex justify-end gap-2 pt-4">
+            <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-4">
                 <Button
                     variant="outline"
                     onClick={onClose}
+                    className="w-full sm:w-auto"
                 >
                     {tCommon('cancel')}
                 </Button>
                 <Button
                     onClick={handleSave}
                     disabled={isSaving}
+                    className="w-full sm:w-auto"
                 >
                     {isSaving ? tCommon('saving') : t('saveChanges')}
                 </Button>
@@ -520,9 +652,9 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                             setDeletionType('grace-period');
                         }
                     }}>
-                        <DialogContent className="max-w-md">
+                        <DialogContent className="max-w-md max-h-[90vh] sm:max-h-[85vh] overflow-y-auto p-4 sm:p-6">
                             <DialogHeader>
-                                <DialogTitle>{t('deleteAccount.dialogTitle')}</DialogTitle>
+                                <DialogTitle className="text-base sm:text-lg">{t('deleteAccount.dialogTitle')}</DialogTitle>
                             </DialogHeader>
                             <div className="space-y-4">
                                 <Alert className={cn(
@@ -532,11 +664,11 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                         : "border-amber-500/30 bg-amber-500/5"
                                 )}>
                                     <AlertTriangle className={cn(
-                                        "h-4 w-4",
+                                        "h-4 w-4 flex-shrink-0",
                                         deletionType === 'immediate' ? "text-red-600" : "text-amber-600"
                                     )} />
                                     <AlertDescription>
-                                        <strong className="text-foreground">
+                                        <strong className="text-foreground text-sm sm:text-base">
                                             {deletionType === 'immediate' 
                                                 ? t('deleteAccount.warningImmediate')
                                                 : t('deleteAccount.warningGracePeriod')}
@@ -548,7 +680,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                     <p className="text-sm font-medium mb-2">
                                         {t('deleteAccount.whenDelete')}
                                     </p>
-                                    <ul className="text-sm text-muted-foreground space-y-1.5 pl-5 list-disc">
+                                    <ul className="text-xs sm:text-sm text-muted-foreground space-y-1.5 pl-4 sm:pl-5 list-disc">
                                         <li>{t('deleteAccount.agentsDeleted')}</li>
                                         <li>{t('deleteAccount.threadsDeleted')}</li>
                                         <li>{t('deleteAccount.credentialsRemoved')}</li>
@@ -561,26 +693,26 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                 </div>
 
                                 <div className="space-y-3">
-                                    <Label>{t('deleteAccount.chooseDeletionType')}</Label>
+                                    <Label className="text-sm">{t('deleteAccount.chooseDeletionType')}</Label>
                                     <RadioGroup value={deletionType} onValueChange={(value) => setDeletionType(value as 'grace-period' | 'immediate')}>
-                                        <div className="flex items-start space-x-2 space-y-0 rounded-md border p-4">
-                                            <RadioGroupItem value="grace-period" id="grace-period" className="mt-0.5" />
-                                            <div className="space-y-1 flex-1">
-                                                <Label htmlFor="grace-period" className="font-medium cursor-pointer">
+                                        <div className="flex items-start gap-2 sm:gap-3 rounded-md border p-3 sm:p-4">
+                                            <RadioGroupItem value="grace-period" id="grace-period" className="mt-0.5 flex-shrink-0" />
+                                            <div className="space-y-1 flex-1 min-w-0">
+                                                <Label htmlFor="grace-period" className="font-medium cursor-pointer text-sm sm:text-base block">
                                                     {t('deleteAccount.gracePeriodOption')}
                                                 </Label>
-                                                <p className="text-sm text-muted-foreground">
+                                                <p className="text-xs sm:text-sm text-muted-foreground">
                                                     {t('deleteAccount.gracePeriodDescription')}
                                                 </p>
                                             </div>
                                         </div>
-                                        <div className="flex items-start space-x-2 space-y-0 rounded-md border border-red-500/30 p-4">
-                                            <RadioGroupItem value="immediate" id="immediate" className="mt-0.5" />
-                                            <div className="space-y-1 flex-1">
-                                                <Label htmlFor="immediate" className="font-medium cursor-pointer text-red-600">
+                                        <div className="flex items-start gap-2 sm:gap-3 rounded-md border border-red-500/30 p-3 sm:p-4">
+                                            <RadioGroupItem value="immediate" id="immediate" className="mt-0.5 flex-shrink-0" />
+                                            <div className="space-y-1 flex-1 min-w-0">
+                                                <Label htmlFor="immediate" className="font-medium cursor-pointer text-sm sm:text-base text-red-600 block">
                                                     {t('deleteAccount.immediateOption')}
                                                 </Label>
-                                                <p className="text-sm text-muted-foreground">
+                                                <p className="text-xs sm:text-sm text-muted-foreground">
                                                     {t('deleteAccount.immediateDescription')}
                                                 </p>
                                             </div>
@@ -589,7 +721,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                 </div>
                                 
                                 <div className="space-y-2">
-                                    <Label htmlFor="delete-confirm">
+                                    <Label htmlFor="delete-confirm" className="text-sm">
                                         {t('deleteAccount.confirmText')}
                                     </Label>
                                     <Input
@@ -597,17 +729,17 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                         value={deleteConfirmText}
                                         onChange={(e) => setDeleteConfirmText(e.target.value)}
                                         placeholder={t('deleteAccount.confirmPlaceholder')}
-                                        className="shadow-none"
+                                        className="shadow-none text-sm sm:text-base"
                                         autoComplete="off"
                                     />
                                 </div>
                                 
-                                <div className="flex gap-2 justify-end">
+                                <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-2">
                                     <Button variant="outline" onClick={() => {
                                         setShowDeleteDialog(false);
                                         setDeleteConfirmText('');
                                         setDeletionType('grace-period');
-                                    }}>
+                                    }} className="w-full sm:w-auto">
                                         {t('deleteAccount.keepAccount')}
                                     </Button>
                                     <Button 
@@ -617,6 +749,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                             (requestDeletion.isPending || deleteImmediately.isPending) || 
                                             deleteConfirmText !== 'delete'
                                         }
+                                        className="w-full sm:w-auto"
                                     >
                                         {(requestDeletion.isPending || deleteImmediately.isPending) 
                                             ? tCommon('processing') 
@@ -628,21 +761,22 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                     </Dialog>
 
                     <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
-                        <AlertDialogContent className="max-w-md">
+                        <AlertDialogContent className="max-w-md p-4 sm:p-6">
                             <AlertDialogHeader>
-                                <AlertDialogTitle>{t('deleteAccount.cancelDeletionTitle')}</AlertDialogTitle>
+                                <AlertDialogTitle className="text-base sm:text-lg">{t('deleteAccount.cancelDeletionTitle')}</AlertDialogTitle>
                             </AlertDialogHeader>
                             <div className="space-y-4">
-                                <p className="text-sm text-muted-foreground">
+                                <p className="text-xs sm:text-sm text-muted-foreground">
                                     {t('deleteAccount.cancelDeletionDescription')}
                                 </p>
-                                <div className="flex gap-2 justify-end">
-                                    <Button variant="outline" onClick={() => setShowCancelDialog(false)}>
+                                <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-2">
+                                    <Button variant="outline" onClick={() => setShowCancelDialog(false)} className="w-full sm:w-auto">
                                         {tCommon('back')}
                                     </Button>
                                     <Button 
                                         onClick={handleCancelDeletion} 
                                         disabled={cancelDeletion.isPending}
+                                        className="w-full sm:w-auto"
                                     >
                                         {cancelDeletion.isPending ? tCommon('processing') : t('deleteAccount.cancelDeletion')}
                                     </Button>
@@ -844,7 +978,7 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
 
     if (isLoading) {
         return (
-            <div className="p-6 space-y-6">
+            <div className="p-4 sm:p-6 space-y-5 sm:space-y-6 min-w-0 max-w-full overflow-x-hidden">
                 <Skeleton className="h-8 w-32" />
                 <div className="space-y-4">
                     <Skeleton className="h-32 w-full" />
@@ -856,7 +990,7 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
 
     if (isLocalMode()) {
         return (
-            <div className="p-6">
+            <div className="p-4 sm:p-6 min-w-0 max-w-full overflow-x-hidden">
                 <Alert className="border-blue-500/50 bg-blue-500/10">
                     <Shield className="h-4 w-4 text-blue-500" />
                     <AlertDescription>
@@ -872,7 +1006,7 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
 
     if (error) {
         return (
-            <div className="p-6">
+            <div className="p-4 sm:p-6 min-w-0 max-w-full overflow-x-hidden">
                 <Alert variant="destructive">
                     <AlertTriangle className="h-4 w-4" />
                     <AlertDescription>{error}</AlertDescription>
@@ -888,12 +1022,12 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
     const canPurchaseCredits = accountState?.subscription.can_purchase_credits || false;
 
     return (
-        <div className="p-6 space-y-8">
+        <div className="p-4 sm:p-6 space-y-6 sm:space-y-8 min-w-0 max-w-full overflow-x-hidden">
             {/* Header with Plan Badge on Right */}
-            <div className="flex items-start justify-between gap-4">
-                <div className="space-y-1">
-                    <h1 className="text-2xl font-medium tracking-tight">Billing Status</h1>
-                    <p className="text-sm text-muted-foreground">Manage your credits and subscription</p>
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 min-w-0">
+                <div className="space-y-1 min-w-0 flex-1">
+                    <h1 className="text-xl sm:text-2xl font-medium tracking-tight">Billing Status</h1>
+                    <p className="text-xs sm:text-sm text-muted-foreground">Manage your credits and subscription</p>
                 </div>
 
                 {/* Plan Badge with Renewal Info - Right aligned */}
@@ -932,38 +1066,38 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
 
             {/* Credit Breakdown - Grid adapts based on tier */}
             <div className={cn(
-                "grid gap-4",
+                "grid gap-2 sm:gap-4",
                 dailyCreditsInfo?.enabled 
-                    ? "grid-cols-2 md:grid-cols-4" 
-                    : "grid-cols-1 md:grid-cols-3"
+                    ? "grid-cols-2 sm:grid-cols-2 md:grid-cols-4" 
+                    : "grid-cols-2 sm:grid-cols-2 md:grid-cols-3"
             )}>
                 {/* Total Available Credits */}
-                <div className="relative overflow-hidden rounded-[18px] border border-border bg-card p-5">
-                    <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2">
-                            <Zap className="h-4 w-4 text-primary" />
-                            <span className="text-xs text-muted-foreground">Total Available</span>
+                <div className="relative overflow-hidden rounded-xl sm:rounded-[18px] border border-border bg-card p-3 sm:p-5">
+                    <div className="flex flex-col gap-1.5 sm:gap-2">
+                        <div className="flex items-center gap-1.5 sm:gap-2">
+                            <Zap className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary flex-shrink-0" />
+                            <span className="text-[10px] sm:text-xs text-muted-foreground truncate">Total</span>
                         </div>
                         <div>
-                            <div className="text-xl leading-none font-semibold">{formatCredits(totalCredits)}</div>
+                            <div className="text-base sm:text-xl leading-none font-semibold">{formatCredits(totalCredits)}</div>
                         </div>
                     </div>
                 </div>
 
                 {/* Daily Credits - Only for free tier */}
                 {dailyCreditsInfo?.enabled && (
-                    <div className="relative overflow-hidden rounded-[18px] border border-blue-500/20 bg-gradient-to-br from-blue-500/5 to-transparent p-5">
-                        <div className="flex flex-col gap-2">
-                            <div className="flex items-center gap-2">
-                                <RotateCcw className="h-4 w-4 text-blue-500" />
-                                <span className="text-xs text-muted-foreground">Daily</span>
+                    <div className="relative overflow-hidden rounded-xl sm:rounded-[18px] border border-blue-500/20 bg-gradient-to-br from-blue-500/5 to-transparent p-3 sm:p-5">
+                        <div className="flex flex-col gap-1.5 sm:gap-2">
+                            <div className="flex items-center gap-1.5 sm:gap-2">
+                                <RotateCcw className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-blue-500 flex-shrink-0" />
+                                <span className="text-[10px] sm:text-xs text-muted-foreground truncate">Daily</span>
                             </div>
                             <div>
-                                <div className="text-xl leading-none font-semibold">{formatCredits(dailyCredits)}</div>
-                                <p className="text-[11px] text-blue-500/80 mt-1.5">
+                                <div className="text-base sm:text-xl leading-none font-semibold">{formatCredits(dailyCredits)}</div>
+                                <p className="text-[10px] sm:text-[11px] text-blue-500/80 mt-1 sm:mt-1.5 truncate">
                                     {hoursUntilDailyRefresh !== null 
-                                        ? `Refresh in ${hoursUntilDailyRefresh}h`
-                                        : 'Refreshes daily'
+                                        ? `${hoursUntilDailyRefresh}h`
+                                        : 'Daily'
                                     }
                                 </p>
                             </div>
@@ -973,48 +1107,47 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
 
                 {/* Monthly Credits - For paid tiers OR expiring credits display */}
                 {(!dailyCreditsInfo?.enabled || monthlyCredits > 0) && (
-                    <div className="relative overflow-hidden rounded-[18px] border border-orange-500/20 bg-gradient-to-br from-orange-500/5 to-transparent p-5">
-                        <div className="flex flex-col gap-2">
-                            <div className="flex items-center gap-2">
-                                <Clock className="h-4 w-4 text-orange-500" />
-                                <span className="text-xs text-muted-foreground">Monthly</span>
+                    <div className="relative overflow-hidden rounded-xl sm:rounded-[18px] border border-orange-500/20 bg-gradient-to-br from-orange-500/5 to-transparent p-3 sm:p-5">
+                        <div className="flex flex-col gap-1.5 sm:gap-2">
+                            <div className="flex items-center gap-1.5 sm:gap-2">
+                                <Clock className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-orange-500 flex-shrink-0" />
+                                <span className="text-[10px] sm:text-xs text-muted-foreground truncate">Monthly</span>
                             </div>
                             <div>
-                                <div className="text-xl leading-none font-semibold">
+                                <div className="text-base sm:text-xl leading-none font-semibold">
                                     {formatCredits(dailyCreditsInfo?.enabled ? monthlyCredits : (accountState?.credits.monthly || 0))}
                                 </div>
-                                <p className="text-[11px] text-orange-500/80 mt-1.5">
-                                    {hoursUntilDailyRefresh !== null 
-                                        ? `Refresh in ${hoursUntilDailyRefresh} ${hoursUntilDailyRefresh === 1 ? 'hour' : 'hours'}`
-                                        : 'No renewal scheduled'
-                                    }
-                                </p>
+                                {accountState?.subscription.current_period_end && (
+                                    <p className="text-[10px] sm:text-[11px] text-orange-500/80 mt-1 sm:mt-1.5 truncate">
+                                        {formatDateFlexible(accountState.subscription.current_period_end)}
+                                    </p>
+                                )}
                             </div>
                         </div>
                     </div>
                 )}
 
                 {/* Extra Credits */}
-                <div className="relative overflow-hidden rounded-[18px] border border-border bg-card p-5">
-                    <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2">
-                            <Infinity className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground">Extra</span>
+                <div className="relative overflow-hidden rounded-xl sm:rounded-[18px] border border-border bg-card p-3 sm:p-5">
+                    <div className="flex flex-col gap-1.5 sm:gap-2">
+                        <div className="flex items-center gap-1.5 sm:gap-2">
+                            <Infinity className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground flex-shrink-0" />
+                            <span className="text-[10px] sm:text-xs text-muted-foreground truncate">Extra</span>
                         </div>
                         <div>
-                            <div className="text-xl leading-none font-semibold">{formatCredits(nonExpiringCredits)}</div>
-                            <p className="text-[11px] text-muted-foreground mt-1.5">Non-expiring</p>
+                            <div className="text-base sm:text-xl leading-none font-semibold">{formatCredits(nonExpiringCredits)}</div>
+                            <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-1 sm:mt-1.5">Non-expiring</p>
                         </div>
                     </div>
                 </div>
             </div>
 
             {/* Action Buttons - Clean Layout */}
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
                 <Button
                     onClick={handleManageSubscription}
                     disabled={createPortalSessionMutation.isPending}
-                    className="h-10"
+                    className="h-10 w-full sm:w-auto"
                 >
                     {createPortalSessionMutation.isPending ? 'Loading...' : 'Manage Subscription'}
                 </Button>
@@ -1022,7 +1155,7 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
                     <Button
                         onClick={() => setShowCreditPurchaseModal(true)}
                         variant="outline"
-                        className="h-10"
+                        className="h-10 w-full sm:w-auto"
                     >
                         <ShoppingCart className="h-4 w-4 mr-2" />
                         Get Additional Credits
@@ -1032,17 +1165,17 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
                     hasScheduledChange ? (
                         <Button
                             variant="outline"
-                            className="h-10 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                            className="h-10 w-full sm:w-auto border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 text-sm"
                             disabled
                         >
-                            <CalendarClock className="h-4 w-4 mr-2" />
-                            Downgrade Scheduled
+                            <CalendarClock className="h-4 w-4 mr-2 flex-shrink-0" />
+                            <span className="truncate">Downgrade Scheduled</span>
                         </Button>
                     ) : (
                         <Button
                             onClick={onOpenPlanModal}
                             variant="outline"
-                            className="h-10"
+                            className="h-10 w-full sm:w-auto"
                         >
                             Change Plan
                         </Button>
@@ -1140,14 +1273,15 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
                             Are you sure you want to cancel your subscription? You'll continue to have access until{' '}
                             {accountState?.subscription.current_period_end && formatDateFlexible(accountState.subscription.current_period_end)}.
                         </p>
-                        <div className="flex gap-2 justify-end">
-                            <Button variant="outline" onClick={() => setShowCancelDialog(false)}>
+                        <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+                            <Button variant="outline" onClick={() => setShowCancelDialog(false)} className="w-full sm:w-auto">
                                 Keep Subscription
                             </Button>
                             <Button 
                                 variant="destructive" 
                                 onClick={handleCancel} 
                                 disabled={cancelSubscriptionMutation.isPending}
+                                className="w-full sm:w-auto"
                             >
                                 {cancelSubscriptionMutation.isPending ? 'Cancelling...' : 'Cancel Plan'}
                             </Button>
@@ -1190,7 +1324,7 @@ function CreditsHelpAlert() {
 
 function UsageTab() {
   return (
-      <div className="p-6 space-y-6">
+      <div className="p-4 sm:p-6 space-y-5 sm:space-y-6 min-w-0 max-w-full overflow-x-hidden">
         <ThreadUsage />
       </div>
   );
@@ -1198,44 +1332,10 @@ function UsageTab() {
 
 function EnvManagerTab() {
     return (
-        <div className="p-6">
+        <div className="p-4 sm:p-6 min-w-0 max-w-full overflow-x-hidden">
             <LocalEnvManager />
         </div>
     );
 }
 
-function KnowledgeBaseTab() {
-    useEffect(() => {
-        window.open('/knowledge', '_blank');
-    }, []);
-    
-    return (
-        <div className="p-6 space-y-4">
-            <div className="text-center py-8">
-                <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-semibold mb-2">Opening Knowledge Base</h3>
-                <p className="text-sm text-muted-foreground">
-                    Redirecting to Knowledge Base page...
-                </p>
-            </div>
-        </div>
-    );
-}
 
-function IntegrationsTab() {
-    useEffect(() => {
-        window.open('/settings/credentials', '_blank');
-    }, []);
-    
-    return (
-        <div className="p-6 space-y-4">
-            <div className="text-center py-8">
-                <Plug className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-semibold mb-2">Opening Integrations</h3>
-                <p className="text-sm text-muted-foreground">
-                    Redirecting to Integrations page...
-                </p>
-            </div>
-        </div>
-    );
-}

@@ -97,3 +97,7 @@ export const isLocalMode = (): boolean => {
 export const isStagingMode = (): boolean => {
   return config.IS_STAGING;
 };
+
+export const isProductionMode = (): boolean => {
+  return config.ENV_MODE === EnvMode.PRODUCTION;
+};

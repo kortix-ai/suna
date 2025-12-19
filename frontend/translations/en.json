@@ -38,13 +38,22 @@
       "plan": "Plan",
       "billing": "Billing",
       "usage": "Usage",
+      "referrals": "Referrals",
       "knowledgeBase": "Knowledge Base",
       "integrations": "Integrations",
       "envManager": "Env Manager"
     },
     "general": {
-      "title": "Profile Settings",
+      "title": "General settings",
       "description": "Manage your account information",
+      "profilePicture": {
+        "title": "Profile Picture",
+        "upload": "Upload avatar",
+        "hint": "JPG, PNG or GIF. Max 5MB.",
+        "invalidType": "Please select an image file",
+        "tooLarge": "Image must be less than 5MB",
+        "uploadFailed": "Failed to upload profile picture"
+      },
       "name": "Name",
       "email": "Email",
       "namePlaceholder": "Enter your name",
@@ -91,6 +100,50 @@
         "cancelDeletion": "Cancel Deletion"
       }
     },
+    "referrals": {
+      "title": "Referral Program",
+      "description": "Share your referral link with friends and earn credits when they sign up.",
+      "creditsPerReferral": "100 credits",
+      "youEarn": "You earn",
+      "friendGets": "Your friend gets",
+      "maxEarnable": "Maximum earnable through referrals:",
+      "maxCredits": "$100 in credits",
+      "yourReferralCode": "Your Referral Code",
+      "referralLink": "Referral Link",
+      "shareYourLink": "Share your referral link",
+      "yourStats": "Your Stats",
+      "enterCodeDescription": "Enter a referral code to earn credits",
+      "enterCode": "Enter code",
+      "refresh": "Refresh",
+      "copyCode": "Copy code",
+      "copyLink": "Copy link",
+      "share": "Share",
+      "stats": {
+        "totalReferrals": "Total Referrals",
+        "successful": "Successful",
+        "creditsEarned": "Credits Earned"
+      },
+      "recentReferrals": "Recent Referrals",
+      "signupComplete": "Signup Complete",
+      "pending": "Pending",
+      "noReferrals": "No referrals yet. Share your referral link to get started!",
+      "copied": "Copied!",
+      "codeCopied": "Referral code copied to clipboard",
+      "linkCopied": "Referral link copied to clipboard",
+      "codeRefreshed": "Referral code refreshed successfully",
+      "refreshFailed": "Failed to refresh referral code",
+      "inviteByEmail": "Invite by Email",
+      "inviteByEmailDescription": "Add up to 3 email addresses (press Enter, Space, or Comma to add)",
+      "emailAddress": "Email address",
+      "emailPlaceholder": "Enter email addresses (press Enter, Space, or Comma)",
+      "emailsAdded": "emails",
+      "sent": "sent",
+      "send": "Send",
+      "sending": "Sending...",
+      "sendAllInvites": "Send All Invites",
+      "allSent": "All Sent",
+      "emailSent": "Referral invitation sent successfully"
+    },
     "billing": {
       "title": "Billing & Subscription",
       "description": "Manage your credits and subscription",
@@ -135,6 +188,49 @@
     "integrations": {
       "opening": "Opening Integrations",
       "redirecting": "Redirecting to Integrations page..."
+    },
+    "memory": {
+      "title": "AI Memory",
+      "description": "Automatically remember context across conversations",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "notAvailable": "Memory is not available on your current plan. Upgrade to Plus or higher to enable automatic memory.",
+      "enableMemory": "Enable Memory",
+      "enableMemoryDescription": "Allow Kortix to remember information from your conversations",
+      "memoryDisabledByUser": "Memory is currently disabled. Enable it above to start building memories from your conversations.",
+      "upgradeRequired": "Memory requires upgrade",
+      "clickToUpgrade": "Click to see plans",
+      "memoryEnabledTooltip": "Memory enabled",
+      "memoryDisabledTooltip": "Memory disabled",
+      "clickToToggle": "Click to toggle",
+      "usage": "Memory Usage",
+      "available": "{count} memories available",
+      "noLimit": "Unlimited",
+      "yourMemories": "Your Memories",
+      "yourMemoriesDescription": "View and manage what the AI remembers about you",
+      "clearAll": "Clear All",
+      "deleteAllTitle": "Delete all memories?",
+      "deleteAllDescription": "This will permanently delete all {count} memories. The AI will no longer remember information from past conversations. This action cannot be undone.",
+      "deleteAllButton": "Delete All Memories",
+      "noMemoriesYet": "No memories yet",
+      "noMemoriesDescription": "Start a conversation and the AI will automatically remember important information about you",
+      "searchMemories": "Search memories...",
+      "filterByType": "Filter by type",
+      "allTypes": "All Types",
+      "personalFacts": "Personal Facts",
+      "preferences": "Preferences",
+      "context": "Context",
+      "conversations": "Conversations",
+      "noMatchingMemories": "No matching memories",
+      "adjustFilters": "Try adjusting your filters or search query",
+      "loadMore": "Load More",
+      "loading": "Loading memories...",
+      "memoryTypes": {
+        "fact": "Fact",
+        "preference": "Preference",
+        "context": "Context",
+        "conversation_summary": "Conversation"
+      }
     }
   },
   "triggers": {
@@ -143,12 +239,12 @@
     "search": "Search",
     "scheduledTrigger": "Scheduled Trigger",
     "eventBasedTrigger": "Event-based Trigger",
-    "chooseAgent": "Choose Agent",
+    "chooseAgent": "Choose Worker",
     "schedule": "Schedule",
-    "agentInstructions": "Agent Instructions",
-    "agentInstructionsDescription": "Custom prompt for the agent",
-    "assignedAgent": "Assigned Agent",
-    "unknownAgent": "Unknown Agent",
+    "agentInstructions": "Worker Instructions",
+    "agentInstructionsDescription": "Custom prompt for the Worker",
+    "assignedAgent": "Assigned Worker",
+    "unknownAgent": "Unknown Worker",
     "technicalDetails": "Technical Details",
     "type": "Type",
     "provider": "Provider",
@@ -165,7 +261,7 @@
     "deleteTaskFailed": "Failed to delete task",
     "taskUpdatedSuccess": "Task updated successfully",
     "updateTaskFailed": "Failed to update task",
-    "pleaseSelectAgent": "Please select an agent",
+    "pleaseSelectAgent": "Please select a Worker",
     "defaultScheduledTriggerName": "Scheduled Trigger",
     "defaultScheduledTriggerDescription": "Automatically scheduled trigger",
     "scheduleTriggerUpdated": "Schedule trigger updated successfully",
@@ -191,12 +287,17 @@
     "monthlyOn1st": "Monthly on 1st"
   },
   "sidebar": {
+    "referAndEarn": "Refer & Earn",
+    "referralShareTitle": "Refer Friends",
+    "referralShareSubtitle": "Get 400 credits",
+    "new": "New",
+    "upgrade": "Upgrade",
     "chats": "Chats",
-    "agents": "Agents",
+    "agents": "Workers",
     "workers": "Workers",
     "triggers": "Triggers",
     "newChat": "New Chat",
-    "newAgent": "New Agent",
+    "newAgent": "New Worker",
     "settings": "Settings",
     "logout": "Log out",
     "openMenu": "Open menu",
@@ -255,9 +356,42 @@
     "customWorkers": "Custom Workers",
     "scheduledTriggers": "Scheduled Triggers",
     "appTriggers": "App Triggers",
-    "limitsExceeded": "You've reached your chat limit ({current}/{limit}). Upgrade your plan to create more chats.",
-    "agentInitiatedSuccessfully": "Agent initiated successfully",
-    "aiAssistantReady": "Your AI assistant is ready to help"
+    "limitsExceeded": "You've reached your chat limit. Upgrade your plan to create more chats.",
+    "agentInitiatedSuccessfully": "Worker initiated successfully",
+    "aiAssistantReady": "Your AI assistant is ready to help",
+    "greetings": {
+      "morning": [
+        "Good morning! What's on the agenda?",
+        "Rise and shine! What are we building?",
+        "Morning! Ready to be productive?"
+      ],
+      "afternoon": [
+        "Good afternoon! What can I help with?",
+        "Hope your day's going well! What's next?"
+      ],
+      "evening": [
+        "Good evening! Burning the midnight oil?",
+        "Evening! What are we working on tonight?",
+        "Good evening! Let's get things done."
+      ],
+      "random": [
+        "Guess who's back, back again",
+        "Ahoy! What can Kortix do for you?",
+        "What do you want to get done?",
+        "Let's build something awesome",
+        "Ready when you are!",
+        "What's cooking?",
+        "At your service! What's the mission?",
+        "Let's make some magic happen",
+        "What challenge shall we tackle?",
+        "Your wish is my command",
+        "What's the plan, Stan?",
+        "Buckle up! Where are we headed?",
+        "Another day, another build",
+        "What's on your mind?",
+        "Let's get this show on the road"
+      ]
+    }
   },
   "thread": {
     "integrations": "Integrations",
@@ -303,17 +437,17 @@
     "feedbackSubmitFailed": "Failed to submit feedback"
   },
   "agents": {
-    "title": "Agents",
-    "create": "Create Agent",
+    "title": "Workers",
+    "create": "Create Worker",
     "createNewWorker": "Create New Worker",
-    "edit": "Edit Agent",
-    "delete": "Delete Agent",
+    "edit": "Edit Worker",
+    "delete": "Delete Worker",
     "name": "Name",
     "description": "Description",
     "model": "Model",
     "systemPrompt": "System Prompt",
-    "systemPromptPlaceholder": "Define how your agent should behave...",
-    "customizeIcon": "Click to customize agent icon"
+    "systemPromptPlaceholder": "Define how your Worker should behave...",
+    "customizeIcon": "Click to customize Worker icon"
   },
   "home": {
     "heroPlaceholder": "Describe the task you want your Worker to complete..."
@@ -409,6 +543,7 @@
     "credits": "Credits",
     "popular": "Popular",
     "creditsExplained": "Credits explained",
+    "creditsExhausted": "+200 Credits in {time}. Upgrade to use now.",
     "creditsExhaustedRefreshIn": "You've exhausted your credits. They will refresh in {time}",
     "trialActive": "Trial Active",
     "trialBadge": "7-Day Trial",
@@ -438,7 +573,7 @@
         "aiModelUsage": {
           "title": "AI Model Usage",
           "description": "The primary driver of credit consumption",
-          "content": "Different AI models have different costs based on their capabilities and token usage. Credits are consumed for input tokens (your prompts and context), output tokens (agent responses), and vary by model tier (Claude, GPT, etc.)."
+          "content": "Different AI models have different costs based on their capabilities and token usage. Credits are consumed for input tokens (your prompts and context), output tokens (Worker responses), and vary by model tier (Claude, GPT, etc.)."
         },
         "pricingModel": {
           "title": "Pricing Model",
@@ -504,6 +639,9 @@
     "downgradePending": "Downgrade Pending",
     "downgrade": "Downgrade",
     "switchToLegacyYearly": "Switch to Legacy Yearly",
+    "confirmDowngradeTitle": "Are you sure you want to downgrade?",
+    "confirmDowngradeDescription": "You're about to downgrade to {planName}. This change will take effect at the end of your current billing period.",
+    "confirmDowngrade": "Yes, Downgrade",
     "pickPlan": "Pick the plan that works for you.",
     "reachedLimit": "You've reached your limits.",
     "projectLimit": "Project Limit ({current}/{limit})",
@@ -524,9 +662,35 @@
       "integrations": "100+ integrations",
       "premiumAIModels": "Premium AI Models",
       "prioritySupport": "Priority Support"
+    },
+    "downgradeDialog": {
+      "confirmTitle": "Confirm plan change",
+      "confirmSubtitle": "We're sorry to see you go",
+      "confirmDescription": "You're about to switch to the {planName} plan. This change will take effect at the end of your current billing period. You'll keep your current benefits until then.",
+      "continue": "Continue",
+      "keepCurrentPlan": "Keep my current plan",
+      "feedbackTitle": "Help us improve",
+      "feedbackSubtitle": "Your feedback shapes the future of Kortix",
+      "whatWouldMakeYouStay": "What would make you stay?",
+      "feedbackPlaceholder": "If there was one thing we could change or add that would make Kortix worth it for you, what would it be?",
+      "feedbackFooter": "Our team reads every response. Your words directly influence what we build next.",
+      "confirmDowngrade": "Confirm downgrade",
+      "processing": "Processing...",
+      "pleaseSelectReason": "Please select a reason",
+      "reasons": {
+        "tooExpensive": "It's too expensive for my needs",
+        "notUsingOften": "I'm not using Kortix enough",
+        "foundAlternative": "I found another solution",
+        "technicalIssues": "I experienced technical issues",
+        "resultsNotGood": "The results didn't meet my expectations",
+        "other": "Other reason"
+      }
     }
   },
   "auth": {
+    "haveReferralCode": "Have a referral code?",
+    "referralCode": "Referral Code",
+    "enterCode": "Enter code",
     "logIntoAccount": "Log into your account",
     "createAccount": "Create account",
     "signInOrCreateAccount": "Sign in or create your Kortix account",
@@ -563,7 +727,16 @@
     "magicLinkSent": "We sent a magic link to",
     "magicLinkDescription": "Click the link in your email to sign in. The link will expire in 1 hour.",
     "magicLinkExplanation": "We'll send you a secure link to sign in. No password needed.",
-    "byContinuingYouAgree": "By continuing, you agree to our <privacyPolicy>Privacy Policy</privacyPolicy> and <termsOfService>Terms of Service</termsOfService>"
+    "magicLinkExpired": "This link has expired",
+    "magicLinkExpiredDescription": "The magic link you clicked has expired. Magic links expire after 1 hour for security reasons.",
+    "resendMagicLink": "Resend magic link",
+    "resending": "Resending...",
+    "byContinuingYouAgree": "By continuing, you agree to our <privacyPolicy>Privacy Policy</privacyPolicy> and <termsOfService>Terms of Service</termsOfService>",
+    "openProvider": "Open {provider}",
+    "didntReceiveEmail": "Didn't receive the email?",
+    "resend": "Resend",
+    "alreadySignedIn": "You're already signed in. No action needed.",
+    "goToDashboard": "Go to Dashboard"
   },
   "onboarding": {
     "welcome": "Welcome",
@@ -613,8 +786,8 @@
     "analyzeSheet": "Analyzing Sheet",
     "visualizeSheet": "Visualizing Sheet",
     "formatSheet": "Formatting Sheet",
-    "updateAgent": "Updating Agent",
-    "getCurrentAgentConfig": "Getting Agent Config",
+    "updateAgent": "Updating Worker",
+    "getCurrentAgentConfig": "Getting Worker Config",
     "searchMcpServers": "Searching MCP Servers",
     "getMcpServerTools": "Getting MCP Server Tools",
     "configureMcpServer": "Configuring MCP Server",
@@ -640,14 +813,14 @@
     "discoverUserMcpServers": "Discovering tools",
     "createCredentialProfile": "Creating profile",
     "getCredentialProfiles": "Getting profiles",
-    "configureProfileForAgent": "Adding tools to agent",
-    "createNewAgent": "Creating New Agent",
+    "configureProfileForAgent": "Adding tools to Worker",
+    "createNewAgent": "Creating New Worker",
     "searchMcpServersForAgent": "Searching MCP Servers",
     "createCredentialProfileForAgent": "Creating Credential Profile",
     "discoverMcpToolsForAgent": "Discovering MCP Tools",
-    "configureAgentIntegration": "Configuring Agent Integration",
+    "configureAgentIntegration": "Configuring Worker Integration",
     "createAgentScheduledTrigger": "Creating Scheduled Trigger",
-    "listAgentScheduledTriggers": "Listing Agent Scheduled Triggers",
+    "listAgentScheduledTriggers": "Listing Worker Scheduled Triggers",
     "executingTool": "Executing tool",
     "toolExecutedSuccessfully": "Tool executed successfully",
     "toolExecutionFailed": "Tool execution failed",
@@ -663,26 +836,26 @@
   "agentRunLimit": {
     "gotIt": "Got it",
     "parallelRunsLimitReached": "Parallel Runs Limit Reached",
-    "parallelRunsLimitDescription": "You've reached the maximum parallel agent runs allowed.",
+    "parallelRunsLimitDescription": "You've reached the maximum parallel Worker runs allowed.",
     "needMoreParallelRuns": "Need more parallel runs?",
-    "upgradeDescription": "Upgrade your plan to run multiple agents simultaneously and boost your productivity.",
+    "upgradeDescription": "Upgrade your plan to run multiple Workers simultaneously and boost your productivity.",
     "upgradePlan": "Upgrade Plan",
-    "currentlyRunningAgents": "Currently Running Agents",
+    "currentlyRunningAgents": "Currently Running Workers",
     "loadingThreads": "Loading threads...",
-    "foundRunningAgents": "Found {count} running agents but unable to load thread details.",
+    "foundRunningAgents": "Found {count} running Workers but unable to load thread details.",
     "threadIds": "Thread IDs: {ids}",
     "moreRunning": "+{count} more running",
     "whatCanYouDo": "What can you do?",
-    "stopAgentsHint": "Click the stop button to stop running agents",
-    "waitForCompletion": "Wait for an agent to complete automatically",
+    "stopAgentsHint": "Click the stop button to stop running Workers",
+    "waitForCompletion": "Wait for a Worker to complete automatically",
     "upgradeYourPlan": "Upgrade your plan",
     "forMoreParallelRuns": "for more parallel runs",
-    "stopAgent": "Stop agent",
-    "stopThisAgent": "Stop this agent",
+    "stopAgent": "Stop Worker",
+    "stopThisAgent": "Stop this Worker",
     "openThread": "Open thread",
-    "agentStoppedSuccessfully": "Agent stopped successfully",
-    "failedToStopAgent": "Failed to stop agent",
-    "upgradeToRunMore": "Upgrade to run more agents in parallel"
+    "agentStoppedSuccessfully": "Worker stopped successfully",
+    "failedToStopAgent": "Failed to stop Worker",
+    "upgradeToRunMore": "Upgrade to run more Workers in parallel"
   },
   "errors": {
     "generic": "An error occurred",
@@ -965,6 +1138,28 @@
         "8": "Study pricing strategies of successful D2C subscription box companies",
         "9": "Research the competitive landscape of AI-powered cybersecurity solutions"
       }
+    }
+  },
+  "announcements": {
+    "memories": {
+      "title": "Introducing Memories",
+      "description": "Kortix now remembers your preferences and context across all conversations",
+      "features": {
+        "personalized": {
+          "title": "Personalized Experience",
+          "description": "Adapts to your working style over time"
+        },
+        "retention": {
+          "title": "Context Retention",
+          "description": "Important details remembered across chats"
+        },
+        "control": {
+          "title": "You're in Control",
+          "description": "Toggle off or clear memories anytime"
+        }
+      },
+      "manageButton": "Manage Memories",
+      "dismissButton": "Got it"
     }
   }
 }

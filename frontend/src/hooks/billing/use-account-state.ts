@@ -14,7 +14,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { siteConfig } from '@/lib/home';
+import { siteConfig } from '@/lib/site-config';
 import {
   billingApi,
   AccountState,

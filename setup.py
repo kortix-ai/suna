@@ -30,7 +30,7 @@ class Colors:
 
 # --- UI Helpers ---
 def print_banner():
-    """Prints the Suna setup banner."""
+    """Prints the Kortix Super Worker setup banner."""
     print(
         f"""
 {Colors.BLUE}{Colors.BOLD}
@@ -474,7 +474,7 @@ class SetupWizard:
         """Runs the setup wizard."""
         print_banner()
         print(
-            "This wizard will guide you through setting up Suna, an open-source generalist AI Worker.\n"
+            "This wizard will guide you through setting up Kortix Super Worker, an open-source generalist AI Worker.\n"
         )
 
         # Show current configuration status
@@ -483,7 +483,7 @@ class SetupWizard:
         # Check if setup is already complete
         if self.is_setup_complete():
             print_info("Setup already complete!")
-            print_info("Would you like to start Suna?")
+            print_info("Would you like to start Kortix Super Worker?")
             print()
             print("[1] Start with Docker Compose")
             print("[2] Start manually (show commands)")
@@ -494,7 +494,7 @@ class SetupWizard:
             choice = input("Enter your choice (1-4): ").strip()
             
             if choice == "1":
-                print_info("Starting Suna with Docker Compose...")
+                print_info("Starting Kortix Super Worker with Docker Compose...")
                 self.start_suna()
                 return
             elif choice == "2":
@@ -588,7 +588,7 @@ class SetupWizard:
             return
 
         print_info(
-            "You can start Suna using either Docker Compose or by manually starting the services."
+            "You can start Kortix Super Worker using either Docker Compose or by manually starting the services."
         )
         
         # Important note about Supabase compatibility
@@ -598,7 +598,7 @@ class SetupWizard:
         print(f"\n  Why? Docker networking can't easily reach local Supabase containers.")
         print(f"  Want to fix this? See: {Colors.CYAN}https://github.com/kortix-ai/suna/issues/1920{Colors.ENDC}")
         
-        print(f"\n{Colors.CYAN}How would you like to set up Suna?{Colors.ENDC}")
+        print(f"\n{Colors.CYAN}How would you like to set up Kortix Super Worker?{Colors.ENDC}")
         print(
             f"{Colors.CYAN}[1] {Colors.GREEN}Manual{Colors.ENDC} {Colors.CYAN}(supports both Cloud and Local Supabase){Colors.ENDC}"
         )
@@ -697,18 +697,18 @@ class SetupWizard:
         for directory in required_dirs:
             if not os.path.isdir(directory):
                 print_error(
-                    f"'{directory}' directory not found. Make sure you're in the Suna repository root."
+                    f"'{directory}' directory not found. Make sure you're in the Kortix Super Worker repository root."
                 )
                 sys.exit(1)
 
         for file in required_files:
             if not os.path.isfile(file):
                 print_error(
-                    f"'{file}' not found. Make sure you're in the Suna repository root."
+                    f"'{file}' not found. Make sure you're in the Kortix Super Worker repository root."
                 )
                 sys.exit(1)
 
-        print_success("Suna repository detected.")
+        print_success("Kortix Super Worker repository detected.")
         return True
 
     def _get_input(
@@ -744,7 +744,7 @@ class SetupWizard:
         print_step(3, self.total_steps, "Collecting Supabase Information")
 
         # Always ask user to choose between local and cloud Supabase
-        print_info("Suna REQUIRES a Supabase project to function. Without these keys, the application will crash on startup.")
+        print_info("Kortix Super Worker REQUIRES a Supabase project to function. Without these keys, the application will crash on startup.")
         print_info("You can choose between:")
         print_info("  1. Local Supabase (automatic setup, recommended for development & local use - runs in Docker)")
         print_info("  2. Cloud Supabase (hosted on supabase.com - requires manual setup)")
@@ -1001,7 +1001,7 @@ class SetupWizard:
             )
         else:
             print_info(
-                "Suna REQUIRES Daytona for sandboxing functionality. Without this key, sandbox features will fail.")
+                "Kortix Super Worker REQUIRES Daytona for sandboxing functionality. Without this key, sandbox features will fail.")
             print_info(
                 "Visit https://app.daytona.io/ to create an account.")
             print_info("Then, generate an API key from the 'Keys' menu.")
@@ -1039,7 +1039,7 @@ class SetupWizard:
         print_success("Daytona information saved.")
 
         print_warning(
-            "IMPORTANT: You must create a Suna snapshot in Daytona for it to work properly."
+            "IMPORTANT: You must create a Kortix Super Worker snapshot in Daytona for it to work properly."
         )
         print_info(
             f"Visit {Colors.GREEN}https://app.daytona.io/dashboard/snapshots{Colors.ENDC}{Colors.CYAN} to create a snapshot."
@@ -1075,7 +1075,7 @@ class SetupWizard:
             )
         else:
             print_info(
-                "LLM providers are OPTIONAL tools that enable AI features in Suna.")
+                "LLM providers are OPTIONAL tools that enable AI features in Kortix Super Worker.")
             print_info(
                 "Supported: Anthropic (Recommended), OpenAI, Groq, OpenRouter, xAI, Google Gemini, OpenAI Compatible, AWS Bedrock."
             )
@@ -1146,7 +1146,7 @@ class SetupWizard:
         if configured_providers:
             print_success(f"LLM providers configured: {', '.join(configured_providers)}")
         else:
-            print_warning("No LLM providers configured - Suna will work but AI features will be disabled.")
+            print_warning("No LLM providers configured - Kortix Super Worker will work but AI features will be disabled.")
         
         print_success("LLM keys saved.")
 
@@ -1164,7 +1164,7 @@ class SetupWizard:
             print_info("AI-powered code editing is enabled using Morph.")
             return
 
-        print_info("Suna uses Morph for fast, intelligent code editing.")
+        print_info("Kortix Super Worker uses Morph for fast, intelligent code editing.")
         print_info(
             "This is optional but highly recommended for the best experience.")
         print_info(f"Learn more about Morph at: {Colors.GREEN}https://morphllm.com/{Colors.ENDC}")
@@ -1223,9 +1223,9 @@ class SetupWizard:
             )
         else:
             print_info(
-                "Search APIs are OPTIONAL tools that enhance Suna's capabilities.")
+                "Search APIs are OPTIONAL tools that enhance Kortix Super Worker's capabilities.")
             print_info(
-                "Without these, Suna will work but won't have web search or scraping functionality.")
+                "Without these, Kortix Super Worker will work but won't have web search or scraping functionality.")
             print_info(
                 "Optional: Tavily for web search, Firecrawl for web scraping")
             print_info(
@@ -1314,7 +1314,7 @@ class SetupWizard:
         if configured_search_tools:
             print_success(f"Search tools configured: {', '.join(configured_search_tools)}")
         else:
-            print_info("No search tools configured - Suna will work without web search capabilities.")
+            print_info("No search tools configured - Kortix Super Worker will work without web search capabilities.")
 
         print_success("Search and scraping keys saved.")
 
@@ -1393,7 +1393,7 @@ class SetupWizard:
             )
         else:
             print_info(
-                "Composio provides extra tools and integrations for Suna agents.")
+                "Composio provides extra tools and integrations for Kortix Super Worker agents.")
             print_info(
                 "With Composio, your agents can interact with 200+ external services including:")
             print_info("  • Email services (Gmail, Outlook, SendGrid)")
@@ -1450,7 +1450,7 @@ class SetupWizard:
             print_info(
                 "Webhook base URL is required for workflows to receive callbacks.")
             print_info(
-                "This must be a publicly accessible URL where Suna API can receive webhooks from Supabase Cron.")
+                "This must be a publicly accessible URL where Kortix Super Worker API can receive webhooks from Supabase Cron.")
             print_info(
                 "For local development, you can use services like ngrok or localtunnel to expose http://localhost:8000 to the internet.")
 
@@ -1532,7 +1532,7 @@ class SetupWizard:
             "NEXT_PUBLIC_URL": "http://localhost:3000",
         }
 
-        backend_env_content = f"# Generated by Suna install script for '{self.env_vars['setup_method']}' setup\n\n"
+        backend_env_content = f"# Generated by Kortix Super Worker install script for '{self.env_vars['setup_method']}' setup\n\n"
         for key, value in backend_env.items():
             backend_env_content += f"{key}={value or ''}\n"
 
@@ -1543,7 +1543,7 @@ class SetupWizard:
         # --- Frontend .env.local ---
         # Always use localhost for base .env files - Docker override handled separately
         frontend_supabase_url = self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"]
-        backend_url = "http://localhost:8000/api"
+        backend_url = "http://localhost:8000/v1"
         
         frontend_env = {
             "NEXT_PUBLIC_ENV_MODE": "local",  # production, staging, or local
@@ -1555,7 +1555,7 @@ class SetupWizard:
             **self.env_vars.get("frontend", {}),
         }
 
-        frontend_env_content = "# Generated by Suna install script\n\n"
+        frontend_env_content = "# Generated by Kortix Super Worker install script\n\n"
         for key, value in frontend_env.items():
             frontend_env_content += f"{key}={value or ''}\n"
 
@@ -1570,11 +1570,11 @@ class SetupWizard:
             "EXPO_PUBLIC_ENV_MODE": "local",  # production, staging, or local
             "EXPO_PUBLIC_SUPABASE_URL": self.env_vars["supabase"]["EXPO_PUBLIC_SUPABASE_URL"],
             "EXPO_PUBLIC_SUPABASE_ANON_KEY": self.env_vars["supabase"]["SUPABASE_ANON_KEY"],
-            "EXPO_PUBLIC_BACKEND_URL": "http://localhost:8000/api",
+            "EXPO_PUBLIC_BACKEND_URL": "http://localhost:8000/v1",
             "EXPO_PUBLIC_URL": "http://localhost:3000",
         }
 
-        mobile_env_content = "# Generated by Suna install script\n\n"
+        mobile_env_content = "# Generated by Kortix Super Worker install script\n\n"
         for key, value in mobile_env.items():
             mobile_env_content += f"{key}={value or ''}\n"
 
@@ -1775,10 +1775,10 @@ class SetupWizard:
             sys.exit(1)
 
     def start_suna(self):
-        """Starts Suna using Docker Compose or shows instructions for manual startup."""
-        print_step(17, self.total_steps, "Starting Suna")
+        """Starts Kortix Super Worker using Docker Compose or shows instructions for manual startup."""
+        print_step(17, self.total_steps, "Starting Kortix Super Worker")
         if self.env_vars["setup_method"] == "docker":
-            print_info("Starting Suna with Docker Compose...")
+            print_info("Starting Kortix Super Worker with Docker Compose...")
             try:
                 subprocess.run(
                     ["docker", "compose", "up", "-d", "--build"],
@@ -1795,13 +1795,13 @@ class SetupWizard:
                     shell=IS_WINDOWS,
                 )
                 if "backend" in result.stdout and "frontend" in result.stdout:
-                    print_success("Suna services are starting up!")
+                    print_success("Kortix Super Worker services are starting up!")
                 else:
                     print_warning(
                         "Some services might not be running. Check 'docker compose ps' for details."
                     )
             except subprocess.SubprocessError as e:
-                print_error(f"Failed to start Suna with Docker Compose: {e}")
+                print_error(f"Failed to start Kortix Super Worker with Docker Compose: {e}")
                 print_warning(
                     "The Docker build might be failing due to environment variable issues during build time."
                 )
@@ -1824,24 +1824,24 @@ class SetupWizard:
     def final_instructions(self):
         """Shows final instructions to the user."""
         print(
-            f"\n{Colors.GREEN}{Colors.BOLD}✨ Suna Setup Complete! ✨{Colors.ENDC}\n")
+            f"\n{Colors.GREEN}{Colors.BOLD}✨ Kortix Super Worker Setup Complete! ✨{Colors.ENDC}\n")
 
         print_info(
-            f"Suna is configured with your LLM API keys and ready to use."
+            f"Kortix Super Worker is configured with your LLM API keys and ready to use."
         )
         print_info(
             f"Delete the {Colors.RED}.setup_progress{Colors.ENDC} file to reset the setup."
         )
 
         if self.env_vars["setup_method"] == "docker":
-            print_info("Your Suna instance is ready to use!")
+            print_info("Your Kortix Super Worker instance is ready to use!")
             
             # Important limitation for local Supabase with Docker
             if self.env_vars.get("supabase_setup_method") == "local":
                 print(f"\n{Colors.RED}{Colors.BOLD}⚠️  IMPORTANT LIMITATION:{Colors.ENDC}")
                 print(f"{Colors.YELLOW}Local Supabase is currently NOT supported with Docker Compose.{Colors.ENDC}")
                 print("\nThis is due to network configuration complexity between:")
-                print("  • Suna containers (backend, frontend, worker)")
+                print("  • Kortix Super Worker containers (backend, frontend, worker)")
                 print("  • Local Supabase containers (via npx supabase start)")
                 print("  • Your browser (accessing from host machine)")
                 print("\n" + "="*70)
@@ -1865,10 +1865,10 @@ class SetupWizard:
                 f"  {Colors.CYAN}docker compose logs -f{Colors.ENDC}    - Follow logs"
             )
             print(
-                f"  {Colors.CYAN}docker compose down{Colors.ENDC}       - Stop Suna services"
+                f"  {Colors.CYAN}docker compose down{Colors.ENDC}       - Stop Kortix Super Worker services"
             )
             print(
-                f"  {Colors.CYAN}python start.py{Colors.ENDC}           - To start or stop Suna services"
+                f"  {Colors.CYAN}python start.py{Colors.ENDC}           - To start or stop Kortix Super Worker services"
             )
             
             # Cloud Supabase commands
@@ -1878,7 +1878,7 @@ class SetupWizard:
                 print(f"  {Colors.CYAN}Project URL:{Colors.ENDC} {self.env_vars['supabase'].get('SUPABASE_URL', 'N/A')}")
         else:
             print_info(
-                "To start Suna, you need to run these commands in separate terminals:"
+                "To start Kortix Super Worker, you need to run these commands in separate terminals:"
             )
             
             # Show Supabase start command for local setup
@@ -1920,7 +1920,7 @@ class SetupWizard:
                 )
                 print(f"{Colors.CYAN}   cd backend && npx supabase stop{Colors.ENDC}")
 
-        print("\nOnce all services are running, access Suna at: http://localhost:3000")
+        print("\nOnce all services are running, access Kortix Super Worker at: http://localhost:3000")
 
 
 if __name__ == "__main__":

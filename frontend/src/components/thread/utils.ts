@@ -26,6 +26,8 @@ import {
   Computer,
   Phone,
   PhoneOff,
+  Hammer,
+  Presentation,
 } from 'lucide-react';
 import { StopwatchIcon } from '@radix-ui/react-icons';
 
@@ -86,6 +88,10 @@ export function safeJsonParse<T>(
 // Helper function to get an icon based on tool name
 export const getToolIcon = (toolName: string): ElementType => {
   switch (toolName?.toLowerCase()) {
+    case 'initialize-tools':
+    case 'initialize_tools':
+      return Hammer;
+
     case 'browser-navigate-to':
     case 'browser-act':
     case 'browser-extract-content':
@@ -106,8 +112,10 @@ export const getToolIcon = (toolName: string): ElementType => {
 
     // Task operations
     case 'create-tasks':
+    case 'create_tasks':
       return List;
     case 'update-tasks':
+    case 'update_tasks':
       return ListTodo;
 
     // Shell commands
@@ -172,6 +180,16 @@ export const getToolIcon = (toolName: string): ElementType => {
     case 'wait_for_call_completion':
       return StopwatchIcon;
 
+    case 'create-slide':
+    case 'create_slide':
+      return Presentation;
+    case 'load-template-design':
+    case 'load_template_design':
+      return Presentation;
+    case 'validate-slide':
+    case 'validate_slide':
+      return Presentation;
+
     // User interaction
     case 'ask':
       return MessageCircleQuestion;
@@ -212,10 +230,17 @@ export const extractPrimaryParam = (
   if (!content) return null;
 
   try {
-    // Try to parse as JSON first
     const parsed = JSON.parse(content);
     
-    // Handle browser tools
+    if (parsed.query) {
+      const query = Array.isArray(parsed.query) ? parsed.query[0] : parsed.query;
+      return query.length > 30 ? query.substring(0, 27) + '...' : query;
+    }
+    if (parsed.arguments?.query) {
+      const query = Array.isArray(parsed.arguments.query) ? parsed.arguments.query[0] : parsed.arguments.query;
+      return query.length > 30 ? query.substring(0, 27) + '...' : query;
+    }
+    
     if (toolName?.toLowerCase().startsWith('browser_')) {
       if (parsed.url) return parsed.url;
       if (parsed.arguments?.url) return parsed.arguments.url;
@@ -226,7 +251,6 @@ export const extractPrimaryParam = (
       return null;
     }
 
-    // Handle file operations
     if (parsed.file_path) {
       const path = parsed.file_path;
       return typeof path === 'string' ? path.split('/').pop() || path : null;
@@ -236,7 +260,6 @@ export const extractPrimaryParam = (
       return typeof path === 'string' ? path.split('/').pop() || path : null;
     }
 
-    // Handle execute-command
     if (toolName?.toLowerCase() === 'execute-command') {
       if (parsed.command) {
         const cmd = parsed.command;
@@ -248,7 +271,6 @@ export const extractPrimaryParam = (
       }
     }
   } catch (e) {
-    // Not JSON, continue with regex fallback
   }
 
   // Fallback: regex extraction for plain text content
@@ -343,6 +365,9 @@ export const extractPrimaryParam = (
 };
 
 const TOOL_DISPLAY_NAMES = new Map([
+  ['initialize-tools', 'Initializing Tools'],
+  ['initialize_tools', 'Initializing Tools'],
+
   ['execute-command', 'Executing Command'],
   ['check-command-output', 'Checking Command Output'],
   ['terminate-command', 'Terminating Command'],
@@ -364,7 +389,9 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['delete-document', 'Deleting Document'],
 
   ['create-tasks', 'Creating Tasks'],
+  ['create_tasks', 'Creating Tasks'],
   ['update-tasks', 'Updating Tasks'],
+  ['update_tasks', 'Updating Tasks'],
   
   ['browser_navigate_to', 'Navigating to Page'],
   ['browser_act', 'Performing Action'],
@@ -462,7 +489,7 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['configure-profile-for-agent', 'Adding tools to agent'],
 
 
-  ['create-new-agent', 'Creating New Agent'],
+  ['create-new-agent', 'Creating New Worker'],
   ['search-mcp-servers-for-agent', 'Searching MCP Servers'],
   ['create-credential-profile-for-agent', 'Creating Credential Profile'],
   ['discover-mcp-tools-for-agent', 'Discovering MCP Tools'],
@@ -482,6 +509,13 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['monitor_call', 'Monitoring Call'],
   ['wait-for-call-completion', 'Waiting for Completion'],
   ['wait_for_call_completion', 'Waiting for Completion'],
+
+  ['create-slide', 'Creating Slide'],
+  ['create_slide', 'Creating Slide'],
+  ['load-template-design', 'Loading Template Design'],
+  ['load_template_design', 'Loading Template Design'],
+  ['validate-slide', 'Validating Slide'],
+  ['validate_slide', 'Validating Slide'],
 ]);
 
 
@@ -510,34 +544,34 @@ function formatMCPToolName(serverName: string, toolName: string): string {
   };
   
   const formattedServerName = serverMappings[serverName.toLowerCase()] || 
-    serverName.charAt(0).toUpperCase() + serverName.slice(1);
+    serverName.charAt(0).toUpperCase() + serverName.slice(1).toLowerCase();
   
   let formattedToolName = toolName;
   
   if (toolName.includes('-')) {
     formattedToolName = toolName
       .split('-')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ');
   }
   else if (toolName.includes('_')) {
     formattedToolName = toolName
       .split('_')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ');
   }
   else if (/[a-z][A-Z]/.test(toolName)) {
     formattedToolName = toolName
       .replace(/([a-z])([A-Z])/g, '$1 $2')
       .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ');
   }
   else {
-    formattedToolName = toolName.charAt(0).toUpperCase() + toolName.slice(1);
+    formattedToolName = toolName.charAt(0).toUpperCase() + toolName.slice(1).toLowerCase();
   }
   
-  return `${formattedServerName}: ${formattedToolName}`;
+  return `${formattedServerName} ${formattedToolName}`;
 }
 
 export function getUserFriendlyToolName(toolName: string): string {
@@ -593,3 +627,56 @@ export const HIDE_STREAMING_XML_TAGS = new Set([
   'execute-data-provider-call',
   'execute-data-provider-endpoint',
 ]);
+
+export function extractAppSlugFromToolCall(toolCall: any): string | null {
+  if (!toolCall) return null;
+
+  if (toolCall._app_filter) {
+    const filter = toolCall._app_filter;
+    const appName = filter.split(' ')[0].toLowerCase();
+    if (appName) return appName;
+  }
+
+  if (toolCall.custom_type === 'composio' || toolCall.customType === 'composio' || toolCall.isComposio) {
+    const slug = toolCall.toolkit_slug || toolCall.toolkitSlug || toolCall.config?.toolkit_slug;
+    if (slug) return slug;
+  }
+
+  const qualifiedName = toolCall.mcp_qualified_name || toolCall.qualifiedName || toolCall.function_name;
+  if (qualifiedName && qualifiedName.startsWith('composio.')) {
+    return qualifiedName.substring(9);
+  }
+
+  if (qualifiedName && qualifiedName.includes('_COMPOSIO_')) {
+    const parts = qualifiedName.split('_COMPOSIO_');
+    if (parts.length > 1) {
+      return parts[1].split('_')[0];
+    }
+  }
+
+  if (toolCall.function_name) {
+    const functionName = toolCall.function_name;
+    
+    const knownApps = [
+      'TWITTER', 'GITHUB', 'SLACK', 'GMAIL', 'GOOGLE', 'NOTION', 'ASANA', 'JIRA',
+      'TRELLO', 'DISCORD', 'LINKEDIN', 'FACEBOOK', 'INSTAGRAM', 'YOUTUBE', 'SPOTIFY',
+      'DROPBOX', 'ONEDRIVE', 'SALESFORCE', 'HUBSPOT', 'ZENDESK', 'INTERCOM', 'MAILCHIMP',
+      'STRIPE', 'PAYPAL', 'TWILIO', 'SENDGRID', 'AIRTABLE', 'MONDAY', 'CLICKUP',
+      'FIGMA', 'MIRO', 'SHOPIFY', 'WOOCOMMERCE', 'WORDPRESS', 'MEDIUM', 'REDDIT',
+      'TELEGRAM', 'WHATSAPP', 'ZOOM', 'CALENDAR', 'DRIVE', 'SHEETS', 'DOCS', 'SLIDES'
+    ];
+    
+    for (const app of knownApps) {
+      if (functionName.startsWith(app + '_')) {
+        return app.toLowerCase();
+      }
+    }
+    
+    const parts = functionName.split('_');
+    if (parts.length >= 2 && parts[0].length > 0 && parts[0] === parts[0].toUpperCase()) {
+      return parts[0].toLowerCase();
+    }
+  }
+
+  return null;
+}

@@ -1,5 +1,6 @@
 from decimal import Decimal
 from typing import Optional, Dict, Tuple, List
+from datetime import datetime, timezone
 from core.billing.credits.calculator import calculate_token_cost, calculate_cached_token_cost, calculate_cache_write_cost
 from core.billing.credits.manager import credit_manager
 from core.utils.config import config, EnvMode
@@ -15,12 +16,37 @@ class BillingIntegration:
             return True, "Local mode", None
         
         try:
-            from core.credits import credit_service
-            await credit_service.check_and_refresh_daily_credits(account_id)
+            import asyncio
+            from core.services import redis_worker as redis
+            today = datetime.now(timezone.utc).date().isoformat()
+            cache_key = f"daily_credit_check:{account_id}:{today}"
+            
+            try:
+                cached_check = await asyncio.wait_for(redis.get(cache_key), timeout=3.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"[CREDIT_CACHE] Redis timeout checking cache for {account_id} - proceeding without cache")
+                cached_check = None
+            
+            if cached_check:
+                logger.debug(f"⚡ [CREDIT_CACHE] Daily refresh already checked for {account_id} today (cached)")
+            else:
+                from core.credits import credit_service
+                refreshed, amount = await credit_service.check_and_refresh_daily_credits(account_id)
+                if refreshed and amount > 0:
+                    logger.info(f"✅ [DAILY_REFRESH] Granted ${amount} to {account_id}")
+                try:
+                    await asyncio.wait_for(redis.set(cache_key, "checked", ex=3600), timeout=3.0)
+                    logger.debug(f"✅ [CREDIT_CACHE] Daily refresh check completed and cached for {account_id} (TTL: 1h)")
+                except asyncio.TimeoutError:
+                    logger.warning(f"[CREDIT_CACHE] Redis timeout caching check for {account_id} - continuing without")
         except Exception as e:
             logger.warning(f"[DAILY_CREDITS] Failed to check/refresh daily credits for {account_id}: {e}")
         
-        balance_info = await credit_manager.get_balance(account_id)
+        import time
+        balance_start = time.time()
+        balance_info = await credit_manager.get_balance(account_id, use_cache=True)
+        balance_elapsed = (time.time() - balance_start) * 1000
+        logger.debug(f"⏱️ [BILLING] Balance query (use_cache=True): {balance_elapsed:.1f}ms")
         
         if isinstance(balance_info, dict):
             balance = Decimal(str(balance_info.get('total', 0)))
@@ -28,9 +54,9 @@ class BillingIntegration:
             balance = Decimal(str(balance_info or 0))
         
         if balance < 0:
-            return False, f"Insufficient credits. Your balance is ${balance:.2f}. Please add credits to continue.", None
+            return False, f"Insufficient credits. Your balance is {int(balance * 100)} credits. Please add credits to continue.", None
         
-        return True, f"Credits available: ${balance:.2f}", None
+        return True, f"Credits available: {int(balance * 100)} credits", None
     
     @staticmethod
     async def check_model_and_billing_access(
@@ -140,7 +166,6 @@ class BillingIntegration:
         
         if result.get('success'):
             logger.info(f"[BILLING] Successfully deducted ${cost:.6f} from user {account_id}. New balance: ${result.get('new_total', result.get('new_balance', 0)):.2f} (expiring: ${result.get('from_expiring', 0):.2f}, non-expiring: ${result.get('from_non_expiring', 0):.2f})")
-            # Invalidate account state cache after successful deduction
             await invalidate_account_state_cache(account_id)
         else:
             logger.error(f"[BILLING] Failed to deduct credits for user {account_id}: {result.get('error')}")
@@ -173,7 +198,6 @@ class BillingIntegration:
             is_expiring=is_expiring,
             **kwargs
         )
-        # Invalidate account state cache after adding credits
         await invalidate_account_state_cache(account_id)
         return result
 

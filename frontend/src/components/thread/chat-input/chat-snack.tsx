@@ -8,18 +8,13 @@ import { FloatingToolPreview, ToolCallInput } from './floating-tool-preview';
 import { isLocalMode } from '@/lib/config';
 
 export interface ChatSnackProps {
-    // Tool preview props
     toolCalls?: ToolCallInput[];
     toolCallIndex?: number;
     onExpandToolPreview?: () => void;
     agentName?: string;
     showToolPreview?: boolean;
-
-    // Upgrade preview props
     subscriptionData?: any;
     onOpenUpgrade?: () => void;
-
-    // General props
     isVisible?: boolean;
 }
 
@@ -39,42 +34,34 @@ export const ChatSnack: React.FC<ChatSnackProps> = ({
     const [currentView, setCurrentView] = React.useState(0);
     const [userDismissedUpgrade, setUserDismissedUpgrade] = React.useState(false);
 
-    // Check if user is on free tier - only when we have subscriptionData and can confirm it's free
     const isFreeTier = subscriptionData && (
         subscriptionData.tier_key === 'free' ||
         subscriptionData.tier?.name === 'free' ||
         subscriptionData.plan_name === 'free'
     );
 
-    // Determine what notifications we have - match exact rendering conditions
     const notifications = [];
 
-    // Tool notification: only if we have tool calls and showToolPreview is true
     if (showToolPreview && toolCalls.length > 0) {
         notifications.push('tool');
     }
 
-    // Upgrade notification: only for free tier users who haven't dismissed it (must have subscriptionData)
     if (isFreeTier && subscriptionData && !isLocalMode() && !userDismissedUpgrade && onOpenUpgrade) {
         notifications.push('upgrade');
     }
 
-
-
     const totalNotifications = notifications.length;
     const hasMultiple = totalNotifications > 1;
 
-    // Reset currentView when notifications change
     React.useEffect(() => {
         if (currentView >= totalNotifications && totalNotifications > 0) {
             setCurrentView(0);
         }
     }, [totalNotifications, currentView]);
 
-    // Update isVisible to include upgrade notification - only show if we have subscriptionData
-    const shouldShowSnack = isVisible || (isFreeTier && subscriptionData && !isLocalMode() && !userDismissedUpgrade && onOpenUpgrade && totalNotifications > 0);
+    const shouldShowSnack = isVisible || 
+        (isFreeTier && subscriptionData && !isLocalMode() && !userDismissedUpgrade && onOpenUpgrade && totalNotifications > 0);
     
-    // Auto-cycle through notifications
     React.useEffect(() => {
         if (!hasMultiple || !shouldShowSnack) return;
 
@@ -83,7 +70,7 @@ export const ChatSnack: React.FC<ChatSnackProps> = ({
         }, 20000);
 
         return () => clearInterval(interval);
-    }, [hasMultiple, shouldShowSnack, totalNotifications, currentView]); // Reset timer when currentView changes
+    }, [hasMultiple, shouldShowSnack, totalNotifications, currentView]);
     
     if (!shouldShowSnack || totalNotifications === 0) return null;
 
@@ -130,7 +117,6 @@ export const ChatSnack: React.FC<ChatSnackProps> = ({
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
                         onClick={(e) => {
-                            // Don't trigger if clicking on indicators or close button
                             const target = e.target as HTMLElement;
                             const isIndicatorClick = target.closest('[data-indicator-click]');
                             const isCloseClick = target.closest('[data-close-click]');
@@ -143,13 +129,8 @@ export const ChatSnack: React.FC<ChatSnackProps> = ({
                         <UpgradePreview
                             subscriptionData={subscriptionData}
                             onClose={() => {
-                                // Mark upgrade as dismissed
                                 setUserDismissedUpgrade(true);
-
-                                // Check what notifications will remain after closing upgrade
                                 const willHaveToolNotification = showToolPreview && toolCalls.length > 0;
-
-                                // If there will be other notifications, switch to them
                                 if (willHaveToolNotification) {
                                     setCurrentView(0);
                                 }
@@ -170,18 +151,8 @@ export const ChatSnack: React.FC<ChatSnackProps> = ({
     };
 
     return (
-        <AnimatePresence mode="wait">
-            {shouldShowSnack && (
-                <motion.div
-                    key={currentNotification}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 8 }}
-                    transition={{ duration: 0.3, ease: 'easeOut' }}
-                >
-                    {renderContent()}
-                </motion.div>
-            )}
-        </AnimatePresence>
+        <div>
+            {shouldShowSnack && renderContent()}
+        </div>
     );
 };

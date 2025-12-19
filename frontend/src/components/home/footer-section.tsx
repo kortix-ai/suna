@@ -2,7 +2,7 @@
 
 import { FlickeringGrid } from '@/components/ui/flickering-grid';
 import { useMediaQuery } from '@/hooks/utils';
-import { siteConfig } from '@/lib/home';
+import { siteConfig } from '@/lib/site-config';
 import { ChevronRightIcon } from '@radix-ui/react-icons';
 import Link from 'next/link';
 import Image from 'next/image';

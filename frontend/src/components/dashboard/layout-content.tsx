@@ -14,6 +14,7 @@ import { usePresence } from '@/hooks/use-presence';
 import { useProjects } from '@/hooks/sidebar/use-sidebar';
 import { useIsMobile } from '@/hooks/utils';
 import { AppProviders } from '@/components/layout/app-providers';
+import { AnnouncementDialog } from '../announcements/announcement-dialog';
 
 // Lazy load heavy components that aren't needed for initial render
 const FloatingMobileMenuButton = lazy(() => 
@@ -38,6 +39,10 @@ const WelcomeBonusBanner = lazy(() =>
 
 const PresenceDebug = lazy(() => 
   import('@/components/debug/presence-debug').then(mod => ({ default: mod.PresenceDebug }))
+);
+
+const KortixAppBanners = lazy(() => 
+  import('@/components/announcements/kortix-app-banners').then(mod => ({ default: mod.KortixAppBanners }))
 );
 
 // Skeleton shell that renders immediately for FCP
@@ -166,6 +171,9 @@ export default function DashboardLayoutContent({
         <Suspense fallback={null}>
           <WelcomeBonusBanner />
         </Suspense>
+        <Suspense fallback={null}>
+          <AnnouncementDialog />
+        </Suspense>
         
         <Suspense fallback={null}>
           <OnboardingProvider>
@@ -175,6 +183,10 @@ export default function DashboardLayoutContent({
         </Suspense>
         <Suspense fallback={null}>
           <PresentationViewerWrapper />
+        </Suspense>
+        {/* Kortix App announcement banners */}
+        <Suspense fallback={null}>
+          <KortixAppBanners />
         </Suspense>
       </div>
     </AppProviders>

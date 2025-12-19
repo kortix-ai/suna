@@ -19,7 +19,43 @@ from core.services.supabase import DBConnection
     icon="Users",
     color="bg-sky-100 dark:bg-sky-800/50",
     weight=250,
-    visible=True
+    visible=True,
+    usage_guide="""
+### SPECIALIZED PEOPLE SEARCH
+
+**⚠️ COST: $0.54 per search (returns 10 results)**
+
+**🔴 MANDATORY: ALWAYS ASK FOR CONFIRMATION BEFORE USING THIS TOOL**
+
+**WORKFLOW - NO EXCEPTIONS:**
+1. **CLARIFY:** Ask 3-5 specific questions about what they're looking for
+   - Job title/role details
+   - Industry/company type
+   - Location preferences
+   - Experience level
+   - Skills/technologies needed
+2. **REFINE:** Build detailed search query based on answers
+3. **CONFIRM:** Show refined query + cost, ask for explicit "yes"
+4. **WAIT:** Wait for confirmation
+5. **EXECUTE:** Only then use people_search
+
+**SEARCH QUERY BEST PRACTICES:**
+- Use descriptive, natural language queries
+- Include job titles, companies, locations, skills, experience
+- Examples:
+  - "Senior Python developers with ML experience at Google"
+  - "CTOs at AI startups in San Francisco with Series A funding"
+  - "Sales directors with 10+ years in SaaS companies"
+
+**ENRICHMENT:**
+- Default: LinkedIn profile URL
+- Can specify custom data to find about each person
+
+**NEVER:**
+- Call without clarifying questions first
+- Proceed without explicit user confirmation
+- Use vague queries - always refine with user input
+"""
 )
 class PeopleSearchTool(Tool):
     def __init__(self, thread_manager: ThreadManager):
@@ -81,7 +117,7 @@ class PeopleSearchTool(Tool):
         "type": "function",
         "function": {
             "name": "people_search",
-            "description": "Search for people using natural language queries and enrich with LinkedIn profiles. IMPORTANT: This search costs $0.54 per search (10 results).",
+            "description": "Search for people using natural language queries and enrich with LinkedIn profiles. IMPORTANT: This search costs 54 credits per search (10 results).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -259,16 +295,16 @@ class PeopleSearchTool(Tool):
             
             if config.ENV_MODE == EnvMode.LOCAL:
                 logger.info("Running in LOCAL mode - skipping billing for people search")
-                cost_deducted_str = f"${total_cost:.2f} (LOCAL - not charged)"
+                cost_deducted_str = f"{int(total_cost * 100)} credits (LOCAL - not charged)"
             else:
                 credits_deducted = await self._deduct_credits(user_id, len(formatted_results), thread_id)
                 if not credits_deducted:
                     return self.fail_response(
                         "Insufficient credits for people search. "
-                        f"This search costs ${total_cost:.2f} ({len(formatted_results)} results). "
+                        f"This search costs {int(total_cost * 100)} credits ({len(formatted_results)} results). "
                         "Please add credits to continue."
                     )
-                cost_deducted_str = f"${total_cost:.2f}"
+                cost_deducted_str = f"{int(total_cost * 100)} credits"
             
             output = {
                 "query": query,

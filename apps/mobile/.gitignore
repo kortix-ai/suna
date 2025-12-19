@@ -28,6 +28,14 @@ yarn-error.*
 .DS_Store
 *.pem
 
+# Editor files
+*.swp
+*.swo
+*~
+*.bak
+*.backup
+*.tmp
+
 # local env files
 .env*.local
 

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, Pressable } from 'react-native';
+import { View, Pressable, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import * as Haptics from 'expo-haptics';
@@ -15,10 +15,10 @@ interface UsageDrawerProps {
   visible: boolean;
   onClose: () => void;
   onUpgradePress?: () => void;
-  onTopUpPress?: () => void;
+  onThreadPress?: (threadId: string, projectId: string | null) => void;
 }
 
-export function UsageDrawer({ visible, onClose, onUpgradePress, onTopUpPress }: UsageDrawerProps) {
+export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }: UsageDrawerProps) {
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const isOpeningRef = React.useRef(false);
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
@@ -53,9 +53,11 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onTopUpPress }: 
   }, [onClose]);
 
   const handleThreadPress = React.useCallback((threadId: string, projectId: string | null) => {
-    console.log('🎯 Thread pressed:', threadId);
+    console.log('🎯 Thread pressed from UsageDrawer:', threadId);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, []);
+    onClose();
+    onThreadPress?.(threadId, projectId);
+  }, [onClose, onThreadPress]);
 
   const renderBackdrop = React.useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -107,7 +109,9 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onTopUpPress }: 
       style={{
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
-        overflow: 'hidden'
+        overflow: 'hidden',
+        zIndex: 9999,
+        elevation: Platform.OS === 'android' ? 9999 : undefined,
       }}
     >
       <BottomSheetScrollView
@@ -136,7 +140,6 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onTopUpPress }: 
         <UsageContent
           onThreadPress={handleThreadPress}
           onUpgradePress={onUpgradePress}
-          onTopUpPress={onTopUpPress}
         />
       </BottomSheetScrollView>
     </BottomSheet>

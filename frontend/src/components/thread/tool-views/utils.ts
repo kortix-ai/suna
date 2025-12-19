@@ -35,6 +35,8 @@ export function getToolTitle(toolName: string): string {
   const toolTitles: Record<string, string> = {
     'execute-command': 'Execute Command',
     'check-command-output': 'Check Command Output',
+    'list-commands': 'Running Commands',
+    'list_commands': 'Running Commands',
     'str-replace': 'String Replace',
     'create-file': 'Create File',
     'full-file-rewrite': 'Rewrite File',
@@ -48,6 +50,12 @@ export function getToolTitle(toolName: string): string {
     'browser-extract-content': 'Browser Extract',
     'browser-screenshot': 'Browser Screenshot',
     'load-image': 'Load Image',
+
+
+    'initialize-tools': 'Initializing Tools',
+    'initialize_tools': 'Initializing Tools',
+
+    
     'ask': 'Ask',
     'complete': 'Task Complete',
     'execute-data-provider-call': 'Data Provider Call',
@@ -62,21 +70,17 @@ export function getToolTitle(toolName: string): string {
     'get-current-agent-config': 'Get Current Agent Config',
     'create-presentation': 'Create Presentation',
     'export-presentation': 'Export Presentation',
+    'export_presentation': 'Export Presentation',
+    // Legacy tool names (backward compatibility)
     'export_to_pptx': 'Export to PPTX',
     'export_to_pdf': 'Export to PDF',
+    'export-to-pptx': 'Export to PPTX',
+    'export-to-pdf': 'Export to PDF',
     'list-presentation-templates': 'List Presentation Templates',
     'upload-file': 'Upload File',
     
-    // Docs tools
-    'create-document': 'Create Document',
-    'update-document': 'Update Document',
-    'read-document': 'Read Document',
-    'list-documents': 'List Documents',
-    'delete-document': 'Delete Document',
-    'export-document': 'Export Document',
-    
     // Agent Creation Tools
-    'create-new-agent': 'Create New Agent',
+    'create-new-agent': 'Create New Worker',
     'update-agent': 'Update Agent',
     'search-mcp-servers-for-agent': 'Search MCP Servers for Agent',
     'get-mcp-server-details': 'Get MCP Server Details',
@@ -1095,7 +1099,7 @@ export function getToolComponent(toolName: string): string {
 
     // String operations
     case 'str-replace':
-      return 'StrReplaceToolView';
+      return 'FileOperationToolView';
 
     // Web operations
     case 'web-search':
@@ -1142,15 +1146,6 @@ export function getToolComponent(toolName: string): string {
     // Upload operations
     case 'upload-file':
       return 'UploadFileToolView';
-    
-    // Docs operations
-    case 'create-document':
-    case 'update-document':
-    case 'read-document':
-    case 'list-documents':
-    case 'delete-document':
-    case 'export-document':
-      return 'DocsToolView';
 
     // Port operations
     case 'expose-port':

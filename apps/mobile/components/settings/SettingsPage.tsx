@@ -6,7 +6,7 @@ import Animated, {
   withSpring,
   withRepeat,
   withTiming,
-  Easing
+  Easing,
 } from 'react-native-reanimated';
 import { useColorScheme } from 'nativewind';
 import { useAuthContext, useLanguage } from '@/contexts';
@@ -23,7 +23,10 @@ import {
   ChevronRight,
   FlaskConical,
   Trash2,
-  Loader2
+  Loader2,
+  Wallet,
+  BarChart3,
+  Plug,
 } from 'lucide-react-native';
 import type { UserProfile } from '../menu/types';
 import { LanguagePage } from './LanguagePage';
@@ -31,13 +34,15 @@ import { NameEditPage } from './NameEditPage';
 import { ThemePage } from './ThemePage';
 import { BetaPage } from './BetaPage';
 import { BillingPage } from './BillingPage';
-import { CreditsPurchasePage } from './CreditsPurchasePage';
+import { PlanPage } from './PlanPage';
 import { UsagePage } from './UsagePage';
 import { AccountDeletionPage } from './AccountDeletionPage';
 import { SettingsHeader } from './SettingsHeader';
+import { IntegrationsPage } from './IntegrationsPage';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import * as Haptics from 'expo-haptics';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
+import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -56,30 +61,31 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const [isNameEditPageVisible, setIsNameEditPageVisible] = React.useState(false);
   const [isThemePageVisible, setIsThemePageVisible] = React.useState(false);
   const [isBetaPageVisible, setIsBetaPageVisible] = React.useState(false);
+  const [isPlanPageVisible, setIsPlanPageVisible] = React.useState(false);
   const [isBillingPageVisible, setIsBillingPageVisible] = React.useState(false);
-  const [isCreditsPurchasePageVisible, setIsCreditsPurchasePageVisible] = React.useState(false);
   const [isUsagePageVisible, setIsUsagePageVisible] = React.useState(false);
   const [isAccountDeletionPageVisible, setIsAccountDeletionPageVisible] = React.useState(false);
   const [isIntegrationsPageVisible, setIsIntegrationsPageVisible] = React.useState(false);
 
+  const { useNativePaywall, presentUpgradePaywall } = useUpgradePaywall();
   const isGuest = !user;
 
   const { data: deletionStatus } = useAccountDeletionStatus({
     enabled: visible && !isGuest,
   });
 
-  const userName = React.useMemo(() =>
-    user?.user_metadata?.full_name || user?.email?.split('@')[0] || profile?.name || 'Guest',
+  const userName = React.useMemo(
+    () => user?.user_metadata?.full_name || user?.email?.split('@')[0] || profile?.name || 'Guest',
     [user?.user_metadata?.full_name, user?.email, profile?.name]
   );
 
-  const userEmail = React.useMemo(() =>
-    user?.email || profile?.email || '',
+  const userEmail = React.useMemo(
+    () => user?.email || profile?.email || '',
     [user?.email, profile?.email]
   );
 
-  const userAvatar = React.useMemo(() =>
-    user?.user_metadata?.avatar_url || profile?.avatar,
+  const userAvatar = React.useMemo(
+    () => user?.user_metadata?.avatar_url || profile?.avatar,
     [user?.user_metadata?.avatar_url, profile?.avatar]
   );
 
@@ -98,11 +104,30 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
     setIsNameEditPageVisible(true);
   }, []);
 
+  const handlePlan = React.useCallback(async () => {
+    console.log('🎯 Plan pressed');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    // If RevenueCat is available, present native paywall directly
+    if (useNativePaywall) {
+      console.log('📱 Using native RevenueCat paywall');
+      await presentUpgradePaywall();
+    } else {
+      // Otherwise, show the custom PlanPage
+      setIsPlanPageVisible(true);
+    }
+  }, [useNativePaywall, presentUpgradePaywall]);
+
   const handleBilling = React.useCallback(() => {
     console.log('🎯 Billing pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
     setIsBillingPageVisible(true);
+  }, []);
+
+  const handleUsage = React.useCallback(() => {
+    console.log('🎯 Usage pressed');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsUsagePageVisible(true);
   }, []);
 
   const handleIntegrations = React.useCallback(() => {
@@ -139,7 +164,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
 
   const handleSignOut = React.useCallback(async () => {
     if (isSigningOut) return; // Prevent multiple sign out attempts
-    
+
     console.log('🎯 Sign Out pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -173,38 +198,44 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
     );
   }, [t, signOut, onClose, router, isSigningOut]);
 
-
   if (!visible) return null;
 
   return (
     <View className="absolute inset-0 z-50">
-      <Pressable
-        onPress={handleClose}
-        className="absolute inset-0 bg-black/50"
-      />
-      <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
+      <Pressable onPress={handleClose} className="absolute inset-0 bg-black/50" />
+      <View className="absolute bottom-0 left-0 right-0 top-0 bg-background">
         <ScrollView
           className="flex-1"
           showsVerticalScrollIndicator={false}
-          removeClippedSubviews={true}
-        >
-          <SettingsHeader
-            title={t('settings.title')}
-            onClose={handleClose}
-          />
+          removeClippedSubviews={true}>
+          <SettingsHeader title={t('settings.title')} onClose={handleClose} />
 
           {/* Settings List */}
           <View className="px-6">
-            <SettingsItem
-              icon={User}
-              label={t('settings.name')}
-              onPress={handleName}
-            />
+            <SettingsItem icon={User} label={t('settings.name')} onPress={handleName} />
 
             <SettingsItem
               icon={CreditCard}
-              label={t('settings.billing')}
+              label={t('settings.plan', 'Plan')}
+              onPress={handlePlan}
+            />
+
+            <SettingsItem
+              icon={Wallet}
+              label={t('settings.billing', 'Billing')}
               onPress={handleBilling}
+            />
+
+            <SettingsItem
+              icon={BarChart3}
+              label={t('settings.usage', 'Usage')}
+              onPress={handleUsage}
+            />
+
+            <SettingsItem
+              icon={Plug}
+              label={t('integrations.title', 'Integrations')}
+              onPress={handleIntegrations}
             />
 
             <SettingsItem
@@ -213,21 +244,22 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
               onPress={handleTheme}
             />
 
-            <SettingsItem
-              icon={Globe}
-              label={t('settings.language')}
-              onPress={handleLanguage}
-            />
+            <SettingsItem icon={Globe} label={t('settings.language')} onPress={handleLanguage} />
 
             <SettingsItem
               icon={FlaskConical}
               label={t('settings.beta') || 'Beta'}
               onPress={handleBeta}
             />
+
             {!isGuest && (
               <SettingsItem
                 icon={Trash2}
-                label={deletionStatus?.has_pending_deletion ? t('accountDeletion.deletionScheduled') : t('accountDeletion.deleteYourAccount')}
+                label={
+                  deletionStatus?.has_pending_deletion
+                    ? t('accountDeletion.deletionScheduled')
+                    : t('accountDeletion.deleteYourAccount')
+                }
                 onPress={handleAccountDeletion}
                 showBadge={deletionStatus?.has_pending_deletion}
               />
@@ -245,14 +277,15 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
         </ScrollView>
       </View>
 
-      <AnimatedPageWrapper visible={isLanguagePageVisible} onClose={() => setIsLanguagePageVisible(false)}>
-        <LanguagePage
-          visible
-          onClose={() => setIsLanguagePageVisible(false)}
-        />
+      <AnimatedPageWrapper
+        visible={isLanguagePageVisible}
+        onClose={() => setIsLanguagePageVisible(false)}>
+        <LanguagePage visible onClose={() => setIsLanguagePageVisible(false)} />
       </AnimatedPageWrapper>
 
-      <AnimatedPageWrapper visible={isNameEditPageVisible} onClose={() => setIsNameEditPageVisible(false)}>
+      <AnimatedPageWrapper
+        visible={isNameEditPageVisible}
+        onClose={() => setIsNameEditPageVisible(false)}>
         <NameEditPage
           visible
           currentName={userName}
@@ -263,46 +296,63 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
         />
       </AnimatedPageWrapper>
 
-      <AnimatedPageWrapper visible={isThemePageVisible} onClose={() => setIsThemePageVisible(false)}>
-        <ThemePage
-          visible
-          onClose={() => setIsThemePageVisible(false)}
-        />
+      <AnimatedPageWrapper
+        visible={isThemePageVisible}
+        onClose={() => setIsThemePageVisible(false)}>
+        <ThemePage visible onClose={() => setIsThemePageVisible(false)} />
       </AnimatedPageWrapper>
 
       <AnimatedPageWrapper visible={isBetaPageVisible} onClose={() => setIsBetaPageVisible(false)}>
-        <BetaPage
-          visible
-          onClose={() => setIsBetaPageVisible(false)}
-        />
+        <BetaPage visible onClose={() => setIsBetaPageVisible(false)} />
       </AnimatedPageWrapper>
 
-      <AnimatedPageWrapper visible={isBillingPageVisible} onClose={() => setIsBillingPageVisible(false)} disableGesture>
+      <AnimatedPageWrapper
+        visible={isPlanPageVisible}
+        onClose={() => setIsPlanPageVisible(false)}
+        disableGesture>
+        <PlanPage visible onClose={() => setIsPlanPageVisible(false)} />
+      </AnimatedPageWrapper>
+
+      <AnimatedPageWrapper
+        visible={isBillingPageVisible}
+        onClose={() => setIsBillingPageVisible(false)}
+        disableGesture>
         <BillingPage
           visible
           onClose={() => setIsBillingPageVisible(false)}
+          onChangePlan={async () => {
+            setIsBillingPageVisible(false);
+            // If RevenueCat is available, present the native paywall directly
+            if (useNativePaywall) {
+              console.log('📱 Using RevenueCat paywall from billing');
+              setTimeout(async () => {
+                await presentUpgradePaywall();
+              }, 100);
+            } else {
+              // Otherwise show the custom plan page
+              console.log('📄 Using custom plan page from billing');
+              setTimeout(() => setIsPlanPageVisible(true), 100);
+            }
+          }}
         />
       </AnimatedPageWrapper>
 
-      <AnimatedPageWrapper visible={isCreditsPurchasePageVisible} onClose={() => setIsCreditsPurchasePageVisible(false)}>
-        <CreditsPurchasePage
-          visible
-          onClose={() => setIsCreditsPurchasePageVisible(false)}
-        />
+      <AnimatedPageWrapper
+        visible={isUsagePageVisible}
+        onClose={() => setIsUsagePageVisible(false)}>
+        <UsagePage visible onClose={() => setIsUsagePageVisible(false)} />
       </AnimatedPageWrapper>
 
-      <AnimatedPageWrapper visible={isUsagePageVisible} onClose={() => setIsUsagePageVisible(false)}>
-        <UsagePage
-          visible
-          onClose={() => setIsUsagePageVisible(false)}
-        />
+      <AnimatedPageWrapper
+        visible={isAccountDeletionPageVisible}
+        onClose={() => setIsAccountDeletionPageVisible(false)}>
+        <AccountDeletionPage visible onClose={() => setIsAccountDeletionPageVisible(false)} />
       </AnimatedPageWrapper>
 
-      <AnimatedPageWrapper visible={isAccountDeletionPageVisible} onClose={() => setIsAccountDeletionPageVisible(false)}>
-        <AccountDeletionPage
-          visible
-          onClose={() => setIsAccountDeletionPageVisible(false)}
-        />
+      <AnimatedPageWrapper
+        visible={isIntegrationsPageVisible}
+        onClose={() => setIsIntegrationsPageVisible(false)}>
+        <IntegrationsPage visible onClose={() => setIsIntegrationsPageVisible(false)} />
       </AnimatedPageWrapper>
     </View>
   );
@@ -317,79 +367,82 @@ interface SettingsItemProps {
   isLoading?: boolean;
 }
 
-const SettingsItem = React.memo(({ icon, label, onPress, destructive = false, showBadge = false, isLoading = false }: SettingsItemProps) => {
-  const scale = useSharedValue(1);
-  const rotation = useSharedValue(0);
+const SettingsItem = React.memo(
+  ({
+    icon,
+    label,
+    onPress,
+    destructive = false,
+    showBadge = false,
+    isLoading = false,
+  }: SettingsItemProps) => {
+    const scale = useSharedValue(1);
+    const rotation = useSharedValue(0);
 
-  React.useEffect(() => {
-    if (isLoading) {
-      rotation.value = withRepeat(
-        withTiming(360, { duration: 1000, easing: Easing.linear }),
-        -1,
-        false
-      );
-    } else {
-      rotation.value = 0;
-    }
-  }, [isLoading, rotation]);
+    React.useEffect(() => {
+      if (isLoading) {
+        rotation.value = withRepeat(
+          withTiming(360, { duration: 1000, easing: Easing.linear }),
+          -1,
+          false
+        );
+      } else {
+        rotation.value = 0;
+      }
+    }, [isLoading, rotation]);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-    opacity: isLoading ? 0.6 : 1,
-  }));
+    const animatedStyle = useAnimatedStyle(() => ({
+      transform: [{ scale: scale.value }],
+      opacity: isLoading ? 0.6 : 1,
+    }));
 
-  const iconAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
+    const iconAnimatedStyle = useAnimatedStyle(() => ({
+      transform: [{ rotate: `${rotation.value}deg` }],
+    }));
 
-  const handlePressIn = React.useCallback(() => {
-    if (!isLoading) {
-      scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-    }
-  }, [scale, isLoading]);
+    const handlePressIn = React.useCallback(() => {
+      if (!isLoading) {
+        scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
+      }
+    }, [scale, isLoading]);
 
-  const handlePressOut = React.useCallback(() => {
-    if (!isLoading) {
-      scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-    }
-  }, [scale, isLoading]);
+    const handlePressOut = React.useCallback(() => {
+      if (!isLoading) {
+        scale.value = withSpring(1, { damping: 15, stiffness: 400 });
+      }
+    }, [scale, isLoading]);
 
-  const iconColor = destructive ? 'text-destructive' : 'dark:text-muted-foreground/50 text-muted/80';
-  const textColor = destructive ? 'text-destructive' : 'text-foreground';
+    const iconColor = destructive ? 'text-destructive' : 'text-primary';
+    const textColor = destructive ? 'text-destructive' : 'text-foreground';
 
-  return (
-    <AnimatedPressable
-      onPress={isLoading ? undefined : onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      disabled={isLoading}
-      style={animatedStyle}
-      className="flex-row items-center justify-between py-4"
-    >
-      <View className="flex-row items-center gap-3">
-        {isLoading ? (
-          <Animated.View style={iconAnimatedStyle}>
-            <Icon as={Loader2} size={20} className={iconColor} strokeWidth={2} />
-          </Animated.View>
-        ) : (
-          <Icon as={icon} size={20} className={iconColor} strokeWidth={2} />
+    return (
+      <AnimatedPressable
+        onPress={isLoading ? undefined : onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={isLoading}
+        style={animatedStyle}
+        className="flex-row items-center justify-between py-4">
+        <View className="flex-row items-center gap-3">
+          {isLoading ? (
+            <Animated.View style={iconAnimatedStyle}>
+              <Icon as={Loader2} size={20} className={iconColor} strokeWidth={2} />
+            </Animated.View>
+          ) : (
+            <Icon as={icon} size={20} className={iconColor} strokeWidth={2} />
+          )}
+          <Text className={`font-roobert-medium text-lg ${textColor}`}>{label}</Text>
+          {showBadge && (
+            <View className="rounded-full bg-destructive/20 px-2 py-0.5">
+              <Text className="font-roobert-medium text-xs text-destructive">Scheduled</Text>
+            </View>
+          )}
+        </View>
+
+        {!destructive && !isLoading && (
+          <Icon as={ChevronRight} size={16} className="text-foreground/40" strokeWidth={2} />
         )}
-        <Text className={`text-lg font-roobert-medium ${textColor}`}>
-          {label}
-        </Text>
-        {showBadge && (
-          <View className="bg-destructive/20 px-2 py-0.5 rounded-full">
-            <Text className="text-xs font-roobert-medium text-destructive">
-              Scheduled
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {!destructive && !isLoading && (
-        <Icon as={ChevronRight} size={16} className="text-foreground/40" strokeWidth={2} />
-      )}
-    </AnimatedPressable>
-  );
-});
-
+      </AnimatedPressable>
+    );
+  }
+);

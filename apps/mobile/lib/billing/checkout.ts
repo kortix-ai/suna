@@ -187,12 +187,24 @@ export async function startPlanCheckout(
   console.log('💳 Starting plan checkout...', { tierKey, commitmentType });
 
   try {
+    // For Stripe web checkout, map 'yearly_commitment' to 'yearly'
+    // The backend expects 'yearly' for Stripe products, not 'yearly_commitment'
+    const stripeCommitmentType = commitmentType === 'yearly_commitment' 
+      ? 'yearly' 
+      : commitmentType;
+
     const request: CreateCheckoutSessionRequest = {
       tier_key: tierKey,
       success_url: buildSuccessUrl('plan'),
       cancel_url: buildCancelUrl(),
-      commitment_type: commitmentType,
+      commitment_type: stripeCommitmentType,
     };
+    
+    console.log('📤 Sending checkout request:', { 
+      tier_key: tierKey, 
+      commitment_type: stripeCommitmentType,
+      original_commitment_type: commitmentType 
+    });
 
     const response = await checkoutApi.createCheckoutSession(request);
 
@@ -270,7 +282,7 @@ export async function openBillingPortal(returnUrl?: string): Promise<void> {
     // Direct users to the web app's billing management page
     const webBillingUrl = process.env.EXPO_PUBLIC_WEB_APP_URL 
       ? `${process.env.EXPO_PUBLIC_WEB_APP_URL}/subscription`
-      : 'https://app.kortix.ai/subscription';
+      : 'https://www.kortix.com/subscription';
 
     await openExternalUrl(webBillingUrl);
   } catch (error) {

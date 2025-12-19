@@ -2,6 +2,8 @@
   "common": {
     "cancel": "Abbrechen",
     "save": "Speichern",
+    "saving": "Speichert...",
+    "success": "Erfolg",
     "done": "Fertig",
     "close": "Schließen",
     "ok": "OK",
@@ -12,11 +14,16 @@
     "search": "Suchen",
     "loading": "Lädt...",
     "error": "Fehler",
+    "errorOccurred": "Ein Fehler ist aufgetreten. Bitte versuche es erneut.",
     "retry": "Nochmal versuchen",
     "send": "Senden",
     "back": "Zurück",
     "new": "Neu",
-    "create": "Erstellen"
+    "create": "Erstellen",
+    "continue": "Weiter",
+    "loadMore": "Mehr laden",
+    "previous": "Vorherige",
+    "next": "Nächste"
   },
   "auth": {
     "signIn": "Anmelden",
@@ -116,9 +123,50 @@
     }
   },
   "onboarding": {
+    "welcome": "Sehen Sie, was Kortix kann",
+    "welcomeSubtitle": "Ihr KI-Assistent, der handelt",
     "skip": "Überspringen",
     "next": "Weiter",
     "getStarted": "Los geht's",
+    "kortixComputer": "Kortix Computer",
+    "ready": "Bereit",
+    "examples": {
+      "presentations": {
+        "title": "Präsentationen",
+        "description": "Sehen Sie, wie es erstaunliche Präsentationen erstellt",
+        "userMessage": "Recherchiere und erstelle eine Präsentation über neuronale Netze",
+        "aiMessage": "Ich werde neuronale Netze recherchieren und eine Präsentation für Sie erstellen...",
+        "researching": "Recherchiere",
+        "creatingFile": "Erstelle Datei",
+        "creatingSlides": "Erstelle Folien"
+      },
+      "dataAnalysis": {
+        "title": "Datenanalyse",
+        "description": "Sehen Sie zu, wie es Daten analysiert und visuelle Berichte erstellt",
+        "userMessage": "Analysiere Q4-Verkaufsleistung von Google Drive",
+        "aiMessage": "Ich lade Ihre Verkaufsdaten und erstelle eine umfassende Analyse...",
+        "loadingFromDrive": "Lädt von Google Drive",
+        "creatingVisualization": "Erstelle Visualisierung",
+        "researchingMarket": "Recherchiere Markt",
+        "creatingReport": "Erstelle Bericht"
+      },
+      "image": {
+        "title": "Bild",
+        "description": "Erleben Sie KI-gestütztes Logo- und Markendesign",
+        "userMessage": "Erstelle ein Logo für unser Unternehmen",
+        "aiMessage": "Ich sehe, Sie haben LUXY bereits erwähnt. Ich erstelle ein professionelles Logo für Ihre Marke...",
+        "researchingBrand": "Recherchiere Marke",
+        "creatingLogo": "Erstelle Logo",
+        "creatingBrandBoard": "Erstelle Markenboard"
+      },
+      "imageEasterEgg": {
+        "title": "Bild",
+        "description": "Verwandeln Sie Ihre Fotos mit KI-Stilen",
+        "userMessage": "Wandle mein Bild in einen blockigen Pixel-Art-Stil um",
+        "aiMessage": "Klar! Ich verwandle Ihr Bild in einen stilisierten blockigen Look...",
+        "creatingImage": "Erstelle stilisiertes Bild"
+      }
+    },
     "slide1": {
       "title": "Chat mit KI",
       "description": "Führe natürliche Gespräche mit mächtigen KI-Assistenten, die den Kontext verstehen und hilfreiche Antworten geben"
@@ -141,7 +189,7 @@
       "example": "Erstelle ein Pitch Deck für mein Startup"
     },
     "research": {
-      "title": "Tiefe Recherche",
+      "title": "Deep Research",
       "description": "Umfassende Web-Recherche mit sofortigen Insights, Zusammenfassungen und Analysen.",
       "example": "Recherchiere KI-Trends im Gesundheitswesen"
     },
@@ -160,16 +208,23 @@
       "description": "Richte Trigger ein, um Workflows zu automatisieren. Plane Aufgaben und überwache Events.",
       "example": "Täglich um 9 Uhr Berichte senden"
     },
+    "final": {
+      "title": "Alles Bereit!",
+      "description": "Gebaut für komplexe Aufgaben, designed für alles. Was möchtest du erledigen?",
+      "example": "Beschreibe die Aufgabe, die dein Worker erledigen soll..."
+    },
     "superworker": {
       "title": "Dein KI-Superworker",
       "description": "Kombiniere alle Features, um maßgeschneiderte KI-Workers für jede Aufgabe zu erstellen, die du brauchst.",
-      "example": "Erstelle einen Kundenservice-Agenten"
+      "example": "Erstelle einen Kundenservice-Worker"
     }
   },
   "settings": {
     "title": "Einstellungen",
     "name": "Name",
+    "plan": "Plan",
     "billing": "Abrechnung",
+    "usage": "Nutzung",
     "integrations": "Integrationen",
     "theme": "Theme & Icon",
     "language": "Sprache",
@@ -183,6 +238,7 @@
   "chat": {
     "newChat": "Neuer Chat",
     "placeholder": "Gib Kortix eine Aufgabe...",
+    "inputPlaceholder": "Frag Kortix alles...",
     "recording": "Nimmt auf...",
     "cancelRecording": "Aufnahme abbrechen",
     "stopRecording": "Aufnahme stoppen",
@@ -230,11 +286,11 @@
   },
   "quickActions": {
     "image": "Bild",
-    "slides": "Slides",
+    "slides": "Folien",
     "data": "Daten",
-    "docs": "Docs",
-    "people": "Leute",
-    "research": "Research",
+    "docs": "Dokumente",
+    "people": "Personen",
+    "research": "Recherche",
     "chooseStyle": "{{action}}-Stil wählen",
     "imageStyles": {
       "abstract": "Abstrakt",
@@ -302,6 +358,61 @@
       "articles": "Artikel",
       "papers": "Papers",
       "database": "Datenbank"
+    },
+    "examplePrompts": "Beispiel-Prompts",
+    "chooseTemplate": "Vorlage wählen",
+    "selected": "Ausgewählt",
+    "starterPrompts": {
+      "image": [
+        "Ein majestätischer goldener Adler, der durch neblige Berggipfel bei Sonnenaufgang schwebt",
+        "Nahaufnahme-Porträt eines Models mit avantgardistischem Make-up und Studio-Beleuchtung",
+        "Gemütliches skandinavisches Wohnzimmer mit natürlichen Holzmöbeln und Zimmerpflanzen",
+        "Futuristischer Cyberpunk-Straßenmarkt bei Nacht mit Neon-Schildern und holographischen Displays",
+        "Elegante Produktfotografie einer Luxus-Parfümflasche auf Marmoroberfläche",
+        "Verspielte schwebende Inseln, verbunden durch Seilbrücken in einem Pastellhimmel",
+        "Makro-Nahaufnahme von Morgentautropfen auf lebendigen Blütenblättern",
+        "Moderner Arbeitsplatz-Desk-Setup mit Laptop, Kaffee und Sukkulenten von oben"
+      ],
+      "slides": [
+        "Erstelle ein Serie-A-Pitch-Deck mit Marktgröße, Traktion und Finanzprognosen",
+        "Baue eine Q4-Geschäftsübersicht mit KPIs, Erfolgen und strategischen Initiativen",
+        "Gestalte eine Produkt-Launch-Präsentation mit Demo-Videos und Kunden-Testimonials",
+        "Entwickle ein Sales-Enablement-Deck, das unseren Wertversprechen und Wettbewerbsvorteile erklärt",
+        "Erstelle ein Investor-Update mit wichtigen Metriken und kommenden Meilensteinen",
+        "Baue eine Kunden-Case-Study-Präsentation mit ROI und Erfolgsmetriken"
+      ],
+      "data": [
+        "Baue ein Finanzmodell, das ARR-Wachstum mit verschiedenen Preisszenarien projiziert",
+        "Erstelle ein interaktives Sales-Dashboard, das Metriken nach Region und Quartal verfolgt",
+        "Analysiere Kundenbewertungen und visualisiere Sentiment-Trends über die Zeit",
+        "Gestalte einen Content-Kalender, der Kampagnen mit ROI- und Engagement-Diagrammen verfolgt",
+        "Baue eine Kohortenanalyse, die Nutzerbindung und Abwanderungsmuster zeigt",
+        "Erstelle ein Marketing-Attributionsmodell, das Kanalleistung vergleicht"
+      ],
+      "docs": [
+        "Schreibe ein umfassendes PRD für eine KI-gestützte Empfehlungsmaschine",
+        "Verfasse ein technisches Architekturdokument für eine skalierbare Microservices-Plattform",
+        "Erstelle ein Go-to-Market-Strategiedokument für unseren Q2-Produkt-Launch",
+        "Entwickle ein 90-Tage-Onboarding-Playbook für Engineering-Manager",
+        "Schreibe einen API-Dokumentationsleitfaden mit Beispielen und Best Practices",
+        "Erstelle ein Unternehmenshandbuch, das Kultur, Richtlinien und Vorteile abdeckt"
+      ],
+      "people": [
+        "Finde VP-of-Engineering-Kandidaten bei Serie-B+-KI/ML-Startups in San Francisco",
+        "Baue eine Lead-Liste von CMOs bei B2B-SaaS-Unternehmen, die kürzlich Serie A/B aufgebracht haben",
+        "Recherchiere Senior-Blockchain-Ingenieure mit Solidity-Erfahrung",
+        "Generiere eine Prospect-Liste technischer Gründer bei Seed-Serie-A-Startups in Enterprise-KI",
+        "Identifiziere Senior-Produktmanager bei Fintech-Unternehmen mit FAANG-Erfahrung",
+        "Finde CIOs bei Mid-Market-Gesundheits-IT-Unternehmen, die Cloud-Migration planen"
+      ],
+      "research": [
+        "Analysiere aufkommende Trends im Quantencomputing und potenzielle Geschäftsanwendungen",
+        "Recherchiere die Top-10-Wettbewerber im KI-gestützten CRM-Bereich mit Funktionsvergleich",
+        "Untersuche regulatorische Anforderungen für den Launch einer Fintech-App in der EU",
+        "Erstelle eine Marktanalyse zur Elektrofahrzeug-Adoptionsrate in wichtigen Märkten",
+        "Studiere die Auswirkungen von Remote-Arbeit auf die Nachfrage nach Gewerbeimmobilien",
+        "Recherchiere Web3-Adoptionsmuster unter Fortune-500-Unternehmen"
+      ]
     }
   },
   "menu": {
@@ -409,7 +520,29 @@
     "plus": "plus",
     "addCredits": "Credits Hinzufügen",
     "needMoreCredits": "Mehr Credits benötigt?",
-    "purchaseAdditional": "Kaufe jederzeit zusätzliche Credits"
+    "purchaseAdditional": "Kaufe jederzeit zusätzliche Credits",
+    "pickPlan": "Wähle den Plan, der zu dir passt",
+    "billingStatus": "Abrechnungsstatus",
+    "manageCredits": "Verwalte deine Credits und dein Abonnement",
+    "checkoutMode": "Checkout-Methode",
+    "nativeCheckout": "Nativ",
+    "webCheckout": "Web",
+    "nativeCheckoutDescription": "Checkout über App Store/Play Store",
+    "webCheckoutDescription": "Checkout über Webbrowser",
+    "monthlyCredits": "Monatliche Credits",
+    "extraCredits": "Zusätzliche Credits",
+    "renews": "Erneuert sich am {date}",
+    "allCredits": "Alle Credits",
+    "creditTransactions": "Credit-Transaktionen",
+    "loadingTransactionHistory": "Lade Transaktionshistorie...",
+    "noTransactions": "Keine Transaktionen gefunden",
+    "transactionHistoryAppearHere": "Deine Transaktionshistorie erscheint hier",
+    "balanceAfter": "Guthaben danach",
+    "noDescription": "Keine Beschreibung",
+    "popular": "Beliebt",
+    "subscription": "Abonnement",
+    "subscriptionDisclaimerIos": "Die Zahlung wird zu deinem Apple ID-Konto zum Zeitpunkt der Bestätigung des Kaufs belastet. Das Abonnement verlängert sich automatisch, es sei denn, die automatische Verlängerung wird mindestens 24 Stunden vor Ende des aktuellen Zeitraums deaktiviert. Dein Konto wird für die Verlängerung innerhalb von 24 Stunden vor Ende des aktuellen Zeitraums belastet. Du kannst deine Abonnements verwalten und kündigen, indem du zu den Kontoeinstellungen im App Store nach dem Kauf gehst.",
+    "subscriptionDisclaimerAndroid": "Die Zahlung wird zu deinem Google-Konto zum Zeitpunkt der Bestätigung des Kaufs belastet. Das Abonnement verlängert sich automatisch, es sei denn, die automatische Verlängerung wird mindestens 24 Stunden vor Ende des aktuellen Zeitraums deaktiviert. Du kannst deine Abonnements verwalten und kündigen, indem du zum Google Play Store gehst."
   },
   "theme": {
     "title": "Aussehen",
@@ -430,17 +563,13 @@
   },
   "beta": {
     "title": "Beta-Funktionen",
-    "experimentalFeatures": "Experimentelle Funktionen",
-    "earlyAccess": "Früher Zugang zu neuen Fähigkeiten",
+    "webSupportTitle": "Vollständig Unterstützt im Web",
+    "webSupportDescription": "Verfügbar auf Kortix.com. Kommt bald auf Mobilgeräten—hier noch in Arbeit.",
+    "visitKortix": "Kortix.com besuchen",
     "advancedFeatures": "Erweiterte Funktionen",
-    "advancedDescription": "Zugang zu experimentellen Funktionen und erweiterten Tools bevor sie für alle verfügbar sind",
-    "whatsIncluded": "Was Enthalten Ist",
-    "experimentalTools": "Experimentelle Tools",
-    "experimentalToolsDescription": "Probiere neue Fähigkeiten vor der offiziellen Veröffentlichung aus",
-    "advancedSettings": "Erweiterte Einstellungen",
-    "advancedSettingsDescription": "Passe deine Erfahrung mit Power-User-Optionen an",
+    "mobileBeta": "Mobile Beta",
     "pleaseNote": "Bitte Beachten",
-    "betaWarning": "Beta-Funktionen können instabil sein und sich ohne Ankündigung ändern. Nutzung auf eigene Gefahr."
+    "mobileWarning": "Auf Mobilgeräten noch in Arbeit und kann Probleme haben. Für die beste Erfahrung nutze Kortix.com."
   },
   "accountDeletion": {
     "title": "Konto Löschen",
@@ -450,7 +579,7 @@
     "actionCannotBeUndone": "Diese Aktion kann nicht rückgängig gemacht werden",
     "accountWillBeDeleted": "Dein Konto wird dauerhaft gelöscht",
     "whatWillBeDeleted": "Was Gelöscht Wird",
-    "allAgents": "Alle deine Agenten und Agent-Versionen",
+    "allAgents": "Alle deine Workers und Worker-Versionen",
     "allThreads": "Alle deine Threads und Konversationen",
     "allCredentials": "Alle deine Anmeldedaten und Integrationen",
     "subscriptionData": "Deine Abonnement- und Abrechnungsdaten",
@@ -480,6 +609,8 @@
     "search": "Suchen...",
     "searchConversations": "Chats durchsuchen",
     "searchAgents": "Workers suchen",
+    "searchWorkers": "Workers suchen",
+    "searchTriggers": "Trigger suchen",
     "imageGeneration": "Beschreibe das Bild, das du erstellen möchtest...",
     "imageWithStyle": "Beschreibe dein {{style}}-Bild...",
     "slidesGeneration": "Was für eine Präsentation brauchst du?",
@@ -549,10 +680,10 @@
     "externalAppsDescription": "Beliebte Apps & Dienste verbinden",
     "customMcpServers": "Benutzerdefinierte MCP-Server",
     "customMcpDescription": "HTTP-basierte Integrationen hinzufügen",
-    "composioApps": "Composio Apps",
+    "composioApps": "App Integrations",
     "composioAppsDescription": "Mit Hunderten von Geschäftsanwendungen verbinden",
     "connected": "Verbunden",
-    "connectedToAgent": "Mit diesem Agenten verbunden",
+    "connectedToAgent": "Mit diesem Worker verbunden",
     "available": "Verfügbare Apps",
     "connect": "Verbinden",
     "setup": "Einrichten",
@@ -566,7 +697,9 @@
     "connecting": "Verbindung wird hergestellt...",
     "disconnect": "Trennen",
     "noAppsFound": "Keine Apps gefunden",
+    "noAppsAvailable": "Keine Apps verfügbar",
     "tryDifferentSearch": "Versuche einen anderen Suchbegriff",
+    "appsAppearHere": "Apps erscheinen hier, sobald verfügbar",
     "loadingIntegrations": "Integrationen werden geladen...",
     "failedToLoad": "Laden fehlgeschlagen",
     "retry": "Erneut versuchen",
@@ -607,7 +740,7 @@
     },
     "toolsSelector": {
       "configureTools": "{{app}}-Tools konfigurieren",
-      "selectTools": "Wähle Tools für deinen Agenten",
+      "selectTools": "Wähle Tools für deinen Worker",
       "readyToConfigureTools": "Bereit zum Konfigurieren",
       "selected": "{{count}} von {{total}} ausgewählt",
       "selectAll": "Alle auswählen",
@@ -615,7 +748,10 @@
       "loadingTools": "Tools werden geladen...",
       "failedToLoadTools": "Laden fehlgeschlagen",
       "noToolsAvailable": "Keine Tools verfügbar",
+      "noToolsFound": "Keine Tools gefunden",
       "noToolsDescription": "Diese Integration hat keine Tools",
+      "tryAdjustingSearch": "Versuche deine Suche anzupassen",
+      "toolsAppearHere": "Tools erscheinen hier, sobald verfügbar",
       "addingTools": "Tools werden hinzugefügt...",
       "addTool": "{{count}} Tool hinzufügen",
       "addTools": "{{count}} Tools hinzufügen",
@@ -638,5 +774,116 @@
       "toolsConfigured": "Benutzerdefiniertes MCP hinzugefügt",
       "toolsConfiguredMessage": "{{count}} Tools konfiguriert"
     }
+  },
+  "threadHeader": {
+    "goBack": "Zurück",
+    "openMenu": "Menü öffnen",
+    "enterTitle": "Titel eingeben",
+    "threadActions": "Thread-Aktionen",
+    "untitled": "Ohne Titel"
+  },
+  "threadActions": {
+    "title": "Thread-Aktionen",
+    "upgradeRequired": "Upgrade Erforderlich",
+    "upgradeRequiredMessage": "Thread-Freigabe ist nur in kostenpflichtigen Plänen verfügbar. Upgrade, um diese Funktion freizuschalten.",
+    "upgrade": "Upgraden",
+    "shareThread": "Thread teilen",
+    "shareThreadUpgrade": "Thread teilen (Upgrade)",
+    "availableOnPaidPlans": "In kostenpflichtigen Plänen verfügbar",
+    "createPublicLink": "Öffentlichen Link erstellen",
+    "manageFiles": "Dateien verwalten",
+    "viewManageAttachments": "Anhänge anzeigen und verwalten",
+    "deleteThread": "Thread löschen",
+    "permanentlyDelete": "Diese Unterhaltung dauerhaft löschen"
+  },
+  "triggers": {
+    "title": "Triggers",
+    "createTrigger": "Trigger erstellen",
+    "editTrigger": "Trigger bearbeiten",
+    "deleteTrigger": "Trigger löschen",
+    "updateTrigger": "Trigger aktualisieren",
+    "scheduleTrigger": "Zeitplan-Trigger",
+    "eventTrigger": "Event-Trigger",
+    "runOnSchedule": "Nach Zeitplan ausführen",
+    "fromExternalApps": "Von externen Apps",
+    "selectApplication": "Anwendung auswählen",
+    "configureTrigger": "Trigger konfigurieren",
+    "loadingTriggerConfig": "Trigger-Konfiguration wird geladen...",
+    "loadingTriggers": "Triggers werden geladen...",
+    "loadingApps": "Apps werden geladen...",
+    "loadingProfiles": "Profile werden geladen...",
+    "noTriggersAvailable": "Keine Triggers verfügbar",
+    "noAppsFound": "Keine Apps gefunden",
+    "connected": "Verbunden",
+    "notConnected": "Nicht verbunden",
+    "setupRequired": "Einrichtung erforderlich",
+    "retry": "Erneut versuchen",
+    "back": "Zurück",
+    "creating": "Wird erstellt...",
+    "updating": "Wird aktualisiert...",
+    "triggerDetails": "Trigger-Details",
+    "active": "Aktiv",
+    "inactive": "Inaktiv",
+    "noTriggersConfigured": "Keine Triggers konfiguriert",
+    "setupTriggersToAutomate": "Richten Sie Triggers ein, um diesen Worker zu automatisieren"
+  },
+  "files": {
+    "title": "Dateien",
+    "loadingFiles": "Dateien werden geladen...",
+    "failedToLoad": "Laden fehlgeschlagen",
+    "retry": "Erneut versuchen",
+    "folderEmpty": "Dieser Ordner ist leer",
+    "uploadOrCreate": "Lade Dateien hoch oder erstelle Ordner",
+    "createFolder": "Ordner erstellen",
+    "folderName": "Ordnername",
+    "cancel": "Abbrechen",
+    "create": "Erstellen"
+  },
+  "workers": {
+    "title": "Workers",
+    "instructions": {
+      "title": "System-Prompt",
+      "description": "Definiere, wie sich dein Worker verhalten soll",
+      "loading": "Anweisungen werden geladen...",
+      "saving": "Wird gespeichert...",
+      "saveChanges": "Änderungen speichern"
+    },
+    "loadingWorker": "Worker wird geladen...",
+    "core": "Kern",
+    "capabilitiesEnabled": "{{enabled}} / {{total}} Fähigkeiten aktiviert",
+    "toolConfiguration": "Tool-Konfiguration",
+    "configureToolsDescription": "Konfigurieren Sie Tools und ihre einzelnen Fähigkeiten für Ihren Agenten",
+    "toolsEnabled": "{{enabled}} / {{total}} aktiviert",
+    "loadingTools": "Tools werden geladen...",
+    "noToolsAvailable": "Keine Tools verfügbar",
+    "toolsWillAppear": "Tools werden hier angezeigt, sobald sie verfügbar sind",
+    "sunaToolsManaged": "Sunas Tools werden zentral verwaltet und können nicht bearbeitet werden.",
+    "toolsNotEditable": "Diese Tools können nicht bearbeitet werden.",
+    "cannotEditTools": "Bearbeitung nicht möglich",
+    "sunaToolsManagedAlert": "Sunas Tools werden zentral verwaltet.",
+    "savingChanges": "Speichern...",
+    "saveChanges": "Änderungen speichern"
+  },
+  "tools": {
+    "executing": "Tool wird ausgeführt",
+    "input": "Eingabe",
+    "output": "Ausgabe",
+    "noContentAvailable": "Kein Inhalt verfügbar",
+    "processing": "Verarbeitung",
+    "loading": "Laden",
+    "searching": "Suchen",
+    "completed": "Abgeschlossen",
+    "failed": "Fehlgeschlagen"
+  },
+  "composio": {
+    "noAppsFound": "Keine Apps gefunden",
+    "noAppsAvailable": "Keine Apps verfügbar",
+    "searchApps": "Apps suchen...",
+    "searchTools": "Tools suchen...",
+    "failedToLoadTools": "Laden der Tools fehlgeschlagen",
+    "retry": "Erneut versuchen",
+    "noToolsFound": "Keine Tools gefunden",
+    "saving": "Wird gespeichert...",
+    "selectTools": "Tools auswählen"
   }
 }

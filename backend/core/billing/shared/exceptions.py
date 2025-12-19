@@ -7,9 +7,9 @@ class InsufficientCreditsError(BillingError):
         self.required = required
         if message is None:
             if required:
-                message = f"Insufficient credits. Balance: ${balance:.2f}, Required: ${required:.2f}"
+                message = f"Insufficient credits. Balance: {int(balance * 100)} credits, Required: {int(required * 100)} credits"
             else:
-                message = f"Insufficient credits. Balance: ${balance:.2f}"
+                message = f"Insufficient credits. Balance: {int(balance * 100)} credits"
         super().__init__(message)
 
 class SubscriptionError(BillingError):

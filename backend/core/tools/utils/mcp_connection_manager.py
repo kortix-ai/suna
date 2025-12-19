@@ -136,4 +136,8 @@ class MCPConnectionManager:
         return self.connected_servers.get(server_name, {})
     
     def get_all_servers(self) -> Dict[str, Dict[str, Any]]:
-        return self.connected_servers.copy() 
+        return self.connected_servers.copy()
+    
+    def cleanup(self):
+        """Clear all connection metadata to help garbage collection."""
+        self.connected_servers.clear() 

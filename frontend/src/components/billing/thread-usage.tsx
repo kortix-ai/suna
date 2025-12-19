@@ -174,25 +174,25 @@ export default function ThreadUsage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 min-w-0 max-w-full">
       {summary && (
           <Card className='w-full'>
-            <CardHeader className='flex items-center justify-between'>
+            <CardHeader className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3'>
               <div>
-                <CardTitle>Total Usage</CardTitle>
-                <CardDescription className='mt-2'>
+                <CardTitle className="text-base sm:text-lg">Total Usage</CardTitle>
+                <CardDescription className='mt-1 sm:mt-2 text-xs sm:text-sm'>
                   {dateRange.from && dateRange.to
                     ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
                     : 'Selected period'}
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                <TrendingDown className="h-5 w-5 text-muted-foreground" />
+                <TrendingDown className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground flex-shrink-0" />
                 <div>
-                  <div className="text-3xl font-semibold">
+                  <div className="text-xl sm:text-3xl font-semibold">
                     {formatCredits(summary.total_credits_used)}
                   </div>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-xs sm:text-sm text-muted-foreground">
                     Credits consumed
                   </p>
                 </div>
@@ -202,10 +202,10 @@ export default function ThreadUsage() {
       )}
       <Card className='p-0 px-0 bg-transparent shadow-none border-none'>
         <CardHeader className='px-0'>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <CardTitle>Usage</CardTitle>
-              <CardDescription className='mt-2'>
+              <CardTitle className="text-base sm:text-lg">Usage</CardTitle>
+              <CardDescription className='mt-1 sm:mt-2 text-xs sm:text-sm'>
                 Credit consumption per conversation
               </CardDescription>
             </div>
@@ -220,7 +220,7 @@ export default function ThreadUsage() {
         <CardContent className='px-0'>
           {threadRecords.length === 0 ? (
             <div className="text-center py-8">
-              <p className="text-muted-foreground">
+              <p className="text-muted-foreground text-sm">
                 {dateRange.from && dateRange.to
                   ? `No thread usage found between ${format(dateRange.from, "MMM dd, yyyy")} and ${format(dateRange.to, "MMM dd, yyyy")}.`
                   : 'No thread usage found.'}
@@ -228,8 +228,8 @@ export default function ThreadUsage() {
             </div>
           ) : (
             <>
-              <div className="rounded-xl border overflow-hidden">
-                <Table>
+              <div className="rounded-xl border overflow-x-auto">
+                <Table className="min-w-[500px]">
                   <TableHeader className='bg-muted/50'>
                     <TableRow>
                       <TableHead>Thread</TableHead>
@@ -279,9 +279,9 @@ export default function ThreadUsage() {
                 </Table>
               </div>
               {data?.pagination && (
-                <div className="flex items-center justify-between mt-4">
-                  <p className="text-sm text-muted-foreground">
-                    Showing {offset + 1}-{Math.min(offset + limit, data.pagination.total)} of {data.pagination.total} threads
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-4">
+                  <p className="text-xs sm:text-sm text-muted-foreground">
+                    Showing {offset + 1}-{Math.min(offset + limit, data.pagination.total)} of {data.pagination.total}
                   </p>
                   <div className="flex items-center gap-2">
                     <Button
@@ -289,6 +289,7 @@ export default function ThreadUsage() {
                       size="sm"
                       onClick={handlePrevPage}
                       disabled={offset === 0 || isLoading}
+                      className="flex-1 sm:flex-none"
                     >
                       Previous
                     </Button>
@@ -297,6 +298,7 @@ export default function ThreadUsage() {
                       size="sm"
                       onClick={handleNextPage}
                       disabled={!data.pagination.has_more || isLoading}
+                      className="flex-1 sm:flex-none"
                     >
                       Next
                     </Button>

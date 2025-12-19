@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { toast } from 'sonner';
-import { ToolCallInput } from '@/components/thread/tool-call-side-panel';
+import { ToolCallInput } from '@/components/thread/kortix-computer';
 import { UnifiedMessage, ParsedMetadata, AgentStatus } from '@/components/thread/types';
 import { safeJsonParse } from '@/components/thread/utils';
 import { useIsMobile } from '@/hooks/utils';
 import { isAskOrCompleteTool } from './utils';
+import { useKortixComputerStore, useIsSidePanelOpen, useSetIsSidePanelOpen } from '@/stores/kortix-computer-store';
 
 interface UseThreadToolCallsReturn {
   toolCalls: ToolCallInput[];
@@ -39,25 +40,26 @@ export function useThreadToolCalls(
 ): UseThreadToolCallsReturn {
   const [toolCalls, setToolCalls] = useState<ToolCallInput[]>([]);
   const [currentToolIndex, setCurrentToolIndex] = useState<number>(0);
-  const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
+  const isSidePanelOpen = useIsSidePanelOpen();
+  const setIsSidePanelOpen = useSetIsSidePanelOpen();
   const [autoOpenedPanel, setAutoOpenedPanel] = useState(false);
   const [externalNavIndex, setExternalNavIndex] = useState<number | undefined>(undefined);
   const userClosedPanelRef = useRef(false);
   const userNavigatedRef = useRef(false);
   const isMobile = useIsMobile();
+  
+  const navigateToToolCall = useKortixComputerStore((state) => state.navigateToToolCall);
 
   const toggleSidePanel = useCallback(() => {
-    setIsSidePanelOpen((prevIsOpen) => {
-      const newState = !prevIsOpen;
-      if (!newState) {
-        userClosedPanelRef.current = true;
-      }
-      if (newState && setLeftSidebarOpen) {
-        setLeftSidebarOpen(false);
-      }
-      return newState;
-    });
-  }, [setLeftSidebarOpen]);
+    const newState = !isSidePanelOpen;
+    if (!newState) {
+      userClosedPanelRef.current = true;
+    }
+    if (newState && setLeftSidebarOpen) {
+      setLeftSidebarOpen(false);
+    }
+    setIsSidePanelOpen(newState);
+  }, [isSidePanelOpen, setIsSidePanelOpen, setLeftSidebarOpen]);
 
   const handleSidePanelNavigate = useCallback((newIndex: number) => {
     setCurrentToolIndex(newIndex);
@@ -67,10 +69,15 @@ export function useThreadToolCalls(
   // Create a map of assistant message ID + tool name to their tool call indices for faster lookup
   // Key format: `${assistantMessageId}:${toolName}` -> toolIndex
   const assistantMessageToToolIndex = useRef<Map<string, number>>(new Map());
+  
+  // Track previous tool calls count to detect actual changes
+  const prevToolCallsCountRef = useRef(0);
 
-  useEffect(() => {
-    const historicalToolPairs: ToolCallInput[] = [];
-    const messageIdAndToolNameToIndex = new Map<string, number>();
+  // Memoize the computation of historical tool calls from messages
+  // This avoids recomputing on unrelated state changes
+  const { historicalToolPairs, messageIdAndToolNameToIndex } = useMemo(() => {
+    const pairs: ToolCallInput[] = [];
+    const indexMap = new Map<string, number>();
     const assistantMessages = messages.filter(m => m.type === 'assistant' && m.message_id);
 
     assistantMessages.forEach(assistantMsg => {
@@ -87,7 +94,7 @@ export function useThreadToolCalls(
 
       // Get tool calls from assistant message metadata
       const assistantMetadata = safeJsonParse<ParsedMetadata>(assistantMsg.metadata, {});
-      const toolCalls = assistantMetadata.tool_calls || [];
+      const msgToolCalls = assistantMetadata.tool_calls || [];
 
       // Match each tool result to its corresponding tool call using tool_call_id
       resultMessages.forEach(resultMessage => {
@@ -102,7 +109,7 @@ export function useThreadToolCalls(
         }
         
         // Find matching tool call by tool_call_id
-        const matchingToolCall = toolCalls.find(tc => tc.tool_call_id === toolCallId);
+        const matchingToolCall = msgToolCalls.find(tc => tc.tool_call_id === toolCallId);
         
         if (!matchingToolCall) {
           return;
@@ -116,7 +123,7 @@ export function useThreadToolCalls(
           return;
         }
 
-        const toolIndex = historicalToolPairs.length;
+        const toolIndex = pairs.length;
         // Normalize arguments - handle both string and object types
         let normalizedArguments: Record<string, any> = {};
         if (matchingToolCall.arguments) {
@@ -130,7 +137,7 @@ export function useThreadToolCalls(
             }
           }
         }
-        historicalToolPairs.push({
+        pairs.push({
           toolCall: {
             tool_call_id: matchingToolCall.tool_call_id,
             function_name: matchingToolCall.function_name,
@@ -148,17 +155,30 @@ export function useThreadToolCalls(
         });
 
         // Map the assistant message ID + tool name to its tool index
-        // This allows multiple tool calls per assistant message to be uniquely identified
         if (assistantMsg.message_id) {
           const key = `${assistantMsg.message_id}:${toolName}`;
-          messageIdAndToolNameToIndex.set(key, toolIndex);
+          indexMap.set(key, toolIndex);
         }
       });
     });
 
-    assistantMessageToToolIndex.current = messageIdAndToolNameToIndex;
-    setToolCalls(historicalToolPairs);
+    return { historicalToolPairs: pairs, messageIdAndToolNameToIndex: indexMap };
+  }, [messages]);
 
+  // Update state only when computed tool calls actually change
+  useEffect(() => {
+    assistantMessageToToolIndex.current = messageIdAndToolNameToIndex;
+    
+    // Only update toolCalls state if the count changed (simple heuristic to avoid deep comparison)
+    if (historicalToolPairs.length !== prevToolCallsCountRef.current) {
+      prevToolCallsCountRef.current = historicalToolPairs.length;
+      setToolCalls(historicalToolPairs);
+    }
+  }, [historicalToolPairs, messageIdAndToolNameToIndex]);
+
+  // Separate effect for UI state management (side panel, current index)
+  // This prevents recomputation of tool calls when UI state changes
+  useEffect(() => {
     if (historicalToolPairs.length > 0) {
       if (agentStatus === 'running' && !userNavigatedRef.current) {
         setCurrentToolIndex(historicalToolPairs.length - 1);
@@ -170,7 +190,7 @@ export function useThreadToolCalls(
         setAutoOpenedPanel(true);
       }
     }
-  }, [messages, isSidePanelOpen, autoOpenedPanel, agentStatus, isMobile, compact]);
+  }, [historicalToolPairs.length, isSidePanelOpen, autoOpenedPanel, agentStatus, isMobile, compact]);
 
   // Reset user navigation flag when agent stops
   useEffect(() => {
@@ -186,14 +206,47 @@ export function useThreadToolCalls(
   }, [isSidePanelOpen]);
 
   const handleToolClick = useCallback((clickedAssistantMessageId: string | null, clickedToolName: string) => {
-    if (!clickedAssistantMessageId) {
-      console.warn("Clicked assistant message ID is null. Cannot open side panel.");
-      toast.warning("Cannot view details: Assistant message ID is missing.");
-      return;
-    }
-
     userClosedPanelRef.current = false;
     userNavigatedRef.current = true;
+
+    // Helper function to navigate to a tool index
+    const navigateToIndex = (index: number) => {
+      setExternalNavIndex(index);
+      setCurrentToolIndex(index);
+      setIsSidePanelOpen(true);
+      // Use store action to ensure KortixComputer switches to tools view
+      navigateToToolCall(index);
+      setTimeout(() => setExternalNavIndex(undefined), 100);
+    };
+
+    // Handle streaming tool calls (message ID is null)
+    if (!clickedAssistantMessageId) {
+      // Find the latest streaming tool call (one without a toolResult yet)
+      // Search from the end backwards to find the most recent streaming tool
+      for (let i = toolCalls.length - 1; i >= 0; i--) {
+        const toolCall = toolCalls[i];
+        // A streaming tool call doesn't have a toolResult yet
+        if (!toolCall.toolResult) {
+          const toolName = toolCall.toolCall.function_name.replace(/_/g, '-').toLowerCase();
+          const normalizedToolName = clickedToolName.replace(/_/g, '-').toLowerCase();
+          
+          // If tool name matches or clickedToolName is 'unknown', navigate to this streaming tool
+          if (toolName === normalizedToolName || clickedToolName === 'unknown') {
+            navigateToIndex(i);
+            return;
+          }
+        }
+      }
+      
+      // If no matching streaming tool found, just open the latest tool call (streaming or not)
+      if (toolCalls.length > 0) {
+        navigateToIndex(toolCalls.length - 1);
+        return;
+      }
+      
+      console.warn("No streaming tool calls found to open.");
+      return;
+    }
 
     // Normalize tool name to match the format used in the mapping (lowercase, with dashes)
     const normalizedToolName = clickedToolName.replace(/_/g, '-').toLowerCase();
@@ -203,11 +256,7 @@ export function useThreadToolCalls(
     const toolIndex = assistantMessageToToolIndex.current.get(compositeKey);
 
     if (toolIndex !== undefined) {
-      setExternalNavIndex(toolIndex);
-      setCurrentToolIndex(toolIndex);
-      setIsSidePanelOpen(true);
-
-      setTimeout(() => setExternalNavIndex(undefined), 100);
+      navigateToIndex(toolIndex);
     } else {
       console.warn(
         `[PAGE] Could not find matching tool call in toolCalls array for assistant message ID: ${clickedAssistantMessageId}, tool name: ${clickedToolName}`,
@@ -237,10 +286,7 @@ export function useThreadToolCalls(
           );
           
           if (foundIndex !== -1) {
-            setExternalNavIndex(foundIndex);
-            setCurrentToolIndex(foundIndex);
-            setIsSidePanelOpen(true);
-            setTimeout(() => setExternalNavIndex(undefined), 100);
+            navigateToIndex(foundIndex);
             return;
           }
         }
@@ -248,7 +294,7 @@ export function useThreadToolCalls(
       
       toast.info('Could not find details for this tool call.');
     }
-  }, [messages, toolCalls]);
+  }, [messages, toolCalls, navigateToToolCall]);
 
   const handleStreamingToolCall = useCallback(
     (toolCall: UnifiedMessage | null) => {
@@ -299,13 +345,12 @@ export function useThreadToolCalls(
               })(),
               source: metadataToolCall.source || 'native',
             },
-            // No result yet - still streaming
             isSuccess: true,
-            assistantTimestamp: new Date().toISOString(),
+            assistantTimestamp: toolCall.created_at || new Date().toISOString(),
+            messages: messages as any,
           };
 
           if (existingIndex !== -1) {
-            // Update existing streaming tool
             const args = metadataToolCall.arguments;
             let normalizedArgs: Record<string, any> = {};
             if (args) {
@@ -325,9 +370,9 @@ export function useThreadToolCalls(
                 ...updated[existingIndex].toolCall,
                 arguments: normalizedArgs,
               },
+              messages: messages as any,
             };
           } else {
-            // Add new streaming tool
             updated.push(newToolCall);
           }
         });

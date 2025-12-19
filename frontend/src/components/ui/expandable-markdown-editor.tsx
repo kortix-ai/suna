@@ -5,8 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "./textarea";
 import { cn } from "@/lib/utils";
 import { Edit2, Expand, Save, X } from "lucide-react";
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { UnifiedMarkdown } from "@/components/markdown";
 
 interface ExpandableMarkdownEditorProps {
   value: string;
@@ -63,56 +62,8 @@ export const ExpandableMarkdownEditor: React.FC<ExpandableMarkdownEditorProps> =
     setIsEditing(true);
   };
 
-  const renderMarkdown = (content: string, isPreview = false) => (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        h1: ({ children }) => <h1 className="text-2xl font-medium mb-4 text-foreground">{children}</h1>,
-        h2: ({ children }) => <h2 className="text-xl font-semibold mb-3 text-foreground">{children}</h2>,
-        h3: ({ children }) => <h3 className="text-lg font-semibold mb-2 text-foreground">{children}</h3>,
-        h4: ({ children }) => <h4 className="text-base font-semibold mb-2 text-foreground">{children}</h4>,
-        h5: ({ children }) => <h5 className="text-sm font-semibold mb-2 text-foreground">{children}</h5>,
-        h6: ({ children }) => <h6 className="text-sm font-medium mb-2 text-foreground">{children}</h6>,
-        p: ({ children }) => <p className="mb-4 last:mb-0 text-foreground leading-relaxed">{children}</p>,
-        ul: ({ children }) => <ul className="list-disc list-inside mb-4 space-y-2 text-foreground">{children}</ul>,
-        ol: ({ children }) => <ol className="list-decimal list-inside mb-4 space-y-2 text-foreground">{children}</ol>,
-        li: ({ children }) => <li className="text-foreground leading-relaxed">{children}</li>,
-        code: ({ children, className }) => {
-          const isInline = !className?.includes('language-');
-          return isInline ? (
-            <code className="bg-muted px-2 py-1 rounded text-sm font-mono text-foreground">{children}</code>
-          ) : (
-            <code className={cn('block bg-muted p-4 rounded text-sm font-mono overflow-x-auto', className)}>
-              {children}
-            </code>
-          );
-        },
-        pre: ({ children }) => <pre className="bg-muted p-4 rounded text-sm font-mono overflow-x-auto mb-4">{children}</pre>,
-        blockquote: ({ children }) => <blockquote className="border-l-4 border-muted-foreground/30 pl-6 italic mb-4 text-muted-foreground">{children}</blockquote>,
-        strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
-        em: ({ children }) => <em className="italic text-foreground">{children}</em>,
-        hr: () => <hr className="my-6 border-muted-foreground/20" />,
-        table: ({ children }) => (
-          <div className="overflow-x-auto mb-4">
-            <table className="min-w-full border-collapse border border-muted-foreground/20">
-              {children}
-            </table>
-          </div>
-        ),
-        th: ({ children }) => (
-          <th className="border border-muted-foreground/20 px-3 py-2 bg-muted font-semibold text-left text-sm">
-            {children}
-          </th>
-        ),
-        td: ({ children }) => (
-          <td className="border border-muted-foreground/20 px-3 py-2 text-sm">
-            {children}
-          </td>
-        ),
-      }}
-    >
-      {content}
-    </ReactMarkdown>
+  const renderMarkdown = (content: string) => (
+    <UnifiedMarkdown content={content} />
   );
 
   return (
@@ -129,8 +80,8 @@ export const ExpandableMarkdownEditor: React.FC<ExpandableMarkdownEditorProps> =
         >
           <div className="p-4 h-full overflow-hidden">
             {value ? (
-              <div className="prose prose-sm dark:prose-invert max-w-none text-sm">
-                {renderMarkdown(value, true)}
+              <div className="text-sm">
+                {renderMarkdown(value)}
               </div>
             ) : (
               <div className="text-muted-foreground italic text-sm">
@@ -187,7 +138,7 @@ export const ExpandableMarkdownEditor: React.FC<ExpandableMarkdownEditorProps> =
                     value={editValue}
                     onChange={(e) => setEditValue(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    className="w-full h-[70vh] rounded-xl bg-muted/30 p-6 resize-none text-sm leading-relaxed font-mono"
+                    className="w-full h-[70vh] rounded-2xl bg-muted/30 p-6 resize-none text-sm leading-relaxed font-mono"
                     style={{ minHeight: '60vh' }}
                     disabled={disabled}
                     placeholder="Write your markdown content here..."
@@ -201,7 +152,7 @@ export const ExpandableMarkdownEditor: React.FC<ExpandableMarkdownEditorProps> =
               <ScrollArea className="flex-1 h-[70vh]">
                 <div className="pr-6 py-2">
                   {value ? (
-                    <div className="prose prose-base dark:prose-invert max-w-none leading-relaxed">
+                    <div>
                       {renderMarkdown(value)}
                     </div>
                   ) : (

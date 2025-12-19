@@ -2,6 +2,8 @@
   "common": {
     "cancel": "キャンセル",
     "save": "保存",
+    "saving": "保存中...",
+    "success": "成功",
     "done": "完了",
     "close": "閉じる",
     "ok": "OK",
@@ -12,11 +14,16 @@
     "search": "検索",
     "loading": "読み込み中...",
     "error": "エラー",
+    "errorOccurred": "エラーが発生しました。もう一度お試しください。",
     "retry": "もう一度",
     "send": "送信",
     "back": "戻る",
     "new": "新規",
-    "create": "作成"
+    "create": "作成",
+    "continue": "続ける",
+    "loadMore": "さらに読み込む",
+    "previous": "前へ",
+    "next": "次へ"
   },
   "auth": {
     "signIn": "ログイン",
@@ -111,9 +118,50 @@
     }
   },
   "onboarding": {
+    "welcome": "Kortixができることを見る",
+    "welcomeSubtitle": "行動するAIアシスタント",
     "skip": "スキップ",
     "next": "次へ",
     "getStarted": "始める",
+    "kortixComputer": "Kortix Computer",
+    "ready": "準備完了",
+    "examples": {
+      "presentations": {
+        "title": "プレゼンテーション",
+        "description": "素晴らしいプレゼンテーションを作成する様子をご覧ください",
+        "userMessage": "ニューラルネットワークについて調査してプレゼンテーションを作成",
+        "aiMessage": "ニューラルネットワークを調査して、プレゼンテーションを作成します...",
+        "researching": "調査中",
+        "creatingFile": "ファイル作成中",
+        "creatingSlides": "スライド作成中"
+      },
+      "dataAnalysis": {
+        "title": "データ分析",
+        "description": "データを分析してビジュアルレポートを作成する様子をご覧ください",
+        "userMessage": "Google DriveからQ4の売上パフォーマンスを分析",
+        "aiMessage": "売上データを読み込み、包括的な分析を作成します...",
+        "loadingFromDrive": "Google Driveから読み込み中",
+        "creatingVisualization": "ビジュアライゼーション作成中",
+        "researchingMarket": "市場調査中",
+        "creatingReport": "レポート作成中"
+      },
+      "image": {
+        "title": "画像",
+        "description": "AI搭載のロゴとブランドデザインを体験",
+        "userMessage": "会社のロゴを作成",
+        "aiMessage": "LUXYについて以前言及されましたね。あなたのブランドのプロフェッショナルなロゴを作成します...",
+        "researchingBrand": "ブランド調査中",
+        "creatingLogo": "ロゴ作成中",
+        "creatingBrandBoard": "ブランドボード作成中"
+      },
+      "imageEasterEgg": {
+        "title": "画像",
+        "description": "AIスタイルで写真を変換",
+        "userMessage": "私の画像をブロック状のピクセルアートスタイルに変換して",
+        "aiMessage": "もちろん！あなたの画像をスタイリッシュなブロック調に変換します...",
+        "creatingImage": "スタイル化画像を作成中"
+      }
+    },
     "slide1": {
       "title": "AIとチャット",
       "description": "文脈を理解し、役立つ回答を提供する強力なAIアシスタントと自然な会話をしよう"
@@ -136,7 +184,7 @@
       "example": "スタートアップのピッチデッキを作成"
     },
     "research": {
-      "title": "深いリサーチ",
+      "title": "Deep Research",
       "description": "瞬時の洞察、要約、分析による包括的なウェブリサーチ。",
       "example": "ヘルスケアのAIトレンドを調査"
     },
@@ -155,16 +203,23 @@
       "description": "ワークフローを自動化するトリガーを設定。タスクをスケジュールし、イベントを監視。",
       "example": "毎日9時にレポートを送信"
     },
+    "final": {
+      "title": "準備完了！",
+      "description": "複雑なタスクのために構築され、あらゆるもののために設計されています。何を成し遂げたいですか？",
+      "example": "Workerに完了させたいタスクを説明してください..."
+    },
     "superworker": {
       "title": "あなたのAIスーパーワーカー",
       "description": "すべての機能を組み合わせて、必要なあらゆるタスクのためのカスタムAIワーカーを構築。",
-      "example": "カスタマーサポートエージェントを作成"
+      "example": "カスタマーサポートワーカーを作成"
     }
   },
   "settings": {
     "title": "設定",
     "name": "名前",
+    "plan": "プラン",
     "billing": "請求",
+    "usage": "使用状況",
     "integrations": "連携",
     "theme": "テーマとアイコン",
     "language": "言語",
@@ -176,6 +231,7 @@
   "chat": {
     "newChat": "新しいチャット",
     "placeholder": "Kortixにタスクを...",
+    "inputPlaceholder": "Kortixに何でも聞いて...",
     "recording": "録音中...",
     "cancelRecording": "録音キャンセル",
     "stopRecording": "録音停止",
@@ -223,11 +279,11 @@
   },
   "quickActions": {
     "image": "画像",
-    "slides": "Slides",
+    "slides": "スライド",
     "data": "データ",
-    "docs": "Docs",
+    "docs": "ドキュメント",
     "people": "人",
-    "research": "Research",
+    "research": "リサーチ",
     "chooseStyle": "{{action}}のスタイルを選択",
     "imageStyles": {
       "abstract": "抽象",
@@ -295,6 +351,61 @@
       "articles": "記事",
       "papers": "論文",
       "database": "データベース"
+    },
+    "examplePrompts": "プロンプトの例",
+    "chooseTemplate": "テンプレートを選択",
+    "selected": "選択済み",
+    "starterPrompts": {
+      "image": [
+        "日の出時に霧に包まれた山々の峰を舞う雄大な金色のワシ",
+        "アバンギャルドなメイクとスタジオ照明のファッションモデルのクローズアップポートレート",
+        "天然木の家具と観葉植物がある居心地の良いスカンジナビアのリビングルーム",
+        "ネオンサインとホログラフィックディスプレイがある夜の未来的なサイバーパンクのストリートマーケット",
+        "大理石の表面にある高級香水ボトルのエレガントな製品写真",
+        "パステル色の空にロープブリッジでつながった幻想的な浮遊島",
+        "鮮やかな花びらの朝露のマクロクローズアップ",
+        "上から見たラップトップ、コーヒー、多肉植物があるモダンなワークスペースデスクセットアップ"
+      ],
+      "slides": [
+        "市場規模、トラクション、財務予測を含むシリーズAピッチデッキを作成",
+        "KPI、勝利、戦略的イニシアチブを紹介するQ4ビジネスレビューを構築",
+        "デモビデオと顧客の証言を含む製品ローンチプレゼンテーションを設計",
+        "価値提案と競争上の優位性を説明するセールスエナブルメントデッキを開発",
+        "主要指標と今後のマイルストーンを強調する投資家向けアップデートを作成",
+        "ROIと成功指標を示す顧客ケーススタディプレゼンテーションを構築"
+      ],
+      "data": [
+        "異なる価格設定シナリオでARR成長を予測する財務モデルを構築",
+        "地域と四半期ごとにメトリクスを追跡するインタラクティブなセールスダッシュボードを作成",
+        "顧客レビューを分析し、時間の経過とともにセンチメントトレンドを可視化",
+        "ROIとエンゲージメントチャートでキャンペーンを追跡するコンテンツカレンダーを設計",
+        "ユーザーリテンションと解約パターンを示すコホート分析を構築",
+        "チャネルパフォーマンスを比較するマーケティングアトリビューションモデルを作成"
+      ],
+      "docs": [
+        "AI駆動の推奨エンジン用の包括的なPRDを作成",
+        "スケーラブルなマイクロサービスプラットフォーム用の技術アーキテクチャドキュメントを起草",
+        "Q2製品ローンチ用のゴー・トゥ・マーケット戦略ドキュメントを作成",
+        "エンジニアリングマネージャー向けの90日間オンボーディングプレイブックを開発",
+        "例とベストプラクティスを含むAPIドキュメントガイドを作成",
+        "文化、ポリシー、福利厚生をカバーする会社ハンドブックを作成"
+      ],
+      "people": [
+        "サンフランシスコのシリーズB+ AI/MLスタートアップでエンジニアリングVP候補者を探す",
+        "最近シリーズA/Bを調達したB2B SaaS企業のCMOリードリストを構築",
+        "Solidity経験のあるシニアブロックチェーンエンジニアをリサーチ",
+        "エンタープライズAIのシード-シリーズAスタートアップで技術的創設者のプロスペクトリストを生成",
+        "FAANG経験のあるフィンテック企業のシニアプロダクトマネージャーを特定",
+        "クラウド移行を計画しているミッドマーケットヘルスケアIT企業のCIOを探す"
+      ],
+      "research": [
+        "量子コンピューティングの新興トレンドと潜在的なビジネスアプリケーションを分析",
+        "機能比較を含むAI駆動CRMスペースのトップ10競合他社をリサーチ",
+        "EUでフィンテックアプリをローンチするための規制要件を調査",
+        "主要市場での電気自動車採用率に関する市場分析をまとめる",
+        "商業不動産需要に対するリモートワークの影響を研究",
+        "フォーチュン500企業間のWeb3採用パターンをリサーチ"
+      ]
     }
   },
   "menu": {
@@ -402,7 +513,29 @@
     "plus": "プラス",
     "addCredits": "クレジット追加",
     "needMoreCredits": "もっとクレジットが必要？",
-    "purchaseAdditional": "いつでも追加クレジットを購入可能"
+    "purchaseAdditional": "いつでも追加クレジットを購入可能",
+    "pickPlan": "あなたに合うプランを選ぶ",
+    "billingStatus": "請求ステータス",
+    "manageCredits": "クレジットとサブスクリプションを管理",
+    "checkoutMode": "決済方法",
+    "nativeCheckout": "ネイティブ",
+    "webCheckout": "ウェブ",
+    "nativeCheckoutDescription": "App Store/Play Store経由で決済",
+    "webCheckoutDescription": "ウェブブラウザ経由で決済",
+    "monthlyCredits": "月額クレジット",
+    "extraCredits": "追加クレジット",
+    "renews": "{date}に更新",
+    "allCredits": "すべてのクレジット",
+    "creditTransactions": "クレジット取引",
+    "loadingTransactionHistory": "取引履歴を読み込み中...",
+    "noTransactions": "取引が見つかりません",
+    "transactionHistoryAppearHere": "取引履歴がここに表示されます",
+    "balanceAfter": "残高（取引後）",
+    "noDescription": "説明なし",
+    "popular": "人気",
+    "subscription": "サブスクリプション",
+    "subscriptionDisclaimerIos": "購入確認時にApple IDアカウントに請求されます。サブスクリプションは自動的に更新されますが、現在の期間終了の24時間以上前に自動更新をオフにしない限り、自動更新されます。現在の期間終了の24時間以内に更新のための請求が行われます。購入後、App Storeのアカウント設定に移動して、サブスクリプションを管理およびキャンセルできます。",
+    "subscriptionDisclaimerAndroid": "購入確認時にGoogleアカウントに請求されます。サブスクリプションは自動的に更新されますが、現在の期間終了の24時間以上前に自動更新をオフにしない限り、自動更新されます。Google Playストアに移動して、サブスクリプションを管理およびキャンセルできます。"
   },
   "theme": {
     "title": "外観",
@@ -423,19 +556,13 @@
   },
   "beta": {
     "title": "ベータ機能",
-    "experimentalFeatures": "実験機能",
-    "earlyAccess": "新機能をいち早く体験",
+    "webSupportTitle": "Web版で完全サポート",
+    "webSupportDescription": "Kortix.comで利用可能。モバイル版は近日公開予定—こちらではまだ開発中です。",
+    "visitKortix": "Kortix.comを訪問",
     "advancedFeatures": "高度な機能",
-    "advancedDescription": "実験機能や高度なツールを一般リリース前に利用できます",
-    "whatsIncluded": "含まれる機能",
-    "experimentalTools": "実験ツール",
-    "experimentalToolsDescription": "正式リリース前に新機能をお試しください",
-    "advancedSettings": "高度設定",
-    "advancedSettingsDescription": "上級者向けオプションで体験をカスタマイズ",
+    "mobileBeta": "モバイルベータ",
     "pleaseNote": "注意事項",
-    "beta": "ベータ機能",
-    "deleteAccount": "アカウントを削除",
-    "betaWarning": "ベータ機能は不安定な場合があり、予告なく変更される可能性があります。自己責任でご利用ください。"
+    "mobileWarning": "モバイル版は開発中で問題が発生する可能性があります。最良の体験のため、Kortix.comをご利用ください。"
   },
   "accountDeletion": {
     "title": "アカウント削除",
@@ -445,7 +572,7 @@
     "actionCannotBeUndone": "この操作は元に戻せません",
     "accountWillBeDeleted": "アカウントが永久に削除されます",
     "whatWillBeDeleted": "削除されるデータ",
-    "allAgents": "すべてのエージェントとバージョン",
+    "allAgents": "すべてのワーカーとバージョン",
     "allThreads": "すべてのスレッドと会話",
     "allCredentials": "すべての認証情報と連携",
     "subscriptionData": "サブスクリプションと請求データ",
@@ -475,6 +602,8 @@
     "search": "検索...",
     "searchConversations": "チャット検索",
     "searchAgents": "Worker検索",
+    "searchWorkers": "Worker検索",
+    "searchTriggers": "トリガー検索",
     "imageGeneration": "作りたい画像を説明して...",
     "imageWithStyle": "{{style}}の画像を説明して...",
     "slidesGeneration": "どんなプレゼンが必要？",
@@ -547,7 +676,7 @@
     "composioApps": "Composioアプリ",
     "composioAppsDescription": "数百のビジネスアプリケーションに接続",
     "connected": "接続済み",
-    "connectedToAgent": "このエージェントに接続済み",
+    "connectedToAgent": "このワーカーに接続済み",
     "available": "利用可能なアプリ",
     "connect": "接続",
     "setup": "セットアップ",
@@ -561,7 +690,9 @@
     "connecting": "接続中...",
     "disconnect": "切断",
     "noAppsFound": "アプリが見つかりません",
+    "noAppsAvailable": "利用可能なアプリがありません",
     "tryDifferentSearch": "別の検索語を試してください",
+    "appsAppearHere": "アプリは利用可能になるとここに表示されます",
     "loadingIntegrations": "統合を読み込み中...",
     "failedToLoad": "読み込みに失敗しました",
     "retry": "再試行",
@@ -602,7 +733,7 @@
     },
     "toolsSelector": {
       "configureTools": "{{app}}ツールを設定",
-      "selectTools": "エージェントに追加するツールを選択",
+      "selectTools": "ワーカーに追加するツールを選択",
       "readyToConfigureTools": "設定の準備完了",
       "selected": "{{count}}/{{total}}選択済み",
       "selectAll": "すべて選択",
@@ -610,7 +741,10 @@
       "loadingTools": "ツールを読み込み中...",
       "failedToLoadTools": "読み込みに失敗",
       "noToolsAvailable": "利用可能なツールはありません",
+      "noToolsFound": "ツールが見つかりません",
       "noToolsDescription": "この統合には設定するツールがありません",
+      "tryAdjustingSearch": "検索条件を調整してみてください",
+      "toolsAppearHere": "ツールは利用可能になるとここに表示されます",
       "addingTools": "ツールを追加中...",
       "addTool": "{{count}}個のツールを追加",
       "addTools": "{{count}}個のツールを追加",
@@ -633,5 +767,116 @@
       "toolsConfigured": "カスタムMCPを追加しました",
       "toolsConfiguredMessage": "{{count}}個のツールを設定しました"
     }
+  },
+  "threadHeader": {
+    "goBack": "戻る",
+    "openMenu": "メニューを開く",
+    "enterTitle": "タイトルを入力",
+    "threadActions": "スレッドアクション",
+    "untitled": "無題"
+  },
+  "threadActions": {
+    "title": "スレッドアクション",
+    "upgradeRequired": "アップグレードが必要",
+    "upgradeRequiredMessage": "スレッドの共有は有料プランで利用可能です。この機能のロックを解除するにはアップグレードしてください。",
+    "upgrade": "アップグレード",
+    "shareThread": "スレッドを共有",
+    "shareThreadUpgrade": "スレッドを共有（アップグレード）",
+    "availableOnPaidPlans": "有料プランで利用可能",
+    "createPublicLink": "公開リンクを作成",
+    "manageFiles": "ファイルを管理",
+    "viewManageAttachments": "添付ファイルを表示・管理",
+    "deleteThread": "スレッドを削除",
+    "permanentlyDelete": "この会話を完全に削除"
+  },
+  "triggers": {
+    "title": "トリガー",
+    "createTrigger": "トリガーを作成",
+    "editTrigger": "トリガーを編集",
+    "deleteTrigger": "トリガーを削除",
+    "updateTrigger": "トリガーを更新",
+    "scheduleTrigger": "スケジュールトリガー",
+    "eventTrigger": "イベントトリガー",
+    "runOnSchedule": "スケジュールで実行",
+    "fromExternalApps": "外部アプリから",
+    "selectApplication": "アプリケーションを選択",
+    "configureTrigger": "トリガーを設定",
+    "loadingTriggerConfig": "トリガー設定を読み込み中...",
+    "loadingTriggers": "トリガーを読み込み中...",
+    "loadingApps": "アプリを読み込み中...",
+    "loadingProfiles": "プロファイルを読み込み中...",
+    "noTriggersAvailable": "利用可能なトリガーがありません",
+    "noAppsFound": "アプリが見つかりません",
+    "connected": "接続済み",
+    "notConnected": "未接続",
+    "setupRequired": "セットアップが必要",
+    "retry": "再試行",
+    "back": "戻る",
+    "creating": "作成中...",
+    "updating": "更新中...",
+    "triggerDetails": "トリガーの詳細",
+    "active": "アクティブ",
+    "inactive": "非アクティブ",
+    "noTriggersConfigured": "トリガーが設定されていません",
+    "setupTriggersToAutomate": "このワーカーを自動化するためにトリガーを設定してください"
+  },
+  "files": {
+    "title": "ファイル",
+    "loadingFiles": "ファイルを読み込み中...",
+    "failedToLoad": "読み込みに失敗",
+    "retry": "再試行",
+    "folderEmpty": "このフォルダーは空です",
+    "uploadOrCreate": "ファイルをアップロードまたはフォルダーを作成",
+    "createFolder": "フォルダーを作成",
+    "folderName": "フォルダー名",
+    "cancel": "キャンセル",
+    "create": "作成"
+  },
+  "workers": {
+    "title": "ワーカー",
+    "instructions": {
+      "title": "システムプロンプト",
+      "description": "ワーカーの動作を定義",
+      "loading": "手順を読み込み中...",
+      "saving": "保存中...",
+      "saveChanges": "変更を保存"
+    },
+    "loadingWorker": "ワーカーを読み込み中...",
+    "core": "コア",
+    "capabilitiesEnabled": "{{enabled}} / {{total}} 機能が有効",
+    "toolConfiguration": "ツール設定",
+    "configureToolsDescription": "エージェントのツールと個別の機能を設定します",
+    "toolsEnabled": "{{enabled}} / {{total}} 有効",
+    "loadingTools": "ツールを読み込み中...",
+    "noToolsAvailable": "利用可能なツールがありません",
+    "toolsWillAppear": "ツールが利用可能になるとここに表示されます",
+    "sunaToolsManaged": "Sunaのツールは一元管理されており、編集できません。",
+    "toolsNotEditable": "これらのツールは編集できません。",
+    "cannotEditTools": "編集不可",
+    "sunaToolsManagedAlert": "Sunaのツールは一元管理されています。",
+    "savingChanges": "保存中...",
+    "saveChanges": "変更を保存"
+  },
+  "tools": {
+    "executing": "ツールを実行中",
+    "input": "入力",
+    "output": "出力",
+    "noContentAvailable": "コンテンツがありません",
+    "processing": "処理中",
+    "loading": "読み込み中",
+    "searching": "検索中",
+    "completed": "完了",
+    "failed": "失敗"
+  },
+  "composio": {
+    "noAppsFound": "アプリが見つかりません",
+    "noAppsAvailable": "利用可能なアプリがありません",
+    "searchApps": "アプリを検索...",
+    "searchTools": "ツールを検索...",
+    "failedToLoadTools": "ツールの読み込みに失敗",
+    "retry": "再試行",
+    "noToolsFound": "ツールが見つかりません",
+    "saving": "保存中...",
+    "selectTools": "ツールを選択"
   }
 }

@@ -161,6 +161,7 @@ class ModelManager:
         return token_count <= max_allowed, max_allowed
     
     def format_model_info(self, model_id: str) -> Dict[str, Any]:
+        """Format model info for API responses."""
         model = self.get_model(model_id)
         if not model:
             return {"error": f"Model '{model_id}' not found"}
@@ -168,14 +169,10 @@ class ModelManager:
         return {
             "id": model.id,
             "name": model.name,
-            "provider": model.provider.value,
+            "aliases": model.aliases,
             "context_window": model.context_window,
             "max_output_tokens": model.max_output_tokens,
             "capabilities": [cap.value for cap in model.capabilities],
-            "pricing": {
-                "input_per_million": model.pricing.input_cost_per_million_tokens,
-                "output_per_million": model.pricing.output_cost_per_million_tokens,
-            } if model.pricing else None,
             "enabled": model.enabled,
             "beta": model.beta,
             "tier_availability": model.tier_availability,

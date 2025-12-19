@@ -1,27 +1,18 @@
 /**
  * Billing Components
- * 
+ *
  * Standardized, reusable billing UI components
  */
 
-// Composite component (quick setup)
-export { BillingContent } from './BillingContent';
-export { PricingSection } from './PricingSection';
-export { RevenueCatPricingSection } from './RevenueCatPricingSection';
-export { UnifiedPricingSection } from './UnifiedPricingSection';
-export { PlanSelectionModal } from './PlanSelectionModal';
+// Composite components
 export { ScheduledDowngradeCard } from './ScheduledDowngradeCard';
+export { FreeTierBlock } from './FreeTierBlock';
+export type { FreeTierBlockVariant } from './FreeTierBlock';
 
-// Carousel view (horizontal scroll)
-export { PricingCarousel } from './PricingCarousel';
-
-// Atomic components (for custom layouts)
-export { PricingTierCard } from './PricingTierCard';
+// Atomic components
 export { PricingTierBadge } from './PricingTierBadge';
-export { BillingPeriodSelector } from './BillingPeriodSelector';
-export { BillingPeriodToggle } from './BillingPeriodToggle';
-export { CurrentPlanCard } from './CurrentPlanCard';
-export { CreditsCard } from './CreditsCard';
 export { CreditPackages } from './CreditPackages';
 export { CreditPurchaseModal } from './CreditPurchaseModal';
+export { DateRangePicker } from './DateRangePicker';
+export type { DateRange } from './DateRangePicker';
 

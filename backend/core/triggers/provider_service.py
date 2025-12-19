@@ -12,7 +12,7 @@ from core.services.supabase import DBConnection
 
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
-from core.utils.config import config, EnvMode
+from core.utils.config import config as app_config, EnvMode
 from .trigger_service import Trigger, TriggerEvent, TriggerResult, TriggerType
 
 
@@ -67,31 +67,28 @@ class ScheduleProvider(TriggerProvider):
         except Exception as e:
             raise ValueError(f"Invalid cron expression: {str(e)}")
         
-        # Block schedules that run more frequently than once per hour
-        cron_parts = config['cron_expression'].split()
-        if len(cron_parts) == 5:
-            minute, hour, day, month, weekday = cron_parts
-            
-            # Check if it runs more frequently than hourly
-            # If minute is '*' or starts with '*/' and hour is '*', it runs more than once per hour
-            if hour == '*' and (minute == '*' or minute.startswith('*/')):
-                raise ValueError("Schedules that run more frequently than once per hour are not allowed. Minimum interval is 1 hour.")
-            
-            # Also check for patterns like '*/X' where X < 60 (runs every X minutes)
-            if minute.startswith('*/'):
-                try:
-                    interval = int(minute[2:])
-                    if interval < 60:
-                        raise ValueError("Schedules that run more frequently than once per hour are not allowed. Minimum interval is 1 hour.")
-                except ValueError:
-                    pass  # Not a numeric interval, let croniter handle validation
+        if app_config.ENV_MODE != EnvMode.STAGING:
+            cron_parts = config['cron_expression'].split()
+            if len(cron_parts) == 5:
+                minute, hour, day, month, weekday = cron_parts
+                
+                if hour == '*' and (minute == '*' or minute.startswith('*/')):
+                    raise ValueError("Schedules that run more frequently than once per hour are not allowed. Minimum interval is 1 hour.")
+                
+                if minute.startswith('*/'):
+                    try:
+                        interval = int(minute[2:])
+                        if interval < 60:
+                            raise ValueError("Schedules that run more frequently than once per hour are not allowed. Minimum interval is 1 hour.")
+                    except ValueError:
+                        pass
         
         return config
     
     async def setup_trigger(self, trigger: Trigger) -> bool:
         try:
-            # Note: webhook_url removed - scheduled triggers may need alternative configuration
-            webhook_url = f"http://localhost:8000/api/triggers/{trigger.trigger_id}/webhook"
+            base_url = app_config.WEBHOOK_BASE_URL or 'http://localhost:8000'
+            webhook_url = f"{base_url}/v1/triggers/{trigger.trigger_id}/webhook"
             cron_expression = trigger.config['cron_expression']
             user_timezone = trigger.config.get('timezone', 'UTC')
 
@@ -110,11 +107,10 @@ class ScheduleProvider(TriggerProvider):
                 "X-Trigger-Source": "schedule"
             }
 
-            # Include simple shared secret header for backend auth
             secret = os.getenv("TRIGGER_WEBHOOK_SECRET")
             if secret:
                 headers["X-Trigger-Secret"] = secret
-            if config.ENV_MODE == EnvMode.STAGING:
+            if app_config.ENV_MODE == EnvMode.STAGING:
                 vercel_bypass_key = os.getenv("VERCEL_PROTECTION_BYPASS_KEY", "")
                 if vercel_bypass_key:
                     headers["X-Vercel-Protection-Bypass"] = vercel_bypass_key
@@ -187,11 +183,14 @@ class ScheduleProvider(TriggerProvider):
             if not agent_prompt:
                 raise ValueError("agent_prompt is required for agent execution")
             
+            model = trigger.config.get('model') if trigger.config else None
+            
             return TriggerResult(
                 success=True,
                 should_execute_agent=True,
                 agent_prompt=agent_prompt,
-                execution_variables=execution_variables
+                execution_variables=execution_variables,
+                model=model
             )
                 
         except Exception as e:
@@ -700,17 +699,18 @@ class ComposioEventProvider(TriggerProvider):
                 "received_at": datetime.now(timezone.utc).isoformat(),
             }
 
-            # Agent routing
             agent_prompt = trigger.config.get("agent_prompt")
             if not agent_prompt:
-                # Minimal default prompt
                 agent_prompt = f"Process Composio event {trigger_slug or ''}: {json.dumps(raw.get('payload', raw))[:800]}"
+
+            model = trigger.config.get('model') if trigger.config else None
 
             return TriggerResult(
                 success=True,
                 should_execute_agent=True,
                 agent_prompt=agent_prompt,
                 execution_variables=execution_variables,
+                model=model
             )
 
         except Exception as e:

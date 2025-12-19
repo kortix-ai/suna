@@ -9,7 +9,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Globe } from 'lucide-react';
 import { locales, type Locale } from '@/i18n/config';
 
 const languageNames: Record<Locale, string> = {
@@ -28,18 +27,14 @@ export function LanguageSwitcher() {
 
   return (
     <div className="space-y-2">
-      <Label htmlFor="language-select" className="flex items-center gap-2">
-        <Globe className="h-4 w-4" />
+      <Label htmlFor="language-select">
         Language
       </Label>
-      <p className="text-sm text-muted-foreground">
-        Choose your preferred language
-      </p>
       <Select
         value={locale}
         onValueChange={(value) => setLanguage(value as Locale)}
       >
-        <SelectTrigger id="language-select" className="w-full">
+        <SelectTrigger id="language-select" className="w-full !h-11">
           <SelectValue>
             {languageNames[locale as Locale] || locale}
           </SelectValue>
@@ -52,9 +47,6 @@ export function LanguageSwitcher() {
           ))}
         </SelectContent>
       </Select>
-      <p className="text-xs text-muted-foreground">
-        Current Language: {languageNames[locale as Locale] || locale}
-      </p>
     </div>
   );
 }

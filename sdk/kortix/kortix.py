@@ -5,7 +5,7 @@ from .tools import AgentPressTools, MCPTools
 
 
 class Kortix:
-    def __init__(self, api_key: str, api_url="https://suna.so/api"):
+    def __init__(self, api_key: str, api_url="https://api.kortix.com/v1"):
         self._agents_client = agents.create_agents_client(api_url, api_key)
         self._threads_client = threads.create_threads_client(api_url, api_key)
 

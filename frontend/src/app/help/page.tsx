@@ -24,7 +24,7 @@ export default function HelpCenterPage() {
             Understand how credits work and manage your subscription.
           </p>
 
-          <Link href="/credits-explained">
+          <Link href="/help/credits-explained">
             <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
               <CardHeader>
                 <div className="flex items-center gap-3">

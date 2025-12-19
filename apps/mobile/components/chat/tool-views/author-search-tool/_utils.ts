@@ -42,8 +42,8 @@ export function extractAuthorSearchData({ toolCall, toolResult }: { toolCall: To
   
   if (toolResult?.output) {
     const output = typeof toolResult.output === 'string' 
-      ? parseContent(result.output) 
-      : result.output;
+      ? parseContent(toolResult.output) 
+      : toolResult.output;
     
     if (output && typeof output === 'object') {
       query = query || output.query || null;

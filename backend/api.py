@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request, HTTPException, Response, Depends, APIRoute
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from core.services import redis
+from core.utils.openapi_config import configure_openapi
 import sentry
 from contextlib import asynccontextmanager
 from core.agentpress.thread_manager import ThreadManager
@@ -16,9 +17,17 @@ from core.utils.logger import logger, structlog
 import time
 from collections import OrderedDict
 import os
+import psutil
 
 from pydantic import BaseModel
 import uuid
+
+from core.utils.rate_limiter import (
+    auth_rate_limiter,
+    api_key_rate_limiter,
+    admin_rate_limiter,
+    get_client_identifier,
+)
 
 from core import api as core_api
 
@@ -28,6 +37,8 @@ from core.setup import router as setup_router, webhook_router
 from core.admin.admin_api import router as admin_router
 from core.admin.billing_admin_api import router as billing_admin_router
 from core.admin.feedback_admin_api import router as feedback_admin_router
+from core.admin.notification_admin_api import router as notification_admin_router
+from core.admin.analytics_admin_api import router as analytics_admin_router
 from core.services import transcription as transcription_api
 import sys
 from core.triggers import api as triggers_api
@@ -50,10 +61,18 @@ MAX_CONCURRENT_IPS = 25
 
 # Background task handle for CloudWatch metrics
 _queue_metrics_task = None
+_worker_metrics_task = None
+_memory_watchdog_task = None
+
+# Graceful shutdown flag for health checks
+# When True, health check will return unhealthy to stop receiving traffic
+_is_shutting_down = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.debug(f"Starting up FastAPI application with instance ID: {instance_id} in {config.ENV_MODE.value} mode")
+    global _queue_metrics_task, _worker_metrics_task, _memory_watchdog_task, _is_shutting_down
+    env_mode = config.ENV_MODE.value if config.ENV_MODE else "unknown"
+    logger.debug(f"Starting up FastAPI application with instance ID: {instance_id} in {env_mode} mode")
     try:
         await db.initialize()
         
@@ -91,12 +110,26 @@ async def lifespan(app: FastAPI):
         composio_api.initialize(db)
         
         # Start CloudWatch queue metrics publisher (production only)
-        global _queue_metrics_task
         if config.ENV_MODE == EnvMode.PRODUCTION:
             from core.services import queue_metrics
             _queue_metrics_task = asyncio.create_task(queue_metrics.start_cloudwatch_publisher())
+            
+            # Start CloudWatch worker metrics publisher
+            from core.services import worker_metrics
+            _worker_metrics_task = asyncio.create_task(worker_metrics.start_cloudwatch_publisher())
+        
+        # Start memory watchdog for observability
+        _memory_watchdog_task = asyncio.create_task(_memory_watchdog())
         
         yield
+
+        # Shutdown sequence: Set flag first so health checks fail
+        _is_shutting_down = True
+        logger.info(f"Starting graceful shutdown for instance {instance_id}")
+        
+        # Give K8s readiness probe time to detect unhealthy state
+        # This ensures no new traffic is routed to this pod
+        await asyncio.sleep(2)
         
         logger.debug("Cleaning up agent resources")
         await core_api.cleanup()
@@ -106,6 +139,22 @@ async def lifespan(app: FastAPI):
             _queue_metrics_task.cancel()
             try:
                 await _queue_metrics_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Stop CloudWatch worker metrics task
+        if _worker_metrics_task is not None:
+            _worker_metrics_task.cancel()
+            try:
+                await _worker_metrics_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Stop memory watchdog task
+        if _memory_watchdog_task is not None:
+            _memory_watchdog_task.cancel()
+            try:
+                await _memory_watchdog_task
             except asyncio.CancelledError:
                 pass
         
@@ -122,7 +171,50 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error during application startup: {e}")
         raise
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan,
+    swagger_ui_parameters={
+        "persistAuthorization": True,  # Keep auth between page refreshes
+    },
+)
+
+# Configure OpenAPI docs with API Key and Bearer token auth
+configure_openapi(app)
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Apply rate limiting to sensitive endpoints."""
+    path = request.url.path
+    
+    # Skip rate limiting for health checks and OPTIONS requests
+    if path in ["/v1/health", "/v1/health-docker"] or request.method == "OPTIONS":
+        return await call_next(request)
+    
+    # Get client identifier
+    client_id = get_client_identifier(request)
+    
+    # Apply appropriate rate limiter based on path
+    rate_limiter = None
+    
+    if "/v1/api-keys" in path:
+        rate_limiter = api_key_rate_limiter
+    elif "/v1/admin" in path:
+        rate_limiter = admin_rate_limiter
+    elif any(sensitive in path for sensitive in ["/v1/setup/initialize", "/v1/billing/webhook"]):
+        rate_limiter = auth_rate_limiter
+    
+    if rate_limiter:
+        is_limited, retry_after = rate_limiter.is_rate_limited(client_id)
+        if is_limited:
+            logger.warning(f"Rate limited: {path} from {client_id[:8]}...")
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests. Please try again later."},
+                headers={"Retry-After": str(retry_after)}
+            )
+    
+    return await call_next(request)
+
 
 @app.middleware("http")
 async def log_requests_middleware(request: Request, call_next):
@@ -161,7 +253,7 @@ async def log_requests_middleware(request: Request, call_next):
         raise
 
 # Define allowed origins based on environment
-allowed_origins = ["https://www.kortix.com", "https://kortix.com", "https://www.suna.so", "https://suna.so"]
+allowed_origins = ["https://www.kortix.com", "https://kortix.com"]
 allow_origin_regex = None
 
 # Add staging-specific origins
@@ -173,13 +265,8 @@ if config.ENV_MODE == EnvMode.LOCAL:
 if config.ENV_MODE == EnvMode.STAGING:
     allowed_origins.append("https://staging.suna.so")
     allowed_origins.append("http://localhost:3000")
-    # Allow Vercel preview deployments for both legacy and new project names
-    allow_origin_regex = r"https://(suna|kortixcom)-.*-prjcts\.vercel\.app"
-
-# Add localhost for production mode local testing (for master password login)
-if config.ENV_MODE == EnvMode.PRODUCTION:
-    allowed_origins.append("http://localhost:3000")
-    allowed_origins.append("http://127.0.0.1:3000")
+    # Allow Vercel preview deployments
+    allow_origin_regex = r"https://.*-kortixai\.vercel\.app"
 
 app.add_middleware(
     CORSMiddleware,
@@ -187,7 +274,7 @@ app.add_middleware(
     allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Project-Id", "X-MCP-URL", "X-MCP-Type", "X-MCP-Headers", "X-Refresh-Token", "X-API-Key"],
+    allow_headers=["Content-Type", "Authorization", "X-Project-Id", "X-MCP-URL", "X-MCP-Type", "X-MCP-Headers", "X-API-Key"],
 )
 
 # Create a main API router
@@ -203,6 +290,8 @@ api_router.include_router(api_keys_api.router)
 api_router.include_router(billing_admin_router)
 api_router.include_router(admin_router)
 api_router.include_router(feedback_admin_router)
+api_router.include_router(notification_admin_router)
+api_router.include_router(analytics_admin_router)
 
 from core.mcp_module import api as mcp_api
 from core.credentials import api as credentials_api
@@ -235,13 +324,32 @@ api_router.include_router(google_slides_router)
 from core.google.google_docs_api import router as google_docs_router
 api_router.include_router(google_docs_router)
 
+from core.referrals import router as referrals_router
+from core.memory.api import router as memory_router
+api_router.include_router(referrals_router)
+api_router.include_router(memory_router)
+
 @api_router.get("/health", summary="Health Check", operation_id="health_check", tags=["system"])
 async def health_check():
     logger.debug("Health check endpoint called")
+
+    # During shutdown, return unhealthy status
+    # This causes K8s readinessProbe to fail and removes pod from service endpoints
+    if _is_shutting_down:
+        logger.debug(f"Health check returning unhealthy (shutting down) for instance {instance_id}")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "shutting_down",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "instance_id": instance_id
+            }
+        )
+    
     return {
-        "status": "ok", 
+        "status": "ok",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "instance_id": instance_id
+        "instance_id": instance_id,
     }
 
 @api_router.get("/metrics/queue", summary="Queue Metrics", operation_id="queue_metrics", tags=["system"])
@@ -253,6 +361,33 @@ async def queue_metrics_endpoint():
     except Exception as e:
         logger.error(f"Failed to get queue metrics: {e}")
         raise HTTPException(status_code=500, detail="Failed to get queue metrics")
+
+@api_router.get("/metrics/workers", summary="Worker Metrics", operation_id="worker_metrics", tags=["system"])
+async def worker_metrics_endpoint():
+    """Get active Dramatiq worker count and thread utilization for monitoring."""
+    from core.services import worker_metrics
+    try:
+        return await worker_metrics.get_worker_metrics()
+    except Exception as e:
+        logger.error(f"Failed to get worker metrics: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get worker metrics")
+
+@api_router.get("/metrics", summary="All Metrics", operation_id="all_metrics", tags=["system"])
+async def all_metrics_endpoint():
+    """Get combined queue and worker metrics for monitoring."""
+    from core.services import queue_metrics, worker_metrics
+    try:
+        queue_data = await queue_metrics.get_queue_metrics()
+        worker_data = await worker_metrics.get_worker_metrics()
+        
+        return {
+            "queue": queue_data,
+            "workers": worker_data,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Failed to get metrics: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get metrics")
 
 @api_router.get("/health-docker", summary="Docker Health Check", operation_id="health_check_docker", tags=["system"])
 async def health_check_docker():
@@ -275,7 +410,33 @@ async def health_check_docker():
         raise HTTPException(status_code=500, detail="Health check failed")
 
 
-app.include_router(api_router, prefix="/api")
+app.include_router(api_router, prefix="/v1")
+
+
+async def _memory_watchdog():
+    """Monitor worker memory usage and log warnings when thresholds are exceeded."""
+    try:
+        while True:
+            try:
+                process = psutil.Process()
+                mem_info = process.memory_info()
+                mem_mb = mem_info.rss / 1024 / 1024  # Convert to MB
+                
+                # Log warning at 6GB (75% of 8GB hard limit)
+                if mem_mb > 6000:
+                    logger.warning(f"Worker memory high: {mem_mb:.0f}MB (instance: {instance_id})")
+                # Log info at 5GB (62.5% of 8GB hard limit) for visibility
+                elif mem_mb > 5000:
+                    logger.info(f"Worker memory: {mem_mb:.0f}MB (instance: {instance_id})")
+                
+            except Exception as e:
+                logger.debug(f"Memory watchdog error: {e}")
+            
+            await asyncio.sleep(60)  # Check every minute
+    except asyncio.CancelledError:
+        logger.debug("Memory watchdog cancelled")
+    except Exception as e:
+        logger.error(f"Memory watchdog failed: {e}")
 
 
 if __name__ == "__main__":
@@ -295,5 +456,6 @@ if __name__ == "__main__":
         host="0.0.0.0", 
         port=8000,
         workers=workers,
-        loop="asyncio"
+        loop="asyncio",
+        reload=True if is_dev_env else False
     )

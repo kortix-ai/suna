@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     title: 'Suna is now Kortix',
     description: 'Kortix (formerly Suna) - Same powerful open source AI worker, new name.',
     type: 'website',
-    url: 'https://kortix.com/suna',
+    url: 'https://www.kortix.com/suna',
     siteName: 'Kortix',
     images: [
       {
@@ -44,7 +44,7 @@ export const metadata: Metadata = {
     images: ['/banner.png'],
   },
   alternates: {
-    canonical: 'https://kortix.com/suna',
+    canonical: 'https://www.kortix.com/suna',
   },
   robots: {
     index: true,
@@ -64,8 +64,8 @@ export default function SunaPage() {
             '@type': 'Organization',
             name: 'Kortix',
             alternateName: ['Suna', 'Kortix Suna', 'Suna AI'],
-            url: 'https://kortix.com',
-            logo: 'https://kortix.com/favicon.png',
+            url: 'https://www.kortix.com',
+            logo: 'https://www.kortix.com/favicon.png',
             sameAs: [
               'https://github.com/kortix-ai',
               'https://x.com/kortix',
@@ -88,13 +88,13 @@ export default function SunaPage() {
                 '@type': 'ListItem',
                 position: 1,
                 name: 'Home',
-                item: 'https://kortix.com',
+                item: 'https://www.kortix.com',
               },
               {
                 '@type': 'ListItem',
                 position: 2,
                 name: 'Suna is now Kortix',
-                item: 'https://kortix.com/suna',
+                item: 'https://www.kortix.com/suna',
               },
             ],
           }),
@@ -138,13 +138,9 @@ export default function SunaPage() {
 
               {/* Main Heading */}
               <h1 className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-medium tracking-tighter text-balance text-center">
-                Suna is now Kortix
+                Kortix
               </h1>
 
-              {/* Subheading */}
-              <p className="text-lg md:text-xl text-muted-foreground font-medium text-center tracking-tight max-w-2xl pt-2">
-                Same powerful open source AI worker. New name.
-              </p>
             </div>
 
             {/* CTA Buttons */}
@@ -191,7 +187,6 @@ export default function SunaPage() {
                   What stayed the same?
                 </h2>
                 <div className="space-y-3 text-base md:text-lg text-muted-foreground font-medium">
-                  <p>Fully open source (Apache 2.0)</p>
                   <p>Same powerful AI capabilities</p>
                   <p>All your existing agents and workflows</p>
                 </div>

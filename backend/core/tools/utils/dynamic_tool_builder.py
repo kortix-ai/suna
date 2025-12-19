@@ -65,6 +65,11 @@ class DynamicToolBuilder:
         return tool_data
     
     def _parse_tool_name(self, tool_name: str) -> tuple[str, str, str]:
+        """Parse tool name to extract stripped name and server info.
+        
+        Returns:
+            tuple: (method_name, clean_tool_name, server_name)
+        """
         if tool_name.startswith("custom_"):
             parts = tool_name.split("_")
             if len(parts) >= 3:

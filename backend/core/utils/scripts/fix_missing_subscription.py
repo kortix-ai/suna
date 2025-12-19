@@ -68,7 +68,7 @@ async def fix_missing_subscription(user_email: str):
     
     active_sub = None
     for sub in subscriptions.data:
-        if sub.status in ['active', 'trialing']:
+        if sub.status in ['active', 'trialing', 'past_due']:
             full_sub = await stripe.Subscription.retrieve_async(
                 sub.id,
                 expand=['items.data.price', 'schedule']
@@ -77,7 +77,7 @@ async def fix_missing_subscription(user_email: str):
             break
     
     if not active_sub:
-        logger.error("❌ No active or trialing subscription found")
+        logger.error("❌ No active, trialing, or past_due subscription found")
         logger.info("\nAll subscriptions:")
         for sub in subscriptions.data:
             logger.info(f"  - {sub.id}: {sub.status}")
@@ -88,6 +88,8 @@ async def fix_missing_subscription(user_email: str):
     logger.info(f"\nActive subscription found:")
     logger.info(f"  ID: {subscription.id}")
     logger.info(f"  Status: {subscription.status}")
+    if subscription.status == 'past_due':
+        logger.info(f"  ⚠️  GRACE PERIOD: Payment failed, Stripe will retry automatically")
     logger.info(f"  Created: {datetime.fromtimestamp(subscription.created).isoformat()}")
     logger.info(f"  Current period: {datetime.fromtimestamp(subscription.current_period_start).isoformat()} to {datetime.fromtimestamp(subscription.current_period_end).isoformat()}")
     

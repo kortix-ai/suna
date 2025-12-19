@@ -12,6 +12,11 @@ class ProductChangeHandler:
         new_product_id = event.get('new_product_id')
         old_product_id = event.get('product_id')
 
+        # SECURITY: Reject product changes from anonymous users
+        if not app_user_id or app_user_id.startswith('$RCAnonymousID:'):
+            logger.error(f"[REVENUECAT PRODUCT_CHANGE] 🚫 REJECTED - Anonymous user: {app_user_id}")
+            return
+
         if not new_product_id:
             logger.warning(
                 f"[REVENUECAT PRODUCT_CHANGE] No new_product_id - this might be a "
@@ -51,4 +56,12 @@ class ProductChangeHandler:
         await SubscriptionService.schedule_plan_change_for_period_end(
             app_user_id, old_product_id, new_product_id, event, change_type
         )
+
+        # Invalidate cache to reflect scheduled change immediately
+        try:
+            from core.billing.shared.cache_utils import invalidate_account_state_cache
+            await invalidate_account_state_cache(app_user_id)
+            logger.info(f"[REVENUECAT PRODUCT_CHANGE] Cache invalidated for {app_user_id}")
+        except Exception as cache_error:
+            logger.warning(f"[REVENUECAT PRODUCT_CHANGE] Cache invalidation failed: {cache_error}")
 

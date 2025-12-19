@@ -1,6 +1,6 @@
 /**
  * Triggers Module
- * 
+ *
  * Trigger management functionality
  */
 
@@ -17,5 +17,9 @@ export {
   useDeleteTrigger,
   useToggleTrigger,
   useTriggerProviders,
+  useTriggerApps,
+  useComposioAppsWithTriggers,
+  useComposioAppTriggers,
+  useCreateComposioEventTrigger,
 } from './hooks';
 
