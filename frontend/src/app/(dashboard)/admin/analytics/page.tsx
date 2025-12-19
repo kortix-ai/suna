@@ -1511,8 +1511,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="text-left p-3 font-medium">Month</th>
-                  <th className="text-center p-3 font-medium" colSpan={3}>Visitors</th>
+                  <th className="text-center p-3 font-medium" colSpan={2}>Visitors</th>
+                  <th className="text-center p-3 font-medium">Growth</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>Signups</th>
+                  <th className="text-center p-3 font-medium">Conv</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>New Paid</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>Total Subs</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>MRR</th>
@@ -1522,9 +1524,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <th></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
-                  <th className="text-right p-2 text-muted-foreground font-normal">% Growth</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal"></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal"></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
@@ -1554,6 +1557,9 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   // Calculate views % growth (month-over-month)
                   const viewsGrowth = prevActualViews > 0 && actualViews > 0 ? ((actualViews / prevActualViews) - 1) * 100 : null;
                   
+                  // Calculate signup conversion rate (signups / views)
+                  const signupConvRate = actualViews > 0 && actualSignups > 0 ? (actualSignups / actualViews) * 100 : null;
+                  
                   // Helper to format growth
                   const formatGrowth = (value: number | null) => {
                     if (value === null) return '—';
@@ -1574,13 +1580,18 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       <td className={`text-right p-2 font-medium ${hasActual && actualViews >= month.visitors ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
                         {actual.views > 0 ? formatNumber(actualViews) : '—'}
                       </td>
-                      <td className={`text-right p-2 text-xs ${getGrowthColor(viewsGrowth)}`}>
+                      {/* % Growth */}
+                      <td className={`text-right p-2 font-medium ${getGrowthColor(viewsGrowth)}`}>
                         {formatGrowth(viewsGrowth)}
                       </td>
                       {/* Signups */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.signups)}</td>
                       <td className={`text-right p-2 font-medium ${hasActual && actualSignups >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
                         {actual.signups > 0 ? formatNumber(actualSignups) : '—'}
+                      </td>
+                      {/* Conv to Signup */}
+                      <td className="text-right p-2 font-medium text-muted-foreground">
+                        {signupConvRate !== null ? `${signupConvRate.toFixed(1)}%` : '—'}
                       </td>
                       {/* New Paid */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.newPaid)}</td>
@@ -1722,9 +1733,11 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <tr className="border-b bg-muted/50">
                     <th className="text-left p-2 font-medium">Week</th>
                     <th className="text-left p-2 font-medium">Date Range</th>
-                    <th className="text-center p-2 font-medium" colSpan={4}>Views</th>
-                    <th className="text-center p-2 font-medium" colSpan={3}>Signups</th>
-                    <th className="text-center p-2 font-medium" colSpan={3}>New Paid</th>
+                    <th className="text-center p-2 font-medium" colSpan={2}>Views</th>
+                    <th className="text-center p-2 font-medium">% Growth</th>
+                    <th className="text-center p-2 font-medium" colSpan={2}>Signups</th>
+                    <th className="text-center p-2 font-medium">Conv to Signup</th>
+                    <th className="text-center p-2 font-medium" colSpan={2}>New Paid</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>Subscribers</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>MRR</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>ARR</th>
@@ -1735,14 +1748,12 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     <th></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">% Growth</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
@@ -1762,11 +1773,8 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     const autoViews = viewsByWeek[week.week] ?? 0;
                     const autoSignups = signupsByWeek[week.week] ?? 0;
                     const autoNewPaid = newPaidByWeek[week.week] ?? 0;
-                    const viewsVar = getVariance(autoViews, week.visitors);
-                    const signupsVar = getVariance(autoSignups, week.signups);
                     // Use Stripe data for new paid, fallback to manual entry
                     const effectiveNewPaid = autoNewPaid || actual.newPaid || 0;
-                    const newPaidVar = getVariance(effectiveNewPaid, week.newPaid);
                     const subsVar = getVariance(actual.subscribers, week.subscribers);
                     const mrrVar = getVariance(actual.mrr, week.mrr);
                     const arrVar = getVariance(actual.arr, week.arr);
@@ -1778,6 +1786,9 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     
                     // Calculate views % growth (week-over-week)
                     const viewsGrowth = prevAutoViews > 0 && autoViews > 0 ? ((autoViews / prevAutoViews) - 1) * 100 : null;
+                    
+                    // Calculate signup conversion rate (signups / views)
+                    const signupConvRate = autoViews > 0 && autoSignups > 0 ? (autoSignups / autoViews) * 100 : null;
                     
                     // Helper to format growth
                     const formatGrowth = (value: number | null) => {
@@ -1795,38 +1806,34 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       <tr key={week.week} className={`border-b hover:bg-muted/30 ${week.week === weeklyProjections.length ? 'bg-primary/5 font-medium' : ''}`}>
                         <td className="p-2 font-medium">W{week.week}</td>
                         <td className="p-2 text-muted-foreground whitespace-nowrap">{week.dateRange}</td>
-                        {/* Views - Auto-fetched from Google Analytics */}
+                        {/* Views */}
                         <td className="text-right p-1">{formatNumber(week.visitors)}</td>
                         <td className="text-right p-1">
                           <span className={`text-[10px] font-medium ${autoViews > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
                             {autoViews > 0 ? formatNumber(autoViews) : '—'}
                           </span>
                         </td>
-                        <td className={`text-right p-1 text-[10px] ${viewsVar.color}`}>
-                          {autoViews > 0 ? `${viewsVar.value >= 0 ? '+' : ''}${viewsVar.value.toFixed(1)}%` : '—'}
-                        </td>
-                        <td className={`text-right p-1 text-[10px] ${getGrowthColor(viewsGrowth)}`}>
+                        {/* % Growth */}
+                        <td className={`text-right p-1 text-[10px] font-medium ${getGrowthColor(viewsGrowth)}`}>
                           {formatGrowth(viewsGrowth)}
                         </td>
-                        {/* Signups - Auto-fetched from database */}
+                        {/* Signups */}
                         <td className="text-right p-1">{formatNumber(week.signups)}</td>
                         <td className="text-right p-1">
                           <span className={`text-[10px] font-medium ${autoSignups > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
                             {autoSignups > 0 ? formatNumber(autoSignups) : '—'}
                           </span>
                         </td>
-                        <td className={`text-right p-1 text-[10px] ${signupsVar.color}`}>
-                          {autoSignups > 0 ? `${signupsVar.value >= 0 ? '+' : ''}${signupsVar.value.toFixed(1)}%` : '—'}
+                        {/* Conv to Signup */}
+                        <td className="text-right p-1 text-[10px] font-medium text-muted-foreground">
+                          {signupConvRate !== null ? `${signupConvRate.toFixed(1)}%` : '—'}
                         </td>
-                        {/* New Paid - Auto-fetched from Stripe */}
+                        {/* New Paid */}
                         <td className="text-right p-1">{formatNumber(week.newPaid)}</td>
                         <td className="text-right p-1">
                           <span className={`text-[10px] font-medium ${effectiveNewPaid > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
                             {effectiveNewPaid > 0 ? formatNumber(effectiveNewPaid) : '—'}
                           </span>
-                        </td>
-                        <td className={`text-right p-1 text-[10px] ${newPaidVar.color}`}>
-                          {effectiveNewPaid > 0 ? `${newPaidVar.value >= 0 ? '+' : ''}${newPaidVar.value.toFixed(1)}%` : '—'}
                         </td>
                         {/* Subscribers */}
                         <td className="text-right p-1 font-medium">{formatNumber(week.subscribers)}</td>
