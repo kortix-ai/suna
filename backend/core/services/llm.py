@@ -143,6 +143,38 @@ async def make_llm_api_call(
     """Make an API call to a language model using LiteLLM."""
     logger.info(f"LLM API call: {model_name} ({len(messages)} messages)")
     
+    Args:
+        messages: List of message dictionaries
+        model_name: Name of the model to use (or "mock-ai" for testing)
+        response_format: Optional response format specification
+        temperature: Temperature for sampling (0-1)
+        max_tokens: Maximum tokens to generate
+        tools: Optional list of tool definitions
+        tool_choice: Tool choice strategy ("auto", "required", "none")
+        api_key: Optional API key override
+        api_base: Optional API base URL override
+        stream: Whether to stream the response
+        top_p: Optional top_p for sampling
+        model_id: Optional model ID for tracking
+        headers: Optional headers to send with request
+        extra_headers: Optional extra headers to send with request
+        stop: Optional list of stop sequences
+    """
+    # Handle mock AI for stress testing
+    if model_name == "mock-ai":
+        logger.info(f"🎭 Using mock LLM provider for testing")
+        from core.test_harness.mock_llm import get_mock_provider
+        mock_provider = get_mock_provider(delay_ms=20)
+        return await mock_provider.acompletion(
+            messages=messages,
+            model=model_name,
+            stream=stream,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+    
+    logger.info(f"Making LLM API call to model: {model_name} with {len(messages)} messages")
     # Configure OpenAI-compatible if needed
     _configure_openai_compatible(model_name, api_key, api_base)
     

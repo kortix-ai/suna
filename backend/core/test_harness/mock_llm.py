@@ -1,0 +1,335 @@
+"""
+Mock LLM Provider for Stress Testing
+
+Provides deterministic, fast responses for stress testing without
+making actual LLM API calls. Simulates tool calls and streaming
+responses based on prompt patterns.
+"""
+
+import asyncio
+import json
+from typing import AsyncGenerator, Dict, List, Any, Optional
+from datetime import datetime
+import re
+
+
+class MockLLMProvider:
+    """
+    Mock LLM provider that generates deterministic streaming responses
+    for stress testing without real API calls
+    """
+    
+    def __init__(self, delay_ms: int = 20):
+        """
+        Initialize mock provider
+        
+        Args:
+            delay_ms: Delay between stream chunks in milliseconds
+        """
+        self.delay_ms = delay_ms
+    
+    async def get_mock_response(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+        model: str = "kortix/basic"
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        Generate mock streaming response based on the user's prompt
+        
+        Args:
+            messages: List of conversation messages
+            tools: Available tools for the agent
+            model: Model name (ignored in mock)
+        
+        Yields:
+            Stream chunks simulating real LLM response
+        """
+        # Extract user prompt from messages
+        user_message = None
+        for msg in reversed(messages):
+            if msg.get('role') == 'user':
+                user_message = msg.get('content', '')
+                break
+        
+        if not user_message:
+            user_message = "test"
+        
+        # Determine which tools to "call" based on prompt patterns
+        tool_calls = self._determine_tool_calls(user_message, tools)
+        
+        # Yield thinking (if model supports it)
+        if 'thinking' in model.lower() or 'power' in model.lower():
+            await asyncio.sleep(self.delay_ms / 1000)
+            yield {
+                'type': 'content_block_start',
+                'index': 0,
+                'content_block': {'type': 'thinking', 'thinking': ''}
+            }
+            
+            await asyncio.sleep(self.delay_ms / 1000)
+            yield {
+                'type': 'content_block_delta',
+                'index': 0,
+                'delta': {'type': 'thinking_delta', 'thinking': 'I will analyze this request and determine the appropriate tools to use.'}
+            }
+            
+            await asyncio.sleep(self.delay_ms / 1000)
+            yield {
+                'type': 'content_block_stop',
+                'index': 0
+            }
+        
+        # Yield tool calls
+        for i, tool_call in enumerate(tool_calls):
+            # Tool use start
+            await asyncio.sleep(self.delay_ms / 1000)
+            yield {
+                'type': 'content_block_start',
+                'index': i + 1,
+                'content_block': {
+                    'type': 'tool_use',
+                    'id': f'toolu_mock_{i}_{datetime.now().timestamp()}',
+                    'name': tool_call['name'],
+                    'input': {}
+                }
+            }
+            
+            # Tool input delta
+            await asyncio.sleep(self.delay_ms / 1000)
+            yield {
+                'type': 'content_block_delta',
+                'index': i + 1,
+                'delta': {
+                    'type': 'input_json_delta',
+                    'partial_json': json.dumps(tool_call['input'])
+                }
+            }
+            
+            # Tool use stop
+            await asyncio.sleep(self.delay_ms / 1000)
+            yield {
+                'type': 'content_block_stop',
+                'index': i + 1
+            }
+        
+        # Yield text response
+        text_response = self._generate_text_response(user_message, tool_calls)
+        
+        await asyncio.sleep(self.delay_ms / 1000)
+        yield {
+            'type': 'content_block_start',
+            'index': len(tool_calls) + 1,
+            'content_block': {'type': 'text', 'text': ''}
+        }
+        
+        # Stream text in chunks
+        chunk_size = 20
+        for i in range(0, len(text_response), chunk_size):
+            chunk = text_response[i:i + chunk_size]
+            await asyncio.sleep(self.delay_ms / 1000)
+            yield {
+                'type': 'content_block_delta',
+                'index': len(tool_calls) + 1,
+                'delta': {'type': 'text_delta', 'text': chunk}
+            }
+        
+        await asyncio.sleep(self.delay_ms / 1000)
+        yield {
+            'type': 'content_block_stop',
+            'index': len(tool_calls) + 1
+        }
+        
+        # Final message delta with stop reason
+        await asyncio.sleep(self.delay_ms / 1000)
+        yield {
+            'type': 'message_delta',
+            'delta': {'stop_reason': 'end_turn'},
+            'usage': {
+                'output_tokens': len(text_response.split())
+            }
+        }
+        
+        # Message stop
+        yield {
+            'type': 'message_stop'
+        }
+    
+    def _determine_tool_calls(
+        self,
+        prompt: str,
+        tools: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Determine which tools to call based on prompt patterns
+        
+        Args:
+            prompt: User's prompt text
+            tools: Available tools
+        
+        Returns:
+            List of mock tool calls
+        """
+        tool_calls = []
+        prompt_lower = prompt.lower()
+        
+        # File operations
+        if any(kw in prompt_lower for kw in ['file', 'list', 'create', 'read', 'write', 'directory']):
+            if self._has_tool(tools, 'sb_files_tool'):
+                action = 'list'
+                if 'create' in prompt_lower or 'write' in prompt_lower:
+                    action = 'write'
+                elif 'read' in prompt_lower:
+                    action = 'read'
+                
+                tool_calls.append({
+                    'name': 'sb_files_tool',
+                    'input': {
+                        'action': action,
+                        'path': '/home/user',
+                        'content': 'Hello from E2E test harness' if action == 'write' else None
+                    }
+                })
+        
+        # Shell commands
+        if any(kw in prompt_lower for kw in ['run', 'execute', 'command', 'pwd', 'echo', 'date', 'shell']):
+            if self._has_tool(tools, 'sb_shell_tool'):
+                command = 'echo "Mock command output"'
+                if 'pwd' in prompt_lower:
+                    command = 'pwd'
+                elif 'date' in prompt_lower:
+                    command = 'date'
+                
+                tool_calls.append({
+                    'name': 'sb_shell_tool',
+                    'input': {
+                        'command': command
+                    }
+                })
+        
+        # Web search
+        if any(kw in prompt_lower for kw in ['search', 'find', 'lookup', 'web', 'internet']):
+            if self._has_tool(tools, 'web_search_tool'):
+                tool_calls.append({
+                    'name': 'web_search_tool',
+                    'input': {
+                        'query': 'mock search query',
+                        'max_results': 5
+                    }
+                })
+        
+        # If no tools detected, might be pure chat
+        return tool_calls
+    
+    def _has_tool(self, tools: List[Dict[str, Any]], tool_name: str) -> bool:
+        """Check if a tool is available"""
+        return any(t.get('name') == tool_name for t in tools)
+    
+    def _generate_text_response(
+        self,
+        prompt: str,
+        tool_calls: List[Dict[str, Any]]
+    ) -> str:
+        """
+        Generate appropriate text response based on prompt and tools used
+        
+        Args:
+            prompt: User's prompt
+            tool_calls: Tools that were called
+        
+        Returns:
+            Text response
+        """
+        if not tool_calls:
+            # Pure chat response
+            if len(prompt) < 10:
+                return "Hello! I'm here to help you. What would you like to do?"
+            elif 'yourself' in prompt.lower() or 'who are you' in prompt.lower():
+                return "I'm Kortix, an AI assistant that can help you with various tasks including file operations, running commands, and searching the web."
+            else:
+                return "I understand your question. Let me provide you with a helpful response based on the information available."
+        
+        # Response based on tools used
+        tool_names = [tc['name'] for tc in tool_calls]
+        
+        if 'sb_files_tool' in tool_names and 'sb_shell_tool' in tool_names:
+            return "I've created the file and executed it successfully. The operation completed as expected."
+        elif 'web_search_tool' in tool_names and 'sb_files_tool' in tool_names:
+            return "I've searched the web and created a notes file with the summary as requested."
+        elif 'sb_files_tool' in tool_names:
+            return "I've completed the file operation. The files have been processed successfully."
+        elif 'sb_shell_tool' in tool_names:
+            return "I've executed the command. Here's the output from the shell."
+        elif 'web_search_tool' in tool_names:
+            return "I've searched the web and found relevant information. Here's a summary of what I found."
+        else:
+            return "I've completed the requested operations successfully."
+    
+    def get_mock_tool_result(self, tool_name: str, tool_input: Dict[str, Any]) -> str:
+        """
+        Generate mock tool execution result
+        
+        Args:
+            tool_name: Name of the tool
+            tool_input: Tool input parameters
+        
+        Returns:
+            Mock tool result as string
+        """
+        if tool_name == 'sb_files_tool':
+            action = tool_input.get('action', 'list')
+            if action == 'list':
+                return json.dumps({
+                    'files': ['file1.py', 'file2.py', 'test.txt'],
+                    'count': 3
+                })
+            elif action == 'write':
+                return json.dumps({'success': True, 'message': 'File created successfully'})
+            elif action == 'read':
+                return 'Mock file content'
+        
+        elif tool_name == 'sb_shell_tool':
+            command = tool_input.get('command', '')
+            if 'pwd' in command:
+                return '/home/user/workspace'
+            elif 'date' in command:
+                return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                return 'Mock command output\nSuccess'
+        
+        elif tool_name == 'web_search_tool':
+            return json.dumps({
+                'results': [
+                    {'title': 'Mock Result 1', 'snippet': 'This is a mock search result for testing purposes.'},
+                    {'title': 'Mock Result 2', 'snippet': 'Another mock result with relevant information.'}
+                ],
+                'total': 2
+            })
+        
+        return 'Mock tool result'
+
+
+# Global instance for easy access
+_mock_provider = None
+
+
+def get_mock_provider(delay_ms: int = 20) -> MockLLMProvider:
+    """Get or create global mock provider instance"""
+    global _mock_provider
+    if _mock_provider is None:
+        _mock_provider = MockLLMProvider(delay_ms=delay_ms)
+    return _mock_provider
+
+
+def enable_mock_mode():
+    """Enable mock LLM mode globally (for stress testing)"""
+    global _mock_provider
+    _mock_provider = MockLLMProvider()
+    return _mock_provider
+
+
+def disable_mock_mode():
+    """Disable mock LLM mode"""
+    global _mock_provider
+    _mock_provider = None
+

@@ -364,6 +364,7 @@ export const optimisticAgentStart = async (options: {
     
     formData.append('thread_id', options.thread_id);
     formData.append('project_id', options.project_id);
+    formData.append('optimistic', 'true');  // Enable optimistic mode
     
     const promptValue = typeof options.prompt === 'string' ? options.prompt.trim() : options.prompt;
     formData.append('prompt', promptValue);
@@ -387,7 +388,7 @@ export const optimisticAgentStart = async (options: {
     }
 
     const response = await backendApi.upload<OptimisticAgentStartResponse>(
-      '/agent/start-optimistic',
+      '/agent/start',  // Now using unified endpoint
       formData,
       { showErrors: false, cache: 'no-store' }
     );
