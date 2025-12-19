@@ -62,7 +62,8 @@ class ModelRegistry:
             )
         ))
         
-        power_litellm_id = build_bedrock_profile_arn(SONNET_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-sonnet-4-5-20250929"
+        # TEMPORARY: Using Haiku 4.5 instead of Sonnet 4.5 for kortix/power
+        power_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
         
         self.register(Model(
             id="kortix/power",
