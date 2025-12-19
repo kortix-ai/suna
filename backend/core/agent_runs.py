@@ -210,6 +210,9 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
     t_start = time.time()
     
     async def check_billing():
+        # Skip billing checks for test harness mock model
+        if model_name == "mock-ai":
+            return (True, None, {})  # (can_proceed, error_message, context)
         return await billing_integration.check_model_and_billing_access(
             account_id, model_name, client
         )
@@ -915,6 +918,9 @@ async def unified_agent_start(
     # Resolve model name
     if model_name is None:
         model_name = await model_manager.get_default_model_for_user(client, account_id)
+    elif model_name == "mock-ai":
+        # Special case: mock-ai for test harness (bypass resolution)
+        pass
     else:
         model_name = model_manager.resolve_model_id(model_name)
     
@@ -1083,6 +1089,9 @@ async def start_agent_on_thread(
         
         if model_name is None:
             model_name = await model_manager.get_default_model_for_user(client, account_id)
+        elif model_name == "mock-ai":
+            # Special case: mock-ai for test harness (bypass resolution)
+            pass
         else:
             model_name = model_manager.resolve_model_id(model_name)
         

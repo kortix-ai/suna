@@ -208,8 +208,7 @@ class TestHarnessRunner:
                     return await self.execute_single_prompt(
                         prompt=prompt,
                         run_id=run_id,
-                        model=model,
-                        mock_mode=False
+                        model=model
                     )
             
             tasks = [execute_with_semaphore(prompt) for prompt in prompts]
@@ -299,23 +298,32 @@ class TestHarnessRunner:
         """Internal method to execute stress test with MOCKED responses"""
         try:
             logger.info(f"🔥 STRESS TEST: {num_executions} executions with {concurrency} concurrency (MOCK MODE)")
+            logger.info(f"🔍 DEBUG: run_id={run_id}, active_runs={self._active_runs}, prompts_count={len(prompts)}")
             
             # No semaphore if concurrency == num_executions (run all at once)
             if concurrency >= num_executions:
                 logger.info(f"⚡ Running ALL {num_executions} requests simultaneously")
                 
                 async def execute_mock(idx):
-                    if not self._active_runs.get(run_id, False):
+                    is_active = self._active_runs.get(run_id, False)
+                    logger.debug(f"🔍 execute_mock({idx}): run_id={run_id}, is_active={is_active}")
+                    if not is_active:
+                        logger.warning(f"⚠️ Run {run_id} is not active, skipping execution {idx}")
                         return None
                     prompt = prompts[idx % len(prompts)]
-                    return await self.execute_single_prompt(
+                    logger.debug(f"🔍 Executing prompt {prompt.id} for idx {idx}")
+                    result = await self.execute_single_prompt(
                         prompt=prompt,
                         run_id=run_id,
                         model='mock-ai'  # Use mock LLM provider
                     )
+                    logger.debug(f"🔍 Execution {idx} completed: {result.status if result else 'None'}")
+                    return result
                 
                 tasks = [execute_mock(i) for i in range(num_executions)]
+                logger.info(f"🔍 Created {len(tasks)} tasks, about to gather...")
                 results = await asyncio.gather(*tasks, return_exceptions=True)
+                logger.info(f"🔍 Gathered {len(results)} results. None count: {sum(1 for r in results if r is None)}")
             else:
                 # Use semaphore for controlled concurrency
                 semaphore = asyncio.Semaphore(concurrency)
@@ -338,10 +346,17 @@ class TestHarnessRunner:
             exception_count = sum(1 for r in results if isinstance(r, Exception))
             if exception_count > 0:
                 logger.warning(f"Stress test had {exception_count} exceptions out of {num_executions} executions")
+                # Log first few exceptions for debugging
+                for i, r in enumerate(results[:3]):
+                    if isinstance(r, Exception):
+                        logger.error(f"Exception in stress test execution {i}: {type(r).__name__}: {r}", exc_info=r)
             
             # Finalize run
             status = 'completed' if self._active_runs.get(run_id, False) else 'cancelled'
             await self.metrics.finalize_run(run_id, status=status)
+            
+            # Cleanup test threads
+            await self._cleanup_test_threads(run_id)
             
             logger.info(f"Stress test completed: run_id={run_id}, status={status}")
             
@@ -350,6 +365,7 @@ class TestHarnessRunner:
             await self.metrics.finalize_run(run_id, status='failed')
         finally:
             self._active_runs.pop(run_id, None)
+            self._test_threads.pop(run_id, None)
     
     async def run_stress_test(
         self,
@@ -395,9 +411,13 @@ class TestHarnessRunner:
         )
         
         self._active_runs[run_id] = True
+        self._test_threads[run_id] = []  # Initialize thread tracking
+        
+        logger.info(f"✅ About to create background task: run_id={run_id}, active_runs={self._active_runs}")
         
         # Execute tests in background
-        asyncio.create_task(self._execute_stress_test(run_id, prompts, concurrency, num_executions))
+        task = asyncio.create_task(self._execute_stress_test(run_id, prompts, concurrency, num_executions))
+        logger.info(f"✅ Background task created: {task}")
         
         # Return run_id immediately
         return run_id
@@ -427,6 +447,7 @@ class TestHarnessRunner:
         cold_start_time_ms = None
         tool_calls = []
         stream_chunks = []
+        chunk_timestamps = []  # Initialize to prevent UnboundLocalError in error handler
         error_message = None
         status = 'completed'
         
@@ -491,14 +512,28 @@ class TestHarnessRunner:
                             chunk_timestamps.append(chunk_time)
                             stream_chunks.append(data)
                             
-                            # Track tool calls
-                            if data.get('type') == 'tool_call':
-                                tool_call_data = {
-                                    'tool_name': data.get('tool_name'),
-                                    'timestamp': chunk_time,
-                                    'input': data.get('input'),
-                                }
-                                tool_calls.append(tool_call_data)
+                            # Track tool calls from assistant message metadata
+                            if data.get('type') == 'assistant':
+                                try:
+                                    metadata = data.get('metadata', '{}')
+                                    if isinstance(metadata, str):
+                                        metadata = json.loads(metadata)
+                                    
+                                    # Extract tool calls from metadata
+                                    metadata_tool_calls = metadata.get('tool_calls', [])
+                                    if metadata_tool_calls:
+                                        for tc in metadata_tool_calls:
+                                            tool_call_data = {
+                                                'tool_name': tc.get('function_name', tc.get('name')),
+                                                'tool_call_id': tc.get('tool_call_id'),
+                                                'timestamp': chunk_time,
+                                                'input': tc.get('arguments', {}),
+                                            }
+                                            # Avoid duplicates (same tool_call_id)
+                                            if not any(t.get('tool_call_id') == tool_call_data['tool_call_id'] for t in tool_calls):
+                                                tool_calls.append(tool_call_data)
+                                except (json.JSONDecodeError, AttributeError) as e:
+                                    logger.debug(f"Failed to parse tool calls from metadata: {e}")
                             
                             # Check for completion
                             if data.get('type') == 'status':
@@ -518,6 +553,27 @@ class TestHarnessRunner:
             status = 'error'
             error_message = str(e)
             logger.error(f"Prompt {prompt.id} failed: {e}", exc_info=True)
+        
+        # Fetch tool calls from final assistant message in database
+        if status == 'completed' and thread_id and not tool_calls:
+            try:
+                client = await self.metrics_collector.supabase.get_client()
+                messages_response = await client.table('messages').select('metadata').eq('thread_id', thread_id).eq('type', 'assistant').eq('is_llm_message', True).order('created_at', desc=True).limit(1).execute()
+                
+                if messages_response.data and len(messages_response.data) > 0:
+                    msg_metadata = messages_response.data[0].get('metadata', {})
+                    db_tool_calls = msg_metadata.get('tool_calls', [])
+                    if db_tool_calls:
+                        logger.debug(f"Fetched {len(db_tool_calls)} tool calls from DB for thread {thread_id}")
+                        for tc in db_tool_calls:
+                            tool_calls.append({
+                                'tool_name': tc.get('function_name', tc.get('name')),
+                                'tool_call_id': tc.get('tool_call_id'),
+                                'timestamp': time.time(),  # Use current time as proxy
+                                'input': tc.get('arguments', {}),
+                            })
+            except Exception as e:
+                logger.warning(f"Failed to fetch tool calls from DB: {e}")
         
         # Calculate metrics
         completed_at = datetime.now(timezone.utc)

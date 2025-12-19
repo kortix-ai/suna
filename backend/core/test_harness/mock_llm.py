@@ -63,7 +63,7 @@ class MockLLMProvider:
         model: str = "kortix/basic"
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        Generate mock streaming response based on the user's prompt
+        Generate mock streaming response in LiteLLM format
         
         Args:
             messages: List of conversation messages
@@ -71,7 +71,7 @@ class MockLLMProvider:
             model: Model name (ignored in mock)
         
         Yields:
-            Stream chunks simulating real LLM response
+            Stream chunks in LiteLLM-compatible dict format
         """
         # Extract user prompt from messages
         user_message = None
@@ -86,102 +86,82 @@ class MockLLMProvider:
         # Determine which tools to "call" based on prompt patterns
         tool_calls = self._determine_tool_calls(user_message, tools)
         
-        # Yield thinking (if model supports it)
-        if 'thinking' in model.lower() or 'power' in model.lower():
-            await asyncio.sleep(self.delay_ms / 1000)
-            yield {
-                'type': 'content_block_start',
-                'index': 0,
-                'content_block': {'type': 'thinking', 'thinking': ''}
-            }
-            
-            await asyncio.sleep(self.delay_ms / 1000)
-            yield {
-                'type': 'content_block_delta',
-                'index': 0,
-                'delta': {'type': 'thinking_delta', 'thinking': 'I will analyze this request and determine the appropriate tools to use.'}
-            }
-            
-            await asyncio.sleep(self.delay_ms / 1000)
-            yield {
-                'type': 'content_block_stop',
-                'index': 0
-            }
-        
-        # Yield tool calls
-        for i, tool_call in enumerate(tool_calls):
-            # Tool use start
-            await asyncio.sleep(self.delay_ms / 1000)
-            yield {
-                'type': 'content_block_start',
-                'index': i + 1,
-                'content_block': {
-                    'type': 'tool_use',
-                    'id': f'toolu_mock_{i}_{datetime.now().timestamp()}',
-                    'name': tool_call['name'],
-                    'input': {}
-                }
-            }
-            
-            # Tool input delta
-            await asyncio.sleep(self.delay_ms / 1000)
-            yield {
-                'type': 'content_block_delta',
-                'index': i + 1,
-                'delta': {
-                    'type': 'input_json_delta',
-                    'partial_json': json.dumps(tool_call['input'])
-                }
-            }
-            
-            # Tool use stop
-            await asyncio.sleep(self.delay_ms / 1000)
-            yield {
-                'type': 'content_block_stop',
-                'index': i + 1
-            }
-        
-        # Yield text response
+        # Generate text response
         text_response = self._generate_text_response(user_message, tool_calls)
         
-        await asyncio.sleep(self.delay_ms / 1000)
-        yield {
-            'type': 'content_block_start',
-            'index': len(tool_calls) + 1,
-            'content_block': {'type': 'text', 'text': ''}
-        }
+        # Create a simple object that mimics LiteLLM's streaming response
+        class MockStreamChunk:
+            def __init__(self, choices, id=None, model=None, usage=None):
+                self.choices = choices
+                self.id = id or f"chatcmpl-mock-{datetime.now().timestamp()}"
+                self.model = model or "mock-ai"
+                self.object = "chat.completion.chunk"
+                self.created = int(datetime.now().timestamp())
+                if usage:
+                    self.usage = usage
         
-        # Stream text in chunks
+        class MockChoice:
+            def __init__(self, delta, finish_reason=None, index=0):
+                self.delta = delta
+                self.finish_reason = finish_reason
+                self.index = index
+        
+        class MockDelta:
+            def __init__(self, content=None, role=None, tool_calls=None):
+                if content is not None:
+                    self.content = content
+                if role:
+                    self.role = role
+                if tool_calls:
+                    self.tool_calls = tool_calls
+        
+        # Stream tool calls first
+        for i, tool_call in enumerate(tool_calls):
+            await asyncio.sleep(self.delay_ms / 1000)
+            
+            delta = MockDelta(
+                role="assistant",
+                tool_calls=[{
+                    'id': f'call_mock_{i}_{int(datetime.now().timestamp() * 1000)}',
+                    'type': 'function',
+                    'function': {
+                        'name': tool_call['name'],
+                        'arguments': json.dumps(tool_call['input'])
+                    }
+                }]
+            )
+            
+            yield MockStreamChunk(
+                choices=[MockChoice(delta=delta, finish_reason=None)],
+                model=model
+            )
+        
+        # Stream text content in chunks
         chunk_size = 20
         for i in range(0, len(text_response), chunk_size):
             chunk = text_response[i:i + chunk_size]
             await asyncio.sleep(self.delay_ms / 1000)
-            yield {
-                'type': 'content_block_delta',
-                'index': len(tool_calls) + 1,
-                'delta': {'type': 'text_delta', 'text': chunk}
-            }
+            
+            delta = MockDelta(content=chunk, role="assistant")
+            
+            yield MockStreamChunk(
+                choices=[MockChoice(delta=delta, finish_reason=None)],
+                model=model
+            )
         
+        # Final chunk with finish_reason and usage
         await asyncio.sleep(self.delay_ms / 1000)
-        yield {
-            'type': 'content_block_stop',
-            'index': len(tool_calls) + 1
-        }
+        delta = MockDelta()
         
-        # Final message delta with stop reason
-        await asyncio.sleep(self.delay_ms / 1000)
-        yield {
-            'type': 'message_delta',
-            'delta': {'stop_reason': 'end_turn'},
-            'usage': {
-                'output_tokens': len(text_response.split())
+        yield MockStreamChunk(
+            choices=[MockChoice(delta=delta, finish_reason="stop")],
+            model=model,
+            usage={
+                'prompt_tokens': 100,
+                'completion_tokens': len(text_response.split()),
+                'total_tokens': 100 + len(text_response.split())
             }
-        }
-        
-        # Message stop
-        yield {
-            'type': 'message_stop'
-        }
+        )
     
     def _determine_tool_calls(
         self,
