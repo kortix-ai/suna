@@ -18,7 +18,7 @@ export class AgentRunLimitError extends Error {
     },
     message?: string,
   ) {
-    super(message || detail.message || `Agent Run Limit Exceeded: ${status}`);
+    super(message || detail.message || `Worker Run Limit Exceeded: ${status}`);
     this.name = 'AgentRunLimitError';
     this.status = status;
     this.detail = detail;
@@ -48,7 +48,7 @@ export class AgentCountLimitError extends Error {
     },
     message?: string,
   ) {
-    super(message || detail.message || `Agent Count Limit Exceeded: ${status}`);
+    super(message || detail.message || `Worker Count Limit Exceeded: ${status}`);
     this.name = 'AgentCountLimitError';
     this.status = status;
     this.detail = detail;

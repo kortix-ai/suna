@@ -63,6 +63,7 @@ import { handleGoogleSlidesUpload } from './tool-views/utils/presentation-utils'
 import { useTranslations } from 'next-intl';
 import { backendApi } from '@/lib/api-client';
 import { useKortixComputerStore, useSetIsSidePanelOpen } from '@/stores/kortix-computer-store';
+import { useToolStreamStore } from '@/stores/tool-stream-store';
 
 interface ThreadComponentProps {
   projectId: string;
@@ -536,13 +537,30 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   const handleStreamClose = useCallback(() => { }, []);
 
+  const { appendOutput, markComplete } = useToolStreamStore();
+  
+  const handleToolOutputStream = useCallback((data: { 
+    tool_call_id: string; 
+    tool_name: string; 
+    output: string; 
+    is_final: boolean; 
+  }) => {
+    if (data.output) {
+      appendOutput(data.tool_call_id, data.output);
+    }
+    if (data.is_final) {
+      markComplete(data.tool_call_id);
+    }
+  }, [appendOutput, markComplete]);
+
   const streamCallbacks = useMemo(() => ({
     onMessage: handleNewMessageFromStream,
     onStatusChange: handleStreamStatusChange,
     onError: handleStreamError,
     onClose: handleStreamClose,
     onToolCallChunk: handleStreamingToolCall,
-  }), [handleNewMessageFromStream, handleStreamStatusChange, handleStreamError, handleStreamClose, handleStreamingToolCall]);
+    onToolOutputStream: handleToolOutputStream,
+  }), [handleNewMessageFromStream, handleStreamStatusChange, handleStreamError, handleStreamClose, handleStreamingToolCall, handleToolOutputStream]);
 
   const {
     status: streamHookStatus,

@@ -196,7 +196,9 @@ def convert_to_unified_tool_call_format(
 
 def convert_buffer_to_metadata_tool_calls(
     tool_calls_buffer: Dict[int, Dict[str, Any]], 
-    include_partial: bool = False
+    include_partial: bool = False,
+    delta_mode: bool = False,
+    sent_lengths: Optional[Dict[int, int]] = None
 ) -> List[Dict[str, Any]]:
     """
     Convert buffered tool calls to unified metadata format for streaming chunks.
@@ -204,6 +206,8 @@ def convert_buffer_to_metadata_tool_calls(
     Args:
         tool_calls_buffer: Dictionary mapping index -> buffered tool call data
         include_partial: Whether to include partial/incomplete tool calls (for streaming)
+        delta_mode: If True, only send new data (delta) not full accumulated content
+        sent_lengths: Dictionary tracking how much has been sent for each index (for delta mode)
         
     Returns:
         List of tool calls in unified metadata format (tool_call_id, function_name, arguments, source)
@@ -216,23 +220,48 @@ def convert_buffer_to_metadata_tool_calls(
             # Arguments might be incomplete JSON string from LLM
             arguments_str = tc_buf['function'].get('arguments', '')
             
-            # Try to parse arguments as JSON - if successful, use parsed object
-            # If it fails (partial/incomplete JSON), keep as string
-            arguments: Any = arguments_str
-            if arguments_str:
-                try:
-                    parsed = json.loads(arguments_str)
-                    # Successfully parsed - use the object (avoids double-escaping)
-                    arguments = parsed
-                except json.JSONDecodeError:
-                    # Partial/incomplete JSON - keep as string for frontend to handle
-                    arguments = arguments_str
-            
-            unified_tool_calls.append({
-                "tool_call_id": tc_buf.get('id', f"streaming_tool_{idx}_{str(uuid.uuid4())}"),
-                "function_name": tc_buf['function']['name'],
-                "arguments": arguments,  # Object if valid JSON, string if partial
-                "source": "native"  # Always native for native tool calls
-            })
+            # DELTA MODE: Only send the new chunk, not full accumulated content
+            if delta_mode and sent_lengths is not None:
+                prev_length = sent_lengths.get(idx, 0)
+                current_length = len(arguments_str)
+                
+                # Only send if there's new content
+                if current_length <= prev_length:
+                    continue  # Nothing new to send
+                
+                # Extract only the new delta
+                arguments_delta = arguments_str[prev_length:]
+                
+                # Update tracking
+                sent_lengths[idx] = current_length
+                
+                # For delta mode, always send as string (frontend will assemble)
+                unified_tool_calls.append({
+                    "tool_call_id": tc_buf.get('id', f"streaming_tool_{idx}_{str(uuid.uuid4())}"),
+                    "function_name": tc_buf['function']['name'],
+                    "arguments_delta": arguments_delta,  # Send ONLY the delta
+                    "is_delta": True,  # Flag to indicate this is a delta update
+                    "source": "native"
+                })
+            else:
+                # FULL MODE: Send complete accumulated content (old behavior)
+                # Try to parse arguments as JSON - if successful, use parsed object
+                # If it fails (partial/incomplete JSON), keep as string
+                arguments: Any = arguments_str
+                if arguments_str:
+                    try:
+                        parsed = json.loads(arguments_str)
+                        # Successfully parsed - use the object (avoids double-escaping)
+                        arguments = parsed
+                    except json.JSONDecodeError:
+                        # Partial/incomplete JSON - keep as string for frontend to handle
+                        arguments = arguments_str
+                
+                unified_tool_calls.append({
+                    "tool_call_id": tc_buf.get('id', f"streaming_tool_{idx}_{str(uuid.uuid4())}"),
+                    "function_name": tc_buf['function']['name'],
+                    "arguments": arguments,  # Object if valid JSON, string if partial
+                    "source": "native"  # Always native for native tool calls
+                })
     return unified_tool_calls
 

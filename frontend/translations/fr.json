@@ -728,7 +728,13 @@
     "didntReceiveEmail": "Tu n'as pas reçu l'e-mail ?",
     "resend": "Renvoyer",
     "alreadySignedIn": "Tu es déjà connecté. Aucune action requise.",
-    "goToDashboard": "Aller au Tableau de bord"
+    "goToDashboard": "Aller au Tableau de bord",
+    "signInToContinue": "Connecte-toi pour continuer",
+    "signInOrCreateAccountToTalk": "Connecte-toi ou crée un compte pour parler avec Kortix",
+    "orContinueWithEmail": "ou continue avec email",
+    "signInWithEmail": "Se connecter avec email",
+    "createNewAccount": "Créer un nouveau compte",
+    "byContinuingYouAgreeSimple": "En continuant, tu acceptes notre"
   },
   "onboarding": {
     "welcome": "Bienvenue",

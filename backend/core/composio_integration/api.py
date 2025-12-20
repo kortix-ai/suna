@@ -681,7 +681,7 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
         client_db = await db.client
         agent_check = await client_db.table('agents').select('agent_id').eq('agent_id', req.agent_id).eq('account_id', current_user_id).execute()
         if not agent_check.data:
-            raise HTTPException(status_code=404, detail="Agent not found or access denied")
+            raise HTTPException(status_code=404, detail="Worker not found or access denied")
 
         if config.ENV_MODE != EnvMode.LOCAL:
             from core.utils.limits_checker import check_trigger_limit

@@ -30,6 +30,13 @@ export interface UseAgentStreamResult {
   stopStreaming: () => Promise<void>;
 }
 
+export interface ToolOutputStreamData {
+  tool_call_id: string;
+  tool_name: string;
+  output: string;
+  is_final: boolean;
+}
+
 // Define the callbacks the hook consumer can provide
 export interface AgentStreamCallbacks {
   onMessage: (message: UnifiedMessage) => void;
@@ -39,6 +46,7 @@ export interface AgentStreamCallbacks {
   onAssistantStart?: () => void;
   onAssistantChunk?: (chunk: { content: string }) => void;
   onToolCallChunk?: (message: UnifiedMessage) => void;
+  onToolOutputStream?: (data: ToolOutputStreamData) => void;
 }
 
 export function useAgentStream(
@@ -113,6 +121,9 @@ export function useAgentStream(
   const currentRunIdRef = useRef<string | null>(null);
   const threadIdRef = useRef(threadId);
   const setMessagesRef = useRef(setMessages);
+  
+  // DELTA STREAMING: Track accumulated tool call arguments
+  const accumulatedToolCallsRef = useRef<Map<string, string>>(new Map());
   
   // Store callbacks in ref to prevent handler recreation on every parent render
   const callbacksRef = useRef(callbacks);
@@ -353,7 +364,7 @@ export function useAgentStream(
       // Early exit for non-JSON completion messages
       if (
         processedData ===
-        '{"type": "status", "status": "completed", "message": "Agent run completed successfully"}'
+        '{"type": "status", "status": "completed", "message": "Worker run completed successfully"}'
       ) {
         finalizeStream('completed', currentRunIdRef.current);
         return;
@@ -479,6 +490,16 @@ export function useAgentStream(
             return;
           }
         }
+        // Handle tool_output_stream messages for real-time shell output
+        if (jsonData.type === 'tool_output_stream') {
+          callbacksRef.current.onToolOutputStream?.({
+            tool_call_id: jsonData.tool_call_id,
+            tool_name: jsonData.tool_name,
+            output: jsonData.output,
+            is_final: jsonData.is_final,
+          });
+          return;
+        }
       } catch (jsonError) {
         // Not JSON or could not parse as JSON, continue processing
       }
@@ -515,12 +536,42 @@ export function useAgentStream(
             // Handle tool call chunks - extract from metadata.tool_calls
             const toolCalls = parsedMetadata.tool_calls || [];
             if (toolCalls.length > 0) {
-              // Set toolCall state with the UnifiedMessage (non-urgent update)
-              React.startTransition(() => {
-                setToolCall(message);
+              // DELTA STREAMING: Accumulate deltas into full tool calls
+              const reconstructedToolCalls = toolCalls.map((tc: any) => {
+                if (tc.is_delta && tc.arguments_delta) {
+                  // This is a delta update - accumulate it
+                  const toolCallId = tc.tool_call_id || 'unknown';
+                  const currentArgs = accumulatedToolCallsRef.current.get(toolCallId) || '';
+                  const newArgs = currentArgs + tc.arguments_delta;
+                  accumulatedToolCallsRef.current.set(toolCallId, newArgs);
+                  
+                  // Return reconstructed tool call with full accumulated arguments
+                  return {
+                    ...tc,
+                    arguments: newArgs,
+                    is_delta: false, // Mark as assembled
+                  };
+                } else {
+                  // Full tool call (legacy mode or complete)
+                  return tc;
+                }
               });
-              // Call the callback with the full message (includes all tool calls in metadata)
-              callbacksRef.current.onToolCallChunk?.(message);
+              
+              // Create updated message with reconstructed tool calls
+              const updatedMessage = {
+                ...message,
+                metadata: JSON.stringify({
+                  ...parsedMetadata,
+                  tool_calls: reconstructedToolCalls,
+                }),
+              };
+              
+              // Set toolCall state with the reconstructed UnifiedMessage (non-urgent update)
+              React.startTransition(() => {
+                setToolCall(updatedMessage);
+              });
+              // Call the callback with the reconstructed message
+              callbacksRef.current.onToolCallChunk?.(updatedMessage);
             }
           } else if (
             parsedMetadata.stream_status === 'chunk' &&
@@ -540,6 +591,8 @@ export function useAgentStream(
               setTextContent([]);
               setToolCall(null);
             });
+            // Clear accumulated tool call deltas
+            accumulatedToolCallsRef.current.clear();
             if (message.message_id) callbacksRef.current.onMessage(message);
           } else if (!parsedMetadata.stream_status) {
             // Handle non-chunked assistant messages if needed
@@ -551,6 +604,8 @@ export function useAgentStream(
           React.startTransition(() => {
             setToolCall(null); // Clear any streaming tool call
           });
+          // Clear accumulated tool call deltas when tool execution completes
+          accumulatedToolCallsRef.current.clear();
           if (message.message_id) callbacksRef.current.onMessage(message);
           break;
         case 'status':
@@ -569,7 +624,7 @@ export function useAgentStream(
               break;
             case 'error':
               React.startTransition(() => {
-                setError(parsedContent.message || 'Agent run failed');
+                setError(parsedContent.message || 'Worker run failed');
               });
               finalizeStream('error', currentRunIdRef.current);
               break;
@@ -667,7 +722,7 @@ export function useAgentStream(
         if (agentStatus.status === 'running') {
           setError('Stream closed unexpectedly while agent was running.');
           finalizeStream('error', runId);
-          toast.warning('Stream disconnected. Agent might still be running.');
+          toast.warning('Stream disconnected. Worker might still be running.');
         } else if (agentStatus.status === 'stopped') {
           // Check if agent stopped due to billing error
           const errorMessage = agentStatus.error || '';
@@ -901,7 +956,7 @@ export function useAgentStream(
 
     try {
       await stopAgent(runIdToStop);
-      toast.success('Agent stopped.');
+      toast.success('Worker stopped.');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.error(

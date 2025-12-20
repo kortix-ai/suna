@@ -3,17 +3,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import {
-  File,
   Folder,
   Upload,
   Download,
   ChevronRight,
   Home,
   Loader,
-  FileText,
-  Presentation,
   ChevronDown,
   AlertTriangle,
+  File,
+  FileText,
+  Presentation,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -466,7 +466,6 @@ export function FileBrowserView({
     [sandboxId, refetchFiles],
   );
 
-  // Get file icon based on type
   const getFileIcon = useCallback((file: FileInfo) => {
     if (file.is_dir) {
       if (isPresentationFolder(file)) {
@@ -477,7 +476,6 @@ export function FileBrowserView({
     
     const extension = file.name.split('.').pop()?.toLowerCase();
     
-    // Check for specific file types
     if (['md', 'txt', 'doc'].includes(extension || '')) {
       return <FileText className="h-8 w-8 text-muted-foreground" />;
     }

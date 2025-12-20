@@ -36,7 +36,7 @@ async def update_agent(
         existing_agent = await client.table('agents').select('*').eq("agent_id", agent_id).eq("account_id", user_id).maybe_single().execute()
         
         if not existing_agent.data:
-            raise HTTPException(status_code=404, detail="Agent not found")
+            raise HTTPException(status_code=404, detail="Worker not found")
         
         existing_data = existing_agent.data
 
@@ -385,7 +385,7 @@ async def delete_agent(agent_id: str, user_id: str = Depends(verify_and_get_user
     try:
         agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).execute()
         if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Agent not found")
+            raise HTTPException(status_code=404, detail="Worker not found")
         
         agent = agent_result.data[0]
         if agent['account_id'] != user_id:
@@ -434,7 +434,7 @@ async def delete_agent(agent_id: str, user_id: str = Depends(verify_and_get_user
             logger.warning(f"Cache invalidation failed for user {user_id}: {str(cache_error)}")
         
         logger.debug(f"Successfully deleted agent: {agent_id}")
-        return {"message": "Agent deleted successfully"}
+        return {"message": "Worker deleted successfully"}
         
     except HTTPException:
         raise

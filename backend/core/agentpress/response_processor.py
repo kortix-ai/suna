@@ -26,6 +26,7 @@ from core.agentpress.xml_tool_parser import (
     extract_xml_chunks,
     parse_xml_tool_calls_with_ids
 )
+from core.tool_output_streaming_context import set_current_tool_call_id
 from core.agentpress.native_tool_parser import (
     extract_tool_call_chunk_data,
     is_tool_call_complete,
@@ -477,6 +478,10 @@ class ResponseProcessor:
         xml_tool_calls_with_ids = [] # Track XML tool calls with their IDs for metadata storage
         content_chunk_buffer = {} # Buffer to reorder content chunks: sequence -> chunk_data
         next_expected_sequence = 0 # Track the next expected sequence number for ordering
+        
+        # DELTA STREAMING: Track how much has been sent for each tool call to avoid duplication
+        tool_call_sent_lengths = {}  # Maps tool_call_index -> length of arguments already sent
+        xml_tool_calls_sent_count = 0  # Track how many XML tool calls have been sent
 
         # Store the complete LiteLLM response object as received
         final_llm_response = None
@@ -803,17 +808,28 @@ class ResponseProcessor:
                             if config.native_tool_calling:
                                 native_unified = convert_buffer_to_metadata_tool_calls(
                                     tool_calls_buffer,
-                                    include_partial=True  # Include partial tool calls for streaming
+                                    include_partial=True,  # Include partial tool calls for streaming
+                                    delta_mode=True,  # CRITICAL: Only send deltas, not full accumulated content
+                                    sent_lengths=tool_call_sent_lengths  # Track what's been sent
                                 )
                                 unified_tool_calls.extend(native_unified)
                             
-                            # Add XML tool calls
+                            # Add XML tool calls - ONLY NEW ONES (delta streaming)
                             if config.xml_tool_calling:
-                                unified_tool_calls.extend(xml_tool_calls_with_ids)
+                                # Only send XML tool calls that haven't been sent yet
+                                new_xml_tool_calls = xml_tool_calls_with_ids[xml_tool_calls_sent_count:]
+                                if new_xml_tool_calls:
+                                    unified_tool_calls.extend(new_xml_tool_calls)
+                                    xml_tool_calls_sent_count = len(xml_tool_calls_with_ids)
                             
                             # Yield single unified streaming chunk if we have any tool calls
                             if unified_tool_calls:
-                                # CRITICAL FIX: Transform execute_tool calls for frontend display during streaming
+                                # Log delta streaming efficiency
+                                for tc in unified_tool_calls:
+                                    if tc.get('is_delta'):
+                                        delta_size = len(tc.get('arguments_delta', ''))
+                                        logger.debug(f"[DELTA STREAM] Tool {tc.get('function_name')}: sending {delta_size} byte delta")
+                                
                                 transformed_unified_tool_calls = []
                                 for tc in unified_tool_calls:
                                     transformed_tc = self._transform_streaming_execute_tool_call(tc)
@@ -1827,6 +1843,11 @@ class ResponseProcessor:
         span = self.trace.span(name=f"execute_tool.{tool_call['function_name']}", input=tool_call["arguments"])
         function_name = "unknown"
         try:
+            # Set the tool_call_id for streaming context (used by shell tool for real-time output)
+            tool_call_id = tool_call.get("tool_call_id", tool_call.get("id", ""))
+            if tool_call_id:
+                set_current_tool_call_id(tool_call_id)
+            
             function_name = tool_call["function_name"]
             arguments = tool_call["arguments"]
 

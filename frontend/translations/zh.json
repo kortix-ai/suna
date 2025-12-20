@@ -728,7 +728,13 @@
     "didntReceiveEmail": "没有收到邮件？",
     "resend": "重新发送",
     "alreadySignedIn": "您已登录，无需任何操作。",
-    "goToDashboard": "前往控制台"
+    "goToDashboard": "前往控制台",
+    "signInToContinue": "登录以继续",
+    "signInOrCreateAccountToTalk": "登录或创建账户以与Kortix对话",
+    "orContinueWithEmail": "或使用邮箱继续",
+    "signInWithEmail": "使用邮箱登录",
+    "createNewAccount": "创建新账户",
+    "byContinuingYouAgreeSimple": "继续即表示您同意我们的"
   },
   "onboarding": {
     "welcome": "欢迎",

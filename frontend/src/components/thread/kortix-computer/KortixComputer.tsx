@@ -29,6 +29,8 @@ import { EmptyState } from './components/EmptyState';
 import { LoadingState } from './components/LoadingState';
 import { AppDock } from './components/Dock';
 import { SandboxDesktop } from './components/Desktop';
+import { EnhancedFileBrowser } from './components/EnhancedFileBrowser';
+import { useDirectoryQuery } from '@/hooks/files';
 
 export interface ToolCallInput {
   toolCall: ToolCallData;
@@ -115,10 +117,20 @@ export const KortixComputer = memo(function KortixComputer({
     filesSubView, 
     selectedFilePath,
     setActiveView,
+    currentPath,
+    navigateToPath,
+    openFile,
   } = useKortixComputerStore();
   
   const pendingToolNavIndex = useKortixComputerPendingToolNavIndex();
   const clearPendingToolNav = useKortixComputerClearPendingToolNav();
+
+  const effectiveSandboxIdForQuery = sandboxId || project?.sandbox?.id || '';
+  const { data: enhancedBrowserFiles = [] } = useDirectoryQuery(
+    effectiveSandboxIdForQuery, 
+    currentPath, 
+    { enabled: !!effectiveSandboxIdForQuery && isMaximized }
+  );
 
   const currentViewRef = useRef(activeView);
 
@@ -319,9 +331,13 @@ export const KortixComputer = memo(function KortixComputer({
   const isCurrentToolStreaming = currentToolCall != null && currentToolCall.toolResult === undefined;
 
   const currentToolName = currentToolCall?.toolCall?.function_name?.replace(/_/g, '-').toLowerCase();
-  const isFileOperation = currentToolName && ['create-file', 'edit-file', 'full-file-rewrite', 'read-file', 'delete-file'].includes(currentToolName);
 
-  if (isCurrentToolStreaming && totalCompletedCalls > 0 && !isFileOperation) {
+  const showDuringStreaming = currentToolName && [
+    'create-file', 'edit-file', 'full-file-rewrite', 'read-file', 'delete-file',
+    'execute-command', 'check-command-output', 'terminate-command'
+  ].includes(currentToolName);
+
+  if (isCurrentToolStreaming && totalCompletedCalls > 0 && !showDuringStreaming) {
     const lastCompletedSnapshot = completedToolCalls[completedToolCalls.length - 1];
     if (lastCompletedSnapshot?.toolCall?.toolCall) {
       displayToolCall = lastCompletedSnapshot.toolCall;
@@ -575,6 +591,42 @@ export const KortixComputer = memo(function KortixComputer({
     );
   };
 
+  const renderFilesViewMaximized = () => {
+    if (filesSubView === 'viewer' && selectedFilePath) {
+      return (
+        <FileViewerView
+          sandboxId={effectiveSandboxId}
+          filePath={selectedFilePath}
+          project={project}
+          projectId={projectId}
+        />
+      );
+    }
+
+    const pathSegments = currentPath.split('/').filter(Boolean);
+    const parentPath = pathSegments.length > 1 
+      ? '/' + pathSegments.slice(0, -1).join('/') 
+      : '/workspace';
+
+    return (
+      <EnhancedFileBrowser
+        files={enhancedBrowserFiles.map(f => ({
+          name: f.name,
+          path: f.path || `${currentPath}/${f.name}`,
+          is_dir: f.is_dir,
+          size: f.size || 0,
+          mod_time: f.mod_time || '',
+        }))}
+        currentPath={currentPath}
+        onNavigate={navigateToPath}
+        onFileOpen={(path) => openFile(path)}
+        onFileEdit={(path) => openFile(path)}
+        onBack={() => navigateToPath(parentPath)}
+        sandboxId={effectiveSandboxId}
+      />
+    );
+  };
+
   const renderBrowserView = () => {
     if (persistentVncIframe) {
       return (
@@ -734,7 +786,7 @@ export const KortixComputer = memo(function KortixComputer({
               onClose={() => setIsMaximized(false)}
               currentView={activeView}
               onViewChange={setActiveView}
-              renderFilesView={renderFilesView}
+              renderFilesView={renderFilesViewMaximized}
               renderBrowserView={renderBrowserView}
               isStreaming={isStreaming}
               project_id={projectId}
@@ -838,7 +890,7 @@ export const KortixComputer = memo(function KortixComputer({
             onClose={() => setIsMaximized(false)}
             currentView={activeView}
             onViewChange={setActiveView}
-            renderFilesView={renderFilesView}
+            renderFilesView={renderFilesViewMaximized}
             renderBrowserView={renderBrowserView}
             isStreaming={isStreaming}
             project_id={projectId}

@@ -40,7 +40,7 @@ async def _get_agent_run_with_access_check(client, agent_run_id: str, user_id: s
     
     agent_run = await client.table('agent_runs').select('*, threads(account_id)').eq('id', agent_run_id).execute()
     if not agent_run.data:
-        raise HTTPException(status_code=404, detail="Agent run not found")
+        raise HTTPException(status_code=404, detail="Worker run not found")
 
     agent_run_data = agent_run.data[0]
     thread_id = agent_run_data['thread_id']
@@ -210,6 +210,9 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
     t_start = time.time()
     
     async def check_billing():
+        # Skip billing checks for test harness mock model
+        if model_name == "mock-ai":
+            return (True, None, {})  # (can_proceed, error_message, context)
         return await billing_integration.check_model_and_billing_access(
             account_id, model_name, client
         )
@@ -797,10 +800,13 @@ async def start_agent_run(
 async def unified_agent_start(
     request: Request,
     thread_id: Optional[str] = Form(None),
+    project_id: Optional[str] = Form(None),
     prompt: Optional[str] = Form(None),
     model_name: Optional[str] = Form(None),
     agent_id: Optional[str] = Form(None),
     files: List[UploadFile] = File(default=[]),
+    optimistic: Optional[str] = Form(None),
+    memory_enabled: Optional[str] = Form(None),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """
@@ -811,19 +817,99 @@ async def unified_agent_start(
     - File uploads (preprocessing before calling internal function)
     - HTTP-specific validation and error responses
     - Thread access authorization
+    - Optimistic mode (when optimistic=true, client provides thread_id and project_id)
     
-    Delegates core logic to start_agent_run().
+    Modes:
+    - Regular: Creates thread on server, returns agent_run_id
+    - Optimistic: Client provides thread_id/project_id, returns immediately with status="pending"
+    
+    Delegates core logic to start_agent_run() or create_thread_optimistically().
     """
     import time
     api_request_start = time.time()
     
     if not utils.instance_id:
-        raise HTTPException(status_code=500, detail="Agent API not initialized with instance ID")
+        raise HTTPException(status_code=500, detail="Worker API not initialized with instance ID")
     
     client = await utils.db.client
     account_id = user_id
     
-    logger.debug(f"Received agent start request: thread_id={thread_id!r}, prompt={prompt[:100] if prompt else None!r}, model_name={model_name!r}, agent_id={agent_id!r}, files_count={len(files)}")
+    # Check if optimistic mode
+    is_optimistic = optimistic and optimistic.lower() == 'true'
+    
+    logger.debug(f"Received agent start request: optimistic={is_optimistic}, thread_id={thread_id!r}, project_id={project_id!r}, prompt={prompt[:100] if prompt else None!r}, model_name={model_name!r}, agent_id={agent_id!r}, files_count={len(files)}")
+    
+    # ================================================================
+    # OPTIMISTIC MODE: Client provides thread_id and project_id
+    # ================================================================
+    if is_optimistic:
+        if not thread_id or not project_id:
+            raise HTTPException(status_code=400, detail="thread_id and project_id are required for optimistic mode")
+        
+        if not prompt or not prompt.strip():
+            raise HTTPException(status_code=400, detail="prompt is required for optimistic mode")
+        
+        try:
+            import uuid
+            try:
+                uuid.UUID(thread_id)
+                uuid.UUID(project_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid UUID format for thread_id or project_id")
+            
+            resolved_model = model_name
+            if resolved_model is None:
+                resolved_model = await model_manager.get_default_model_for_user(client, account_id)
+            else:
+                resolved_model = model_manager.resolve_model_id(resolved_model)
+            
+            t_billing = time.time()
+            await _check_billing_and_limits(client, account_id, resolved_model, check_project_limit=True, check_thread_limit=True)
+            logger.debug(f"⏱️ [TIMING] Optimistic billing check: {(time.time() - t_billing) * 1000:.1f}ms")
+            
+            structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id, account_id=account_id)
+            
+            from core.thread_init_service import create_thread_optimistically
+            
+            memory_enabled_bool = None
+            if memory_enabled is not None:
+                memory_enabled_bool = memory_enabled.lower() == 'true'
+            
+            result = await create_thread_optimistically(
+                thread_id=thread_id,
+                project_id=project_id,
+                account_id=account_id,
+                prompt=prompt,
+                agent_id=agent_id,
+                model_name=resolved_model,
+                files=files if len(files) > 0 else None,
+                memory_enabled=memory_enabled_bool,
+            )
+            
+            logger.info(f"⏱️ [TIMING] 🎯 Optimistic API Request Total: {(time.time() - api_request_start) * 1000:.1f}ms")
+            
+            return {
+                "thread_id": result["thread_id"],
+                "project_id": result["project_id"],
+                "agent_run_id": None,
+                "status": "pending"
+            }
+        
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error in optimistic agent start: {str(e)}\n{traceback.format_exc()}")
+            error_details = {
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "traceback": traceback.format_exc()
+            }
+            logger.error(f"Full error details: {error_details}")
+            raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
+    
+    # ================================================================
+    # REGULAR MODE: Server creates thread
+    # ================================================================
     
     # Validation
     if not thread_id and (not prompt or not prompt.strip()):
@@ -832,6 +918,9 @@ async def unified_agent_start(
     # Resolve model name
     if model_name is None:
         model_name = await model_manager.get_default_model_for_user(client, account_id)
+    elif model_name == "mock-ai":
+        # Special case: mock-ai for test harness (bypass resolution)
+        pass
     else:
         model_name = model_manager.resolve_model_id(model_name)
     
@@ -925,90 +1014,6 @@ async def unified_agent_start(
         logger.error(f"Full error details: {error_details}")
         raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
 
-@router.post("/agent/start-optimistic", summary="Start Agent (Optimistic)", operation_id="optimistic_agent_start")
-async def optimistic_agent_start(
-    request: Request,
-    thread_id: str = Form(...),
-    project_id: str = Form(...),
-    prompt: Optional[str] = Form(None),
-    model_name: Optional[str] = Form(None),
-    agent_id: Optional[str] = Form(None),
-    files: List[UploadFile] = File(default=[]),
-    memory_enabled: Optional[str] = Form(None),
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
-):
-    import time
-    api_request_start = time.time()
-    
-    if not utils.instance_id:
-        raise HTTPException(status_code=500, detail="Agent API not initialized with instance ID")
-    
-    client = await utils.db.client
-    account_id = user_id
-    
-    logger.debug(f"Received optimistic agent start request: thread_id={thread_id}, project_id={project_id}, prompt={prompt[:100] if prompt else None!r}, model_name={model_name!r}, agent_id={agent_id!r}, files_count={len(files)}")
-    
-    if not prompt or not prompt.strip():
-        raise HTTPException(status_code=400, detail="prompt is required when creating a new thread")
-    
-    try:
-        import uuid
-        try:
-            uuid.UUID(thread_id)
-            uuid.UUID(project_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid UUID format")
-        
-        resolved_model = model_name
-        if resolved_model is None:
-            resolved_model = await model_manager.get_default_model_for_user(client, account_id)
-        else:
-            resolved_model = model_manager.resolve_model_id(resolved_model)
-        
-        t_billing = time.time()
-        await _check_billing_and_limits(client, account_id, resolved_model, check_project_limit=True, check_thread_limit=True)
-        logger.debug(f"⏱️ [TIMING] Optimistic billing check: {(time.time() - t_billing) * 1000:.1f}ms")
-        
-        structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id, account_id=account_id)
-        
-        from core.thread_init_service import create_thread_optimistically
-        
-        memory_enabled_bool = None
-        if memory_enabled is not None:
-            memory_enabled_bool = memory_enabled.lower() == 'true'
-        
-        result = await create_thread_optimistically(
-            thread_id=thread_id,
-            project_id=project_id,
-            account_id=account_id,
-            prompt=prompt,
-            agent_id=agent_id,
-            model_name=resolved_model,
-            files=files if len(files) > 0 else None,
-            memory_enabled=memory_enabled_bool,
-        )
-        
-        logger.info(f"⏱️ [TIMING] 🎯 Optimistic API Request Total: {(time.time() - api_request_start) * 1000:.1f}ms")
-        
-        return {
-            "thread_id": result["thread_id"],
-            "project_id": result["project_id"],
-            "agent_run_id": None,
-            "status": "pending"
-        }
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in optimistic agent start: {str(e)}\n{traceback.format_exc()}")
-        error_details = {
-            "error": str(e),
-            "error_type": type(e).__name__,
-            "traceback": traceback.format_exc()
-        }
-        logger.error(f"Full error details: {error_details}")
-        raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
-
 @router.post("/thread/{thread_id}/start-agent", summary="Start Agent on Initialized Thread", operation_id="start_agent_on_thread")
 async def start_agent_on_thread(
     thread_id: str,
@@ -1020,7 +1025,7 @@ async def start_agent_on_thread(
     api_request_start = time.time()
     
     if not utils.instance_id:
-        raise HTTPException(status_code=500, detail="Agent API not initialized with instance ID")
+        raise HTTPException(status_code=500, detail="Worker API not initialized with instance ID")
     
     client = await utils.db.client
     account_id = user_id
@@ -1047,6 +1052,9 @@ async def start_agent_on_thread(
         
         if model_name is None:
             model_name = await model_manager.get_default_model_for_user(client, account_id)
+        elif model_name == "mock-ai":
+            # Special case: mock-ai for test harness (bypass resolution)
+            pass
         else:
             model_name = model_manager.resolve_model_id(model_name)
         
@@ -1230,7 +1238,7 @@ async def get_thread_agent(thread_id: str, user_id: str = Depends(verify_and_get
             return {
                 "agent": None,
                 "source": "none",
-                "message": "No agent has been used in this thread yet. Threads are agent-agnostic - use /agent/start to select an agent."
+                "message": "No worker has been used in this thread yet. Threads are worker-agnostic - use /agent/start to select a worker."
             }
         
         # Fetch the agent details
@@ -1241,7 +1249,7 @@ async def get_thread_agent(thread_id: str, user_id: str = Depends(verify_and_get
             return {
                 "agent": None,
                 "source": "missing",
-                "message": f"Agent {effective_agent_id} not found or was deleted. You can select a different agent."
+                "message": f"Worker {effective_agent_id} not found or was deleted. You can select a different worker."
             }
         
         agent_data = agent_result.data[0]
@@ -1348,6 +1356,55 @@ async def stream_agent_run(
     pubsub_channel = f"agent_run:{agent_run_id}:pubsub"
     control_channel = f"agent_run:{agent_run_id}:control"
 
+    def find_last_safe_boundary(entries):
+        """
+        Find the last entry that marks a complete structural unit.
+        
+        Safe boundaries are:
+        - llm_response_end: Complete LLM cycle saved to DB
+        - status with completed/failed/stopped: Entire run complete
+        - assistant with stream_status=complete: Message saved to DB
+        
+        Returns:
+            int: Index of last safe boundary, or -1 if no safe boundary found
+        """
+        last_safe_index = -1
+        
+        for i, (entry_id, fields) in enumerate(entries):
+            try:
+                data = json.loads(fields.get('data', '{}'))
+                msg_type = data.get('type')
+                
+                # LLM response end = complete LLM cycle (saved to DB)
+                if msg_type == 'llm_response_end':
+                    last_safe_index = i
+                    logger.debug(f"Found safe boundary at index {i}: llm_response_end")
+                
+                # Run completion status = entire run complete
+                elif msg_type == 'status':
+                    status = data.get('status')
+                    if status in ['completed', 'failed', 'stopped', 'error']:
+                        last_safe_index = i
+                        logger.debug(f"Found safe boundary at index {i}: status={status}")
+                
+                # Assistant message with stream_status=complete (saved to DB)
+                elif msg_type == 'assistant':
+                    metadata = data.get('metadata', {})
+                    if isinstance(metadata, str):
+                        try:
+                            metadata = json.loads(metadata)
+                        except (json.JSONDecodeError, TypeError):
+                            metadata = {}
+                    if metadata.get('stream_status') == 'complete':
+                        last_safe_index = i
+                        logger.debug(f"Found safe boundary at index {i}: assistant with stream_status=complete")
+            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                # Skip malformed entries, but log warning
+                logger.debug(f"Skipping malformed entry at index {i}: {e}")
+                continue
+        
+        return last_safe_index
+
     async def stream_generator(agent_run_data):
         logger.debug(f"Streaming responses for {agent_run_id} (pubsub: {pubsub_channel}, stream: {stream_key})")
         terminate_stream = False
@@ -1360,13 +1417,55 @@ async def stream_agent_run(
             initial_entries = await redis.xrange(stream_key)
             if initial_entries:
                 logger.debug(f"Sending {len(initial_entries)} catch-up responses for {agent_run_id}")
+                last_entry_id = None
                 for entry_id, fields in initial_entries:
                     response = json.loads(fields.get('data', '{}'))
                     yield f"data: {json.dumps(response)}\n\n"
+                    last_entry_id = entry_id
                     # Check if already completed
                     if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
                         logger.debug(f"Detected completion in catch-up: {response.get('status')}")
                         terminate_stream = True
+                
+                # Structure-aware trimming: Only trim up to last safe boundary
+                # This prevents race conditions where partial streaming data gets trimmed
+                if last_entry_id:
+                    try:
+                        # Find the last safe boundary (complete structural unit)
+                        last_safe_index = find_last_safe_boundary(initial_entries)
+                        
+                        if last_safe_index >= 0:
+                            # We have a safe boundary - trim up to and including that entry
+                            safe_boundary_entry_id = initial_entries[last_safe_index][0]
+                            
+                            # Increment sequence part to remove the boundary entry too
+                            # Format: "timestamp-sequence" -> increment sequence part
+                            if '-' in safe_boundary_entry_id:
+                                parts = safe_boundary_entry_id.split('-')
+                                if len(parts) == 2:
+                                    try:
+                                        timestamp = parts[0]
+                                        sequence = int(parts[1])
+                                        # Increment sequence to remove the boundary entry
+                                        next_id = f"{timestamp}-{sequence + 1}"
+                                        trimmed_count = await redis.xtrim_minid(stream_key, next_id, approximate=True)
+                                        logger.debug(f"Trimmed {trimmed_count} entries from stream {stream_key} up to safe boundary at index {last_safe_index} (entry: {safe_boundary_entry_id})")
+                                    except (ValueError, IndexError):
+                                        # Fallback: use boundary ID directly (keeps boundary entry)
+                                        trimmed_count = await redis.xtrim_minid(stream_key, safe_boundary_entry_id, approximate=True)
+                                        logger.debug(f"Trimmed {trimmed_count} entries from stream {stream_key} up to safe boundary (fallback)")
+                                else:
+                                    trimmed_count = await redis.xtrim_minid(stream_key, safe_boundary_entry_id, approximate=True)
+                                    logger.debug(f"Trimmed {trimmed_count} entries from stream {stream_key} up to safe boundary")
+                            else:
+                                trimmed_count = await redis.xtrim_minid(stream_key, safe_boundary_entry_id, approximate=True)
+                                logger.debug(f"Trimmed {trimmed_count} entries from stream {stream_key} up to safe boundary")
+                        else:
+                            # No safe boundary found - don't trim (keep all entries for reconnection safety)
+                            logger.debug(f"No safe boundary found in {len(initial_entries)} entries - skipping trim to prevent race conditions")
+                    except Exception as trim_error:
+                        logger.warning(f"Failed to trim stream after catch-up read: {trim_error}")
+            
             initial_yield_complete = True
 
             if terminate_stream:

@@ -260,7 +260,7 @@ export const stopAgent = async (agentRunId: string): Promise<void> => {
 
 export const getAgentStatus = async (agentRunId: string): Promise<AgentRun> => {
   if (nonRunningAgentRuns.has(agentRunId)) {
-    throw new Error(`Agent run ${agentRunId} is not running`);
+    throw new Error(`Worker run ${agentRunId} is not running`);
   }
 
   try {
@@ -396,6 +396,7 @@ export const optimisticAgentStart = async (options: {
     
     formData.append('thread_id', options.thread_id);
     formData.append('project_id', options.project_id);
+    formData.append('optimistic', 'true');  // Enable optimistic mode
     
     const promptValue = typeof options.prompt === 'string' ? options.prompt.trim() : options.prompt;
     formData.append('prompt', promptValue);
@@ -419,7 +420,7 @@ export const optimisticAgentStart = async (options: {
     }
 
     const response = await backendApi.upload<OptimisticAgentStartResponse>(
-      '/agent/start-optimistic',
+      '/agent/start',  // Now using unified endpoint
       formData,
       { showErrors: false, cache: 'no-store' }
     );
@@ -547,7 +548,7 @@ export const streamAgent = (
 ): (() => void) => {
   if (nonRunningAgentRuns.has(agentRunId)) {
     setTimeout(() => {
-      callbacks.onError(`Agent run ${agentRunId} is not running`);
+      callbacks.onError(`Worker run ${agentRunId} is not running`);
       callbacks.onClose();
     }, 0);
 
@@ -566,7 +567,7 @@ export const streamAgent = (
         if (status.status !== 'running') {
           nonRunningAgentRuns.add(agentRunId);
           callbacks.onError(
-            `Agent run ${agentRunId} is not running (status: ${status.status})`,
+            `Worker run ${agentRunId} is not running (status: ${status.status})`,
           );
           callbacks.onClose();
           return;
@@ -635,7 +636,7 @@ export const streamAgent = (
             rawData.includes('not found in active runs')
           ) {
             nonRunningAgentRuns.add(agentRunId);
-            callbacks.onError('Agent run not found in active runs');
+            callbacks.onError('Worker run not found in active runs');
             cleanupEventSource(agentRunId, 'agent run not found');
             callbacks.onClose();
             return;

@@ -224,7 +224,8 @@ class MCPRegistry:
         from core.services.supabase import DBConnection
         
         schemas = {}
-        toolkits_to_query = {}
+        composio_toolkits = {}
+        custom_toolkits = {}
         
         for tool_name in tool_names:
             if tool_name not in self._tools:
@@ -233,15 +234,63 @@ class MCPRegistry:
             tool_info = self._tools[tool_name]
             toolkit_slug = tool_info.toolkit_slug
             
-            if toolkit_slug not in toolkits_to_query:
-                toolkits_to_query[toolkit_slug] = []
-            toolkits_to_query[toolkit_slug].append(tool_name)
+            # Separate custom MCPs from Composio MCPs based on toolkit_slug pattern
+            if toolkit_slug.startswith("custom_"):
+                if toolkit_slug not in custom_toolkits:
+                    custom_toolkits[toolkit_slug] = []
+                custom_toolkits[toolkit_slug].append(tool_name)
+            else:
+                if toolkit_slug not in composio_toolkits:
+                    composio_toolkits[toolkit_slug] = []
+                composio_toolkits[toolkit_slug].append(tool_name)
         
+        # Load custom MCP schemas
+        for toolkit_slug, tools in custom_toolkits.items():
+            try:
+                cached_schemas = await self._get_cached_toolkit_schemas(toolkit_slug)
+                
+                if cached_schemas:
+                    for tool_name in tools:
+                        if tool_name in cached_schemas:
+                            schemas[tool_name] = cached_schemas[tool_name]
+                            if tool_name in self._tools:
+                                self._tools[tool_name].schema = cached_schemas[tool_name]
+                            logger.debug(f"⚡ [MCP SCHEMA CACHE] Using cached schema for custom MCP tool {tool_name}")
+                    continue
+                
+                # Get config from tool_info for custom MCPs
+                first_tool_info = self._tools.get(tools[0])
+                if not first_tool_info:
+                    continue
+                
+                mcp_config = first_tool_info.mcp_config
+                custom_type = mcp_config.get("customType", mcp_config.get("type", "http"))
+                config = mcp_config.get("config", {})
+                
+                logger.info(f"📥 [MCP REGISTRY] Loading schemas for custom MCP {toolkit_slug} (type: {custom_type})")
+                
+                toolkit_schemas = await self._load_custom_mcp_schemas(custom_type, config)
+                
+                for tool_name in tools:
+                    if tool_name in toolkit_schemas:
+                        schemas[tool_name] = toolkit_schemas[tool_name]
+                        if tool_name in self._tools:
+                            self._tools[tool_name].schema = toolkit_schemas[tool_name]
+                        logger.debug(f"✅ [MCP REGISTRY] Loaded schema for custom MCP tool {tool_name}")
+                
+                if toolkit_schemas:
+                    await self._cache_toolkit_schemas(toolkit_slug, toolkit_schemas)
+                
+            except Exception as e:
+                logger.warning(f"⚠️  [MCP REGISTRY] Failed to load schemas for custom MCP {toolkit_slug}: {e}")
+                continue
+        
+        # Load Composio MCP schemas
         try:
             db = DBConnection()
             profile_service = ComposioProfileService(db)
             
-            for toolkit_slug, tools in toolkits_to_query.items():
+            for toolkit_slug, tools in composio_toolkits.items():
                 try:
                     cached_schemas = await self._get_cached_toolkit_schemas(toolkit_slug)
                     
@@ -317,7 +366,180 @@ class MCPRegistry:
                     continue
         
         except Exception as e:
-            logger.error(f"❌ [MCP REGISTRY] Failed to load schemas: {e}")
+            logger.error(f"❌ [MCP REGISTRY] Failed to load Composio schemas: {e}")
+        
+        return schemas
+    
+    async def _load_custom_mcp_schemas(self, custom_type: str, config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        """Load schemas from custom MCP servers (SSE, HTTP, JSON/stdio)"""
+        schemas = {}
+        
+        try:
+            if custom_type == "sse":
+                schemas = await self._load_sse_mcp_schemas(config)
+            elif custom_type == "http":
+                schemas = await self._load_http_mcp_schemas(config)
+            elif custom_type == "json":
+                schemas = await self._load_json_mcp_schemas(config)
+            else:
+                # Default to HTTP for unknown types
+                schemas = await self._load_http_mcp_schemas(config)
+        except Exception as e:
+            logger.error(f"❌ [MCP REGISTRY] Failed to load custom MCP schemas ({custom_type}): {e}")
+        
+        return schemas
+    
+    async def _load_sse_mcp_schemas(self, config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        """Load schemas from SSE MCP server"""
+        url = config.get('url')
+        if not url:
+            logger.error("❌ [MCP REGISTRY] Missing 'url' in SSE MCP config")
+            return {}
+        
+        from mcp.client.sse import sse_client
+        from mcp import ClientSession
+        
+        headers = config.get('headers', {})
+        schemas = {}
+        
+        try:
+            try:
+                async with sse_client(url, headers=headers) as (read_stream, write_stream):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        await session.initialize()
+                        tools_result = await session.list_tools()
+                        tools = tools_result.tools if hasattr(tools_result, 'tools') else tools_result
+                        
+                        for tool in tools:
+                            schema = {
+                                "type": "function",
+                                "function": {
+                                    "name": tool.name,
+                                    "description": tool.description or f"Execute {tool.name}",
+                                    "parameters": tool.inputSchema if hasattr(tool, 'inputSchema') else {
+                                        "type": "object",
+                                        "properties": {},
+                                        "required": []
+                                    }
+                                }
+                            }
+                            schemas[tool.name] = schema
+                        
+                        logger.debug(f"⚡ [MCP REGISTRY] Discovered {len(schemas)} SSE schemas")
+            except TypeError as e:
+                if "unexpected keyword argument" in str(e):
+                    async with sse_client(url) as (read_stream, write_stream):
+                        async with ClientSession(read_stream, write_stream) as session:
+                            await session.initialize()
+                            tools_result = await session.list_tools()
+                            tools = tools_result.tools if hasattr(tools_result, 'tools') else tools_result
+                            
+                            for tool in tools:
+                                schema = {
+                                    "type": "function",
+                                    "function": {
+                                        "name": tool.name,
+                                        "description": tool.description or f"Execute {tool.name}",
+                                        "parameters": tool.inputSchema if hasattr(tool, 'inputSchema') else {
+                                            "type": "object",
+                                            "properties": {},
+                                            "required": []
+                                        }
+                                    }
+                                }
+                                schemas[tool.name] = schema
+                            
+                            logger.debug(f"⚡ [MCP REGISTRY] Discovered {len(schemas)} SSE schemas (no headers)")
+                else:
+                    raise
+        except Exception as e:
+            logger.error(f"❌ [MCP REGISTRY] Failed to load SSE schemas: {e}")
+        
+        return schemas
+    
+    async def _load_http_mcp_schemas(self, config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        """Load schemas from HTTP/Streamable HTTP MCP server"""
+        url = config.get('url')
+        if not url:
+            logger.error("❌ [MCP REGISTRY] Missing 'url' in HTTP MCP config")
+            return {}
+        
+        from mcp.client.streamable_http import streamablehttp_client
+        from mcp import ClientSession
+        
+        schemas = {}
+        
+        try:
+            async with streamablehttp_client(url) as (read_stream, write_stream, _):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    tools_result = await session.list_tools()
+                    tools = tools_result.tools if hasattr(tools_result, 'tools') else tools_result
+                    
+                    for tool in tools:
+                        schema = {
+                            "type": "function",
+                            "function": {
+                                "name": tool.name,
+                                "description": tool.description or f"Execute {tool.name}",
+                                "parameters": tool.inputSchema if hasattr(tool, 'inputSchema') else {
+                                    "type": "object",
+                                    "properties": {},
+                                    "required": []
+                                }
+                            }
+                        }
+                        schemas[tool.name] = schema
+                    
+                    logger.debug(f"⚡ [MCP REGISTRY] Discovered {len(schemas)} HTTP schemas")
+        except Exception as e:
+            logger.error(f"❌ [MCP REGISTRY] Failed to load HTTP schemas: {e}")
+        
+        return schemas
+    
+    async def _load_json_mcp_schemas(self, config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        """Load schemas from JSON/stdio MCP server"""
+        command = config.get('command')
+        if not command:
+            logger.error("❌ [MCP REGISTRY] Missing 'command' in JSON/stdio MCP config")
+            return {}
+        
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+        
+        schemas = {}
+        
+        try:
+            server_params = StdioServerParameters(
+                command=command,
+                args=config.get("args", []),
+                env=config.get("env", {})
+            )
+            
+            async with stdio_client(server_params) as (read_stream, write_stream):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    tools_result = await session.list_tools()
+                    tools = tools_result.tools if hasattr(tools_result, 'tools') else tools_result
+                    
+                    for tool in tools:
+                        schema = {
+                            "type": "function",
+                            "function": {
+                                "name": tool.name,
+                                "description": tool.description or f"Execute {tool.name}",
+                                "parameters": tool.inputSchema if hasattr(tool, 'inputSchema') else {
+                                    "type": "object",
+                                    "properties": {},
+                                    "required": []
+                                }
+                            }
+                        }
+                        schemas[tool.name] = schema
+                    
+                    logger.debug(f"⚡ [MCP REGISTRY] Discovered {len(schemas)} JSON/stdio schemas")
+        except Exception as e:
+            logger.error(f"❌ [MCP REGISTRY] Failed to load JSON/stdio schemas: {e}")
         
         return schemas
     

@@ -94,6 +94,7 @@ dependencies = [
   "google-analytics-data>=0.18.0",
   "realitydefender>=0.1.10",
   "apify-client==2.3.0",
+  "paramiko>=3.4.0",
 ]
 
 [project.urls]

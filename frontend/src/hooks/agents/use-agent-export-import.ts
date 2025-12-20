@@ -39,7 +39,7 @@ export const useExportAgent = () => {
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!session) {
-        throw new Error('You must be logged in to export agents');
+        throw new Error('You must be logged in to export workers');
       }
 
       const response = await fetch(`${API_URL}/agents/${agentId}/export`, {
@@ -66,13 +66,13 @@ export const useExportAgent = () => {
       
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${data.name.replace(/[^a-zA-Z0-9]/g, '_')}_agent_export.json`;
+      link.download = `${data.name.replace(/[^a-zA-Z0-9]/g, '_')}_worker_export.json`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       
-      toast.success(`Agent "${data.name}" exported successfully`);
+      toast.success(`Worker "${data.name}" exported successfully`);
     },
     onError: (error: any) => {
       console.error('Export error:', error);
@@ -91,7 +91,7 @@ export const useImportAgent = () => {
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!session) {
-        throw new Error('You must be logged in to import agents');
+        throw new Error('You must be logged in to import workers');
       }
 
       const response = await fetch(`${API_URL}/agents/import`, {
@@ -116,7 +116,7 @@ export const useImportAgent = () => {
       queryClient.invalidateQueries({ queryKey: ['agents'] });
       
       const action = variables.import_as_new ? 'imported' : 'updated';
-      toast.success(`Agent "${variables.import_data.name}" ${action} successfully`);
+      toast.success(`Worker "${variables.import_data.name}" ${action} successfully`);
     },
     onError: (error: any) => {
       console.error('Import error:', error);
@@ -135,7 +135,7 @@ export const validateImportData = (data: any): { isValid: boolean; errors: strin
   }
   
   if (!data.name || typeof data.name !== 'string') {
-    errors.push("Agent name is required");
+    errors.push("Worker name is required");
   }
   
   if (!data.system_prompt || typeof data.system_prompt !== 'string') {
@@ -143,7 +143,7 @@ export const validateImportData = (data: any): { isValid: boolean; errors: strin
   }
   
   if (!data.export_version) {
-    errors.push("Export version is missing - this may not be a valid agent export file");
+    errors.push("Export version is missing - this may not be a valid worker export file");
   }
   
   if (data.agentpress_tools && typeof data.agentpress_tools !== 'object') {

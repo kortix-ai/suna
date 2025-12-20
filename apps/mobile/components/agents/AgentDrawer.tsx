@@ -121,6 +121,7 @@ export function AgentDrawer({
     selectAgent,
     selectModel,
     isLoading,
+    hasInitialized,
     loadAgents,
   } = agentContext;
 
@@ -295,8 +296,8 @@ export function AgentDrawer({
 
     if (!selectedAgent) {
       Alert.alert(
-        'No Agent Selected',
-        'Please select an agent first before configuring integrations.',
+        'No Worker Selected',
+        'Please select a worker first before configuring integrations.',
         [{ text: 'OK' }]
       );
       return;
@@ -379,7 +380,7 @@ export function AgentDrawer({
                   colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
               }}
               className="font-roobert text-sm">
-              {isLoading ? t('loading.threads') : 'No worker selected'}
+              {isLoading || !hasInitialized ? t('loading.threads') : 'No worker selected'}
             </Text>
           </View>
         )}

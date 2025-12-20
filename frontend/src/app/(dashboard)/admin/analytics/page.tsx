@@ -28,6 +28,7 @@ import {
   ArrowDownRight,
   ChevronLeft,
   ChevronRight,
+  CreditCard,
 } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -63,6 +64,7 @@ import {
   useSignupsByDate,
   useViewsByDate,
   useNewPaidByDate,
+  useChurnByDate,
   type SimulatorConfigData,
   type ThreadAnalytics,
   type RetentionData,
@@ -70,6 +72,37 @@ import {
   type WeeklyActualData,
   type AnalyticsSource,
 } from '@/hooks/admin/use-admin-analytics';
+import { AdminUserTable } from '@/components/admin/admin-user-table';
+import { AdminUserDetailsDialog } from '@/components/admin/admin-user-details-dialog';
+import { useAdminUserList, useRefreshUserData, type UserSummary } from '@/hooks/admin/use-admin-users';
+
+// ============================================================================
+// CLICKABLE USER EMAIL COMPONENT
+// ============================================================================
+
+interface UserEmailLinkProps {
+  email: string | null | undefined;
+  onUserClick: (email: string) => void;
+  className?: string;
+}
+
+function UserEmailLink({ email, onUserClick, className = '' }: UserEmailLinkProps) {
+  if (!email) {
+    return <span className="text-muted-foreground">Unknown user</span>;
+  }
+  
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onUserClick(email);
+      }}
+      className={`text-primary hover:underline hover:text-primary/80 transition-colors text-left ${className}`}
+    >
+      {email}
+    </button>
+  );
+}
 
 // ============================================================================
 // STAT CARD COMPONENT
@@ -120,9 +153,10 @@ interface ThreadBrowserProps {
   categoryFilter?: string | null;
   filterDate?: string | null;  // Date string in YYYY-MM-DD format for filtering when category is selected
   onClearCategory?: () => void;
+  onUserClick: (email: string) => void;
 }
 
-function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBrowserProps) {
+function ThreadBrowser({ categoryFilter, filterDate, onClearCategory, onUserClick }: ThreadBrowserProps) {
   const [params, setParams] = useState<ThreadBrowseParams>({
     page: 1,
     page_size: 15,
@@ -223,9 +257,9 @@ function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBr
               <Badge variant="outline" className="text-xs">Public</Badge>
             )}
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {thread.user_email || 'Unknown user'}
-          </p>
+          <div className="text-xs mt-1">
+            <UserEmailLink email={thread.user_email} onUserClick={onUserClick} />
+          </div>
           <p className="text-xs text-muted-foreground font-mono">
             {thread.thread_id.slice(0, 8)}...
           </p>
@@ -314,7 +348,7 @@ function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBr
       ),
       width: 'w-24',
     },
-  ], [translations, translateMutation.isPending]);
+  ], [translations, translateMutation.isPending, onUserClick]);
 
   return (
     <div className="space-y-4">
@@ -412,7 +446,11 @@ function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBr
 // RETENTION TAB COMPONENT
 // ============================================================================
 
-function RetentionTab() {
+interface RetentionTabProps {
+  onUserClick: (email: string) => void;
+}
+
+function RetentionTab({ onUserClick }: RetentionTabProps) {
   const [params, setParams] = useState({
     page: 1,
     page_size: 15,
@@ -436,7 +474,7 @@ function RetentionTab() {
       header: 'User',
       cell: (user) => (
         <div>
-          <p className="font-medium">{user.email || 'Unknown'}</p>
+          <UserEmailLink email={user.email} onUserClick={onUserClick} className="font-medium" />
           <p className="text-xs text-muted-foreground font-mono">{user.user_id.slice(0, 8)}...</p>
         </div>
       ),
@@ -481,7 +519,7 @@ function RetentionTab() {
       ),
       width: 'w-32',
     },
-  ], []);
+  ], [onUserClick]);
 
   return (
     <div className="space-y-4">
@@ -715,6 +753,14 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   const signupsDateFrom = '2025-12-15';
   const signupsDateTo = '2026-06-15';
   
+  // Week 0 (Dec 8-14) baseline data for Week 1 growth calculation
+  // From spreadsheet: used only for % Growth, not displayed
+  const week0Baseline = {
+    views: 44592,    // 4506+4851+7504+8722+7941+6263+4805
+    signups: 10056,  // 1171+1191+1046+2058+2101+1289+1200
+    newPaid: 120,    // 9+14+15+17+26+22+17
+  };
+  
   // Fetch signups grouped by date
   const { data: signupsByDateData } = useSignupsByDate(signupsDateFrom, signupsDateTo);
   
@@ -723,6 +769,9 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   
   // Fetch new paid subscriptions from Stripe (excludes free tier)
   const { data: newPaidByDateData } = useNewPaidByDate(signupsDateFrom, signupsDateTo);
+  
+  // Fetch churn data from Stripe Events
+  const { data: churnByDateData } = useChurnByDate(signupsDateFrom, signupsDateTo);
   
   // Group signups by week number (frontend owns week logic)
   const signupsByWeek = useMemo((): Record<number, number> => {
@@ -781,6 +830,52 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     return result;
   }, [newPaidByDateData]);
 
+  // Group churn by week number (from Stripe Events)
+  const churnByWeek = useMemo((): Record<number, number> => {
+    if (!churnByDateData?.churn_by_date) return {};
+    
+    const startDate = new Date(2025, 11, 15); // Dec 15, 2025
+    const result: Record<number, number> = {};
+    
+    Object.entries(churnByDateData.churn_by_date).forEach(([dateStr, count]) => {
+      const date = new Date(dateStr);
+      const daysSinceStart = Math.floor((date.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      const weekNum = Math.floor(daysSinceStart / 7) + 1;
+      if (weekNum >= 1) {
+        result[weekNum] = (result[weekNum] || 0) + count;
+      }
+    });
+    
+    return result;
+  }, [churnByDateData]);
+
+  // Calculate actual subscribers by week progressively
+  // Starting point: 709 subscribers as of Dec 14, 2025
+  const actualSubsByWeek = useMemo((): Record<number, number> => {
+    const DEC_14_SUBSCRIBERS = 709;
+    const result: Record<number, number> = {};
+    
+    // Get max week from either newPaid or churn data
+    const maxWeek = Math.max(
+      ...Object.keys(newPaidByWeek).map(Number),
+      ...Object.keys(churnByWeek).map(Number),
+      0
+    );
+    
+    if (maxWeek === 0) return result;
+    
+    let currentSubs = DEC_14_SUBSCRIBERS;
+    
+    for (let week = 1; week <= maxWeek; week++) {
+      const weekNewPaid = newPaidByWeek[week] || 0;
+      const weekChurn = churnByWeek[week] || 0;
+      currentSubs = currentSubs + weekNewPaid - weekChurn;
+      result[week] = currentSubs;
+    }
+    
+    return result;
+  }, [newPaidByWeek, churnByWeek]);
+
   // Weekly projections derived from monthly (matching HTML dashboard logic exactly)
   const weeklyProjections = useMemo((): SimulationWeek[] => {
     const weeks: SimulationWeek[] = [];
@@ -805,11 +900,15 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         const weekEnd = new Date(currentDate);
         weekEnd.setDate(weekEnd.getDate() + 6);
         
-        // Determine actual calendar month index based on week start date
+        // Determine actual calendar month index based on week END date (with 1-day buffer)
+        // A week belongs to the month where it ends (last complete week logic)
+        // Buffer of 1 day: if week ends on 1st of month, count it as previous month
         // Dec 2025 = 0, Jan 2026 = 1, Feb 2026 = 2, etc.
-        const calendarMonthIndex = weekStart.getMonth() === 11 
+        const weekEndWithBuffer = new Date(weekEnd);
+        weekEndWithBuffer.setDate(weekEndWithBuffer.getDate() - 1);
+        const calendarMonthIndex = weekEndWithBuffer.getMonth() === 11 
           ? 0  // December 2025
-          : weekStart.getMonth() + 1;  // Jan=1, Feb=2, etc.
+          : weekEndWithBuffer.getMonth() + 1;  // Jan=1, Feb=2, etc.
         
         // Update running subscriber count (matching HTML logic)
         totalSubs = Math.max(0, totalSubs + weeklyNewPaid - weeklyChurned);
@@ -938,8 +1037,8 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     // Use Stripe data for new paid, fallback to manual entry
     actualNewPaid: newPaidByWeek[w.week] || actualData[w.week]?.newPaid || 0,
     goalSubs: w.subscribers,
-    // Use manual entry for subscribers (Stripe gives current total, not weekly)
-    actualSubs: actualData[w.week]?.subscribers || 0,
+    // Use calculated subscribers from newPaid - churn
+    actualSubs: actualSubsByWeek[w.week] || 0,
     goalMRR: w.mrr,
     actualMRR: actualData[w.week]?.mrr || 0,
     goalARR: w.arr,
@@ -948,7 +1047,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
 
   // Aggregate weekly actuals into monthly actuals for comparison
   const monthlyActuals = useMemo(() => {
-    const result: Record<number, { views: number; signups: number; newPaid: number; subscribers: number; mrr: number; arr: number }> = {};
+    const result: Record<number, { views: number; signups: number; newPaid: number; churn: number; subscribers: number; mrr: number; arr: number }> = {};
     
     weeklyProjections.forEach((week) => {
       const monthIdx = week.monthIndex;
@@ -956,9 +1055,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       const autoSignups = signupsByWeek[week.week] || 0;
       const autoViews = viewsByWeek[week.week] || 0;
       const autoNewPaid = newPaidByWeek[week.week] || 0;
+      const autoChurn = churnByWeek[week.week] || 0;
       
       if (!result[monthIdx]) {
-        result[monthIdx] = { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+        result[monthIdx] = { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0 };
       }
       
       // Use auto-fetched signups from database
@@ -967,17 +1067,24 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       result[monthIdx].views += autoViews;
       // Use auto-fetched new paid from Stripe (fallback to manual)
       result[monthIdx].newPaid += autoNewPaid || (weekActual?.newPaid || 0);
+      // Use auto-fetched churn from Stripe
+      result[monthIdx].churn += autoChurn;
+      
+      // Use calculated subscribers (take last week's value as end-of-month)
+      const calcSubs = actualSubsByWeek[week.week];
+      if (calcSubs !== undefined) {
+        result[monthIdx].subscribers = calcSubs;
+      }
       
       if (weekActual) {
-        // For subscribers, MRR, ARR - take the last week's value as end-of-month value
-        result[monthIdx].subscribers = weekActual.subscribers || result[monthIdx].subscribers;
+        // For MRR, ARR - take the last week's value as end-of-month value
         result[monthIdx].mrr = weekActual.mrr || result[monthIdx].mrr;
         result[monthIdx].arr = weekActual.arr || result[monthIdx].arr;
       }
     });
     
     return result;
-  }, [weeklyProjections, actualData, signupsByWeek, viewsByWeek, newPaidByWeek]);
+  }, [weeklyProjections, actualData, signupsByWeek, viewsByWeek, newPaidByWeek, churnByWeek, actualSubsByWeek]);
 
   // Derive monthly goals from weekly projections (grouped by actual calendar month)
   // This ensures the monthly table shows all months that have weeks, including June
@@ -1463,8 +1570,12 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                 <tr className="border-b bg-muted/50">
                   <th className="text-left p-3 font-medium">Month</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>Visitors</th>
+                  <th className="text-center p-3 font-medium">Growth</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>Signups</th>
+                  <th className="text-center p-3 font-medium">Conv</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>New Paid</th>
+                  <th className="text-center p-3 font-medium">Conv</th>
+                  <th className="text-center p-3 font-medium">Churn</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>Total Subs</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>MRR</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>ARR</th>
@@ -1473,9 +1584,13 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <th></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal"></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal"></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal"></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
@@ -1487,30 +1602,75 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               </thead>
               <tbody>
                 {monthlyFromWeekly.map((month, idx) => {
-                  const actual = monthlyActuals[month.monthIndex] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+                  const actual = monthlyActuals[month.monthIndex] || { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0 };
+                  const prevMonth = idx > 0 ? monthlyFromWeekly[idx - 1] : null;
+                  const prevActual = prevMonth ? (monthlyActuals[prevMonth.monthIndex] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 }) : null;
                   const hasActual = actual.views > 0 || actual.signups > 0 || actual.subscribers > 0;
                   const isLastMonth = idx === monthlyFromWeekly.length - 1;
+                  
+                  // Calculate actual values with Dec 1-14 adjustments
+                  const actualViews = actual.views + (month.monthIndex === 0 ? 78313 : 0);
+                  const actualSignups = actual.signups + (month.monthIndex === 0 ? 18699 : 0);
+                  const actualNewPaid = actual.newPaid + (month.monthIndex === 0 ? 233 : 0);
+                  const actualChurn = actual.churn + (month.monthIndex === 0 ? 98 : 0);
+                  
+                  // Calculate previous month actual values with Dec 1-14 adjustments
+                  const prevActualViews = prevActual ? (prevActual.views + (prevMonth?.monthIndex === 0 ? 78313 : 0)) : 0;
+                  
+                  // Calculate views % growth (month-over-month)
+                  const viewsGrowth = prevActualViews > 0 && actualViews > 0 ? ((actualViews / prevActualViews) - 1) * 100 : null;
+                  
+                  // Calculate signup conversion rate (signups / views)
+                  const signupConvRate = actualViews > 0 && actualSignups > 0 ? (actualSignups / actualViews) * 100 : null;
+                  
+                  // Calculate new paid conversion rate (new paid / signups)
+                  const paidConvRate = actualSignups > 0 && actualNewPaid > 0 ? (actualNewPaid / actualSignups) * 100 : null;
+                  
+                  // Helper to format growth
+                  const formatGrowth = (value: number | null) => {
+                    if (value === null) return '—';
+                    const sign = value >= 0 ? '+' : '';
+                    return `${sign}${value.toFixed(1)}%`;
+                  };
+                  
+                  const getGrowthColor = (value: number | null) => {
+                    if (value === null) return 'text-muted-foreground';
+                    return value >= 0 ? 'text-green-600' : 'text-red-500';
+                  };
                   
                   return (
                     <tr key={month.month} className={`border-b ${isLastMonth ? 'bg-primary/5 font-medium' : ''}`}>
                       <td className="p-3">{month.month}</td>
                       {/* Visitors */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.visitors)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actual.views >= month.visitors ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.views > 0 ? formatNumber(actual.views + (month.monthIndex === 0 ? 78313 : 0)) : '—'}
-                         {/* added dec 1 to 14 data to actual.views for December */}
+                      <td className={`text-right p-2 font-medium ${hasActual && actualViews >= month.visitors ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.views > 0 ? formatNumber(actualViews) : '—'}
+                      </td>
+                      {/* % Growth */}
+                      <td className={`text-right p-2 font-medium ${getGrowthColor(viewsGrowth)}`}>
+                        {formatGrowth(viewsGrowth)}
                       </td>
                       {/* Signups */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.signups)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actual.signups >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.signups > 0 ? formatNumber(actual.signups + (month.monthIndex === 0 ? 18699 : 0)) : '—'}
-                        {/* added dec 1 to 14 data to actual.signups for December */}
+                      <td className={`text-right p-2 font-medium ${hasActual && actualSignups >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.signups > 0 ? formatNumber(actualSignups) : '—'}
+                      </td>
+                      {/* Signup Conv */}
+                      <td className="text-right p-2 font-medium text-muted-foreground">
+                        {signupConvRate !== null ? `${signupConvRate.toFixed(1)}%` : '—'}
                       </td>
                       {/* New Paid */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.newPaid)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actual.newPaid >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.newPaid > 0 ? formatNumber(actual.newPaid + (month.monthIndex === 0 ? 233 : 0)) : '—'}
-                        {/* added dec 1 to 14 data to actual.newPaid for December */}
+                      <td className={`text-right p-2 font-medium ${hasActual && actualNewPaid >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actual.newPaid > 0 ? formatNumber(actualNewPaid) : '—'}
+                      </td>
+                      {/* Paid Conv */}
+                      <td className="text-right p-2 font-medium text-muted-foreground">
+                        {paidConvRate !== null ? `${paidConvRate.toFixed(1)}%` : '—'}
+                      </td>
+                      {/* Churn */}
+                      <td className={`text-right p-2 font-medium ${actualChurn > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actualChurn > 0 ? formatNumber(actualChurn) : '—'}
                       </td>
                       {/* Total Subs */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.totalSubs)}</td>
@@ -1647,9 +1807,13 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <tr className="border-b bg-muted/50">
                     <th className="text-left p-2 font-medium">Week</th>
                     <th className="text-left p-2 font-medium">Date Range</th>
-                    <th className="text-center p-2 font-medium" colSpan={3}>Views</th>
-                    <th className="text-center p-2 font-medium" colSpan={3}>Signups</th>
-                    <th className="text-center p-2 font-medium" colSpan={3}>New Paid</th>
+                    <th className="text-center p-2 font-medium" colSpan={2}>Views</th>
+                    <th className="text-center p-2 font-medium">Growth</th>
+                    <th className="text-center p-2 font-medium" colSpan={2}>Signups</th>
+                    <th className="text-center p-2 font-medium">Conv</th>
+                    <th className="text-center p-2 font-medium" colSpan={2}>New Paid</th>
+                    <th className="text-center p-2 font-medium">Conv</th>
+                    <th className="text-center p-2 font-medium">Churn</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>Subscribers</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>MRR</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>ARR</th>
@@ -1660,13 +1824,14 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     <th></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
@@ -1686,63 +1851,91 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     const autoViews = viewsByWeek[week.week] ?? 0;
                     const autoSignups = signupsByWeek[week.week] ?? 0;
                     const autoNewPaid = newPaidByWeek[week.week] ?? 0;
-                    const viewsVar = getVariance(autoViews, week.visitors);
-                    const signupsVar = getVariance(autoSignups, week.signups);
+                    const calcSubs = actualSubsByWeek[week.week] ?? 0;
                     // Use Stripe data for new paid, fallback to manual entry
                     const effectiveNewPaid = autoNewPaid || actual.newPaid || 0;
-                    const newPaidVar = getVariance(effectiveNewPaid, week.newPaid);
-                    const subsVar = getVariance(actual.subscribers, week.subscribers);
+                    const subsVar = getVariance(calcSubs, week.subscribers);
                     const mrrVar = getVariance(actual.mrr, week.mrr);
                     const arrVar = getVariance(actual.arr, week.arr);
+                    
+                    // Get previous week's views for % Growth calculation
+                    const prevWeekNum = week.week - 1;
+                    // For Week 1, use week0Baseline; otherwise use fetched data
+                    const prevAutoViews = prevWeekNum === 0 ? week0Baseline.views : (prevWeekNum >= 1 ? (viewsByWeek[prevWeekNum] ?? 0) : 0);
+                    
+                    // Calculate views % growth (week-over-week)
+                    const viewsGrowth = prevAutoViews > 0 && autoViews > 0 ? ((autoViews / prevAutoViews) - 1) * 100 : null;
+                    
+                    // Calculate signup conversion rate (signups / views)
+                    const signupConvRate = autoViews > 0 && autoSignups > 0 ? (autoSignups / autoViews) * 100 : null;
+                    
+                    // Calculate new paid conversion rate (new paid / signups)
+                    const paidConvRate = autoSignups > 0 && effectiveNewPaid > 0 ? (effectiveNewPaid / autoSignups) * 100 : null;
+                    
+                    // Helper to format growth
+                    const formatGrowth = (value: number | null) => {
+                      if (value === null) return '—';
+                      const sign = value >= 0 ? '+' : '';
+                      return `${sign}${value.toFixed(0)}%`;
+                    };
+                    
+                    const getGrowthColor = (value: number | null) => {
+                      if (value === null) return 'text-muted-foreground';
+                      return value >= 0 ? 'text-green-600' : 'text-red-500';
+                    };
                     
                     return (
                       <tr key={week.week} className={`border-b hover:bg-muted/30 ${week.week === weeklyProjections.length ? 'bg-primary/5 font-medium' : ''}`}>
                         <td className="p-2 font-medium">W{week.week}</td>
                         <td className="p-2 text-muted-foreground whitespace-nowrap">{week.dateRange}</td>
-                        {/* Views - Auto-fetched from Google Analytics */}
+                        {/* Views */}
                         <td className="text-right p-1">{formatNumber(week.visitors)}</td>
                         <td className="text-right p-1">
                           <span className={`text-[10px] font-medium ${autoViews > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
                             {autoViews > 0 ? formatNumber(autoViews) : '—'}
                           </span>
                         </td>
-                        <td className={`text-right p-1 text-[10px] ${viewsVar.color}`}>
-                          {autoViews > 0 ? `${viewsVar.value >= 0 ? '+' : ''}${viewsVar.value.toFixed(1)}%` : '—'}
+                        {/* % Growth */}
+                        <td className={`text-right p-1 text-[10px] font-medium ${getGrowthColor(viewsGrowth)}`}>
+                          {formatGrowth(viewsGrowth)}
                         </td>
-                        {/* Signups - Auto-fetched from database */}
+                        {/* Signups */}
                         <td className="text-right p-1">{formatNumber(week.signups)}</td>
                         <td className="text-right p-1">
                           <span className={`text-[10px] font-medium ${autoSignups > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
                             {autoSignups > 0 ? formatNumber(autoSignups) : '—'}
                           </span>
                         </td>
-                        <td className={`text-right p-1 text-[10px] ${signupsVar.color}`}>
-                          {autoSignups > 0 ? `${signupsVar.value >= 0 ? '+' : ''}${signupsVar.value.toFixed(1)}%` : '—'}
+                        {/* Signup Conv */}
+                        <td className="text-right p-1 text-[10px] font-medium text-muted-foreground">
+                          {signupConvRate !== null ? `${signupConvRate.toFixed(1)}%` : '—'}
                         </td>
-                        {/* New Paid - Auto-fetched from Stripe */}
+                        {/* New Paid */}
                         <td className="text-right p-1">{formatNumber(week.newPaid)}</td>
                         <td className="text-right p-1">
                           <span className={`text-[10px] font-medium ${effectiveNewPaid > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
                             {effectiveNewPaid > 0 ? formatNumber(effectiveNewPaid) : '—'}
                           </span>
                         </td>
-                        <td className={`text-right p-1 text-[10px] ${newPaidVar.color}`}>
-                          {effectiveNewPaid > 0 ? `${newPaidVar.value >= 0 ? '+' : ''}${newPaidVar.value.toFixed(1)}%` : '—'}
+                        {/* Paid Conv */}
+                        <td className="text-right p-1 text-[10px] font-medium text-muted-foreground">
+                          {paidConvRate !== null ? `${paidConvRate.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* Churn */}
+                        <td className="text-right p-1">
+                          <span className={`text-[10px] font-medium ${(churnByWeek[week.week] || 0) > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                            {(churnByWeek[week.week] || 0) > 0 ? formatNumber(churnByWeek[week.week]) : '—'}
+                          </span>
                         </td>
                         {/* Subscribers */}
                         <td className="text-right p-1 font-medium">{formatNumber(week.subscribers)}</td>
                         <td className="text-right p-1">
-                          <Input
-                            type="number"
-                            value={getInputValue(week.week, 'subscribers')}
-                            onChange={(e) => handleInputChange(week.week, 'subscribers', e.target.value)}
-                            onBlur={() => handleInputBlur(week.week, 'subscribers')}
-                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            placeholder="—"
-                          />
+                          <span className={`text-[10px] font-medium ${calcSubs > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                            {calcSubs > 0 ? formatNumber(calcSubs) : '—'}
+                          </span>
                         </td>
                         <td className={`text-right p-1 text-[10px] ${subsVar.color}`}>
-                          {actual.subscribers ? `${subsVar.value >= 0 ? '+' : ''}${subsVar.value.toFixed(1)}%` : '—'}
+                          {calcSubs > 0 ? `${subsVar.value >= 0 ? '+' : ''}${subsVar.value.toFixed(1)}%` : '—'}
                         </td>
                         {/* MRR */}
                         <td className="text-right p-1">{formatCurrency(week.mrr)}</td>
@@ -1775,7 +1968,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           {actual.arr ? `${arrVar.value >= 0 ? '+' : ''}${arrVar.value.toFixed(1)}%` : '—'}
                         </td>
                         <td className="p-1">
-                          {(actual.newPaid || actual.subscribers || actual.mrr || actual.arr) && (
+                          {(actual.newPaid || actual.mrr || actual.arr) && (
                             <button
                               onClick={() => deleteWeekActual(week.week)}
                               className="text-muted-foreground hover:text-red-500 transition-colors"
@@ -1815,6 +2008,58 @@ export default function AdminAnalyticsPage() {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('vercel');
+  
+  // User details dialog state
+  const [selectedUser, setSelectedUser] = useState<UserSummary | null>(null);
+  const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
+  const [pendingUserEmail, setPendingUserEmail] = useState<string | null>(null);
+  
+  // Fetch user by email when clicked
+  const { data: userSearchResult, isLoading: isSearchingUser, isFetching: isUserFetching } = useAdminUserList({
+    page: 1,
+    page_size: 1,
+    search_email: pendingUserEmail || undefined,
+  });
+  
+  const { refreshUserList, refreshUserStats } = useRefreshUserData();
+  
+  // When user search completes, open the dialog
+  useEffect(() => {
+    // Only process results when we have a pending email and the query is done fetching
+    if (!pendingUserEmail || isSearchingUser || isUserFetching) {
+      return;
+    }
+    
+    if (userSearchResult?.data && userSearchResult.data.length > 0) {
+      setSelectedUser(userSearchResult.data[0]);
+      setIsUserDialogOpen(true);
+      setPendingUserEmail(null);
+    } else if (userSearchResult?.data && userSearchResult.data.length === 0) {
+      toast.error(`User not found: ${pendingUserEmail}`);
+      setPendingUserEmail(null);
+    }
+  }, [pendingUserEmail, userSearchResult, isSearchingUser, isUserFetching]);
+  
+  // Handle user email click from anywhere in the app
+  const handleUserEmailClick = (email: string) => {
+    setPendingUserEmail(email);
+  };
+  
+  // Handle user selection from the Users tab table
+  const handleUserSelect = (user: UserSummary) => {
+    setSelectedUser(user);
+    setIsUserDialogOpen(true);
+  };
+  
+  const handleCloseUserDialog = () => {
+    setIsUserDialogOpen(false);
+    setSelectedUser(null);
+  };
+  
+  const handleRefreshUserData = () => {
+    refreshUserList();
+    refreshUserStats();
+  };
   
   const utcToday = getUTCToday();
   const dateString = format(distributionDate, 'yyyy-MM-dd');
@@ -1992,9 +2237,9 @@ export default function AdminAnalyticsPage() {
                           {conversionFunnel.subscriber_emails && conversionFunnel.subscriber_emails.length > 0 ? (
                             <ul className="space-y-1">
                               {conversionFunnel.subscriber_emails.map((email, idx) => (
-                                <li key={idx} className="text-sm text-muted-foreground flex items-center gap-2">
+                                <li key={idx} className="text-sm flex items-center gap-2">
                                   <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">{idx + 1}</span>
-                                  <a href={`mailto:${email}`} className="hover:text-primary hover:underline">{email}</a>
+                                  <UserEmailLink email={email} onUserClick={handleUserEmailClick} />
                                 </li>
                               ))}
                             </ul>
@@ -2102,6 +2347,10 @@ export default function AdminAnalyticsPage() {
               <MessageSquare className="h-4 w-4" />
               All Threads
             </TabsTrigger>
+            <TabsTrigger value="users" className="flex items-center gap-2">
+              <CreditCard className="h-4 w-4" />
+              Users & Billing
+            </TabsTrigger>
             <TabsTrigger value="retention" className="flex items-center gap-2">
               <UserCheck className="h-4 w-4" />
               Retention
@@ -2117,17 +2366,51 @@ export default function AdminAnalyticsPage() {
               categoryFilter={categoryFilter}
               filterDate={dateString}
               onClearCategory={() => setCategoryFilter(null)}
+              onUserClick={handleUserEmailClick}
             />
           </TabsContent>
 
+          <TabsContent value="users">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  User Management
+                </CardTitle>
+                <CardDescription>
+                  Search users, view billing details, and manage credits
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <AdminUserTable onUserSelect={handleUserSelect} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="retention">
-            <RetentionTab />
+            <RetentionTab onUserClick={handleUserEmailClick} />
           </TabsContent>
 
           <TabsContent value="simulator">
             <ARRSimulator analyticsSource={analyticsSource} />
           </TabsContent>
         </Tabs>
+        
+        {/* User Details Dialog - accessible from anywhere */}
+        <AdminUserDetailsDialog
+          user={selectedUser}
+          isOpen={isUserDialogOpen}
+          onClose={handleCloseUserDialog}
+          onRefresh={handleRefreshUserData}
+        />
+        
+        {/* Loading indicator when searching for user */}
+        {isSearchingUser && pendingUserEmail && (
+          <div className="fixed bottom-4 right-4 bg-background border rounded-lg shadow-lg p-3 flex items-center gap-2">
+            <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm">Loading user: {pendingUserEmail}</span>
+          </div>
+        )}
       </div>
     </div>
   );

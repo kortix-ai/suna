@@ -856,7 +856,7 @@ class ThreadManager:
             logger.warning(f"Reached maximum auto-continue limit ({native_max_auto_continues})")
             yield {
                 "type": "content",
-                "content": f"\n[Agent reached maximum auto-continue limit of {native_max_auto_continues}]"
+                "content": f"\n[Worker reached maximum auto-continue limit of {native_max_auto_continues}]"
             }
 
     def _check_auto_continue_trigger(

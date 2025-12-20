@@ -45,10 +45,9 @@ async def get_queue_metrics() -> dict:
     from core.services import redis
     
     try:
-        client = await redis.get_client()
-        queue_depth = await client.llen("dramatiq:default")
-        delay_queue_depth = await client.llen("dramatiq:default.DQ")
-        dead_letter_depth = await client.llen("dramatiq:default.XQ")
+        queue_depth = await redis.llen("dramatiq:default")
+        delay_queue_depth = await redis.llen("dramatiq:default.DQ")
+        dead_letter_depth = await redis.llen("dramatiq:default.XQ")
         
         return {
             "queue_depth": queue_depth,

@@ -1,5 +1,6 @@
 import dramatiq
 import asyncio
+import os
 from typing import List, Dict, Any
 from datetime import datetime, timezone, timedelta
 from core.utils.logger import logger, structlog
@@ -8,6 +9,15 @@ from core.billing.shared.config import get_memory_config, is_memory_enabled
 from .extraction_service import MemoryExtractionService
 from .embedding_service import EmbeddingService
 from .models import MemoryType, ExtractionQueueStatus
+
+# Get queue prefix from environment (for preview deployments)
+QUEUE_PREFIX = os.getenv("DRAMATIQ_QUEUE_PREFIX", "")
+
+def get_queue_name(base_name: str) -> str:
+    """Get queue name with optional prefix for preview deployments."""
+    if QUEUE_PREFIX:
+        return f"{QUEUE_PREFIX}{base_name}"
+    return base_name
 
 db = DBConnection()
 extraction_service = MemoryExtractionService()
@@ -19,7 +29,7 @@ __all__ = [
     'consolidate_memories',
 ]
 
-@dramatiq.actor
+@dramatiq.actor(queue_name=get_queue_name("default"))
 async def extract_memories_from_conversation(
     thread_id: str,
     account_id: str,
@@ -122,7 +132,7 @@ async def extract_memories_from_conversation(
         except:
             pass
 
-@dramatiq.actor
+@dramatiq.actor(queue_name=get_queue_name("default"))
 async def embed_and_store_memories(
     account_id: str,
     thread_id: str,
@@ -182,7 +192,7 @@ async def embed_and_store_memories(
     except Exception as e:
         logger.error(f"Memory embedding and storage failed: {str(e)}")
 
-@dramatiq.actor
+@dramatiq.actor(queue_name=get_queue_name("default"))
 async def consolidate_memories(account_id: str):
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(

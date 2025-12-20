@@ -7,6 +7,11 @@ def calculate_token_cost(prompt_tokens: int, completion_tokens: int, model: str)
     try:
         logger.debug(f"[COST_CALC] Calculating cost for model '{model}' with {prompt_tokens} prompt + {completion_tokens} completion tokens")
         
+        # Skip cost calculation for test harness mock model
+        if model == "mock-ai":
+            logger.debug(f"[COST_CALC] Skipping cost calculation for mock-ai (test harness)")
+            return Decimal('0')
+        
         resolved_model = model_manager.resolve_model_id(model)
         logger.debug(f"[COST_CALC] Model '{model}' resolved to '{resolved_model}'")
         
@@ -34,6 +39,10 @@ def calculate_cached_token_cost(cached_tokens: int, model: str) -> Decimal:
     Uses cached_read_cost_per_million_tokens if available, otherwise falls back to regular input pricing.
     """
     try:
+        # Skip cost calculation for test harness mock model
+        if model == "mock-ai":
+            return Decimal('0')
+        
         resolved_model = model_manager.resolve_model_id(model)
         model_obj = model_manager.get_model(resolved_model)
         
@@ -56,6 +65,10 @@ def calculate_cache_write_cost(cache_creation_tokens: int, model: str, cache_ttl
     Defaults to 5-minute cache pricing.
     """
     try:
+        # Skip cost calculation for test harness mock model
+        if model == "mock-ai":
+            return Decimal('0')
+        
         resolved_model = model_manager.resolve_model_id(model)
         model_obj = model_manager.get_model(resolved_model)
         

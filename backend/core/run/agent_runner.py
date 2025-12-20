@@ -501,7 +501,7 @@ class AgentRunner:
                     yield {
                         "type": "status",
                         "status": "stopped",
-                        "message": "Agent execution cancelled"
+                        "message": "Worker execution cancelled"
                     }
                     break
 

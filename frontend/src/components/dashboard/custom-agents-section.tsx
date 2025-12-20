@@ -354,7 +354,7 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
       });
 
       if (result.status === 'installed' && result.instance_id) {
-        toast.success(`Agent "${instanceName}" installed successfully!`);
+        toast.success(`Worker "${instanceName}" installed successfully!`);
         setShowInstallDialog(false);
         
         if (onAgentSelect) {

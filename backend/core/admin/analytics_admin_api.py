@@ -1383,6 +1383,220 @@ async def get_new_paid_by_date(
         raise HTTPException(status_code=500, detail="Failed to get new paid subscriptions")
 
 
+async def _fetch_churn_from_stripe(start_ts: int, end_ts: int) -> Dict[str, Dict[str, int]]:
+    """
+    Fetch churn data from Stripe for a timestamp range.
+    Returns dict with 'deleted' and 'downgrade' counts by date.
+    """
+    async def fetch_deleted_churns() -> Dict[str, int]:
+        """Fetch subscription.deleted events for paid subscriptions."""
+        churn_counts: Dict[str, int] = {}
+        has_more = True
+        starting_after = None
+        
+        while has_more:
+            params = {
+                "type": "customer.subscription.deleted",
+                "created": {"gte": start_ts, "lte": end_ts},
+                "limit": 100,
+            }
+            if starting_after:
+                params["starting_after"] = starting_after
+            
+            result = await stripe.Event.list_async(**params)
+            
+            for event in result.data:
+                sub = event.data.object
+                metadata = sub.get("metadata", {}) or {}
+                
+                # Skip free tier
+                if metadata.get("tier") == "free":
+                    continue
+                
+                # Check if it had actual price > $0
+                items = sub.get("items", {}).get("data", [])
+                is_paid = any(
+                    (item.get("price", {}).get("unit_amount", 0) or 0) > 0
+                    for item in items
+                )
+                
+                if is_paid:
+                    event_date = datetime.fromtimestamp(event.created, tz=BERLIN_TZ).strftime('%Y-%m-%d')
+                    churn_counts[event_date] = churn_counts.get(event_date, 0) + 1
+            
+            has_more = result.has_more
+            starting_after = result.data[-1].id if has_more and result.data else None
+        
+        return churn_counts
+    
+    async def fetch_downgrade_churns() -> Dict[str, int]:
+        """Fetch subscription.updated events where amount dropped from >0 to 0."""
+        churn_counts: Dict[str, int] = {}
+        has_more = True
+        starting_after = None
+        
+        while has_more:
+            params = {
+                "type": "customer.subscription.updated",
+                "created": {"gte": start_ts, "lte": end_ts},
+                "limit": 100,
+            }
+            if starting_after:
+                params["starting_after"] = starting_after
+            
+            result = await stripe.Event.list_async(**params)
+            
+            for event in result.data:
+                sub = event.data.object
+                previous = event.data.get("previous_attributes", {}) or {}
+                
+                # Skip if items didn't change
+                if "items" not in previous:
+                    continue
+                
+                # Get current amount
+                current_items = sub.get("items", {}).get("data", [])
+                current_amount = sum(
+                    (item.get("price", {}).get("unit_amount", 0) or 0)
+                    for item in current_items
+                )
+                
+                # Skip if current is not $0
+                if current_amount != 0:
+                    continue
+                
+                # Get previous amount from previous_attributes.items
+                prev_items_data = previous.get("items", {})
+                prev_items = prev_items_data.get("data", []) if isinstance(prev_items_data, dict) else []
+                
+                prev_amount = sum(
+                    (item.get("price", {}).get("unit_amount", 0) or 0)
+                    for item in prev_items
+                )
+                
+                # Count as churn if previous amount > 0 and current = 0
+                if prev_amount > 0:
+                    event_date = datetime.fromtimestamp(event.created, tz=BERLIN_TZ).strftime('%Y-%m-%d')
+                    churn_counts[event_date] = churn_counts.get(event_date, 0) + 1
+            
+            has_more = result.has_more
+            starting_after = result.data[-1].id if has_more and result.data else None
+        
+        return churn_counts
+    
+    # Run both queries in parallel
+    deleted_churns, downgrade_churns = await asyncio.gather(
+        fetch_deleted_churns(),
+        fetch_downgrade_churns()
+    )
+    
+    return {"deleted": deleted_churns, "downgrade": downgrade_churns}
+
+
+@router.get("/arr/churn")
+async def get_churn_by_date(
+    date_from: str = Query(..., description="Start date YYYY-MM-DD"),
+    date_to: str = Query(..., description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """
+    Get churned subscriber counts grouped by date for a date range.
+    Uses database cache for historical data, only fetches from Stripe for today.
+    Super admin only.
+    """
+    try:
+        stripe.api_key = config.STRIPE_SECRET_KEY
+        db = DBConnection()
+        client = await db.client
+        
+        # Parse dates
+        start_date = datetime.strptime(date_from, "%Y-%m-%d").date()
+        end_date = datetime.strptime(date_to, "%Y-%m-%d").date()
+        today = datetime.now(BERLIN_TZ).date()
+        
+        # Cap end date to today
+        if end_date > today:
+            end_date = today
+        
+        # 1. Get cached data from database
+        cached_result = await client.from_('arr_daily_churn').select(
+            'churn_date, deleted_count, downgrade_count'
+        ).gte('churn_date', date_from).lte('churn_date', end_date.isoformat()).execute()
+        
+        cached_dates = {}
+        for row in cached_result.data or []:
+            cached_dates[row['churn_date']] = {
+                'deleted': row['deleted_count'] or 0,
+                'downgrade': row['downgrade_count'] or 0
+            }
+        
+        # 2. Find dates that need fetching from Stripe
+        # - Any date not in cache (except future dates)
+        # - Today (always refresh since it's still updating)
+        dates_to_fetch = []
+        current = start_date
+        while current <= end_date:
+            date_str = current.isoformat()
+            if date_str not in cached_dates or current == today:
+                dates_to_fetch.append(current)
+            current += timedelta(days=1)
+        
+        # 3. Fetch missing dates from Stripe (if any)
+        if dates_to_fetch:
+            # Group consecutive dates into ranges for efficiency
+            fetch_start = min(dates_to_fetch)
+            fetch_end = max(dates_to_fetch)
+            
+            fetch_start_dt = datetime.combine(fetch_start, datetime.min.time()).replace(tzinfo=BERLIN_TZ)
+            fetch_end_dt = datetime.combine(fetch_end, datetime.max.time().replace(microsecond=0)).replace(tzinfo=BERLIN_TZ)
+            
+            start_ts = int(fetch_start_dt.timestamp())
+            end_ts = int(fetch_end_dt.timestamp())
+            
+            logger.debug(f"Fetching churn from Stripe for {fetch_start} to {fetch_end}")
+            stripe_data = await _fetch_churn_from_stripe(start_ts, end_ts)
+            
+            # 4. Store new data in database (upsert)
+            for date in dates_to_fetch:
+                date_str = date.isoformat()
+                deleted = stripe_data["deleted"].get(date_str, 0)
+                downgrade = stripe_data["downgrade"].get(date_str, 0)
+                
+                # Update cache dict
+                cached_dates[date_str] = {'deleted': deleted, 'downgrade': downgrade}
+                
+                # Upsert to database (skip today - don't cache incomplete data)
+                if date != today:
+                    await client.from_('arr_daily_churn').upsert({
+                        'churn_date': date_str,
+                        'deleted_count': deleted,
+                        'downgrade_count': downgrade
+                    }, on_conflict='churn_date').execute()
+        
+        # 5. Build response
+        churn_by_date: Dict[str, int] = {}
+        for date_str, counts in cached_dates.items():
+            total = counts['deleted'] + counts['downgrade']
+            if total > 0:
+                churn_by_date[date_str] = total
+        
+        total = sum(churn_by_date.values())
+        
+        return {
+            "date_from": date_from,
+            "date_to": date_to,
+            "churn_by_date": churn_by_date,
+            "total": total
+        }
+        
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe error getting churn by date: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get churn data from Stripe")
+    except Exception as e:
+        logger.error(f"Failed to get churn by date: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get churn data")
+
+
 @router.get("/arr/actuals")
 async def get_arr_weekly_actuals(
     admin: dict = Depends(require_super_admin)

@@ -117,8 +117,7 @@ async def _get_user_id_from_account_cached(account_id: str) -> Optional[str]:
     cache_key = f"account_user:{account_id}"
     
     try:
-        redis_client = await redis.get_client()
-        cached_user_id = await redis_client.get(cache_key)
+        cached_user_id = await redis.get(cache_key)
         if cached_user_id:
             return cached_user_id.decode('utf-8') if isinstance(cached_user_id, bytes) else cached_user_id
     except Exception as e:
@@ -137,7 +136,7 @@ async def _get_user_id_from_account_cached(account_id: str) -> Optional[str]:
             user_id = user_result.data[0]['primary_owner_user_id']
             
             try:
-                await redis_client.setex(cache_key, 300, user_id)
+                await redis.setex(cache_key, 300, user_id)
             except Exception as e:
                 structlog.get_logger().warning(f"Failed to cache user lookup: {e}")
                 
@@ -337,7 +336,7 @@ async def verify_and_get_agent_authorization(client, agent_id: str, user_id: str
         agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', user_id).execute()
         
         if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Agent not found or access denied")
+            raise HTTPException(status_code=404, detail="Worker not found or access denied")
         
         return agent_result.data[0]
         
