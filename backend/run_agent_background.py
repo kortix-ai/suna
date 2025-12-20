@@ -104,6 +104,9 @@ async def initialize():
     
     logger.info(f"Initializing worker async resources with Redis at {redis_host}:{redis_port}")
     await retry(lambda: redis.initialize_async())
+    
+    await redis.verify_connection()
+    
     await db.initialize()
     
     from core.utils.tool_discovery import warm_up_tools_cache
@@ -539,6 +542,10 @@ async def run_agent_background(
         cancellation_event = asyncio.Event()
 
         redis_keys = create_redis_keys(agent_run_id, instance_id)
+        
+        await redis.verify_stream_writable(redis_keys['response_stream'])
+        logger.info(f"✅ Verified Redis stream {redis_keys['response_stream']} is writable")
+        
         trace = langfuse.trace(
             name="agent_run",
             id=agent_run_id,

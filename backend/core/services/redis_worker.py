@@ -1,4 +1,5 @@
 import redis.asyncio as redis_lib
+from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
 import os
 import time as _time
 from dotenv import load_dotenv
@@ -13,6 +14,7 @@ client: Optional[redis_lib.Redis] = None
 pool: Optional[redis_lib.ConnectionPool] = None
 _initialized = False
 _init_lock = asyncio.Lock()
+_reconnect_lock = asyncio.Lock()
 
 _operation_semaphore: Optional[asyncio.Semaphore] = None
 
@@ -20,6 +22,9 @@ REDIS_KEY_TTL = 3600 * 24
 
 DEFAULT_MAX_CONCURRENT_OPS = 100
 DEFAULT_MAX_CONNECTIONS = DEFAULT_MAX_CONCURRENT_OPS + 50
+
+MAX_RETRIES = int(os.getenv("REDIS_MAX_RETRIES", "3"))
+RETRY_BACKOFF_BASE = 0.5
 
 _circuit_breaker = {
     "failures": 0,
@@ -134,6 +139,78 @@ async def get_client():
     return client
 
 
+async def force_reconnect():
+    global client, pool, _initialized, _circuit_breaker
+    
+    async with _reconnect_lock:
+        logger.warning("🔄 Forcing Redis reconnection...")
+        
+        if client:
+            try:
+                await asyncio.wait_for(client.aclose(), timeout=2.0)
+            except Exception:
+                pass
+            client = None
+        
+        if pool:
+            try:
+                await asyncio.wait_for(pool.disconnect(), timeout=2.0)
+            except Exception:
+                pass
+            pool = None
+        
+        _initialized = False
+        
+        try:
+            await initialize_async()
+            _circuit_breaker["state"] = "closed"
+            _circuit_breaker["failures"] = 0
+            logger.info("✅ Redis reconnection successful, circuit breaker reset")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Redis reconnection failed: {e}")
+            raise
+
+
+def _is_connection_error(exc: Exception) -> bool:
+    return isinstance(exc, (
+        RedisConnectionError,
+        RedisTimeoutError,
+        ConnectionError,
+        ConnectionRefusedError,
+        ConnectionResetError,
+        asyncio.TimeoutError,
+        OSError,
+    ))
+
+
+async def verify_connection() -> bool:
+    try:
+        redis_client = await get_client()
+        await asyncio.wait_for(redis_client.ping(), timeout=5.0)
+        logger.info("✅ Redis connection verified")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Redis connection verification failed: {e}")
+        raise ConnectionError(f"Redis connection verification failed: {e}")
+
+
+async def verify_stream_writable(stream_key: str) -> bool:
+    try:
+        redis_client = await get_client()
+        test_id = await asyncio.wait_for(
+            redis_client.xadd(stream_key, {'_health_check': 'true'}, maxlen=10000),
+            timeout=5.0
+        )
+        if test_id:
+            logger.info(f"✅ Redis stream {stream_key} is writable")
+            return True
+        raise ConnectionError(f"Redis stream {stream_key} write returned no ID")
+    except Exception as e:
+        logger.error(f"❌ Redis stream {stream_key} write verification failed: {e}")
+        raise ConnectionError(f"Redis stream {stream_key} is not writable: {e}")
+
+
 def _check_circuit_breaker() -> bool:
     global _circuit_breaker
     now = _time.time()
@@ -187,6 +264,64 @@ def get_circuit_breaker_state() -> dict:
     }
 
 
+async def _execute_with_retry(op_factory, operation_name: str = "redis_op"):
+    last_exception = None
+    
+    for attempt in range(MAX_RETRIES):
+        if not _check_circuit_breaker():
+            if attempt == 0:
+                logger.warning(f"🔄 Circuit breaker open for {operation_name}, attempting reconnect...")
+                try:
+                    await force_reconnect()
+                except Exception as e:
+                    raise RedisCircuitOpenError(f"Redis circuit breaker is open and reconnection failed: {e}")
+            else:
+                raise RedisCircuitOpenError("Redis circuit breaker is open after retry attempts")
+        
+        try:
+            coro = op_factory()
+            
+            if _operation_semaphore is None:
+                result = await asyncio.wait_for(coro, timeout=10.0)
+            else:
+                async with _operation_semaphore:
+                    result = await asyncio.wait_for(coro, timeout=10.0)
+            
+            _record_success()
+            return result
+            
+        except asyncio.TimeoutError as e:
+            last_exception = e
+            _record_failure()
+            logger.warning(f"⚠️ Redis timeout on {operation_name} (attempt {attempt + 1}/{MAX_RETRIES})")
+            
+        except RedisCircuitOpenError:
+            raise
+            
+        except Exception as e:
+            last_exception = e
+            _record_failure()
+            
+            if _is_connection_error(e):
+                logger.warning(f"⚠️ Redis connection error on {operation_name} (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
+                if attempt < MAX_RETRIES - 1:
+                    try:
+                        await force_reconnect()
+                    except Exception as reconnect_err:
+                        logger.error(f"Reconnect failed during retry: {reconnect_err}")
+            else:
+                logger.error(f"❌ Redis error on {operation_name} (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
+        
+        if attempt < MAX_RETRIES - 1:
+            backoff = RETRY_BACKOFF_BASE * (2 ** attempt)
+            logger.info(f"🔄 Retrying {operation_name} in {backoff:.1f}s...")
+            await asyncio.sleep(backoff)
+    
+    error_msg = f"Redis operation {operation_name} failed after {MAX_RETRIES} attempts"
+    logger.error(f"❌ {error_msg}: {last_exception}")
+    raise ConnectionError(f"{error_msg}: {last_exception}")
+
+
 async def _with_concurrency_limit(coro, allow_circuit_break: bool = True):
     if allow_circuit_break and not _check_circuit_breaker():
         raise RedisCircuitOpenError("Redis circuit breaker is open")
@@ -211,85 +346,117 @@ async def _with_concurrency_limit(coro, allow_circuit_break: bool = True):
 
 
 async def set(key: str, value: str, ex: int = None, nx: bool = False):
-    async def _op():
-        redis_client = await get_client()
-        return await redis_client.set(key, value, ex=ex, nx=nx)
-    return await _with_concurrency_limit(_op())
+    def _op():
+        async def _inner():
+            redis_client = await get_client()
+            return await redis_client.set(key, value, ex=ex, nx=nx)
+        return _inner()
+    return await _execute_with_retry(_op, f"SET {key}")
 
 
 async def get(key: str, default: str = None):
-    async def _op():
-        redis_client = await get_client()
-        result = await redis_client.get(key)
-        return result if result is not None else default
-    return await _with_concurrency_limit(_op())
+    def _op():
+        async def _inner():
+            redis_client = await get_client()
+            result = await redis_client.get(key)
+            return result if result is not None else default
+        return _inner()
+    return await _execute_with_retry(_op, f"GET {key}")
 
 
 async def delete(key: str):
-    async def _op():
-        redis_client = await get_client()
-        return await redis_client.delete(key)
-    return await _with_concurrency_limit(_op())
+    def _op():
+        async def _inner():
+            redis_client = await get_client()
+            return await redis_client.delete(key)
+        return _inner()
+    return await _execute_with_retry(_op, f"DELETE {key}")
 
 
 async def publish(channel: str, message: str):
-    async def _op():
-        redis_client = await get_client()
-        return await redis_client.publish(channel, message)
-    return await _with_concurrency_limit(_op())
+    def _op():
+        async def _inner():
+            redis_client = await get_client()
+            return await redis_client.publish(channel, message)
+        return _inner()
+    return await _execute_with_retry(_op, f"PUBLISH {channel}")
 
 
 async def create_pubsub():
-    redis_client = await get_client()
-    return redis_client.pubsub()
+    for attempt in range(MAX_RETRIES):
+        try:
+            redis_client = await get_client()
+            return redis_client.pubsub()
+        except Exception as e:
+            if _is_connection_error(e) and attempt < MAX_RETRIES - 1:
+                logger.warning(f"⚠️ Redis pubsub creation failed (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
+                try:
+                    await force_reconnect()
+                except Exception:
+                    pass
+                await asyncio.sleep(RETRY_BACKOFF_BASE * (2 ** attempt))
+            else:
+                raise
 
 
 async def rpush(key: str, *values: Any):
-    async def _op():
-        redis_client = await get_client()
-        return await redis_client.rpush(key, *values)
-    return await _with_concurrency_limit(_op())
+    def _op():
+        async def _inner():
+            redis_client = await get_client()
+            return await redis_client.rpush(key, *values)
+        return _inner()
+    return await _execute_with_retry(_op, f"RPUSH {key}")
 
 
 async def lrange(key: str, start: int, end: int) -> List[str]:
-    async def _op():
-        redis_client = await get_client()
-        return await redis_client.lrange(key, start, end)
-    return await _with_concurrency_limit(_op())
+    def _op():
+        async def _inner():
+            redis_client = await get_client()
+            return await redis_client.lrange(key, start, end)
+        return _inner()
+    return await _execute_with_retry(_op, f"LRANGE {key}")
 
 
 async def keys(pattern: str) -> List[str]:
-    async def _op():
-        redis_client = await get_client()
-        return await redis_client.keys(pattern)
-    return await _with_concurrency_limit(_op())
+    def _op():
+        async def _inner():
+            redis_client = await get_client()
+            return await redis_client.keys(pattern)
+        return _inner()
+    return await _execute_with_retry(_op, f"KEYS {pattern}")
 
 
 async def expire(key: str, seconds: int):
-    async def _op():
-        redis_client = await get_client()
-        return await redis_client.expire(key, seconds)
-    return await _with_concurrency_limit(_op())
+    def _op():
+        async def _inner():
+            redis_client = await get_client()
+            return await redis_client.expire(key, seconds)
+        return _inner()
+    return await _execute_with_retry(_op, f"EXPIRE {key}")
 
 
 async def batch_publish(channel: str, messages: List[str]):
-    async def _op():
-        redis_client = await get_client()
-        async with redis_client.pipeline() as pipe:
-            for msg in messages:
-                pipe.publish(channel, msg)
-            return await pipe.execute()
-    return await _with_concurrency_limit(_op())
+    def _op():
+        async def _inner():
+            redis_client = await get_client()
+            async with redis_client.pipeline() as pipe:
+                for msg in messages:
+                    pipe.publish(channel, msg)
+                return await pipe.execute()
+        return _inner()
+    return await _execute_with_retry(_op, f"BATCH_PUBLISH {channel}")
 
 
 async def batch_rpush(key: str, values: List[str]):
-    async def _op():
-        redis_client = await get_client()
-        async with redis_client.pipeline() as pipe:
-            for value in values:
-                pipe.rpush(key, value)
-            return await pipe.execute()
-    return await _with_concurrency_limit(_op())
+    def _op():
+        async def _inner():
+            redis_client = await get_client()
+            async with redis_client.pipeline() as pipe:
+                for value in values:
+                    pipe.rpush(key, value)
+                return await pipe.execute()
+        return _inner()
+    return await _execute_with_retry(_op, f"BATCH_RPUSH {key}")
 
 
 async def get_connection_info():
@@ -330,39 +497,49 @@ async def get_connection_info():
         return {"error": str(e)}
 
 async def xadd(stream_key: str, fields: dict, maxlen: int = None, approximate: bool = True) -> str:
-    async def _op():
-        redis_client = await get_client()
-        kwargs = {}
-        if maxlen is not None:
-            kwargs['maxlen'] = maxlen
-            kwargs['approximate'] = approximate
-        return await redis_client.xadd(stream_key, fields, **kwargs)
-    return await _with_concurrency_limit(_op())
+    def _op():
+        async def _inner():
+            redis_client = await get_client()
+            kwargs = {}
+            if maxlen is not None:
+                kwargs['maxlen'] = maxlen
+                kwargs['approximate'] = approximate
+            return await redis_client.xadd(stream_key, fields, **kwargs)
+        return _inner()
+    return await _execute_with_retry(_op, f"XADD {stream_key}")
 
 
 async def xread(streams: dict, count: int = None, block: int = None) -> list:
-    async def _op():
-        redis_client = await get_client()
-        return await redis_client.xread(streams, count=count, block=block)
-    return await _with_concurrency_limit(_op())
+    def _op():
+        async def _inner():
+            redis_client = await get_client()
+            return await redis_client.xread(streams, count=count, block=block)
+        return _inner()
+    return await _execute_with_retry(_op, f"XREAD")
 
 
 async def xrange(stream_key: str, start: str = '-', end: str = '+', count: int = None) -> list:
-    async def _op():
-        redis_client = await get_client()
-        return await redis_client.xrange(stream_key, start, end, count=count)
-    return await _with_concurrency_limit(_op())
+    def _op():
+        async def _inner():
+            redis_client = await get_client()
+            return await redis_client.xrange(stream_key, start, end, count=count)
+        return _inner()
+    return await _execute_with_retry(_op, f"XRANGE {stream_key}")
 
 
 async def xlen(stream_key: str) -> int:
-    async def _op():
-        redis_client = await get_client()
-        return await redis_client.xlen(stream_key)
-    return await _with_concurrency_limit(_op())
+    def _op():
+        async def _inner():
+            redis_client = await get_client()
+            return await redis_client.xlen(stream_key)
+        return _inner()
+    return await _execute_with_retry(_op, f"XLEN {stream_key}")
 
 
 async def xtrim(stream_key: str, maxlen: int, approximate: bool = True) -> int:
-    async def _op():
-        redis_client = await get_client()
-        return await redis_client.xtrim(stream_key, maxlen=maxlen, approximate=approximate)
-    return await _with_concurrency_limit(_op())
+    def _op():
+        async def _inner():
+            redis_client = await get_client()
+            return await redis_client.xtrim(stream_key, maxlen=maxlen, approximate=approximate)
+        return _inner()
+    return await _execute_with_retry(_op, f"XTRIM {stream_key}")
