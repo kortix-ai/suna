@@ -59,7 +59,7 @@ db = DBConnection()
 instance_id = ""
 
 # TTL for Redis stream keys - ensures cleanup even if process crashes
-REDIS_STREAM_TTL_SECONDS = 3600  # 1 hour
+REDIS_STREAM_TTL_SECONDS = 600  # 10 minutes
 
 _STATIC_CORE_PROMPT = None
 
@@ -356,7 +356,7 @@ async def process_agent_responses(
                 asyncio.create_task(redis.xadd(
                     stream_key,
                     {'data': response_json},
-                    maxlen=10000,
+                    maxlen=200,
                     approximate=True
                 ))
             )
@@ -431,7 +431,7 @@ async def handle_normal_completion(
                 redis.xadd(
                     redis_keys['response_stream'],
                     {'data': completion_json},
-                    maxlen=10000,
+                    maxlen=200,
                     approximate=True
                 ),
                 return_exceptions=True
@@ -708,7 +708,7 @@ async def run_agent_background(
                     redis.xadd(
                         redis_keys['response_stream'],
                         {'data': error_json},
-                        maxlen=10000,
+                        maxlen=200,
                         approximate=True
                     ),
                     return_exceptions=True

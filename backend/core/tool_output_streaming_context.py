@@ -93,7 +93,7 @@ async def stream_tool_output(
         await redis.xadd(
             ctx.stream_key,
             {'data': message_json},
-            maxlen=10000,
+            maxlen=200,
             approximate=True
         )
         

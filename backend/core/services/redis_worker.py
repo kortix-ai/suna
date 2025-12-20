@@ -547,3 +547,23 @@ async def xtrim(stream_key: str, maxlen: int, approximate: bool = True) -> int:
             return await redis_client.xtrim(stream_key, maxlen=maxlen, approximate=approximate)
         return _inner()
     return await _execute_with_retry(_op, f"XTRIM {stream_key}")
+
+
+async def xtrim_minid(stream_key: str, minid: str, approximate: bool = True) -> int:
+    """
+    Trim stream entries older than the given minimum ID.
+    
+    Args:
+        stream_key: The Redis stream key
+        minid: Minimum entry ID to keep (entries with ID < minid will be removed)
+        approximate: Use approximate trimming for better performance
+    
+    Returns:
+        Number of entries removed
+    """
+    def _op():
+        async def _inner():
+            redis_client = await get_client()
+            return await redis_client.xtrim(stream_key, minid=minid, approximate=approximate)
+        return _inner()
+    return await _execute_with_retry(_op, f"XTRIM {stream_key} MINID")

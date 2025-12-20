@@ -1016,18 +1016,18 @@ async def unified_agent_start(
 
 # DEPRECATED: Old optimistic route - now use /agent/start with optimistic=true parameter
 # Kept for backwards compatibility for a short period
-@router.post("/agent/start-optimistic", summary="Start Agent (Optimistic) [DEPRECATED]", operation_id="optimistic_agent_start_deprecated", deprecated=True)
-async def optimistic_agent_start_deprecated(
-    request: Request,
-    thread_id: str = Form(...),
-    project_id: str = Form(...),
-    prompt: Optional[str] = Form(None),
-    model_name: Optional[str] = Form(None),
-    agent_id: Optional[str] = Form(None),
-    files: List[UploadFile] = File(default=[]),
-    memory_enabled: Optional[str] = Form(None),
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
-):
+# @router.post("/agent/start-optimistic", summary="Start Agent (Optimistic) [DEPRECATED]", operation_id="optimistic_agent_start_deprecated", deprecated=True)
+# async def optimistic_agent_start_deprecated(
+#     request: Request,
+#     thread_id: str = Form(...),
+#     project_id: str = Form(...),
+#     prompt: Optional[str] = Form(None),
+#     model_name: Optional[str] = Form(None),
+#     agent_id: Optional[str] = Form(None),
+#     files: List[UploadFile] = File(default=[]),
+#     memory_enabled: Optional[str] = Form(None),
+#     user_id: str = Depends(verify_and_get_user_id_from_jwt)
+# ):
     """
     DEPRECATED: Use /agent/start with optimistic=true parameter instead.
     
@@ -1405,13 +1405,46 @@ async def stream_agent_run(
             initial_entries = await redis.xrange(stream_key)
             if initial_entries:
                 logger.debug(f"Sending {len(initial_entries)} catch-up responses for {agent_run_id}")
+                last_entry_id = None
                 for entry_id, fields in initial_entries:
                     response = json.loads(fields.get('data', '{}'))
                     yield f"data: {json.dumps(response)}\n\n"
+                    last_entry_id = entry_id
                     # Check if already completed
                     if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
                         logger.debug(f"Detected completion in catch-up: {response.get('status')}")
                         terminate_stream = True
+                
+                # Trim entries we've already read (keep only unread entries)
+                # XTRIM MINID removes entries with ID < minid, so we increment the sequence
+                # to also remove the last entry we read
+                if last_entry_id:
+                    try:
+                        # Increment sequence part of Redis stream ID to remove last entry too
+                        # Format: "timestamp-sequence" -> increment sequence part
+                        if '-' in last_entry_id:
+                            parts = last_entry_id.split('-')
+                            if len(parts) == 2:
+                                try:
+                                    timestamp = parts[0]
+                                    sequence = int(parts[1])
+                                    # Increment sequence to remove the last entry we read
+                                    next_id = f"{timestamp}-{sequence + 1}"
+                                    trimmed_count = await redis.xtrim_minid(stream_key, next_id, approximate=True)
+                                    logger.debug(f"Trimmed {trimmed_count} entries from stream {stream_key} after catch-up read (including last entry)")
+                                except (ValueError, IndexError):
+                                    # Fallback: use original ID (keeps last entry, but removes bulk)
+                                    trimmed_count = await redis.xtrim_minid(stream_key, last_entry_id, approximate=True)
+                                    logger.debug(f"Trimmed {trimmed_count} entries from stream {stream_key} after catch-up read")
+                            else:
+                                trimmed_count = await redis.xtrim_minid(stream_key, last_entry_id, approximate=True)
+                                logger.debug(f"Trimmed {trimmed_count} entries from stream {stream_key} after catch-up read")
+                        else:
+                            trimmed_count = await redis.xtrim_minid(stream_key, last_entry_id, approximate=True)
+                            logger.debug(f"Trimmed {trimmed_count} entries from stream {stream_key} after catch-up read")
+                    except Exception as trim_error:
+                        logger.warning(f"Failed to trim stream after catch-up read: {trim_error}")
+            
             initial_yield_complete = True
 
             if terminate_stream:
