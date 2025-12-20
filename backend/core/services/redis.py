@@ -1,26 +1,28 @@
 import redis.asyncio as redis
+from redis.asyncio.cluster import RedisCluster, ClusterNode
 import os
 from dotenv import load_dotenv
 import asyncio
 from core.utils.logger import logger
-from typing import List, Any
-from core.utils.retry import retry
+from typing import List, Any, Union
 
-client: redis.Redis | None = None
-pool: redis.ConnectionPool | None = None
+client: Union[RedisCluster, redis.Redis, None] = None
 _initialized = False
 _init_lock = asyncio.Lock()
+_cluster_mode = False
 
 REDIS_KEY_TTL = 3600 * 2
+
 
 def get_redis_config():
     load_dotenv()
     
-    redis_host = os.getenv("REDIS_HOST", "redis")
+    redis_host = os.getenv("REDIS_HOST", "localhost")
     redis_port = int(os.getenv("REDIS_PORT", 6379))
     redis_password = os.getenv("REDIS_PASSWORD", "")
     redis_username = os.getenv("REDIS_USERNAME", None)
     redis_ssl = os.getenv("REDIS_SSL", "false").lower() == "true"
+    cluster_mode = os.getenv("REDIS_CLUSTER_MODE", "false").lower() == "true"
     
     scheme = "rediss" if redis_ssl else "redis"
     if redis_username and redis_password:
@@ -37,42 +39,55 @@ def get_redis_config():
         "username": redis_username,
         "ssl": redis_ssl,
         "url": redis_url,
+        "cluster_mode": cluster_mode,
     }
 
 
 def initialize():
-    global client, pool
-
-    load_dotenv()
+    global client, _cluster_mode
 
     config = get_redis_config()
-    redis_url = config["url"]
-    redis_host = config["host"]
-    redis_port = config["port"]
-    redis_username = config["username"]
-    redis_ssl = config["ssl"]
+    _cluster_mode = config["cluster_mode"]
     
     max_connections = int(os.getenv("REDIS_MAX_CONNECTIONS", "100"))
-    socket_timeout = 15.0
-    connect_timeout = 10.0
-    retry_on_timeout = not (os.getenv("REDIS_RETRY_ON_TIMEOUT", "True").lower() != "true")
 
-    auth_info = f"user={redis_username} " if redis_username else ""
-    ssl_info = "(SSL) " if redis_ssl else ""
-    logger.info(f"Initializing Redis connection pool to {redis_host}:{redis_port} {auth_info}{ssl_info}with max {max_connections} connections")
+    mode_info = "cluster" if _cluster_mode else "standalone"
+    ssl_info = " (SSL)" if config["ssl"] else ""
+    logger.info(f"Initializing Redis [{mode_info}] -> {config['host']}:{config['port']}{ssl_info}")
 
-    pool = redis.ConnectionPool.from_url(
-        redis_url,
-        decode_responses=True,
-        socket_timeout=socket_timeout,
-        socket_connect_timeout=connect_timeout,
-        socket_keepalive=True,
-        retry_on_timeout=retry_on_timeout,
-        health_check_interval=30,
-        max_connections=max_connections,
-    )
-
-    client = redis.Redis(connection_pool=pool)
+    if _cluster_mode:
+        startup_nodes = [ClusterNode(config["host"], config["port"])]
+        
+        cluster_kwargs = {
+            "startup_nodes": startup_nodes,
+            "decode_responses": True,
+            "socket_timeout": 15.0,
+            "socket_connect_timeout": 10.0,
+            "read_from_replicas": True,
+            "reinitialize_steps": 5,
+            "skip_full_coverage_check": True,
+        }
+        
+        if config["password"]:
+            cluster_kwargs["password"] = config["password"]
+        if config["username"]:
+            cluster_kwargs["username"] = config["username"]
+        if config["ssl"]:
+            cluster_kwargs["ssl"] = True
+            cluster_kwargs["ssl_cert_reqs"] = None
+        
+        client = RedisCluster(**cluster_kwargs)
+    else:
+        pool = redis.ConnectionPool.from_url(
+            config["url"],
+            decode_responses=True,
+            socket_timeout=15.0,
+            socket_connect_timeout=10.0,
+            socket_keepalive=True,
+            health_check_interval=30,
+            max_connections=max_connections,
+        )
+        client = redis.Redis(connection_pool=pool)
 
     return client
 
@@ -85,16 +100,13 @@ async def initialize_async():
             initialize()
 
         try:
+            if _cluster_mode and isinstance(client, RedisCluster):
+                await client.initialize()
             await asyncio.wait_for(client.ping(), timeout=5.0)
-            logger.info("Successfully connected to Redis")
+            logger.info(f"Redis connected ({'cluster' if _cluster_mode else 'standalone'})")
             _initialized = True
-        except asyncio.TimeoutError:
-            logger.error("Redis connection timeout during initialization")
-            client = None
-            _initialized = False
-            raise ConnectionError("Redis connection timeout")
         except Exception as e:
-            logger.error(f"Failed to connect to Redis: {e}")
+            logger.error(f"Redis connection failed: {e}")
             client = None
             _initialized = False
             raise
@@ -103,67 +115,44 @@ async def initialize_async():
 
 
 async def close():
-    global client, pool, _initialized
+    global client, _initialized
     if client:
         try:
             await asyncio.wait_for(client.aclose(), timeout=5.0)
-        except asyncio.TimeoutError:
-            logger.warning("Redis close timeout, forcing close")
         except Exception as e:
-            logger.warning(f"Error closing Redis client: {e}")
+            logger.warning(f"Redis close error: {e}")
         finally:
             client = None
-    
-    if pool:
-        try:
-            await asyncio.wait_for(pool.aclose(), timeout=5.0)
-        except asyncio.TimeoutError:
-            logger.warning("Redis pool close timeout, forcing close")
-        except Exception as e:
-            logger.warning(f"Error closing Redis pool: {e}")
-        finally:
-            pool = None
-    
     _initialized = False
-    logger.info("Redis connection and pool closed")
 
 
 async def get_client():
     global client, _initialized
     if client is None or not _initialized:
-        await retry(lambda: initialize_async())
+        await initialize_async()
     return client
 
 
 async def get_connection_info():
     try:
         redis_client = await get_client()
-        
-        pool_info = {}
-        if pool:
-            pool_info = {
-                "max_connections": pool.max_connections,
-                "created_connections": pool.created_connections if hasattr(pool, 'created_connections') else None,
-            }
-        
         info = await redis_client.info("clients")
-        server_info = {
+        
+        result = {
+            "cluster_mode": _cluster_mode,
             "connected_clients": info.get("connected_clients", 0),
-            "client_recent_max_input_buffer": info.get("client_recent_max_input_buffer", 0),
-            "client_recent_max_output_buffer": info.get("client_recent_max_output_buffer", 0),
         }
         
-        if pool and hasattr(pool, '_available_connections'):
-            pool_info["available_connections"] = len(pool._available_connections)
-        if pool and hasattr(pool, '_in_use_connections'):
-            pool_info["in_use_connections"] = len(pool._in_use_connections)
+        if _cluster_mode and isinstance(redis_client, RedisCluster):
+            try:
+                cluster_info = await redis_client.cluster_info()
+                result["cluster_state"] = cluster_info.get("cluster_state", "unknown")
+                result["cluster_known_nodes"] = cluster_info.get("cluster_known_nodes", 0)
+            except Exception:
+                pass
         
-        return {
-            "pool": pool_info,
-            "server": server_info,
-        }
+        return result
     except Exception as e:
-        logger.error(f"Error getting Redis connection info: {e}")
         return {"error": str(e)}
 
 
@@ -212,7 +201,7 @@ class PubSubContextManager:
                     await self.pubsub.unsubscribe(*self.channels)
                 await self.pubsub.close()
             except Exception as e:
-                logger.warning(f"Error closing pubsub in context manager: {e}")
+                logger.warning(f"Pubsub close error: {e}")
         return False
 
 
@@ -228,6 +217,16 @@ async def lrange(key: str, start: int, end: int) -> List[str]:
 
 async def keys(pattern: str) -> List[str]:
     redis_client = await get_client()
+    if _cluster_mode and isinstance(redis_client, RedisCluster):
+        all_keys = []
+        for node in redis_client.get_primaries():
+            node_keys = await redis_client.keys(pattern, target_nodes=node)
+            if isinstance(node_keys, list):
+                all_keys.extend(node_keys)
+            elif isinstance(node_keys, dict):
+                for keys_list in node_keys.values():
+                    all_keys.extend(keys_list)
+        return list(set(all_keys))
     return await redis_client.keys(pattern)
 
 
