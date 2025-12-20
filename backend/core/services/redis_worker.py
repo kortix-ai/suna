@@ -1,12 +1,10 @@
 import redis.asyncio as redis_lib
 from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
 import os
-import time as _time
 from dotenv import load_dotenv
 import asyncio
 from core.utils.logger import logger
 from typing import List, Any, Optional
-from core.utils.retry import retry
 
 from core.services.redis import get_redis_config
 
@@ -14,7 +12,6 @@ client: Optional[redis_lib.Redis] = None
 pool: Optional[redis_lib.ConnectionPool] = None
 _initialized = False
 _init_lock = asyncio.Lock()
-_reconnect_lock = asyncio.Lock()
 
 _operation_semaphore: Optional[asyncio.Semaphore] = None
 
@@ -23,16 +20,8 @@ REDIS_KEY_TTL = 3600 * 24
 DEFAULT_MAX_CONCURRENT_OPS = 100
 DEFAULT_MAX_CONNECTIONS = DEFAULT_MAX_CONCURRENT_OPS + 50
 
-MAX_RETRIES = int(os.getenv("REDIS_MAX_RETRIES", "3"))
-RETRY_BACKOFF_BASE = 0.5
-
-_circuit_breaker = {
-    "failures": 0,
-    "last_failure": 0.0,
-    "state": "closed",
-}
-CIRCUIT_BREAKER_THRESHOLD = 5
-CIRCUIT_BREAKER_TIMEOUT = 30.0
+MAX_RETRIES = 2
+RETRY_DELAY = 0.5
 
 
 def initialize():
@@ -47,32 +36,24 @@ def initialize():
     
     socket_timeout = 5.0
     connect_timeout = 3.0
-    retry_on_timeout = os.getenv("REDIS_RETRY_ON_TIMEOUT", "false").lower() == "true"
 
     auth_info = f"user={config['username']} " if config['username'] else ""
+    ssl_info = "(SSL) " if config['ssl'] else ""
     logger.info(
         f"Initializing WORKER Redis pool to {config['host']}:{config['port']} "
-        f"{auth_info}with max {max_connections} connections, "
+        f"{auth_info}{ssl_info}with max {max_connections} connections, "
         f"{max_concurrent_ops} concurrent operations"
     )
 
-    pool_kwargs = {
-        "host": config["host"],
-        "port": config["port"],
-        "password": config["password"],
-        "decode_responses": True,
-        "socket_timeout": socket_timeout,
-        "socket_connect_timeout": connect_timeout,
-        "socket_keepalive": True,
-        "retry_on_timeout": retry_on_timeout,
-        "health_check_interval": 30,
-        "max_connections": max_connections,
-    }
-    
-    if config["username"]:
-        pool_kwargs["username"] = config["username"]
-    
-    pool = redis_lib.ConnectionPool(**pool_kwargs)
+    pool = redis_lib.ConnectionPool.from_url(
+        config["url"],
+        decode_responses=True,
+        socket_timeout=socket_timeout,
+        socket_connect_timeout=connect_timeout,
+        socket_keepalive=True,
+        health_check_interval=30,
+        max_connections=max_connections,
+    )
     client = redis_lib.Redis(connection_pool=pool)
     
     _operation_semaphore = asyncio.Semaphore(max_concurrent_ops)
@@ -84,7 +65,7 @@ async def initialize_async():
     global client, _initialized
 
     async with _init_lock:
-        if not _initialized:
+        if not _initialized or client is None:
             initialize()
 
         try:
@@ -135,41 +116,8 @@ async def close():
 async def get_client():
     global client, _initialized
     if client is None or not _initialized:
-        await retry(lambda: initialize_async())
+        await initialize_async()
     return client
-
-
-async def force_reconnect():
-    global client, pool, _initialized, _circuit_breaker
-    
-    async with _reconnect_lock:
-        logger.warning("🔄 Forcing Redis reconnection...")
-        
-        if client:
-            try:
-                await asyncio.wait_for(client.aclose(), timeout=2.0)
-            except Exception:
-                pass
-            client = None
-        
-        if pool:
-            try:
-                await asyncio.wait_for(pool.aclose(), timeout=2.0)
-            except Exception:
-                pass
-            pool = None
-        
-        _initialized = False
-        
-        try:
-            await initialize_async()
-            _circuit_breaker["state"] = "closed"
-            _circuit_breaker["failures"] = 0
-            logger.info("✅ Redis reconnection successful, circuit breaker reset")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Redis reconnection failed: {e}")
-            raise
 
 
 def _is_connection_error(exc: Exception) -> bool:
@@ -215,138 +163,40 @@ async def verify_stream_writable(stream_key: str) -> bool:
         raise ConnectionError(f"Redis stream {stream_key} is not writable: {e}")
 
 
-def _check_circuit_breaker() -> bool:
-    global _circuit_breaker
-    now = _time.time()
-    
-    if _circuit_breaker["state"] == "closed":
-        return True
-    
-    if _circuit_breaker["state"] == "open":
-        if now - _circuit_breaker["last_failure"] > CIRCUIT_BREAKER_TIMEOUT:
-            _circuit_breaker["state"] = "half-open"
-            logger.info("🔌 Redis circuit breaker: half-open (testing)")
-            return True
-        return False
-    
-    return True
-
-
-def _record_success():
-    global _circuit_breaker
-    if _circuit_breaker["state"] == "half-open":
-        _circuit_breaker["state"] = "closed"
-        _circuit_breaker["failures"] = 0
-        logger.info("✅ Redis circuit breaker: closed (healthy)")
-
-
-def _record_failure():
-    global _circuit_breaker
-    _circuit_breaker["failures"] += 1
-    _circuit_breaker["last_failure"] = _time.time()
-    
-    if _circuit_breaker["failures"] >= CIRCUIT_BREAKER_THRESHOLD:
-        if _circuit_breaker["state"] != "open":
-            _circuit_breaker["state"] = "open"
-            logger.warning(f"🔴 Redis circuit breaker: OPEN (failures={_circuit_breaker['failures']})")
-
-
-class RedisCircuitOpenError(Exception):
-    pass
-
-
 def is_redis_healthy() -> bool:
-    return _circuit_breaker["state"] != "open"
-
-
-def get_circuit_breaker_state() -> dict:
-    return {
-        "state": _circuit_breaker["state"],
-        "failures": _circuit_breaker["failures"],
-        "threshold": CIRCUIT_BREAKER_THRESHOLD,
-        "timeout": CIRCUIT_BREAKER_TIMEOUT,
-    }
+    return True
 
 
 async def _execute_with_retry(op_factory, operation_name: str = "redis_op"):
     last_exception = None
     
     for attempt in range(MAX_RETRIES):
-        if not _check_circuit_breaker():
-            if attempt == 0:
-                logger.warning(f"🔄 Circuit breaker open for {operation_name}, attempting reconnect...")
-                try:
-                    await force_reconnect()
-                except Exception as e:
-                    raise RedisCircuitOpenError(f"Redis circuit breaker is open and reconnection failed: {e}")
-            else:
-                raise RedisCircuitOpenError("Redis circuit breaker is open after retry attempts")
-        
         try:
             coro = op_factory()
             
             if _operation_semaphore is None:
-                result = await asyncio.wait_for(coro, timeout=10.0)
+                return await asyncio.wait_for(coro, timeout=10.0)
             else:
                 async with _operation_semaphore:
-                    result = await asyncio.wait_for(coro, timeout=10.0)
-            
-            _record_success()
-            return result
+                    return await asyncio.wait_for(coro, timeout=10.0)
             
         except asyncio.TimeoutError as e:
             last_exception = e
-            _record_failure()
-            logger.warning(f"⚠️ Redis timeout on {operation_name} (attempt {attempt + 1}/{MAX_RETRIES})")
-            
-        except RedisCircuitOpenError:
-            raise
+            logger.warning(f"Redis timeout on {operation_name} (attempt {attempt + 1}/{MAX_RETRIES})")
             
         except Exception as e:
             last_exception = e
-            _record_failure()
-            
             if _is_connection_error(e):
-                logger.warning(f"⚠️ Redis connection error on {operation_name} (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
-                if attempt < MAX_RETRIES - 1:
-                    try:
-                        await force_reconnect()
-                    except Exception as reconnect_err:
-                        logger.error(f"Reconnect failed during retry: {reconnect_err}")
+                logger.warning(f"Redis connection error on {operation_name} (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
             else:
-                logger.error(f"❌ Redis error on {operation_name} (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
+                raise
         
         if attempt < MAX_RETRIES - 1:
-            backoff = RETRY_BACKOFF_BASE * (2 ** attempt)
-            logger.info(f"🔄 Retrying {operation_name} in {backoff:.1f}s...")
-            await asyncio.sleep(backoff)
+            await asyncio.sleep(RETRY_DELAY)
     
     error_msg = f"Redis operation {operation_name} failed after {MAX_RETRIES} attempts"
-    logger.error(f"❌ {error_msg}: {last_exception}")
+    logger.error(f"{error_msg}: {last_exception}")
     raise ConnectionError(f"{error_msg}: {last_exception}")
-
-
-async def _with_concurrency_limit(coro, allow_circuit_break: bool = True):
-    if allow_circuit_break and not _check_circuit_breaker():
-        raise RedisCircuitOpenError("Redis circuit breaker is open")
-    
-    if _operation_semaphore is None:
-        try:
-            result = await coro
-            _record_success()
-            return result
-        except Exception:
-            _record_failure()
-            raise
-    
-    async with _operation_semaphore:
-        try:
-            result = await coro
-            _record_success()
-            return result
-        except Exception:
-            _record_failure()
-            raise
 
 
 async def set(key: str, value: str, ex: int = None, nx: bool = False):
@@ -387,26 +237,8 @@ async def publish(channel: str, message: str):
 
 
 async def create_pubsub():
-    last_exception = None
-    for attempt in range(MAX_RETRIES):
-        try:
-            redis_client = await get_client()
-            pubsub = redis_client.pubsub()
-            _record_success()
-            return pubsub
-        except Exception as e:
-            last_exception = e
-            _record_failure()
-            if _is_connection_error(e) and attempt < MAX_RETRIES - 1:
-                logger.warning(f"⚠️ Redis pubsub creation failed (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
-                try:
-                    await force_reconnect()
-                except Exception:
-                    pass
-                await asyncio.sleep(RETRY_BACKOFF_BASE * (2 ** attempt))
-            else:
-                raise
-    raise ConnectionError(f"Redis pubsub creation failed after {MAX_RETRIES} attempts: {last_exception}")
+    redis_client = await get_client()
+    return redis_client.pubsub()
 
 
 async def rpush(key: str, *values: Any):
@@ -505,6 +337,7 @@ async def get_connection_info():
     except Exception as e:
         logger.error(f"Error getting WORKER Redis connection info: {e}")
         return {"error": str(e)}
+
 
 async def xadd(stream_key: str, fields: dict, maxlen: int = None, approximate: bool = True) -> str:
     def _op():
