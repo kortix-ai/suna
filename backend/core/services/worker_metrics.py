@@ -52,8 +52,6 @@ async def get_worker_metrics() -> dict:
     import time
     
     try:
-        client = await redis.get_client()
-        
         # Configuration: threads per worker process
         # From ECS config: 8 processes × 12 threads = 96 threads per worker task
         WORKER_PROCESSES = int(os.getenv("WORKER_PROCESSES", "8"))
@@ -75,7 +73,7 @@ async def get_worker_metrics() -> dict:
         
         # Get all workers with heartbeats within the timeout window
         # ZRANGEBYSCORE returns members with scores >= min_timestamp
-        active_worker_ids = await client.zrangebyscore(
+        active_worker_ids = await redis.zrangebyscore(
             heartbeat_key,
             min=min_timestamp,
             max="+inf"
@@ -94,15 +92,16 @@ async def get_worker_metrics() -> dict:
         
         for worker_id in active_worker_ids:
             # Find all ack sets for this worker
+            # Use scan_keys instead of direct client access
             ack_pattern = f"dramatiq:__acks__.{worker_id}.*"
-            ack_keys = await client.keys(ack_pattern)
+            ack_keys = await redis.scan_keys(ack_pattern)
             
             worker_tasks = 0
             for ack_key in ack_keys:
                 if isinstance(ack_key, bytes):
                     ack_key = ack_key.decode('utf-8')
                 # Count messages in this ack set (these are in-progress)
-                task_count = await client.scard(ack_key)
+                task_count = await redis.scard(ack_key)
                 worker_tasks += task_count
             
             worker_task_counts[worker_id] = worker_tasks
@@ -119,7 +118,7 @@ async def get_worker_metrics() -> dict:
         for worker_id in active_worker_ids[:5]:  # Limit to first 5 for performance
             try:
                 # Get heartbeat timestamp for this worker
-                score = await client.zscore(heartbeat_key, worker_id)
+                score = await redis.zscore(heartbeat_key, worker_id)
                 if score is not None:
                     heartbeat_age_ms = current_time_ms - int(score)
                     worker_details.append({

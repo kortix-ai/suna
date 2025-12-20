@@ -17,7 +17,7 @@ class BillingIntegration:
         
         try:
             import asyncio
-            from core.services import redis_worker as redis
+            from core.services import redis
             today = datetime.now(timezone.utc).date().isoformat()
             cache_key = f"daily_credit_check:{account_id}:{today}"
             

@@ -356,8 +356,7 @@ class APIKeyService:
             cache_key = f"api_key:{public_key}:{self._hash_secret_key(secret_key)[:8]}"
 
             try:
-                redis_client = await redis.get_client()
-                cached_result = await redis_client.get(cache_key)
+                cached_result = await redis.get(cache_key)
                 if cached_result:
                     import json
 
@@ -461,7 +460,6 @@ class APIKeyService:
     ):
         """Cache validation result in Redis"""
         try:
-            redis_client = await redis.get_client()
             import json
 
             cache_data = {
@@ -470,7 +468,7 @@ class APIKeyService:
                 "key_id": str(result.key_id) if result.key_id else None,
                 "error_message": result.error_message,
             }
-            await redis_client.setex(cache_key, ttl, json.dumps(cache_data))
+            await redis.setex(cache_key, ttl, json.dumps(cache_data))
         except Exception as e:
             logger.warning(f"Failed to cache validation result: {e}")
 
@@ -481,17 +479,16 @@ class APIKeyService:
 
         # Try Redis first
         try:
-            redis_client = await redis.get_client()
             throttle_key = f"last_used_throttle:{key_id}"
 
             # Check if we've updated this key recently
-            last_update = await redis_client.get(throttle_key)
+            last_update = await redis.get(throttle_key)
             if last_update:
                 # Already updated within throttle interval, skip
                 return
 
             # Set throttle flag first to prevent race conditions
-            await redis_client.setex(throttle_key, throttle_interval, "1")
+            await redis.setex(throttle_key, throttle_interval, "1")
 
         except Exception as redis_error:
             # Fallback to in-memory throttling when Redis unavailable
@@ -544,9 +541,8 @@ class APIKeyService:
     async def _clear_throttle(self, key_id: str):
         """Clear the throttle for a specific key (useful for testing)"""
         try:
-            redis_client = await redis.get_client()
             throttle_key = f"last_used_throttle:{key_id}"
-            await redis_client.delete(throttle_key)
+            await redis.delete(throttle_key)
             logger.debug(f"Cleared throttle for key {key_id}")
         except Exception as e:
             logger.warning(f"Failed to clear throttle for key {key_id}: {e}")

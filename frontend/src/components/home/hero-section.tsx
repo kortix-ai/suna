@@ -46,6 +46,7 @@ const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 export function HeroSection() {
     const t = useTranslations('suna');
     const tBilling = useTranslations('billing');
+    const tAuth = useTranslations('auth');
     const { hero } = siteConfig;
     const isMobile = useIsMobile();
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -385,11 +386,11 @@ export function HeroSection() {
                     <DialogHeader>
                         <div className="flex items-center justify-between">
                             <DialogTitle className="text-xl font-medium">
-                                Sign in to continue
+                                {tAuth('signInToContinue')}
                             </DialogTitle>
                         </div>
                         <DialogDescription className="text-muted-foreground">
-                            Sign in or create an account to talk with Kortix
+                            {tAuth('signInOrCreateAccountToTalk')}
                         </DialogDescription>
                     </DialogHeader>
 
@@ -405,7 +406,7 @@ export function HeroSection() {
                         </div>
                         <div className="relative flex justify-center text-sm">
                             <span className="px-3 bg-background text-muted-foreground font-medium">
-                                or continue with email
+                                {tAuth('orContinueWithEmail')}
                             </span>
                         </div>
                     </div>
@@ -416,7 +417,7 @@ export function HeroSection() {
                             className="flex h-12 items-center justify-center w-full text-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-all shadow-sm font-medium"
                             onClick={() => setAuthDialogOpen(false)}
                         >
-                            Sign in with email
+                            {tAuth('signInWithEmail')}
                         </Link>
 
                         <Link
@@ -424,18 +425,18 @@ export function HeroSection() {
                             className="flex h-12 items-center justify-center w-full text-center rounded-full border border-border bg-background hover:bg-accent/50 transition-all font-medium"
                             onClick={() => setAuthDialogOpen(false)}
                         >
-                            Create new account
+                            {tAuth('createNewAccount')}
                         </Link>
                     </div>
 
                     <div className="mt-8 text-center text-[13px] text-muted-foreground leading-relaxed">
-                        By continuing, you agree to our{' '}
+                        {tAuth('byContinuingYouAgreeSimple')}{' '}
                         <a href="https://www.kortix.com/legal?tab=terms" target="_blank" rel="noopener noreferrer" className="text-foreground/70 hover:text-foreground underline underline-offset-2 transition-colors">
-                            Terms of Service
+                            {tAuth('termsOfService')}
                         </a>{' '}
                         and{' '}
                         <a href="https://www.kortix.com/legal?tab=privacy" target="_blank" rel="noopener noreferrer" className="text-foreground/70 hover:text-foreground underline underline-offset-2 transition-colors">
-                            Privacy Policy
+                            {tAuth('privacyPolicy')}
                         </a>
                     </div>
                 </DialogContent>
