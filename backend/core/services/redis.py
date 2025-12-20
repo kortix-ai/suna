@@ -63,7 +63,7 @@ def initialize():
     load_dotenv()
     config = get_redis_config()
     
-    max_connections = int(os.getenv("REDIS_MAX_CONNECTIONS", "100"))
+    max_connections = int(os.getenv("REDIS_MAX_CONNECTIONS", "10"))
     socket_timeout = 10.0
     connect_timeout = 5.0
     retry_on_timeout = os.getenv("REDIS_RETRY_ON_TIMEOUT", "true").lower() == "true"
