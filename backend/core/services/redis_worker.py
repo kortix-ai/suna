@@ -154,7 +154,7 @@ async def force_reconnect():
         
         if pool:
             try:
-                await asyncio.wait_for(pool.disconnect(), timeout=2.0)
+                await asyncio.wait_for(pool.aclose(), timeout=2.0)
             except Exception:
                 pass
             pool = None
@@ -196,16 +196,20 @@ async def verify_connection() -> bool:
 
 
 async def verify_stream_writable(stream_key: str) -> bool:
+    test_key = f"{stream_key}:health_check"
     try:
         redis_client = await get_client()
         test_id = await asyncio.wait_for(
-            redis_client.xadd(stream_key, {'_health_check': 'true'}, maxlen=10000),
+            redis_client.xadd(test_key, {'_health_check': 'true'}, maxlen=1),
             timeout=5.0
         )
         if test_id:
+            await asyncio.wait_for(redis_client.delete(test_key), timeout=2.0)
             logger.info(f"✅ Redis stream {stream_key} is writable")
             return True
         raise ConnectionError(f"Redis stream {stream_key} write returned no ID")
+    except ConnectionError:
+        raise
     except Exception as e:
         logger.error(f"❌ Redis stream {stream_key} write verification failed: {e}")
         raise ConnectionError(f"Redis stream {stream_key} is not writable: {e}")
@@ -383,11 +387,16 @@ async def publish(channel: str, message: str):
 
 
 async def create_pubsub():
+    last_exception = None
     for attempt in range(MAX_RETRIES):
         try:
             redis_client = await get_client()
-            return redis_client.pubsub()
+            pubsub = redis_client.pubsub()
+            _record_success()
+            return pubsub
         except Exception as e:
+            last_exception = e
+            _record_failure()
             if _is_connection_error(e) and attempt < MAX_RETRIES - 1:
                 logger.warning(f"⚠️ Redis pubsub creation failed (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
                 try:
@@ -397,6 +406,7 @@ async def create_pubsub():
                 await asyncio.sleep(RETRY_BACKOFF_BASE * (2 ** attempt))
             else:
                 raise
+    raise ConnectionError(f"Redis pubsub creation failed after {MAX_RETRIES} attempts: {last_exception}")
 
 
 async def rpush(key: str, *values: Any):
