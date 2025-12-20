@@ -28,24 +28,14 @@ jobs:
           fi
           echo "✅ Confirmation received"
       
-      - name: Set Environment URL
-        id: set-url
-        run: |
-          if [ "${{ inputs.environment }}" = "production" ]; then
-            echo "API_URL=${{ secrets.PRODUCTION_API_URL }}" >> $GITHUB_OUTPUT
-          else
-            echo "API_URL=${{ secrets.STAGING_API_URL }}" >> $GITHUB_OUTPUT
-          fi
-      
       - name: Emergency Stop All Tests
         env:
-          API_URL: ${{ steps.set-url.outputs.API_URL }}
+          API_URL: ${{ inputs.environment == 'production' && 'https://api.kortix.com' || 'https://staging-api.suna.so' }}
           ADMIN_API_KEY: ${{ secrets.KORTIX_ADMIN_API_KEY }}
         run: |
           set -e
           
           # Mask secrets
-          echo "::add-mask::$API_URL"
           echo "::add-mask::$ADMIN_API_KEY"
           
           echo "🚨 EMERGENCY STOP - Cancelling all active tests on ${{ inputs.environment }}"
