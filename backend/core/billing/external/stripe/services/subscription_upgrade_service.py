@@ -1,10 +1,13 @@
 from typing import Dict, Optional
 from datetime import datetime, timezone
+from decimal import Decimal
 from core.utils.logger import logger
+from core.utils.distributed_lock import DistributedLock
 from core.billing.shared.config import get_tier_by_price_id, is_commitment_price_id
 from ..repositories.subscription_repository import SubscriptionRepository
 from .commitment_service import CommitmentService
 from core.billing.shared.config import get_plan_type
+from core.billing.credits.manager import credit_manager
 
 class SubscriptionUpgradeService:
     def __init__(self):
@@ -24,37 +27,65 @@ class SubscriptionUpgradeService:
             logger.error(f"[UPGRADE] Cannot process upgrade - price_id {price_id} not recognized")
             raise ValueError(f"Unrecognized price_id: {price_id}")
         
-        # Get subscription status - handle both object and dict access
         subscription_status = getattr(subscription, 'status', None) or subscription.get('status')
         
         billing_dates = self._calculate_billing_dates(subscription)
         plan_type = get_plan_type(price_id)
         
-        # Block tier setting for ANY non-active status (incomplete, incomplete_expired, canceled, etc.)
-        # Only set tier when subscription is definitely active and payment succeeded
         if subscription_status != 'active':
-            # Payment is pending or failed - do NOT set tier yet
-            # Tier will be set when subscription becomes 'active' via subscription.updated webhook
             logger.info(f"[UPGRADE] Subscription status '{subscription_status}' is not active - storing pending subscription without setting tier for {account_id}")
             
-            # Only store the pending subscription reference, NOT the tier
             await self.subscription_repo.update_subscription_metadata(account_id, {
                 'stripe_subscription_id': subscription['id'],
                 'stripe_subscription_status': subscription_status or 'unknown',
                 'payment_status': 'pending'
             })
-            return  # Don't proceed further until payment succeeds
+            return
         
-        # subscription_status == 'active' - safe to set tier
         logger.info(f"[UPGRADE] User {account_id} upgrading from {current_tier} to {tier_info.name}")
         
-        await self.subscription_repo.update_subscription_metadata(account_id, {
-            'tier': tier_info.name,
-            'plan_type': plan_type,
-            'stripe_subscription_id': subscription['id'],
-            'billing_cycle_anchor': billing_dates['billing_anchor_iso'],
-            'next_credit_grant': billing_dates['next_grant_date_iso']
-        })
+        lock_key = f"credit_grant:free_upgrade:{account_id}"
+        lock = DistributedLock(lock_key, timeout_seconds=60)
+        
+        acquired = await lock.acquire(wait=True, wait_timeout=30)
+        if not acquired:
+            logger.error(f"[UPGRADE] Failed to acquire lock for free tier upgrade credit grant to {account_id}")
+            await self.subscription_repo.update_subscription_metadata(account_id, {
+                'tier': tier_info.name,
+                'plan_type': plan_type,
+                'stripe_subscription_id': subscription['id'],
+                'billing_cycle_anchor': billing_dates['billing_anchor_iso'],
+                'next_credit_grant': billing_dates['next_grant_date_iso']
+            })
+            return
+        
+        try:
+            if tier_info.monthly_refill_enabled:
+                credits_amount = Decimal(str(tier_info.monthly_credits))
+                logger.info(f"[UPGRADE] Granting ${credits_amount} credits for new {tier_info.name} subscription (upgrade from {current_tier})")
+                
+                await credit_manager.add_credits(
+                    account_id=account_id,
+                    amount=credits_amount,
+                    is_expiring=True,
+                    description=f"New subscription: {tier_info.name} (upgrade from {current_tier})",
+                    expires_at=billing_dates['next_grant_date'],
+                    stripe_event_id=f"free_upgrade_{account_id}_{subscription['id']}"
+                )
+                logger.info(f"[UPGRADE] ✅ Granted ${credits_amount} credits to {account_id}")
+            else:
+                logger.info(f"[UPGRADE] Skipping credits for tier {tier_info.name} - monthly_refill_enabled=False")
+            
+            await self.subscription_repo.update_subscription_metadata(account_id, {
+                'tier': tier_info.name,
+                'plan_type': plan_type,
+                'stripe_subscription_id': subscription['id'],
+                'billing_cycle_anchor': billing_dates['billing_anchor_iso'],
+                'next_credit_grant': billing_dates['next_grant_date_iso'],
+                'last_grant_date': billing_dates['billing_anchor_iso']
+            })
+        finally:
+            await lock.release()
     
     async def handle_incomplete_to_active_upgrade(
         self, 

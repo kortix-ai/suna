@@ -325,11 +325,12 @@ class InvoiceHandler:
                             amount = entry.get('amount', 0)
                             stripe_event_id_check = entry.get('stripe_event_id', '')
                             
-                            if ((('checkout.session.completed' in description or 'checkout_' in stripe_event_id_check) and
+                            if ((('checkout.session.completed' in description or 'checkout_' in stripe_event_id_check or 'free_upgrade_' in stripe_event_id_check) and
                                 float(amount) == float(monthly_credits) and
                                 tier in description) or 
                                 ('Tier upgrade to' in description and float(amount) == float(monthly_credits)) or
-                                ('Subscription credits for' in description and float(amount) == float(monthly_credits))):
+                                ('Subscription credits for' in description and float(amount) == float(monthly_credits)) or
+                                ('New subscription:' in description and tier in description and float(amount) == float(monthly_credits))):
                                 checkout_credits_already_granted = True
                                 logger.info(f"[INITIAL GRANT SKIP] Found recent upgrade credit grant: {description} (${amount})")
                                 break
