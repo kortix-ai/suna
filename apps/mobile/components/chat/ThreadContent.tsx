@@ -1229,7 +1229,21 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                     (agentStatus === 'running' || agentStatus === 'connecting') &&
                     !streamingTextContent &&
                     !streamingToolCall &&
-                    (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
+                    (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') &&
+                    (() => {
+                      // Check if any message in this group already has ASK or COMPLETE
+                      const hasAskOrComplete = group.messages.some((msg) => {
+                        if (msg.type !== 'assistant') return false;
+                        try {
+                          const metadata = safeJsonParse<ParsedMetadata>(msg.metadata, {});
+                          const toolCalls = metadata.tool_calls || [];
+                          return toolCalls.some((tc) => isAskOrCompleteTool(tc.function_name));
+                        } catch {
+                          return false;
+                        }
+                      });
+                      return !hasAskOrComplete;
+                    })() && (
                       <View className="mt-2">
                         <AgentLoader />
                       </View>

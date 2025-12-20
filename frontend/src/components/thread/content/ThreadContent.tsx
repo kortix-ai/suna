@@ -864,7 +864,24 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                 (agentStatus === 'running' || agentStatus === 'connecting') && 
                                                                 !streamingTextContent && 
                                                                 !streamingToolCall &&
-                                                                (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
+                                                                (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') &&
+                                                                (() => {
+                                                                    // Check if any message in this group already has ASK or COMPLETE
+                                                                    const hasAskOrComplete = group.messages.some(msg => {
+                                                                        if (msg.type !== 'assistant') return false;
+                                                                        try {
+                                                                            const metadata = safeJsonParse<ParsedMetadata>(msg.metadata, {});
+                                                                            const toolCalls = metadata.tool_calls || [];
+                                                                            return toolCalls.some(tc => {
+                                                                                const toolName = tc.function_name?.replace(/_/g, '-').toLowerCase() || '';
+                                                                                return toolName === 'ask' || toolName === 'complete';
+                                                                            });
+                                                                        } catch {
+                                                                            return false;
+                                                                        }
+                                                                    });
+                                                                    return !hasAskOrComplete;
+                                                                })() && (
                                                                 <div className="mt-1.5">
                                                                     <AgentLoader />
                                                                 </div>
@@ -880,7 +897,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                             })()}
 
                             {/* Show loader as new assistant group only when there's no assistant group (last message is user or no messages) and agent is running */}
-                            {((agentStatus === 'running' || agentStatus === 'connecting') && !streamingTextContent && !streamingToolCall &&
+                            {((agentStatus === 'running' || agentStatus === 'connecting') && 
+                                !streamingTextContent && 
+                                !streamingToolCall &&
                                 !readOnly &&
                                 (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') &&
                                 (displayMessages.length === 0 || displayMessages[displayMessages.length - 1].type === 'user')) && (

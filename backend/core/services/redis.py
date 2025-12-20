@@ -1,15 +1,17 @@
 import redis.asyncio as redis_lib
+from redis.asyncio.cluster import RedisCluster
 from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
 import os
 import time as _time
 from dotenv import load_dotenv
 import asyncio
 from core.utils.logger import logger
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Union
 from core.utils.retry import retry
 
-client: Optional[redis_lib.Redis] = None
+client: Optional[Union[redis_lib.Redis, RedisCluster]] = None
 pool: Optional[redis_lib.ConnectionPool] = None
+_is_cluster: bool = False
 _initialized = False
 _init_lock = asyncio.Lock()
 _reconnect_lock = asyncio.Lock()
@@ -56,7 +58,7 @@ def get_redis_config():
 
 
 def initialize():
-    global client, pool
+    global client, pool, _is_cluster
 
     load_dotenv()
     config = get_redis_config()
@@ -66,22 +68,45 @@ def initialize():
     connect_timeout = 5.0
     retry_on_timeout = os.getenv("REDIS_RETRY_ON_TIMEOUT", "true").lower() == "true"
     
+    # Check if this is a cluster configuration endpoint (ends with .clustercfg.*)
+    is_cluster_endpoint = ".clustercfg." in config['host'] or config['host'].endswith(".clustercfg")
+    
     auth_info = f"user={config['username']} " if config['username'] else ""
     ssl_info = "(SSL) " if config['ssl'] else ""
-    logger.info(f"Initializing Redis to {config['host']}:{config['port']} {auth_info}{ssl_info}with max {max_connections} connections")
+    cluster_info = " (CLUSTER MODE) " if is_cluster_endpoint else ""
+    logger.info(f"Initializing Redis to {config['host']}:{config['port']} {auth_info}{ssl_info}{cluster_info}with max {max_connections} connections")
 
-    pool = redis_lib.ConnectionPool.from_url(
-        config["url"],
-        decode_responses=True,
-        socket_timeout=socket_timeout,
-        socket_connect_timeout=connect_timeout,
-        socket_keepalive=True,
-        retry_on_timeout=retry_on_timeout,
-        health_check_interval=30,
-        max_connections=max_connections,
-    )
-
-    client = redis_lib.Redis(connection_pool=pool)
+    if is_cluster_endpoint:
+        # Use RedisCluster for cluster mode
+        _is_cluster = True
+        client = RedisCluster(
+            host=config['host'],
+            port=config['port'],
+            password=config['password'] if config['password'] else None,
+            username=config['username'] if config['username'] else None,
+            ssl=config['ssl'],
+            decode_responses=True,
+            socket_timeout=socket_timeout,
+            socket_connect_timeout=connect_timeout,
+            socket_keepalive=True,
+            skip_full_coverage_check=True,  # Required for ElastiCache cluster mode
+            health_check_interval=30,
+        )
+        pool = None  # RedisCluster manages its own connections
+    else:
+        # Use standard Redis client for non-cluster mode
+        _is_cluster = False
+        pool = redis_lib.ConnectionPool.from_url(
+            config["url"],
+            decode_responses=True,
+            socket_timeout=socket_timeout,
+            socket_connect_timeout=connect_timeout,
+            socket_keepalive=True,
+            retry_on_timeout=retry_on_timeout,
+            health_check_interval=30,
+            max_connections=max_connections,
+        )
+        client = redis_lib.Redis(connection_pool=pool)
 
     return client
 
@@ -112,7 +137,7 @@ async def initialize_async():
 
 
 async def close():
-    global client, pool, _initialized
+    global client, pool, _initialized, _is_cluster
     if client:
         try:
             await asyncio.wait_for(client.aclose(), timeout=5.0)
@@ -134,6 +159,7 @@ async def close():
             pool = None
     
     _initialized = False
+    _is_cluster = False
     logger.info("Redis connection and pool closed")
 
 
@@ -145,7 +171,7 @@ async def get_client():
 
 
 async def force_reconnect():
-    global client, pool, _initialized, _circuit_breaker
+    global client, pool, _initialized, _circuit_breaker, _is_cluster
     
     async with _reconnect_lock:
         logger.warning("🔄 Forcing Redis reconnection...")
@@ -165,6 +191,7 @@ async def force_reconnect():
             pool = None
         
         _initialized = False
+        _is_cluster = False
         
         try:
             await initialize_async()
