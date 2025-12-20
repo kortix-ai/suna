@@ -849,6 +849,33 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     return result;
   }, [churnByDateData]);
 
+  // Calculate actual subscribers by week progressively
+  // Starting point: 709 subscribers as of Dec 14, 2025
+  const actualSubsByWeek = useMemo((): Record<number, number> => {
+    const DEC_14_SUBSCRIBERS = 709;
+    const result: Record<number, number> = {};
+    
+    // Get max week from either newPaid or churn data
+    const maxWeek = Math.max(
+      ...Object.keys(newPaidByWeek).map(Number),
+      ...Object.keys(churnByWeek).map(Number),
+      0
+    );
+    
+    if (maxWeek === 0) return result;
+    
+    let currentSubs = DEC_14_SUBSCRIBERS;
+    
+    for (let week = 1; week <= maxWeek; week++) {
+      const weekNewPaid = newPaidByWeek[week] || 0;
+      const weekChurn = churnByWeek[week] || 0;
+      currentSubs = currentSubs + weekNewPaid - weekChurn;
+      result[week] = currentSubs;
+    }
+    
+    return result;
+  }, [newPaidByWeek, churnByWeek]);
+
   // Weekly projections derived from monthly (matching HTML dashboard logic exactly)
   const weeklyProjections = useMemo((): SimulationWeek[] => {
     const weeks: SimulationWeek[] = [];
@@ -1010,8 +1037,8 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     // Use Stripe data for new paid, fallback to manual entry
     actualNewPaid: newPaidByWeek[w.week] || actualData[w.week]?.newPaid || 0,
     goalSubs: w.subscribers,
-    // Use manual entry for subscribers (Stripe gives current total, not weekly)
-    actualSubs: actualData[w.week]?.subscribers || 0,
+    // Use calculated subscribers from newPaid - churn
+    actualSubs: actualSubsByWeek[w.week] || 0,
     goalMRR: w.mrr,
     actualMRR: actualData[w.week]?.mrr || 0,
     goalARR: w.arr,
@@ -1043,16 +1070,21 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       // Use auto-fetched churn from Stripe
       result[monthIdx].churn += autoChurn;
       
+      // Use calculated subscribers (take last week's value as end-of-month)
+      const calcSubs = actualSubsByWeek[week.week];
+      if (calcSubs !== undefined) {
+        result[monthIdx].subscribers = calcSubs;
+      }
+      
       if (weekActual) {
-        // For subscribers, MRR, ARR - take the last week's value as end-of-month value
-        result[monthIdx].subscribers = weekActual.subscribers || result[monthIdx].subscribers;
+        // For MRR, ARR - take the last week's value as end-of-month value
         result[monthIdx].mrr = weekActual.mrr || result[monthIdx].mrr;
         result[monthIdx].arr = weekActual.arr || result[monthIdx].arr;
       }
     });
     
     return result;
-  }, [weeklyProjections, actualData, signupsByWeek, viewsByWeek, newPaidByWeek, churnByWeek]);
+  }, [weeklyProjections, actualData, signupsByWeek, viewsByWeek, newPaidByWeek, churnByWeek, actualSubsByWeek]);
 
   // Derive monthly goals from weekly projections (grouped by actual calendar month)
   // This ensures the monthly table shows all months that have weeks, including June
@@ -1580,6 +1612,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   const actualViews = actual.views + (month.monthIndex === 0 ? 78313 : 0);
                   const actualSignups = actual.signups + (month.monthIndex === 0 ? 18699 : 0);
                   const actualNewPaid = actual.newPaid + (month.monthIndex === 0 ? 233 : 0);
+                  const actualChurn = actual.churn + (month.monthIndex === 0 ? 98 : 0);
                   
                   // Calculate previous month actual values with Dec 1-14 adjustments
                   const prevActualViews = prevActual ? (prevActual.views + (prevMonth?.monthIndex === 0 ? 78313 : 0)) : 0;
@@ -1636,8 +1669,8 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                         {paidConvRate !== null ? `${paidConvRate.toFixed(1)}%` : '—'}
                       </td>
                       {/* Churn */}
-                      <td className={`text-right p-2 font-medium ${actual.churn > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.churn > 0 ? formatNumber(actual.churn) : '—'}
+                      <td className={`text-right p-2 font-medium ${actualChurn > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {actualChurn > 0 ? formatNumber(actualChurn) : '—'}
                       </td>
                       {/* Total Subs */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.totalSubs)}</td>
@@ -1818,9 +1851,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     const autoViews = viewsByWeek[week.week] ?? 0;
                     const autoSignups = signupsByWeek[week.week] ?? 0;
                     const autoNewPaid = newPaidByWeek[week.week] ?? 0;
+                    const calcSubs = actualSubsByWeek[week.week] ?? 0;
                     // Use Stripe data for new paid, fallback to manual entry
                     const effectiveNewPaid = autoNewPaid || actual.newPaid || 0;
-                    const subsVar = getVariance(actual.subscribers, week.subscribers);
+                    const subsVar = getVariance(calcSubs, week.subscribers);
                     const mrrVar = getVariance(actual.mrr, week.mrr);
                     const arrVar = getVariance(actual.arr, week.arr);
                     
@@ -1896,17 +1930,12 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                         {/* Subscribers */}
                         <td className="text-right p-1 font-medium">{formatNumber(week.subscribers)}</td>
                         <td className="text-right p-1">
-                          <Input
-                            type="number"
-                            value={getInputValue(week.week, 'subscribers')}
-                            onChange={(e) => handleInputChange(week.week, 'subscribers', e.target.value)}
-                            onBlur={() => handleInputBlur(week.week, 'subscribers')}
-                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            placeholder="—"
-                          />
+                          <span className={`text-[10px] font-medium ${calcSubs > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                            {calcSubs > 0 ? formatNumber(calcSubs) : '—'}
+                          </span>
                         </td>
                         <td className={`text-right p-1 text-[10px] ${subsVar.color}`}>
-                          {actual.subscribers ? `${subsVar.value >= 0 ? '+' : ''}${subsVar.value.toFixed(1)}%` : '—'}
+                          {calcSubs > 0 ? `${subsVar.value >= 0 ? '+' : ''}${subsVar.value.toFixed(1)}%` : '—'}
                         </td>
                         {/* MRR */}
                         <td className="text-right p-1">{formatCurrency(week.mrr)}</td>
@@ -1939,7 +1968,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           {actual.arr ? `${arrVar.value >= 0 ? '+' : ''}${arrVar.value.toFixed(1)}%` : '—'}
                         </td>
                         <td className="p-1">
-                          {(actual.newPaid || actual.subscribers || actual.mrr || actual.arr) && (
+                          {(actual.newPaid || actual.mrr || actual.arr) && (
                             <button
                               onClick={() => deleteWeekActual(week.week)}
                               className="text-muted-foreground hover:text-red-500 transition-colors"

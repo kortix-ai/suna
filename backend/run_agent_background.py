@@ -59,7 +59,7 @@ db = DBConnection()
 instance_id = ""
 
 # TTL for Redis stream keys - ensures cleanup even if process crashes
-REDIS_STREAM_TTL_SECONDS = 3600  # 1 hour
+REDIS_STREAM_TTL_SECONDS = 600  # 10 minutes
 
 _STATIC_CORE_PROMPT = None
 
@@ -104,6 +104,9 @@ async def initialize():
     
     logger.info(f"Initializing worker async resources with Redis at {redis_host}:{redis_port}")
     await retry(lambda: redis.initialize_async())
+    
+    await redis.verify_connection()
+    
     await db.initialize()
     
     from core.utils.tool_discovery import warm_up_tools_cache
@@ -353,7 +356,7 @@ async def process_agent_responses(
                 asyncio.create_task(redis.xadd(
                     stream_key,
                     {'data': response_json},
-                    maxlen=10000,
+                    maxlen=200,
                     approximate=True
                 ))
             )
@@ -428,7 +431,7 @@ async def handle_normal_completion(
                 redis.xadd(
                     redis_keys['response_stream'],
                     {'data': completion_json},
-                    maxlen=10000,
+                    maxlen=200,
                     approximate=True
                 ),
                 return_exceptions=True
@@ -539,6 +542,10 @@ async def run_agent_background(
         cancellation_event = asyncio.Event()
 
         redis_keys = create_redis_keys(agent_run_id, instance_id)
+        
+        await redis.verify_stream_writable(redis_keys['response_stream'])
+        logger.info(f"✅ Verified Redis stream {redis_keys['response_stream']} is writable")
+        
         trace = langfuse.trace(
             name="agent_run",
             id=agent_run_id,
@@ -701,7 +708,7 @@ async def run_agent_background(
                     redis.xadd(
                         redis_keys['response_stream'],
                         {'data': error_json},
-                        maxlen=10000,
+                        maxlen=200,
                         approximate=True
                     ),
                     return_exceptions=True

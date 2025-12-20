@@ -71,7 +71,7 @@ class ModelRegistry:
             litellm_model_id=power_litellm_id,
             provider=ModelProvider.ANTHROPIC,
             aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
-            context_window=1_000_000,
+            context_window=200_000,
             capabilities=[
                 ModelCapability.CHAT,
                 ModelCapability.FUNCTION_CALLING,
