@@ -52,6 +52,7 @@ class TestHarnessRunner:
         self.metrics = MetricsCollector()
         self._active_runs: Dict[str, bool] = {}  # run_id -> should_continue
         self._test_threads: Dict[str, List[str]] = {}  # run_id -> [thread_ids]
+        self._tasks: Dict[str, asyncio.Task] = {}  # run_id -> background task (prevent GC)
         self._jwt_token: Optional[str] = None
         self._test_user_initialized = False
     
@@ -235,6 +236,7 @@ class TestHarnessRunner:
         finally:
             self._active_runs.pop(run_id, None)
             self._test_threads.pop(run_id, None)
+            self._tasks.pop(run_id, None)
     
     async def run_core_test(
         self,
@@ -283,7 +285,10 @@ class TestHarnessRunner:
         self._test_threads[run_id] = []
         
         # Execute tests in background
-        asyncio.create_task(self._execute_core_test(run_id, prompts, concurrency, model))
+        task = asyncio.create_task(self._execute_core_test(run_id, prompts, concurrency, model))
+        
+        # Store task reference to prevent garbage collection
+        self._tasks[run_id] = task
         
         # Return run_id immediately
         return run_id
@@ -359,13 +364,14 @@ class TestHarnessRunner:
             await self._cleanup_test_threads(run_id)
             
             logger.info(f"Stress test completed: run_id={run_id}, status={status}")
-            
+
         except Exception as e:
             logger.error(f"Stress test failed: {e}", exc_info=True)
             await self.metrics.finalize_run(run_id, status='failed')
         finally:
             self._active_runs.pop(run_id, None)
             self._test_threads.pop(run_id, None)
+            self._tasks.pop(run_id, None)
     
     async def run_stress_test(
         self,
@@ -418,6 +424,9 @@ class TestHarnessRunner:
         # Execute tests in background
         task = asyncio.create_task(self._execute_stress_test(run_id, prompts, concurrency, num_executions))
         logger.info(f"✅ Background task created: {task}")
+        
+        # Store task reference to prevent garbage collection
+        self._tasks[run_id] = task
         
         # Return run_id immediately
         return run_id
