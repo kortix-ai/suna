@@ -1014,43 +1014,6 @@ async def unified_agent_start(
         logger.error(f"Full error details: {error_details}")
         raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
 
-# DEPRECATED: Old optimistic route - now use /agent/start with optimistic=true parameter
-# Kept for backwards compatibility for a short period
-@router.post("/agent/start-optimistic", summary="Start Agent (Optimistic) [DEPRECATED]", operation_id="optimistic_agent_start_deprecated", deprecated=True)
-async def optimistic_agent_start_deprecated(
-    request: Request,
-    thread_id: str = Form(...),
-    project_id: str = Form(...),
-    prompt: Optional[str] = Form(None),
-    model_name: Optional[str] = Form(None),
-    agent_id: Optional[str] = Form(None),
-    files: List[UploadFile] = File(default=[]),
-    memory_enabled: Optional[str] = Form(None),
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
-):
-    """
-    DEPRECATED: Use /agent/start with optimistic=true parameter instead.
-    
-    This endpoint will be removed in a future version.
-    """
-    logger.warning("⚠️ DEPRECATED: /agent/start-optimistic called. Use /agent/start with optimistic=true instead")
-    if not utils.instance_id:
-        raise HTTPException(status_code=500, detail="Worker API not initialized with instance ID")
-    
-    # Forward to the unified endpoint
-    return await unified_agent_start(
-        request=request,
-        thread_id=thread_id,
-        project_id=project_id,
-        prompt=prompt,
-        model_name=model_name,
-        agent_id=agent_id,
-        files=files,
-        optimistic="true",
-        memory_enabled=memory_enabled,
-        user_id=user_id
-    )
-
 @router.post("/thread/{thread_id}/start-agent", summary="Start Agent on Initialized Thread", operation_id="start_agent_on_thread")
 async def start_agent_on_thread(
     thread_id: str,
