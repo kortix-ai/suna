@@ -268,13 +268,17 @@ If relevant context seems missing, ask a clarifying question.
     @staticmethod
     async def _append_jit_mcp_info(system_content: str, mcp_loader) -> str:
         if not mcp_loader:
+            logger.debug("⚡ [MCP PROMPT] No mcp_loader provided, skipping JIT MCP info")
             return system_content
         
         try:
             available_tools = await mcp_loader.get_available_tools()
             toolkits = await mcp_loader.get_toolkits()
             
+            logger.debug(f"⚡ [MCP PROMPT] Available tools: {len(available_tools)}, Toolkits: {toolkits}")
+            
             if not available_tools:
+                logger.debug("⚡ [MCP PROMPT] No available tools, skipping JIT MCP info")
                 return system_content
             
             mcp_jit_info = "\n\n--- EXTERNAL MCP TOOLS ---\n"
@@ -287,14 +291,29 @@ If relevant context seems missing, ask a clarifying question.
             for tool_name in available_tools:
                 tool_info = await mcp_loader.get_tool_info(tool_name)
                 if tool_info:
-                    toolkit = tool_info.toolkit_slug.upper()
+                    toolkit_slug = tool_info.toolkit_slug
+                    if toolkit_slug.startswith("custom_"):
+                        parts = toolkit_slug.split("_")
+                        if len(parts) >= 3:
+                            toolkit = "_".join(parts[2:]).upper()  # Everything after custom_type_
+                        else:
+                            toolkit = toolkit_slug.upper()
+                        api_name = tool_name
+                    else:
+                        toolkit = toolkit_slug.upper()
+                        api_name = tool_name
+                        if not api_name.startswith(toolkit + '_'):
+                            api_name = f"{toolkit}_{tool_name.upper()}"
+                    
                     if toolkit not in toolkit_tools:
                         toolkit_tools[toolkit] = []
-
-                    api_name = tool_name
-                    if not api_name.startswith(toolkit + '_'):
-                        api_name = f"{toolkit}_{tool_name.upper()}"
                     toolkit_tools[toolkit].append(api_name)
+                else:
+                    logger.warning(f"⚠️ [MCP PROMPT] No tool_info for tool: {tool_name}")
+            
+            logger.info(f"⚡ [MCP PROMPT] Collected {len(toolkit_tools)} toolkits: {list(toolkit_tools.keys())}")
+            for tk, tl in toolkit_tools.items():
+                logger.debug(f"⚡ [MCP PROMPT] Toolkit {tk}: {len(tl)} tools")
             
             for toolkit, tools in toolkit_tools.items():
                 if toolkit == "TWITTER":
@@ -324,9 +343,10 @@ If relevant context seems missing, ask a clarifying question.
             mcp_jit_info += "3. NEVER re-discover tools already in conversation history\n"
             mcp_jit_info += "4. Check history first - if schemas exist, skip directly to execute_mcp_tool!\n\n"
             
+            logger.info(f"⚡ [MCP PROMPT] Appended MCP info ({len(mcp_jit_info)} chars) for {len(toolkit_tools)} toolkits")
             return system_content + mcp_jit_info
         except Exception as e:
-            logger.warning(f"⚠️  [MCP JIT] Failed to load dynamic tools for prompt: {e}")
+            logger.warning(f"⚠️  [MCP JIT] Failed to load dynamic tools for prompt: {e}", exc_info=True)
             return system_content
     
     @staticmethod
