@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   CheckCircle,
   AlertTriangle,
@@ -53,7 +53,6 @@ import {
   isFileType,
   hasLanguageHighlighting,
   splitContentIntoLines,
-  generateEmptyLines,
   generateLineDiff,
   calculateDiffStats,
   type FileOperation,
@@ -458,7 +457,9 @@ export function FileOperationToolView({
 
   const language = getLanguageFromFileName(fileName);
   const hasHighlighting = hasLanguageHighlighting(language);
-  const contentLines = React.useMemo(() => splitContentIntoLines(fileContent), [fileContent]);
+  
+  // Only calculate content lines for non-streaming or when actually needed
+  const contentLines = useMemo(() => splitContentIntoLines(fileContent), [fileContent]);
 
   const htmlPreviewUrl =
     isHtml && project?.sandbox?.sandbox_url && processedFilePath
@@ -468,10 +469,10 @@ export function FileOperationToolView({
   const FileIcon = getFileIcon(fileName);
 
   // Auto-scroll refs for streaming
-  const sourceScrollRef = React.useRef<HTMLDivElement>(null);
-  const previewScrollRef = React.useRef<HTMLDivElement>(null);
-  const lastLineCountRef = React.useRef<number>(0);
-  const isUserScrollingSourceRef = React.useRef<boolean>(false);
+  const sourceScrollRef = useRef<HTMLDivElement>(null);
+  const previewScrollRef = useRef<HTMLDivElement>(null);
+  const lastLineCountRef = useRef<number>(0);
+  const isUserScrollingSourceRef = useRef<boolean>(false);
   const isUserScrollingPreviewRef = React.useRef<boolean>(false);
 
   const isNearBottom = (element: HTMLElement, threshold: number = 100): boolean => {
@@ -774,26 +775,18 @@ export function FileOperationToolView({
       );
     }
 
-    // Always use file-lines rendering for consistency
-    // Add empty lines to fill viewport
-    const emptyLines = generateEmptyLines(50); // Add 50 empty lines for natural scrolling
-    const allLines = [...contentLines, ...emptyLines];
-
+    // PERFORMANCE FIX: Use CodeEditor (which uses virtualized CodeMirror) instead of
+    // creating individual DOM elements for each line. This prevents browser hangs
+    // when streaming large files.
     return (
-      <div className="w-full max-w-full table bg-white dark:bg-zinc-900 overflow-x-auto">
-        {allLines.map((line, idx) => (
-          <div
-            key={idx}
-            className={cn("table-row transition-colors", config.hoverColor)}
-          >
-            <div className="table-cell text-right pr-4 pl-4 py-0.5 text-xs text-zinc-400 dark:text-zinc-600 select-none w-14 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 flex-shrink-0">
-              {idx + 1}
-            </div>
-            <div className="table-cell pl-4 py-0.5 pr-4 text-[15px] leading-relaxed whitespace-pre-wrap break-words text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-900 max-w-full min-w-0">
-              {line ? processUnicodeContent(line, true) : ' '}
-            </div>
-          </div>
-        ))}
+      <div className="w-full max-w-full bg-white dark:bg-zinc-900 min-w-0">
+        <CodeEditor
+          content={processUnicodeContent(fileContent)}
+          fileName={fileName}
+          readOnly={true}
+          className="w-full max-w-full"
+          showLineNumbers={true}
+        />
       </div>
     );
   };

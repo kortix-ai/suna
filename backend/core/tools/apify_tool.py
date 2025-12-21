@@ -274,170 +274,146 @@ class ApifyTool(SandboxToolsBase):
         """Return actor ID as-is (no shortcuts)."""
         return actor_id
     
-    async def _get_run_cost(self, run_info: dict) -> Decimal:
+    async def _get_run_cost(self, run_info: dict, approval_id: Optional[str] = None, run_id: Optional[str] = None) -> Decimal:
         """
-        Extract actual cost from Apify run info using the standard Apify API approach.
+        Calculate actual cost from Apify run info.
         
-        STANDARD APIFY APPROACH:
-        - Use `usageTotalUsd` field from run info (primary method)
-        - This field is populated by Apify for all pricing models including PRICE_PER_DATASET_ITEM
-        - Apify calculates and includes all costs (actor pricing + platform usage) in usageTotalUsd
+        CRITICAL DISCOVERY: Apify API does NOT return usageTotalUsd in the run response.
+        Cost must be CALCULATED from:
+        - pricingInfo.pricePerUnitUsd * dataset.itemCount (for PRICE_PER_DATASET_ITEM)
+        - pricingInfo.pricePerUnitUsd * event_count (for PRICE_PER_EVENT)
+        - Or other pricing models as appropriate
         
         CRITICAL: Cost is only available AFTER the run completes (status: SUCCEEDED, FAILED, ABORTED, TIMED-OUT).
         For RUNNING status, this returns 0 to prevent premature deduction.
+        
+        Falls back to:
+        1. Checking approval record for actual_cost_usd (if already calculated)
+        2. Calculating from pricingInfo and dataset item count
         """
         try:
-            # Log what we're receiving for debugging
-            if isinstance(run_info, dict):
-                logger.info(f"🔍 Extracting cost from run_info. Keys: {list(run_info.keys())[:20]}...")  # Log first 20 keys
-                logger.info(f"🔍 Run status: {run_info.get('status')}, usageTotalUsd: {run_info.get('usageTotalUsd')}")
-                # Log full usage object if available
-                if 'usage' in run_info:
-                    logger.info(f"🔍 Usage object: {run_info.get('usage')}")
-            else:
-                logger.debug(f"Extracting cost from run_info. Type: {type(run_info)}")
-            
-            # STANDARD APIFY APPROACH: Extract usageTotalUsd (primary field)
-            # Try multiple field name variations and nested locations
-            usage_total_usd = None
-            
-            # Helper function to recursively search for cost fields
-            def find_cost_in_dict(obj, depth=0, max_depth=3):
-                """Recursively search for cost-related fields in dict/object"""
-                if depth > max_depth:
-                    return None
-                
-                if isinstance(obj, dict):
-                    # Check all possible cost field names
-                    for key in ['usageTotalUsd', 'usageTotalUSD', 'usage_total_usd', 'usageTotal', 'totalUsd', 'costUsd', 'cost']:
-                        if key in obj:
-                            value = obj[key]
-                            if value is not None and value != 0:
-                                try:
-                                    # Try to convert to number
-                                    if isinstance(value, (int, float, Decimal)):
-                                        return Decimal(str(value))
-                                    elif isinstance(value, str):
-                                        return Decimal(value)
-                                except (ValueError, TypeError):
-                                    pass
-                    
-                    # Recursively search nested dicts
-                    for value in obj.values():
-                        if isinstance(value, (dict, list)):
-                            result = find_cost_in_dict(value, depth + 1, max_depth)
-                            if result is not None:
-                                return result
-                elif isinstance(obj, list):
-                    for item in obj:
-                        result = find_cost_in_dict(item, depth + 1, max_depth)
-                        if result is not None:
-                            return result
-                
-                return None
-            
-            if isinstance(run_info, dict):
-                # Try direct field access first
-                usage_total_usd = run_info.get("usageTotalUsd")
-                if usage_total_usd is None:
-                    usage_total_usd = run_info.get("usageTotalUSD")
-                if usage_total_usd is None:
-                    usage_total_usd = run_info.get("usage_total_usd")
-                if usage_total_usd is None:
-                    usage_total_usd = run_info.get("usageTotal")
-                if usage_total_usd is None:
-                    usage_total_usd = run_info.get("totalUsd")
-                if usage_total_usd is None:
-                    usage_total_usd = run_info.get("costUsd")
-                
-                # If still not found, do recursive search
-                if usage_total_usd is None:
-                    found_cost = find_cost_in_dict(run_info)
-                    if found_cost is not None:
-                        usage_total_usd = found_cost
-                        logger.info(f"✅ Found cost via recursive search: ${usage_total_usd:.6f} USD")
-            else:
-                # Try attribute access for object responses
-                if hasattr(run_info, 'usageTotalUsd'):
-                    usage_total_usd = getattr(run_info, 'usageTotalUsd', None)
-                elif hasattr(run_info, 'usageTotalUSD'):
-                    usage_total_usd = getattr(run_info, 'usageTotalUSD', None)
-                elif hasattr(run_info, 'usage_total_usd'):
-                    usage_total_usd = getattr(run_info, 'usage_total_usd', None)
-                # Try nested access
-                if usage_total_usd is None and hasattr(run_info, 'stats'):
-                    stats = getattr(run_info, 'stats', None)
-                    if stats:
-                        if hasattr(stats, 'usageTotalUsd'):
-                            usage_total_usd = getattr(stats, 'usageTotalUsd', None)
-                        elif isinstance(stats, dict):
-                            usage_total_usd = stats.get('usageTotalUsd') or stats.get('usageTotalUSD')
-            
-            # Convert to Decimal if found
-            if usage_total_usd is not None:
-                try:
-                    usage_total_usd_decimal = Decimal(str(usage_total_usd))
-                    logger.info(f"🔍 usageTotalUsd raw value: {usage_total_usd}, converted: {usage_total_usd_decimal}")
-                    if usage_total_usd_decimal > 0:
-                        logger.info(f"✅ Found cost via usageTotalUsd: ${usage_total_usd_decimal:.6f} USD")
-                        return usage_total_usd_decimal
-                    elif usage_total_usd_decimal == 0:
-                        logger.info(f"ℹ️ usageTotalUsd is 0 - actor has no cost or is free (or cost not yet calculated)")
-                        return Decimal("0")
-                except (ValueError, TypeError) as e:
-                    logger.warning(f"Could not convert usageTotalUsd to Decimal: {e}, value: {usage_total_usd}, type: {type(usage_total_usd)}")
-            
-            # Fallback 1: Try to get cost from usage object with different field names
-            usage = None
-            if isinstance(run_info, dict):
-                usage = run_info.get("usage", {})
-            elif hasattr(run_info, 'usage'):
-                usage = run_info.usage
-            
-            if isinstance(usage, dict):
-                # Check for cost in usage object
-                usage_cost = usage.get("usageTotalUsd") or usage.get("usageTotalUSD") or usage.get("totalUsd")
-                if usage_cost is not None:
+            if not isinstance(run_info, dict):
+                # Try to get from approval if available
+                if approval_id:
                     try:
-                        usage_cost_decimal = Decimal(str(usage_cost))
-                        if usage_cost_decimal > 0:
-                            logger.info(f"✅ Found cost in usage object: ${usage_cost_decimal:.6f} USD")
-                            return usage_cost_decimal
-                    except (ValueError, TypeError) as e:
-                        logger.debug(f"Could not convert usage cost to Decimal: {e}")
-                
-                # Fallback: Calculate from compute units if usageTotalUsd is missing
-                if "ACTOR_COMPUTE_UNITS" in usage:
-                    compute_units = usage.get("ACTOR_COMPUTE_UNITS", 0)
-                    if compute_units > 0:
-                        compute_cost = Decimal(str(compute_units)) * Decimal("0.25")
-                        logger.warning(
-                            f"⚠️ usageTotalUsd not found, calculated from compute units: {compute_units} CUs = ${compute_cost:.6f} USD. "
-                            f"This should not happen for completed runs - Apify should populate usageTotalUsd."
-                        )
-                        return compute_cost
+                        approval = await self._get_approval_request(approval_id)
+                        if approval and approval.get('actual_cost_usd') is not None:
+                            return Decimal(str(approval['actual_cost_usd']))
+                    except Exception:
+                        pass
+                return Decimal("0")
             
-            # Log warning if no cost found
-            if usage_total_usd is None:
-                logger.warning(
-                    f"⚠️ usageTotalUsd field not found in run_info. "
-                    f"This may indicate: (1) run hasn't completed yet, (2) free actor, or (3) Apify API issue. "
-                    f"Returning 0 cost."
-                )
+            # METHOD 1: Calculate from pricingInfo and dataset item count
+            # This is the CORRECT way - Apify doesn't return usageTotalUsd in the API response
+            pricing_info = run_info.get("pricingInfo")
+            dataset_id = run_info.get("defaultDatasetId")
             
-            # No cost info available - return 0 (actor has no Apify cost or cost not yet calculated)
+            if pricing_info and dataset_id:
+                try:
+                    pricing_model = pricing_info.get("pricingModel")
+                    price_per_unit = pricing_info.get("pricePerUnitUsd")
+                    
+                    if price_per_unit is not None:
+                        # Get item count from dataset
+                        if self.client:
+                            try:
+                                dataset_info = self.client.dataset(dataset_id).get()
+                                if isinstance(dataset_info, dict):
+                                    item_count = dataset_info.get("itemCount", 0)
+                                else:
+                                    item_count = getattr(dataset_info, 'itemCount', 0)
+                                
+                                if item_count and item_count > 0:
+                                    # Calculate cost based on pricing model
+                                    if pricing_model == "PRICE_PER_DATASET_ITEM":
+                                        calculated_cost = Decimal(str(price_per_unit)) * Decimal(str(item_count))
+                                        logger.info(f"✅ Calculated cost from pricingInfo: ${price_per_unit} * {item_count} items = ${calculated_cost}")
+                                        return calculated_cost
+                                    elif pricing_model == "PRICE_PER_EVENT":
+                                        # For event-based pricing, we'd need event count (not available in dataset)
+                                        # Fall through to other methods
+                                        logger.debug(f"PRICE_PER_EVENT model - cannot calculate without event count")
+                                    else:
+                                        logger.debug(f"Unknown pricing model: {pricing_model}")
+                            except Exception as e:
+                                logger.debug(f"Could not get dataset item count: {e}")
+                except Exception as e:
+                    logger.debug(f"Error calculating cost from pricingInfo: {e}")
+            
+            # METHOD 2: Check for usageTotalUsd (legacy - may not exist, but check anyway)
+            usage_total_usd = (
+                run_info.get("usageTotalUsd") or
+                run_info.get("usageTotalUSD") or
+                run_info.get("usage_total_usd") or
+                run_info.get("cost") or
+                run_info.get("totalCost") or
+                run_info.get("total_cost") or
+                # Check nested structures
+                (run_info.get("usage") or {}).get("totalUsd") or
+                (run_info.get("usage") or {}).get("totalUSD") or
+                (run_info.get("stats") or {}).get("usageTotalUsd") or
+                (run_info.get("stats") or {}).get("usageTotalUSD")
+            )
+            
+            if usage_total_usd is not None:
+                cost = Decimal(str(usage_total_usd))
+                if cost > 0:
+                    logger.info(f"Found cost in run_info (usageTotalUsd): ${cost}")
+                    return cost
+            
+            # If not found in run_info, check approval record
+            if approval_id:
+                try:
+                    approval = await self._get_approval_request(approval_id)
+                    if approval and approval.get('actual_cost_usd') is not None:
+                        cost = Decimal(str(approval['actual_cost_usd']))
+                        logger.info(f"Found cost in approval record: ${cost}")
+                        return cost
+                except Exception as e:
+                    logger.debug(f"Could not get cost from approval {approval_id}: {e}")
+            
+            # METHOD 3: If calculation failed, try to get dataset item count via direct API call
+            # (fallback if client.dataset() failed above)
+            if run_id and dataset_id and pricing_info:
+                try:
+                    api_token = config.APIFY_API_TOKEN
+                    if api_token:
+                        # Get dataset info directly
+                        dataset_url = f"https://api.apify.com/v2/datasets/{dataset_id}?token={api_token}"
+                        logger.debug(f"Fetching dataset info directly from API for run {run_id}")
+                        response = requests.get(dataset_url, timeout=10)
+                        if response.status_code == 200:
+                            dataset_data = response.json()
+                            dataset_info = dataset_data.get("data", dataset_data)
+                            item_count = dataset_info.get("itemCount", 0)
+                            
+                            price_per_unit = pricing_info.get("pricePerUnitUsd")
+                            pricing_model = pricing_info.get("pricingModel")
+                            
+                            if price_per_unit and item_count and pricing_model == "PRICE_PER_DATASET_ITEM":
+                                calculated_cost = Decimal(str(price_per_unit)) * Decimal(str(item_count))
+                                logger.info(f"✅ Calculated cost via direct API: ${price_per_unit} * {item_count} = ${calculated_cost}")
+                                return calculated_cost
+                except Exception as e:
+                    logger.debug(f"Could not calculate cost via direct API for run {run_id}: {e}")
+            
+            # Log what fields are available for debugging
+            logger.warning(f"Cost not found in run_info for run {run_id or 'unknown'}. Available keys: {list(run_info.keys())[:30]}")
+            # Log the full run_info for debugging (first 500 chars to avoid huge logs)
+            run_info_str = json.dumps(run_info, default=str)[:500]
+            logger.debug(f"Run info sample (first 500 chars): {run_info_str}")
             return Decimal("0")
         except Exception as e:
-            logger.error(f"Error extracting run cost: {e}", exc_info=True)
+            logger.error(f"Error extracting run cost: {e}")
             return Decimal("0")
     
     def _format_cost_display(self, cost_usd: Decimal) -> str:
         """
         Format cost for display in UI.
-        Returns formatted string like "$0.05" or "0 credits (free run!)" for $0.
+        Returns formatted string like "$0.05" or "0 credits" for $0.
         """
         if cost_usd is None or cost_usd == 0:
-            return "0 credits (free run!) ✨"
+            return "0 credits"
         
         # Convert to credits (1 credit = $0.01, with 20% markup)
         # Ensure all operands are Decimal to avoid type errors
@@ -634,6 +610,33 @@ class ApifyTool(SandboxToolsBase):
         except Exception as e:
             logger.debug(f"Error getting approval request {approval_id}: {e}")
             return None
+    
+    async def _find_approval_by_run_id(self, run_id: str, user_id: Optional[str] = None) -> Optional[dict]:
+        """Find approval request by run_id. Optionally filter by user_id."""
+        try:
+            redis_client = await get_client()
+            # Search for all approval keys
+            pattern = "apify:approval:*"
+            keys = []
+            async for key in redis_client.scan_iter(match=pattern):
+                keys.append(key.decode() if isinstance(key, bytes) else key)
+            
+            # Check each approval for matching run_id
+            for key in keys:
+                try:
+                    data = await redis_get(key)
+                    if data:
+                        approval = json.loads(data)
+                        if approval.get('run_id') == run_id:
+                            # If user_id provided, also check it matches
+                            if user_id and approval.get('account_id') != user_id:
+                                continue
+                            return approval
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.debug(f"Error finding approval by run_id {run_id}: {e}")
+        return None
     
     async def _check_existing_approval(
         self,
@@ -1752,7 +1755,7 @@ class ApifyTool(SandboxToolsBase):
                     timed_out = False  # No longer timed out if it completed
                 
                 run_info_dict = run_info_final if isinstance(run_info_final, dict) else (run_info_final.__dict__ if hasattr(run_info_final, '__dict__') else {})
-                actual_cost = await self._get_run_cost(run_info_dict)
+                actual_cost = await self._get_run_cost(run_info_dict, approval_id=approval_id, run_id=run_id)
             except Exception as e:
                 logger.debug(f"Could not get final run info: {e}")
                 actual_cost = Decimal("0")
@@ -1940,71 +1943,47 @@ class ApifyTool(SandboxToolsBase):
             if not dataset_id:
                 return self.fail_response(f"Run {run_id} has no dataset")
             
-            # Get cost from run info (CRITICAL: Fetch actual cost from Apify)
-            # Use the same run_info_response we already fetched to avoid duplicate API calls
+            # Get cost from run info - try multiple sources
             actual_cost = Decimal("0")
+            approval_for_cost = None
+            
+            # Try to find approval by run_id to get actual cost
             try:
-                # Convert run_info_response to dict format for cost extraction
-                if isinstance(run_info_response, dict):
-                    run_info_dict = run_info_response
-                elif hasattr(run_info_response, '__dict__'):
-                    run_info_dict = run_info_response.__dict__
-                else:
-                    # Try to get as dict from object attributes
-                    run_info_dict = {}
-                    # Try to get all attributes
-                    if hasattr(run_info_response, '__dict__'):
-                        run_info_dict = run_info_response.__dict__.copy()
-                    else:
-                        # Try common attribute names
-                        for attr in ['usageTotalUsd', 'usageTotalUSD', 'usage_total_usd', 'status', 'usage', 'stats', 'actId', 'defaultDatasetId', 'id', 'status']:
-                            if hasattr(run_info_response, attr):
-                                try:
-                                    run_info_dict[attr] = getattr(run_info_response, attr)
-                                except Exception:
-                                    pass
-                
-                # Log what we're getting for debugging
-                if isinstance(run_info_dict, dict):
-                    all_keys = list(run_info_dict.keys())
-                    logger.info(f"🔍 Cost extraction for run {run_id}: Available keys ({len(all_keys)}): {all_keys}")
-                    usage_total_usd = run_info_dict.get("usageTotalUsd") or run_info_dict.get("usageTotalUSD") or run_info_dict.get("usage_total_usd")
-                    logger.info(f"🔍 Run status: {run_info_dict.get('status')}, usageTotalUsd: {usage_total_usd}")
-                    # Log usage object if present
-                    if 'usage' in run_info_dict:
-                        usage_obj = run_info_dict.get('usage')
-                        logger.info(f"🔍 Usage object type: {type(usage_obj)}, content: {usage_obj}")
-                    # Log stats if present
-                    if 'stats' in run_info_dict:
-                        stats_obj = run_info_dict.get('stats')
-                        logger.info(f"🔍 Stats object type: {type(stats_obj)}, content: {stats_obj}")
-                else:
-                    logger.warning(f"🔍 run_info_dict is not a dict: {type(run_info_dict)}")
-                
-                actual_cost = await self._get_run_cost(run_info_dict)
-                logger.info(f"✅ Extracted cost for run {run_id}: ${actual_cost:.6f} USD")
-                
-                # If still 0, try fetching fresh run info (cost might be calculated asynchronously)
-                if actual_cost == 0:
-                    logger.warning(f"⚠️ Cost is 0 for run {run_id}, fetching fresh run info to check if cost was calculated...")
-                    try:
-                        fresh_run_info = self.client.run(run_id).get()
-                        if isinstance(fresh_run_info, dict):
-                            fresh_dict = fresh_run_info
-                        elif hasattr(fresh_run_info, '__dict__'):
-                            fresh_dict = fresh_run_info.__dict__
-                        else:
-                            fresh_dict = {}
-                        
-                        fresh_cost = await self._get_run_cost(fresh_dict)
-                        if fresh_cost > 0:
-                            logger.info(f"✅ Found cost in fresh run info: ${fresh_cost:.6f} USD")
-                            actual_cost = fresh_cost
-                    except Exception as e2:
-                        logger.debug(f"Could not fetch fresh run info: {e2}")
-                        
+                thread_id, user_id = await self._get_current_thread_and_user()
+                if user_id:
+                    approval_for_cost = await self._find_approval_by_run_id(run_id, user_id=user_id)
+                    if approval_for_cost and approval_for_cost.get('actual_cost_usd') is not None:
+                        actual_cost = Decimal(str(approval_for_cost['actual_cost_usd']))
+                        logger.info(f"Found cost from approval record: ${actual_cost} for run {run_id}")
             except Exception as e:
-                logger.warning(f"Could not get cost for run {run_id}: {e}", exc_info=True)
+                logger.debug(f"Could not find approval by run_id: {e}")
+            
+            # If not found in approval, try to get from run_info
+            if actual_cost == 0:
+                try:
+                    approval_id_for_cost = approval_for_cost.get('approval_id') if approval_for_cost else None
+                    # Apify SDK returns dict, extract cost directly
+                    if isinstance(run_info_response, dict):
+                        cost_from_run = await self._get_run_cost(run_info_response, approval_id=approval_id_for_cost, run_id=run_id)
+                        if cost_from_run > 0:
+                            actual_cost = cost_from_run
+                            logger.info(f"Found cost from run_info: ${actual_cost} for run {run_id}")
+                    else:
+                        # Fallback for object responses (shouldn't happen, but handle gracefully)
+                        run_info_dict = run_info_response.__dict__ if hasattr(run_info_response, '__dict__') else {}
+                        cost_from_run = await self._get_run_cost(run_info_dict, approval_id=approval_id_for_cost, run_id=run_id)
+                        if cost_from_run > 0:
+                            actual_cost = cost_from_run
+                            logger.info(f"Found cost from run_info (object): ${actual_cost} for run {run_id}")
+                except Exception as e:
+                    logger.warning(f"Could not get cost from run_info for run {run_id}: {e}")
+            
+            # If still 0, log what we have for debugging
+            if actual_cost == 0:
+                if isinstance(run_info_response, dict):
+                    logger.warning(f"Cost is 0 for run {run_id}. Run info keys: {list(run_info_response.keys())[:30]}. Approval actual_cost_usd: {approval_for_cost.get('actual_cost_usd') if approval_for_cost else 'N/A'}")
+                else:
+                    logger.warning(f"Cost is 0 for run {run_id}. Run info is object type. Approval actual_cost_usd: {approval_for_cost.get('actual_cost_usd') if approval_for_cost else 'N/A'}")
             
             # Get ALL dataset items (not paginated - save everything to file)
             dataset_client = self.client.dataset(dataset_id)
@@ -2018,40 +1997,6 @@ class ApifyTool(SandboxToolsBase):
             except Exception as e:
                 logger.error(f"Error fetching dataset items: {e}")
                 return self.fail_response(f"Failed to retrieve dataset items: {str(e)}")
-            
-            # If cost is still 0 and we have items, try to calculate from actor pricing (fallback for PRICE_PER_DATASET_ITEM)
-            if actual_cost == 0 and len(all_items) > 0 and actor_id:
-                logger.info(f"⚠️ Cost is 0 but we have {len(all_items)} items. Attempting to calculate cost from actor pricing...")
-                try:
-                    # Get actor details to check pricing model
-                    actor_info = self.client.actor(actor_id).get()
-                    pricing_model = None
-                    price_per_item = None
-                    
-                    if isinstance(actor_info, dict):
-                        pricing_infos = actor_info.get("pricingInfos", [])
-                        if pricing_infos and len(pricing_infos) > 0:
-                            first_pricing = pricing_infos[0]
-                            if isinstance(first_pricing, dict):
-                                pricing_model = first_pricing.get("pricingModel")
-                                price_per_item = first_pricing.get("pricePerUnitUsd")
-                    elif hasattr(actor_info, 'pricingInfos'):
-                        pricing_infos = getattr(actor_info, 'pricingInfos', [])
-                        if pricing_infos and len(pricing_infos) > 0:
-                            first_pricing = pricing_infos[0]
-                            if isinstance(first_pricing, dict):
-                                pricing_model = first_pricing.get("pricingModel")
-                                price_per_item = first_pricing.get("pricePerUnitUsd")
-                            elif hasattr(first_pricing, 'pricingModel'):
-                                pricing_model = getattr(first_pricing, 'pricingModel', None)
-                                price_per_item = getattr(first_pricing, 'pricePerUnitUsd', None)
-                    
-                    if pricing_model == "PRICE_PER_DATASET_ITEM" and price_per_item:
-                        calculated_cost = Decimal(str(price_per_item)) * Decimal(str(len(all_items)))
-                        logger.info(f"✅ Calculated cost from pricing: {len(all_items)} items × ${price_per_item} = ${calculated_cost:.6f} USD")
-                        actual_cost = calculated_cost
-                except Exception as e:
-                    logger.debug(f"Could not calculate cost from actor pricing: {e}")
             
             # Format cost for display
             cost_deducted_str = self._format_cost_display(actual_cost)
@@ -2175,7 +2120,7 @@ class ApifyTool(SandboxToolsBase):
             status_message = run_info.get("statusMessage") if isinstance(run_info, dict) else getattr(run_info_response, 'statusMessage', None)
             dataset_id = run_info.get("defaultDatasetId") if isinstance(run_info, dict) else getattr(run_info_response, 'defaultDatasetId', None)
             
-            # Get cost info using standard Apify approach (usageTotalUsd)
+            # Get cost info using usageTotalUsd
             run_info_dict = run_info_response if isinstance(run_info_response, dict) else (run_info_response.__dict__ if hasattr(run_info_response, '__dict__') else {})
             actual_cost = await self._get_run_cost(run_info_dict)
             
