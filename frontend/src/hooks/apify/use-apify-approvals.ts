@@ -101,8 +101,9 @@ export function useGetApifyApprovalStatus(approvalId: string | null, threadId: s
       return response.data.data;
     },
     enabled: !!approvalId,
-    refetchInterval: (data) => {
+    refetchInterval: (query) => {
       // Poll if pending
+      const data = query.state.data;
       return data?.status === 'pending' ? 5000 : false;
     },
   });

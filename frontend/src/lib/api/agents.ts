@@ -125,7 +125,7 @@ export const unifiedAgentStart = async (options: {
       
       if (status === 402) {
         // Check error_code to determine the correct error type
-        const errorDetail = response.error.details?.detail || response.error.detail || { message: response.error.message || 'Payment required' };
+        const errorDetail = response.error.details?.detail || { message: response.error.message || 'Payment required' };
         const errorCode = errorDetail.error_code || response.error.code;
         
         // Handle concurrent agent run limit (should be AgentRunLimitError, not BillingError)
@@ -434,7 +434,7 @@ export const optimisticAgentStart = async (options: {
       }
       
       if (status === 402) {
-        const errorDetail = response.error.details?.detail || response.error.detail || { message: response.error.message || 'Payment required' };
+        const errorDetail = response.error.details?.detail || { message: response.error.message || 'Payment required' };
         const parsedError = parseTierRestrictionError({
           status,
           detail: errorDetail,

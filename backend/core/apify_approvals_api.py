@@ -160,6 +160,49 @@ async def approve_apify_request(
             except Exception as e:
                 logger.warning(f"Error checking approval expiration: {e}")
         
+        # CRITICAL: Deduct max_cost_usd on approve as a "hold" to prevent exploit
+        # This ensures credits are deducted even if agent stops before checking status
+        # Credits will be adjusted to actual cost when run completes
+        from decimal import Decimal
+        from core.billing.shared.config import TOKEN_PRICE_MULTIPLIER
+        
+        max_cost_usd = Decimal(str(approval.get('max_cost_usd', 0)))
+        max_cost_credits = max_cost_usd * TOKEN_PRICE_MULTIPLIER * Decimal('100')  # Convert to credits
+        
+        deduction_success = False
+        if max_cost_usd > 0:
+            try:
+                from core.billing.credits.manager import CreditManager
+                credit_manager = CreditManager()
+                
+                result = await credit_manager.deduct_credits(
+                    account_id=user_id,
+                    amount=max_cost_credits,
+                    description=f"Apify hold: {approval.get('actor_id')} (approval: {approval_id}) - max cost hold",
+                    type='usage',
+                    thread_id=thread_id
+                )
+                
+                if result.get('success'):
+                    deduction_success = True
+                    approval['deducted_on_approve_credits'] = float(max_cost_credits)
+                    approval['deducted_on_approve_usd'] = float(max_cost_usd)
+                    logger.info(f"✅ Deducted ${max_cost_credits:.2f} credits on approve for {approval_id} (max cost hold)")
+                else:
+                    logger.error(f"Failed to deduct credits on approve: {result.get('error')}")
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Insufficient credits. Need {max_cost_credits:.2f} credits (${max_cost_usd:.4f} USD) to approve this request."
+                    )
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Error deducting credits on approve: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to process approval: {str(e)}"
+                )
+        
         # Update approval status
         now = datetime.now(timezone.utc)
         approval['status'] = 'approved'
@@ -180,10 +223,11 @@ async def approve_apify_request(
             "data": {
                 "approval_id": approval_id,
                 "status": "approved",
-                "message": f"✅ Approval {approval_id} approved! You can now run the actor.",
+                "message": f"✅ Approval {approval_id} approved! ${max_cost_credits:.2f} credits deducted as hold (max cost). Credits will be adjusted to actual cost when run completes.",
                 "estimated_cost_usd": approval.get('estimated_cost_usd'),
                 "estimated_cost_credits": approval.get('estimated_cost_credits'),
                 "max_cost_usd": approval.get('max_cost_usd'),
+                "deducted_on_approve_credits": approval.get('deducted_on_approve_credits'),
                 "actor_id": approval.get('actor_id')
             }
         }

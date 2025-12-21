@@ -387,7 +387,7 @@ export function useFilePreloader() {
       return;
     }
     
-    const uniquePaths = [...new Set(filePaths)];
+    const uniquePaths = Array.from(new Set(filePaths));
     
     const preloadPromises = uniquePaths.map(async (path) => {
       const normalizedPath = normalizePath(path);
@@ -468,4 +468,4 @@ export function useCachedFile<T = string>(
     getFromCache: () => processedData,
     cache: new Map(), // Legacy compatibility - empty map
   };
-} 
+}
