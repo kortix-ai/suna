@@ -139,7 +139,7 @@ export function useFileDelete() {
       });
 
       // Clean up legacy FileCache entries for this file
-      const normalizedPath = normalizePath(variables.filePath);
+      const normalizedPath = normalizeWorkspacePath(variables.filePath);
       const legacyCacheKeys = [
         `${variables.sandboxId}:${normalizedPath}:blob`,
         `${variables.sandboxId}:${normalizedPath}:text`,

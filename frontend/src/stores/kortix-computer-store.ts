@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import { normalizeWorkspacePath, getThreadIdFromUrl } from '@/lib/utils/workspace-path';
+import { normalizeWorkspacePath } from '@/lib/utils/workspace-path';
 
 export type ViewType = 'tools' | 'files' | 'browser';
 export type FilesSubView = 'browser' | 'viewer';
