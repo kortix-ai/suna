@@ -89,11 +89,11 @@ async def stream_tool_output(
         
         logger.debug(f"[TOOL OUTPUT] Publishing to {ctx.pubsub_channel}: tool_call_id={tool_call_id}, chunk_len={len(output_chunk)}, is_final={is_final}")
         
-        await redis.publish(ctx.pubsub_channel, message_json)
-        await redis.xadd(
+        await redis.publish_and_xadd(
+            ctx.pubsub_channel,
+            message_json,
             ctx.stream_key,
-            {'data': message_json},
-            maxlen=10000,
+            maxlen=200,
             approximate=True
         )
         

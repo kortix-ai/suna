@@ -3,7 +3,7 @@ import { siteMetadata } from '@/lib/site-metadata';
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/components/AuthProvider';
-import { PresenceProvider } from '@/providers/presence-provider';
+import { PresenceProvider } from '@/components/presence-provider';
 import { ReactQueryProvider } from './react-query-provider';
 import { Toaster } from '@/components/ui/sonner';
 import Script from 'next/script';
@@ -235,8 +235,8 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <I18nProvider>
-            <AuthProvider>
+          <AuthProvider>
+            <I18nProvider>
               <PresenceProvider>
               <ReactQueryProvider>
                 {children}
@@ -246,8 +246,8 @@ export default function RootLayout({
                 </Suspense>
               </ReactQueryProvider>
               </PresenceProvider>
-            </AuthProvider>
-          </I18nProvider>
+            </I18nProvider>
+          </AuthProvider>
           {/* Analytics - lazy loaded to not block FCP */}
           <Suspense fallback={null}>
             <Analytics />

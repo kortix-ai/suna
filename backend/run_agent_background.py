@@ -7,7 +7,7 @@ import json
 import traceback
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Tuple
-from core.services import redis_worker as redis
+from core.services import redis
 from core.run import run_agent
 from core.utils.logger import logger, structlog
 from core.utils.tool_discovery import warm_up_tools_cache
@@ -59,7 +59,7 @@ db = DBConnection()
 instance_id = ""
 
 # TTL for Redis stream keys - ensures cleanup even if process crashes
-REDIS_STREAM_TTL_SECONDS = 3600  # 1 hour
+REDIS_STREAM_TTL_SECONDS = 600  # 10 minutes
 
 _STATIC_CORE_PROMPT = None
 
@@ -350,13 +350,11 @@ async def process_agent_responses(
         
         if redis_streaming_enabled and redis.is_redis_healthy():
             pending_redis_operations.append(
-                asyncio.create_task(redis.publish(pubsub_channel, response_json))
-            )
-            pending_redis_operations.append(
-                asyncio.create_task(redis.xadd(
+                asyncio.create_task(redis.publish_and_xadd(
+                    pubsub_channel,
+                    response_json,
                     stream_key,
-                    {'data': response_json},
-                    maxlen=10000,
+                    maxlen=200,
                     approximate=True
                 ))
             )
@@ -431,7 +429,7 @@ async def handle_normal_completion(
                 redis.xadd(
                     redis_keys['response_stream'],
                     {'data': completion_json},
-                    maxlen=10000,
+                    maxlen=200,
                     approximate=True
                 ),
                 return_exceptions=True
@@ -703,15 +701,12 @@ async def run_agent_background(
         try:
             error_json = json.dumps(error_response)
             await asyncio.wait_for(
-                asyncio.gather(
-                    redis.publish(redis_keys['response_pubsub'], error_json),
-                    redis.xadd(
-                        redis_keys['response_stream'],
-                        {'data': error_json},
-                        maxlen=10000,
-                        approximate=True
-                    ),
-                    return_exceptions=True
+                redis.publish_and_xadd(
+                    redis_keys['response_pubsub'],
+                    error_json,
+                    redis_keys['response_stream'],
+                    maxlen=200,
+                    approximate=True
                 ),
                 timeout=5.0
             )
@@ -817,7 +812,8 @@ async def cleanup_redis_keys_for_agent_run(agent_run_id: str, instance_id: Optio
     # Also find and clean up any other instance active keys for this agent run
     # (in case there are stale keys from other instances)
     try:
-        instance_keys = await redis.keys(f"active_run:*:{agent_run_id}")
+        # Use scan_keys instead of keys() to avoid blocking Redis
+        instance_keys = await redis.scan_keys(f"active_run:*:{agent_run_id}")
         for key in instance_keys:
             # Decode bytes if needed
             key_str = key.decode('utf-8') if isinstance(key, bytes) else key

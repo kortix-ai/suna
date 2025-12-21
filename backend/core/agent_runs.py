@@ -1014,43 +1014,6 @@ async def unified_agent_start(
         logger.error(f"Full error details: {error_details}")
         raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
 
-# DEPRECATED: Old optimistic route - now use /agent/start with optimistic=true parameter
-# Kept for backwards compatibility for a short period
-@router.post("/agent/start-optimistic", summary="Start Agent (Optimistic) [DEPRECATED]", operation_id="optimistic_agent_start_deprecated", deprecated=True)
-async def optimistic_agent_start_deprecated(
-    request: Request,
-    thread_id: str = Form(...),
-    project_id: str = Form(...),
-    prompt: Optional[str] = Form(None),
-    model_name: Optional[str] = Form(None),
-    agent_id: Optional[str] = Form(None),
-    files: List[UploadFile] = File(default=[]),
-    memory_enabled: Optional[str] = Form(None),
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
-):
-    """
-    DEPRECATED: Use /agent/start with optimistic=true parameter instead.
-    
-    This endpoint will be removed in a future version.
-    """
-    logger.warning("⚠️ DEPRECATED: /agent/start-optimistic called. Use /agent/start with optimistic=true instead")
-    if not utils.instance_id:
-        raise HTTPException(status_code=500, detail="Worker API not initialized with instance ID")
-    
-    # Forward to the unified endpoint
-    return await unified_agent_start(
-        request=request,
-        thread_id=thread_id,
-        project_id=project_id,
-        prompt=prompt,
-        model_name=model_name,
-        agent_id=agent_id,
-        files=files,
-        optimistic="true",
-        memory_enabled=memory_enabled,
-        user_id=user_id
-    )
-
 @router.post("/thread/{thread_id}/start-agent", summary="Start Agent on Initialized Thread", operation_id="start_agent_on_thread")
 async def start_agent_on_thread(
     thread_id: str,
@@ -1393,6 +1356,55 @@ async def stream_agent_run(
     pubsub_channel = f"agent_run:{agent_run_id}:pubsub"
     control_channel = f"agent_run:{agent_run_id}:control"
 
+    def find_last_safe_boundary(entries):
+        """
+        Find the last entry that marks a complete structural unit.
+        
+        Safe boundaries are:
+        - llm_response_end: Complete LLM cycle saved to DB
+        - status with completed/failed/stopped: Entire run complete
+        - assistant with stream_status=complete: Message saved to DB
+        
+        Returns:
+            int: Index of last safe boundary, or -1 if no safe boundary found
+        """
+        last_safe_index = -1
+        
+        for i, (entry_id, fields) in enumerate(entries):
+            try:
+                data = json.loads(fields.get('data', '{}'))
+                msg_type = data.get('type')
+                
+                # LLM response end = complete LLM cycle (saved to DB)
+                if msg_type == 'llm_response_end':
+                    last_safe_index = i
+                    logger.debug(f"Found safe boundary at index {i}: llm_response_end")
+                
+                # Run completion status = entire run complete
+                elif msg_type == 'status':
+                    status = data.get('status')
+                    if status in ['completed', 'failed', 'stopped', 'error']:
+                        last_safe_index = i
+                        logger.debug(f"Found safe boundary at index {i}: status={status}")
+                
+                # Assistant message with stream_status=complete (saved to DB)
+                elif msg_type == 'assistant':
+                    metadata = data.get('metadata', {})
+                    if isinstance(metadata, str):
+                        try:
+                            metadata = json.loads(metadata)
+                        except (json.JSONDecodeError, TypeError):
+                            metadata = {}
+                    if metadata.get('stream_status') == 'complete':
+                        last_safe_index = i
+                        logger.debug(f"Found safe boundary at index {i}: assistant with stream_status=complete")
+            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                # Skip malformed entries, but log warning
+                logger.debug(f"Skipping malformed entry at index {i}: {e}")
+                continue
+        
+        return last_safe_index
+
     async def stream_generator(agent_run_data):
         logger.debug(f"Streaming responses for {agent_run_id} (pubsub: {pubsub_channel}, stream: {stream_key})")
         terminate_stream = False
@@ -1405,13 +1417,55 @@ async def stream_agent_run(
             initial_entries = await redis.xrange(stream_key)
             if initial_entries:
                 logger.debug(f"Sending {len(initial_entries)} catch-up responses for {agent_run_id}")
+                last_entry_id = None
                 for entry_id, fields in initial_entries:
                     response = json.loads(fields.get('data', '{}'))
                     yield f"data: {json.dumps(response)}\n\n"
+                    last_entry_id = entry_id
                     # Check if already completed
                     if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
                         logger.debug(f"Detected completion in catch-up: {response.get('status')}")
                         terminate_stream = True
+                
+                # Structure-aware trimming: Only trim up to last safe boundary
+                # This prevents race conditions where partial streaming data gets trimmed
+                if last_entry_id:
+                    try:
+                        # Find the last safe boundary (complete structural unit)
+                        last_safe_index = find_last_safe_boundary(initial_entries)
+                        
+                        if last_safe_index >= 0:
+                            # We have a safe boundary - trim up to and including that entry
+                            safe_boundary_entry_id = initial_entries[last_safe_index][0]
+                            
+                            # Increment sequence part to remove the boundary entry too
+                            # Format: "timestamp-sequence" -> increment sequence part
+                            if '-' in safe_boundary_entry_id:
+                                parts = safe_boundary_entry_id.split('-')
+                                if len(parts) == 2:
+                                    try:
+                                        timestamp = parts[0]
+                                        sequence = int(parts[1])
+                                        # Increment sequence to remove the boundary entry
+                                        next_id = f"{timestamp}-{sequence + 1}"
+                                        trimmed_count = await redis.xtrim_minid(stream_key, next_id, approximate=True)
+                                        logger.debug(f"Trimmed {trimmed_count} entries from stream {stream_key} up to safe boundary at index {last_safe_index} (entry: {safe_boundary_entry_id})")
+                                    except (ValueError, IndexError):
+                                        # Fallback: use boundary ID directly (keeps boundary entry)
+                                        trimmed_count = await redis.xtrim_minid(stream_key, safe_boundary_entry_id, approximate=True)
+                                        logger.debug(f"Trimmed {trimmed_count} entries from stream {stream_key} up to safe boundary (fallback)")
+                                else:
+                                    trimmed_count = await redis.xtrim_minid(stream_key, safe_boundary_entry_id, approximate=True)
+                                    logger.debug(f"Trimmed {trimmed_count} entries from stream {stream_key} up to safe boundary")
+                            else:
+                                trimmed_count = await redis.xtrim_minid(stream_key, safe_boundary_entry_id, approximate=True)
+                                logger.debug(f"Trimmed {trimmed_count} entries from stream {stream_key} up to safe boundary")
+                        else:
+                            # No safe boundary found - don't trim (keep all entries for reconnection safety)
+                            logger.debug(f"No safe boundary found in {len(initial_entries)} entries - skipping trim to prevent race conditions")
+                    except Exception as trim_error:
+                        logger.warning(f"Failed to trim stream after catch-up read: {trim_error}")
+            
             initial_yield_complete = True
 
             if terminate_stream:

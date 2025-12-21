@@ -122,6 +122,9 @@ export function useAgentStream(
   const threadIdRef = useRef(threadId);
   const setMessagesRef = useRef(setMessages);
   
+  // DELTA STREAMING: Track accumulated tool call arguments
+  const accumulatedToolCallsRef = useRef<Map<string, string>>(new Map());
+  
   // Store callbacks in ref to prevent handler recreation on every parent render
   const callbacksRef = useRef(callbacks);
   useEffect(() => {
@@ -533,12 +536,42 @@ export function useAgentStream(
             // Handle tool call chunks - extract from metadata.tool_calls
             const toolCalls = parsedMetadata.tool_calls || [];
             if (toolCalls.length > 0) {
-              // Set toolCall state with the UnifiedMessage (non-urgent update)
-              React.startTransition(() => {
-                setToolCall(message);
+              // DELTA STREAMING: Accumulate deltas into full tool calls
+              const reconstructedToolCalls = toolCalls.map((tc: any) => {
+                if (tc.is_delta && tc.arguments_delta) {
+                  // This is a delta update - accumulate it
+                  const toolCallId = tc.tool_call_id || 'unknown';
+                  const currentArgs = accumulatedToolCallsRef.current.get(toolCallId) || '';
+                  const newArgs = currentArgs + tc.arguments_delta;
+                  accumulatedToolCallsRef.current.set(toolCallId, newArgs);
+                  
+                  // Return reconstructed tool call with full accumulated arguments
+                  return {
+                    ...tc,
+                    arguments: newArgs,
+                    is_delta: false, // Mark as assembled
+                  };
+                } else {
+                  // Full tool call (legacy mode or complete)
+                  return tc;
+                }
               });
-              // Call the callback with the full message (includes all tool calls in metadata)
-              callbacksRef.current.onToolCallChunk?.(message);
+              
+              // Create updated message with reconstructed tool calls
+              const updatedMessage = {
+                ...message,
+                metadata: JSON.stringify({
+                  ...parsedMetadata,
+                  tool_calls: reconstructedToolCalls,
+                }),
+              };
+              
+              // Set toolCall state with the reconstructed UnifiedMessage (non-urgent update)
+              React.startTransition(() => {
+                setToolCall(updatedMessage);
+              });
+              // Call the callback with the reconstructed message
+              callbacksRef.current.onToolCallChunk?.(updatedMessage);
             }
           } else if (
             parsedMetadata.stream_status === 'chunk' &&
@@ -558,6 +591,8 @@ export function useAgentStream(
               setTextContent([]);
               setToolCall(null);
             });
+            // Clear accumulated tool call deltas
+            accumulatedToolCallsRef.current.clear();
             if (message.message_id) callbacksRef.current.onMessage(message);
           } else if (!parsedMetadata.stream_status) {
             // Handle non-chunked assistant messages if needed
@@ -569,6 +604,8 @@ export function useAgentStream(
           React.startTransition(() => {
             setToolCall(null); // Clear any streaming tool call
           });
+          // Clear accumulated tool call deltas when tool execution completes
+          accumulatedToolCallsRef.current.clear();
           if (message.message_id) callbacksRef.current.onMessage(message);
           break;
         case 'status':

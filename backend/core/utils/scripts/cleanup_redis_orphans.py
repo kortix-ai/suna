@@ -32,7 +32,7 @@ async def cleanup():
     
     for pattern in patterns:
         print(f"\n🔍 Scanning: {pattern}")
-        keys = await redis.keys(pattern)
+        keys = await redis.scan_keys(pattern)
         print(f"   Found {len(keys)} keys")
         
         for key in keys:

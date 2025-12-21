@@ -647,7 +647,13 @@
     "didntReceiveEmail": "Keine E-Mail erhalten?",
     "resend": "Erneut senden",
     "alreadySignedIn": "Du bist bereits angemeldet. Keine Aktion erforderlich.",
-    "goToDashboard": "Zum Dashboard"
+    "goToDashboard": "Zum Dashboard",
+    "signInToContinue": "Anmelden, um fortzufahren",
+    "signInOrCreateAccountToTalk": "Melde dich an oder erstelle ein Konto, um mit Kortix zu sprechen",
+    "orContinueWithEmail": "oder mit E-Mail fortfahren",
+    "signInWithEmail": "Mit E-Mail anmelden",
+    "createNewAccount": "Neues Konto erstellen",
+    "byContinuingYouAgreeSimple": "Durch Fortfahren stimmst du unserer"
   },
   "onboarding": {
     "welcome": "Willkommen",

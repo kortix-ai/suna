@@ -59,7 +59,8 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
 
     # Find all instances handling this agent run and send STOP to instance-specific channels
     try:
-        instance_keys = await redis.keys(f"active_run:*:{agent_run_id}")
+        # Use scan_keys instead of keys() to avoid blocking Redis
+        instance_keys = await redis.scan_keys(f"active_run:*:{agent_run_id}")
         logger.debug(f"Found {len(instance_keys)} active instance keys for agent run {agent_run_id}")
 
         for key in instance_keys:

@@ -728,7 +728,13 @@
     "didntReceiveEmail": "メールが届きませんでしたか？",
     "resend": "再送信",
     "alreadySignedIn": "すでにログインしています。操作は不要です。",
-    "goToDashboard": "ダッシュボードへ"
+    "goToDashboard": "ダッシュボードへ",
+    "signInToContinue": "続行するにはログイン",
+    "signInOrCreateAccountToTalk": "ログインまたはアカウントを作成してKortixと話す",
+    "orContinueWithEmail": "またはメールで続ける",
+    "signInWithEmail": "メールでログイン",
+    "createNewAccount": "新しいアカウントを作成",
+    "byContinuingYouAgreeSimple": "続行することで、"
   },
   "onboarding": {
     "welcome": "ようこそ",

@@ -89,11 +89,14 @@ class ContextManager:
             return 0
         
         saved_count = 0
+        skipped_count = 0
+        upgraded_count = 0
         client = await self.db.client
         
         for msg_data in compressed_messages:
             message_id = msg_data.get('message_id')
             compressed_content = msg_data.get('compressed_content')
+            is_omission = msg_data.get('is_omission', False)  # Flag for omission placeholders
             
             if not message_id or not compressed_content:
                 continue
@@ -105,13 +108,25 @@ class ContextManager:
                 if result.data:
                     existing_metadata = result.data.get('metadata', {}) or {}
                     
-                    # Skip if already compressed
+                    # Check if already compressed
                     if existing_metadata.get('compressed'):
+                        # Allow omission to override compression (placeholder is smaller)
+                        if is_omission and not existing_metadata.get('omitted'):
+                            existing_metadata['omitted'] = True
+                            existing_metadata['compressed_content'] = compressed_content
+                            await client.table('messages').update({
+                                'metadata': existing_metadata
+                            }).eq('message_id', message_id).execute()
+                            upgraded_count += 1
+                        else:
+                            skipped_count += 1
                         continue
                     
                     # Update metadata with compressed content
                     existing_metadata['compressed'] = True
                     existing_metadata['compressed_content'] = compressed_content
+                    if is_omission:
+                        existing_metadata['omitted'] = True
                     
                     await client.table('messages').update({
                         'metadata': existing_metadata
@@ -122,8 +137,8 @@ class ContextManager:
             except Exception as e:
                 logger.warning(f"Failed to save compressed message {message_id}: {e}")
         
-        if saved_count > 0:
-            logger.info(f"💾 Saved {saved_count} compressed messages to database")
+        if saved_count > 0 or skipped_count > 0 or upgraded_count > 0:
+            logger.info(f"💾 Compression save: {saved_count} new, {upgraded_count} upgraded to omitted, {skipped_count} skipped")
         
         return saved_count
     
@@ -1330,16 +1345,19 @@ class ContextManager:
                     # Preserve tool_call_id for tool messages
                     if msg.get('tool_call_id'):
                         placeholder_msg['tool_call_id'] = msg['tool_call_id']
+                    # Preserve tool_calls for assistant messages (critical for pairing validation)
+                    if msg.get('tool_calls'):
+                        placeholder_msg['tool_calls'] = msg['tool_calls']
                     
                     omitted_to_save.append({
                         'message_id': message_id,
-                        'compressed_content': json.dumps(placeholder_msg)
+                        'compressed_content': json.dumps(placeholder_msg),
+                        'is_omission': True  # Mark as omission so it can override compression
                     })
             
             if omitted_to_save:
                 try:
-                    saved_count = await self.save_compressed_messages(omitted_to_save)
-                    logger.info(f"💾 Saved {saved_count} omitted messages as compressed placeholders")
+                    await self.save_compressed_messages(omitted_to_save)
                 except Exception as e:
                     logger.warning(f"Failed to save omitted messages: {e}")
 
@@ -1424,16 +1442,19 @@ class ContextManager:
                         }
                         if msg.get('tool_call_id'):
                             placeholder_msg['tool_call_id'] = msg['tool_call_id']
+                        # Preserve tool_calls for assistant messages (critical for pairing validation)
+                        if msg.get('tool_calls'):
+                            placeholder_msg['tool_calls'] = msg['tool_calls']
                         
                         omitted_to_save.append({
                             'message_id': message_id,
-                            'compressed_content': json.dumps(placeholder_msg)
+                            'compressed_content': json.dumps(placeholder_msg),
+                            'is_omission': True  # Mark as omission so it can override compression
                         })
             
             if omitted_to_save:
                 try:
-                    saved_count = await self.save_compressed_messages(omitted_to_save)
-                    logger.info(f"💾 Saved {saved_count} middle-out omitted messages as compressed placeholders")
+                    await self.save_compressed_messages(omitted_to_save)
                 except Exception as e:
                     logger.warning(f"Failed to save middle-out omitted messages: {e}")
         

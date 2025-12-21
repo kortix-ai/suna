@@ -736,7 +736,13 @@
     "didntReceiveEmail": "Didn't receive the email?",
     "resend": "Resend",
     "alreadySignedIn": "You're already signed in. No action needed.",
-    "goToDashboard": "Go to Dashboard"
+    "goToDashboard": "Go to Dashboard",
+    "signInToContinue": "Sign in to continue",
+    "signInOrCreateAccountToTalk": "Sign in or create an account to talk with Kortix",
+    "orContinueWithEmail": "or continue with email",
+    "signInWithEmail": "Sign in with email",
+    "createNewAccount": "Create new account",
+    "byContinuingYouAgreeSimple": "By continuing, you agree to our"
   },
   "onboarding": {
     "welcome": "Welcome",
