@@ -798,17 +798,17 @@ class ApifyTool(SandboxToolsBase):
             return True
         
         max_cost_usd = Decimal(str(approval.get('max_cost_usd', 0)))
-        deducted_on_approve_credits = Decimal(str(approval.get('deducted_on_approve_credits', 0)))
+        deducted_on_approve_usd = Decimal(str(approval.get('deducted_on_approve_credits', 0)))  # Note: stored as USD with markup despite name
         
         # If no deduction happened on approve (legacy approval), skip adjustment
-        if deducted_on_approve_credits == 0:
+        if deducted_on_approve_usd == 0:
             logger.debug(f"No deduction on approve for approval {approval_id} - skipping adjustment (legacy approval)")
             return True
         
         # If run failed, refund everything that was deducted on approve
         if run_status in ["FAILED", "ABORTED", "TIMED-OUT"]:
-            if deducted_on_approve_credits > 0:
-                refund_amount = deducted_on_approve_credits  # Already in credits
+            if deducted_on_approve_usd > 0:
+                refund_amount = deducted_on_approve_usd  # Already in USD with markup
                 try:
                     result = await self.credit_manager.add_credits(
                         account_id=user_id,
@@ -818,7 +818,7 @@ class ApifyTool(SandboxToolsBase):
                         type='refund'
                     )
                     if result.get('success'):
-                        logger.info(f"✅ Refunded ${refund_amount:.2f} credits for failed run {run_id} (status: {run_status})")
+                        logger.info(f"✅ Refunded ${refund_amount:.6f} USD for failed run {run_id} (status: {run_status})")
                         # Update approval
                         approval['refunded_credits'] = float(refund_amount)
                         approval['refund_reason'] = f"Run {run_status}"
@@ -845,17 +845,16 @@ class ApifyTool(SandboxToolsBase):
             actual_cost = max_cost_usd
         
         # Calculate what should be charged (actual cost with markup)
-        should_charge_usd = actual_cost
-        should_charge_credits = should_charge_usd * TOKEN_PRICE_MULTIPLIER * Decimal('100')
+        should_charge_usd_with_markup = actual_cost * TOKEN_PRICE_MULTIPLIER
         
-        # Use deducted_on_approve_credits directly (already in credits)
-        deducted_credits = deducted_on_approve_credits
+        # Use deducted_on_approve_usd directly (already in USD with markup)
+        deducted_usd_with_markup = deducted_on_approve_usd
         
         # If actual cost is less than what was deducted, refund the difference
-        if should_charge_credits < deducted_credits:
-            refund_amount = deducted_credits - should_charge_credits
+        if should_charge_usd_with_markup < deducted_usd_with_markup:
+            refund_amount = deducted_usd_with_markup - should_charge_usd_with_markup
             if refund_amount <= 0:
-                logger.warning(f"Invalid refund amount calculated: ${refund_amount:.2f} for run {run_id}")
+                logger.warning(f"Invalid refund amount calculated: ${refund_amount:.6f} for run {run_id}")
                 return False
             
             try:
@@ -868,8 +867,8 @@ class ApifyTool(SandboxToolsBase):
                 )
                 if result.get('success'):
                     logger.info(
-                        f"✅ Refunded ${refund_amount:.2f} credits for run {run_id} "
-                        f"(deducted: ${deducted_credits:.2f}, actual: ${should_charge_credits:.2f})"
+                        f"✅ Refunded ${refund_amount:.6f} USD for run {run_id} "
+                        f"(deducted: ${deducted_usd_with_markup:.6f}, actual: ${should_charge_usd_with_markup:.6f})"
                     )
                     # Update approval
                     approval['refunded_credits'] = float(refund_amount)
@@ -883,14 +882,14 @@ class ApifyTool(SandboxToolsBase):
                     error_msg = result.get('error', 'Unknown error')
                     logger.error(
                         f"Failed to refund excess credits for run {run_id}: {error_msg}. "
-                        f"Refund amount: ${refund_amount:.2f}, deducted: ${deducted_credits:.2f}, actual: ${should_charge_credits:.2f}"
+                        f"Refund amount: ${refund_amount:.6f}, deducted: ${deducted_usd_with_markup:.6f}, actual: ${should_charge_usd_with_markup:.6f}"
                     )
                     return False
             except Exception as e:
                 error_details = str(e)
                 logger.error(
                     f"Exception refunding excess credits for run {run_id}: {error_details}. "
-                    f"Refund amount: ${refund_amount:.2f}",
+                    f"Refund amount: ${refund_amount:.6f}",
                     exc_info=True
                 )
                 return False
@@ -901,7 +900,7 @@ class ApifyTool(SandboxToolsBase):
             approval['updated_at'] = datetime.now(timezone.utc).isoformat()
             key = self._get_approval_key(approval_id)
             await redis_set(key, json.dumps(approval), ex=604800)
-            logger.info(f"✅ Credits confirmed for run {run_id} (deducted: ${deducted_credits:.2f}, actual: ${should_charge_credits:.2f})")
+            logger.info(f"✅ Credits confirmed for run {run_id} (deducted: ${deducted_usd_with_markup:.6f}, actual: ${should_charge_usd_with_markup:.6f})")
         
         return True
     

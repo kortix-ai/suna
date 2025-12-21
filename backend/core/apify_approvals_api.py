@@ -164,7 +164,7 @@ async def approve_apify_request(
         from core.billing.shared.config import TOKEN_PRICE_MULTIPLIER
         
         max_cost_usd = Decimal(str(approval.get('max_cost_usd', 0)))
-        max_cost_credits = max_cost_usd * TOKEN_PRICE_MULTIPLIER * Decimal('100')  # Convert to credits
+        max_cost_with_markup = max_cost_usd * TOKEN_PRICE_MULTIPLIER  # Apply markup (deduct_credits expects USD with markup)
         
         deduction_success = False
         if max_cost_usd > 0:
@@ -174,7 +174,7 @@ async def approve_apify_request(
                 
                 result = await credit_manager.deduct_credits(
                     account_id=user_id,
-                    amount=max_cost_credits,
+                    amount=max_cost_with_markup,
                     description=f"Apify hold: {approval.get('actor_id')} (approval: {approval_id}) - max cost hold",
                     type='usage',
                     thread_id=thread_id
@@ -182,14 +182,14 @@ async def approve_apify_request(
                 
                 if result.get('success'):
                     deduction_success = True
-                    approval['deducted_on_approve_credits'] = float(max_cost_credits)
+                    approval['deducted_on_approve_credits'] = float(max_cost_with_markup)
                     approval['deducted_on_approve_usd'] = float(max_cost_usd)
-                    logger.info(f"✅ Deducted ${max_cost_credits:.2f} credits on approve for {approval_id} (max cost hold)")
+                    logger.info(f"✅ Deducted ${max_cost_with_markup:.6f} USD (with markup) on approve for {approval_id} (max cost hold: ${max_cost_usd:.6f} USD)")
                 else:
                     logger.error(f"Failed to deduct credits on approve: {result.get('error')}")
                     raise HTTPException(
                         status_code=400, 
-                        detail=f"Insufficient credits. Need {max_cost_credits:.2f} credits (${max_cost_usd:.4f} USD) to approve this request."
+                        detail=f"Insufficient credits. Need ${max_cost_with_markup:.6f} USD (${max_cost_usd:.6f} base cost) to approve this request."
                     )
             except HTTPException:
                 raise
@@ -220,7 +220,7 @@ async def approve_apify_request(
             "data": {
                 "approval_id": approval_id,
                 "status": "approved",
-                "message": f"✅ Approval {approval_id} approved! {max_cost_credits:.2f} credits deducted as hold (max cost). Credits will be adjusted to actual cost when run completes.",
+                "message": f"✅ Approval {approval_id} approved! ${max_cost_with_markup:.6f} USD deducted as hold (max cost: ${max_cost_usd:.6f} USD). Credits will be adjusted to actual cost when run completes.",
                 "estimated_cost_usd": approval.get('estimated_cost_usd'),
                 "estimated_cost_credits": approval.get('estimated_cost_credits'),
                 "max_cost_usd": approval.get('max_cost_usd'),
