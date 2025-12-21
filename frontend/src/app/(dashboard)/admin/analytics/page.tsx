@@ -743,7 +743,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   const gapToTarget = targetARR - (finalMonth?.arr || 0);
   const progressPercent = Math.min(100, ((finalMonth?.arr || 0) / targetARR) * 100);
 
-  // Prepare chart data with negative churned for bar chart
+  // Prepare chart data with negative churned for bar chart (goal data)
   const chartData = projections.map(p => ({
     ...p,
     negativeChurned: -p.churned,
@@ -1210,6 +1210,28 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     return { views, signups, newPaid, churn };
   }, [viewsByDateData, signupsByDateData, newPaidByDateData, churnByDateData]);
 
+  // Monthly chart data using same data as table (from monthlyActuals)
+  const monthlyChartData = useMemo(() => {
+    const monthNames = ['Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026', 'Jun 2026'];
+    return monthNames.map((month, idx) => ({
+      month,
+      monthIndex: idx,
+      newPaid: metricsByCalendarMonth.newPaid[idx] || 0,
+      churned: metricsByCalendarMonth.churn[idx] || 0,
+      negativeChurned: -(metricsByCalendarMonth.churn[idx] || 0),
+      signups: metricsByCalendarMonth.signups[idx] || 0,
+      views: metricsByCalendarMonth.views[idx] || 0,
+      // Same data as table (from monthlyActuals)
+      actualSubs: monthlyActuals[idx]?.subscribers || 0,
+      actualMrr: monthlyActuals[idx]?.mrr || 0,
+      actualArr: monthlyActuals[idx]?.arr || 0,
+      // Goal data for comparison
+      goalSubs: projections[idx]?.totalSubs || 0,
+      goalMrr: projections[idx]?.mrr || 0,
+      goalArr: projections[idx]?.arr || 0,
+    }));
+  }, [metricsByCalendarMonth, monthlyActuals, projections]);
+
   // Derive monthly goals from weekly projections (grouped by actual calendar month)
   // This ensures the monthly table shows all months that have weeks, including June
   const monthlyFromWeekly = useMemo(() => {
@@ -1481,17 +1503,17 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       <>
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* ARR Growth Trajectory */}
+        {/* ARR Growth (Actual from table data) */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              📈 ARR Growth Trajectory
+              📈 ARR Growth (Actual)
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={projections}>
+                <LineChart data={monthlyChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis 
                     dataKey="month" 
@@ -1521,8 +1543,8 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   />
                   <Line 
                     type="monotone" 
-                    dataKey="arr" 
-                    name="ARR"
+                    dataKey="actualArr" 
+                    name="ARR (Actual)"
                     stroke="hsl(var(--primary))" 
                     strokeWidth={3}
                     dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2, r: 5 }}
@@ -1534,17 +1556,17 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
           </CardContent>
         </Card>
 
-        {/* Subscriber Growth */}
+        {/* Subscriber Growth (Actual from table data) */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              👥 Subscriber Growth
+              👥 Subscriber Growth (Actual)
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={projections}>
+                <AreaChart data={monthlyChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis 
                     dataKey="month" 
@@ -1567,8 +1589,8 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <Legend />
                   <Area 
                     type="monotone" 
-                    dataKey="totalSubs" 
-                    name="Total Subscribers"
+                    dataKey="actualSubs" 
+                    name="Actual Subscribers"
                     stroke="#8b5cf6" 
                     fill="#8b5cf6"
                     fillOpacity={0.2}
@@ -1581,17 +1603,17 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
           </CardContent>
         </Card>
 
-        {/* MRR Growth */}
+        {/* MRR Growth (Actual from table data) */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              💰 MRR Growth
+              💰 MRR Growth (Actual)
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={projections}>
+                <AreaChart data={monthlyChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis 
                     dataKey="month" 
@@ -1614,8 +1636,8 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <Legend />
                   <Area 
                     type="monotone" 
-                    dataKey="mrr" 
-                    name="MRR"
+                    dataKey="actualMrr" 
+                    name="MRR (Actual)"
                     stroke="#f59e0b" 
                     fill="#f59e0b"
                     fillOpacity={0.2}
@@ -1628,17 +1650,17 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
           </CardContent>
         </Card>
 
-        {/* New Signups vs Churn */}
+        {/* New Signups vs Churn (Actual from API) */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              📊 New Signups vs Churn
+              📊 New Paid vs Churn (Actual)
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
+                <BarChart data={monthlyChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis 
                     dataKey="month" 
@@ -1868,7 +1890,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     <Tooltip formatter={(v: number) => [`$${v.toLocaleString()}`, '']} />
                     <Legend />
                     <Line type="monotone" dataKey="goalARR" name="Goal" stroke="#10b981" strokeWidth={2} dot={false} strokeDasharray="5 5" />
-                    <Line type="monotone" dataKey="actualARR" name="Actual" stroke="hsl(var(--primary))" strokeWidth={3} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="actualARR" name="Actual" stroke="hsl(var(--primary))" strokeWidth={3} dot={{ r: 4, fill: '#fff', stroke: '#000', strokeWidth: 2 }} activeDot={{ r: 6, fill: '#fff', stroke: 'hsl(var(--primary))', strokeWidth: 2 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
