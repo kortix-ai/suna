@@ -74,6 +74,9 @@ interface ThreadComponentProps {
 }
 
 export function ThreadComponent({ projectId, threadId, compact = false, configuredAgentId, isShared = false }: ThreadComponentProps) {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ThreadComponent.tsx:76',message:'Component render start',data:{projectId,threadId,compact,configuredAgentId,isShared},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   const t = useTranslations('dashboard');
   const isMobile = useIsMobile();
   const searchParams = useSearchParams();
@@ -82,7 +85,10 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const { user } = useAuth();
   const isAuthenticated = !!user;
   
-  const isNewThread = searchParams.get('new') === 'true';
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ThreadComponent.tsx:85',message:'Checking searchParams for new param',data:{searchParams:searchParams?.toString(),hasSearchParams:!!searchParams},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
+  const isNewThread = searchParams?.get('new') === 'true';
 
   const [isSending, setIsSending] = useState(false);
   const [initialPanelOpenAttempted, setInitialPanelOpenAttempted] =
@@ -191,21 +197,43 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     userClosedPanelRef,
   } = useThreadToolCalls(messages, setLeftSidebarOpen, agentStatus, compact);
   
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ThreadComponent.tsx:194',message:'Before render-time state update check',data:{isNewThread,optimisticPrompt,agentRunId,hasDataLoaded:hasDataLoaded.current,showOptimisticUI,initialLoadCompleted,messagesLength:messages.length,threadStatus},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+  
   if (isNewThread && !optimisticPrompt) {
-    const stored = sessionStorage.getItem('optimistic_prompt');
-    const storedThread = sessionStorage.getItem('optimistic_thread');
-    if (stored && storedThread === threadId) {
-      setOptimisticPrompt(stored);
-      setShowOptimisticUI(true);
-      if (!isMobile && !compact) {
-        setStorePanelOpen(true);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ThreadComponent.tsx:196',message:'RENDER-TIME STATE UPDATE: Checking sessionStorage',data:{isNewThread,optimisticPrompt},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    try {
+      const stored = sessionStorage.getItem('optimistic_prompt');
+      const storedThread = sessionStorage.getItem('optimistic_thread');
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ThreadComponent.tsx:199',message:'SessionStorage values retrieved',data:{stored:!!stored,storedThread,matchesThreadId:storedThread===threadId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      if (stored && storedThread === threadId) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ThreadComponent.tsx:201',message:'RENDER-TIME STATE UPDATE: Calling setState',data:{stored,storedThread},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        setOptimisticPrompt(stored);
+        setShowOptimisticUI(true);
+        if (!isMobile && !compact) {
+          setStorePanelOpen(true);
+        }
+        sessionStorage.removeItem('optimistic_prompt');
+        sessionStorage.removeItem('optimistic_thread');
       }
-      sessionStorage.removeItem('optimistic_prompt');
-      sessionStorage.removeItem('optimistic_thread');
+    } catch (e) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ThreadComponent.tsx:210',message:'SessionStorage access error',data:{error:String(e)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
     }
   }
   
   if (isNewThread && agentRunId && !hasDataLoaded.current) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ThreadComponent.tsx:214',message:'RENDER-TIME REF MUTATION',data:{isNewThread,agentRunId,hasDataLoaded:hasDataLoaded.current},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
     hasDataLoaded.current = true;
   }
   
@@ -214,6 +242,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     : ((agentRunId || messages.length > 0 || threadStatus === 'ready') && initialLoadCompleted);
   
   if (shouldHideOptimisticUI && showOptimisticUI) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ThreadComponent.tsx:222',message:'RENDER-TIME STATE UPDATE: Hiding optimistic UI',data:{shouldHideOptimisticUI,showOptimisticUI},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     setShowOptimisticUI(false);
   }
   

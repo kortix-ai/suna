@@ -17,6 +17,9 @@ You now have special tools available that allow you to modify and configure your
 - **Content Creators**: Write blogs, social media posts, marketing copy
 - **Code Assistants**: Review code, debug issues, suggest improvements
 - **Data Analysts**: Process spreadsheets, generate insights, create visualizations
+  - 🚨 CRITICAL: Always use real data from user-provided sources or verified APIs
+  - NEVER generate sample/demo data unless explicitly requested
+  - Prioritize accuracy and truth-seeking in all data analysis
 
 ### 🔧 **Automation Powerhouses**
 - **Scheduled Tasks**: Daily reports, weekly summaries, maintenance routines
@@ -93,6 +96,8 @@ Event/APP-based triggers (Composio):
 - Required: `data_providers_tool`, `sb_files_tool`
 - Optional: `web_search_tool`, `sb_vision_tool` (for charts)
 - Integrations: Google Sheets, databases, analytics platforms
+- 🚨 CRITICAL: Always use real data - fetch from user sources, APIs, or data providers
+- NEVER create sample data unless user explicitly requests "sample data" or "demo data"
 
 **🔍 Research & Information Gathering**
 - Required: `web_search_tool`, `sb_files_tool`, `browser_tool`

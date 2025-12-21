@@ -69,7 +69,7 @@ class SandboxFilesTool(SandboxToolsBase):
         return clean_path(path, self.workspace_path)
     
     def _get_full_path(self, path: str) -> str:
-        """Get full absolute path, handling both /workspace and thread-specific paths"""
+        """Get full absolute path relative to /workspace"""
         cleaned = self.clean_path(path)
         if cleaned.startswith('/workspace'):
             return cleaned

@@ -20,22 +20,11 @@ class SandboxToolsBase(Tool):
         super().__init__()
         self.project_id = project_id
         self.thread_manager = thread_manager
-        # Initialize workspace_path based on thread_id if available
-        self._workspace_path = None
+        self.workspace_path = "/workspace"
         self._sandbox = None
         self._sandbox_id = None
         self._sandbox_pass = None
         self._sandbox_url = None
-    
-    @property
-    def workspace_path(self) -> str:
-        """Get the workspace path, using thread_id if available."""
-        if self._workspace_path is None:
-            if self.thread_manager and self.thread_manager.thread_id:
-                self._workspace_path = f"/workspace/{self.thread_manager.thread_id}"
-            else:
-                self._workspace_path = "/workspace"
-        return self._workspace_path
 
     async def _ensure_sandbox(self) -> AsyncSandbox:
         """Ensure we have a valid sandbox instance, retrieving it from the project if needed.
@@ -154,24 +143,7 @@ class SandboxToolsBase(Tool):
         return self._sandbox_url
 
     def clean_path(self, path: str) -> str:
-        """
-        Clean and normalize a path.
-        
-        If path starts with /workspace, returns absolute path as-is.
-        Otherwise, returns cleaned relative path.
-        """
+        """Clean and normalize a path to be relative to /workspace."""
         cleaned_path = clean_path(path, self.workspace_path)
-        logger.debug(f"Cleaned path: {path} -> {cleaned_path} (workspace: {self.workspace_path})")
+        logger.debug(f"Cleaned path: {path} -> {cleaned_path}")
         return cleaned_path
-    
-    def get_full_path(self, path: str) -> str:
-        """
-        Get the full absolute path for a file.
-        
-        If path starts with /workspace, uses it directly.
-        Otherwise, prepends self.workspace_path.
-        """
-        cleaned = self.clean_path(path)
-        if cleaned.startswith('/workspace'):
-            return cleaned
-        return f"{self.workspace_path}/{cleaned}"

@@ -2,31 +2,34 @@ import React, { useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
 import { listSandboxFiles, type FileInfo } from '@/lib/api/sandbox';
-import { normalizeWorkspacePath } from '@/lib/utils/workspace-path';
 
 /**
- * Normalize a file path to ensure consistent caching.
- * All paths are normalized to /workspace/... format.
- * Any embedded thread IDs are stripped.
+ * Normalize a file path to ensure consistent caching
  */
 function normalizePath(path: string): string {
-  if (!path) {
-    return '/workspace';
+  if (!path) return '/workspace';
+  
+  // Handle paths that start with "workspace" (without leading /)
+  // This prevents "/workspace/workspace" when someone passes "workspace" or "workspace/foo"
+  if (path === 'workspace' || path.startsWith('workspace/')) {
+    path = '/' + path;
   }
   
-  // Use shared normalization function (strips any embedded thread IDs)
-  let normalized = normalizeWorkspacePath(path);
+  // Ensure path starts with /workspace
+  if (!path.startsWith('/workspace')) {
+    path = `/workspace/${path.startsWith('/') ? path.substring(1) : path}`;
+  }
   
   // Handle Unicode escape sequences
   try {
-    normalized = normalized.replace(/\\u([0-9a-fA-F]{4})/g, (_, hexCode) => {
+    path = path.replace(/\\u([0-9a-fA-F]{4})/g, (_, hexCode) => {
       return String.fromCharCode(parseInt(hexCode, 16));
     });
   } catch (e) {
     console.error('Error processing Unicode escapes in path:', e);
   }
   
-  return normalized;
+  return path;
 }
 
 /**
@@ -102,8 +105,7 @@ function getMimeTypeFromPath(path: string): string {
 }
 
 /**
- * Fetch file content with proper error handling and content type detection.
- * All paths are normalized to /workspace/... format.
+ * Fetch file content with proper error handling and content type detection
  */
 export async function fetchFileContent(
   sandboxId: string,
@@ -111,33 +113,44 @@ export async function fetchFileContent(
   contentType: 'text' | 'blob' | 'json',
   token: string
 ): Promise<string | Blob | any> {
-  // Normalize path - this strips any embedded thread IDs
   const normalizedPath = normalizePath(filePath);
+  
+  const url = new URL(`${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${sandboxId}/files/content`);
+  url.searchParams.append('path', normalizedPath);
   
   const headers: Record<string, string> = {};
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
   
-  const url = new URL(`${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${sandboxId}/files/content`);
-  url.searchParams.append('path', normalizedPath);
-  
-  const response = await fetch(url.toString(), { headers });
+  const response = await fetch(url.toString(), {
+    headers,
+  });
   
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`Failed to fetch file: ${response.status} ${errorText}`);
   }
   
+  // Handle content based on type
   switch (contentType) {
     case 'json':
       return await response.json();
     case 'blob': {
       const blob = await response.blob();
+      
+      // Ensure correct MIME type for known file types
       const expectedMimeType = getMimeTypeFromPath(filePath);
       if (expectedMimeType !== blob.type && expectedMimeType !== 'application/octet-stream') {
-        return new Blob([blob], { type: expectedMimeType });
+        const correctedBlob = new Blob([blob], { type: expectedMimeType });
+        
+        // Additional validation for images
+        if (isImageFile(filePath)) {
+        }
+        
+        return correctedBlob;
       }
+      
       return blob;
     }
     case 'text':
@@ -338,7 +351,7 @@ export function useFilePreloader() {
       return;
     }
     
-    const uniquePaths = Array.from(new Set(filePaths));
+    const uniquePaths = [...new Set(filePaths)];
     
     const preloadPromises = uniquePaths.map(async (path) => {
       const normalizedPath = normalizePath(path);
@@ -419,4 +432,4 @@ export function useCachedFile<T = string>(
     getFromCache: () => processedData,
     cache: new Map(), // Legacy compatibility - empty map
   };
-}
+} 

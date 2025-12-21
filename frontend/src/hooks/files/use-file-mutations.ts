@@ -3,7 +3,28 @@ import { useAuth } from '@/components/AuthProvider';
 import { fileQueryKeys } from './use-file-queries';
 import { FileCache } from '@/hooks/files';
 import { toast } from 'sonner';
-import { normalizeWorkspacePath } from '@/lib/utils/workspace-path';
+// Import the normalizePath function from use-file-queries
+function normalizePath(path: string): string {
+  if (!path) return '/';
+  
+  // Remove any leading/trailing whitespace
+  path = path.trim();
+  
+  // Ensure path starts with /
+  if (!path.startsWith('/')) {
+    path = '/' + path;
+  }
+  
+  // Remove duplicate slashes and normalize
+  path = path.replace(/\/+/g, '/');
+  
+  // Remove trailing slash unless it's the root
+  if (path.length > 1 && path.endsWith('/')) {
+    path = path.slice(0, -1);
+  }
+  
+  return path;
+}
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 

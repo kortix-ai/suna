@@ -288,58 +288,11 @@ async def list_files(
         # Get sandbox using the safer method
         sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
         
-        # Try to list files, handling cases where path doesn't exist
-        try:
-            files = await retry_with_backoff(
-                operation=lambda: sandbox.fs.list_files(path),
-                operation_name=f"list_files({path}) in sandbox {sandbox_id}"
-            )
-        except Exception as list_err:
-            error_str = str(list_err).lower()
-            # Check if it's a "no such file or directory" error
-            if "no such file" in error_str or "not found" in error_str or "does not exist" in error_str:
-                # Path doesn't exist - try to create it if it's a thread-specific workspace
-                path_parts = path.strip('/').split('/')
-                
-                # Check if this is a thread-specific workspace path: /workspace/{thread_id}/...
-                if len(path_parts) >= 2 and path_parts[0] == 'workspace':
-                    thread_id = path_parts[1]
-                    thread_workspace = f"/workspace/{thread_id}"
-                    
-                    # Ensure the thread workspace directory exists
-                    try:
-                        await sandbox.fs.make_dir(thread_workspace)
-                        logger.info(f"Created thread workspace directory: {thread_workspace}")
-                    except Exception as mkdir_err:
-                        # Directory might already exist, or there's another issue
-                        logger.debug(f"Thread workspace {thread_workspace} creation result: {mkdir_err}")
-                    
-                    # If the requested path is deeper than just /workspace/{thread_id}, try to create it
-                    if len(path_parts) > 2:
-                        try:
-                            await sandbox.fs.make_dir(path)
-                            logger.info(f"Created directory: {path}")
-                        except Exception as mkdir_err:
-                            logger.debug(f"Directory {path} creation result: {mkdir_err}")
-                    
-                    # Try listing again after creating directory
-                    try:
-                        files = await retry_with_backoff(
-                            operation=lambda: sandbox.fs.list_files(path),
-                            operation_name=f"list_files({path}) in sandbox {sandbox_id}"
-                        )
-                    except Exception as retry_err:
-                        # If it still fails, return empty list (path might be a file, not a directory)
-                        logger.debug(f"Path {path} does not exist or is not a directory: {retry_err}")
-                        return {"files": []}
-                else:
-                    # Not a thread-specific path or path doesn't exist, return empty list
-                    logger.debug(f"Path {path} does not exist: {list_err}")
-                    return {"files": []}
-            else:
-                # Some other error, re-raise it
-                raise
-        
+        # List files with retry logic for transient errors
+        files = await retry_with_backoff(
+            operation=lambda: sandbox.fs.list_files(path),
+            operation_name=f"list_files({path}) in sandbox {sandbox_id}"
+        )
         result = []
         
         for file in files:
@@ -387,66 +340,17 @@ async def read_file(
         # Get sandbox using the safer method
         sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
         
-        # Build list of paths to try (fallback from thread-specific to root workspace)
-        paths_to_try = []
-        
-        if path.startswith('/workspace/'):
-            # Check if it's a thread-specific path: /workspace/{uuid}/...
-            path_parts = path.strip('/').split('/')
-            if len(path_parts) >= 2:
-                # Check if second part looks like a UUID (thread_id)
-                potential_thread_id = path_parts[1]
-                # UUIDs are typically 36 chars with dashes: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-                if len(potential_thread_id) == 36 and potential_thread_id.count('-') == 4:
-                    # It's a thread-specific path - try it first, then try root workspace version
-                    paths_to_try.append(path)
-                    # Build root workspace path: /workspace/{rest of path after thread_id}
-                    root_path = '/workspace/' + '/'.join(path_parts[2:]) if len(path_parts) > 2 else '/workspace'
-                    paths_to_try.append(root_path)
-                else:
-                    # Not a thread-specific path, use as-is
-                    paths_to_try.append(path)
-            else:
-                # Just /workspace, use as-is
-                paths_to_try.append(path)
-        else:
-            # Not a workspace path, use as-is
-            paths_to_try.append(path)
-        
-        # Try each path until one succeeds
-        last_error = None
-        for path_to_try in paths_to_try:
-            try:
-                # Read file with retry logic for transient errors (502, 503, 504)
-                content = await retry_with_backoff(
-                    operation=lambda: sandbox.fs.download_file(path_to_try),
-                    operation_name=f"download_file({path_to_try}) from sandbox {sandbox_id}"
-                )
-                # Success! Use this path
-                path = path_to_try
-                break
-            except Exception as download_err:
-                error_str = str(download_err).lower()
-                # Check if it's a "file not found" error
-                if "not found" in error_str or "no such file" in error_str or "does not exist" in error_str:
-                    # File not found at this path, try next path
-                    last_error = download_err
-                    logger.debug(f"File not found at {path_to_try}, trying next path...")
-                    continue
-                else:
-                    # Other error (network, permission, etc.), throw immediately
-                    logger.error(f"Error downloading file {path_to_try} from sandbox {sandbox_id}: {str(download_err)}")
-                    raise HTTPException(
-                        status_code=500, 
-                        detail=f"Failed to download file: {str(download_err)}"
-                    )
-        
-        # If we tried all paths and none worked, raise 404
-        if last_error:
-            logger.error(f"File not found at any path (tried {paths_to_try}) in sandbox {sandbox_id}: {str(last_error)}")
+        # Read file with retry logic for transient errors (502, 503, 504)
+        try:
+            content = await retry_with_backoff(
+                operation=lambda: sandbox.fs.download_file(path),
+                operation_name=f"download_file({path}) from sandbox {sandbox_id}"
+            )
+        except Exception as download_err:
+            logger.error(f"Error downloading file {path} from sandbox {sandbox_id}: {str(download_err)}")
             raise HTTPException(
                 status_code=404, 
-                detail=f"Failed to download file: file not found or invalid: {path}"
+                detail=f"Failed to download file: {str(download_err)}"
             )
         
         # Return a Response object with the content directly

@@ -23,7 +23,6 @@ import { PresentationSlidePreview } from '@/components/thread/tool-views/present
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { normalizeWorkspacePath } from '@/lib/utils/workspace-path';
 
 // Define basic file types
 export type FileType =
@@ -153,13 +152,19 @@ function getFileSize(filepath: string, type: FileType): string {
 function getFileUrl(sandboxId: string | undefined, path: string): string {
     if (!sandboxId) return path;
 
-    // Use shared normalization function
-    let normalizedPath = normalizeWorkspacePath(path);
+    // Check if the path already starts with /workspace
+    // Handle paths that start with "workspace" (without leading /)
+    if (path === 'workspace' || path.startsWith('workspace/')) {
+        path = '/' + path;
+    } else if (!path.startsWith('/workspace')) {
+        // Prepend /workspace to the path if it doesn't already have it
+        path = `/workspace/${path.startsWith('/') ? path.substring(1) : path}`;
+    }
 
     // Handle any potential Unicode escape sequences
     try {
         // Replace escaped Unicode sequences with actual characters
-        normalizedPath = normalizedPath.replace(/\\u([0-9a-fA-F]{4})/g, (_, hexCode) => {
+        path = path.replace(/\\u([0-9a-fA-F]{4})/g, (_, hexCode) => {
             return String.fromCharCode(parseInt(hexCode, 16));
         });
     } catch (e) {
@@ -169,7 +174,7 @@ function getFileUrl(sandboxId: string | undefined, path: string): string {
     const url = new URL(`${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${sandboxId}/files/content`);
 
     // Properly encode the path parameter for UTF-8 support
-    url.searchParams.append('path', normalizedPath);
+    url.searchParams.append('path', path);
 
     return url.toString();
 }

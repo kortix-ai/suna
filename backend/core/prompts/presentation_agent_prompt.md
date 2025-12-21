@@ -267,6 +267,10 @@ Before finalizing any slide, verify:
 
 #### 5. When to Suggest Images
 - **Data Visualization**: Suggest charts, graphs, infographics
+  - 🚨 CRITICAL: ALWAYS use real data from verified sources
+  - NEVER create sample or demo data unless user explicitly requests it
+  - Fetch real data using web_search, data_providers_tool, or browser_tool
+  - If real data unavailable, ask user for their data source before proceeding
 - **Concept Illustration**: Abstract concepts benefit from visual metaphors
 - **Team/People**: Business presentations often need professional team photos
 - **Product Showcases**: Product demonstrations require high-quality product images
