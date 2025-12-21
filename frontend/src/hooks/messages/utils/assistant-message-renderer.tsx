@@ -15,9 +15,11 @@ import { TaskCompletedFeedback } from '@/components/thread/tool-views/shared/Tas
 import { PromptExamples } from '@/components/shared/prompt-examples';
 import type { Project } from '@/lib/api/threads';
 import { AppIcon } from '@/components/thread/tool-views/shared/AppIcon';
+import { ApifyApprovalInline } from '@/components/thread/content/ApifyApprovalInline';
 
 export interface AssistantMessageRendererProps {
   message: UnifiedMessage;
+  toolResults?: UnifiedMessage[]; // Tool result messages linked to this assistant message
   onToolClick: (assistantMessageId: string | null, toolName: string) => void;
   onFileClick?: (filePath?: string, filePathList?: string[]) => void;
   sandboxId?: string;
@@ -184,7 +186,7 @@ function renderRegularToolCall(
 }
 
 export function renderAssistantMessage(props: AssistantMessageRendererProps): React.ReactNode {
-  const { message } = props;
+  const { message, threadId, toolResults = [] } = props;
   const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
   
   const toolCalls = metadata.tool_calls || [];
@@ -203,6 +205,33 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
       </div>
     );
   }
+  
+  // Check for approval requests in tool calls and render inline
+  toolCalls.forEach((toolCall, index) => {
+    const toolName = toolCall.function_name.replace(/_/g, '-');
+    if (toolName === 'request-apify-approval' || toolName === 'request_apify_approval') {
+      // Find matching tool result
+      const toolResult = toolResults.find(tr => {
+        const trMeta = safeJsonParse<ParsedMetadata>(tr.metadata, {});
+        return trMeta.tool_call_id === toolCall.tool_call_id;
+      });
+      
+      if (toolResult && threadId) {
+        const trMeta = safeJsonParse<ParsedMetadata>(toolResult.metadata, {});
+        const resultData = trMeta.result;
+        
+        if (resultData?.output && typeof resultData.output === 'object' && resultData.output.approval_id) {
+          contentParts.push(
+            <ApifyApprovalInline
+              key={`approval-${toolCall.tool_call_id}`}
+              approval={resultData.output as any}
+              threadId={threadId}
+            />
+          );
+        }
+      }
+    }
+  });
   
   // Render tool calls
   toolCalls.forEach((toolCall, index) => {

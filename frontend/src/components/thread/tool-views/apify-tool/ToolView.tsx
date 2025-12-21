@@ -1,4 +1,5 @@
 import React from 'react';
+import { useParams } from 'next/navigation';
 import {
   Globe,
   CheckCircle,
@@ -31,7 +32,9 @@ import {
   extractApifyActorDetails,
   extractApifyRunData,
   extractApifyRunResultsData,
+  extractApifyApprovalData,
 } from './_utils';
+import { ApifyApprovalCard } from './ApifyApprovalCard';
 
 // View type configurations
 const VIEW_CONFIGS = {
@@ -50,6 +53,14 @@ const VIEW_CONFIGS = {
     bgColor: 'bg-zinc-50 dark:bg-zinc-900/20',
     textColor: 'text-zinc-700 dark:text-zinc-300',
     borderColor: 'border-zinc-200 dark:border-zinc-800',
+  },
+  approval: {
+    title: 'Apify Approval Request',
+    icon: Clock,
+    color: 'from-yellow-500 to-yellow-600',
+    bgColor: 'bg-yellow-50 dark:bg-yellow-900/20',
+    textColor: 'text-yellow-700 dark:text-yellow-300',
+    borderColor: 'border-yellow-200 dark:border-yellow-800',
   },
   run: {
     title: 'Run Apify Actor',
@@ -79,6 +90,9 @@ export function ApifyToolView({
   project,
   onFileClick,
 }: ToolViewProps) {
+  const params = useParams();
+  const threadId = params?.threadId as string || '';
+  
   // Progress state for streaming
   const [progress, setProgress] = React.useState(0);
   const [elapsedTime, setElapsedTime] = React.useState(0);
@@ -118,9 +132,14 @@ export function ApifyToolView({
 
   const functionName = toolCall.function_name || '';
   
+  // Check for approval request first
+  const approvalData = extractApifyApprovalData(toolCall, toolResult, isSuccess, toolTimestamp, assistantTimestamp);
+  
   // Determine which function was called
   let viewType: keyof typeof VIEW_CONFIGS = 'search';
-  if (functionName.includes('search')) {
+  if (functionName.includes('approval') || functionName.includes('request_apify_approval')) {
+    viewType = 'approval';
+  } else if (functionName.includes('search')) {
     viewType = 'search';
   } else if (functionName.includes('details')) {
     viewType = 'details';
@@ -325,6 +344,17 @@ export function ApifyToolView({
         ) : (
           <ScrollArea className="h-full w-full">
             <div className="p-4 space-y-6">
+              {/* Approval Request View */}
+              {viewType === 'approval' && approvalData && threadId && (
+                <ApifyApprovalCard
+                  approval={approvalData}
+                  threadId={threadId}
+                  onApproved={() => {
+                    // Optionally refresh or navigate
+                  }}
+                />
+              )}
+
               {/* Search Results View */}
               {viewType === 'search' && (
                 <>

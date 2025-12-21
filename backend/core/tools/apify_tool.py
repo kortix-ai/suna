@@ -3,9 +3,10 @@ import json
 import os
 from typing import Optional, Dict, Any, List, Union
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from apify_client import ApifyClient
 import requests
+import uuid
 
 from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
@@ -14,7 +15,8 @@ from core.utils.logger import logger
 from core.billing.credits.manager import CreditManager
 from core.billing.shared.config import TOKEN_PRICE_MULTIPLIER
 from core.services.supabase import DBConnection
-from core.sandbox.sandbox import get_or_start_sandbox
+from core.services.redis import get_client, set as redis_set, get as redis_get, delete as redis_delete
+from core.sandbox.tool_base import SandboxToolsBase
 
 # Popular actors for quick access
 POPULAR_ACTORS = {
@@ -54,55 +56,148 @@ POPULAR_ACTORS = {
    - Returns: Actor details, input schema, pricing model
    - Use shortcuts: "twitter", "youtube", "tiktok", "instagram", "reddit", "linkedin", "google_maps", "amazon"
 
-3. `run_apify_actor(actor_id, run_input, max_cost_usd?)` - Start actor run (non-blocking)
-   - Example: run_apify_actor("twitter", {"searchTerms": ["from:elonmusk"], "maxTweets": 100})
+3. `request_apify_approval(actor_id, run_input, max_cost_usd?)` - Create approval request (REQUIRED FIRST STEP)
+   - Example: request_apify_approval("twitter", {"searchTerms": ["from:elonmusk"], "maxTweets": 100})
    - IMPORTANT: Always get actor details first to understand input schema
-   - Costs are charged - confirm with user before running
-   - Returns immediately with run_id - use get_actor_run_status() to check progress and get logs
+   - Estimates cost and creates pending approval request
+   - Returns approval_id - **IMMEDIATELY after calling this, use ASK tool to communicate with user**
    - Default max_cost_usd: 1.0
+   - **CRITICAL: After calling request_apify_approval(), you MUST use the ASK tool with this EXACT message:**
+     "I've created an approval request. Maximum cost: {X} credits (${Y.YY}). Please click the 'Approve' button in the approval card above to approve it. I cannot approve it for you - only you can approve by clicking the button in the UI."
+   - **CRITICAL: DO NOT ask if they want to approve or offer options - just tell them to click the approve button.**
+   - **CRITICAL: NEVER mention any 'approve' tool - there is NO such tool.**
 
-4. `get_actor_run_results(run_id, limit?, offset?)` - Get results from completed run
-   - Use if run_apify_actor returned partial results (has_more: true)
-   - Default limit: 100 items
+4. `get_apify_approval_status(approval_id)` - Check approval request status
+   - Use to check if approval is pending, approved, rejected, or expired
+   - Returns full approval details including costs
+   - **CRITICAL: If status is 'pending', tell the user: "The approval request is still pending. Please click the 'Approve' button in the UI to approve it. I cannot approve it for you - only you can approve via the UI."**
+   - **CRITICAL: If status is 'expired', tell the user: "The approval request has expired. I'll create a new approval request for you."**
+   - **CRITICAL: NEVER try to call any 'approve' tool - there is NO such tool. Only the user can approve by clicking the approve button in the UI.**
 
-5. `get_actor_run_status(run_id)` - Get run status, logs, and details
+6. `run_apify_actor(actor_id, run_input, max_cost_usd?, approval_id)` - Start actor run (REQUIRES APPROVAL)
+   - Example: run_apify_actor("twitter", {...input...}, approval_id="approval-123")
+   - CRITICAL: approval_id is REQUIRED - must approve request first
+   - Returns immediately with run_id - use get_actor_run_status() to check progress and get logs
+   - Credits are only deducted after approval and execution
+   - ⚠️ MANDATORY: After run completes, you MUST call get_actor_run_results() to fetch and display actual data
+
+7. `get_actor_run_results(run_id, limit?, offset?)` - Get ALL results from completed run (MANDATORY AFTER RUN)
+   - ⚠️ CRITICAL: You MUST call this function immediately after run_apify_actor completes successfully
+   - ⚠️ CRITICAL: You MUST present the actual received data to the user - never just say "run completed"
+   - This function fetches ALL results and saves them to disk
+   - Returns: Complete dataset with all items, file_path (relative path), item count
+   - Default limit: 100 items (use offset for pagination if needed)
+   - ALWAYS call this after run completes - users need to see the actual data immediately
+   - **CRITICAL: When presenting results, use 'complete' tool with the file_path as an attachment - NEVER show raw file paths in messages**
+
+8. `get_actor_run_status(run_id)` - Get run status, logs, and details
    - Use to check status of a running or completed actor
    - Returns: status, logs, error messages, cost info
+   - Poll this until status is SUCCEEDED or FAILED before calling get_actor_run_results()
 
-6. `stop_actor_run(run_id)` - Stop/cancel a running actor
+9. `stop_actor_run(run_id)` - Stop/cancel a running actor
    - Use to cancel a long-running actor that's taking too long
    - Returns: confirmation of stop request
 
-**WORKFLOW:**
+**WORKFLOW (APPROVAL REQUIRED - COMPLETE DATA DELIVERY MANDATORY):**
 1. Search for actors: search_apify_actors("platform scraper")
 2. Get details: get_actor_details("actor_id") to see input schema and pricing
-3. CONFIRM cost with user before running paid actors
-4. Start actor: run_apify_actor("actor_id", {...input...}) - returns immediately with run_id
-5. Monitor status: get_actor_run_status("run_id") to check progress/logs (poll until SUCCEEDED/FAILED)
-6. Get results: get_actor_run_results("run_id") once status is SUCCEEDED
-7. Stop if needed: stop_actor_run("run_id") to cancel a running actor
+3. Request approval: request_apify_approval("actor_id", {...input...}) - creates pending approval
+4. **IMMEDIATELY use ASK tool** to communicate with user:
+   - Present the approval request details (actor, estimated cost, max cost in credits)
+   - Say: "I've created an approval request. Maximum cost: {X} credits ({$Y.YY}). Please click the 'Approve' button in the approval card above to approve it. I cannot approve it for you - only you can approve by clicking the button in the UI."
+   - **CRITICAL: NEVER mention any 'approve' tool - there is NO such tool. The user must click the approve button in the UI.**
+5. Check status: get_apify_approval_status("approval_id") to verify user has approved via UI
+   - **If status is 'pending': Tell user: "The approval is still pending. Please click the 'Approve' button in the approval card above to approve it. I cannot approve it for you."**
+   - **If status is 'approved': Proceed to step 6**
+   - **If status is 'expired': Tell user: "The approval has expired. I'll create a new approval request." Then go back to step 3**
+   - **CRITICAL: NEVER try to call any 'approve_apify_request' or 'approve' tool - it does NOT exist. Only the user can approve via UI.**
+6. Start actor: run_apify_actor("actor_id", {...input...}, approval_id="approval_id") - REQUIRES approval_id
+7. Monitor status: get_actor_run_status("run_id") to check progress/logs (poll until SUCCEEDED/FAILED)
+8. **MANDATORY: Get and display results** - get_actor_run_results("run_id") once status is SUCCEEDED
+   - ⚠️ CRITICAL: You MUST call get_actor_run_results() immediately after run completes
+   - ⚠️ CRITICAL: You MUST present the ACTUAL received data to the user in your response
+   - ⚠️ CRITICAL: Never just say "run completed" - always show the actual data
+   - Reference specific items, counts, and key data points from the results
+   - **CRITICAL: Use 'complete' tool with the file_path from results as an attachment - NEVER show raw file paths like "/workspace/.../file.json" in messages**
+   - Users need to see the data immediately - don't make them ask for it
+9. Stop if needed: stop_actor_run("run_id") to cancel a running actor
+
+**COMPLETE TOOL CALL REQUIREMENT:**
+- After run_apify_actor() completes successfully, you MUST make a COMPLETE tool call sequence:
+  1. Call get_actor_run_status("run_id") to confirm SUCCEEDED status
+  2. Call get_actor_run_results("run_id") to fetch ALL data
+  3. Present the actual data to the user using 'complete' tool with:
+     - Total item count
+     - Key data points/examples from the results
+     - **File attached (use file_path from results as attachment - NEVER show raw paths)**
+     - Summary of what was scraped
+- Never skip step 2 - users expect to see the data, not just confirmation that scraping worked
+- Always reference actual received data: "I found X items", "Here are the results", "The data shows..."
+- **CRITICAL: Always attach the file using 'complete' tool attachments parameter - never mention file paths like "/workspace/..." in messages**
 
 **POPULAR ACTORS (shortcuts):**
 - twitter, youtube, tiktok, instagram, reddit, linkedin
 - google_maps, amazon
 
-**BILLING:** 
+**BILLING & APPROVALS:** 
+- ⚠️ ALL actor runs REQUIRE APPROVAL before execution
+- Approval requests estimate costs and require user approval
+- Credits are ONLY deducted after approval AND successful execution
 - Apify costs passed through + 20% markup
-- Costs deducted from user credits automatically
 - IMPORTANT: 1 CREDIT = 1 CENT ($0.01 USD)
 - When discussing costs with users, use format: "$X.XX (XXX credits)" or "XXX credits ($X.XX)"
 - Check pricing before running - some actors have no Apify cost, others charge per result/event
+- Approvals expire after 24 hours - create new approval if expired
+- **🚨 CRITICAL: THERE IS NO 'approve_apify_request' TOOL. IT DOES NOT EXIST.**
+- **🚨 CRITICAL: YOU CANNOT APPROVE REQUESTS. ONLY THE USER CAN APPROVE BY CLICKING THE 'APPROVE' BUTTON IN THE UI.**
+- **🚨 CRITICAL: If approval is pending, tell the user: "Please click the 'Approve' button in the approval card above. I cannot approve it for you."**
+- **🚨 CRITICAL: NEVER try to call 'approve_apify_request' or any approve tool - it will fail because it doesn't exist.**
 
-**EXAMPLES:**
-- "Scrape latest tweets from @elonmusk" → search_apify_actors("twitter"), get_actor_details("twitter"), run_apify_actor("twitter", {"searchTerms": ["from:elonmusk"]})
-- "Get YouTube video details" → search_apify_actors("youtube"), get_actor_details("youtube"), run_apify_actor("youtube", {"videoUrls": ["https://youtube.com/watch?v=..."]})
-- "Find restaurants on Google Maps" → search_apify_actors("google maps"), get_actor_details("google_maps"), run_apify_actor("google_maps", {"queries": "restaurants in NYC"})
+**EXAMPLES (COMPLETE WORKFLOW WITH DATA DELIVERY):**
+- "Scrape latest tweets from @elonmusk" → 
+  1. search_apify_actors("twitter")
+  2. get_actor_details("twitter")
+  3. request_apify_approval("twitter", {"searchTerms": ["from:elonmusk"]})
+  4. **USE ASK TOOL:** "I've created an approval request for scraping tweets. Maximum cost: 120 credits ($1.00). Please click the 'Approve' button in the approval card above to approve it. I cannot approve it for you - only you can approve by clicking the button in the UI."
+  5. get_apify_approval_status("approval_id") - check if user approved
+     - **If pending: Tell user: "The approval is still pending. Please click the 'Approve' button in the approval card above. I cannot approve it for you."**
+     - **If approved: Proceed to step 6**
+  6. run_apify_actor("twitter", {"searchTerms": ["from:elonmusk"]}, approval_id="approval_id")
+  7. get_actor_run_status("run_id") - poll until SUCCEEDED
+  8. **MANDATORY:** get_actor_run_results("run_id") - fetch and display actual tweets
+  9. Present data: "I found 50 tweets from @elonmusk. Here are the latest ones: [show actual tweet data]"
+
+- "Get YouTube video details" → 
+  1. search_apify_actors("youtube")
+  2. get_actor_details("youtube")
+  3. request_apify_approval("youtube", {"videoUrls": ["https://youtube.com/watch?v=..."]})
+  4. **USE ASK TOOL:** "Approval request created for YouTube video details. Max cost: 60 credits ($0.50). Please click the 'Approve' button in the approval card above to approve it. I cannot approve it for you - only you can approve via the UI."
+  5. get_apify_approval_status("approval_id") - check if user approved
+     - **If pending: Tell user: "Please click the 'Approve' button in the approval card above. I cannot approve it for you."**
+     - **If approved: Proceed to step 6**
+  6. run_apify_actor("youtube", {"videoUrls": ["..."]}, approval_id="approval_id")
+  7. get_actor_run_status("run_id") - poll until SUCCEEDED
+  8. **MANDATORY:** get_actor_run_results("run_id") - fetch and display actual video details
+  9. Present data: "Here are the video details: [show actual title, views, description, etc.]"
+
+- "Find restaurants on Google Maps" → 
+  1. search_apify_actors("google maps")
+  2. get_actor_details("google_maps")
+  3. request_apify_approval("google_maps", {"queries": "restaurants in NYC"})
+  4. **USE ASK TOOL:** "Created approval for Google Maps search. Maximum cost: 100 credits ($1.00). Please click the 'Approve' button in the approval card above to approve it. I cannot approve it for you - only you can approve via the UI."
+  5. get_apify_approval_status("approval_id") - check if user approved
+     - **If pending: Tell user: "The approval is still pending. Please click the 'Approve' button in the approval card above. I cannot approve it for you."**
+     - **If approved: Proceed to step 6**
+  6. run_apify_actor("google_maps", {"queries": "restaurants in NYC"}, approval_id="approval_id")
+  7. get_actor_run_status("run_id") - poll until SUCCEEDED
+  8. **MANDATORY:** get_actor_run_results("run_id") - fetch and display actual restaurant data
+  9. Present data: "I found 25 restaurants in NYC: [show actual restaurant names, addresses, ratings]"
 """
 )
-class ApifyTool(Tool):
-    def __init__(self, thread_manager: ThreadManager):
-        super().__init__()
-        self.thread_manager = thread_manager
+class ApifyTool(SandboxToolsBase):
+    def __init__(self, project_id: str, thread_manager: Optional[ThreadManager] = None):
+        super().__init__(project_id, thread_manager)
         self.credit_manager = CreditManager()
         self.db = DBConnection()
         
@@ -229,18 +324,216 @@ class ApifyTool(Tool):
             # If we can't check, assume no deduction exists (safer to try deducting)
             return False
     
+    async def _estimate_actor_cost(
+        self,
+        actor_id: str,
+        run_input: dict,
+        max_cost_usd: Decimal
+    ) -> tuple[Decimal, Decimal]:
+        """
+        Estimate cost for an actor run based on pricing model and input.
+        Returns (estimated_cost_usd, estimated_cost_credits_with_markup).
+        Uses max_cost_usd as conservative estimate if pricing info unavailable.
+        """
+        try:
+            # Try to get actor pricing info
+            try:
+                store_actor_info = self.client.store().get(actor_id)
+                pricing_model = None
+                pricing_infos = None
+                
+                if isinstance(store_actor_info, dict):
+                    pricing_model = store_actor_info.get("pricingModel")
+                    pricing_infos = store_actor_info.get("pricingInfos", [])
+                else:
+                    pricing_model = getattr(store_actor_info, 'pricingModel', None)
+                    pricing_infos = getattr(store_actor_info, 'pricingInfos', None)
+            except Exception:
+                # If we can't get pricing info, use max_cost_usd as estimate
+                logger.debug(f"Could not get pricing info for {actor_id}, using max_cost_usd as estimate")
+                estimated_usd = max_cost_usd
+                estimated_credits = max_cost_usd * TOKEN_PRICE_MULTIPLIER * Decimal("100")  # Convert to credits (1 credit = $0.01)
+                return estimated_usd, estimated_credits
+            
+            # Estimate based on pricing model
+            if pricing_model == "PRICE_PER_DATASET_ITEM":
+                # Try to estimate based on input (e.g., maxTweets, maxResults)
+                # Conservative estimate: assume we'll get some results
+                price_per_item = Decimal("0.01")  # Default conservative estimate
+                if pricing_infos and isinstance(pricing_infos, list) and len(pricing_infos) > 0:
+                    first_pricing = pricing_infos[0]
+                    if isinstance(first_pricing, dict):
+                        price_per_item = Decimal(str(first_pricing.get("priceUsd", 0.01)))
+                    elif hasattr(first_pricing, 'priceUsd'):
+                        price_per_item = Decimal(str(getattr(first_pricing, 'priceUsd', 0.01)))
+                
+                # Estimate items based on input
+                estimated_items = 100  # Default conservative estimate
+                if isinstance(run_input, dict):
+                    # Look for common input fields that indicate result count
+                    for key in ['maxTweets', 'maxResults', 'maxItems', 'limit', 'count']:
+                        if key in run_input:
+                            try:
+                                estimated_items = min(int(run_input[key]), 1000)  # Cap at 1000
+                                break
+                            except (ValueError, TypeError):
+                                pass
+                
+                estimated_usd = Decimal(str(estimated_items)) * price_per_item
+            elif pricing_model == "PRICE_PER_EVENT":
+                # Estimate based on events (harder to predict)
+                price_per_event = Decimal("0.01")
+                if pricing_infos and isinstance(pricing_infos, list) and len(pricing_infos) > 0:
+                    first_pricing = pricing_infos[0]
+                    if isinstance(first_pricing, dict):
+                        price_per_event = Decimal(str(first_pricing.get("priceUsd", 0.01)))
+                    elif hasattr(first_pricing, 'priceUsd'):
+                        price_per_event = Decimal(str(getattr(first_pricing, 'priceUsd', 0.01)))
+                
+                # Conservative estimate: assume 10-50 events
+                estimated_events = 25
+                estimated_usd = Decimal(str(estimated_events)) * price_per_event
+            else:
+                # Free actor or unknown pricing - use max_cost_usd as conservative estimate
+                estimated_usd = max_cost_usd
+            
+            # Cap at max_cost_usd
+            estimated_usd = min(estimated_usd, max_cost_usd)
+            
+            # Convert to credits with markup (1 credit = $0.01 USD)
+            estimated_credits = estimated_usd * TOKEN_PRICE_MULTIPLIER * Decimal("100")
+            
+            return estimated_usd, estimated_credits
+            
+        except Exception as e:
+            logger.warning(f"Error estimating cost for {actor_id}: {e}")
+            # Fallback to max_cost_usd
+            estimated_usd = max_cost_usd
+            estimated_credits = max_cost_usd * TOKEN_PRICE_MULTIPLIER * Decimal("100")
+            return estimated_usd, estimated_credits
+    
+    def _get_approval_key(self, approval_id: str) -> str:
+        """Get Redis key for approval request."""
+        return f"apify:approval:{approval_id}"
+    
+    
+    async def _create_approval_request(
+        self,
+        account_id: str,
+        thread_id: Optional[str],
+        actor_id: str,
+        run_input: dict,
+        estimated_cost_usd: Decimal,
+        estimated_cost_credits: Decimal,
+        max_cost_usd: Decimal
+    ) -> Optional[str]:
+        """Create an approval request in Redis with 24h TTL. Returns approval_id."""
+        try:
+            approval_id = str(uuid.uuid4())
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+            
+            approval_data = {
+                'id': approval_id,
+                'account_id': account_id,
+                'thread_id': thread_id,
+                'actor_id': actor_id,
+                'run_input': run_input,
+                'estimated_cost_usd': float(estimated_cost_usd),
+                'estimated_cost_credits': float(estimated_cost_credits),
+                'max_cost_usd': float(max_cost_usd),
+                'status': 'pending',
+                'expires_at': expires_at.isoformat(),
+                'created_at': datetime.now(timezone.utc).isoformat(),
+                'updated_at': datetime.now(timezone.utc).isoformat()
+            }
+            
+            # Store in Redis with 24 hour TTL (86400 seconds)
+            key = self._get_approval_key(approval_id)
+            await redis_set(key, json.dumps(approval_data), ex=86400)
+            
+            logger.info(f"Created approval request {approval_id} for actor {actor_id} (estimated: ${estimated_cost_usd:.4f} / {estimated_cost_credits:.2f} credits)")
+            return approval_id
+                
+        except Exception as e:
+            logger.error(f"Error creating approval request: {e}")
+            return None
+    
+    async def _get_approval_request(self, approval_id: str) -> Optional[dict]:
+        """Get an approval request by ID from Redis."""
+        try:
+            key = self._get_approval_key(approval_id)
+            data = await redis_get(key)
+            if data:
+                return json.loads(data)
+            return None
+        except Exception as e:
+            logger.debug(f"Error getting approval request {approval_id}: {e}")
+            return None
+    
+    async def _check_existing_approval(
+        self,
+        account_id: str,
+        actor_id: str,
+        run_input: dict
+    ) -> Optional[str]:
+        """Check if there's an existing pending approval for the same actor/input. Returns approval_id if found."""
+        try:
+            # Scan Redis for user's pending approvals (simple approach)
+            redis_client = await get_client()
+            approval_ids = []
+            try:
+                pattern = "apify:approval:*"
+                async for key in redis_client.scan_iter(match=pattern):
+                    approval_id = key.split(':')[-1]
+                    approval = await self._get_approval_request(approval_id)
+                    if approval and approval.get('account_id') == account_id:
+                        approval_ids.append(approval_id)
+            except Exception as e:
+                logger.debug(f"Error scanning approvals: {e}")
+                return None
+            
+            # Check each approval
+            for approval_id in approval_ids:
+                approval = await self._get_approval_request(approval_id)
+                if approval and approval.get('status') == 'pending':
+                    if approval.get('actor_id') == actor_id and approval.get('run_input') == run_input:
+                        # Check if not expired
+                        expires_at_str = approval.get('expires_at')
+                        if expires_at_str:
+                            try:
+                                expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+                                if datetime.now(timezone.utc) <= expires_at:
+                                    return approval_id
+                            except Exception:
+                                pass
+                        else:
+                            return approval_id
+            
+            return None
+        except Exception as e:
+            logger.debug(f"Error checking existing approval: {e}")
+            return None
+    
     async def _deduct_apify_credits(
         self, 
         user_id: str, 
         cost: Decimal, 
         actor_id: str, 
         run_id: str, 
-        thread_id: Optional[str] = None
+        thread_id: Optional[str] = None,
+        approval_id: Optional[str] = None
     ) -> bool:
-        """Deduct credits for Apify usage with markup. Checks database first to avoid duplicate deductions."""
+        """Deduct credits for Apify usage with markup. Checks database first to avoid duplicate deductions. Only deducts if approval exists."""
         if config.ENV_MODE == EnvMode.LOCAL:
             logger.info(f"LOCAL mode - skipping billing for Apify run {run_id}")
             return True
+        
+        # CRITICAL: Only deduct if approval exists and is approved
+        if approval_id:
+            approval = await self._get_approval_request(approval_id)
+            if not approval or approval.get('status') != 'approved':
+                logger.warning(f"Cannot deduct credits - approval {approval_id} not found or not approved")
+                return False
         
         # Check if deduction already exists (database is source of truth)
         if await self._has_deduction_for_run(user_id, run_id):
@@ -253,13 +546,30 @@ class ApifyTool(Tool):
             result = await self.credit_manager.deduct_credits(
                 account_id=user_id,
                 amount=marked_up_cost,
-                description=f"Apify: {actor_id} (run: {run_id})",
+                description=f"Apify: {actor_id} (run: {run_id})" + (f" [approval: {approval_id}]" if approval_id else ""),
                 type='apify_usage',
                 thread_id=thread_id
             )
             
             if result.get('success'):
                 logger.info(f"Deducted ${marked_up_cost:.6f} for Apify run {run_id} (base: ${cost:.6f})")
+                
+                # Update approval request with actual cost
+                if approval_id:
+                    try:
+                        approval = await self._get_approval_request(approval_id)
+                        if approval:
+                            approval['actual_cost_usd'] = float(cost)
+                            approval['actual_cost_credits'] = float(marked_up_cost)
+                            approval['status'] = 'executed'
+                            approval['executed_at'] = datetime.now(timezone.utc).isoformat()
+                            approval['updated_at'] = datetime.now(timezone.utc).isoformat()
+                            key = self._get_approval_key(approval_id)
+                            # Keep for 7 days after execution for audit trail
+                            await redis_set(key, json.dumps(approval), ex=604800)  # 7 days
+                    except Exception as e:
+                        logger.warning(f"Failed to update approval request with actual cost: {e}")
+                
                 return True
             else:
                 logger.warning(f"Failed to deduct credits: {result.get('error')}")
@@ -619,8 +929,228 @@ class ApifyTool(Tool):
     @openapi_schema({
         "type": "function",
         "function": {
+            "name": "request_apify_approval",
+            "description": "Create an approval request for running an Apify actor. REQUIRED before running any actor. Estimates cost and creates a pending approval request that must be approved by the user before execution.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "actor_id": {
+                        "type": "string",
+                        "description": "Actor ID or shortcut name"
+                    },
+                    "run_input": {
+                        "type": "object",
+                        "description": "Input for the actor (check get_actor_details for schema). Can be passed as a dict/object or JSON string."
+                    },
+                    "max_cost_usd": {
+                        "type": "number",
+                        "description": "Maximum cost limit in USD (default: 1.0)",
+                        "default": 1.0
+                    }
+                },
+                "required": ["actor_id", "run_input"]
+            }
+        }
+    })
+    async def request_apify_approval(
+        self,
+        actor_id: str,
+        run_input: Union[dict, str],
+        max_cost_usd: Union[float, str] = 1.0
+    ) -> ToolResult:
+        """Create an approval request for running an Apify actor."""
+        try:
+            if not self.client:
+                return self.fail_response("Apify API token not configured")
+            
+            # Parse run_input if it's a JSON string
+            if isinstance(run_input, str):
+                try:
+                    run_input = json.loads(run_input)
+                except json.JSONDecodeError as e:
+                    return self.fail_response(f"Invalid JSON in run_input: {str(e)}")
+            elif not isinstance(run_input, dict):
+                return self.fail_response(f"run_input must be a dict or JSON string, got {type(run_input).__name__}")
+            
+            # Parse max_cost_usd if it's a string
+            if isinstance(max_cost_usd, str):
+                try:
+                    max_cost_usd = float(max_cost_usd)
+                except ValueError:
+                    return self.fail_response(f"Invalid max_cost_usd value: {max_cost_usd}")
+            
+            max_cost_usd_decimal = Decimal(str(max_cost_usd))
+            
+            # Get user context
+            thread_id, user_id = await self._get_current_thread_and_user()
+            
+            if not user_id and config.ENV_MODE != EnvMode.LOCAL:
+                return self.fail_response(
+                    "No active session context. This tool requires an active agent session."
+                )
+            
+            # Resolve shortcut names
+            resolved_id = self._resolve_actor_id(actor_id)
+            
+            # Check for existing pending approval
+            existing_approval_id = await self._check_existing_approval(user_id, resolved_id, run_input)
+            if existing_approval_id:
+                approval = await self._get_approval_request(existing_approval_id)
+                if approval:
+                    return self.success_response({
+                        "approval_id": existing_approval_id,
+                        "status": "pending",
+                        "message": f"Found existing pending approval request. User must approve via UI before execution.",
+                        "estimated_cost_usd": approval.get('estimated_cost_usd'),
+                        "estimated_cost_credits": approval.get('estimated_cost_credits'),
+                        "max_cost_usd": approval.get('max_cost_usd'),
+                        "actor_id": resolved_id
+                    })
+            
+            # Estimate cost
+            estimated_cost_usd, estimated_cost_credits = await self._estimate_actor_cost(
+                resolved_id, run_input, max_cost_usd_decimal
+            )
+            
+            # Create approval request
+            approval_id = await self._create_approval_request(
+                account_id=user_id,
+                thread_id=thread_id,
+                actor_id=resolved_id,
+                run_input=run_input,
+                estimated_cost_usd=estimated_cost_usd,
+                estimated_cost_credits=estimated_cost_credits,
+                max_cost_usd=max_cost_usd_decimal
+            )
+            
+            if not approval_id:
+                return self.fail_response("Failed to create approval request")
+            
+            # Calculate max_cost_credits (max_cost_usd * 100 * 1.2 for markup)
+            max_cost_credits = float(max_cost_usd_decimal * Decimal('100') * Decimal(str(TOKEN_PRICE_MULTIPLIER)))
+            
+            return self.success_response({
+                "approval_id": approval_id,
+                "status": "pending",
+                "message": f"✅ Approval request created. Estimated cost: ${estimated_cost_usd:.4f} ({estimated_cost_credits:.2f} credits). Maximum cost: ${max_cost_usd:.4f} ({max_cost_credits:.2f} credits). **CRITICAL: Use ASK tool immediately to tell user: 'Please click the Approve button in the approval card above to approve this request. I cannot approve it for you - only you can approve via the UI.' DO NOT try to call any approve tool - it does NOT exist. Use get_apify_approval_status(approval_id='{approval_id}') to check if user has approved after they click the button.**",
+                "estimated_cost_usd": float(estimated_cost_usd),
+                "estimated_cost_credits": float(estimated_cost_credits),
+                "max_cost_usd": float(max_cost_usd_decimal),
+                "actor_id": resolved_id,
+                "expires_at": (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+            })
+            
+        except Exception as e:
+            error_message = str(e)
+            logger.error(f"Error creating approval request: {error_message}")
+            simplified_message = f"Error creating approval request: {error_message[:200]}"
+            if len(error_message) > 200:
+                simplified_message += "..."
+            return self.fail_response(simplified_message)
+    
+    
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "get_apify_approval_status",
+            "description": "Get the status of an Apify approval request. Use this to check if an approval is pending, approved, rejected, or expired.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "approval_id": {
+                        "type": "string",
+                        "description": "Approval ID from request_apify_approval()"
+                    }
+                },
+                "required": ["approval_id"]
+            }
+        }
+    })
+    async def get_apify_approval_status(self, approval_id: str) -> ToolResult:
+        """Get the status of an Apify approval request."""
+        try:
+            # Get user context
+            thread_id, user_id = await self._get_current_thread_and_user()
+            
+            if not user_id and config.ENV_MODE != EnvMode.LOCAL:
+                return self.fail_response("No active session context")
+            
+            # Get approval request
+            approval = await self._get_approval_request(approval_id)
+            if not approval:
+                # If Redis key doesn't exist, treat as expired
+                return self.success_response({
+                    "approval_id": approval_id,
+                    "status": "expired",
+                    "message": f"Approval {approval_id} has expired or been removed. Create a new approval request.",
+                    "actor_id": None,
+                    "estimated_cost_usd": None,
+                    "estimated_cost_credits": None,
+                    "max_cost_usd": None,
+                    "actual_cost_usd": None,
+                    "actual_cost_credits": None,
+                    "run_id": None,
+                    "created_at": None,
+                    "approved_at": None,
+                    "expires_at": None
+                })
+            
+            # Verify ownership
+            if approval.get('account_id') != user_id:
+                return self.fail_response("You can only view your own approval requests")
+            
+            # Check if expired by timestamp (even if status isn't set to expired)
+            status = approval.get('status')
+            expires_at_str = approval.get('expires_at')
+            if expires_at_str:
+                try:
+                    expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+                    if datetime.now(timezone.utc) > expires_at:
+                        status = 'expired'
+                except Exception:
+                    pass
+            message = f"Approval {approval_id} status: {status}"
+            
+            if status == 'pending':
+                message += ". **CRITICAL: The user must click the 'Approve' button in the UI to approve this request. Tell the user: 'Please click the Approve button in the approval card above. I cannot approve it for you - only you can approve via the UI.' DO NOT try to call any approve tool - it does NOT exist.**"
+            elif status == 'approved':
+                message += ". You can now call run_apify_actor() with this approval_id."
+            elif status == 'rejected':
+                message += ". This approval was rejected by the user."
+            elif status == 'expired':
+                message += ". **This approval has expired. Tell the user you'll create a new approval request, then call request_apify_approval() again.**"
+            elif status == 'executed':
+                message += ". This approval has been executed."
+            
+            return self.success_response({
+                "approval_id": approval_id,
+                "status": status,
+                "message": message,
+                "actor_id": approval.get('actor_id'),
+                "estimated_cost_usd": approval.get('estimated_cost_usd'),
+                "estimated_cost_credits": approval.get('estimated_cost_credits'),
+                "max_cost_usd": approval.get('max_cost_usd'),
+                "actual_cost_usd": approval.get('actual_cost_usd'),
+                "actual_cost_credits": approval.get('actual_cost_credits'),
+                "run_id": approval.get('run_id'),
+                "created_at": approval.get('created_at'),
+                "approved_at": approval.get('approved_at'),
+                "expires_at": approval.get('expires_at')
+            })
+            
+        except Exception as e:
+            error_message = str(e)
+            logger.error(f"Error getting approval status: {error_message}")
+            simplified_message = f"Error getting approval status: {error_message[:200]}"
+            if len(error_message) > 200:
+                simplified_message += "..."
+            return self.fail_response(simplified_message)
+    
+    @openapi_schema({
+        "type": "function",
+        "function": {
             "name": "run_apify_actor",
-            "description": "Start an Apify actor run (non-blocking). Returns immediately with run_id. Use get_actor_run_status() to check progress and get logs. IMPORTANT: Costs will be charged. Get actor details first to understand pricing.",
+            "description": "Start an Apify actor run (non-blocking). REQUIRES APPROVAL FIRST - use request_apify_approval() before calling this. Returns immediately with run_id. Use get_actor_run_status() to check progress and get logs. ⚠️ CRITICAL: After run completes successfully, you MUST call get_actor_run_results() to fetch and display the actual data to the user. Never just confirm completion - always show the actual results. IMPORTANT: All runs require approval before execution. Credits are only deducted after approval.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -636,9 +1166,13 @@ class ApifyTool(Tool):
                         "type": "number",
                         "description": "Maximum cost limit in USD (default: 1.0)",
                         "default": 1.0
+                    },
+                    "approval_id": {
+                        "type": "string",
+                        "description": "Approval ID from request_apify_approval() - REQUIRED for execution"
                     }
                 },
-                "required": ["actor_id", "run_input"]
+                "required": ["actor_id", "run_input", "approval_id"]
             }
         }
     })
@@ -647,9 +1181,10 @@ class ApifyTool(Tool):
         actor_id: str, 
         run_input: Union[dict, str], 
         max_cost_usd: Union[float, str] = 1.0,
+        approval_id: Optional[str] = None,
         **kwargs  # Ignore unexpected args
     ) -> ToolResult:
-        """Run an Apify actor (blocking, 60s timeout). Waits up to 60 seconds for completion."""
+        """Run an Apify actor (blocking, 60s timeout). REQUIRES APPROVAL FIRST. Waits up to 60 seconds for completion."""
         
         try:
             if not self.client:
@@ -672,6 +1207,8 @@ class ApifyTool(Tool):
                 except ValueError:
                     return self.fail_response(f"Invalid max_cost_usd value: {max_cost_usd}")
             
+            max_cost_usd_decimal = Decimal(str(max_cost_usd))
+            
             # Get user context for billing
             thread_id, user_id = await self._get_current_thread_and_user()
             
@@ -679,6 +1216,63 @@ class ApifyTool(Tool):
                 return self.fail_response(
                     "No active session context for billing. This tool requires an active agent session."
                 )
+            
+            # CRITICAL: Require approval before running
+            if not approval_id:
+                return self.fail_response(
+                    "❌ Approval required before running Apify actors.\n\n"
+                    "📋 Workflow:\n"
+                    "1. Call request_apify_approval(actor_id, run_input, max_cost_usd) to create approval request\n"
+                    "2. User approves the request\n"
+                    "3. Call run_apify_actor(actor_id, run_input, max_cost_usd, approval_id) with the approval_id\n\n"
+                    "This ensures users control their spending and approve costs before execution."
+                )
+            
+            # Verify approval exists and is approved
+            approval = await self._get_approval_request(approval_id)
+            if not approval:
+                return self.fail_response(
+                    f"Approval request {approval_id} has expired or been removed. "
+                    f"Please create a new approval request using request_apify_approval()."
+                )
+            
+            # Check if expired by timestamp (even if status isn't set to expired)
+            expires_at_str = approval.get('expires_at')
+            if expires_at_str:
+                try:
+                    expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+                    if datetime.now(timezone.utc) > expires_at:
+                        return self.fail_response(
+                            f"Approval request {approval_id} has expired. "
+                            f"Please create a new approval request using request_apify_approval()."
+                        )
+                except Exception:
+                    pass
+            
+            if approval.get('status') != 'approved':
+                return self.fail_response(
+                    f"Approval request {approval_id} is not approved (status: {approval.get('status')}). "
+                    f"User must approve the request via UI before execution."
+                )
+            
+            # Verify approval matches the request
+            if approval.get('actor_id') != actor_id:
+                return self.fail_response(
+                    f"Approval {approval_id} is for actor '{approval.get('actor_id')}', not '{actor_id}'. "
+                    f"Please use the correct approval_id for this actor."
+                )
+            
+            # Check if approval expired
+            expires_at_str = approval.get('expires_at')
+            if expires_at_str:
+                try:
+                    expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+                    if datetime.now(expires_at.tzinfo) > expires_at:
+                        return self.fail_response(
+                            f"Approval {approval_id} has expired. Please create a new approval request."
+                        )
+                except Exception as e:
+                    logger.warning(f"Error checking approval expiration: {e}")
             
             # Resolve shortcut names
             resolved_id = self._resolve_actor_id(actor_id)
@@ -843,7 +1437,26 @@ class ApifyTool(Tool):
                 except Exception as e:
                     logger.debug(f"Could not fetch logs: {e}")
             
+            # Update approval request with run_id
+            if approval_id:
+                try:
+                    approval = await self._get_approval_request(approval_id)
+                    if approval:
+                        approval['run_id'] = run_id
+                        approval['updated_at'] = datetime.now(timezone.utc).isoformat()
+                        key = self._get_approval_key(approval_id)
+                        # Get remaining TTL to preserve it
+                        redis_client = await get_client()
+                        ttl = await redis_client.ttl(key)
+                        if ttl > 0:
+                            await redis_set(key, json.dumps(approval), ex=ttl)
+                        else:
+                            await redis_set(key, json.dumps(approval), ex=86400)  # Re-set 24h if expired
+                except Exception as e:
+                    logger.warning(f"Failed to update approval request with run_id: {e}")
+            
             # Deduct credits if run finished successfully (database check prevents duplicates)
+            # CRITICAL: Only deduct if approval exists and is approved
             if status in ["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"] and actual_cost > 0:
                 if user_id:
                     await self._deduct_apify_credits(
@@ -851,14 +1464,15 @@ class ApifyTool(Tool):
                         cost=actual_cost,
                         actor_id=resolved_id,
                         run_id=run_id,
-                        thread_id=thread_id
+                        thread_id=thread_id,
+                        approval_id=approval_id
                     )
             
             # Build response message
             if timed_out:
                 message = f"⏱️ Run timed out after 60 seconds (still RUNNING). Check logs below. Use get_actor_run_status(run_id='{run_id}') to check progress."
             elif status == "SUCCEEDED":
-                message = f"✅ Run completed successfully! Use get_actor_run_results(run_id='{run_id}') to get the data."
+                message = f"✅ Run completed successfully! ⚠️ MANDATORY: You MUST immediately call get_actor_run_results(run_id='{run_id}') to fetch and display the actual data to the user. Never just confirm completion - always show the results."
             elif status == "FAILED":
                 message = f"❌ Run failed. Check logs for details."
             elif status == "ABORTED":
@@ -895,7 +1509,7 @@ class ApifyTool(Tool):
         "type": "function",
         "function": {
             "name": "get_actor_run_results",
-            "description": "Retrieve ALL results from a completed actor run and save them to a file in /workspace/apify_results/. Results are saved as JSON and can be accessed via terminal commands or Python. Use this after run_apify_actor completes successfully.",
+            "description": "⚠️ MANDATORY: Retrieve ALL results from a completed actor run and save them to disk. You MUST call this function immediately after run_apify_actor() completes successfully (status: SUCCEEDED). You MUST present the actual received data to the user in your response - never just say 'run completed'. Always show item counts, key data points, and examples from the results. Results are saved as JSON to /workspace/apify_results/ and can be accessed via terminal commands or Python. This is a COMPLETE tool call requirement - users expect to see the data immediately.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -971,36 +1585,16 @@ class ApifyTool(Tool):
                     "message": "No items found in dataset"
                 })
             
-            # Save results to file in sandbox workspace - NO FALLBACKS, MUST SUCCEED
-            # Use same pattern as SandboxToolsBase for consistency
-            if not self.thread_manager:
-                return self.fail_response("No thread manager available - cannot save results to disk")
+            # Save results to file in sandbox workspace - use SandboxToolsBase._ensure_sandbox()
+            sandbox = await self._ensure_sandbox()
             
-            project_id = self.thread_manager.project_id
-            if not project_id:
-                return self.fail_response("No project context available - cannot save results to disk")
-            
-            # Get database client from thread_manager (same pattern as SandboxToolsBase)
-            client = await self.thread_manager.db.client
-            
-            # Get sandbox_id from project
-            project_result = await client.table('projects').select('sandbox').eq('project_id', project_id).execute()
-            if not project_result.data or not project_result.data[0].get('sandbox') or not project_result.data[0]['sandbox'].get('id'):
-                return self.fail_response("Project has no sandbox - cannot save results to disk")
-            
-            sandbox_id = project_result.data[0]['sandbox']['id']
-            
-            # Get sandbox for this project (same pattern as SandboxToolsBase)
-            sandbox = await get_or_start_sandbox(sandbox_id)
-            if not sandbox:
-                return self.fail_response("Could not access sandbox - cannot save results to disk")
-            
-            # Create apify_results directory
-            results_dir = "/workspace/apify_results"
+            # Create apify_results directory - use workspace_path from SandboxToolsBase
+            workspace_path = self.workspace_path
+            results_dir = f"{workspace_path}/apify_results"
             await sandbox.fs.create_folder(results_dir, "755")
             
             # Generate filename with timestamp and run_id
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             safe_actor_id = (actor_id or "unknown").replace("/", "_").replace("~", "_") if actor_id else "unknown"
             filename = f"apify_results_{safe_actor_id}_{run_id[:12]}_{timestamp}.json"
             file_path = f"{results_dir}/{filename}"
@@ -1013,8 +1607,10 @@ class ApifyTool(Tool):
             await sandbox.fs.upload_file(json_bytes, file_path)
             logger.info(f"✅ Saved {len(all_items)} items to {file_path} ({len(json_bytes)} bytes)")
             
-            # Return relative path (without /workspace prefix) for frontend
-            relative_path = file_path.replace("/workspace/", "")
+            if workspace_path.startswith("/workspace/"):
+                relative_path = file_path.replace("/workspace/", "")
+            else:
+                relative_path = filename
             
             return self.success_response({
                 "run_id": run_id,
@@ -1023,7 +1619,7 @@ class ApifyTool(Tool):
                 "saved_to_disk": True,
                 "file_path": relative_path,
                 "item_count": len(all_items),
-                "message": f"✅ Retrieved {len(all_items)} items and saved to {relative_path}. Use terminal commands or Python to read the file."
+                "message": f"✅ Retrieved {len(all_items)} items. The data has been saved and attached. **When presenting results to the user, use the 'complete' tool with the file_path '{relative_path}' as an attachment - never show raw file paths in messages.**"
             })
             
         except Exception as e:
@@ -1095,16 +1691,33 @@ class ApifyTool(Tool):
             actual_cost = await self._get_run_cost(run_info_response if isinstance(run_info_response, dict) else (run_info_response.__dict__ if hasattr(run_info_response, '__dict__') else {}))
             
             # Deduct credits if run is finished and has cost (database check prevents duplicates)
+            # Note: get_actor_run_status doesn't have approval_id, so we check if there's an approval for this run_id
             if status in ["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"] and actual_cost > 0:
                 # Get user context for billing
                 thread_id, user_id = await self._get_current_thread_and_user()
                 if user_id:
+                    # Find approval request for this run_id (scan user's approvals)
+                    approval_id_for_deduction = None
+                    try:
+                        redis_client = await get_client()
+                        pattern = "apify:approval:*"
+                        async for key in redis_client.scan_iter(match=pattern):
+                            approval_id = key.split(':')[-1]
+                            approval = await self._get_approval_request(approval_id)
+                            if approval and approval.get('account_id') == user_id:
+                                if approval.get('run_id') == run_id and approval.get('status') == 'approved':
+                                    approval_id_for_deduction = approval_id
+                                    break
+                    except Exception:
+                        pass
+                    
                     await self._deduct_apify_credits(
                         user_id=user_id,
                         cost=actual_cost,
                         actor_id=actor_id or "unknown",
                         run_id=run_id,
-                        thread_id=thread_id
+                        thread_id=thread_id,
+                        approval_id=approval_id_for_deduction
                     )
             
             # Get logs (plain text from Apify API)
@@ -1134,7 +1747,7 @@ class ApifyTool(Tool):
             
             # Build response message based on status
             if status == "SUCCEEDED":
-                message = f"✅ Run completed successfully! Retrieved {item_count} items. Use get_actor_run_results(run_id='{run_id}') to get the data."
+                message = f"✅ Run completed successfully! Retrieved {item_count} items. ⚠️ MANDATORY: You MUST immediately call get_actor_run_results(run_id='{run_id}') to fetch and display the actual data to the user."
             elif status == "RUNNING":
                 message = f"⏳ Run is still in progress. Check again in a few seconds."
             elif status == "FAILED":

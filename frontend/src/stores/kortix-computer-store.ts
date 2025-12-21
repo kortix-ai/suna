@@ -1,30 +1,9 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import { normalizeWorkspacePath, getThreadIdFromUrl } from '@/lib/utils/workspace-path';
 
 export type ViewType = 'tools' | 'files' | 'browser';
 export type FilesSubView = 'browser' | 'viewer';
-
-/**
- * Normalize a file path to ensure it starts with /workspace
- * Handles paths like "workspace", "workspace/foo", "/workspace", "/workspace/foo", "/foo", "foo"
- */
-function normalizeWorkspacePath(path: string): string {
-  if (!path) return '/workspace';
-  
-  // Handle paths that start with "workspace" (without leading /)
-  // This prevents "/workspace/workspace" when someone passes "workspace" or "workspace/foo"
-  if (path === 'workspace' || path.startsWith('workspace/')) {
-    return '/' + path;
-  }
-  
-  // If already starts with /workspace, return as-is
-  if (path.startsWith('/workspace')) {
-    return path;
-  }
-  
-  // Otherwise, prepend /workspace/
-  return `/workspace/${path.replace(/^\//, '')}`;
-}
 
 interface KortixComputerState {
   // Main view state
@@ -100,7 +79,7 @@ interface KortixComputerState {
 const initialState = {
   activeView: 'tools' as ViewType,
   filesSubView: 'browser' as FilesSubView,
-  currentPath: '/workspace',
+  currentPath: '/workspace', // Always start at root /workspace
   selectedFilePath: null,
   filePathList: undefined,
   currentFileIndex: -1,
@@ -123,7 +102,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       },
       
       openFile: (filePath: string, filePathList?: string[]) => {
-        // Normalize the file path
+        // Normalize the file path (preserve explicit /workspace paths)
         const normalizedPath = normalizeWorkspacePath(filePath);
         
         // Extract directory from file path for breadcrumb context
@@ -177,9 +156,15 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           const filePath = filePathList[index];
           const normalizedPath = normalizeWorkspacePath(filePath);
           
+          const lastSlashIndex = normalizedPath.lastIndexOf('/');
+          const directoryPath = lastSlashIndex > 0
+            ? normalizedPath.substring(0, lastSlashIndex)
+            : '/workspace';
+          
           set({
             currentFileIndex: index,
             selectedFilePath: normalizedPath,
+            currentPath: directoryPath,
           });
         }
       },
@@ -229,6 +214,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       
       openFileBrowser: () => {
         // Open files tab in browser mode without selecting a file
+        // Always start at root /workspace - user can navigate to thread-specific folder if needed
         set({
           activeView: 'files',
           filesSubView: 'browser',

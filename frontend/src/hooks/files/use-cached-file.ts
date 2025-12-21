@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/components/AuthProvider';
+import { normalizeWorkspacePath, getThreadIdFromUrl } from '@/lib/utils/workspace-path';
 
 // Global cache to persist between component mounts
 const fileCache = new Map<string, {
@@ -17,32 +18,27 @@ const inProgressPreloads = new Map<string, Promise<any>>();
 /**
  * Normalize a file path to ensure consistent caching
  * @param path The file path to normalize
- * @returns Normalized path starting with /workspace/
+ * @returns Normalized path starting with /workspace/{thread_id}/
  */
 function normalizePath(path: string): string {
-  if (!path) return '/workspace';
-  
-  // Handle paths that start with "workspace" (without leading /)
-  // This prevents "/workspace/workspace" when someone passes "workspace" or "workspace/foo"
-  if (path === 'workspace' || path.startsWith('workspace/')) {
-    path = '/' + path;
+  if (!path) {
+    const tid = getThreadIdFromUrl();
+    return tid ? `/workspace/${tid}` : '/workspace';
   }
   
-  // Ensure path starts with /workspace
-  if (!path.startsWith('/workspace')) {
-    path = `/workspace/${path.startsWith('/') ? path.substring(1) : path}`;
-  }
+  // Use shared normalization function
+  let normalized = normalizeWorkspacePath(path);
   
   // Handle Unicode escape sequences like \u0308
   try {
-    path = path.replace(/\\u([0-9a-fA-F]{4})/g, (_, hexCode) => {
+    normalized = normalized.replace(/\\u([0-9a-fA-F]{4})/g, (_, hexCode) => {
       return String.fromCharCode(parseInt(hexCode, 16));
     });
   } catch (e) {
     console.error('Error processing Unicode escapes in path:', e);
   }
   
-  return path;
+  return normalized;
 }
 
 /**

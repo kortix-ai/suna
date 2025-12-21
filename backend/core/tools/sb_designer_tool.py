@@ -21,7 +21,6 @@ class SandboxDesignerTool(SandboxToolsBase):
         super().__init__(project_id, thread_manager)
         self.thread_id = thread_id
         self.thread_manager = thread_manager
-        self.designs_dir = "/workspace/designs"
         
         self.social_media_sizes = {
             "instagram_square": (1080, 1080),
@@ -61,6 +60,11 @@ class SandboxDesignerTool(SandboxToolsBase):
             "flyer_a4": (2480, 3508),
             "poster_a3": (3508, 4961),
         }
+    
+    @property
+    def designs_dir(self) -> str:
+        """Get the designs directory path based on workspace_path."""
+        return f"{self.workspace_path}/designs"
         
     async def _ensure_designs_directory(self):
         await self._ensure_sandbox()

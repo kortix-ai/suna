@@ -349,6 +349,89 @@ export function extractApifyRunData(
   }
 }
 
+export interface ApifyApprovalData {
+  approval_id: string;
+  status: 'pending' | 'approved' | 'rejected' | 'expired' | 'executed';
+  actor_id: string;
+  estimated_cost_usd?: number;
+  estimated_cost_credits?: number;
+  max_cost_usd?: number;
+  actual_cost_usd?: number;
+  actual_cost_credits?: number;
+  run_id?: string;
+  created_at?: string;
+  approved_at?: string;
+  expires_at?: string;
+  message?: string;
+  actualIsSuccess: boolean;
+  actualToolTimestamp?: string;
+  actualAssistantTimestamp?: string;
+}
+
+export function extractApifyApprovalData(
+  toolCall: ToolCallData | undefined,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true,
+  toolTimestamp?: string,
+  assistantTimestamp?: string
+): ApifyApprovalData | null {
+  try {
+    if (!toolCall) {
+      return null;
+    }
+
+    const functionName = toolCall.function_name || '';
+    
+    // Only extract if it's an approval-related function
+    if (!functionName.includes('approval') && !functionName.includes('request_apify_approval')) {
+      return null;
+    }
+
+    let output: any = null;
+    let actualIsSuccess = isSuccess;
+    let actualToolTimestamp = toolTimestamp;
+
+    if (toolResult?.output) {
+      output = toolResult.output;
+      if (toolResult.success !== undefined) {
+        actualIsSuccess = toolResult.success;
+      }
+      if (toolResult.timestamp) {
+        actualToolTimestamp = toolResult.timestamp;
+      }
+    }
+
+    if (output && typeof output === 'object' && output !== null) {
+      // Check if output has approval_id (from request_apify_approval)
+      if (output.approval_id) {
+        return {
+          approval_id: output.approval_id,
+          status: output.status || 'pending',
+          actor_id: output.actor_id || '',
+          estimated_cost_usd: output.estimated_cost_usd,
+          estimated_cost_credits: output.estimated_cost_credits,
+          max_cost_usd: output.max_cost_usd,
+          actual_cost_usd: output.actual_cost_usd,
+          actual_cost_credits: output.actual_cost_credits,
+          run_id: output.run_id,
+          created_at: output.created_at,
+          approved_at: output.approved_at,
+          expires_at: output.expires_at,
+          message: output.message,
+          actualIsSuccess,
+          actualToolTimestamp,
+          actualAssistantTimestamp: assistantTimestamp,
+        };
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('extractApifyApprovalData error:', error);
+    return null;
+  }
+}
+
 export function extractApifyRunResultsData(
   toolCall: ToolCallData | undefined,
   toolResult?: ToolResultData,

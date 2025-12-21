@@ -79,7 +79,7 @@ If relevant context seems missing, ask a clarifying question.
         system_content = await PromptManager._append_builder_tools_prompt(system_content, agent_config)
         
         kb_task = PromptManager._fetch_knowledge_base(agent_config, client)
-        user_context_task = PromptManager._fetch_user_context_data(user_id, client)
+        user_context_task = PromptManager._fetch_user_context_data(user_id, client, thread_id)
         memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
         
         system_content = PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance)
@@ -442,7 +442,7 @@ Example of correct tool call format (multiple invokes in one block):
         return system_content + datetime_info
     
     @staticmethod
-    async def _fetch_user_context_data(user_id: Optional[str], client) -> Optional[str]:
+    async def _fetch_user_context_data(user_id: Optional[str], client, thread_id: Optional[str] = None) -> Optional[str]:
         if not (user_id and client):
             return None
         
@@ -465,6 +465,16 @@ Example of correct tool call format (multiple invokes in one block):
             username_info += "Use this information to personalize your responses and address the user appropriately.\n"
             context_parts.append(username_info)
             logger.debug(f"Added username ({username}) to system prompt for user {user_id}")
+        
+        if thread_id:
+            workspace_info = f"\n\n=== WORKSPACE CONTEXT ===\n"
+            workspace_info += f"Root workspace: /workspace (always accessible)\n"
+            workspace_info += f"Thread-specific workspace: /workspace/{thread_id} (optional subdirectory for isolation)\n"
+            workspace_info += f"You can write files to /workspace directly (e.g., /workspace/file.json) or use the thread-specific folder (/workspace/{thread_id}/file.json).\n"
+            workspace_info += f"Prefer relative paths when possible (e.g., 'src/main.py' resolves to /workspace/{thread_id}/src/main.py in thread context).\n"
+            workspace_info += f"The thread-specific folder helps isolate work between different threads, but /workspace root is always available.\n"
+            context_parts.append(workspace_info)
+            logger.debug(f"Added workspace context (thread_id: {thread_id}) to system prompt")
         
         return ''.join(context_parts) if context_parts else None
     

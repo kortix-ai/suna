@@ -1,5 +1,6 @@
 import { ToolCallData, ToolResultData } from '../types';
 import { normalizeContentToString } from '../utils';
+import { normalizeWorkspacePath } from '@/lib/utils/workspace-path';
 
 export interface SeeImageData {
   filePath: string | null;
@@ -227,14 +228,7 @@ export function constructImageUrl(filePath: string, project?: { sandbox?: { sand
     : project?.sandbox?.id;
   
   if (sandboxId) {
-    let normalizedPath = cleanPath;
-    // Handle paths that start with "workspace" (without leading /)
-    if (normalizedPath === 'workspace' || normalizedPath.startsWith('workspace/')) {
-      normalizedPath = '/' + normalizedPath;
-    } else if (!normalizedPath.startsWith('/workspace')) {
-      normalizedPath = `/workspace/${normalizedPath.startsWith('/') ? normalizedPath.substring(1) : normalizedPath}`;
-    }
-    
+    const normalizedPath = normalizeWorkspacePath(cleanPath);
     const apiEndpoint = `${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(normalizedPath)}`;
     return apiEndpoint;
   }
@@ -242,14 +236,7 @@ export function constructImageUrl(filePath: string, project?: { sandbox?: { sand
   // Fallback to sandbox_url for direct access
   if (project?.sandbox?.sandbox_url) {
     const sandboxUrl = project.sandbox.sandbox_url.replace(/\/$/, '');
-    let normalizedPath = cleanPath;
-    // Handle paths that start with "workspace" (without leading /)
-    if (normalizedPath === 'workspace' || normalizedPath.startsWith('workspace/')) {
-      normalizedPath = '/' + normalizedPath;
-    } else if (!normalizedPath.startsWith('/workspace')) {
-      normalizedPath = `/workspace/${normalizedPath.startsWith('/') ? normalizedPath.substring(1) : normalizedPath}`;
-    }
-    
+    const normalizedPath = normalizeWorkspacePath(cleanPath);
     const fullUrl = `${sandboxUrl}${normalizedPath}`;
     return fullUrl;
   }

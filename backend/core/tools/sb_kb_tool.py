@@ -71,7 +71,7 @@ class SandboxKbTool(SandboxToolsBase):
         # Let kb use its default location (~/.config/kb/ or ~/knowledge-base/)
         # Don't force KB_DIR so file watcher and direct commands use same DB
         
-        response = await self.sandbox.process.exec(command, env=env, cwd=cwd or "/workspace")
+        response = await self.sandbox.process.exec(command, env=env, cwd=cwd or self.workspace_path)
         
         return {
             "output": response.result,
@@ -157,8 +157,8 @@ class SandboxKbTool(SandboxToolsBase):
             if not init_result.get("success"):
                 return self.fail_response(f"Failed to initialize kb-fusion: {init_result.get('error', 'Unknown error')}")
             
-            # Default to /workspace if no path provided
-            search_path = path or "/workspace"
+            # Default to workspace_path if no path provided
+            search_path = path or self.workspace_path
             
             # Verify path exists in sandbox
             check_path = await self.sandbox.process.exec(f"test -e {search_path} && echo 'exists' || echo 'not_found'")
@@ -343,11 +343,11 @@ class SandboxKbTool(SandboxToolsBase):
                 return self.success_response({
                     "message": "No knowledge base files to sync",
                     "synced_files": 0,
-                    "kb_directory": "/workspace/downloads/global-knowledge"
+                    "kb_directory": f"{self.workspace_path}/downloads/global-knowledge"
                 })
             
             # Create knowledge base directory in sandbox - in workspace so it's searchable
-            kb_dir = "/workspace/downloads/global-knowledge"
+            kb_dir = f"{self.workspace_path}/downloads/global-knowledge"
             await self.sandbox.process.exec(f"mkdir -p {kb_dir}")
             await self.sandbox.process.exec(f"rm -rf {kb_dir}/*")
             

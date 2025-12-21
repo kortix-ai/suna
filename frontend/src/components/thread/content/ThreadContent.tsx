@@ -524,9 +524,13 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                         // Check if this is the latest message (last assistant message in the last group)
                                                                         const isLatestMessage = isLastGroup && message.message_id === lastAssistantMessageId;
 
+                                                                        // Get tool results for this assistant message
+                                                                        const toolResults = toolResultsMap.get(message.message_id) || [];
+
                                                                         // Use ONLY metadata for rendering
                                                                         const renderedContent = renderAssistantMessage({
                                                                             message,
+                                                                            toolResults,
                                                                             onToolClick: handleToolClick,
                                                                             onFileClick: handleOpenFileViewer,
                                                                             sandboxId,

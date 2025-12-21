@@ -197,7 +197,7 @@ class ToolManager:
         if config.APIFY_API_TOKEN and 'apify_tool' not in disabled_tools:
             from core.tools.apify_tool import ApifyTool
             enabled_methods = self._get_enabled_methods_for_tool('apify_tool')
-            self.thread_manager.add_tool(ApifyTool, function_names=enabled_methods, thread_manager=self.thread_manager)
+            self.thread_manager.add_tool(ApifyTool, function_names=enabled_methods, project_id=self.project_id, thread_manager=self.thread_manager)
             
     def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
         from core.tools.tool_registry import AGENT_BUILDER_TOOLS, get_tool_class
