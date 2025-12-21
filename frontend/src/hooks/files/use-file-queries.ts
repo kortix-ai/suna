@@ -2,19 +2,20 @@ import React, { useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
 import { listSandboxFiles, type FileInfo } from '@/lib/api/sandbox';
-import { normalizeWorkspacePath, getThreadIdFromUrl } from '@/lib/utils/workspace-path';
+import { normalizeWorkspacePath } from '@/lib/utils/workspace-path';
 
 /**
- * Normalize a file path to ensure consistent caching
+ * Normalize a file path to ensure consistent caching.
+ * All paths are normalized to /workspace/... format.
+ * Any embedded thread IDs are stripped.
  */
 function normalizePath(path: string): string {
   if (!path) {
     return '/workspace';
   }
   
-  // Use shared normalization function with preferThreadWorkspace=false
-  // This defaults relative paths to root /workspace instead of thread-specific
-  let normalized = normalizeWorkspacePath(path, null, false);
+  // Use shared normalization function (strips any embedded thread IDs)
+  let normalized = normalizeWorkspacePath(path);
   
   // Handle Unicode escape sequences
   try {
@@ -101,8 +102,8 @@ function getMimeTypeFromPath(path: string): string {
 }
 
 /**
- * Fetch file content with proper error handling and content type detection
- * Tries both thread-specific and root workspace paths for relative paths
+ * Fetch file content with proper error handling and content type detection.
+ * All paths are normalized to /workspace/... format.
  */
 export async function fetchFileContent(
   sandboxId: string,
@@ -110,89 +111,39 @@ export async function fetchFileContent(
   contentType: 'text' | 'blob' | 'json',
   token: string
 ): Promise<string | Blob | any> {
+  // Normalize path - this strips any embedded thread IDs
   const normalizedPath = normalizePath(filePath);
-  
-  // Build list of paths to try
-  // If normalized path is already absolute (/workspace/...), check if it's thread-specific
-  // and also try root workspace version
-  const pathsToTry: string[] = [];
-  const tid = getThreadIdFromUrl();
-  
-  if (normalizedPath.startsWith('/workspace')) {
-    // Already absolute - check if it's thread-specific
-    if (tid && normalizedPath.startsWith(`/workspace/${tid}/`)) {
-      // Thread-specific path - try root workspace version FIRST, then thread-specific
-      const rootPath = normalizedPath.replace(`/workspace/${tid}/`, '/workspace/');
-      pathsToTry.push(rootPath);
-      pathsToTry.push(normalizedPath);
-    } else {
-      // Root workspace path or other absolute path - use as-is
-      pathsToTry.push(normalizedPath);
-    }
-  } else {
-    // Relative path - try root workspace FIRST, then thread-specific (if thread_id exists)
-    pathsToTry.push(`/workspace/${normalizedPath}`);
-    if (tid) {
-      pathsToTry.push(`/workspace/${tid}/${normalizedPath}`);
-    }
-  }
   
   const headers: Record<string, string> = {};
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
   
-  let lastError: Error | null = null;
+  const url = new URL(`${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${sandboxId}/files/content`);
+  url.searchParams.append('path', normalizedPath);
   
-  // Try each path until one succeeds
-  for (const pathToTry of pathsToTry) {
-    try {
-      const url = new URL(`${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${sandboxId}/files/content`);
-      url.searchParams.append('path', pathToTry);
-      
-      const response = await fetch(url.toString(), {
-        headers,
-      });
-      
-      if (response.ok) {
-        // Success! Process and return content
-        switch (contentType) {
-          case 'json':
-            return await response.json();
-          case 'blob': {
-            const blob = await response.blob();
-            const expectedMimeType = getMimeTypeFromPath(filePath);
-            if (expectedMimeType !== blob.type && expectedMimeType !== 'application/octet-stream') {
-              return new Blob([blob], { type: expectedMimeType });
-            }
-            return blob;
-          }
-          case 'text':
-          default:
-            return await response.text();
-        }
-      } else if (response.status === 404) {
-        // File not found at this path, try next path
-        const errorText = await response.text();
-        lastError = new Error(`File not found: ${response.status} ${errorText}`);
-        continue;
-      } else {
-        // Other error (not 404), throw immediately
-        const errorText = await response.text();
-        throw new Error(`Failed to fetch file: ${response.status} ${errorText}`);
-      }
-    } catch (error) {
-      // Network error or non-404 HTTP error
-      if (error instanceof Error && error.message.includes('404')) {
-        lastError = error;
-        continue; // Try next path
-      }
-      throw error; // Re-throw non-404 errors
-    }
+  const response = await fetch(url.toString(), { headers });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to fetch file: ${response.status} ${errorText}`);
   }
   
-  // All paths failed
-  throw lastError || new Error(`Failed to fetch file: ${filePath}`);
+  switch (contentType) {
+    case 'json':
+      return await response.json();
+    case 'blob': {
+      const blob = await response.blob();
+      const expectedMimeType = getMimeTypeFromPath(filePath);
+      if (expectedMimeType !== blob.type && expectedMimeType !== 'application/octet-stream') {
+        return new Blob([blob], { type: expectedMimeType });
+      }
+      return blob;
+    }
+    case 'text':
+    default:
+      return await response.text();
+  }
 }
 
 /**

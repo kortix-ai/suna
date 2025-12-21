@@ -1,9 +1,18 @@
 /**
- * Shared utility for normalizing workspace paths with thread_id support
+ * Shared utility for normalizing workspace paths.
+ * 
+ * ARCHITECTURE:
+ * - /workspace/ is ALWAYS the base directory for all files
+ * - File paths for backend API calls use: /workspace/relativePath
+ * - Sandbox proxy URLs use: ${sandboxUrl}/${threadId}/relativePath
+ * 
+ * This module handles FILE PATHS only (for backend API calls).
+ * For sandbox proxy URLs, use constructSandboxPreviewUrl from url.ts
  */
 
 /**
- * Get threadId from URL params
+ * Get threadId from the current page URL.
+ * Used for constructing sandbox proxy URLs.
  */
 export function getThreadIdFromUrl(): string | null {
   if (typeof window === 'undefined') return null;
@@ -15,51 +24,67 @@ export function getThreadIdFromUrl(): string | null {
 
 /**
  * Normalize a file path to ensure it starts with /workspace
- * Handles paths like "workspace", "workspace/foo", "/workspace", "/workspace/foo", "/foo", "foo"
  * 
- * IMPORTANT: /workspace is always accessible as the root. Thread-specific paths are optional
- * subdirectories under /workspace (e.g., /workspace/{thread_id}).
+ * This is for BACKEND API CALLS - files are always at /workspace/...
+ * NO thread ID is included in file paths.
  * 
- * For relative paths, this function returns the root workspace path. The caller should handle
- * fallback to thread-specific paths if needed (e.g., in fetchFileContent).
+ * Handles paths like:
+ * - "workspace" -> "/workspace"
+ * - "workspace/foo" -> "/workspace/foo"
+ * - "/workspace" -> "/workspace"
+ * - "/workspace/foo" -> "/workspace/foo"
+ * - "/foo" -> "/workspace/foo"
+ * - "foo" -> "/workspace/foo"
+ * - "/workspace/{uuid}/foo" -> "/workspace/foo" (strips embedded thread IDs)
  * 
  * @param path - The file path to normalize
- * @param threadId - Optional threadId (will be extracted from URL if not provided)
- * @param preferThreadWorkspace - If true, relative paths will use thread-specific workspace (default: false for file reads)
- * @returns Normalized path
+ * @returns Normalized path starting with /workspace/
  */
-export function normalizeWorkspacePath(
-  path: string, 
-  threadId?: string | null,
-  preferThreadWorkspace: boolean = false
-): string {
+export function normalizeWorkspacePath(path: string): string {
   if (!path) {
-    // Default to root /workspace - user can navigate to thread-specific folder if needed
     return '/workspace';
   }
   
   // Handle paths that start with "workspace" (without leading /)
-  // This prevents "/workspace/workspace" when someone passes "workspace" or "workspace/foo"
   if (path === 'workspace' || path.startsWith('workspace/')) {
-    return '/' + path;
+    path = '/' + path;
   }
   
-  // If path explicitly starts with /workspace, preserve it as-is
-  // This allows access to root /workspace and all its subdirectories
-  if (path.startsWith('/workspace')) {
+  // If path starts with /workspace, check for embedded thread ID and strip it
+  if (path.startsWith('/workspace/')) {
+    const afterWorkspace = path.slice('/workspace/'.length);
+    const segments = afterWorkspace.split('/').filter(Boolean);
+    
+    // UUID pattern: 8-4-4-4-12 hex characters
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    
+    // If first segment looks like a UUID (thread ID), strip it
+    if (segments.length > 0 && uuidPattern.test(segments[0])) {
+      segments.shift();
+      return segments.length > 0 ? `/workspace/${segments.join('/')}` : '/workspace';
+    }
+    
+    // No thread ID found, return as-is
     return path;
   }
   
-  // For relative paths, default to root /workspace (not thread-specific)
-  // This ensures files in /workspace are found first
-  // Callers can try thread-specific paths as fallback if needed
-  const tid = preferThreadWorkspace ? (threadId ?? getThreadIdFromUrl()) : null;
-  
-  if (tid) {
-    return `/workspace/${tid}/${path.replace(/^\//, '')}`;
+  // Path is /workspace exactly
+  if (path === '/workspace') {
+    return path;
   }
   
-  // No thread_id or preferThreadWorkspace is false, use root /workspace
+  // Relative path - prepend /workspace/
   return `/workspace/${path.replace(/^\//, '')}`;
 }
 
+/**
+ * Get the relative path from a workspace path (strips /workspace/ prefix)
+ * 
+ * @param path - Full path (e.g., /workspace/foo/bar.html)
+ * @returns Relative path (e.g., foo/bar.html)
+ */
+export function getRelativeWorkspacePath(path: string): string {
+  const normalized = normalizeWorkspacePath(path);
+  // Remove /workspace/ prefix
+  return normalized.replace(/^\/workspace\/?/, '') || '';
+}

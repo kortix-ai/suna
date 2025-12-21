@@ -1,20 +1,31 @@
+import { getThreadIdFromUrl, getRelativeWorkspacePath } from './workspace-path';
+
 /**
- * Constructs a preview URL for HTML files in the sandbox environment.
- * Properly handles URL encoding of file paths by encoding each path segment individually.
- *
- * @param sandboxUrl - The base URL of the sandbox
- * @param filePath - The path to the HTML file (can include /workspace/ prefix, or be a full API URL)
+ * Constructs a preview URL for files in the sandbox proxy.
+ * 
+ * ARCHITECTURE:
+ * - Sandbox proxy URLs use: ${sandboxUrl}/${threadId}/${relativePath}
+ * - The threadId is for routing in the sandbox proxy
+ * - relativePath is the path relative to /workspace/
+ * 
+ * @param sandboxUrl - The base URL of the sandbox (e.g., https://8080-xxx.proxy.daytona.works)
+ * @param filePath - The path to the file. Can be:
+ *   - Relative path: "file.html" -> uses current thread ID
+ *   - Workspace path: "/workspace/file.html" -> extracts relative path
+ *   - Full API URL: extracts path parameter
+ * @param threadId - Optional thread ID. If not provided, extracted from current page URL.
  * @returns The properly encoded preview URL, or undefined if inputs are invalid
  */
 export function constructHtmlPreviewUrl(
   sandboxUrl: string | undefined,
   filePath: string | undefined,
+  threadId?: string | null,
 ): string | undefined {
   if (!sandboxUrl || !filePath) {
     return undefined;
   }
 
-  let processedPath = filePath;
+  let relativePath = filePath;
 
   // If filePath is a full URL (API endpoint), extract the path parameter
   if (filePath.includes('://') || filePath.includes('/sandboxes/') || filePath.includes('/files/content')) {
@@ -24,51 +35,60 @@ export function constructHtmlPreviewUrl(
         const url = new URL(filePath);
         const pathParam = url.searchParams.get('path');
         if (pathParam) {
-          processedPath = decodeURIComponent(pathParam);
+          relativePath = decodeURIComponent(pathParam);
         } else {
-          // If no path param, try to extract from pathname
-          // Handle patterns like /v1/sandboxes/.../files/content?path=...
           const pathMatch = filePath.match(/[?&]path=([^&]+)/);
           if (pathMatch) {
-            processedPath = decodeURIComponent(pathMatch[1]);
+            relativePath = decodeURIComponent(pathMatch[1]);
           } else {
-            // If it's a relative URL with /sandboxes/ pattern, extract the path
-            const sandboxMatch = filePath.match(/\/sandboxes\/[^\/]+\/files\/content[?&]path=([^&]+)/);
-            if (sandboxMatch) {
-              processedPath = decodeURIComponent(sandboxMatch[1]);
-            } else {
-              // Can't extract path, return undefined
-              return undefined;
-            }
+            return undefined;
           }
         }
       } else {
         // Relative URL pattern: /sandboxes/.../files/content?path=...
         const pathMatch = filePath.match(/[?&]path=([^&]+)/);
         if (pathMatch) {
-          processedPath = decodeURIComponent(pathMatch[1]);
+          relativePath = decodeURIComponent(pathMatch[1]);
         } else {
-          // Can't extract path, return undefined
           return undefined;
         }
       }
     } catch (e) {
-      // If URL parsing fails, treat as regular path
       console.warn('Failed to parse filePath as URL, treating as regular path:', filePath);
     }
   }
 
-  // Remove /workspace/ prefix if present
-  processedPath = processedPath.replace(/^\/workspace\//, '');
+  // Convert to relative path (strips /workspace/ prefix and any embedded thread ID)
+  relativePath = getRelativeWorkspacePath(relativePath);
+
+  // Get thread ID: provided > from URL
+  const finalThreadId = threadId ?? (typeof window !== 'undefined' ? getThreadIdFromUrl() : null);
 
   // Split the path into segments and encode each segment individually
-  const pathSegments = processedPath
+  const pathSegments = relativePath
     .split('/')
-    .filter(Boolean) // Remove empty segments
+    .filter(Boolean)
     .map((segment) => encodeURIComponent(segment));
 
-  // Join the segments back together with forward slashes
   const encodedPath = pathSegments.join('/');
 
-  return `${sandboxUrl}/${encodedPath}`;
+  // Clean sandbox URL (remove trailing slash)
+  const cleanSandboxUrl = sandboxUrl.replace(/\/$/, '');
+
+  // Construct URL with thread ID if available
+  if (finalThreadId && encodedPath) {
+    return `${cleanSandboxUrl}/${finalThreadId}/${encodedPath}`;
+  } else if (finalThreadId) {
+    return `${cleanSandboxUrl}/${finalThreadId}`;
+  } else if (encodedPath) {
+    return `${cleanSandboxUrl}/${encodedPath}`;
+  }
+
+  return cleanSandboxUrl;
 }
+
+/**
+ * Alias for constructHtmlPreviewUrl for semantic clarity.
+ * Use this when constructing any sandbox preview URL (not just HTML).
+ */
+export const constructSandboxPreviewUrl = constructHtmlPreviewUrl;

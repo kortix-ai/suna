@@ -288,28 +288,43 @@ class ApifyTool(SandboxToolsBase):
         """
         try:
             # Log what we're receiving for debugging
-            logger.debug(f"Extracting cost from run_info. Type: {type(run_info)}, Keys: {list(run_info.keys()) if isinstance(run_info, dict) else 'N/A'}")
+            if isinstance(run_info, dict):
+                logger.info(f"🔍 Extracting cost from run_info. Keys: {list(run_info.keys())[:20]}...")  # Log first 20 keys
+                logger.info(f"🔍 Run status: {run_info.get('status')}, usageTotalUsd: {run_info.get('usageTotalUsd')}")
+                # Log full usage object if available
+                if 'usage' in run_info:
+                    logger.info(f"🔍 Usage object: {run_info.get('usage')}")
+            else:
+                logger.debug(f"Extracting cost from run_info. Type: {type(run_info)}")
             
             # STANDARD APIFY APPROACH: Extract usageTotalUsd (primary field)
             usage_total_usd = None
             
             if isinstance(run_info, dict):
                 usage_total_usd = run_info.get("usageTotalUsd")
+                # Also check for camelCase variant
+                if usage_total_usd is None:
+                    usage_total_usd = run_info.get("usageTotalUSD")
+                if usage_total_usd is None:
+                    usage_total_usd = run_info.get("usage_total_usd")
             elif hasattr(run_info, 'usageTotalUsd'):
                 usage_total_usd = run_info.usageTotalUsd
+            elif hasattr(run_info, 'usageTotalUSD'):
+                usage_total_usd = run_info.usageTotalUSD
             
             # Convert to Decimal if found
             if usage_total_usd is not None:
                 try:
                     usage_total_usd_decimal = Decimal(str(usage_total_usd))
+                    logger.info(f"🔍 usageTotalUsd raw value: {usage_total_usd}, converted: {usage_total_usd_decimal}")
                     if usage_total_usd_decimal > 0:
                         logger.info(f"✅ Found cost via usageTotalUsd: ${usage_total_usd_decimal:.6f} USD")
                         return usage_total_usd_decimal
                     elif usage_total_usd_decimal == 0:
-                        logger.debug(f"usageTotalUsd is 0 - actor has no cost or is free")
+                        logger.info(f"ℹ️ usageTotalUsd is 0 - actor has no cost or is free (or cost not yet calculated)")
                         return Decimal("0")
                 except (ValueError, TypeError) as e:
-                    logger.warning(f"Could not convert usageTotalUsd to Decimal: {e}")
+                    logger.warning(f"Could not convert usageTotalUsd to Decimal: {e}, value: {usage_total_usd}, type: {type(usage_total_usd)}")
             
             # Fallback: Calculate from compute units if usageTotalUsd is missing (shouldn't happen for completed runs)
             # This is only for edge cases where Apify hasn't populated usageTotalUsd yet
@@ -342,6 +357,35 @@ class ApifyTool(SandboxToolsBase):
         except Exception as e:
             logger.error(f"Error extracting run cost: {e}", exc_info=True)
             return Decimal("0")
+    
+    def _format_cost_display(self, cost_usd: Decimal) -> str:
+        """
+        Format cost for display in UI.
+        Returns formatted string like "$0.05" or "0 credits (free run!)" for $0.
+        """
+        if cost_usd is None or cost_usd == 0:
+            return "0 credits (free run!) ✨"
+        
+        # Convert to credits (1 credit = $0.01, with 20% markup)
+        credits = float(cost_usd) * TOKEN_PRICE_MULTIPLIER * 100
+        
+        # Format USD nicely
+        if cost_usd < 0.01:
+            usd_str = f"${float(cost_usd):.4f}"
+        elif cost_usd < 1:
+            usd_str = f"${float(cost_usd):.2f}"
+        else:
+            usd_str = f"${float(cost_usd):.2f}"
+        
+        # Format credits
+        if credits < 1:
+            credits_str = f"{credits:.2f}"
+        elif credits % 1 == 0:
+            credits_str = f"{int(credits)}"
+        else:
+            credits_str = f"{credits:.2f}"
+        
+        return f"{credits_str} credits ({usd_str} USD)"
     
     async def _has_deduction_for_run(self, user_id: str, run_id: str) -> bool:
         """Check if credits have already been deducted for this run_id (database check)."""
@@ -467,7 +511,12 @@ class ApifyTool(SandboxToolsBase):
         estimated_cost_credits: Decimal,
         max_cost_usd: Decimal
     ) -> Optional[str]:
-        """Create an approval request in Redis with 24h TTL. Returns approval_id."""
+        """
+        Create an approval request in Redis with 24h TTL. Returns approval_id.
+        
+        CRITICAL: This function ONLY creates the approval request - it does NOT deduct credits.
+        Credits are ONLY deducted when the user approves via the UI (in apify_approvals_api.py).
+        """
         try:
             approval_id = str(uuid.uuid4())
             expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
@@ -488,10 +537,11 @@ class ApifyTool(SandboxToolsBase):
             }
             
             # Store in Redis with 24 hour TTL (86400 seconds)
+            # CRITICAL: NO credit deduction happens here - only when user approves via UI
             key = self._get_approval_key(approval_id)
             await redis_set(key, json.dumps(approval_data), ex=86400)
             
-            logger.info(f"Created approval request {approval_id} for actor {actor_id} (estimated: ${estimated_cost_usd:.4f} / {estimated_cost_credits:.2f} credits)")
+            logger.info(f"Created approval request {approval_id} for actor {actor_id} (estimated: ${estimated_cost_usd:.4f} / {estimated_cost_credits:.2f} credits). Status: PENDING - NO credits deducted yet.")
             return approval_id
                 
         except Exception as e:
@@ -670,17 +720,17 @@ class ApifyTool(SandboxToolsBase):
             return True
         
         max_cost_usd = Decimal(str(approval.get('max_cost_usd', 0)))
-        deducted_on_approve = Decimal(str(approval.get('deducted_on_approve_credits', 0))) / Decimal('100') / TOKEN_PRICE_MULTIPLIER  # Convert back to USD
+        deducted_on_approve_credits = Decimal(str(approval.get('deducted_on_approve_credits', 0)))
         
         # If no deduction happened on approve (legacy approval), skip adjustment
-        if deducted_on_approve == 0:
+        if deducted_on_approve_credits == 0:
             logger.debug(f"No deduction on approve for approval {approval_id} - skipping adjustment (legacy approval)")
             return True
         
         # If run failed, refund everything that was deducted on approve
         if run_status in ["FAILED", "ABORTED", "TIMED-OUT"]:
-            if deducted_on_approve > 0:
-                refund_amount = deducted_on_approve * TOKEN_PRICE_MULTIPLIER * Decimal('100')  # Convert to credits
+            if deducted_on_approve_credits > 0:
+                refund_amount = deducted_on_approve_credits  # Already in credits
                 try:
                     result = await self.credit_manager.add_credits(
                         account_id=user_id,
@@ -720,8 +770,8 @@ class ApifyTool(SandboxToolsBase):
         should_charge_usd = actual_cost
         should_charge_credits = should_charge_usd * TOKEN_PRICE_MULTIPLIER * Decimal('100')
         
-        # Calculate what was deducted on approve (max_cost_usd with markup)
-        deducted_credits = deducted_on_approve * TOKEN_PRICE_MULTIPLIER * Decimal('100')
+        # Use deducted_on_approve_credits directly (already in credits)
+        deducted_credits = deducted_on_approve_credits
         
         # If actual cost is less than what was deducted, refund the difference
         if should_charge_credits < deducted_credits:
@@ -1156,7 +1206,9 @@ class ApifyTool(SandboxToolsBase):
         run_input: Union[dict, str],
         max_cost_usd: Union[float, str] = 1.0
     ) -> ToolResult:
-        """Create an approval request for running an Apify actor."""
+        """
+        Create an approval request for running an Apify actor.
+        """
         try:
             if not self.client:
                 return self.fail_response("Apify API token not configured")
@@ -1731,12 +1783,16 @@ class ApifyTool(SandboxToolsBase):
             else:
                 message = f"Run status: {status}"
             
+            # Format cost for display
+            cost_deducted_str = self._format_cost_display(actual_cost)
+            
             response_data = {
                 "run_id": run_id,
                 "actor_id": resolved_id,
                 "status": status,
                 "dataset_id": dataset_id,
                 "cost_usd": float(actual_cost),
+                "cost_deducted": cost_deducted_str,
                 "max_cost_usd": float(max_cost_usd_for_response),
                 "message": message,
                 "logs": log_text if log_text else None  # Include logs if timed out
@@ -1809,6 +1865,21 @@ class ApifyTool(SandboxToolsBase):
             if not dataset_id:
                 return self.fail_response(f"Run {run_id} has no dataset")
             
+            # Get cost from run info (CRITICAL: Fetch actual cost from Apify)
+            actual_cost = Decimal("0")
+            try:
+                run_info_for_cost = self.client.run(run_id).get()
+                run_info_dict = run_info_for_cost if isinstance(run_info_for_cost, dict) else (run_info_for_cost.__dict__ if hasattr(run_info_for_cost, '__dict__') else {})
+                
+                # Log what we're getting for debugging
+                usage_total_usd = run_info_dict.get("usageTotalUsd") if isinstance(run_info_dict, dict) else None
+                logger.info(f"🔍 Cost extraction for run {run_id}: usageTotalUsd={usage_total_usd}, status={run_info_dict.get('status') if isinstance(run_info_dict, dict) else 'N/A'}")
+                
+                actual_cost = await self._get_run_cost(run_info_dict)
+                logger.info(f"✅ Extracted cost for run {run_id}: ${actual_cost:.6f} USD")
+            except Exception as e:
+                logger.warning(f"Could not get cost for run {run_id}: {e}", exc_info=True)
+            
             # Get ALL dataset items (not paginated - save everything to file)
             dataset_client = self.client.dataset(dataset_id)
             all_items = []
@@ -1822,13 +1893,19 @@ class ApifyTool(SandboxToolsBase):
                 logger.error(f"Error fetching dataset items: {e}")
                 return self.fail_response(f"Failed to retrieve dataset items: {str(e)}")
             
+            # Format cost for display
+            cost_deducted_str = self._format_cost_display(actual_cost)
+            
             if not all_items:
                 return self.success_response({
                     "run_id": run_id,
+                    "actor_id": actor_id,
                     "dataset_id": dataset_id,
                     "saved_to_disk": False,
                     "file_path": None,
                     "item_count": 0,
+                    "cost_usd": float(actual_cost),
+                    "cost_deducted": cost_deducted_str,
                     "message": "No items found in dataset"
                 })
             
@@ -1866,6 +1943,8 @@ class ApifyTool(SandboxToolsBase):
                 "saved_to_disk": True,
                 "file_path": relative_path,
                 "item_count": len(all_items),
+                "cost_usd": float(actual_cost),
+                "cost_deducted": cost_deducted_str,
                 "message": f"✅ Retrieved {len(all_items)} items. The data has been saved and attached. **When presenting results to the user, use the 'complete' tool with the file_path '{relative_path}' as an attachment - never show raw file paths in messages.**"
             })
             
@@ -2018,6 +2097,9 @@ class ApifyTool(SandboxToolsBase):
             else:
                 message = f"Run status: {status}"
             
+            # Format cost for display
+            cost_deducted_str = self._format_cost_display(actual_cost)
+            
             response_data = {
                 "run_id": run_id,
                 "actor_id": actor_id,
@@ -2027,6 +2109,7 @@ class ApifyTool(SandboxToolsBase):
                 "started_at": started_at.isoformat() if started_at and hasattr(started_at, 'isoformat') else str(started_at) if started_at else None,
                 "finished_at": finished_at.isoformat() if finished_at and hasattr(finished_at, 'isoformat') else str(finished_at) if finished_at else None,
                 "cost_usd": float(actual_cost),
+                "cost_deducted": cost_deducted_str,
                 "dataset_id": dataset_id,
                 "item_count": item_count,
                 "logs": log_text  # Full log output as plain text

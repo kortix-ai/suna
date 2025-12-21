@@ -160,9 +160,6 @@ async def approve_apify_request(
             except Exception as e:
                 logger.warning(f"Error checking approval expiration: {e}")
         
-        # CRITICAL: Deduct max_cost_usd on approve as a "hold" to prevent exploit
-        # This ensures credits are deducted even if agent stops before checking status
-        # Credits will be adjusted to actual cost when run completes
         from decimal import Decimal
         from core.billing.shared.config import TOKEN_PRICE_MULTIPLIER
         

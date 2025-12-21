@@ -68,30 +68,10 @@ import { FileDownloadButton } from '../tool-views/shared/FileDownloadButton';
 
 
 
+import { normalizeWorkspacePath } from '@/lib/utils/workspace-path';
+
 // Define API_URL
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
-
-/**
- * Normalize a file path to ensure it starts with /workspace
- * Handles paths like "workspace", "workspace/foo", "/workspace", "/workspace/foo", "/foo", "foo"
- */
-function normalizeWorkspacePath(path: string): string {
-  if (!path) return '/workspace';
-  
-  // Handle paths that start with "workspace" (without leading /)
-  // This prevents "/workspace/workspace" when someone passes "workspace" or "workspace/foo"
-  if (path === 'workspace' || path.startsWith('workspace/')) {
-    return '/' + path;
-  }
-  
-  // If already starts with /workspace, return as-is
-  if (path.startsWith('/workspace')) {
-    return path;
-  }
-  
-  // Otherwise, prepend /workspace/
-  return `/workspace/${path.replace(/^\//, '')}`;
-}
 
 // API Helper: Get file history (git commits)
 async function fetchFileHistory(
