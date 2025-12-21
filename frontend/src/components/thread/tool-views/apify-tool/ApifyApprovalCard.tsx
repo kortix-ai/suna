@@ -132,7 +132,7 @@ export function ApifyApprovalCard({ approval, threadId, onApproved }: ApifyAppro
           </p>
           <div className="flex items-baseline gap-2">
             <span className="text-3xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums">
-              {formatCredits(currentApproval.estimated_cost_credits || (currentApproval.max_cost_usd ? currentApproval.max_cost_usd * 100 * 1.2 : 0))}
+              {formatCredits(currentApproval.max_cost_usd ? currentApproval.max_cost_usd * 100 * 1.2 : 0)}
             </span>
             <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
               credits

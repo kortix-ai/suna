@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, ScrollView, Pressable, ActivityIndicator } from 'react-native';
+import { View, ScrollView, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,12 +9,12 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  DollarSign,
   Loader2,
 } from 'lucide-react-native';
 import { ToolViewProps } from '../types';
 import { ToolViewCard } from '../shared/ToolViewCard';
-import { apifyApprovalsApi, ApifyApproval } from '@/api/apify-approvals';
+import { ApifyApproval } from '@/api/apify-approvals';
+import { useApproveApifyRequest, useGetApifyApprovalStatus } from '@/hooks/apify/use-apify-approvals';
 import { Alert } from 'react-native';
 
 export function ApifyApprovalView({
@@ -23,8 +23,7 @@ export function ApifyApprovalView({
   threadId,
   isSuccess = true,
 }: ToolViewProps) {
-  const [isApproving, setIsApproving] = useState(false);
-  const [approval, setApproval] = useState<ApifyApproval | null>(null);
+  const [initialApproval, setInitialApproval] = useState<ApifyApproval | null>(null);
 
   // Extract approval data from tool result
   React.useEffect(() => {
@@ -35,12 +34,13 @@ export function ApifyApprovalView({
           : toolResult.output;
         
         if (output.approval_id) {
-          setApproval({
+          setInitialApproval({
             approval_id: output.approval_id,
             status: output.status || 'pending',
             actor_id: output.actor_id || '',
             estimated_cost_usd: output.estimated_cost_usd,
             estimated_cost_credits: output.estimated_cost_credits,
+            max_cost_usd: output.max_cost_usd,
             actual_cost_usd: output.actual_cost_usd,
             actual_cost_credits: output.actual_cost_credits,
             run_id: output.run_id,
@@ -56,28 +56,33 @@ export function ApifyApprovalView({
     }
   }, [toolResult]);
 
+  const approveMutation = useApproveApifyRequest(threadId || '');
+  const { data: updatedApproval } = useGetApifyApprovalStatus(
+    initialApproval?.approval_id || null,
+    threadId || ''
+  );
+  
+  // Use updated approval from query if available, otherwise use initial approval
+  // The query will automatically update when the cache is invalidated after approval
+  const currentApproval = updatedApproval || initialApproval;
+
   const handleApprove = async () => {
-    if (!approval || !threadId) {
+    if (!currentApproval || !threadId) {
       Alert.alert('Error', 'Missing approval or thread ID');
       return;
     }
 
-    setIsApproving(true);
     try {
-      const result = await apifyApprovalsApi.approveRequest(approval.approval_id, threadId);
-      setApproval(result);
-      Alert.alert('Success', 'Approval request approved!');
+      await approveMutation.mutateAsync(currentApproval.approval_id);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to approve request');
-    } finally {
-      setIsApproving(false);
     }
   };
 
   const getStatusConfig = () => {
-    if (!approval) return null;
+    if (!currentApproval) return null;
 
-    switch (approval.status) {
+    switch (currentApproval.status) {
       case 'pending':
         return {
           icon: Clock,
@@ -119,11 +124,17 @@ export function ApifyApprovalView({
           label: 'Executed',
         };
       default:
-        return null;
+        return {
+          icon: AlertCircle,
+          iconColor: 'text-zinc-900 dark:text-zinc-100',
+          bgColor: 'bg-zinc-50 dark:bg-zinc-900/20',
+          borderColor: 'border-zinc-300 dark:border-zinc-700',
+          label: currentApproval.status,
+        };
     }
   };
 
-  if (!approval) {
+  if (!currentApproval) {
     return (
       <ToolViewCard
         header={{
@@ -163,9 +174,9 @@ export function ApifyApprovalView({
     return usd.toFixed(4).replace(/\.?0+$/, '');
   };
 
-  // Calculate max cost in credits (max_cost_usd * 100 * 1.2 for markup, or use estimated_cost_credits)
-  const maxCostUsd = approval?.max_cost_usd || approval?.estimated_cost_usd || 0;
-  const maxCostCredits = approval?.estimated_cost_credits || (maxCostUsd * 100 * 1.2); // 20% markup
+  // Calculate max cost in credits (max_cost_usd * 100 * 1.2 for markup)
+  const maxCostUsd = currentApproval?.max_cost_usd || currentApproval?.estimated_cost_usd || 0;
+  const maxCostCredits = maxCostUsd * 100 * 1.2; // 20% markup
 
   return (
     <ToolViewCard
@@ -175,7 +186,7 @@ export function ApifyApprovalView({
         iconBgColor: statusConfig?.bgColor || 'bg-zinc-100 dark:bg-zinc-800',
         subtitle: 'Apify Approval',
         title: 'Approval Request',
-        isSuccess: approval.status === 'approved' || approval.status === 'executed',
+        isSuccess: currentApproval.status === 'approved' || currentApproval.status === 'executed',
         showStatus: true,
       }}
     >
@@ -188,7 +199,7 @@ export function ApifyApprovalView({
             </Text>
             <View className="rounded-xl border border-border bg-card p-4">
               <Text className="font-roobert-mono text-xs leading-5 text-primary" selectable>
-                {approval.actor_id}
+                {currentApproval.actor_id}
               </Text>
             </View>
           </View>
@@ -207,26 +218,28 @@ export function ApifyApprovalView({
                   credits
                 </Text>
               </View>
-              <Text className="text-xs text-muted-foreground">
-                ≈ ${formatUSD(maxCostUsd)} USD
-              </Text>
+              {currentApproval.max_cost_usd && (
+                <Text className="text-xs text-muted-foreground">
+                  ≈ ${formatUSD(currentApproval.max_cost_usd)} USD
+                </Text>
+              )}
             </View>
           </View>
 
-          {approval.estimated_cost_usd && approval.estimated_cost_usd !== maxCostUsd && (
+          {currentApproval.estimated_cost_usd && currentApproval.estimated_cost_usd !== (currentApproval.max_cost_usd || currentApproval.estimated_cost_usd) && (
             <View className="gap-2 pt-2 border-t border-border">
               <Text className="px-1 font-roobert-medium text-xs uppercase tracking-wider text-primary opacity-60">
                 Estimated Cost
               </Text>
               <View className="flex-row items-baseline gap-2">
                 <Text className="text-2xl font-roobert-semibold text-primary">
-                  {formatCredits(approval.estimated_cost_credits)}
+                  {formatCredits(currentApproval.estimated_cost_credits)}
                 </Text>
                 <Text className="text-xs font-roobert-medium text-muted-foreground">
                   credits
                 </Text>
                 <Text className="text-xs text-muted-foreground">
-                  ≈ ${formatUSD(approval.estimated_cost_usd)} USD
+                  ≈ ${formatUSD(currentApproval.estimated_cost_usd)} USD
                 </Text>
               </View>
             </View>
@@ -242,21 +255,21 @@ export function ApifyApprovalView({
           </View>
 
           {/* Message */}
-          {approval.message && (
+          {currentApproval.message && (
             <View className="rounded-xl border border-border bg-card p-4">
-              <Text className="text-sm text-primary">{approval.message}</Text>
+              <Text className="text-sm text-primary">{currentApproval.message}</Text>
             </View>
           )}
 
           {/* Approval Actions */}
-          {approval.status === 'pending' && (
+          {currentApproval.status === 'pending' && (
             <View className="gap-2 pt-3 border-t border-border">
               <Button
                 onPress={handleApprove}
-                disabled={isApproving}
+                disabled={approveMutation.isPending}
                 className="bg-zinc-900 dark:bg-zinc-100"
               >
-                {isApproving ? (
+                {approveMutation.isPending ? (
                   <View className="flex-row items-center gap-2">
                     <ActivityIndicator size="small" color="white" />
                     <Text className="text-white dark:text-zinc-900 font-roobert-semibold">Approving...</Text>
@@ -272,7 +285,7 @@ export function ApifyApprovalView({
           )}
 
           {/* Status Messages */}
-          {approval.status === 'approved' && (
+          {currentApproval.status === 'approved' && (
             <View className="flex-row items-center gap-2 p-3 bg-zinc-100 dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700">
               <Icon as={CheckCircle2} size={16} className="text-primary" />
               <Text className="text-sm font-roobert-medium text-primary flex-1">
@@ -281,7 +294,7 @@ export function ApifyApprovalView({
             </View>
           )}
 
-          {approval.status === 'expired' && (
+          {currentApproval.status === 'expired' && (
             <View className="flex-row items-center gap-2 p-3 bg-zinc-100 dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700">
               <Icon as={AlertCircle} size={16} className="text-primary" />
               <Text className="text-sm font-roobert-medium text-primary flex-1">
@@ -292,19 +305,19 @@ export function ApifyApprovalView({
 
           {/* Timestamps */}
           <View className="gap-1">
-            {approval.created_at && (
+            {currentApproval.created_at && (
               <Text className="text-xs text-muted-foreground">
-                Created: {new Date(approval.created_at).toLocaleString()}
+                Created: {new Date(currentApproval.created_at).toLocaleString()}
               </Text>
             )}
-            {approval.approved_at && (
+            {currentApproval.approved_at && (
               <Text className="text-xs text-muted-foreground">
-                Approved: {new Date(approval.approved_at).toLocaleString()}
+                Approved: {new Date(currentApproval.approved_at).toLocaleString()}
               </Text>
             )}
-            {approval.expires_at && (
+            {currentApproval.expires_at && (
               <Text className="text-xs text-muted-foreground">
-                Expires: {new Date(approval.expires_at).toLocaleString()}
+                Expires: {new Date(currentApproval.expires_at).toLocaleString()}
               </Text>
             )}
           </View>

@@ -220,7 +220,7 @@ async def approve_apify_request(
             "data": {
                 "approval_id": approval_id,
                 "status": "approved",
-                "message": f"✅ Approval {approval_id} approved! ${max_cost_credits:.2f} credits deducted as hold (max cost). Credits will be adjusted to actual cost when run completes.",
+                "message": f"✅ Approval {approval_id} approved! {max_cost_credits:.2f} credits deducted as hold (max cost). Credits will be adjusted to actual cost when run completes.",
                 "estimated_cost_usd": approval.get('estimated_cost_usd'),
                 "estimated_cost_credits": approval.get('estimated_cost_credits'),
                 "max_cost_usd": approval.get('max_cost_usd'),
