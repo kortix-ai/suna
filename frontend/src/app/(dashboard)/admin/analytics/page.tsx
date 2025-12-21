@@ -1086,6 +1086,130 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     return result;
   }, [weeklyProjections, actualData, signupsByWeek, viewsByWeek, newPaidByWeek, churnByWeek, actualSubsByWeek]);
 
+  // Calculate subscribers at 1st of each month for churn rate calculation
+  // Formula: Jan 1 subs = Dec 31 subs + Jan 1 new paid - Jan 1 churn
+  // Dec 1 = 548 (hardcoded baseline for December's churn rate)
+  const subsAtMonthStart = useMemo((): Record<number, number> => {
+    const DEC_1_SUBSCRIBERS = 548;
+    const result: Record<number, number> = { 0: DEC_1_SUBSCRIBERS }; // monthIndex 0 = December
+    
+    // Build daily new paid and churn maps
+    const dailyNewPaid: Record<string, number> = {};
+    const dailyChurn: Record<string, number> = {};
+    
+    if (newPaidByDateData?.new_paid_by_date) {
+      Object.entries(newPaidByDateData.new_paid_by_date).forEach(([dateStr, count]) => {
+        dailyNewPaid[dateStr] = count;
+      });
+    }
+    
+    if (churnByDateData?.churn_by_date) {
+      Object.entries(churnByDateData.churn_by_date).forEach(([dateStr, count]) => {
+        dailyChurn[dateStr] = count;
+      });
+    }
+    
+    // Calculate subs at 1st of each month by iterating through days
+    // Start from Dec 1, 2025 (use Dec 1 subs as starting point)
+    let currentSubs = DEC_1_SUBSCRIBERS;
+    
+    // Iterate from Dec 1 to Jun 30
+    const startDate = new Date(2025, 11, 1); // Dec 1, 2025
+    const endDate = new Date(2026, 5, 30); // Jun 30, 2026
+    
+    // Dec 1-14 daily averages (233 new paid, 98 churn over 14 days)
+    const DEC_1_14_DAILY_NEW_PAID = 233 / 14;
+    const DEC_1_14_DAILY_CHURN = 98 / 14;
+    
+    const currentDate = new Date(startDate);
+    while (currentDate <= endDate) {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      
+      // For Dec 1-14, use hardcoded daily averages; for Dec 15+, use API data
+      let dayNewPaid: number;
+      let dayChurn: number;
+      
+      if (currentDate.getFullYear() === 2025 && currentDate.getMonth() === 11 && currentDate.getDate() <= 14) {
+        // Dec 1-14: use hardcoded daily averages
+        dayNewPaid = DEC_1_14_DAILY_NEW_PAID;
+        dayChurn = DEC_1_14_DAILY_CHURN;
+      } else {
+        // Dec 15 onwards: use API data
+        dayNewPaid = dailyNewPaid[dateStr] || 0;
+        dayChurn = dailyChurn[dateStr] || 0;
+      }
+      
+      // Update running subs count
+      currentSubs = currentSubs + dayNewPaid - dayChurn;
+      
+      // Check if this is the 1st of a month (after applying that day's activity)
+      if (currentDate.getDate() === 1 && !(currentDate.getMonth() === 11 && currentDate.getFullYear() === 2025)) {
+        // Determine monthIndex: Jan = 1, Feb = 2, etc.
+        const monthIdx = currentDate.getMonth() + 1; // Jan=1, Feb=2, Mar=3, Apr=4, May=5, Jun=6
+        result[monthIdx] = Math.round(currentSubs);
+      }
+      
+      // Move to next day
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    return result;
+  }, [newPaidByDateData, churnByDateData]);
+
+  // Helper to determine monthIndex from date: Dec 2025 = 0, Jan 2026 = 1, etc.
+  const getMonthIndex = (date: Date): number => {
+    return date.getFullYear() === 2025 && date.getMonth() === 11 ? 0 : date.getMonth() + 1;
+  };
+
+  // Aggregate all metrics by actual calendar month (using daily data)
+  // Dec 29-31 data goes to December, Jan 1-4 data goes to January
+  const metricsByCalendarMonth = useMemo(() => {
+    const views: Record<number, number> = {};
+    const signups: Record<number, number> = {};
+    const newPaid: Record<number, number> = {};
+    const churn: Record<number, number> = {};
+    
+    // Add Dec 1-14 adjustments to December
+    views[0] = 78313;
+    signups[0] = 18699;
+    newPaid[0] = 233;
+    churn[0] = 98;
+    
+    // Aggregate daily views by calendar month
+    if (viewsByDateData?.views_by_date) {
+      Object.entries(viewsByDateData.views_by_date).forEach(([dateStr, count]) => {
+        const monthIdx = getMonthIndex(new Date(dateStr));
+        views[monthIdx] = (views[monthIdx] || 0) + count;
+      });
+    }
+    
+    // Aggregate daily signups by calendar month
+    if (signupsByDateData?.signups_by_date) {
+      Object.entries(signupsByDateData.signups_by_date).forEach(([dateStr, count]) => {
+        const monthIdx = getMonthIndex(new Date(dateStr));
+        signups[monthIdx] = (signups[monthIdx] || 0) + count;
+      });
+    }
+    
+    // Aggregate daily new paid by calendar month
+    if (newPaidByDateData?.new_paid_by_date) {
+      Object.entries(newPaidByDateData.new_paid_by_date).forEach(([dateStr, count]) => {
+        const monthIdx = getMonthIndex(new Date(dateStr));
+        newPaid[monthIdx] = (newPaid[monthIdx] || 0) + count;
+      });
+    }
+    
+    // Aggregate daily churn by calendar month
+    if (churnByDateData?.churn_by_date) {
+      Object.entries(churnByDateData.churn_by_date).forEach(([dateStr, count]) => {
+        const monthIdx = getMonthIndex(new Date(dateStr));
+        churn[monthIdx] = (churn[monthIdx] || 0) + count;
+      });
+    }
+    
+    return { views, signups, newPaid, churn };
+  }, [viewsByDateData, signupsByDateData, newPaidByDateData, churnByDateData]);
+
   // Derive monthly goals from weekly projections (grouped by actual calendar month)
   // This ensures the monthly table shows all months that have weeks, including June
   const monthlyFromWeekly = useMemo(() => {
@@ -1576,6 +1700,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <th className="text-center p-3 font-medium" colSpan={2}>New Paid</th>
                   <th className="text-center p-3 font-medium">Conv</th>
                   <th className="text-center p-3 font-medium">Churn</th>
+                  <th className="text-center p-3 font-medium">Churn Rate</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>Total Subs</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>MRR</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>ARR</th>
@@ -1592,6 +1717,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
                   <th className="text-right p-2 text-muted-foreground font-normal"></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal"></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
@@ -1603,28 +1729,32 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               <tbody>
                 {monthlyFromWeekly.map((month, idx) => {
                   const actual = monthlyActuals[month.monthIndex] || { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0 };
-                  const prevMonth = idx > 0 ? monthlyFromWeekly[idx - 1] : null;
-                  const prevActual = prevMonth ? (monthlyActuals[prevMonth.monthIndex] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 }) : null;
-                  const hasActual = actual.views > 0 || actual.signups > 0 || actual.subscribers > 0;
                   const isLastMonth = idx === monthlyFromWeekly.length - 1;
                   
-                  // Calculate actual values with Dec 1-14 adjustments
-                  const actualViews = actual.views + (month.monthIndex === 0 ? 78313 : 0);
-                  const actualSignups = actual.signups + (month.monthIndex === 0 ? 18699 : 0);
-                  const actualNewPaid = actual.newPaid + (month.monthIndex === 0 ? 233 : 0);
-                  const actualChurn = actual.churn + (month.monthIndex === 0 ? 98 : 0);
+                  // Use calendar month aggregations (from daily data)
+                  const calendarViews = metricsByCalendarMonth.views[month.monthIndex] || 0;
+                  const calendarSignups = metricsByCalendarMonth.signups[month.monthIndex] || 0;
+                  const calendarNewPaid = metricsByCalendarMonth.newPaid[month.monthIndex] || 0;
+                  const calendarChurn = metricsByCalendarMonth.churn[month.monthIndex] || 0;
                   
-                  // Calculate previous month actual values with Dec 1-14 adjustments
-                  const prevActualViews = prevActual ? (prevActual.views + (prevMonth?.monthIndex === 0 ? 78313 : 0)) : 0;
+                  // Previous month values for growth calculation
+                  const prevMonthIdx = idx > 0 ? monthlyFromWeekly[idx - 1].monthIndex : -1;
+                  const prevCalendarViews = prevMonthIdx >= 0 ? (metricsByCalendarMonth.views[prevMonthIdx] || 0) : 0;
+                  
+                  const hasActual = calendarViews > 0 || calendarSignups > 0 || actual.subscribers > 0;
                   
                   // Calculate views % growth (month-over-month)
-                  const viewsGrowth = prevActualViews > 0 && actualViews > 0 ? ((actualViews / prevActualViews) - 1) * 100 : null;
+                  const viewsGrowth = prevCalendarViews > 0 && calendarViews > 0 ? ((calendarViews / prevCalendarViews) - 1) * 100 : null;
                   
                   // Calculate signup conversion rate (signups / views)
-                  const signupConvRate = actualViews > 0 && actualSignups > 0 ? (actualSignups / actualViews) * 100 : null;
+                  const signupConvRate = calendarViews > 0 && calendarSignups > 0 ? (calendarSignups / calendarViews) * 100 : null;
                   
                   // Calculate new paid conversion rate (new paid / signups)
-                  const paidConvRate = actualSignups > 0 && actualNewPaid > 0 ? (actualNewPaid / actualSignups) * 100 : null;
+                  const paidConvRate = calendarSignups > 0 && calendarNewPaid > 0 ? (calendarNewPaid / calendarSignups) * 100 : null;
+                  
+                  // Churn rate
+                  const monthStartSubs = subsAtMonthStart[month.monthIndex] || 0;
+                  const churnRate = monthStartSubs > 0 && calendarChurn > 0 ? (calendarChurn / monthStartSubs) * 100 : null;
                   
                   // Helper to format growth
                   const formatGrowth = (value: number | null) => {
@@ -1643,8 +1773,8 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       <td className="p-3">{month.month}</td>
                       {/* Visitors */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.visitors)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actualViews >= month.visitors ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.views > 0 ? formatNumber(actualViews) : '—'}
+                      <td className={`text-right p-2 font-medium ${hasActual && calendarViews >= month.visitors ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {calendarViews > 0 ? formatNumber(calendarViews) : '—'}
                       </td>
                       {/* % Growth */}
                       <td className={`text-right p-2 font-medium ${getGrowthColor(viewsGrowth)}`}>
@@ -1652,8 +1782,8 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       </td>
                       {/* Signups */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.signups)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actualSignups >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.signups > 0 ? formatNumber(actualSignups) : '—'}
+                      <td className={`text-right p-2 font-medium ${hasActual && calendarSignups >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {calendarSignups > 0 ? formatNumber(calendarSignups) : '—'}
                       </td>
                       {/* Signup Conv */}
                       <td className="text-right p-2 font-medium text-muted-foreground">
@@ -1661,16 +1791,20 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       </td>
                       {/* New Paid */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.newPaid)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actualNewPaid >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.newPaid > 0 ? formatNumber(actualNewPaid) : '—'}
+                      <td className={`text-right p-2 font-medium ${hasActual && calendarNewPaid >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {calendarNewPaid > 0 ? formatNumber(calendarNewPaid) : '—'}
                       </td>
                       {/* Paid Conv */}
                       <td className="text-right p-2 font-medium text-muted-foreground">
                         {paidConvRate !== null ? `${paidConvRate.toFixed(1)}%` : '—'}
                       </td>
-                      {/* Churn */}
-                      <td className={`text-right p-2 font-medium ${actualChurn > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actualChurn > 0 ? formatNumber(actualChurn) : '—'}
+                      {/* Churn (by calendar month from daily data) */}
+                      <td className={`text-right p-2 font-medium ${calendarChurn > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {calendarChurn > 0 ? formatNumber(calendarChurn) : '—'}
+                      </td>
+                      {/* Churn Rate = Churn / Subs at 1st of month */}
+                      <td className={`text-right p-2 font-medium ${churnRate !== null && churnRate > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {churnRate !== null ? `${churnRate.toFixed(1)}%` : '—'}
                       </td>
                       {/* Total Subs */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.totalSubs)}</td>
@@ -1814,6 +1948,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     <th className="text-center p-2 font-medium" colSpan={2}>New Paid</th>
                     <th className="text-center p-2 font-medium">Conv</th>
                     <th className="text-center p-2 font-medium">Churn</th>
+                    <th className="text-center p-2 font-medium">Churn Rate</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>Subscribers</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>MRR</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>ARR</th>
@@ -1832,6 +1967,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
@@ -1927,6 +2063,22 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                             {(churnByWeek[week.week] || 0) > 0 ? formatNumber(churnByWeek[week.week]) : '—'}
                           </span>
                         </td>
+                        {/* Churn Rate = week churn / subs at 1st of month (week starts in) */}
+                        {(() => {
+                          const weekChurn = churnByWeek[week.week] || 0;
+                          // Determine which month the week STARTS in
+                          const weekStartDate = new Date(2025, 11, 15 + (week.week - 1) * 7);
+                          const monthIdx = weekStartDate.getMonth() === 11 ? 0 : weekStartDate.getMonth() + 1;
+                          const monthStartSubs = subsAtMonthStart[monthIdx] || 0;
+                          const churnRate = monthStartSubs > 0 && weekChurn > 0 
+                            ? (weekChurn / monthStartSubs) * 100 
+                            : null;
+                          return (
+                            <td className={`text-right p-1 text-[10px] font-medium ${churnRate !== null && churnRate > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                              {churnRate !== null ? `${churnRate.toFixed(1)}%` : '—'}
+                            </td>
+                          );
+                        })()}
                         {/* Subscribers */}
                         <td className="text-right p-1 font-medium">{formatNumber(week.subscribers)}</td>
                         <td className="text-right p-1">
