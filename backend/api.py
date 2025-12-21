@@ -332,6 +332,9 @@ api_router.include_router(memory_router)
 from core.test_harness.api import router as test_harness_router
 api_router.include_router(test_harness_router)
 
+from core.files import staged_files_router
+api_router.include_router(staged_files_router, prefix="/files")
+
 @api_router.get("/health", summary="Health Check", operation_id="health_check", tags=["system"])
 async def health_check():
     logger.debug("Health check endpoint called")

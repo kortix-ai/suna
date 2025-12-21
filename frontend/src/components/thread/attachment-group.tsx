@@ -21,6 +21,8 @@ interface UploadedFile {
     size: number;
     type: string;
     localUrl?: string;
+    fileId?: string;
+    status?: 'uploading' | 'ready' | 'error';
 }
 
 interface AttachmentGroupProps {
@@ -119,6 +121,11 @@ export function AttachmentGroup({
     const getLocalPreviewUrl = (file: string | UploadedFile): string | undefined => {
         if (typeof file === 'string') return undefined;
         return !sandboxId ? file.localUrl : undefined;
+    };
+
+    const getUploadStatus = (file: string | UploadedFile): 'uploading' | 'ready' | 'error' | undefined => {
+        if (typeof file === 'string') return undefined;
+        return file.status;
     };
 
     // Check if a file is HTML, Markdown, CSV, XLSX, or PDF (previewable types in grid)
@@ -494,8 +501,9 @@ export function AttachmentGroup({
                                     sandboxId={sandboxId}
                                     showPreview={showPreviews}
                                     localPreviewUrl={getLocalPreviewUrl(item.file)}
-                                    collapsed={true} // Collapse all files in inline layout - show as compact attachments
-                                    alignRight={alignRight} // Pass alignRight prop
+                                    collapsed={true}
+                                    alignRight={alignRight}
+                                    uploadStatus={getUploadStatus(item.file)}
                                 />
                                 {onRemove && (
                                     <div

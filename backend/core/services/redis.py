@@ -68,7 +68,6 @@ def initialize():
     connect_timeout = 5.0
     retry_on_timeout = os.getenv("REDIS_RETRY_ON_TIMEOUT", "true").lower() == "true"
     
-    # Check if this is a cluster configuration endpoint (ends with .clustercfg.*)
     is_cluster_endpoint = ".clustercfg." in config['host'] or config['host'].endswith(".clustercfg")
     
     auth_info = f"user={config['username']} " if config['username'] else ""
@@ -77,7 +76,6 @@ def initialize():
     logger.info(f"Initializing Redis to {config['host']}:{config['port']} {auth_info}{ssl_info}{cluster_info}with max {max_connections} connections")
 
     if is_cluster_endpoint:
-        # Use RedisCluster for cluster mode
         _is_cluster = True
         client = RedisCluster(
             host=config['host'],
@@ -89,12 +87,11 @@ def initialize():
             socket_timeout=socket_timeout,
             socket_connect_timeout=connect_timeout,
             socket_keepalive=True,
-            skip_full_coverage_check=True,  # Required for ElastiCache cluster mode
+            skip_full_coverage_check=True,
             health_check_interval=30,
         )
-        pool = None  # RedisCluster manages its own connections
+        pool = None
     else:
-        # Use standard Redis client for non-cluster mode
         _is_cluster = False
         pool = redis_lib.ConnectionPool.from_url(
             config["url"],
