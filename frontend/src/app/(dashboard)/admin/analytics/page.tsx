@@ -1696,8 +1696,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <th className="text-center p-3 font-medium" colSpan={2}>Visitors</th>
                   <th className="text-center p-3 font-medium">Growth</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>Signups</th>
+                  <th className="text-center p-3 font-medium">Growth</th>
                   <th className="text-center p-3 font-medium">Conv</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>New Paid</th>
+                  <th className="text-center p-3 font-medium">Growth</th>
                   <th className="text-center p-3 font-medium">Conv</th>
                   <th className="text-center p-3 font-medium">Churn</th>
                   <th className="text-center p-3 font-medium">Churn Rate</th>
@@ -1713,8 +1715,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
                   <th className="text-right p-2 text-muted-foreground font-normal"></th>
+                  <th className="text-right p-2 text-muted-foreground font-normal"></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal"></th>
                   <th className="text-right p-2 text-muted-foreground font-normal"></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
                   <th className="text-right p-2 text-muted-foreground font-normal"></th>
@@ -1740,11 +1744,15 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   // Previous month values for growth calculation
                   const prevMonthIdx = idx > 0 ? monthlyFromWeekly[idx - 1].monthIndex : -1;
                   const prevCalendarViews = prevMonthIdx >= 0 ? (metricsByCalendarMonth.views[prevMonthIdx] || 0) : 0;
+                  const prevCalendarSignups = prevMonthIdx >= 0 ? (metricsByCalendarMonth.signups[prevMonthIdx] || 0) : 0;
+                  const prevCalendarNewPaid = prevMonthIdx >= 0 ? (metricsByCalendarMonth.newPaid[prevMonthIdx] || 0) : 0;
                   
                   const hasActual = calendarViews > 0 || calendarSignups > 0 || actual.subscribers > 0;
                   
-                  // Calculate views % growth (month-over-month)
+                  // Calculate growth rates (month-over-month)
                   const viewsGrowth = prevCalendarViews > 0 && calendarViews > 0 ? ((calendarViews / prevCalendarViews) - 1) * 100 : null;
+                  const signupsGrowth = prevCalendarSignups > 0 && calendarSignups > 0 ? ((calendarSignups / prevCalendarSignups) - 1) * 100 : null;
+                  const newPaidGrowth = prevCalendarNewPaid > 0 && calendarNewPaid > 0 ? ((calendarNewPaid / prevCalendarNewPaid) - 1) * 100 : null;
                   
                   // Calculate signup conversion rate (signups / views)
                   const signupConvRate = calendarViews > 0 && calendarSignups > 0 ? (calendarSignups / calendarViews) * 100 : null;
@@ -1785,6 +1793,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       <td className={`text-right p-2 font-medium ${hasActual && calendarSignups >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
                         {calendarSignups > 0 ? formatNumber(calendarSignups) : '—'}
                       </td>
+                      {/* Signups Growth */}
+                      <td className={`text-right p-2 font-medium ${getGrowthColor(signupsGrowth)}`}>
+                        {formatGrowth(signupsGrowth)}
+                      </td>
                       {/* Signup Conv */}
                       <td className="text-right p-2 font-medium text-muted-foreground">
                         {signupConvRate !== null ? `${signupConvRate.toFixed(1)}%` : '—'}
@@ -1793,6 +1805,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.newPaid)}</td>
                       <td className={`text-right p-2 font-medium ${hasActual && calendarNewPaid >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
                         {calendarNewPaid > 0 ? formatNumber(calendarNewPaid) : '—'}
+                      </td>
+                      {/* New Paid Growth */}
+                      <td className={`text-right p-2 font-medium ${getGrowthColor(newPaidGrowth)}`}>
+                        {formatGrowth(newPaidGrowth)}
                       </td>
                       {/* Paid Conv */}
                       <td className="text-right p-2 font-medium text-muted-foreground">
@@ -1944,8 +1960,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     <th className="text-center p-2 font-medium" colSpan={2}>Views</th>
                     <th className="text-center p-2 font-medium">Growth</th>
                     <th className="text-center p-2 font-medium" colSpan={2}>Signups</th>
+                    <th className="text-center p-2 font-medium">Growth</th>
                     <th className="text-center p-2 font-medium">Conv</th>
                     <th className="text-center p-2 font-medium" colSpan={2}>New Paid</th>
+                    <th className="text-center p-2 font-medium">Growth</th>
                     <th className="text-center p-2 font-medium">Conv</th>
                     <th className="text-center p-2 font-medium">Churn</th>
                     <th className="text-center p-2 font-medium">Churn Rate</th>
@@ -1963,8 +1981,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
@@ -1994,13 +2014,17 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     const mrrVar = getVariance(actual.mrr, week.mrr);
                     const arrVar = getVariance(actual.arr, week.arr);
                     
-                    // Get previous week's views for % Growth calculation
+                    // Get previous week's data for Growth calculations
                     const prevWeekNum = week.week - 1;
                     // For Week 1, use week0Baseline; otherwise use fetched data
                     const prevAutoViews = prevWeekNum === 0 ? week0Baseline.views : (prevWeekNum >= 1 ? (viewsByWeek[prevWeekNum] ?? 0) : 0);
+                    const prevAutoSignups = prevWeekNum === 0 ? week0Baseline.signups : (prevWeekNum >= 1 ? (signupsByWeek[prevWeekNum] ?? 0) : 0);
+                    const prevAutoNewPaid = prevWeekNum === 0 ? week0Baseline.newPaid : (prevWeekNum >= 1 ? (newPaidByWeek[prevWeekNum] ?? 0) : 0);
                     
-                    // Calculate views % growth (week-over-week)
+                    // Calculate growth rates (week-over-week)
                     const viewsGrowth = prevAutoViews > 0 && autoViews > 0 ? ((autoViews / prevAutoViews) - 1) * 100 : null;
+                    const signupsGrowth = prevAutoSignups > 0 && autoSignups > 0 ? ((autoSignups / prevAutoSignups) - 1) * 100 : null;
+                    const newPaidGrowth = prevAutoNewPaid > 0 && effectiveNewPaid > 0 ? ((effectiveNewPaid / prevAutoNewPaid) - 1) * 100 : null;
                     
                     // Calculate signup conversion rate (signups / views)
                     const signupConvRate = autoViews > 0 && autoSignups > 0 ? (autoSignups / autoViews) * 100 : null;
@@ -2042,6 +2066,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                             {autoSignups > 0 ? formatNumber(autoSignups) : '—'}
                           </span>
                         </td>
+                        {/* Signups Growth */}
+                        <td className={`text-right p-1 text-[10px] font-medium ${getGrowthColor(signupsGrowth)}`}>
+                          {formatGrowth(signupsGrowth)}
+                        </td>
                         {/* Signup Conv */}
                         <td className="text-right p-1 text-[10px] font-medium text-muted-foreground">
                           {signupConvRate !== null ? `${signupConvRate.toFixed(1)}%` : '—'}
@@ -2052,6 +2080,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           <span className={`text-[10px] font-medium ${effectiveNewPaid > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
                             {effectiveNewPaid > 0 ? formatNumber(effectiveNewPaid) : '—'}
                           </span>
+                        </td>
+                        {/* New Paid Growth */}
+                        <td className={`text-right p-1 text-[10px] font-medium ${getGrowthColor(newPaidGrowth)}`}>
+                          {formatGrowth(newPaidGrowth)}
                         </td>
                         {/* Paid Conv */}
                         <td className="text-right p-1 text-[10px] font-medium text-muted-foreground">
