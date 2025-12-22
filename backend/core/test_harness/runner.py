@@ -177,11 +177,14 @@ class TestHarnessRunner:
         client = await db.client
         
         try:
-            # Delete threads (cascade will delete messages, agent_runs, etc.)
+            # Delete agent_runs first (to avoid FK constraint violations), then threads
             for thread_id in thread_ids:
                 try:
+                    # Delete agent_runs first
+                    await client.table('agent_runs').delete().eq('thread_id', thread_id).execute()
+                    # Then delete the thread
                     await client.table('threads').delete().eq('thread_id', thread_id).execute()
-                    logger.debug(f"Deleted test thread: {thread_id}")
+                    logger.debug(f"Deleted test thread and its agent_runs: {thread_id}")
                 except Exception as e:
                     logger.warning(f"Failed to delete thread {thread_id}: {e}")
             
@@ -462,8 +465,11 @@ class TestHarnessRunner:
         
         # Make API calls (real or mocked based on model name)
         try:
+            # For stress tests with mock LLM, use a shorter timeout (30s instead of 120s)
+            timeout_seconds = 30.0 if model == 'mock-ai' else 120.0
+            
             # Call /agent/start
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
                 # Start agent with JWT authentication
                 auth_headers = self._get_auth_headers()
                 
@@ -566,7 +572,8 @@ class TestHarnessRunner:
         # Fetch tool calls from final assistant message in database
         if status == 'completed' and thread_id and not tool_calls:
             try:
-                client = await self.metrics_collector.supabase.get_client()
+                await self.metrics.db.initialize()
+                client = await self.metrics.db.client
                 messages_response = await client.table('messages').select('metadata').eq('thread_id', thread_id).eq('type', 'assistant').eq('is_llm_message', True).order('created_at', desc=True).limit(1).execute()
                 
                 if messages_response.data and len(messages_response.data) > 0:
