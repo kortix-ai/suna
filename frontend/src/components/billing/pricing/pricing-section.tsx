@@ -4,7 +4,7 @@ import type { PricingTier } from '@/lib/pricing-config';
 import { siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import NextImage from 'next/image';
 import {
   CheckIcon,
@@ -39,8 +39,6 @@ export const SUBSCRIPTION_PLANS = {
   PRO: 'base',
   ENTERPRISE: 'extra',
 };
-
-const PUBLIC_DEFAULT_BILLING_PERIOD: 'monthly' | 'yearly' | 'yearly_commitment' = 'yearly';
 
 // Types
 type ButtonVariant =
@@ -1018,15 +1016,15 @@ export function PricingSection({
 
   const getDefaultBillingPeriod = useCallback((): 'monthly' | 'yearly' | 'yearly_commitment' => {
     if (!isAuthenticated || !currentSubscription) {
-      console.log(`[BILLING-PERIOD-DEBUG] Public default billing period: ${PUBLIC_DEFAULT_BILLING_PERIOD}`);
-      return PUBLIC_DEFAULT_BILLING_PERIOD;
+      console.log('[BILLING-PERIOD-DEBUG] No auth or subscription, defaulting to yearly');
+      return 'yearly';
     }
     if (currentBillingPeriod) {
       console.log(`[BILLING-PERIOD-DEBUG] Using detected billing period: ${currentBillingPeriod}`);
       return currentBillingPeriod;
     }
-    console.log(`[BILLING-PERIOD-DEBUG] No billing period detected, defaulting to ${PUBLIC_DEFAULT_BILLING_PERIOD}`);
-    return PUBLIC_DEFAULT_BILLING_PERIOD;
+    console.log('[BILLING-PERIOD-DEBUG] No billing period detected, defaulting to yearly');
+    return 'yearly';
   }, [isAuthenticated, currentSubscription, currentBillingPeriod]);
 
   const [planLoadingStates, setPlanLoadingStates] = useState<Record<string, boolean>>({});
@@ -1036,21 +1034,6 @@ export function PricingSection({
   const [sharedBillingPeriod, setSharedBillingPeriod] = useState<'monthly' | 'yearly' | 'yearly_commitment'>(() => {
     return currentBillingPeriod || getDefaultBillingPeriod();
   });
-
-  useEffect(() => {
-    if (!currentBillingPeriod) {
-      return;
-    }
-
-    setSharedBillingPeriod((prev) => {
-      if (prev === currentBillingPeriod) {
-        return prev;
-      }
-
-      console.log(`[BILLING-PERIOD-DEBUG] Syncing shared billing period to account: ${currentBillingPeriod}`);
-      return currentBillingPeriod;
-    });
-  }, [currentBillingPeriod]);
 
   // Plan switcher state for paid tiers
   const paidTiers = siteConfig.cloudPricingItems.filter(
