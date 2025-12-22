@@ -284,15 +284,29 @@ export function useTranslate() {
 // ARR WEEKLY ACTUALS
 // ============================================================================
 
+// Tracks which fields have been manually overridden by admin
+// When a field is true, its value should NOT be overwritten by Stripe/API data
+export interface FieldOverrides {
+  views?: boolean;
+  signups?: boolean;
+  new_paid?: boolean;
+  churn?: boolean;
+  subscribers?: boolean;
+  mrr?: boolean;
+  arr?: boolean;
+}
+
 export interface WeeklyActualData {
   week_number: number;
   week_start_date: string;
   views: number;
   signups: number;
   new_paid: number;
+  churn: number;
   subscribers: number;
   mrr: number;
   arr: number;
+  overrides?: FieldOverrides;  // Tracks which fields are locked/manually overridden
 }
 
 export interface WeeklyActualsResponse {
@@ -336,6 +350,33 @@ export function useDeleteARRWeeklyActual() {
   return useMutation({
     mutationFn: async (weekNumber: number): Promise<{ message: string }> => {
       const response = await backendApi.delete(`/admin/analytics/arr/actuals/${weekNumber}`);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'arr-actuals'] });
+    },
+  });
+}
+
+// Toggle override for a specific field in a week
+export interface ToggleOverrideParams {
+  weekNumber: number;
+  field: keyof FieldOverrides;
+  override: boolean;
+}
+
+export function useToggleFieldOverride() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({ weekNumber, field, override }: ToggleOverrideParams): Promise<{ message: string }> => {
+      const response = await backendApi.patch(`/admin/analytics/arr/actuals/${weekNumber}/override`, {
+        field,
+        override,
+      });
       if (response.error) {
         throw new Error(response.error.message);
       }
@@ -506,6 +547,103 @@ export function useChurnByDate(dateFrom: string, dateTo: string) {
     staleTime: 60000, // 1 minute
     enabled: !!dateFrom && !!dateTo,
     retry: 1,
+  });
+}
+
+
+// ============================================================================
+// ARR MONTHLY ACTUALS (Direct monthly editing with override support)
+// ============================================================================
+
+export interface MonthlyActualData {
+  month_index: number;  // 0=Dec 2024, 1=Jan 2025, etc.
+  month_name: string;   // 'Dec 2024', 'Jan 2025', etc.
+  views: number;
+  signups: number;
+  new_paid: number;
+  churn: number;
+  subscribers: number;
+  mrr: number;
+  arr: number;
+  overrides?: FieldOverrides;  // Tracks which fields are locked/manually overridden
+}
+
+export interface MonthlyActualsResponse {
+  actuals: Record<number, MonthlyActualData>;
+}
+
+export function useARRMonthlyActuals() {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'arr-monthly-actuals'],
+    queryFn: async (): Promise<MonthlyActualsResponse> => {
+      const response = await backendApi.get('/admin/analytics/arr/monthly-actuals');
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 60000, // 1 minute
+  });
+}
+
+export function useUpdateARRMonthlyActual() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (data: MonthlyActualData): Promise<MonthlyActualData> => {
+      const response = await backendApi.put(`/admin/analytics/arr/monthly-actuals/${data.month_index}`, data);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'arr-monthly-actuals'] });
+    },
+  });
+}
+
+export function useDeleteARRMonthlyActual() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (monthIndex: number): Promise<{ message: string }> => {
+      const response = await backendApi.delete(`/admin/analytics/arr/monthly-actuals/${monthIndex}`);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'arr-monthly-actuals'] });
+    },
+  });
+}
+
+// Toggle override for a specific field in a month
+export interface ToggleMonthlyOverrideParams {
+  monthIndex: number;
+  field: keyof FieldOverrides;
+  override: boolean;
+}
+
+export function useToggleMonthlyFieldOverride() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({ monthIndex, field, override }: ToggleMonthlyOverrideParams): Promise<{ message: string }> => {
+      const response = await backendApi.patch(`/admin/analytics/arr/monthly-actuals/${monthIndex}/override`, {
+        field,
+        override,
+      });
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'analytics', 'arr-monthly-actuals'] });
+    },
   });
 }
 
