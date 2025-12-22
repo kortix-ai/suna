@@ -68,25 +68,6 @@ async function fetchApi<T>(
 }
 
 export const apifyApprovalsApi = {
-  async requestApproval(
-    request: ApifyApprovalRequest,
-    threadId: string
-  ): Promise<ApifyApproval> {
-    const response = await fetchApi<ApifyApprovalResponse>(
-      '/apify/approvals/request',
-      {
-        method: 'POST',
-        body: JSON.stringify({ ...request, thread_id: threadId }),
-      }
-    );
-
-    if (!response.success || !response.data) {
-      throw new Error(response.data?.message || 'Failed to create approval request');
-    }
-
-    return response.data;
-  },
-
   async approveRequest(
     approvalId: string,
     threadId: string

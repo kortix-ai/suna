@@ -3,22 +3,6 @@ import { apifyApprovalsApi, ApifyApproval, ApifyApprovalRequest } from '@/api/ap
 
 export type { ApifyApproval, ApifyApprovalRequest };
 
-export function useRequestApifyApproval(threadId: string) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (request: ApifyApprovalRequest) => {
-      return await apifyApprovalsApi.requestApproval(request, threadId);
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['apify-approval', data.approval_id] });
-    },
-    onError: (error: Error) => {
-      console.error('Failed to create approval request:', error);
-    },
-  });
-}
-
 export function useApproveApifyRequest(threadId: string) {
   const queryClient = useQueryClient();
 

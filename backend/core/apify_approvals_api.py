@@ -19,69 +19,8 @@ import json
 router = APIRouter(tags=["apify-approvals"])
 
 
-class ApprovalRequest(BaseModel):
-    actor_id: str
-    run_input: Dict[str, Any]
-    max_cost_usd: float = 1.0
-    thread_id: Optional[str] = None
-
-
 class ApproveRequest(BaseModel):
     thread_id: Optional[str] = None
-
-
-@router.post("/apify/approvals/request", summary="Request Apify Approval", operation_id="request_apify_approval")
-async def request_apify_approval(
-    request: ApprovalRequest,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
-) -> Dict[str, Any]:
-    """Create an approval request for running an Apify actor."""
-    try:
-        # Get thread_id from request body
-        thread_id = request.thread_id
-        if not thread_id:
-            raise HTTPException(status_code=400, detail="thread_id is required")
-        
-        db = DBConnection()
-        client = await db.client
-        thread_result = await client.from_('threads').select('project_id, account_id').eq('thread_id', thread_id).single().execute()
-        
-        if not thread_result.data:
-            raise HTTPException(status_code=404, detail="Thread not found")
-        
-        # Create minimal thread manager
-        from core.agentpress.thread_manager import ThreadManager
-        project_id = thread_result.data.get('project_id')
-        thread_manager = ThreadManager(
-            thread_id=thread_id,
-            project_id=project_id,
-            account_id=thread_result.data.get('account_id')
-        )
-        
-        # Create ApifyTool instance
-        apify_tool = ApifyTool(project_id, thread_manager)
-        
-        # Call the tool method
-        result = await apify_tool.request_apify_approval(
-            actor_id=request.actor_id,
-            run_input=request.run_input,
-            max_cost_usd=request.max_cost_usd
-        )
-        
-        if result.success:
-            return {
-                "success": True,
-                "data": result.output
-            }
-        else:
-            error_msg = result.output if isinstance(result.output, str) else "Failed to create approval request"
-            raise HTTPException(status_code=400, detail=error_msg)
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating approval request: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to create approval request: {str(e)}")
 
 
 @router.post("/apify/approvals/{approval_id}/approve", summary="Approve Apify Request", operation_id="approve_apify_request")

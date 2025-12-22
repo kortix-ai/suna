@@ -401,7 +401,8 @@ export function extractApifyApprovalData(
 
     const functionName = toolCall.function_name || '';
     
-    if (!functionName.includes('approval') && !functionName.includes('request_apify_approval')) {
+    // Only extract if it's an approval-related function
+    if (!functionName.includes('approval') && !functionName.includes('request_apify_approval') && !functionName.includes('approve_apify_request')) {
       return null;
     }
 

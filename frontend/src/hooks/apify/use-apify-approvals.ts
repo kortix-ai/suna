@@ -29,32 +29,6 @@ export interface ApifyApprovalResponse {
   data: ApifyApproval;
 }
 
-export function useRequestApifyApproval(threadId: string) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (request: ApifyApprovalRequest) => {
-      const response = await backendApi.post<ApifyApprovalResponse>(
-        `/apify/approvals/request`,
-        { ...request, thread_id: threadId }
-      );
-
-      if (!response.success || !response.data?.success) {
-        throw new Error(response.data?.data?.message || 'Failed to create approval request');
-      }
-
-      return response.data.data;
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['apify-approval', data.approval_id] });
-      toast.success('Approval request created');
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to create approval request');
-    },
-  });
-}
-
 export function useApproveApifyRequest(threadId: string) {
   const queryClient = useQueryClient();
 
