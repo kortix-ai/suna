@@ -567,9 +567,6 @@ export function useAgentStream(
                   // Merge ALL chunks we have in sequence order (progressive display)
                   // This ensures correct ordering while still showing updates even if chunks arrive out of order
                   let mergedArgs = '';
-                  // Merge ALL chunks we have in sequence order (progressive display)
-                  // This ensures correct ordering while still showing updates even if chunks arrive out of order
-                  let mergedArgs = '';
                   
                   for (const chunk of chunks) {
                     mergedArgs += chunk.delta;
