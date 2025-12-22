@@ -763,6 +763,21 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   const signupsDateFrom = '2025-12-15';
   const signupsDateTo = '2026-06-15';
   
+  // Calculate current week number and month index for filtering chart data
+  const { currentWeekNumber, currentMonthIndex } = useMemo(() => {
+    const startDate = new Date(2025, 11, 15); // Dec 15, 2025
+    const today = new Date();
+    const daysSinceStart = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const weekNum = Math.max(1, Math.floor(daysSinceStart / 7) + 1);
+    
+    // Month index: Dec 2025 = 0, Jan 2026 = 1, Feb 2026 = 2, etc.
+    const monthIdx = today.getFullYear() === 2025 && today.getMonth() === 11 ? 0 
+      : today.getFullYear() === 2026 ? today.getMonth() + 1 
+      : 0;
+    
+    return { currentWeekNumber: weekNum, currentMonthIndex: monthIdx };
+  }, []);
+  
   // Week 0 (Dec 8-14) baseline data for Week 1 growth calculation
   // From spreadsheet: used only for % Growth, not displayed
   const week0Baseline = {
@@ -1301,7 +1316,9 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
 
   // Prepare weekly chart data for actual vs goal comparison
   // Respects overridden values when calculating actuals
+  // Only show actual data for current and past weeks (future weeks show null so Recharts won't plot them)
   const weeklyChartData = weeklyProjections.map(w => {
+    const isFutureWeek = w.week > currentWeekNumber;
     const weekData = actualData[w.week];
     const overrides = weekData?.overrides || {};
     
@@ -1315,17 +1332,17 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     return {
       week: `W${w.week}`,
       goalViews: w.visitors,
-      actualViews: effectiveViews,
+      actualViews: isFutureWeek ? null : effectiveViews,
       goalSignups: w.signups,
-      actualSignups: effectiveSignups,
+      actualSignups: isFutureWeek ? null : effectiveSignups,
       goalNewPaid: w.newPaid,
-      actualNewPaid: effectiveNewPaid,
+      actualNewPaid: isFutureWeek ? null : effectiveNewPaid,
       goalSubs: w.subscribers,
-      actualSubs: effectiveSubs,
+      actualSubs: isFutureWeek ? null : effectiveSubs,
       goalMRR: w.mrr,
-      actualMRR: weekData?.mrr || 0,
+      actualMRR: isFutureWeek ? null : (weekData?.mrr || 0),
       goalARR: w.arr,
-      actualARR: weekData?.arr || 0,
+      actualARR: isFutureWeek ? null : (weekData?.arr || 0),
     };
   });
 
@@ -1563,6 +1580,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   }, [weeklyProjections, projections]);
 
   // Monthly chart data - uses monthlyFromWeekly for goals (same as table)
+  // Only show actual data for current and past months (future months show null so Recharts won't plot them)
   const monthlyChartData = useMemo(() => {
     // Build a lookup by monthIndex for easy access
     const goalsByMonth: Record<number, typeof monthlyFromWeekly[0]> = {};
@@ -1572,6 +1590,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     
     const monthNames = ['Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026', 'Jun 2026'];
     return monthNames.map((month, idx) => {
+      const isFutureMonth = idx > currentMonthIndex;
       const goal = goalsByMonth[idx];
       const monthlyOverride = monthlyActualData[idx];
       const overrides = monthlyOverride?.overrides || {};
@@ -1588,15 +1607,15 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       return {
         month,
         monthIndex: idx,
-        // Actual data (respects overrides)
-        actualNewPaid: effectiveNewPaid,
-        actualChurned: effectiveChurn,
-        negativeActualChurned: -effectiveChurn,
-        signups: effectiveSignups,
-        views: effectiveViews,
-        actualSubs: effectiveSubs,
-        actualMrr: effectiveMrr,
-        actualArr: effectiveArr,
+        // Actual data (respects overrides) - null for future months so Recharts won't plot them
+        actualNewPaid: isFutureMonth ? null : effectiveNewPaid,
+        actualChurned: isFutureMonth ? null : effectiveChurn,
+        negativeActualChurned: isFutureMonth ? null : -effectiveChurn,
+        signups: isFutureMonth ? null : effectiveSignups,
+        views: isFutureMonth ? null : effectiveViews,
+        actualSubs: isFutureMonth ? null : effectiveSubs,
+        actualMrr: isFutureMonth ? null : effectiveMrr,
+        actualArr: isFutureMonth ? null : effectiveArr,
         // Goal data from monthlyFromWeekly (same source as table)
         goalNewPaid: goal?.newPaid || 0,
         goalChurned: 0,
@@ -1606,7 +1625,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         goalArr: goal?.arr || 0,
       };
     });
-  }, [metricsByCalendarMonth, monthlyActuals, monthlyActualData, monthlyFromWeekly]);
+  }, [metricsByCalendarMonth, monthlyActuals, monthlyActualData, monthlyFromWeekly, currentMonthIndex]);
 
   // View state
   const [simulatorView, setSimulatorView] = useState<'monthly' | 'weekly'>('monthly');
