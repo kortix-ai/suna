@@ -59,6 +59,7 @@ import { createPresentationViewerToolContent, parsePresentationSlidePath } from 
 import { KbToolView } from '../KbToolView';
 import { ExpandMessageToolView } from '../expand-message-tool/ExpandMessageToolView';
 import { RealityDefenderToolView } from '../reality-defender-tool/RealityDefenderToolView';
+import { ApifyToolView } from '../apify-tool/ToolView';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;
@@ -95,6 +96,21 @@ const defaultRegistry: ToolViewRegistryType = {
 
   'execute-data-provider-call': ExecuteDataProviderCallToolView,
   'get-data-provider-endpoints': DataProviderEndpointsToolView,
+
+  'search-apify-actors': ApifyToolView,
+  'search_apify_actors': ApifyToolView,
+  'get-actor-details': ApifyToolView,
+  'get_actor_details': ApifyToolView,
+  'request-apify-approval': ApifyToolView,
+  'request_apify_approval': ApifyToolView,
+  'approve-apify-request': ApifyToolView,
+  'approve_apify_request': ApifyToolView,
+  'get-apify-approval-status': ApifyToolView,
+  'get_apify_approval_status': ApifyToolView,
+  'run-apify-actor': ApifyToolView,
+  'run_apify_actor': ApifyToolView,
+  'get-actor-run-results': ApifyToolView,
+  'get_actor_run_results': ApifyToolView,
 
   'search-mcp-servers': SearchMcpServersToolView,
   'get-app-details': GetAppDetailsToolView,

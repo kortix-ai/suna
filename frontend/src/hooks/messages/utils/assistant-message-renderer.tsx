@@ -10,14 +10,16 @@ import { Clock } from 'lucide-react';
 import { UnifiedMessage, ParsedMetadata } from '@/components/thread/types';
 import { safeJsonParse, getToolIcon, getUserFriendlyToolName } from '@/components/thread/utils';
 import { ComposioUrlDetector } from '@/components/thread/content/composio-url-detector';
-import { renderAttachments } from '@/components/thread/content/ThreadContent';
+import { FileAttachmentGrid, FileAttachment } from '@/components/thread/file-attachment';
 import { TaskCompletedFeedback } from '@/components/thread/tool-views/shared/TaskCompletedFeedback';
 import { PromptExamples } from '@/components/shared/prompt-examples';
 import type { Project } from '@/lib/api/threads';
 import { AppIcon } from '@/components/thread/tool-views/shared/AppIcon';
+import { ApifyApprovalInline } from '@/components/thread/content/ApifyApprovalInline';
 
 export interface AssistantMessageRendererProps {
   message: UnifiedMessage;
+  toolResults?: UnifiedMessage[]; // Tool result messages linked to this assistant message
   onToolClick: (assistantMessageId: string | null, toolName: string) => void;
   onFileClick?: (filePath?: string, filePathList?: string[]) => void;
   sandboxId?: string;
@@ -93,7 +95,19 @@ function renderAskToolCall(
         content={askText} 
         className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3" 
       />
-      {renderAttachments(attachments, onFileClick, sandboxId, project)}
+      {attachments.length > 0 && (
+        <div className="mt-3">
+          <FileAttachmentGrid
+            attachments={attachments}
+            onFileClick={onFileClick}
+            sandboxId={sandboxId}
+            showPreviews={true}
+            collapsed={false}
+            project={project}
+            standalone={true}
+          />
+        </div>
+      )}
       {isLatestMessage && (
         <div className="flex items-center gap-2 mt-3">
           <Clock className="h-4 w-4 text-orange-500 flex-shrink-0" />
@@ -130,11 +144,32 @@ function renderCompleteToolCall(
 
   return (
     <div key={`complete-${index}`} className="space-y-3 my-1.5">
+      {/* Main content */}
       <ComposioUrlDetector 
         content={completeText} 
         className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3" 
       />
-      {renderAttachments(attachments, onFileClick, sandboxId, project)}
+      
+      {/* Attachments underneath the text */}
+      {attachments.length > 0 && (
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <span>Task complete</span>
+            <span className="text-xs">({attachments.length} {attachments.length === 1 ? 'file' : 'files'})</span>
+          </div>
+          <FileAttachmentGrid
+            attachments={attachments}
+            onFileClick={onFileClick}
+            sandboxId={sandboxId}
+            showPreviews={true}
+            collapsed={false}
+            project={project}
+            standalone={true}
+          />
+        </div>
+      )}
+      
+      {/* Task completed feedback */}
       <TaskCompletedFeedback
         taskSummary={completeText}
         followUpPrompts={isLatestMessage && followUpPrompts.length > 0 ? followUpPrompts : undefined}
@@ -184,7 +219,7 @@ function renderRegularToolCall(
 }
 
 export function renderAssistantMessage(props: AssistantMessageRendererProps): React.ReactNode {
-  const { message } = props;
+  const { message, threadId, toolResults = [] } = props;
   const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
   
   const toolCalls = metadata.tool_calls || [];
@@ -203,6 +238,33 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
       </div>
     );
   }
+  
+  // Check for approval requests in tool calls and render inline
+  toolCalls.forEach((toolCall, index) => {
+    const toolName = toolCall.function_name.replace(/_/g, '-');
+    if (toolName === 'request-apify-approval' || toolName === 'request_apify_approval') {
+      // Find matching tool result
+      const toolResult = toolResults.find(tr => {
+        const trMeta = safeJsonParse<ParsedMetadata>(tr.metadata, {});
+        return trMeta.tool_call_id === toolCall.tool_call_id;
+      });
+      
+      if (toolResult && threadId) {
+        const trMeta = safeJsonParse<ParsedMetadata>(toolResult.metadata, {});
+        const resultData = trMeta.result;
+        
+        if (resultData?.output && typeof resultData.output === 'object' && resultData.output.approval_id) {
+          contentParts.push(
+            <ApifyApprovalInline
+              key={`approval-${toolCall.tool_call_id}`}
+              approval={resultData.output as any}
+              threadId={threadId}
+            />
+          );
+        }
+      }
+    }
+  });
   
   // Render tool calls
   toolCalls.forEach((toolCall, index) => {

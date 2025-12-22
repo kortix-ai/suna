@@ -249,7 +249,7 @@ class SandboxPresentationTool(SandboxToolsBase):
                     "title": slide_data.get("title", f"Slide {slide_num}"),
                     "filename": slide_filename,
                     "file_path": f"{self.presentations_dir}/{safe_name}/{slide_filename}",
-                    "preview_url": f"/workspace/{self.presentations_dir}/{safe_name}/{slide_filename}",
+                    "preview_url": f"{self.workspace_path}/{self.presentations_dir}/{safe_name}/{slide_filename}",
                     "created_at": datetime.now().isoformat()
                 }
             metadata["slides"] = updated_slides
@@ -870,14 +870,14 @@ class SandboxPresentationTool(SandboxToolsBase):
                 return self.success_response({
                     "message": f"Found {len(presentations)} presentations",
                     "presentations": presentations,
-                    "presentations_directory": f"/workspace/{self.presentations_dir}"
+                    "presentations_directory": f"{self.workspace_path}/{self.presentations_dir}"
                 })
                 
             except Exception as e:
                 return self.success_response({
                     "message": "No presentations found",
                     "presentations": [],
-                    "presentations_directory": f"/workspace/{self.presentations_dir}",
+                    "presentations_directory": f"{self.workspace_path}/{self.presentations_dir}",
                     "note": "Create your first slide using create_slide"
                 })
                 
@@ -1031,7 +1031,7 @@ print(json.dumps(result))
             # Execute the script
             try:
                 result = await self.sandbox.process.exec(
-                    f"/bin/sh -c 'cd /workspace && python3 .validate_slide_temp.py'",
+                    f"/bin/sh -c 'cd {self.workspace_path} && python3 .validate_slide_temp.py'",
                     timeout=30
                 )
                 
@@ -1114,7 +1114,7 @@ print(json.dumps(result))
             if store_locally:
                 result = convert_response.json()
                 filename = result.get("filename")
-                downloads_path = f"/workspace/downloads/{filename}"
+                downloads_path = f"{self.workspace_path}/downloads/{filename}"
                 presentation_file_path = f"{presentation_path}/{safe_name}.{format_type}"
                 
                 try:
@@ -1127,7 +1127,7 @@ print(json.dumps(result))
                     "success": True,
                     "format": format_type,
                     "file": f"{self.presentations_dir}/{safe_name}/{safe_name}.{format_type}",
-                    "download_url": f"/workspace/downloads/{filename}",
+                    "download_url": f"{self.workspace_path}/downloads/{filename}",
                     "total_slides": result.get("total_slides"),
                     "stored_locally": True
                 }
@@ -1183,7 +1183,7 @@ print(json.dumps(result))
                 return self.fail_response("Presentation name is required.")
             
             safe_name = self._sanitize_filename(presentation_name)
-            presentation_path = f"/workspace/{self.presentations_dir}/{safe_name}"
+            presentation_path = f"{self.workspace_path}/{self.presentations_dir}/{safe_name}"
             
             # Verify presentation exists
             metadata = await self._load_presentation_metadata(presentation_path)

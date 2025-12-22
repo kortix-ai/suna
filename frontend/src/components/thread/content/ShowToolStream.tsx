@@ -1,8 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { CircleDashed } from 'lucide-react';
 import { getToolIcon, getUserFriendlyToolName, extractPrimaryParam } from '@/components/thread/utils';
-import { CodeBlockCode } from '@/components/ui/code-block';
-import { getLanguageFromFileName } from '../tool-views/file-operation/_utils';
 import { AppIcon } from '../tool-views/shared/AppIcon';
 
 // Define tool categories for different streaming behaviors
@@ -93,25 +91,30 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
         stableStartTimeRef.current = Date.now();
     }
 
-    let rawToolName: string | null = null;
-    let parsedToolCall: any = null;
+    // Parse tool info from content
+    const { rawToolName, parsedToolCall } = useMemo(() => {
+        let rawName: string | null = null;
+        let parsed: any = null;
+        
+        try {
+          parsed = JSON.parse(content);
+          if (parsed.function?.name) {
+            rawName = parsed.function.name;
+          } else if (parsed.tool_name) {
+            rawName = parsed.tool_name;
+          } else if (parsed.function_name) {
+            rawName = parsed.function_name;
+          }
+        } catch (e) {
+          const match = content.match(/(?:function|tool)[_\-]?name["']?\s*[:=]\s*["']?([^"'\s]+)/i);
+          if (match) {
+            rawName = match[1];
+          }
+        }
+        
+        return { rawToolName: rawName, parsedToolCall: parsed };
+    }, [content]);
     
-    try {
-      const parsed = JSON.parse(content);
-      parsedToolCall = parsed;
-      if (parsed.function?.name) {
-        rawToolName = parsed.function.name;
-      } else if (parsed.tool_name) {
-        rawToolName = parsed.tool_name;
-      } else if (parsed.function_name) {
-        rawToolName = parsed.function_name;
-      }
-    } catch (e) {
-      const match = content.match(/(?:function|tool)[_\-]?name["']?\s*[:=]\s*["']?([^"'\s]+)/i);
-      if (match) {
-        rawToolName = match[1];
-      }
-    }
     const toolName = getUserFriendlyToolName(rawToolName || '');
     const isEditFile = toolName === 'AI File Edit';
     const isCreateFile = toolName === 'Creating File';
@@ -143,7 +146,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     };
 
     // Extract streaming content from JSON or plain text
-    const streamingContent = React.useMemo(() => {
+    const streamingContent = useMemo(() => {
         if (!content) return { html: '', plainText: '' };
 
         try {
@@ -251,6 +254,9 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
         return () => container.removeEventListener('scroll', handleScroll);
     }, [shouldShowContent]);
 
+    // Calculate paramDisplay before early return to satisfy Rules of Hooks
+    const paramDisplay = useMemo(() => extractPrimaryParam(rawToolName || '', content), [rawToolName, content]);
+
     if (!toolName) {
         return null;
     }
@@ -260,7 +266,6 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
 
     const IconComponent = getToolIcon(rawToolName || '');
     const displayName = toolName;
-    const paramDisplay = extractPrimaryParam(rawToolName || '', content);
 
     // Always show tool button, conditionally show content below for streamable tools
     if (showExpanded && isToolStreamable) {

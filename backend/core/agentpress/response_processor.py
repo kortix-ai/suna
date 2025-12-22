@@ -449,7 +449,7 @@ class ResponseProcessor:
         Yields:
             Complete message objects matching the DB schema, except for content chunks.
         """
-        logger.info(f"Starting streaming response processing for thread {thread_id}")
+        logger.debug(f"Starting streaming response processing for thread {thread_id}")
         
         # Initialize cancellation event if not provided
         if cancellation_event is None:
@@ -498,7 +498,7 @@ class ResponseProcessor:
         
         # CRITICAL: Generate unique ID for THIS specific LLM call (not per thread run)
         llm_response_id = str(uuid.uuid4())
-        logger.info(f"🔵 LLM CALL #{auto_continue_count + 1} starting - llm_response_id: {llm_response_id}")
+        logger.debug(f"🔵 LLM CALL #{auto_continue_count + 1} starting - llm_response_id: {llm_response_id}")
 
         # Track background DB tasks for cleanup
         background_db_tasks = []
@@ -646,9 +646,9 @@ class ResponseProcessor:
                     if finish_reason == "stop":
                         # Check if stop token appeared in content
                         if "|||STOP_AGENT|||" in accumulated_content:
-                            logger.info(f"🛑 Stop sequence triggered - |||STOP_AGENT||| detected in content")
+                            logger.debug(f"🛑 Stop sequence triggered - |||STOP_AGENT||| detected in content")
                         elif "<function_calls>" in accumulated_content:
-                            logger.info(f"🛑 Stop sequence triggered after function call")
+                            logger.debug(f"🛑 Stop sequence triggered after function call")
                         else:
                             logger.debug(f"Natural completion at chunk #{chunk_count}")
                         
@@ -857,10 +857,10 @@ class ResponseProcessor:
 
             # Log when stream naturally ends
             if finish_reason == "stop":
-                logger.info(f"✅ Stream naturally ended after stop sequence. Total chunks: {chunk_count}, finish_reason: {finish_reason}")
+                logger.debug(f"✅ Stream naturally ended after stop sequence. Total chunks: {chunk_count}, finish_reason: {finish_reason}")
             else:
-                logger.info(f"Stream complete. Total chunks: {chunk_count}, finish_reason: {finish_reason}")
-            logger.info(f"📝 Accumulated content length: {len(accumulated_content)} chars")
+                logger.debug(f"Stream complete. Total chunks: {chunk_count}, finish_reason: {finish_reason}")
+            logger.debug(f"📝 Accumulated content length: {len(accumulated_content)} chars")
             
             # Save summary to debug file
             # Save debug summary and accumulated content (if enabled)
@@ -931,7 +931,7 @@ class ResponseProcessor:
 
             tool_results_buffer = []
             if pending_tool_executions:
-                logger.info(f"Waiting for {len(pending_tool_executions)} pending streamed tool executions")
+                logger.debug(f"Waiting for {len(pending_tool_executions)} pending streamed tool executions")
                 self.trace.event(name="waiting_for_pending_streamed_tool_executions", level="DEFAULT", status_message=(f"Waiting for {len(pending_tool_executions)} pending streamed tool executions"))
                 pending_tasks = [execution["task"] for execution in pending_tool_executions]
                 done, _ = await asyncio.wait(pending_tasks)
@@ -1146,14 +1146,14 @@ class ResponseProcessor:
 
                 # Populate from buffer if executed on stream
                 if config.execute_on_stream and tool_results_buffer:
-                    logger.info(f"Processing {len(tool_results_buffer)} buffered tool results")
+                    logger.debug(f"Processing {len(tool_results_buffer)} buffered tool results")
                     self.trace.event(name="processing_buffered_tool_results", level="DEFAULT", status_message=(f"Processing {len(tool_results_buffer)} buffered tool results"))
                     for tool_call, result, tool_idx, context in tool_results_buffer:
                         if last_assistant_message_object: context.assistant_message_id = last_assistant_message_object['message_id']
                         tool_results_map[tool_idx] = (tool_call, result, context)
                 # Or execute now if not streamed (or if streamed but no buffered results)
                 elif final_tool_calls_to_process:
-                    logger.info(f"🔄 STREAMING: Executing {len(final_tool_calls_to_process)} tools ({config.tool_execution_strategy}) after stream")
+                    logger.debug(f"🔄 STREAMING: Executing {len(final_tool_calls_to_process)} tools ({config.tool_execution_strategy}) after stream")
                     logger.debug(f"📋 Final tool calls to process: {final_tool_calls_to_process}")
                     logger.debug(f"⚙️ Config: execute_on_stream={config.execute_on_stream}, strategy={config.tool_execution_strategy}")
                     self.trace.event(name="executing_tools_after_stream", level="DEFAULT", status_message=(f"Executing {len(final_tool_calls_to_process)} tools ({config.tool_execution_strategy}) after stream"))
@@ -1263,7 +1263,7 @@ class ResponseProcessor:
                     try:
                         # Use the complete LiteLLM response object as received
                         if final_llm_response:
-                            logger.info("✅ Using complete LiteLLM response for llm_response_end (before termination)")
+                            logger.debug("✅ Using complete LiteLLM response for llm_response_end (before termination)")
                             # Serialize the complete response object as-is
                             llm_end_content = self._serialize_model_response(final_llm_response)
                             
@@ -1305,7 +1305,7 @@ class ResponseProcessor:
                             llm_response_end_saved = True
                             # Yield to stream for real-time context usage updates
                             if llm_end_msg_obj: yield format_for_yield(llm_end_msg_obj)
-                        logger.info(f"✅ llm_response_end saved for call #{auto_continue_count + 1} (before termination)")
+                        logger.debug(f"✅ llm_response_end saved for call #{auto_continue_count + 1} (before termination)")
                     except Exception as e:
                         logger.error(f"Error saving llm_response_end (before termination): {str(e)}")
                         self.trace.event(name="error_saving_llm_response_end_before_termination", level="ERROR", status_message=(f"Error saving llm_response_end (before termination): {str(e)}"))
@@ -1320,7 +1320,7 @@ class ResponseProcessor:
                     try:
                         # Use the complete LiteLLM response object as received
                         if final_llm_response:
-                            logger.info("✅ Using complete LiteLLM response for llm_response_end (normal completion)")
+                            logger.debug("✅ Using complete LiteLLM response for llm_response_end (normal completion)")
                             
                             # Log the complete response object for debugging
                             logger.info(f"🔍 COMPLETE RESPONSE OBJECT: {final_llm_response}")
@@ -1365,7 +1365,7 @@ class ResponseProcessor:
                             llm_response_end_saved = True
                             # Yield to stream for real-time context usage updates
                             if llm_end_msg_obj: yield format_for_yield(llm_end_msg_obj)
-                            logger.info(f"✅ llm_response_end saved for call #{auto_continue_count + 1}")
+                            logger.debug(f"✅ llm_response_end saved for call #{auto_continue_count + 1}")
                         else:
                             logger.warning("⚠️ No complete LiteLLM response available, skipping llm_response_end")
                     except Exception as e:
@@ -1402,7 +1402,7 @@ class ResponseProcessor:
                 
                 # Cancel all pending tool execution tasks when stopping
                 if pending_tool_executions:
-                    logger.info(f"Cancelling {len(pending_tool_executions)} pending tool executions due to stop/cancellation")
+                    logger.debug(f"Cancelling {len(pending_tool_executions)} pending tool executions due to stop/cancellation")
                     for execution in pending_tool_executions:
                         task = execution.get("task")
                         if task and not task.done():
@@ -1430,9 +1430,9 @@ class ResponseProcessor:
             
             if not llm_response_end_saved and last_assistant_message_object:
                 try:
-                    logger.info(f"💰 BULLETPROOF BILLING: Saving llm_response_end in finally block for call #{auto_continue_count + 1}")
+                    logger.debug(f"💰 BULLETPROOF BILLING: Saving llm_response_end in finally block for call #{auto_continue_count + 1}")
                     if final_llm_response:
-                        logger.info("💰 Using exact usage from LLM response")
+                        logger.debug("💰 Using exact usage from LLM response")
                         llm_end_content = self._serialize_model_response(final_llm_response)
                     else:
                         logger.warning("💰 No LLM response with usage - ESTIMATING token usage for billing")
@@ -1466,7 +1466,7 @@ class ResponseProcessor:
                     
                     usage_info = llm_end_content.get('usage', {})
                     is_estimated = usage_info.get('estimated', False)
-                    logger.info(f"💰 BILLING RECOVERY - Usage ({'ESTIMATED' if is_estimated else 'EXACT'}): {usage_info}")
+                    logger.debug(f"💰 BILLING RECOVERY - Usage ({'ESTIMATED' if is_estimated else 'EXACT'}): {usage_info}")
                     
                     llm_end_msg_obj = await self.add_message(
                         thread_id=thread_id,
@@ -1481,7 +1481,7 @@ class ResponseProcessor:
                     llm_response_end_saved = True
                     # Don't yield in finally block - stream may be closed (GeneratorExit)
                     # Frontend already stopped consuming, no point in yielding
-                    logger.info(f"✅ BILLING SUCCESS: Saved llm_response_end in finally for call #{auto_continue_count + 1} ({'estimated' if is_estimated else 'exact'} usage)")
+                    logger.debug(f"✅ BILLING SUCCESS: Saved llm_response_end in finally for call #{auto_continue_count + 1} ({'estimated' if is_estimated else 'exact'} usage)")
                     
                 except Exception as billing_e:
                     logger.error(f"❌ CRITICAL BILLING FAILURE: Could not save llm_response_end: {str(billing_e)}", exc_info=True)
@@ -1561,7 +1561,7 @@ class ResponseProcessor:
                                 self.total_tokens = total
                         
                         usage = EstimatedUsage(estimated_total_tokens)
-                        logger.info(f"⚡ Using fast check estimate: {estimated_total_tokens} tokens (stream stopped, no recalculation)")
+                        logger.debug(f"⚡ Using fast check estimate: {estimated_total_tokens} tokens (stream stopped, no recalculation)")
                     
                     end_content = {"status_type": "thread_run_end"}
                     end_msg_obj = await self.add_message(

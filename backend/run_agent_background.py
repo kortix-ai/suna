@@ -348,7 +348,8 @@ async def process_agent_responses(
 
         response_json = json.dumps(response)
         
-        if redis_streaming_enabled and redis.is_redis_healthy():
+        redis_healthy = redis.is_redis_healthy()
+        if redis_streaming_enabled and redis_healthy:
             pending_redis_operations.append(
                 asyncio.create_task(redis.publish_and_xadd(
                     pubsub_channel,

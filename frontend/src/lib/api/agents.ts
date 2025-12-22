@@ -125,9 +125,41 @@ export const unifiedAgentStart = async (options: {
     if (response.error) {
       const status = response.error.status || 500;
       
+      // Check if error is already parsed by api-client (e.g., AgentRunLimitError)
+      if (response.error instanceof AgentRunLimitError) {
+        throw response.error;
+      }
+      
       if (status === 402) {
-        const detail = response.error.details?.detail || { message: response.error.message || 'Payment required' };
-        throw new BillingError(status, detail);
+        // Check error_code to determine the correct error type
+        const errorDetail = response.error.details?.detail || { message: response.error.message || 'Payment required' };
+        const errorCode = errorDetail.error_code || response.error.code;
+        
+        // Handle concurrent agent run limit (should be AgentRunLimitError, not BillingError)
+        if (errorCode === 'AGENT_RUN_LIMIT_EXCEEDED') {
+          const detail = {
+            message: errorDetail.message || `Maximum of ${errorDetail.limit || 1} concurrent agent runs allowed. You currently have ${errorDetail.running_count || 0} running.`,
+            running_thread_ids: errorDetail.running_thread_ids || [],
+            running_count: errorDetail.running_count || 0,
+            limit: errorDetail.limit || 1,
+          };
+          throw new AgentRunLimitError(status, detail);
+        }
+        
+        // For other 402 errors, use parseTierRestrictionError to get the correct error type
+        const parsedError = parseTierRestrictionError({
+          status,
+          detail: errorDetail,
+          response: { data: { detail: errorDetail } },
+        });
+        
+        // If parseTierRestrictionError returned a different error type, throw that
+        if (!(parsedError instanceof BillingError) && parsedError instanceof Error) {
+          throw parsedError;
+        }
+        
+        // Otherwise, throw BillingError
+        throw new BillingError(status, errorDetail);
       }
 
       if (status === 429) {
@@ -408,10 +440,17 @@ export const optimisticAgentStart = async (options: {
     if (response.error) {
       const status = response.error.status || 500;
       
+      // Check if error is already parsed by api-client (e.g., AgentRunLimitError)
+      if (response.error instanceof AgentRunLimitError) {
+        throw response.error;
+      }
+      
       if (status === 402) {
+        const errorDetail = response.error.details?.detail || { message: response.error.message || 'Payment required' };
         const parsedError = parseTierRestrictionError({
           status,
-          detail: response.error.details?.detail || { message: response.error.message || 'Payment required' }
+          detail: errorDetail,
+          response: { data: { detail: errorDetail } },
         });
         throw parsedError;
       }

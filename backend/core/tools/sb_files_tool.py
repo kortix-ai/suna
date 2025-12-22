@@ -67,6 +67,13 @@ class SandboxFilesTool(SandboxToolsBase):
     def clean_path(self, path: str) -> str:
         """Clean and normalize a path to be relative to /workspace"""
         return clean_path(path, self.workspace_path)
+    
+    def _get_full_path(self, path: str) -> str:
+        """Get full absolute path relative to /workspace"""
+        cleaned = self.clean_path(path)
+        if cleaned.startswith('/workspace'):
+            return cleaned
+        return f"{self.workspace_path}/{cleaned}"
 
     def _should_exclude_file(self, rel_path: str) -> bool:
         """Check if a file should be excluded based on path, name, or extension"""
@@ -96,7 +103,7 @@ class SandboxFilesTool(SandboxToolsBase):
                     continue
 
                 try:
-                    full_path = f"{self.workspace_path}/{rel_path}"
+                    full_path = self._get_full_path(rel_path)
                     content = (await self.sandbox.fs.download_file(full_path)).decode()
                     files_state[rel_path] = {
                         "content": content,
@@ -152,8 +159,7 @@ class SandboxFilesTool(SandboxToolsBase):
             # Ensure sandbox is initialized
             await self._ensure_sandbox()
             
-            file_path = self.clean_path(file_path)
-            full_path = f"{self.workspace_path}/{file_path}"
+            full_path = self._get_full_path(file_path)
             if await self._file_exists(full_path):
                 return self.fail_response(f"File '{file_path}' already exists. Use update_file to modify existing files.")
             
@@ -218,8 +224,7 @@ class SandboxFilesTool(SandboxToolsBase):
             # Ensure sandbox is initialized
             await self._ensure_sandbox()
             
-            file_path = self.clean_path(file_path)
-            full_path = f"{self.workspace_path}/{file_path}"
+            full_path = self._get_full_path(file_path)
             if not await self._file_exists(full_path):
                 return self.fail_response(f"File '{file_path}' does not exist")
             
@@ -278,8 +283,7 @@ class SandboxFilesTool(SandboxToolsBase):
             # Ensure sandbox is initialized
             await self._ensure_sandbox()
             
-            file_path = self.clean_path(file_path)
-            full_path = f"{self.workspace_path}/{file_path}"
+            full_path = self._get_full_path(file_path)
             if not await self._file_exists(full_path):
                 return self.fail_response(f"File '{file_path}' does not exist. Use create_file to create a new file.")
 
@@ -370,8 +374,7 @@ class SandboxFilesTool(SandboxToolsBase):
             
             await self._ensure_sandbox()
             
-            file_path = self.clean_path(file_path)
-            full_path = f"{self.workspace_path}/{file_path}"
+            full_path = self._get_full_path(file_path)
             if not await self._file_exists(full_path):
                 return self.fail_response(f"File '{file_path}' does not exist")
             
@@ -479,7 +482,7 @@ class SandboxFilesTool(SandboxToolsBase):
             await self._ensure_sandbox()
             
             target_file = self.clean_path(target_file)
-            full_path = f"{self.workspace_path}/{target_file}"
+            full_path = self._get_full_path(target_file)
             if not await self._file_exists(full_path):
                 return self.fail_response(f"File '{target_file}' does not exist")
             

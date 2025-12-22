@@ -55,6 +55,7 @@ import { PresentationToolView } from './presentation-tool/PresentationToolView';
 import { ListPresentationsToolView } from './list-presentations-tool/ListPresentationsToolView';
 import { ExportToolView } from './export-tool/ExportToolView';
 import { RealityDefenderToolView } from './reality-defender-tool/RealityDefenderToolView';
+import { ApifyToolView } from './apify-tool/ApifyToolView';
 
 /**
  * Registry mapping tool names to their view components
@@ -250,6 +251,22 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   // Deepfake detection
   'detect-deepfake': RealityDefenderToolView,
   'detect_deepfake': RealityDefenderToolView,
+  
+  // Apify tools
+  'search-apify-actors': ApifyToolView,
+  'search_apify_actors': ApifyToolView,
+  'get-actor-details': ApifyToolView,
+  'get_actor_details': ApifyToolView,
+  'request-apify-approval': ApifyToolView,
+  'request_apify_approval': ApifyToolView,
+  'approve-apify-request': ApifyToolView,
+  'approve_apify_request': ApifyToolView,
+  'get-apify-approval-status': ApifyToolView,
+  'get_apify_approval_status': ApifyToolView,
+  'run-apify-actor': ApifyToolView,
+  'run_apify_actor': ApifyToolView,
+  'get-actor-run-results': ApifyToolView,
+  'get_actor_run_results': ApifyToolView,
   
   // Default fallback
   'default': GenericToolView,

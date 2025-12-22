@@ -216,6 +216,7 @@ export function ToolCallPanel({
               currentIndex={currentIndex}
               totalCalls={toolMessages.length}
               project={project}
+              threadId={currentPair.toolMessage?.thread_id || currentPair.assistantMessage?.thread_id}
               onPromptFill={handlePromptFill}
             />
           </View>
