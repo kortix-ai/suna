@@ -165,7 +165,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     projectQuery,
     agentRunsQuery,
   } = useThreadData(threadId, projectId, isShared, {
-    enablePolling: isNewThread && !hasDataLoaded.current,
+    // Only actively poll for agent when: new thread + haven't found agent yet
+    waitingForAgent: isNewThread && !hasDataLoaded.current,
   });
   
   const threadStatus = threadQuery.data?.status;

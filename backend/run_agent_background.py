@@ -368,12 +368,35 @@ async def process_agent_responses(
                     logger.debug(f"Set initial TTL ({REDIS_STREAM_TTL_SECONDS}s) on stream {stream_key}")
                 except (asyncio.TimeoutError, Exception) as e:
                     logger.debug(f"Failed to set initial TTL on stream (non-critical): {e}")
+            
+            # CRITICAL: Ensure initial messages are persisted to Redis before continuing
+            # This prevents race conditions where client connects before messages are in the stream
+            # Await first 10 messages to ensure they're ordered in Redis
+            if total_responses < 10:
+                try:
+                    await asyncio.wait_for(pending_redis_operations[-1], timeout=1.0)
+                except (asyncio.TimeoutError, Exception):
+                    pass  # Non-critical, continue
         
         total_responses += 1
         stop_signal_checker_state['total_responses'] = total_responses
 
-        if total_responses % 50 == 0:
+        # More frequent batching: every 10 messages instead of 50, to prevent ordering issues
+        if total_responses % 10 == 0:
             pending_redis_operations = [t for t in pending_redis_operations if not t.done()]
+            
+            # If too many pending ops, await some to ensure ordering
+            if len(pending_redis_operations) > 20:
+                try:
+                    # Wait for the oldest half to complete, preserving order
+                    to_await = pending_redis_operations[:len(pending_redis_operations)//2]
+                    await asyncio.wait_for(
+                        asyncio.gather(*to_await, return_exceptions=True),
+                        timeout=2.0
+                    )
+                    pending_redis_operations = [t for t in pending_redis_operations if not t.done()]
+                except (asyncio.TimeoutError, Exception):
+                    pass
             
             if len(pending_redis_operations) > MAX_PENDING_REDIS_OPS:
                 if redis_streaming_enabled:
@@ -407,7 +430,23 @@ async def process_agent_responses(
                     logger.error(f"Agent run failed: {error_message}")
                 break
     
-    stop_signal_checker_state['pending_redis_operations'] = pending_redis_operations
+    # CRITICAL: Await all pending Redis operations before returning
+    # This ensures all messages are written to the stream before completion is signaled
+    if pending_redis_operations:
+        pending_redis_operations = [t for t in pending_redis_operations if not t.done()]
+        if pending_redis_operations:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*pending_redis_operations, return_exceptions=True),
+                    timeout=5.0
+                )
+                logger.debug(f"Awaited {len(pending_redis_operations)} pending Redis ops before completion")
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout waiting for pending Redis ops for {agent_run_id}")
+            except Exception as e:
+                logger.warning(f"Error awaiting pending Redis ops: {e}")
+    
+    stop_signal_checker_state['pending_redis_operations'] = []  # Clear since we awaited them
     return final_status, error_message, complete_tool_called, total_responses
 
 

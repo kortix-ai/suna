@@ -27,7 +27,8 @@ interface UseThreadDataReturn {
 }
 
 interface UseThreadDataOptions {
-  enablePolling?: boolean;
+  /** Enable polling for agent detection (new threads waiting for optimistic start) */
+  waitingForAgent?: boolean;
 }
 
 export function useThreadData(
@@ -36,7 +37,7 @@ export function useThreadData(
   isShared: boolean = false,
   options?: UseThreadDataOptions
 ): UseThreadDataReturn {
-  const { enablePolling = false } = options || {};
+  const { waitingForAgent = false } = options || {};
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('idle');
@@ -45,18 +46,19 @@ export function useThreadData(
   
   const initialLoadCompleted = useRef<boolean>(false);
   const messagesLoadedRef = useRef(false);
-  // Track if we've found a running agent (not just checked once)
   const foundRunningAgentRef = useRef(false);
   const hasInitiallyScrolled = useRef<boolean>(false);
-  // Track the last agent run ID we detected to avoid duplicate updates
   const lastDetectedRunIdRef = useRef<string | null>(null);
   
+  // Retry counter for exponential backoff when waiting for agent
+  const retryCountRef = useRef(0);
 
   const threadQuery = useThreadQuery(threadId);
+  
+  // Messages: NO polling - stream will provide real-time updates
   const messagesQuery = useMessagesQuery(threadId, {
-    // Use faster polling (1s) for new threads to detect agent start quickly
-    refetchInterval: enablePolling ? 1000 : false,
-    staleTime: 500, // Lower stale time for faster updates during polling
+    refetchInterval: false,
+    staleTime: 5000,
   });
   
   const effectiveProjectId = threadQuery.data?.project_id || projectId || '';
@@ -64,15 +66,19 @@ export function useThreadData(
   const projectQuery = useProjectQuery(effectiveProjectId, {
     enabled: hasThreadData && !!effectiveProjectId,
     refetchOnWindowFocus: true,
-    refetchInterval: 30000, // 30s is enough for project data
+    refetchInterval: 30000,
     staleTime: 10000,
   });
   
+  // Agent runs: Smart polling only when waiting for agent, stops once found
+  const shouldPollAgentRuns = waitingForAgent && !foundRunningAgentRef.current && !agentRunId;
+  
   const agentRunsQuery = useAgentRunsQuery(threadId, { 
     enabled: !isShared,
-    // Use faster polling (1s) for new threads to detect agent start quickly
-    refetchInterval: enablePolling ? 1000 : false,
-    staleTime: 500, // Lower stale time for faster updates during polling
+    // Only poll when actively waiting for an agent to start
+    // Use 2s interval - fast enough for good UX, not too aggressive
+    refetchInterval: shouldPollAgentRuns ? 2000 : false,
+    staleTime: 1000,
   });
 
   const project = projectQuery.data || null;
@@ -86,13 +92,38 @@ export function useThreadData(
     lastDetectedRunIdRef.current = null;
     initialLoadCompleted.current = false;
     hasInitiallyScrolled.current = false;
+    retryCountRef.current = 0;
     setMessages([]);
     setAgentRunId(null);
     setAgentStatus('idle');
   }, [threadId]);
 
-  // Dedicated effect for continuous agent run monitoring
-  // This runs on every agentRunsQuery.data change, not just once
+  // Manual retry with exponential backoff for agent detection
+  // This is more efficient than constant polling
+  useEffect(() => {
+    if (!waitingForAgent || isShared || foundRunningAgentRef.current || agentRunId) {
+      return;
+    }
+
+    // Quick initial retries, then slow down
+    const getRetryDelay = (count: number): number => {
+      if (count < 3) return 500;   // First 3: every 500ms
+      if (count < 6) return 1000;  // Next 3: every 1s
+      if (count < 10) return 2000; // Next 4: every 2s
+      return 3000;                 // After that: every 3s
+    };
+
+    const retryTimeout = setTimeout(() => {
+      if (!foundRunningAgentRef.current && !agentRunId) {
+        retryCountRef.current += 1;
+        agentRunsQuery.refetch();
+      }
+    }, getRetryDelay(retryCountRef.current));
+
+    return () => clearTimeout(retryTimeout);
+  }, [waitingForAgent, isShared, agentRunId, agentRunsQuery, agentRunsQuery.dataUpdatedAt]);
+
+  // Detect running agent from query data
   useEffect(() => {
     if (isShared || !agentRunsQuery.data) return;
     
@@ -101,35 +132,23 @@ export function useThreadData(
     if (runningRuns.length > 0) {
       const latestRunning = runningRuns[0];
       
-      // Only update if this is a new running agent we haven't detected yet
       if (lastDetectedRunIdRef.current !== latestRunning.id) {
         console.log('[useThreadData] Detected running agent:', latestRunning.id);
         lastDetectedRunIdRef.current = latestRunning.id;
         foundRunningAgentRef.current = true;
+        retryCountRef.current = 0; // Reset retry counter
         setAgentRunId(latestRunning.id);
         setAgentStatus('running');
       }
-    } else if (foundRunningAgentRef.current && !enablePolling) {
-      // Only reset to idle if we previously found a running agent and polling is disabled
-      // This prevents premature idle state during the race condition window
+    } else if (foundRunningAgentRef.current && !waitingForAgent) {
+      // Only reset if not actively waiting for agent
       setAgentStatus('idle');
       setAgentRunId(null);
       lastDetectedRunIdRef.current = null;
     }
-  }, [agentRunsQuery.data, isShared, enablePolling]);
+  }, [agentRunsQuery.data, isShared, waitingForAgent]);
 
-  // Trigger immediate agent runs refetch when messages first load (during polling)
-  // This helps catch the agent run faster since messages often arrive before agent run is detected
-  useEffect(() => {
-    if (!enablePolling || isShared || foundRunningAgentRef.current) return;
-    
-    // When messages arrive for the first time, immediately refetch agent runs
-    if (messagesQuery.data && messagesQuery.data.length > 0 && !agentRunId) {
-      console.log('[useThreadData] Messages detected, triggering agent runs refetch');
-      agentRunsQuery.refetch();
-    }
-  }, [messagesQuery.data, enablePolling, isShared, agentRunId, agentRunsQuery]);
-
+  // Main data initialization effect
   useEffect(() => {
     let isMounted = true;
 
@@ -145,7 +164,6 @@ export function useThreadData(
         if (!isMounted) return;
 
         if (messagesQuery.data && !messagesLoadedRef.current) {
-          // Backend now filters out status messages, so no need to filter here
           const unifiedMessages = (messagesQuery.data || [])
             .map((msg: ApiMessageType) => ({
               message_id: msg.message_id || null,
@@ -160,7 +178,6 @@ export function useThreadData(
               agents: (msg as any).agents,
             }));
 
-          // Merge with any local messages that are not present in server data yet
           const serverIds = new Set(
             unifiedMessages.map((m) => m.message_id).filter(Boolean) as string[],
           );
@@ -184,7 +201,6 @@ export function useThreadData(
           }
         }
 
-        // For shared pages, only wait for thread and messages data
         const requiredDataLoaded = isShared 
           ? (threadQuery.data && messagesQuery.data)
           : (threadQuery.data && messagesQuery.data && agentRunsQuery.data);
@@ -228,18 +244,12 @@ export function useThreadData(
     isShared
   ]);
 
-  // Force message reload when thread changes or new data arrives
+  // Force message reload when new data arrives (but not via polling)
   useEffect(() => {
     if (messagesQuery.data && messagesQuery.status === 'success' && !isLoading) {
-      // (debug logs removed)
-      
-      // Always reload messages when thread data changes or we have more raw messages than processed
-      const shouldReload = messages.length === 0 || messagesQuery.data.length > messages.length + 50; // Allow for status messages
+      const shouldReload = messages.length === 0 || messagesQuery.data.length > messages.length + 50;
       
       if (shouldReload) {
-        // (debug logs removed)
-        
-        // Backend now filters out status messages, so no need to filter here
         const unifiedMessages = (messagesQuery.data || [])
           .map((msg: ApiMessageType) => ({
             message_id: msg.message_id || null,
@@ -254,7 +264,6 @@ export function useThreadData(
             agents: (msg as any).agents,
           }));
 
-        // Merge strategy: preserve any local (optimistic/streamed) messages not in server yet
         setMessages((prev) => {
           const serverIds = new Set(
             unifiedMessages.map((m) => m.message_id).filter(Boolean) as string[],
@@ -271,11 +280,8 @@ export function useThreadData(
             return aTime - bTime;
           });
           
-          // Messages set only from server merge; no cross-thread cache
           return merged;
         });
-      } else {
-        // (debug logs removed)
       }
     }
   }, [messagesQuery.data, messagesQuery.status, isLoading, messages.length, threadId]);
