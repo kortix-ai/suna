@@ -16,8 +16,6 @@ import { CompanySearchToolView } from '../company-search-tool/CompanySearchToolV
 import { DocumentParserToolView } from '../document-parser-tool/DocumentParserToolView';
 import { SeeImageToolView } from '../see-image-tool/SeeImageToolView';
 import { WaitToolView } from '../wait-tool/WaitToolView';
-import { ExecuteDataProviderCallToolView } from '../data-provider-tool/ExecuteDataProviderCallToolView';
-import { DataProviderEndpointsToolView } from '../data-provider-tool/DataProviderEndpointsToolView';
 import { SearchMcpServersToolView } from '../search-mcp-servers/search-mcp-servers';
 import { GetAppDetailsToolView } from '../get-app-details/get-app-details';
 import { CreateCredentialProfileToolView } from '../create-credential-profile/create-credential-profile';
@@ -94,8 +92,6 @@ const defaultRegistry: ToolViewRegistryType = {
   'scrape-webpage': WebScrapeToolView,
   'image-search': WebSearchToolView,
 
-  'execute-data-provider-call': ExecuteDataProviderCallToolView,
-  'get-data-provider-endpoints': DataProviderEndpointsToolView,
 
   'search-apify-actors': ApifyToolView,
   'search_apify_actors': ApifyToolView,

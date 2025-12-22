@@ -25,7 +25,7 @@ import {
   getFileTypeFromExtension,
 } from '@/components/file-editors';
 import { UnifiedMarkdown } from '@/components/markdown';
-import { CsvRenderer, XlsxRenderer, HtmlRenderer } from '@/components/file-renderers';
+import { CsvRenderer, XlsxRenderer, HtmlRenderer, JsonRenderer } from '@/components/file-renderers';
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
@@ -678,6 +678,7 @@ export function FileOperationToolView({
     // Determine file type for rendering
     const fileType = getFileTypeFromExtension(fileName);
     const isMarkdown = fileExtension === 'md' || fileExtension === 'markdown';
+    const isJson = fileExtension === 'json';
     const isCsv = fileExtension === 'csv' || fileExtension === 'tsv';
     const isXlsx = fileExtension === 'xlsx' || fileExtension === 'xls';
     
@@ -701,6 +702,13 @@ export function FileOperationToolView({
         <div className="h-full overflow-auto p-4 bg-white dark:bg-zinc-900">
           <UnifiedMarkdown content={processUnicodeContent(fileContent)} />
         </div>
+      );
+    }
+
+    // For JSON files
+    if (isJson) {
+      return (
+        <JsonRenderer content={fileContent} />
       );
     }
 

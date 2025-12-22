@@ -459,8 +459,6 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['browser_extract_content', 'Extracting Content'],
   ['browser_screenshot', 'Taking Screenshot'],
 
-  ['execute_data_provider_call', 'Calling data provider'],
-  ['get_data_provider_endpoints', 'Getting endpoints'],
   
   ['get-paper-details', 'Getting Paper Details'],
   ['search-authors', 'Searching Authors'],
@@ -621,11 +619,6 @@ export const HIDE_STREAMING_XML_TAGS = new Set([
   'crawl-webpage',
   'web-search',
   'load-image',
-  'execute_data_provider_call',
-  'execute_data_provider_endpoint',
-
-  'execute-data-provider-call',
-  'execute-data-provider-endpoint',
 ]);
 
 export function extractAppSlugFromToolCall(toolCall: any): string | null {

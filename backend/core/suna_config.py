@@ -18,7 +18,6 @@ SUNA_CONFIG = {
         # Search and research tools
         "web_search_tool": True,
         "image_search_tool": True,
-        "data_providers_tool": True,
         
         # AI vision and image tools
         "sb_vision_tool": True,

@@ -33,6 +33,7 @@ import {
   type LineDiff,
 } from './_utils';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { JsonRenderer } from './JsonRenderer';
 import { CsvRenderer } from './CsvRenderer';
 import { XlsxRenderer } from './XlsxRenderer';
 import { ToolViewCard, TabSwitcher, StatusBadge, LoadingState, CodeRenderer, FileDownloadButton } from '../shared';
@@ -330,6 +331,7 @@ export function FileOperationToolView({
 
   const isHtml = isFileType.html(fileExtension);
   const isMarkdown = fileExtension === 'md' || fileExtension === 'markdown';
+  const isJson = fileExtension === 'json';
   const isCsv = fileExtension === 'csv' || fileExtension === 'tsv';
   const isXlsx = fileExtension === 'xlsx' || fileExtension === 'xls';
 
@@ -537,6 +539,21 @@ export function FileOperationToolView({
       );
     }
 
+    if (isJson) {
+      return (
+        <ScrollView
+          ref={previewScrollRef}
+          className="flex-1"
+          showsVerticalScrollIndicator={true}
+          nestedScrollEnabled={true}
+          onScroll={handlePreviewScroll}
+          scrollEventThrottle={16}
+        >
+          <JsonRenderer content={fileContent} />
+        </ScrollView>
+      );
+    }
+
     if (isCsv) {
       return (
         <ScrollView
@@ -661,7 +678,7 @@ export function FileOperationToolView({
     if (!tabInitializedRef.current) {
       if (hasDiffData) {
         setActiveTab('changes');
-      } else if (isMarkdown || isHtml || isCsv || isXlsx || isPresentationSlide) {
+      } else if (isMarkdown || isJson || isHtml || isCsv || isXlsx || isPresentationSlide) {
         setActiveTab('preview');
       } else {
         setActiveTab('code');

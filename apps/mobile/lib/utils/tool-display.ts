@@ -114,14 +114,6 @@ export const getToolIcon = (toolName: string): LucideIcon => {
     case 'scrape_webpage':
       return Globe;
 
-    case 'call-data-provider':
-    case 'call_data_provider':
-      return ExternalLink;
-    case 'get-data-provider-endpoints':
-    case 'get_data_provider_endpoints':
-    case 'execute-data-provider-call':
-    case 'execute_data_provider_call':
-      return Network;
 
     case 'create-sheet':
     case 'create_sheet':
@@ -303,8 +295,6 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['str_replace', 'Editing Text'],
   ['edit_file', 'Editing File'],
 
-  ['execute_data_provider_call', 'Calling data provider'],
-  ['get_data_provider_endpoints', 'Getting endpoints'],
   
   ['get-paper-details', 'Getting Paper Details'],
   ['search-authors', 'Searching Authors'],

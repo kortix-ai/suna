@@ -116,7 +116,7 @@ export function useThreadToolCalls(
         }
 
         const toolName = functionName.replace(/_/g, '-').toLowerCase();
-        const isSuccess = toolResult.success !== false;
+        const isSuccess = toolResult?.success !== false;
 
         // Check if this tool should be filtered out
         if (shouldFilterTool(toolName)) {
@@ -145,9 +145,9 @@ export function useThreadToolCalls(
             source: matchingToolCall.source || 'xml',
           },
           toolResult: {
-            success: toolResult.success !== false,
-            output: toolResult.output,
-            error: toolResult.error || null,
+            success: toolResult?.success !== false,
+            output: toolResult?.output,
+            error: toolResult?.error || null,
           },
           assistantTimestamp: assistantMsg.created_at,
           toolTimestamp: resultMessage.created_at,

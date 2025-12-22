@@ -8,6 +8,7 @@ export { CsvRenderer } from './csv-renderer';
 export { XlsxRenderer } from './xlsx-renderer';
 export { PptxRenderer } from './pptx-renderer';
 export { HtmlRenderer } from './html-renderer';
+export { JsonRenderer } from './JsonRenderer';
 
 // File type helpers
 export type BinaryFileType = 'pdf' | 'image' | 'binary' | 'csv' | 'xlsx' | 'pptx';

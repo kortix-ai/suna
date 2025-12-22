@@ -30,7 +30,7 @@ _STATELESS_TOOL_INSTANCES: Dict[Type[Tool], Tool] = {}
 # Tools that CAN be pre-instantiated (no constructor args required)
 STATELESS_TOOLS = {
     'expand_msg_tool', 'message_tool', 'task_list_tool',
-    'data_providers_tool', 'web_search_tool', 'image_search_tool',
+    'web_search_tool', 'image_search_tool',
     'people_search_tool', 'company_search_tool', 'paper_search_tool',
 }
 

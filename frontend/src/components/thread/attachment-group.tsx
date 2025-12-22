@@ -3,6 +3,7 @@ import { X, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { FileAttachment } from './file-attachment';
 import { cn } from '@/lib/utils';
+import { isPreviewableFile as isPreviewableFilePath, isImageFile as isImageFilePath } from '@/lib/utils/file-types';
 import { Project } from '@/lib/api/threads';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
@@ -180,21 +181,9 @@ export function AttachmentGroup({
         return file.status;
     };
 
-    // Check if a file is HTML, Markdown, CSV, XLSX, or PDF (previewable types in grid)
+    // Check if a file is previewable (HTML, Markdown, JSON, CSV, XLSX, PDF)
     const isPreviewableFile = (file: string | UploadedFile): boolean => {
-        const path = getFilePath(file);
-        const ext = path.split('.').pop()?.toLowerCase() || '';
-        return (
-            ext === 'html' ||
-            ext === 'htm' ||
-            ext === 'md' ||
-            ext === 'markdown' ||
-            ext === 'csv' ||
-            ext === 'tsv' ||
-            ext === 'xlsx' ||
-            ext === 'xls' ||
-            ext === 'pdf'
-        );
+        return isPreviewableFilePath(getFilePath(file));
     };
 
     // Pre-compute any conditional values used in rendering

@@ -147,10 +147,10 @@ export function extractApifySearchData(
 
     if (toolResult?.output) {
       output = toolResult.output;
-      if (toolResult.success !== undefined) {
+      if (toolResult?.success !== undefined) {
         actualIsSuccess = toolResult.success;
       }
-      if (toolResult.timestamp) {
+      if (toolResult?.timestamp) {
         actualToolTimestamp = toolResult.timestamp;
       }
     }
@@ -212,10 +212,10 @@ export function extractApifyActorDetails(
 
     if (toolResult?.output) {
       output = toolResult.output;
-      if (toolResult.success !== undefined) {
+      if (toolResult?.success !== undefined) {
         actualIsSuccess = toolResult.success;
       }
-      if (toolResult.timestamp) {
+      if (toolResult?.timestamp) {
         actualToolTimestamp = toolResult.timestamp;
       }
     }
@@ -311,10 +311,10 @@ export function extractApifyRunData(
 
     if (toolResult?.output) {
       output = toolResult.output;
-      if (toolResult.success !== undefined) {
+      if (toolResult?.success !== undefined) {
         actualIsSuccess = toolResult.success;
       }
-      if (toolResult.timestamp) {
+      if (toolResult?.timestamp) {
         actualToolTimestamp = toolResult.timestamp;
       }
     }
@@ -393,10 +393,10 @@ export function extractApifyApprovalData(
 
     if (toolResult?.output) {
       output = toolResult.output;
-      if (toolResult.success !== undefined) {
+      if (toolResult?.success !== undefined) {
         actualIsSuccess = toolResult.success;
       }
-      if (toolResult.timestamp) {
+      if (toolResult?.timestamp) {
         actualToolTimestamp = toolResult.timestamp;
       }
     }
@@ -469,10 +469,10 @@ export function extractApifyRunResultsData(
 
     if (toolResult?.output) {
       output = toolResult.output;
-      if (toolResult.success !== undefined) {
+      if (toolResult?.success !== undefined) {
         actualIsSuccess = toolResult.success;
       }
-      if (toolResult.timestamp) {
+      if (toolResult?.timestamp) {
         actualToolTimestamp = toolResult.timestamp;
       }
     }

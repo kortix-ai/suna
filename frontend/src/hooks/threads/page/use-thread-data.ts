@@ -51,7 +51,8 @@ export function useThreadData(
 
   const threadQuery = useThreadQuery(threadId);
   const messagesQuery = useMessagesQuery(threadId, {
-    refetchInterval: enablePolling ? 1000 : false,
+    refetchInterval: enablePolling ? 3000 : false, // 3s polling when enabled
+    staleTime: 2000, // Prevent refetch spam
   });
   
   const effectiveProjectId = threadQuery.data?.project_id || projectId || '';
@@ -59,12 +60,14 @@ export function useThreadData(
   const projectQuery = useProjectQuery(effectiveProjectId, {
     enabled: hasThreadData && !!effectiveProjectId,
     refetchOnWindowFocus: true,
-    refetchInterval: 10000,
+    refetchInterval: 30000, // 30s is enough for project data
+    staleTime: 10000,
   });
   
   const agentRunsQuery = useAgentRunsQuery(threadId, { 
     enabled: !isShared,
-    refetchInterval: enablePolling ? 1000 : false,
+    refetchInterval: enablePolling ? 3000 : false, // 3s polling when enabled
+    staleTime: 2000, // Prevent refetch spam
   });
 
   const project = projectQuery.data || null;

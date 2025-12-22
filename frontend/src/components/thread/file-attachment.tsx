@@ -5,8 +5,18 @@ import {
     Loader2, Download, ChevronDown
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+    isPreviewableExtension,
+    isImageExtension,
+    isJsonExtension,
+    isMarkdownExtension,
+    isHtmlExtension,
+    isCsvExtension,
+    isSpreadsheetExtension,
+    isPdfExtension,
+} from '@/lib/utils/file-types';
 import { AttachmentGroup } from './attachment-group';
-import { HtmlRenderer, CsvRenderer, XlsxRenderer, PdfRenderer } from '@/components/file-renderers';
+import { HtmlRenderer, CsvRenderer, XlsxRenderer, PdfRenderer, JsonRenderer } from '@/components/file-renderers';
 import { UnifiedMarkdown } from '@/components/markdown';
 import {
     DropdownMenu,
@@ -237,27 +247,29 @@ export function FileAttachment({
     const fileSize = getFileSize(filepath, fileType);
     const IconComponent = getFileIcon(fileType);
 
-    // Display flags
+    // Display flags - using centralized file type utilities
     const isImage = fileType === 'image';
-    const isHtmlOrMd = extension === 'html' || extension === 'htm' || extension === 'md' || extension === 'markdown';
-    const isHtml = extension === 'html' || extension === 'htm';
+    const isHtml = isHtmlExtension(extension);
+    const isMarkdown = isMarkdownExtension(extension);
+    const isHtmlOrMd = isHtml || isMarkdown;
+    const isJson = isJsonExtension(extension);
+    const isCsv = isCsvExtension(extension);
+    const isXlsx = isSpreadsheetExtension(extension);
+    const isPdf = isPdfExtension(extension);
     
     // For HTML files, construct the proper preview URL using sandbox URL instead of API endpoint
     const htmlPreviewUrl = isHtml && project?.sandbox?.sandbox_url
         ? constructHtmlPreviewUrl(project.sandbox.sandbox_url, filepath)
         : undefined;
-    const isCsv = extension === 'csv' || extension === 'tsv';
-    const isXlsx = extension === 'xlsx' || extension === 'xls';
-    const isPdf = extension === 'pdf';
+    
     const isGridLayout = customStyle?.gridColumn === '1 / -1' || Boolean(customStyle && ('--attachment-height' in customStyle));
-    // Define isInlineMode early, before any hooks
     const isInlineMode = !isGridLayout;
-    const shouldShowPreview = (isHtmlOrMd || isCsv || isXlsx || isPdf) && showPreview && collapsed === false;
+    const shouldShowPreview = isPreviewableExtension(extension) && showPreview && collapsed === false;
 
     // Use the React Query hook to fetch file content
     // For CSV files, always try to load content for better preview experience
     // For XLSX files, we need binary data which is handled by useImageContent
-    const shouldLoadContent = (isHtmlOrMd || isCsv) && (shouldShowPreview || isCsv);
+    const shouldLoadContent = (isHtmlOrMd || isJson || isCsv) && (shouldShowPreview || isCsv);
     const {
         data: fileContent,
         isLoading: fileContentLoading,
@@ -668,7 +680,7 @@ export function FileAttachment({
                     "group relative w-full",
                     "rounded-xl border bg-card overflow-hidden pt-10", // Consistent card styling with header space
                     isPdf ? "!min-h-[200px] sm:min-h-0 sm:h-[400px] max-h-[500px] sm:!min-w-[300px]" :
-                        isHtmlOrMd ? "!min-h-[200px] sm:min-h-0 sm:h-[400px] max-h-[600px] sm:!min-w-[300px]" :
+                        isHtmlOrMd || isJson ? "!min-h-[200px] sm:min-h-0 sm:h-[400px] max-h-[600px] sm:!min-w-[300px]" :
                             (isCsv || isXlsx) ? "min-h-[300px] h-full" : // Let CSV and XLSX take full height
                                 standalone ? "min-h-[300px] h-auto" : "h-[300px]", // Better height handling for standalone
                     className
@@ -687,8 +699,8 @@ export function FileAttachment({
                     style={{
                         minWidth: 0,
                         width: '100%',
-                        containIntrinsicSize: (isPdf || isHtmlOrMd) ? '100% 500px' : undefined,
-                        contain: (isPdf || isHtmlOrMd) ? 'layout size' : undefined
+                        containIntrinsicSize: (isPdf || isHtmlOrMd || isJson) ? '100% 500px' : undefined,
+                        contain: (isPdf || isHtmlOrMd || isJson) ? 'layout size' : undefined
                     }}
                 >
                     {/* Render PDF, XLSX, or text-based previews */}
@@ -734,6 +746,11 @@ export function FileAttachment({
                                 <div className="h-full w-full overflow-auto p-4">
                                     <UnifiedMarkdown content={fileContent} />
                                     </div>
+                            )}
+                            
+                            {/* JSON Preview */}
+                            {isJson && fileContent && (
+                                <JsonRenderer content={fileContent} />
                             )}
                             
                             {/* HTML Preview */}

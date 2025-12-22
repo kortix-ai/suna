@@ -53,12 +53,29 @@ export function WebSearchToolView({
     assistantTimestamp
   );
 
+  // Log the extracted data for debugging
+  console.log('[WebSearchToolView] Data:', { 
+    query, 
+    isBatch, 
+    batchResultsLength: batchResults?.length,
+    currentQueryIndex,
+    searchResultsLength: searchResults?.length 
+  });
+
   // Reset to first query when batch results change
   useEffect(() => {
     if (isBatch && batchResults && batchResults.length > 0) {
       setCurrentQueryIndex(0);
     }
   }, [isBatch, batchResults?.length]);
+
+  // Ensure currentQueryIndex is always valid - computed value with bounds checking
+  const safeQueryIndex = batchResults && batchResults.length > 0 
+    ? Math.min(currentQueryIndex, batchResults.length - 1)
+    : 0;
+  
+  // Get the current batch item safely
+  const currentBatchItem = batchResults?.[safeQueryIndex];
 
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const toolTitle = getToolTitle(name);
@@ -148,31 +165,31 @@ export function WebSearchToolView({
           <ScrollArea className="h-full w-full">
             <div className="p-4 py-0 my-4">
               {/* Navigation Header - At the absolute top */}
-              {isBatch && batchResults && (
+              {isBatch && batchResults && currentBatchItem && (
                 <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs font-medium text-muted-foreground">
-                        Query {currentQueryIndex + 1} of {batchResults.length}
+                        Query {safeQueryIndex + 1} of {batchResults.length}
                       </span>
-                      {batchResults[currentQueryIndex].success ? (
+                      {currentBatchItem.success ? (
                         <CheckCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                       ) : (
                         <AlertTriangle className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
                       )}
-                      {name === 'image-search' && batchResults[currentQueryIndex].images.length > 0 && (
+                      {name === 'image-search' && currentBatchItem.images?.length > 0 && (
                         <Badge variant="outline" className="text-xs font-normal h-4 px-1.5">
-                          {batchResults[currentQueryIndex].images.length} images
+                          {currentBatchItem.images.length} images
                         </Badge>
                       )}
-                      {name !== 'image-search' && batchResults[currentQueryIndex].results.length > 0 && (
+                      {name !== 'image-search' && currentBatchItem.results?.length > 0 && (
                         <Badge variant="outline" className="text-xs font-normal h-4 px-1.5">
-                          {batchResults[currentQueryIndex].results.length}
+                          {currentBatchItem.results.length}
                         </Badge>
                       )}
                     </div>
                     <p className="text-sm font-medium text-foreground truncate">
-                      {batchResults[currentQueryIndex].query}
+                      {currentBatchItem.query}
                     </p>
                   </div>
                   
@@ -181,8 +198,8 @@ export function WebSearchToolView({
                       variant="ghost"
                       size="sm"
                       className="h-8 w-8 p-0"
-                      onClick={() => setCurrentQueryIndex(Math.max(0, currentQueryIndex - 1))}
-                      disabled={currentQueryIndex === 0}
+                      onClick={() => setCurrentQueryIndex(Math.max(0, safeQueryIndex - 1))}
+                      disabled={safeQueryIndex === 0}
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
@@ -190,8 +207,8 @@ export function WebSearchToolView({
                       variant="ghost"
                       size="sm"
                       className="h-8 w-8 p-0"
-                      onClick={() => setCurrentQueryIndex(Math.min(batchResults.length - 1, currentQueryIndex + 1))}
-                      disabled={currentQueryIndex === batchResults.length - 1}
+                      onClick={() => setCurrentQueryIndex(Math.min(batchResults.length - 1, safeQueryIndex + 1))}
+                      disabled={safeQueryIndex === batchResults.length - 1}
                     >
                       <ChevronRight className="h-4 w-4" />
                     </Button>
@@ -203,22 +220,22 @@ export function WebSearchToolView({
                 <div className="mb-6">
                   <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-3 flex items-center">
                     <ImageIcon className="h-4 w-4 mr-2 opacity-70" />
-                    Images {name === 'image-search' && isBatch && batchResults
-                      ? `(${batchResults[currentQueryIndex]?.images?.length || 0})`
+                    Images {name === 'image-search' && isBatch && currentBatchItem
+                      ? `(${currentBatchItem.images?.length || 0})`
                       : name === 'image-search'
                         ? `(${images.length})`
                         : ''}
                     {isBatch && batchResults && (
                       <span className="ml-2 text-xs text-muted-foreground">
-                        (Query {currentQueryIndex + 1} of {batchResults.length})
+                        (Query {safeQueryIndex + 1} of {batchResults.length})
                       </span>
                     )}
                   </h3>
                   <div className={`grid gap-3 mb-1 ${name === 'image-search' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4' : 'grid-cols-2 sm:grid-cols-3'}`}>
                     {(() => {
                       // Show images for current query if batch mode, otherwise all images
-                      const imagesToShow = isBatch && batchResults && batchResults[currentQueryIndex]?.images
-                        ? batchResults[currentQueryIndex].images
+                      const imagesToShow = isBatch && currentBatchItem?.images
+                        ? currentBatchItem.images
                         : (name === 'image-search' ? images : images.slice(0, 6));
                       return imagesToShow.map((image, idx) => {
                       const imageUrl = typeof image === 'string' ? image : (image as any).imageUrl;
@@ -252,8 +269,8 @@ export function WebSearchToolView({
                     })()}
                   </div>
                   {name !== 'image-search' && (() => {
-                    const currentImages = isBatch && batchResults && batchResults[currentQueryIndex]?.images
-                      ? batchResults[currentQueryIndex].images
+                    const currentImages = isBatch && currentBatchItem?.images
+                      ? currentBatchItem.images
                       : images;
                     return currentImages.length > 6 && (
                     <Button variant="outline" size="sm" className="mt-2 text-xs">
@@ -266,32 +283,31 @@ export function WebSearchToolView({
 
               {name !== 'image-search' && (
                 <>
-                  {isBatch && batchResults ? (
+                  {isBatch && batchResults && currentBatchItem ? (
                     // Batch mode: display current query results
                     <div className="space-y-4">
                       {/* Current Query Results */}
                       {(() => {
-                        const batchItem = batchResults[currentQueryIndex];
                         return (
                           <div className="space-y-4">
-                            {batchItem.answer && (
+                            {currentBatchItem.answer && (
                               <div className="bg-muted/50 border border-border rounded-lg p-3">
                                 <p className="text-sm text-foreground leading-relaxed">
-                                  {batchItem.answer}
+                                  {currentBatchItem.answer}
                                 </p>
                               </div>
                             )}
 
-                            {batchItem.results.length > 0 ? (
+                            {currentBatchItem.results?.length > 0 ? (
                               <div className="space-y-2.5">
-                                {batchItem.results.map((result, idx) => {
+                                {currentBatchItem.results.map((result, idx) => {
                                   // Guard against missing url/title
                                   if (!result?.url || !result?.title) {
                                     return null;
                                   }
                                   
                                   const { icon: ResultTypeIcon, label: resultTypeLabel } = getResultType(result);
-                                  const resultKey = `batch-${currentQueryIndex}-result-${idx}`;
+                                  const resultKey = `batch-${safeQueryIndex}-result-${idx}`;
                                   const isExpanded = expandedResults[resultKey] || false;
                                   const favicon = getFavicon(result.url);
 

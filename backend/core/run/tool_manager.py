@@ -3,7 +3,6 @@ from typing import Optional, List
 from core.tools.message_tool import MessageTool
 from core.tools.web_search_tool import SandboxWebSearchTool
 from core.tools.image_search_tool import SandboxImageSearchTool
-from core.tools.data_providers_tool import DataProvidersTool
 from core.tools.expand_msg_tool import ExpandMessageTool
 from core.tools.task_list_tool import TaskListTool
 from core.tools.people_search_tool import PeopleSearchTool
@@ -167,10 +166,6 @@ class ToolManager:
                 self.thread_manager.add_tool(tool_class, function_names=enabled_methods, **kwargs)
     
     def _register_utility_tools(self, disabled_tools: List[str]):
-        if config.RAPID_API_KEY and 'data_providers_tool' not in disabled_tools:
-            enabled_methods = self._get_enabled_methods_for_tool('data_providers_tool')
-            self.thread_manager.add_tool(DataProvidersTool, function_names=enabled_methods)
-        
         if config.SEMANTIC_SCHOLAR_API_KEY and 'paper_search_tool' not in disabled_tools:
             if 'paper_search_tool' not in disabled_tools:
                 enabled_methods = self._get_enabled_methods_for_tool('paper_search_tool')

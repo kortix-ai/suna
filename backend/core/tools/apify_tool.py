@@ -56,18 +56,17 @@ from core.sandbox.tool_base import SandboxToolsBase
      - After approval: "I have approved", "you can start", "go ahead", "approved", "start"
      - To find cheaper: "find cheaper", "lower cost", "reduce cost", "cheaper option"
      - To cancel: "cancel", "don't run", "stop"
-   - **CRITICAL: After user responds, check approval status with get_apify_approval_status() and proceed accordingly:**
-     - If user says "approved"/"start"/"go ahead" → check status, if approved → run actor
+   - **CRITICAL: After user responds, proceed directly:**
+     - If user says "approved"/"start"/"go ahead" → directly call run_apify_actor() (it will return an error if not approved)
      - If user says "find cheaper" → search for cheaper actors or adjust parameters
      - If user says "cancel" → acknowledge and don't run
    - **CRITICAL: DO NOT ask if they want to approve or offer options - just tell them to click the approve button.**
    - **CRITICAL: NEVER mention any 'approve' tool - there is NO such tool.**
 
-4. `get_apify_approval_status(approval_id)` - Check approval request status
-   - Use to check if approval is pending, approved, rejected, or expired
+4. `get_apify_approval_status(approval_id)` - Check approval request status (OPTIONAL)
+   - Optional: Use to check if approval is pending, approved, rejected, or expired
    - Returns full approval details including costs
-   - **CRITICAL: If status is 'pending', tell the user: "The approval request is still pending. Please click the 'Approve' button in the UI to approve it. I cannot approve it for you - only you can approve via the UI."**
-   - **CRITICAL: If status is 'expired', tell the user: "The approval request has expired. I'll create a new approval request for you."**
+   - **NOTE: Not required before running - run_apify_actor() will return an error if approval is not approved**
    - **CRITICAL: NEVER try to call any 'approve' tool - there is NO such tool. Only the user can approve by clicking the approve button in the UI.**
 
 6. `run_apify_actor(actor_id, run_input, max_cost_usd?, approval_id)` - Start actor run (REQUIRES APPROVAL)
@@ -107,15 +106,13 @@ from core.sandbox.tool_base import SandboxToolsBase
      - "If you want a cheaper option, say 'find cheaper' or 'lower cost' and I'll search for alternatives."
      - "To cancel, just say 'cancel' or 'don't run'."
    - **CRITICAL: NEVER mention any 'approve' tool - there is NO such tool. The user must click the approve button in the UI.**
-5. **Wait for user response, then check status:** get_apify_approval_status("approval_id") to verify user has approved via UI
-   - **If user says "approved"/"start"/"go ahead" → Check status:**
-     - **If status is 'approved': Proceed to step 6 (run actor)**
-     - **If status is 'pending': Tell user: "The approval is still pending. Please click the 'Approve' button in the approval card above to approve it. I cannot approve it for you."**
+5. **Wait for user response, then proceed directly:**
+   - **If user says "approved"/"start"/"go ahead" → Directly call run_apify_actor() (step 6) - it will return an error if approval is not approved**
    - **If user says "find cheaper"/"lower cost" → Search for cheaper actors or adjust parameters, then create new approval**
    - **If user says "cancel"/"don't run" → Acknowledge and don't run**
-   - **If status is 'expired': Tell user: "The approval has expired. I'll create a new approval request." Then go back to step 3**
    - **CRITICAL: NEVER try to call any 'approve_apify_request' or 'approve' tool - it does NOT exist. Only the user can approve via UI.**
 6. Start actor: run_apify_actor("actor_id", {...input...}, approval_id="approval_id") - REQUIRES approval_id
+   - **NOTE: If approval is not approved, this will return an error automatically - no need to check status first**
 7. Monitor status: get_actor_run_status("run_id") to check progress/logs (poll until SUCCEEDED/FAILED)
 8. **MANDATORY: Get and display results** - get_actor_run_results("run_id") once status is SUCCEEDED
    - ⚠️ CRITICAL: You MUST call get_actor_run_results() immediately after run completes
@@ -159,10 +156,8 @@ from core.sandbox.tool_base import SandboxToolsBase
   2. get_actor_details("apify/twitter-scraper")
   3. request_apify_approval("apify/twitter-scraper", {"searchTerms": ["from:elonmusk"]})
   4. **USE ASK TOOL:** "I've created an approval request for scraping tweets. Maximum cost: 120 credits ($1.00). Please click the 'Approve' button in the approval card above to approve it. I cannot approve it for you - only you can approve by clicking the button in the UI. Once you click it, I'll immediately start scraping the LinkedIn posts for you! After you approve, you can say 'I have approved', 'you can start', 'go ahead', or just 'approved' and I'll start immediately. If you want a cheaper option, say 'find cheaper'."
-  5. **Wait for user response, then:** get_apify_approval_status("approval_id") - check if user approved
-     - **If user says "approved"/"start" → Check status:**
-       - **If approved: Proceed to step 6**
-       - **If pending: Tell user: "The approval is still pending. Please click the 'Approve' button in the approval card above. I cannot approve it for you."**
+  5. **Wait for user response, then proceed directly:**
+     - **If user says "approved"/"start"/"go ahead" → Directly call run_apify_actor() (step 6) - it will return an error if not approved**
      - **If user says "find cheaper": Search for cheaper actors and create new approval**
   6. run_apify_actor("apify/twitter-scraper", {"searchTerms": ["from:elonmusk"]}, approval_id="approval_id")
   7. get_actor_run_status("run_id") - poll until SUCCEEDED
@@ -174,10 +169,8 @@ from core.sandbox.tool_base import SandboxToolsBase
   2. get_actor_details("streamers/youtube-scraper")
   3. request_apify_approval("streamers/youtube-scraper", {"videoUrls": ["https://youtube.com/watch?v=..."]})
   4. **USE ASK TOOL:** "Approval request created for YouTube video details. Max cost: 60 credits ($0.50). Please click the 'Approve' button in the approval card above to approve it. I cannot approve it for you - only you can approve via the UI. Once you approve, say 'I have approved' or 'you can start' and I'll fetch the video details immediately. If you want a cheaper option, say 'find cheaper'."
-  5. **Wait for user response, then:** get_apify_approval_status("approval_id") - check if user approved
-     - **If user says "approved"/"start" → Check status:**
-       - **If approved: Proceed to step 6**
-       - **If pending: Tell user: "Please click the 'Approve' button in the approval card above. I cannot approve it for you."**
+  5. **Wait for user response, then proceed directly:**
+     - **If user says "approved"/"start"/"go ahead" → Directly call run_apify_actor() (step 6) - it will return an error if not approved**
      - **If user says "find cheaper": Search for cheaper actors and create new approval**
   6. run_apify_actor("streamers/youtube-scraper", {"videoUrls": ["..."]}, approval_id="approval_id")
   7. get_actor_run_status("run_id") - poll until SUCCEEDED
@@ -189,10 +182,8 @@ from core.sandbox.tool_base import SandboxToolsBase
   2. get_actor_details("compass/crawler-google-places")
   3. request_apify_approval("compass/crawler-google-places", {"queries": "restaurants in NYC"})
   4. **USE ASK TOOL:** "Created approval for Google Maps search. Maximum cost: 100 credits ($1.00). Please click the 'Approve' button in the approval card above to approve it. I cannot approve it for you - only you can approve via the UI. Once you approve, say 'I have approved' or 'you can start' and I'll search for restaurants immediately. If you want a cheaper option, say 'find cheaper'."
-  5. **Wait for user response, then:** get_apify_approval_status("approval_id") - check if user approved
-     - **If user says "approved"/"start" → Check status:**
-       - **If approved: Proceed to step 6**
-       - **If pending: Tell user: "The approval is still pending. Please click the 'Approve' button in the approval card above. I cannot approve it for you."**
+  5. **Wait for user response, then proceed directly:**
+     - **If user says "approved"/"start"/"go ahead" → Directly call run_apify_actor() (step 6) - it will return an error if not approved**
      - **If user says "find cheaper": Search for cheaper actors and create new approval**
   6. run_apify_actor("compass/crawler-google-places", {"queries": "restaurants in NYC"}, approval_id="approval_id")
   7. get_actor_run_status("run_id") - poll until SUCCEEDED
@@ -1379,7 +1370,7 @@ class ApifyTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "get_apify_approval_status",
-            "description": "Get the status of an Apify approval request. Use this to check if an approval is pending, approved, rejected, or expired.",
+            "description": "Get the status of an Apify approval request (OPTIONAL). Use this to check if an approval is pending, approved, rejected, or expired. NOTE: Not required before running - run_apify_actor() will automatically return an error if approval is not approved, so you can directly call run_apify_actor() without checking status first.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1889,7 +1880,7 @@ class ApifyTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "get_actor_run_results",
-            "description": "⚠️ MANDATORY: Retrieve ALL results from a completed actor run and save them to disk. You MUST call this function immediately after run_apify_actor() completes successfully (status: SUCCEEDED). You MUST present the actual received data to the user in your response - never just say 'run completed'. Always show item counts, key data points, and examples from the results. Results are saved as JSON to /workspace/apify_results/ and can be accessed via terminal commands or Python. This is a COMPLETE tool call requirement - users expect to see the data immediately.",
+            "description": "⚠️ MANDATORY: Retrieve ALL results from a completed actor run and save them to disk. You MUST call this function immediately after run_apify_actor() completes successfully (status: SUCCEEDED). You MUST present the actual received data to the user in your response - never just say 'run completed'. Always show item counts, key data points, and examples from the results. Results are saved as JSON to /workspace/apify_results/. IMPORTANT: Use the 'absolute_file_path' returned (e.g., /workspace/apify_results/...) for all shell commands like cat, jq, python - do NOT use relative paths as your shell cwd may be /app, not /workspace. This is a COMPLETE tool call requirement - users expect to see the data immediately.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2035,23 +2026,28 @@ class ApifyTool(SandboxToolsBase):
             await sandbox.fs.upload_file(json_bytes, file_path)
             logger.info(f"✅ Saved {len(all_items)} items to {file_path} ({len(json_bytes)} bytes)")
             
-            # Return the full file path (relative to /workspace)
-            # Remove /workspace/ prefix to get relative path for frontend
+            # Return both absolute and relative paths
+            # - absolute_file_path: for shell commands (agent may be in /app, not /workspace)
+            # - file_path: relative path for frontend attachments
             if file_path.startswith("/workspace/"):
                 relative_path = file_path.replace("/workspace/", "")
             else:
                 relative_path = file_path.replace("/workspace", "").lstrip("/")
+            
+            # IMPORTANT: Return absolute path for shell access since agent's cwd may not be /workspace
+            absolute_file_path = file_path  # Already absolute: /workspace/apify_results/...
             
             return self.success_response({
                 "run_id": run_id,
                 "actor_id": actor_id,
                 "dataset_id": dataset_id,
                 "saved_to_disk": True,
-                "file_path": relative_path,
+                "file_path": relative_path,  # For frontend attachments
+                "absolute_file_path": absolute_file_path,  # For shell commands
                 "item_count": len(all_items),
                 "cost_usd": float(actual_cost),
                 "cost_deducted": cost_deducted_str,
-                "message": f"✅ Retrieved {len(all_items)} items. The data has been saved and attached. **When presenting results to the user, use the 'complete' tool with the file_path '{relative_path}' as an attachment - never show raw file paths in messages.**"
+                "message": f"✅ Retrieved {len(all_items)} items. Data saved to: {absolute_file_path} (use this absolute path for shell commands like cat, jq, python scripts). For the 'complete' tool attachment, use relative path: '{relative_path}'"
             })
             
         except Exception as e:

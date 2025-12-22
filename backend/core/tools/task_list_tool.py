@@ -29,18 +29,24 @@ class Task(BaseModel):
     color="bg-amber-100 dark:bg-amber-800/50",
     is_core=True,
     usage_guide="""
-### TASK MANAGEMENT SYSTEM - MANDATORY FOR COMPLEX WORK
+### TASK MANAGEMENT SYSTEM - FOR LARGE, COMPLEX WORK ONLY
 
-**WHEN TO CREATE TASK LISTS (USE EXTENSIVELY):**
-- **ALWAYS create for:**
-  * Research requests (even seemingly simple ones)
-  * Multi-item research (countries, companies, topics, products, etc.)
-  * Data gathering and analysis tasks
-  * Content creation projects
-  * Multi-step processes
-  * Any work requiring organization or planning
-  * Comparative analysis across multiple items
-- **Skip ONLY for:** Trivial single-step questions answerable immediately
+**WHEN TO CREATE TASK LISTS (ONLY FOR SIGNIFICANT TASKS):**
+- **ONLY create for LARGE, COMPLEX tasks:**
+  * Extensive multi-item research (10+ items, countries, companies, topics, products, etc.)
+  * Large-scale data gathering and analysis projects
+  * Complex content creation projects (presentations, reports, multi-file projects)
+  * Multi-phase processes requiring significant planning
+  * Projects with 5+ distinct steps that need tracking
+  * Comparative analysis across many items (10+)
+  * Tasks that will take substantial time and require progress tracking
+- **DO NOT create task lists for:**
+  * Simple questions or single-step tasks
+  * Small research requests (1-3 items)
+  * Quick content edits or small file changes
+  * Tasks that can be completed in one response
+  * Simple operations that don't require planning
+  * Trivial requests answerable immediately
 
 **CRITICAL: GRANULAR TASK BREAKDOWN - GO DEEP**
 
@@ -334,7 +340,7 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "create_tasks",
-            "description": "Create tasks organized by sections. Supports both single section and multi-section batch creation. Creates sections automatically if they don't exist. CRITICAL: For research tasks involving multiple items (countries, companies, topics, etc.), create SEPARATE individual tasks for EACH item to ensure deep, thorough research. Each research task should be comprehensive, requiring multiple queries and sources. Break down complex operations into granular, sequential tasks. Create tasks in the exact order they will be executed. Each task should represent a single, specific operation that can be completed independently. IMPORTANT: You can also use this tool DURING execution to add new tasks when you discover additional work is needed. You MUST specify either 'sections' array OR both 'task_contents' and ('section_title' OR 'section_id'). CRITICAL: The 'sections' parameter MUST be passed as an array of objects, NOT as a JSON string. Pass the actual array structure, not a stringified version.",
+            "description": "Create tasks organized by sections. Supports both single section and multi-section batch creation. Creates sections automatically if they don't exist. USE ONLY FOR LARGE, COMPLEX TASKS: Only create task lists for substantial projects (10+ items, multi-phase work, large-scale research, complex multi-file projects). For research tasks involving many items, create SEPARATE individual tasks for EACH item to ensure deep, thorough research. Each research task should be comprehensive, requiring multiple queries and sources. Break down complex operations into granular, sequential tasks. Create tasks in the exact order they will be executed. Each task should represent a single, specific operation that can be completed independently. IMPORTANT: You can also use this tool DURING execution to add new tasks when you discover additional work is needed. You MUST specify either 'sections' array OR both 'task_contents' and ('section_title' OR 'section_id'). CRITICAL: The 'sections' parameter MUST be passed as an array of objects, NOT as a JSON string. Pass the actual array structure, not a stringified version.",
             "parameters": {
                 "type": "object",
                 "properties": {

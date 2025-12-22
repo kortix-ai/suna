@@ -220,7 +220,6 @@ def _get_default_agentpress_tools() -> Dict[str, bool]:
         "sb_image_edit_tool": True,
         "sb_presentation_tool": True,
         "browser_tool": True,
-        "data_providers_tool": True,
         "sb_git_sync": True,
         "people_search_tool": False,
         "agent_config_tool": True,

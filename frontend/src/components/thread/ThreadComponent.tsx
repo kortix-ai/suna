@@ -209,8 +209,17 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }
   
-  if (isNewThread && agentRunId && !hasDataLoaded.current) {
+  // Stop polling once initial data is loaded (agentRunId exists OR initial load completed)
+  if (isNewThread && !hasDataLoaded.current && (agentRunId || initialLoadCompleted)) {
     hasDataLoaded.current = true;
+    // Clean up the ?new=true URL param to prevent future polling issues
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('new') === 'true') {
+        url.searchParams.delete('new');
+        window.history.replaceState({}, '', url.pathname + url.search);
+      }
+    }
   }
   
   const shouldHideOptimisticUI = isNewThread 

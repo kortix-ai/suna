@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, ScrollView, ActivityIndicator } from 'react-native';
+import { View, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,13 +9,11 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  Loader2,
 } from 'lucide-react-native';
 import { ToolViewProps } from '../types';
 import { ToolViewCard } from '../shared/ToolViewCard';
 import { ApifyApproval } from '@/api/apify-approvals';
 import { useApproveApifyRequest, useGetApifyApprovalStatus } from '@/hooks/apify/use-apify-approvals';
-import { Alert } from 'react-native';
 
 export function ApifyApprovalView({
   toolCall,
@@ -25,7 +23,6 @@ export function ApifyApprovalView({
 }: ToolViewProps) {
   const [initialApproval, setInitialApproval] = useState<ApifyApproval | null>(null);
 
-  // Extract approval data from tool result
   React.useEffect(() => {
     if (toolResult?.output) {
       try {
@@ -62,8 +59,6 @@ export function ApifyApprovalView({
     threadId || ''
   );
   
-  // Use updated approval from query if available, otherwise use initial approval
-  // The query will automatically update when the cache is invalidated after approval
   const currentApproval = updatedApproval || initialApproval;
 
   const handleApprove = async () => {
@@ -81,56 +76,19 @@ export function ApifyApprovalView({
 
   const getStatusConfig = () => {
     if (!currentApproval) return null;
-
     switch (currentApproval.status) {
       case 'pending':
-        return {
-          icon: Clock,
-          iconColor: 'text-zinc-900 dark:text-zinc-100',
-          bgColor: 'bg-zinc-50 dark:bg-zinc-900/20',
-          borderColor: 'border-zinc-300 dark:border-zinc-700',
-          label: 'Pending Approval',
-        };
+        return { icon: Clock, iconColor: 'text-zinc-900 dark:text-zinc-100', bgColor: 'bg-zinc-50 dark:bg-zinc-900/20', borderColor: 'border-zinc-300 dark:border-zinc-700', label: 'Pending Approval' };
       case 'approved':
-        return {
-          icon: CheckCircle2,
-          iconColor: 'text-zinc-900 dark:text-zinc-100',
-          bgColor: 'bg-zinc-50 dark:bg-zinc-900/20',
-          borderColor: 'border-zinc-300 dark:border-zinc-700',
-          label: 'Approved',
-        };
+        return { icon: CheckCircle2, iconColor: 'text-zinc-900 dark:text-zinc-100', bgColor: 'bg-zinc-50 dark:bg-zinc-900/20', borderColor: 'border-zinc-300 dark:border-zinc-700', label: 'Approved' };
       case 'rejected':
-        return {
-          icon: XCircle,
-          iconColor: 'text-zinc-900 dark:text-zinc-100',
-          bgColor: 'bg-zinc-50 dark:bg-zinc-900/20',
-          borderColor: 'border-zinc-300 dark:border-zinc-700',
-          label: 'Rejected',
-        };
+        return { icon: XCircle, iconColor: 'text-zinc-900 dark:text-zinc-100', bgColor: 'bg-zinc-50 dark:bg-zinc-900/20', borderColor: 'border-zinc-300 dark:border-zinc-700', label: 'Rejected' };
       case 'expired':
-        return {
-          icon: AlertCircle,
-          iconColor: 'text-zinc-900 dark:text-zinc-100',
-          bgColor: 'bg-zinc-50 dark:bg-zinc-900/20',
-          borderColor: 'border-zinc-300 dark:border-zinc-700',
-          label: 'Expired',
-        };
+        return { icon: AlertCircle, iconColor: 'text-zinc-900 dark:text-zinc-100', bgColor: 'bg-zinc-50 dark:bg-zinc-900/20', borderColor: 'border-zinc-300 dark:border-zinc-700', label: 'Expired' };
       case 'executed':
-        return {
-          icon: CheckCircle2,
-          iconColor: 'text-zinc-900 dark:text-zinc-100',
-          bgColor: 'bg-zinc-50 dark:bg-zinc-900/20',
-          borderColor: 'border-zinc-300 dark:border-zinc-700',
-          label: 'Executed',
-        };
+        return { icon: CheckCircle2, iconColor: 'text-zinc-900 dark:text-zinc-100', bgColor: 'bg-zinc-50 dark:bg-zinc-900/20', borderColor: 'border-zinc-300 dark:border-zinc-700', label: 'Executed' };
       default:
-        return {
-          icon: AlertCircle,
-          iconColor: 'text-zinc-900 dark:text-zinc-100',
-          bgColor: 'bg-zinc-50 dark:bg-zinc-900/20',
-          borderColor: 'border-zinc-300 dark:border-zinc-700',
-          label: currentApproval.status,
-        };
+        return { icon: AlertCircle, iconColor: 'text-zinc-900 dark:text-zinc-100', bgColor: 'bg-zinc-50 dark:bg-zinc-900/20', borderColor: 'border-zinc-300 dark:border-zinc-700', label: currentApproval.status };
     }
   };
 
@@ -148,9 +106,7 @@ export function ApifyApprovalView({
         }}
       >
         <View className="flex-1 items-center justify-center px-6 py-12">
-          <Text className="text-sm text-muted-foreground text-center">
-            No approval data available
-          </Text>
+          <Text className="text-sm text-muted-foreground text-center">No approval data available</Text>
         </View>
       </ToolViewCard>
     );
@@ -161,22 +117,17 @@ export function ApifyApprovalView({
 
   const formatCredits = (credits?: number) => {
     if (!credits && credits !== 0) return '—';
-    // Remove unnecessary decimals
     return credits % 1 === 0 ? credits.toString() : credits.toFixed(2).replace(/\.?0+$/, '');
   };
 
   const formatUSD = (usd?: number) => {
     if (!usd && usd !== 0) return '—';
-    // Remove unnecessary decimals, but keep precision for small amounts
-    if (usd >= 1) {
-      return usd % 1 === 0 ? usd.toString() : usd.toFixed(2).replace(/\.?0+$/, '');
-    }
+    if (usd >= 1) return usd % 1 === 0 ? usd.toString() : usd.toFixed(2).replace(/\.?0+$/, '');
     return usd.toFixed(4).replace(/\.?0+$/, '');
   };
 
-  // Calculate max cost in credits (max_cost_usd * 100 * 1.2 for markup)
   const maxCostUsd = currentApproval?.max_cost_usd || currentApproval?.estimated_cost_usd || 0;
-  const maxCostCredits = maxCostUsd * 100 * 1.2; // 20% markup
+  const maxCostCredits = maxCostUsd * 100 * 1.2;
 
   return (
     <ToolViewCard
@@ -192,83 +143,52 @@ export function ApifyApprovalView({
     >
       <ScrollView className="flex-1" showsVerticalScrollIndicator={true}>
         <View className="gap-4 p-4">
-          {/* Actor ID */}
           <View className="gap-2">
-            <Text className="px-1 font-roobert-medium text-xs uppercase tracking-wider text-primary opacity-60">
-              Actor ID
-            </Text>
+            <Text className="px-1 font-roobert-medium text-xs uppercase tracking-wider text-primary opacity-60">Actor ID</Text>
             <View className="rounded-xl border border-border bg-card p-4">
-              <Text className="font-roobert-mono text-xs leading-5 text-primary" selectable>
-                {currentApproval.actor_id}
-              </Text>
+              <Text className="font-roobert-mono text-xs leading-5 text-primary" selectable>{currentApproval.actor_id}</Text>
             </View>
           </View>
 
-          {/* Cost Information - Clean, Credit-First Display */}
           <View className="gap-3">
-            <Text className="px-1 font-roobert-medium text-xs uppercase tracking-wider text-primary opacity-60">
-              Maximum Cost
-            </Text>
+            <Text className="px-1 font-roobert-medium text-xs uppercase tracking-wider text-primary opacity-60">Maximum Cost</Text>
             <View className="gap-2">
               <View className="flex-row items-baseline gap-2">
-                <Text className="text-4xl font-roobert-bold text-primary">
-                  {formatCredits(maxCostCredits)}
-                </Text>
-                <Text className="text-sm font-roobert-medium text-muted-foreground">
-                  credits
-                </Text>
+                <Text className="text-4xl font-roobert-bold text-primary">{formatCredits(maxCostCredits)}</Text>
+                <Text className="text-sm font-roobert-medium text-muted-foreground">credits</Text>
               </View>
               {currentApproval.max_cost_usd && (
-                <Text className="text-xs text-muted-foreground">
-                  ≈ ${formatUSD(currentApproval.max_cost_usd)} USD
-                </Text>
+                <Text className="text-xs text-muted-foreground">≈ ${formatUSD(currentApproval.max_cost_usd)} USD</Text>
               )}
             </View>
           </View>
 
           {currentApproval.estimated_cost_usd && currentApproval.estimated_cost_usd !== (currentApproval.max_cost_usd || currentApproval.estimated_cost_usd) && (
             <View className="gap-2 pt-2 border-t border-border">
-              <Text className="px-1 font-roobert-medium text-xs uppercase tracking-wider text-primary opacity-60">
-                Estimated Cost
-              </Text>
+              <Text className="px-1 font-roobert-medium text-xs uppercase tracking-wider text-primary opacity-60">Estimated Cost</Text>
               <View className="flex-row items-baseline gap-2">
-                <Text className="text-2xl font-roobert-semibold text-primary">
-                  {formatCredits(currentApproval.estimated_cost_credits)}
-                </Text>
-                <Text className="text-xs font-roobert-medium text-muted-foreground">
-                  credits
-                </Text>
-                <Text className="text-xs text-muted-foreground">
-                  ≈ ${formatUSD(currentApproval.estimated_cost_usd)} USD
-                </Text>
+                <Text className="text-2xl font-roobert-semibold text-primary">{formatCredits(currentApproval.estimated_cost_credits)}</Text>
+                <Text className="text-xs font-roobert-medium text-muted-foreground">credits</Text>
+                <Text className="text-xs text-muted-foreground">≈ ${formatUSD(currentApproval.estimated_cost_usd)} USD</Text>
               </View>
             </View>
           )}
 
-          {/* Status Badge */}
           <View className="flex-row items-center gap-2">
             <Badge variant="outline" className={statusConfig?.borderColor}>
-              <Text className={`text-xs font-roobert-medium ${statusConfig?.iconColor}`}>
-                {statusConfig?.label}
-              </Text>
+              <Text className={`text-xs font-roobert-medium ${statusConfig?.iconColor}`}>{statusConfig?.label}</Text>
             </Badge>
           </View>
 
-          {/* Message */}
           {currentApproval.message && (
             <View className="rounded-xl border border-border bg-card p-4">
               <Text className="text-sm text-primary">{currentApproval.message}</Text>
             </View>
           )}
 
-          {/* Approval Actions */}
           {currentApproval.status === 'pending' && (
             <View className="gap-2 pt-3 border-t border-border">
-              <Button
-                onPress={handleApprove}
-                disabled={approveMutation.isPending}
-                className="bg-zinc-900 dark:bg-zinc-100"
-              >
+              <Button onPress={handleApprove} disabled={approveMutation.isPending} className="bg-zinc-900 dark:bg-zinc-100">
                 {approveMutation.isPending ? (
                   <View className="flex-row items-center gap-2">
                     <ActivityIndicator size="small" color="white" />
@@ -284,46 +204,27 @@ export function ApifyApprovalView({
             </View>
           )}
 
-          {/* Status Messages */}
           {currentApproval.status === 'approved' && (
             <View className="flex-row items-center gap-2 p-3 bg-zinc-100 dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700">
               <Icon as={CheckCircle2} size={16} className="text-primary" />
-              <Text className="text-sm font-roobert-medium text-primary flex-1">
-                Approved – Actor can be executed
-              </Text>
+              <Text className="text-sm font-roobert-medium text-primary flex-1">Approved – Actor can be executed</Text>
             </View>
           )}
 
           {currentApproval.status === 'expired' && (
             <View className="flex-row items-center gap-2 p-3 bg-zinc-100 dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700">
               <Icon as={AlertCircle} size={16} className="text-primary" />
-              <Text className="text-sm font-roobert-medium text-primary flex-1">
-                Expired – Create a new approval request
-              </Text>
+              <Text className="text-sm font-roobert-medium text-primary flex-1">Expired – Create a new approval request</Text>
             </View>
           )}
 
-          {/* Timestamps */}
           <View className="gap-1">
-            {currentApproval.created_at && (
-              <Text className="text-xs text-muted-foreground">
-                Created: {new Date(currentApproval.created_at).toLocaleString()}
-              </Text>
-            )}
-            {currentApproval.approved_at && (
-              <Text className="text-xs text-muted-foreground">
-                Approved: {new Date(currentApproval.approved_at).toLocaleString()}
-              </Text>
-            )}
-            {currentApproval.expires_at && (
-              <Text className="text-xs text-muted-foreground">
-                Expires: {new Date(currentApproval.expires_at).toLocaleString()}
-              </Text>
-            )}
+            {currentApproval.created_at && <Text className="text-xs text-muted-foreground">Created: {new Date(currentApproval.created_at).toLocaleString()}</Text>}
+            {currentApproval.approved_at && <Text className="text-xs text-muted-foreground">Approved: {new Date(currentApproval.approved_at).toLocaleString()}</Text>}
+            {currentApproval.expires_at && <Text className="text-xs text-muted-foreground">Expires: {new Date(currentApproval.expires_at).toLocaleString()}</Text>}
           </View>
         </View>
       </ScrollView>
     </ToolViewCard>
   );
 }
-

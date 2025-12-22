@@ -39,7 +39,6 @@ _AgentPressTools_descriptions = {
     "browser_tool": "Browse websites and interact with web pages",
     "web_search_tool": "Search the web for information",
     "sb_image_edit_tool": "Edit and manipulate images",
-    "data_providers_tool": "Access structured data from various providers",
 }
 
 
@@ -52,7 +51,6 @@ class AgentPressTools(str, Enum):
     SB_VISION_TOOL = "sb_vision_tool"
     BROWSER_TOOL = "browser_tool"
     WEB_SEARCH_TOOL = "web_search_tool"
-    DATA_PROVIDERS_TOOL = "data_providers_tool"
 
     def get_description(self) -> str:
         global _AgentPressTools_descriptions

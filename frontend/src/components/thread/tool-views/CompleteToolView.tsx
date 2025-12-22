@@ -17,6 +17,7 @@ import {
   getFileIconAndColor,
 } from './utils';
 import { cn } from '@/lib/utils';
+import { isPreviewableFile, isImageFile } from '@/lib/utils/file-types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -103,16 +104,6 @@ export function CompleteToolView({
   }
 
   const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;
-
-  const isImageFile = (filePath: string): boolean => {
-    const filename = filePath.split('/').pop() || '';
-    return filename.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i) !== null;
-  };
-
-  const isPreviewableFile = (filePath: string): boolean => {
-    const ext = filePath.split('.').pop()?.toLowerCase() || '';
-    return ext === 'html' || ext === 'htm' || ext === 'md' || ext === 'markdown' || ext === 'csv' || ext === 'tsv';
-  };
 
   const toolTitle = getToolTitle(name) || 'Task Complete';
 

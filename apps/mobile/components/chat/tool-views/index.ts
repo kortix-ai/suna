@@ -22,7 +22,6 @@ export { CheckCommandOutputToolView } from './check-command-output-tool/CheckCom
 export { TerminateCommandToolView } from './terminate-command-tool/TerminateCommandToolView';
 export { AskToolView } from './ask-tool/AskToolView';
 export { CompleteToolView } from './complete-tool/CompleteToolView';
-export { DataProviderToolView } from './data-provider-tool/DataProviderToolView';
 export { DocumentParserToolView } from './document-parser-tool/DocumentParserToolView';
 export { DocsToolView } from './docs-tool/DocsToolView';
 export { PeopleSearchToolView } from './people-search-tool/PeopleSearchToolView';

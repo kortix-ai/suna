@@ -22,6 +22,14 @@ import { FileText, File, Download, ExternalLink, Image as ImageIcon, Play, Prese
 import { useColorScheme } from 'nativewind';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { autoLinkUrls } from '@/lib/utils/url-autolink';
+import {
+  isImageExtension,
+  isDocumentExtension,
+  isPreviewableExtension,
+  isJsonExtension,
+  isMarkdownExtension,
+  isHtmlExtension,
+} from '@/lib/utils/file-types';
 import { WebView } from 'react-native-webview';
 import { getAuthToken } from '@/api/config';
 import Animated, {
@@ -105,20 +113,17 @@ interface FileAttachmentRendererProps {
 }
 
 /**
- * Parse file path and determine type
+ * Parse file path and determine type using centralized file-types utility
  */
 function parseFilePath(path: string): FileAttachment {
   const name = path.split('/').pop() || 'file';
-  const extension = name.split('.').pop()?.toLowerCase();
-
-  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'heif'];
-  const documentExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'];
+  const extension = name.split('.').pop()?.toLowerCase() || '';
 
   let type: 'image' | 'document' | 'other' = 'other';
 
-  if (extension && imageExtensions.includes(extension)) {
+  if (isImageExtension(extension)) {
     type = 'image';
-  } else if (extension && documentExtensions.includes(extension)) {
+  } else if (isDocumentExtension(extension)) {
     type = 'document';
   }
 
@@ -565,11 +570,10 @@ function DocumentAttachment({
     if (!showPreview || !file.extension) return false;
     const ext = file.extension.toLowerCase();
     // Don't preview presentation slides - they should use PresentationAttachment instead
-    if ((ext === 'html' || ext === 'htm') && isPresentationAttachment(file.path)) {
+    if (isHtmlExtension(ext) && isPresentationAttachment(file.path)) {
       return false;
     }
-    const result = ['md', 'markdown', 'html', 'htm', 'txt', 'json', 'csv'].includes(ext);
-    return result;
+    return isPreviewableExtension(ext);
   }, [showPreview, file.extension, file.path]);
 
   useEffect(() => {
@@ -614,9 +618,10 @@ function DocumentAttachment({
   }, [isPreviewable, sandboxId, file.path]);
 
   if (showPreview && isPreviewable) {
-    const ext = file.extension?.toLowerCase();
-    const isMarkdown = ext === 'md' || ext === 'markdown';
-    const isHtml = ext === 'html' || ext === 'htm';
+    const ext = file.extension?.toLowerCase() || '';
+    const isMarkdown = isMarkdownExtension(ext);
+    const isJson = isJsonExtension(ext);
+    const isHtml = isHtmlExtension(ext);
 
     console.log('[DocumentAttachment] Render state:', {
       isLoading,
@@ -673,6 +678,17 @@ function DocumentAttachment({
                   <SelectableMarkdownText isDark={colorScheme === 'dark'}>
                     {autoLinkUrls(fileContent)}
                   </SelectableMarkdownText>
+                ) : isJson ? (
+                  <Text className="text-xs font-mono text-foreground leading-5" selectable style={{ fontFamily: 'monospace' }}>
+                    {(() => {
+                      try {
+                        const parsed = JSON.parse(fileContent);
+                        return JSON.stringify(parsed, null, 2);
+                      } catch {
+                        return fileContent;
+                      }
+                    })()}
+                  </Text>
                 ) : (
                   <Text className="text-xs font-mono text-foreground leading-5" selectable style={{ fontFamily: 'monospace' }}>
                     {fileContent}
