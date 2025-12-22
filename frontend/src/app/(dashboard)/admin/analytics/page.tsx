@@ -1210,28 +1210,6 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     return { views, signups, newPaid, churn };
   }, [viewsByDateData, signupsByDateData, newPaidByDateData, churnByDateData]);
 
-  // Monthly chart data using same data as table (from monthlyActuals)
-  const monthlyChartData = useMemo(() => {
-    const monthNames = ['Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026', 'Jun 2026'];
-    return monthNames.map((month, idx) => ({
-      month,
-      monthIndex: idx,
-      newPaid: metricsByCalendarMonth.newPaid[idx] || 0,
-      churned: metricsByCalendarMonth.churn[idx] || 0,
-      negativeChurned: -(metricsByCalendarMonth.churn[idx] || 0),
-      signups: metricsByCalendarMonth.signups[idx] || 0,
-      views: metricsByCalendarMonth.views[idx] || 0,
-      // Same data as table (from monthlyActuals)
-      actualSubs: monthlyActuals[idx]?.subscribers || 0,
-      actualMrr: monthlyActuals[idx]?.mrr || 0,
-      actualArr: monthlyActuals[idx]?.arr || 0,
-      // Goal data for comparison
-      goalSubs: projections[idx]?.totalSubs || 0,
-      goalMrr: projections[idx]?.mrr || 0,
-      goalArr: projections[idx]?.arr || 0,
-    }));
-  }, [metricsByCalendarMonth, monthlyActuals, projections]);
-
   // Derive monthly goals from weekly projections (grouped by actual calendar month)
   // This ensures the monthly table shows all months that have weeks, including June
   const monthlyFromWeekly = useMemo(() => {
@@ -1242,10 +1220,19 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       visitors: number; 
       signups: number; 
       newPaid: number;
+      churned: number;
       totalSubs: number; 
       mrr: number; 
       arr: number;
     }> = {};
+    
+    // Also calculate churned per month from projections
+    const churnedByMonth: Record<number, number> = {};
+    projections.forEach((proj, projIdx) => {
+      // projections are indexed 0-5 for Dec-May
+      // We need to map this to monthIndex based on the month name
+      churnedByMonth[projIdx] = proj.churned;
+    });
     
     weeklyProjections.forEach((week) => {
       const idx = week.monthIndex;
@@ -1256,6 +1243,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
           visitors: 0,
           signups: 0,
           newPaid: 0,
+          churned: 0,
           totalSubs: 0,
           mrr: 0,
           arr: 0,
@@ -1271,9 +1259,50 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       result[idx].arr = week.arr;
     });
     
+    // Add churned data from projections (mapped by monthIndex)
+    Object.keys(result).forEach((key) => {
+      const idx = Number(key);
+      // projections[0] = Dec (monthIndex 0), projections[1] = Jan (monthIndex 1), etc.
+      result[idx].churned = churnedByMonth[idx] || 0;
+    });
+    
     // Convert to sorted array
     return Object.values(result).sort((a, b) => a.monthIndex - b.monthIndex);
-  }, [weeklyProjections]);
+  }, [weeklyProjections, projections]);
+
+  // Monthly chart data - uses monthlyFromWeekly for goals (same as table)
+  const monthlyChartData = useMemo(() => {
+    // Build a lookup by monthIndex for easy access
+    const goalsByMonth: Record<number, typeof monthlyFromWeekly[0]> = {};
+    monthlyFromWeekly.forEach((m) => {
+      goalsByMonth[m.monthIndex] = m;
+    });
+    
+    const monthNames = ['Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026', 'Jun 2026'];
+    return monthNames.map((month, idx) => {
+      const goal = goalsByMonth[idx];
+      return {
+        month,
+        monthIndex: idx,
+        // Actual data
+        actualNewPaid: metricsByCalendarMonth.newPaid[idx] || 0,
+        actualChurned: metricsByCalendarMonth.churn[idx] || 0,
+        negativeActualChurned: -(metricsByCalendarMonth.churn[idx] || 0),
+        signups: metricsByCalendarMonth.signups[idx] || 0,
+        views: metricsByCalendarMonth.views[idx] || 0,
+        actualSubs: monthlyActuals[idx]?.subscribers || 0,
+        actualMrr: monthlyActuals[idx]?.mrr || 0,
+        actualArr: monthlyActuals[idx]?.arr || 0,
+        // Goal data from monthlyFromWeekly (same source as table)
+          goalNewPaid: goal?.newPaid || 0,
+          goalChurned: 0,
+          negativeGoalChurned: 0,
+        goalSubs: goal?.totalSubs || 0,
+        goalMrr: goal?.mrr || 0,
+        goalArr: goal?.arr || 0,
+      };
+    });
+  }, [metricsByCalendarMonth, monthlyActuals, monthlyFromWeekly]);
 
   // View state
   const [simulatorView, setSimulatorView] = useState<'monthly' | 'weekly'>('monthly');
@@ -1503,11 +1532,11 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       <>
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* ARR Growth (Actual from table data) */}
+        {/* ARR Growth (Goal vs Actual) */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              📈 ARR Growth (Actual)
+              📈 ARR: Goal vs Actual
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -1526,7 +1555,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     domain={[0, Math.max(targetARR * 1.1, (finalMonth?.arr || 0) * 1.2)]}
                   />
                   <Tooltip 
-                    formatter={(value: number) => [formatCurrency(value), 'ARR']}
+                    formatter={(value: number, name: string) => [formatCurrency(value), name]}
                     labelStyle={{ color: 'hsl(var(--foreground))' }}
                     contentStyle={{ 
                       backgroundColor: 'hsl(var(--background))', 
@@ -1543,8 +1572,17 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   />
                   <Line 
                     type="monotone" 
+                    dataKey="goalArr" 
+                    name="Goal"
+                    stroke="#10b981" 
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    dot={false}
+                  />
+                  <Line 
+                    type="monotone" 
                     dataKey="actualArr" 
-                    name="ARR (Actual)"
+                    name="Actual"
                     stroke="hsl(var(--primary))" 
                     strokeWidth={3}
                     dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2, r: 5 }}
@@ -1556,17 +1594,17 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
           </CardContent>
         </Card>
 
-        {/* Subscriber Growth (Actual from table data) */}
+        {/* Subscriber Growth (Goal vs Actual) */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              👥 Subscriber Growth (Actual)
+              👥 Subscribers: Goal vs Actual
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={monthlyChartData}>
+                <LineChart data={monthlyChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis 
                     dataKey="month" 
@@ -1578,7 +1616,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     tickFormatter={(value) => formatNumber(value)}
                   />
                   <Tooltip 
-                    formatter={(value: number) => [formatNumber(value), 'Subscribers']}
+                    formatter={(value: number, name: string) => [formatNumber(value), name]}
                     labelStyle={{ color: 'hsl(var(--foreground))' }}
                     contentStyle={{ 
                       backgroundColor: 'hsl(var(--background))', 
@@ -1587,33 +1625,40 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     }}
                   />
                   <Legend />
-                  <Area 
+                  <Line 
+                    type="monotone" 
+                    dataKey="goalSubs" 
+                    name="Goal"
+                    stroke="#10b981" 
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    dot={false}
+                  />
+                  <Line 
                     type="monotone" 
                     dataKey="actualSubs" 
-                    name="Actual Subscribers"
+                    name="Actual"
                     stroke="#8b5cf6" 
-                    fill="#8b5cf6"
-                    fillOpacity={0.2}
                     strokeWidth={3}
                     dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 5 }}
                   />
-                </AreaChart>
+                </LineChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
 
-        {/* MRR Growth (Actual from table data) */}
+        {/* MRR Growth (Goal vs Actual) */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              💰 MRR Growth (Actual)
+              💰 MRR: Goal vs Actual
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={monthlyChartData}>
+                <LineChart data={monthlyChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis 
                     dataKey="month" 
@@ -1625,7 +1670,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`}
                   />
                   <Tooltip 
-                    formatter={(value: number) => [formatCurrency(value), 'MRR']}
+                    formatter={(value: number, name: string) => [formatCurrency(value), name]}
                     labelStyle={{ color: 'hsl(var(--foreground))' }}
                     contentStyle={{ 
                       backgroundColor: 'hsl(var(--background))', 
@@ -1634,27 +1679,34 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     }}
                   />
                   <Legend />
-                  <Area 
+                  <Line 
+                    type="monotone" 
+                    dataKey="goalMrr" 
+                    name="Goal"
+                    stroke="#10b981" 
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    dot={false}
+                  />
+                  <Line 
                     type="monotone" 
                     dataKey="actualMrr" 
-                    name="MRR (Actual)"
+                    name="Actual"
                     stroke="#f59e0b" 
-                    fill="#f59e0b"
-                    fillOpacity={0.2}
                     strokeWidth={3}
                     dot={{ fill: '#f59e0b', strokeWidth: 2, r: 5 }}
                   />
-                </AreaChart>
+                </LineChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
 
-        {/* New Signups vs Churn (Actual from API) */}
+        {/* New Paid vs Churn (Goal vs Actual) */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              📊 New Paid vs Churn (Actual)
+              📊 New Paid vs Churn: Goal vs Actual
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -1685,14 +1737,21 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   />
                   <Legend />
                   <Bar 
-                    dataKey="newPaid" 
-                    name="New Paid Customers"
+                    dataKey="goalNewPaid" 
+                    name="New Paid (Goal)"
+                    fill="#10b981" 
+                    opacity={0.3}
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Bar 
+                    dataKey="actualNewPaid" 
+                    name="New Paid (Actual)"
                     fill="#10b981" 
                     radius={[4, 4, 0, 0]}
                   />
                   <Bar 
-                    dataKey="negativeChurned" 
-                    name="Churned Customers"
+                    dataKey="negativeActualChurned" 
+                    name="Churn (Actual)"
                     fill="#ef4444" 
                     radius={[0, 0, 4, 4]}
                   />
