@@ -380,20 +380,19 @@ export function useThreadToolCalls(
         return updated;
       });
 
-      // If agent is running and user hasn't manually navigated, show the latest tool
-      if (!userNavigatedRef.current) {
-        setCurrentToolIndex(prev => {
-          const newLength = toolCalls.length + filteredToolCalls.length;
-          return newLength - 1;
-        });
-      }
-      
       if (!compact) {
         setIsSidePanelOpen(true);
       }
     },
-    [toolCalls.length, compact],
+    [compact],
   );
+  
+  // Update current tool index when toolCalls changes (if user hasn't manually navigated)
+  useEffect(() => {
+    if (!userNavigatedRef.current && toolCalls.length > 0) {
+      setCurrentToolIndex(toolCalls.length - 1);
+    }
+  }, [toolCalls.length]);
 
   return {
     toolCalls,

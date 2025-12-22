@@ -1,20 +1,21 @@
 import redis.asyncio as redis_lib
-from redis.asyncio.cluster import RedisCluster
 from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
 import os
 import time as _time
 from dotenv import load_dotenv
 import asyncio
 from core.utils.logger import logger
-from typing import List, Any, Optional, Union
+from typing import List, Any, Optional
 from core.utils.retry import retry
 
-client: Optional[Union[redis_lib.Redis, RedisCluster]] = None
+client: Optional[redis_lib.Redis] = None
 pool: Optional[redis_lib.ConnectionPool] = None
-_is_cluster: bool = False
 _initialized = False
 _init_lock = asyncio.Lock()
 _reconnect_lock = asyncio.Lock()
+_reconnect_in_progress = False
+_last_reconnect_attempt = 0.0
+RECONNECT_DEBOUNCE_SECONDS = 2.0  # Don't reconnect more than once every 2 seconds
 
 REDIS_KEY_TTL = 3600 * 2
 
@@ -58,7 +59,7 @@ def get_redis_config():
 
 
 def initialize():
-    global client, pool, _is_cluster
+    global client, pool
 
     load_dotenv()
     config = get_redis_config()
@@ -68,65 +69,61 @@ def initialize():
     connect_timeout = 5.0
     retry_on_timeout = os.getenv("REDIS_RETRY_ON_TIMEOUT", "true").lower() == "true"
     
-    is_cluster_endpoint = ".clustercfg." in config['host'] or config['host'].endswith(".clustercfg")
-    
     auth_info = f"user={config['username']} " if config['username'] else ""
     ssl_info = "(SSL) " if config['ssl'] else ""
-    cluster_info = " (CLUSTER MODE) " if is_cluster_endpoint else ""
-    logger.info(f"Initializing Redis to {config['host']}:{config['port']} {auth_info}{ssl_info}{cluster_info}with max {max_connections} connections")
+    logger.info(f"Initializing Redis to {config['host']}:{config['port']} {auth_info}{ssl_info}with max {max_connections} connections")
 
-    if is_cluster_endpoint:
-        _is_cluster = True
-        client = RedisCluster(
-            host=config['host'],
-            port=config['port'],
-            password=config['password'] if config['password'] else None,
-            username=config['username'] if config['username'] else None,
-            ssl=config['ssl'],
-            decode_responses=True,
-            socket_timeout=socket_timeout,
-            socket_connect_timeout=connect_timeout,
-            socket_keepalive=True,
-            skip_full_coverage_check=True,
-            health_check_interval=30,
-        )
-        pool = None
-    else:
-        _is_cluster = False
-        pool = redis_lib.ConnectionPool.from_url(
-            config["url"],
-            decode_responses=True,
-            socket_timeout=socket_timeout,
-            socket_connect_timeout=connect_timeout,
-            socket_keepalive=True,
-            retry_on_timeout=retry_on_timeout,
-            health_check_interval=30,
-            max_connections=max_connections,
-        )
-        client = redis_lib.Redis(connection_pool=pool)
+    pool = redis_lib.ConnectionPool.from_url(
+        config["url"],
+        decode_responses=True,
+        socket_timeout=socket_timeout,
+        socket_connect_timeout=connect_timeout,
+        socket_keepalive=True,
+        retry_on_timeout=retry_on_timeout,
+        health_check_interval=30,
+        max_connections=max_connections,
+    )
+    client = redis_lib.Redis(connection_pool=pool)
 
     return client
 
 
 async def initialize_async():
-    global client, _initialized
+    global client, pool, _initialized
 
     async with _init_lock:
-        if not _initialized or client is None:
+        # If already initialized and client exists, just verify it's still alive
+        if _initialized and client is not None:
+            try:
+                await asyncio.wait_for(client.ping(), timeout=2.0)
+                return client  # Connection is good, reuse it
+            except Exception:
+                # Connection is dead, need to recreate
+                logger.warning("Existing Redis connection is dead, recreating...")
+                client = None
+                pool = None
+                _initialized = False
+        
+        # Create new connection
+        if client is None:
             initialize()
+            logger.info("Created new Redis connection pool")
 
         try:
             await asyncio.wait_for(client.ping(), timeout=5.0)
-            logger.info("Successfully connected to Redis")
+            if not _initialized:
+                logger.info("Successfully connected to Redis")
             _initialized = True
         except asyncio.TimeoutError:
             logger.error("Redis connection timeout during initialization")
             client = None
+            pool = None
             _initialized = False
             raise ConnectionError("Redis connection timeout")
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}")
             client = None
+            pool = None
             _initialized = False
             raise
 
@@ -134,7 +131,7 @@ async def initialize_async():
 
 
 async def close():
-    global client, pool, _initialized, _is_cluster
+    global client, pool, _initialized
     if client:
         try:
             await asyncio.wait_for(client.aclose(), timeout=5.0)
@@ -156,7 +153,6 @@ async def close():
             pool = None
     
     _initialized = False
-    _is_cluster = False
     logger.info("Redis connection and pool closed")
 
 
@@ -168,37 +164,70 @@ async def get_client():
 
 
 async def force_reconnect():
-    global client, pool, _initialized, _circuit_breaker, _is_cluster
+    global client, pool, _initialized, _circuit_breaker, _reconnect_in_progress, _last_reconnect_attempt
+    
+    now = _time.time()
+    
+    # Debounce: Don't reconnect if we just tried recently
+    if now - _last_reconnect_attempt < RECONNECT_DEBOUNCE_SECONDS:
+        logger.debug(f"⏸️  Skipping reconnect (debounced, last attempt {now - _last_reconnect_attempt:.2f}s ago)")
+        return False
     
     async with _reconnect_lock:
-        logger.warning("🔄 Forcing Redis reconnection...")
+        # Double-check: Another coroutine might have reconnected while we were waiting
+        if _reconnect_in_progress:
+            logger.debug("⏸️  Reconnect already in progress, skipping")
+            return False
         
-        if client:
-            try:
-                await asyncio.wait_for(client.aclose(), timeout=2.0)
-            except Exception:
-                pass
-            client = None
+        # Check debounce again after acquiring lock
+        now = _time.time()  # Re-check time after acquiring lock
+        if now - _last_reconnect_attempt < RECONNECT_DEBOUNCE_SECONDS:
+            logger.debug("⏸️  Skipping reconnect (debounced after lock)")
+            return False
         
-        if pool:
-            try:
-                await asyncio.wait_for(pool.aclose(), timeout=2.0)
-            except Exception:
-                pass
-            pool = None
-        
-        _initialized = False
-        _is_cluster = False
+        _reconnect_in_progress = True
+        _last_reconnect_attempt = now
         
         try:
-            await initialize_async()
-            _circuit_breaker["state"] = "closed"
-            _circuit_breaker["failures"] = 0
-            logger.info("✅ Redis reconnection successful, circuit breaker reset")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Redis reconnection failed: {e}")
-            raise
+            logger.warning("🔄 Forcing Redis reconnection...")
+            
+            # Close client first
+            if client:
+                try:
+                    await asyncio.wait_for(client.aclose(), timeout=2.0)
+                except Exception as e:
+                    logger.debug(f"Error closing client: {e}")
+                finally:
+                    client = None
+            
+            # Close pool with more aggressive cleanup
+            if pool:
+                try:
+                    # Wait a bit for any in-flight operations to complete
+                    await asyncio.sleep(0.1)
+                    await asyncio.wait_for(pool.aclose(), timeout=3.0)
+                except Exception as e:
+                    logger.debug(f"Error closing pool: {e}")
+                finally:
+                    pool = None
+            
+            # Ensure everything is cleaned up
+            _initialized = False
+            
+            # Small delay to ensure connections are fully released
+            await asyncio.sleep(0.2)
+            
+            try:
+                await initialize_async()
+                _circuit_breaker["state"] = "closed"
+                _circuit_breaker["failures"] = 0
+                logger.info("✅ Redis reconnection successful, circuit breaker reset")
+                return True
+            except Exception as e:
+                logger.error(f"❌ Redis reconnection failed: {e}")
+                raise
+        finally:
+            _reconnect_in_progress = False
 
 
 def _is_connection_error(exc: Exception) -> bool:
@@ -330,7 +359,9 @@ async def _execute_with_retry(op_factory, operation_name: str = "redis_op"):
             
             if _is_connection_error(e):
                 logger.warning(f"⚠️ Redis connection error on {operation_name} (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
-                if attempt < MAX_RETRIES - 1:
+                # Only reconnect on first attempt or if circuit breaker is open
+                # This prevents thundering herd of reconnection attempts
+                if attempt == 0 or _circuit_breaker["state"] == "open":
                     try:
                         await force_reconnect()
                     except Exception as reconnect_err:

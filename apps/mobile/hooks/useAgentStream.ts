@@ -93,12 +93,9 @@ export function useAgentStream(
   const retryCountRef = useRef<number>(0);
   const startStreamingRef = useRef<((runId: string) => void) | null>(null);
   
-  // DELTA STREAMING: Track accumulated tool call arguments
+  // DELTA STREAMING: Track accumulated tool call arguments with sequence numbers
   // Structure: Map<toolCallId, Array<{sequence: number, delta: string}>>
   const accumulatedToolCallsRef = useRef<Map<string, Array<{sequence: number, delta: string}>>>(new Map());
-  
-  // Track the merged arguments and highest consecutive sequence for each tool call
-  const mergedToolCallsRef = useRef<Map<string, { mergedArgs: string; lastSequence: number }>>(new Map());
 
   const orderedTextContent = useMemo(() => {
     if (textContent.length === 0) return '';
@@ -382,29 +379,18 @@ export function useAgentStream(
                   // Sort chunks by sequence number
                   chunks.sort((a, b) => a.sequence - b.sequence);
                   
-                  // Get or create the merged state for this tool call
-                  let mergedState = mergedToolCallsRef.current.get(toolCallId);
-                  if (!mergedState) {
-                    mergedState = { mergedArgs: '', lastSequence: -1 };
-                    mergedToolCallsRef.current.set(toolCallId, mergedState);
-                  }
+                  // Merge ALL chunks we have in sequence order (progressive display)
+                  // This ensures correct ordering while still showing updates even if chunks arrive out of order
+                  let mergedArgs = '';
+                  const seenSequences = new Set<number>();
                   
-                  // Merge all consecutive chunks starting from lastSequence + 1
-                  let expectedSequence = mergedState.lastSequence + 1;
                   for (const chunk of chunks) {
-                    if (chunk.sequence === expectedSequence) {
-                      // This is the next expected chunk - merge it
-                      mergedState.mergedArgs += chunk.delta;
-                      mergedState.lastSequence = chunk.sequence;
-                      expectedSequence = chunk.sequence + 1;
-                    } else if (chunk.sequence > expectedSequence) {
-                      // Gap in sequence - stop merging until we get the missing chunk
-                      break;
+                    // Only merge each sequence once (avoid duplicates)
+                    if (!seenSequences.has(chunk.sequence)) {
+                      mergedArgs += chunk.delta;
+                      seenSequences.add(chunk.sequence);
                     }
-                    // If chunk.sequence < expectedSequence, it's already been merged, skip it
                   }
-                  
-                  const mergedArgs = mergedState.mergedArgs;
                   
                   // Return reconstructed tool call with full accumulated arguments
                   return {
@@ -454,7 +440,6 @@ export function useAgentStream(
             setToolCall(null);
             // Clear accumulated tool call deltas
             accumulatedToolCallsRef.current.clear();
-            mergedToolCallsRef.current.clear();
             if (message.message_id) callbacks.onMessage(message);
           } else if (!parsedMetadata.stream_status) {
             // Handle non-chunked assistant messages if needed
@@ -466,7 +451,6 @@ export function useAgentStream(
           setToolCall(null); // Clear any streaming tool call
           // Clear accumulated tool call deltas when tool execution completes
           accumulatedToolCallsRef.current.clear();
-          mergedToolCallsRef.current.clear();
           if (message.message_id) callbacks.onMessage(message);
           break;
         case 'status':
