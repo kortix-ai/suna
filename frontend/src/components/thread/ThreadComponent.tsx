@@ -946,11 +946,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   }, [subscriptionData, subscriptionStatus, initialLoadCompleted, openBillingModal]);
 
 
-  useEffect(() => {
-    if (streamingToolCall) {
-      handleStreamingToolCall(streamingToolCall);
-    }
-  }, [streamingToolCall, handleStreamingToolCall]);
+  // Note: handleStreamingToolCall is called via the onToolCallChunk callback in useAgentStream
+  // No need for a separate useEffect here - it would cause duplicate processing
 
   useEffect(() => {
     setIsSidePanelAnimating(true);

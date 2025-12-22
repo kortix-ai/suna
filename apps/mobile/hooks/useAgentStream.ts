@@ -93,8 +93,9 @@ export function useAgentStream(
   const retryCountRef = useRef<number>(0);
   const startStreamingRef = useRef<((runId: string) => void) | null>(null);
   
-  // DELTA STREAMING: Track accumulated tool call arguments
-  const accumulatedToolCallsRef = useRef<Map<string, string>>(new Map());
+  // DELTA STREAMING: Track accumulated tool call arguments with sequence numbers
+  // Structure: Map<toolCallId, Array<{sequence: number, delta: string}>>
+  const accumulatedToolCallsRef = useRef<Map<string, Array<{sequence: number, delta: string}>>>(new Map());
 
   const orderedTextContent = useMemo(() => {
     if (textContent.length === 0) return '';
@@ -351,19 +352,50 @@ export function useAgentStream(
             // Handle tool call chunks - extract from metadata.tool_calls
             const toolCalls = parsedMetadata.tool_calls || [];
             if (toolCalls.length > 0) {
-              // DELTA STREAMING: Accumulate deltas into full tool calls
+              // DELTA STREAMING: Accumulate deltas into full tool calls with sequence ordering
               const reconstructedToolCalls = toolCalls.map((tc: any) => {
                 if (tc.is_delta && tc.arguments_delta) {
-                  // This is a delta update - accumulate it
+                  // This is a delta update - store it with sequence number
                   const toolCallId = tc.tool_call_id || 'unknown';
-                  const currentArgs = accumulatedToolCallsRef.current.get(toolCallId) || '';
-                  const newArgs = currentArgs + tc.arguments_delta;
-                  accumulatedToolCallsRef.current.set(toolCallId, newArgs);
+                  const sequence = message.sequence ?? 0;
+                  
+                  // Get or create the chunks array for this tool call
+                  let chunks = accumulatedToolCallsRef.current.get(toolCallId);
+                  if (!chunks) {
+                    chunks = [];
+                    accumulatedToolCallsRef.current.set(toolCallId, chunks);
+                  }
+                  
+                  // Check if we already have this sequence (avoid duplicates)
+                  const existingIndex = chunks.findIndex(c => c.sequence === sequence);
+                  if (existingIndex >= 0) {
+                    // Update existing chunk
+                    chunks[existingIndex].delta = tc.arguments_delta;
+                  } else {
+                    // Add new chunk
+                    chunks.push({ sequence, delta: tc.arguments_delta });
+                  }
+                  
+                  // Sort chunks by sequence number
+                  chunks.sort((a, b) => a.sequence - b.sequence);
+                  
+                  // Merge ALL chunks we have in sequence order (progressive display)
+                  // This ensures correct ordering while still showing updates even if chunks arrive out of order
+                  let mergedArgs = '';
+                  const seenSequences = new Set<number>();
+                  
+                  for (const chunk of chunks) {
+                    // Only merge each sequence once (avoid duplicates)
+                    if (!seenSequences.has(chunk.sequence)) {
+                      mergedArgs += chunk.delta;
+                      seenSequences.add(chunk.sequence);
+                    }
+                  }
                   
                   // Return reconstructed tool call with full accumulated arguments
                   return {
                     ...tc,
-                    arguments: newArgs,
+                    arguments: mergedArgs,
                     is_delta: false, // Mark as assembled
                   };
                 } else {
