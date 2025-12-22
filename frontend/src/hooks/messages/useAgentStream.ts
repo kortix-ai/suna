@@ -567,14 +567,12 @@ export function useAgentStream(
                   // Merge ALL chunks we have in sequence order (progressive display)
                   // This ensures correct ordering while still showing updates even if chunks arrive out of order
                   let mergedArgs = '';
-                  const seenSequences = new Set<number>();
+                  // Merge ALL chunks we have in sequence order (progressive display)
+                  // This ensures correct ordering while still showing updates even if chunks arrive out of order
+                  let mergedArgs = '';
                   
                   for (const chunk of chunks) {
-                    // Only merge each sequence once (avoid duplicates)
-                    if (!seenSequences.has(chunk.sequence)) {
-                      mergedArgs += chunk.delta;
-                      seenSequences.add(chunk.sequence);
-                    }
+                    mergedArgs += chunk.delta;
                   }
                   
                   // Return reconstructed tool call with full accumulated arguments
