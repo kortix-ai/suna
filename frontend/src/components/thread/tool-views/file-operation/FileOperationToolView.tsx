@@ -25,7 +25,7 @@ import {
   getFileTypeFromExtension,
 } from '@/components/file-editors';
 import { UnifiedMarkdown } from '@/components/markdown';
-import { CsvRenderer, XlsxRenderer } from '@/components/file-renderers';
+import { CsvRenderer, XlsxRenderer, HtmlRenderer } from '@/components/file-renderers';
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
@@ -681,15 +681,15 @@ export function FileOperationToolView({
     const isCsv = fileExtension === 'csv' || fileExtension === 'tsv';
     const isXlsx = fileExtension === 'xlsx' || fileExtension === 'xls';
     
-    // For HTML files with preview URL, use iframe directly (but show CodeMirror during streaming)
-    if (isHtml && htmlPreviewUrl && !isStreaming) {
+    // For HTML files, use HtmlRenderer with Preview/Code/Open buttons (but show CodeMirror during streaming)
+    if (isHtml && !isStreaming) {
       return (
         <div className="w-full max-w-full h-full overflow-hidden min-w-0">
-          <iframe
-            src={htmlPreviewUrl}
-            title={`HTML Preview of ${fileName}`}
-            className="w-full h-full border-0 max-w-full"
-            sandbox="allow-same-origin allow-scripts"
+          <HtmlRenderer
+            content={fileContent || ''}
+            previewUrl={htmlPreviewUrl || ''}
+            className="w-full h-full"
+            project={project}
           />
         </div>
       );

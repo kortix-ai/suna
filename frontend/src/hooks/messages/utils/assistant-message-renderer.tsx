@@ -10,7 +10,7 @@ import { Clock } from 'lucide-react';
 import { UnifiedMessage, ParsedMetadata } from '@/components/thread/types';
 import { safeJsonParse, getToolIcon, getUserFriendlyToolName } from '@/components/thread/utils';
 import { ComposioUrlDetector } from '@/components/thread/content/composio-url-detector';
-import { renderAttachments } from '@/components/thread/content/ThreadContent';
+import { FileAttachmentGrid, FileAttachment } from '@/components/thread/file-attachment';
 import { TaskCompletedFeedback } from '@/components/thread/tool-views/shared/TaskCompletedFeedback';
 import { PromptExamples } from '@/components/shared/prompt-examples';
 import type { Project } from '@/lib/api/threads';
@@ -95,7 +95,19 @@ function renderAskToolCall(
         content={askText} 
         className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3" 
       />
-      {renderAttachments(attachments, onFileClick, sandboxId, project)}
+      {attachments.length > 0 && (
+        <div className="mt-3">
+          <FileAttachmentGrid
+            attachments={attachments}
+            onFileClick={onFileClick}
+            sandboxId={sandboxId}
+            showPreviews={true}
+            collapsed={false}
+            project={project}
+            standalone={true}
+          />
+        </div>
+      )}
       {isLatestMessage && (
         <div className="flex items-center gap-2 mt-3">
           <Clock className="h-4 w-4 text-orange-500 flex-shrink-0" />
@@ -132,11 +144,32 @@ function renderCompleteToolCall(
 
   return (
     <div key={`complete-${index}`} className="space-y-3 my-1.5">
+      {/* Main content */}
       <ComposioUrlDetector 
         content={completeText} 
         className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3" 
       />
-      {renderAttachments(attachments, onFileClick, sandboxId, project)}
+      
+      {/* Attachments underneath the text */}
+      {attachments.length > 0 && (
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <span>Task complete</span>
+            <span className="text-xs">({attachments.length} {attachments.length === 1 ? 'file' : 'files'})</span>
+          </div>
+          <FileAttachmentGrid
+            attachments={attachments}
+            onFileClick={onFileClick}
+            sandboxId={sandboxId}
+            showPreviews={true}
+            collapsed={false}
+            project={project}
+            standalone={true}
+          />
+        </div>
+      )}
+      
+      {/* Task completed feedback */}
       <TaskCompletedFeedback
         taskSummary={completeText}
         followUpPrompts={isLatestMessage && followUpPrompts.length > 0 ? followUpPrompts : undefined}

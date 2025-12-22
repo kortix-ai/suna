@@ -212,8 +212,8 @@ export function AttachmentGroup({
         };
     });
     
-    // Determine if we should use carousel (4+ attachments)
-    const shouldUseCarousel = layout === 'grid' && uniqueFiles.length >= 4;
+    // Determine if we should use carousel (3+ attachments for better UX)
+    const shouldUseCarousel = layout === 'grid' && uniqueFiles.length >= 2;
     
     const canGoPrev = currentIndex > 0;
     const canGoNext = currentIndex < uniqueFiles.length - 1;
@@ -230,6 +230,33 @@ export function AttachmentGroup({
         }
     };
 
+    // Keyboard navigation for carousel
+    useEffect(() => {
+        if (layout !== 'grid' || uniqueFiles.length < 2) return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Only handle if not typing in an input/textarea
+            if (
+                e.target instanceof HTMLInputElement ||
+                e.target instanceof HTMLTextAreaElement ||
+                (e.target instanceof HTMLElement && e.target.isContentEditable)
+            ) {
+                return;
+            }
+
+            if (e.key === 'ArrowLeft' && canGoPrev) {
+                e.preventDefault();
+                handlePrev();
+            } else if (e.key === 'ArrowRight' && canGoNext) {
+                e.preventDefault();
+                handleNext();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [layout, uniqueFiles.length, currentIndex, canGoPrev, canGoNext]);
+
     // Now continue with the fully conditional rendering but with pre-computed values
     const renderContent = () => {
         if (layout === 'grid') {
@@ -240,107 +267,160 @@ export function AttachmentGroup({
                 
                 return (
                     <div className={cn("relative isolate", className)}>
-                        {/* Carousel Navigation */}
-                        <div className="flex items-center justify-between mb-3">
-                            <div className="text-xs text-muted-foreground">
-                                {uniqueFiles.length} {uniqueFiles.length === 1 ? 'file' : 'files'}
-                            </div>
+                        {/* Carousel Navigation - Enhanced for visibility */}
+                        <div className="flex items-center justify-between mb-3 px-1">
                             <div className="flex items-center gap-2">
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={handlePrev}
-                                    disabled={!canGoPrev}
-                                    className="h-7 w-7 p-0 opacity-60 hover:opacity-100 disabled:opacity-30"
-                                >
-                                    <ChevronLeft className="h-4 w-4" />
-                                </Button>
-                                <div className="text-xs text-muted-foreground min-w-[60px] text-center">
+                                <div className="text-xs font-medium text-foreground">
+                                    {uniqueFiles.length} {uniqueFiles.length === 1 ? 'file' : 'files'}
+                                </div>
+                                <div className="h-1 w-1 rounded-full bg-muted-foreground/40" />
+                                <div className="text-xs text-muted-foreground">
+                                    Use arrows to navigate
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={handlePrev}
+                                                disabled={!canGoPrev}
+                                                className="h-8 w-8 p-0 border-2 hover:bg-accent hover:border-accent-foreground/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                            >
+                                                <ChevronLeft className="h-4 w-4" />
+                                            </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                            <p>Previous file</p>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+                                
+                                {/* Progress dots indicator */}
+                                <div className="flex items-center gap-1.5">
+                                    {uniqueFiles.map((_, idx) => (
+                                        <button
+                                            key={idx}
+                                            onClick={() => setCurrentIndex(idx)}
+                                            className={cn(
+                                                "h-2 rounded-full transition-all duration-200",
+                                                idx === currentIndex
+                                                    ? "w-6 bg-primary"
+                                                    : "w-2 bg-muted-foreground/30 hover:bg-muted-foreground/50"
+                                            )}
+                                            aria-label={`Go to file ${idx + 1}`}
+                                        />
+                                    ))}
+                                </div>
+                                
+                                <div className="text-sm font-medium text-foreground min-w-[50px] text-center">
                                     {currentIndex + 1} / {uniqueFiles.length}
                                 </div>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={handleNext}
-                                    disabled={!canGoNext}
-                                    className="h-7 w-7 p-0 opacity-60 hover:opacity-100 disabled:opacity-30"
-                                >
-                                    <ChevronRight className="h-4 w-4" />
-                                </Button>
+                                
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={handleNext}
+                                                disabled={!canGoNext}
+                                                className="h-8 w-8 p-0 border-2 hover:bg-accent hover:border-accent-foreground/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                            >
+                                                <ChevronRight className="h-4 w-4" />
+                                            </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                            <p>Next file</p>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
                             </div>
                         </div>
                         
-                        {/* Single Item Display */}
+                        {/* Single Item Display with smooth transition */}
                         <div className="relative isolate">
-                            <div className={cn(
-                                "relative overflow-visible",
-                                currentItem.isImage ? "flex items-start justify-center" : "",
-                                currentItem.isPreviewFile ? "w-full" : ""
-                            )} style={currentItem.wrapperStyle}>
-                                <FileAttachment
-                                    filepath={currentFilePath}
-                                    onClick={handleFileClick}
-                                    sandboxId={sandboxId}
-                                    showPreview={showPreviews}
-                                    localPreviewUrl={getLocalPreviewUrl(currentItem.file)}
-                                    className={cn(
-                                        "w-full",
-                                        currentItem.isImage ? "h-auto min-h-[54px]" :
-                                            currentItem.isPreviewFile ? "min-h-[240px] max-h-[400px]" : "h-[54px]"
-                                    )}
-                                    customStyle={
-                                        currentItem.isImage ? {
-                                            width: '100%',
-                                            height: 'auto',
-                                            maxHeight: `${gridImageHeight}px`,
-                                            '--attachment-height': `${gridImageHeight}px`
-                                        } as React.CSSProperties :
-                                            currentItem.isPreviewFile ? {
-                                                gridColumn: '1 / -1',
-                                                width: '100%'
-                                            } : undefined
-                                    }
-                                    collapsed={false}
-                                    project={project}
-                                    isSingleItemGrid={true}
-                                    standalone={standalone}
-                                    alignRight={alignRight}
-                                />
-                                {onRemove && (
-                                    <div
-                                        className="absolute -top-1 -right-1 h-5 w-5 rounded-full
-                                        bg-black dark:bg-white
-                                        border-3 border-sidebar
-                                        text-white dark:text-black flex items-center justify-center
-                                        z-10 cursor-pointer"
-                                        onClick={() => {
-                                            const originalIndex = uniqueFiles.findIndex(f => 
-                                                getFilePath(f) === currentFilePath
-                                            );
-                                            if (originalIndex !== -1) {
-                                                onRemove(originalIndex);
-                                                // Adjust current index if needed
-                                                if (currentIndex >= uniqueFiles.length - 1 && currentIndex > 0) {
-                                                    setCurrentIndex(prev => prev - 1);
-                                                }
+                            <AnimatePresence mode="wait">
+                                <motion.div
+                                    key={currentIndex}
+                                    initial={{ opacity: 0, x: 20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    exit={{ opacity: 0, x: -20 }}
+                                    transition={{ duration: 0.2 }}
+                                >
+                                    <div className={cn(
+                                        "relative overflow-visible",
+                                        currentItem.isImage ? "flex items-start justify-center" : "",
+                                        currentItem.isPreviewFile ? "w-full" : ""
+                                    )} style={currentItem.wrapperStyle}>
+                                        <FileAttachment
+                                            filepath={currentFilePath}
+                                            onClick={handleFileClick}
+                                            sandboxId={sandboxId}
+                                            showPreview={showPreviews}
+                                            localPreviewUrl={getLocalPreviewUrl(currentItem.file)}
+                                            className={cn(
+                                                "w-full",
+                                                currentItem.isImage ? "h-auto min-h-[54px]" :
+                                                    currentItem.isPreviewFile ? "min-h-[240px] max-h-[400px]" : "h-[54px]"
+                                            )}
+                                            customStyle={
+                                                currentItem.isImage ? {
+                                                    width: '100%',
+                                                    height: 'auto',
+                                                    maxHeight: `${gridImageHeight}px`,
+                                                    '--attachment-height': `${gridImageHeight}px`
+                                                } as React.CSSProperties :
+                                                    currentItem.isPreviewFile ? {
+                                                        gridColumn: '1 / -1',
+                                                        width: '100%'
+                                                    } : undefined
                                             }
-                                        }}
-                                    >
-                                        <TooltipProvider>
-                                            <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                    <div className="flex items-center justify-center w-full h-full">
-                                                        <X size={10} strokeWidth={3} />
-                                                    </div>
-                                                </TooltipTrigger>
-                                                <TooltipContent side="top">
-                                                    <p>Remove file</p>
-                                                </TooltipContent>
-                                            </Tooltip>
-                                        </TooltipProvider>
+                                            collapsed={false}
+                                            project={project}
+                                            isSingleItemGrid={true}
+                                            standalone={standalone}
+                                            alignRight={alignRight}
+                                        />
+                                        {onRemove && (
+                                            <div
+                                                className="absolute -top-1 -right-1 h-5 w-5 rounded-full
+                                                bg-black dark:bg-white
+                                                border-3 border-sidebar
+                                                text-white dark:text-black flex items-center justify-center
+                                                z-10 cursor-pointer"
+                                                onClick={() => {
+                                                    const originalIndex = uniqueFiles.findIndex(f => 
+                                                        getFilePath(f) === currentFilePath
+                                                    );
+                                                    if (originalIndex !== -1) {
+                                                        onRemove(originalIndex);
+                                                        // Adjust current index if needed
+                                                        if (currentIndex >= uniqueFiles.length - 1 && currentIndex > 0) {
+                                                            setCurrentIndex(prev => prev - 1);
+                                                        }
+                                                    }
+                                                }}
+                                            >
+                                                <TooltipProvider>
+                                                    <Tooltip>
+                                                        <TooltipTrigger asChild>
+                                                            <div className="flex items-center justify-center w-full h-full">
+                                                                <X size={10} strokeWidth={3} />
+                                                            </div>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent side="top">
+                                                            <p>Remove file</p>
+                                                        </TooltipContent>
+                                                    </Tooltip>
+                                                </TooltipProvider>
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-                            </div>
+                                </motion.div>
+                            </AnimatePresence>
                         </div>
                     </div>
                 );

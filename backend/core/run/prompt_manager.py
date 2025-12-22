@@ -50,9 +50,17 @@ If relevant context seems missing, ask a clarifying question.
         
         content = await PromptManager._append_jit_mcp_info(content, mcp_loader)
         
+        # Fetch user context (locale, username) in parallel with memory
+        user_context_task = PromptManager._fetch_user_context_data(user_id, client)
+        memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
+        
+        user_context_data, memory_data = await asyncio.gather(user_context_task, memory_task)
+        
+        if user_context_data:
+            content += user_context_data
+        
         system_message = {"role": "system", "content": content}
         
-        memory_data = await PromptManager._fetch_user_memories(user_id, thread_id, client)
         if memory_data:
             return system_message, {"role": "user", "content": f"[CONTEXT - User Memory]\n{memory_data}\n[END CONTEXT]"}
         
@@ -208,13 +216,6 @@ If relevant context seems missing, ask a clarifying question.
         except Exception as e:
             logger.error(f"Error retrieving knowledge base context for agent {agent_config.get('agent_id', 'unknown')}: {e}")
             return None
-    
-    @staticmethod
-    async def _append_knowledge_base(system_content: str, agent_config: Optional[dict], client) -> str:
-        kb_data = await PromptManager._fetch_knowledge_base(agent_config, client)
-        if kb_data:
-            system_content += kb_data
-        return system_content
     
     @staticmethod
     def _append_mcp_tools_info(system_content: str, agent_config: Optional[dict], mcp_wrapper_instance: Optional[MCPToolWrapper]) -> str:
@@ -446,10 +447,35 @@ Example of correct tool call format (multiple invokes in one block):
         if not (user_id and client):
             return None
         
-        locale_task = PromptManager._fetch_user_locale(user_id, client)
-        username_task = PromptManager._fetch_username(user_id, client)
+        # Fetch locale and username in parallel
+        async def fetch_locale():
+            try:
+                from core.utils.user_locale import get_user_locale
+                return await get_user_locale(user_id, client)
+            except Exception as e:
+                logger.warning(f"Failed to fetch locale for user {user_id}: {e}")
+                return None
         
-        locale, username = await asyncio.gather(locale_task, username_task)
+        async def fetch_username():
+            try:
+                user = await client.auth.admin.get_user_by_id(user_id)
+                if user and user.user:
+                    user_metadata = user.user.user_metadata or {}
+                    email = user.user.email
+                    
+                    username = (
+                        user_metadata.get('full_name') or
+                        user_metadata.get('name') or
+                        user_metadata.get('display_name') or
+                        (email.split('@')[0] if email else None)
+                    )
+                    return username
+                return None
+            except Exception as e:
+                logger.warning(f"Failed to fetch username for user {user_id}: {e}")
+                return None
+        
+        locale, username = await asyncio.gather(fetch_locale(), fetch_username())
         
         context_parts = []
         
@@ -467,42 +493,6 @@ Example of correct tool call format (multiple invokes in one block):
             logger.debug(f"Added username ({username}) to system prompt for user {user_id}")
         
         return ''.join(context_parts) if context_parts else None
-    
-    @staticmethod
-    async def _append_user_context(system_content: str, user_id: Optional[str], client) -> str:
-        user_context_data = await PromptManager._fetch_user_context_data(user_id, client)
-        if user_context_data:
-            system_content += user_context_data
-        return system_content
-    
-    @staticmethod
-    async def _fetch_user_locale(user_id: str, client):
-        try:
-            from core.utils.user_locale import get_user_locale
-            return await get_user_locale(user_id, client)
-        except Exception as e:
-            logger.warning(f"Failed to fetch locale for user {user_id}: {e}")
-            return None
-    
-    @staticmethod
-    async def _fetch_username(user_id: str, client):
-        try:
-            user = await client.auth.admin.get_user_by_id(user_id)
-            if user and user.user:
-                user_metadata = user.user.user_metadata or {}
-                email = user.user.email
-                
-                username = (
-                    user_metadata.get('full_name') or
-                    user_metadata.get('name') or
-                    user_metadata.get('display_name') or
-                    (email.split('@')[0] if email else None)
-                )
-                return username
-            return None
-        except Exception as e:
-            logger.warning(f"Failed to fetch username for user {user_id}: {e}")
-            return None
     
     @staticmethod
     async def _fetch_user_memories(user_id: Optional[str], thread_id: str, client) -> Optional[str]:
