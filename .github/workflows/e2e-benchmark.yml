@@ -194,14 +194,34 @@ jobs:
               echo "### 📋 Individual Test Results:" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               
-              # Loop through each result
+              # Loop through each result with color-coded deviations
               echo "$RESULT" | jq -r '.results[]? | 
                 "#### \(.prompt_id)\n" +
                 "- **Status**: \(if .status == "completed" then "✅ Passed" else "❌ Failed" end)\n" +
                 "- **Duration**: \(.total_duration_ms)ms (cold start: \(.cold_start_ms)ms)\n" +
                 "- **Tool Calls**: \(.tool_calls_count) calls\n" +
                 "- **Expected Tools**: \(if .expected_tools_present then "✅ All present" else "⚠️ Missing: \(.missing_tools | join(", "))" end)\n" +
-                "- **Tools Used**: \(.tool_call_breakdown | to_entries | map("\(.key): \(.value)") | join(", "))\n"
+                "- **Tool Call Accuracy**:\n" +
+                (if (.tool_call_deviations | length) > 0 then
+                  (.tool_call_deviations | to_entries | map(
+                    "  - `\(.key)`: " + 
+                    (if .value.deviation == 0 then 
+                      "$\\color{Green}{\\textsf{✓ \(.value.actual)/\(.value.expected)}}$"
+                    elif .value.deviation == 1 then
+                      "$\\color{Yellow}{\\textsf{⚠ \(.value.actual)/\(.value.expected) (+\(.value.deviation))}}$"
+                    elif .value.deviation == 2 then
+                      "$\\color{Orange}{\\textsf{⚠⚠ \(.value.actual)/\(.value.expected) (+\(.value.deviation))}}$"
+                    elif .value.deviation > 2 then
+                      "$\\color{Red}{\\textbf{✗ \(.value.actual)/\(.value.expected) (+\(.value.deviation))}}$"
+                    elif .value.deviation < 0 then
+                      "$\\color{Red}{\\textbf{✗ \(.value.actual)/\(.value.expected) (\(.value.deviation))}}$"
+                    else
+                      "\(.value.actual)/\(.value.expected)"
+                    end)
+                  ) | join("\n"))
+                else
+                  "  - _(No expected tool calls defined)_"
+                end) + "\n"
               ' 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "_(Could not parse individual results)_" >> $GITHUB_STEP_SUMMARY
               
               echo "" >> $GITHUB_STEP_SUMMARY
