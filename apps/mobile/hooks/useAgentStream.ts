@@ -94,7 +94,11 @@ export function useAgentStream(
   const startStreamingRef = useRef<((runId: string) => void) | null>(null);
   
   // DELTA STREAMING: Track accumulated tool call arguments
-  const accumulatedToolCallsRef = useRef<Map<string, string>>(new Map());
+  // Structure: Map<toolCallId, Array<{sequence: number, delta: string}>>
+  const accumulatedToolCallsRef = useRef<Map<string, Array<{sequence: number, delta: string}>>>(new Map());
+  
+  // Track the merged arguments and highest consecutive sequence for each tool call
+  const mergedToolCallsRef = useRef<Map<string, { mergedArgs: string; lastSequence: number }>>(new Map());
 
   const orderedTextContent = useMemo(() => {
     if (textContent.length === 0) return '';
@@ -351,19 +355,61 @@ export function useAgentStream(
             // Handle tool call chunks - extract from metadata.tool_calls
             const toolCalls = parsedMetadata.tool_calls || [];
             if (toolCalls.length > 0) {
-              // DELTA STREAMING: Accumulate deltas into full tool calls
+              // DELTA STREAMING: Accumulate deltas into full tool calls with sequence ordering
               const reconstructedToolCalls = toolCalls.map((tc: any) => {
                 if (tc.is_delta && tc.arguments_delta) {
-                  // This is a delta update - accumulate it
+                  // This is a delta update - store it with sequence number
                   const toolCallId = tc.tool_call_id || 'unknown';
-                  const currentArgs = accumulatedToolCallsRef.current.get(toolCallId) || '';
-                  const newArgs = currentArgs + tc.arguments_delta;
-                  accumulatedToolCallsRef.current.set(toolCallId, newArgs);
+                  const sequence = message.sequence ?? 0;
+                  
+                  // Get or create the chunks array for this tool call
+                  let chunks = accumulatedToolCallsRef.current.get(toolCallId);
+                  if (!chunks) {
+                    chunks = [];
+                    accumulatedToolCallsRef.current.set(toolCallId, chunks);
+                  }
+                  
+                  // Check if we already have this sequence (avoid duplicates)
+                  const existingIndex = chunks.findIndex(c => c.sequence === sequence);
+                  if (existingIndex >= 0) {
+                    // Update existing chunk
+                    chunks[existingIndex].delta = tc.arguments_delta;
+                  } else {
+                    // Add new chunk
+                    chunks.push({ sequence, delta: tc.arguments_delta });
+                  }
+                  
+                  // Sort chunks by sequence number
+                  chunks.sort((a, b) => a.sequence - b.sequence);
+                  
+                  // Get or create the merged state for this tool call
+                  let mergedState = mergedToolCallsRef.current.get(toolCallId);
+                  if (!mergedState) {
+                    mergedState = { mergedArgs: '', lastSequence: -1 };
+                    mergedToolCallsRef.current.set(toolCallId, mergedState);
+                  }
+                  
+                  // Merge all consecutive chunks starting from lastSequence + 1
+                  let expectedSequence = mergedState.lastSequence + 1;
+                  for (const chunk of chunks) {
+                    if (chunk.sequence === expectedSequence) {
+                      // This is the next expected chunk - merge it
+                      mergedState.mergedArgs += chunk.delta;
+                      mergedState.lastSequence = chunk.sequence;
+                      expectedSequence = chunk.sequence + 1;
+                    } else if (chunk.sequence > expectedSequence) {
+                      // Gap in sequence - stop merging until we get the missing chunk
+                      break;
+                    }
+                    // If chunk.sequence < expectedSequence, it's already been merged, skip it
+                  }
+                  
+                  const mergedArgs = mergedState.mergedArgs;
                   
                   // Return reconstructed tool call with full accumulated arguments
                   return {
                     ...tc,
-                    arguments: newArgs,
+                    arguments: mergedArgs,
                     is_delta: false, // Mark as assembled
                   };
                 } else {
@@ -408,6 +454,7 @@ export function useAgentStream(
             setToolCall(null);
             // Clear accumulated tool call deltas
             accumulatedToolCallsRef.current.clear();
+            mergedToolCallsRef.current.clear();
             if (message.message_id) callbacks.onMessage(message);
           } else if (!parsedMetadata.stream_status) {
             // Handle non-chunked assistant messages if needed
@@ -419,6 +466,7 @@ export function useAgentStream(
           setToolCall(null); // Clear any streaming tool call
           // Clear accumulated tool call deltas when tool execution completes
           accumulatedToolCallsRef.current.clear();
+          mergedToolCallsRef.current.clear();
           if (message.message_id) callbacks.onMessage(message);
           break;
         case 'status':
