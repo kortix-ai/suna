@@ -29,6 +29,9 @@ class BenchmarkResult:
     total_duration_ms: Optional[int]
     tool_calls_count: int
     tool_calls: List[Dict[str, Any]]
+    tool_call_breakdown: Dict[str, int]  # Count of each tool called
+    expected_tools_present: bool  # Were all expected tools called?
+    missing_tools: List[str]  # List of expected tools that weren't called
     avg_tool_call_time_ms: Optional[float]
     slowest_tool_call: Optional[Dict[str, Any]]
     stream_chunk_count: int
@@ -130,6 +133,9 @@ class MetricsCollector:
             'total_duration_ms': result.total_duration_ms,
             'tool_calls_count': result.tool_calls_count,
             'tool_calls': result.tool_calls,
+            'tool_call_breakdown': result.tool_call_breakdown,
+            'expected_tools_present': result.expected_tools_present,
+            'missing_tools': result.missing_tools,
             'avg_tool_call_time_ms': result.avg_tool_call_time_ms,
             'slowest_tool_call': result.slowest_tool_call,
             'stream_chunk_count': result.stream_chunk_count,
@@ -305,6 +311,9 @@ class MetricsCollector:
                     'cold_start_ms': r.get('cold_start_time_ms'),
                     'total_duration_ms': r.get('total_duration_ms'),
                     'tool_calls_count': r.get('tool_calls_count', 0),
+                    'tool_call_breakdown': r.get('tool_call_breakdown', {}),
+                    'expected_tools_present': r.get('expected_tools_present', True),
+                    'missing_tools': r.get('missing_tools', []),
                     'avg_tool_call_time_ms': r.get('avg_tool_call_time_ms'),
                     'slowest_tool_call': r.get('slowest_tool_call'),
                     'error_message': r.get('error_message'),
