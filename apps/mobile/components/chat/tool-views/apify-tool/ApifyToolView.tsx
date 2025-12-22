@@ -129,7 +129,7 @@ export function ApifyToolView({
   
   // Determine which function was called
   let viewType: keyof typeof VIEW_CONFIGS = 'search';
-  if (functionName.includes('approval') || functionName.includes('request_apify_approval')) {
+  if (functionName.includes('approval') || functionName.includes('request_apify_approval') || functionName.includes('approve_apify_request')) {
     viewType = 'approval';
   } else if (functionName.includes('search')) {
     viewType = 'search';
@@ -583,7 +583,7 @@ export function ApifyToolView({
                     <FileAttachmentRenderer
                       filePath={runData.file_path}
                       sandboxId={project.sandbox.id}
-                      sandboxUrl={project.sandbox.url}
+                      sandboxUrl={project.sandbox.sandbox_url}
                       showPreview={true}
                       onPress={onFileClick}
                     />
@@ -645,7 +645,7 @@ export function ApifyToolView({
                     <FileAttachmentRenderer
                       filePath={resultsData.file_path}
                       sandboxId={project.sandbox.id}
-                      sandboxUrl={project.sandbox.url}
+                      sandboxUrl={project.sandbox.sandbox_url}
                       showPreview={true}
                       onPress={onFileClick}
                     />

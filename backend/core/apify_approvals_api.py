@@ -157,6 +157,8 @@ async def approve_apify_request(
                     if ttl > 0:
                         await redis_set(key, json.dumps(approval), ex=ttl)
                     raise HTTPException(status_code=400, detail=f"Approval request {approval_id} has expired. Please create a new approval request.")
+            except HTTPException:
+                raise
             except Exception as e:
                 logger.warning(f"Error checking approval expiration: {e}")
         

@@ -762,7 +762,7 @@ export function useChat(): UseChatReturn {
           }
           
           // Handle project limit
-          if (errorMessage.includes('402') && (errorMessage.includes('PROJECT_LIMIT_EXCEEDED') || errorCode === 'PROJECT_LIMIT_EXCEEDED')) {
+          if (agentStartError?.status === 402 && errorCode === 'PROJECT_LIMIT_EXCEEDED') {
             console.log('💳 Project limit exceeded - opening billing modal');
             router.push({
               pathname: '/plans',
@@ -912,7 +912,7 @@ export function useChat(): UseChatReturn {
           }
           
           // Handle project limit
-          if (errorMessage.includes('402') && (errorMessage.includes('PROJECT_LIMIT_EXCEEDED') || errorCode === 'PROJECT_LIMIT_EXCEEDED')) {
+          if (sendMessageError?.status === 402 && errorCode === 'PROJECT_LIMIT_EXCEEDED') {
             console.log('💳 Project limit exceeded - opening billing modal');
             router.push({
               pathname: '/plans',
