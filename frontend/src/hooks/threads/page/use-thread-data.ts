@@ -45,14 +45,18 @@ export function useThreadData(
   
   const initialLoadCompleted = useRef<boolean>(false);
   const messagesLoadedRef = useRef(false);
-  const agentRunsCheckedRef = useRef(false);
+  // Track if we've found a running agent (not just checked once)
+  const foundRunningAgentRef = useRef(false);
   const hasInitiallyScrolled = useRef<boolean>(false);
+  // Track the last agent run ID we detected to avoid duplicate updates
+  const lastDetectedRunIdRef = useRef<string | null>(null);
   
 
   const threadQuery = useThreadQuery(threadId);
   const messagesQuery = useMessagesQuery(threadId, {
-    refetchInterval: enablePolling ? 3000 : false, // 3s polling when enabled
-    staleTime: 2000, // Prevent refetch spam
+    // Use faster polling (1s) for new threads to detect agent start quickly
+    refetchInterval: enablePolling ? 1000 : false,
+    staleTime: 500, // Lower stale time for faster updates during polling
   });
   
   const effectiveProjectId = threadQuery.data?.project_id || projectId || '';
@@ -66,26 +70,68 @@ export function useThreadData(
   
   const agentRunsQuery = useAgentRunsQuery(threadId, { 
     enabled: !isShared,
-    refetchInterval: enablePolling ? 3000 : false, // 3s polling when enabled
-    staleTime: 2000, // Prevent refetch spam
+    // Use faster polling (1s) for new threads to detect agent start quickly
+    refetchInterval: enablePolling ? 1000 : false,
+    staleTime: 500, // Lower stale time for faster updates during polling
   });
 
   const project = projectQuery.data || null;
   const sandboxId = project?.sandbox?.id || (typeof project?.sandbox === 'string' ? project.sandbox : null);
   const projectName = project?.name || '';
-  
-  // (debug logs removed)
+
+  // Reset refs when thread changes
+  useEffect(() => {
+    messagesLoadedRef.current = false;
+    foundRunningAgentRef.current = false;
+    lastDetectedRunIdRef.current = null;
+    initialLoadCompleted.current = false;
+    hasInitiallyScrolled.current = false;
+    setMessages([]);
+    setAgentRunId(null);
+    setAgentStatus('idle');
+  }, [threadId]);
+
+  // Dedicated effect for continuous agent run monitoring
+  // This runs on every agentRunsQuery.data change, not just once
+  useEffect(() => {
+    if (isShared || !agentRunsQuery.data) return;
+    
+    const runningRuns = agentRunsQuery.data.filter(r => r.status === 'running');
+    
+    if (runningRuns.length > 0) {
+      const latestRunning = runningRuns[0];
+      
+      // Only update if this is a new running agent we haven't detected yet
+      if (lastDetectedRunIdRef.current !== latestRunning.id) {
+        console.log('[useThreadData] Detected running agent:', latestRunning.id);
+        lastDetectedRunIdRef.current = latestRunning.id;
+        foundRunningAgentRef.current = true;
+        setAgentRunId(latestRunning.id);
+        setAgentStatus('running');
+      }
+    } else if (foundRunningAgentRef.current && !enablePolling) {
+      // Only reset to idle if we previously found a running agent and polling is disabled
+      // This prevents premature idle state during the race condition window
+      setAgentStatus('idle');
+      setAgentRunId(null);
+      lastDetectedRunIdRef.current = null;
+    }
+  }, [agentRunsQuery.data, isShared, enablePolling]);
+
+  // Trigger immediate agent runs refetch when messages first load (during polling)
+  // This helps catch the agent run faster since messages often arrive before agent run is detected
+  useEffect(() => {
+    if (!enablePolling || isShared || foundRunningAgentRef.current) return;
+    
+    // When messages arrive for the first time, immediately refetch agent runs
+    if (messagesQuery.data && messagesQuery.data.length > 0 && !agentRunId) {
+      console.log('[useThreadData] Messages detected, triggering agent runs refetch');
+      agentRunsQuery.refetch();
+    }
+  }, [messagesQuery.data, enablePolling, isShared, agentRunId, agentRunsQuery]);
 
   useEffect(() => {
     let isMounted = true;
-    
-    // Reset refs when thread changes
-    agentRunsCheckedRef.current = false;
-    messagesLoadedRef.current = false;
-    initialLoadCompleted.current = false;
-    
-    // Clear messages on thread change; fresh data will set messages
-    setMessages([]);
 
     async function initializeData() {
       if (!initialLoadCompleted.current) setIsLoading(true);
@@ -99,8 +145,6 @@ export function useThreadData(
         if (!isMounted) return;
 
         if (messagesQuery.data && !messagesLoadedRef.current) {
-          // (debug logs removed)
-
           // Backend now filters out status messages, so no need to filter here
           const unifiedMessages = (messagesQuery.data || [])
             .map((msg: ApiMessageType) => ({
@@ -133,29 +177,10 @@ export function useThreadData(
           });
 
           setMessages(mergedMessages);
-          // Messages set only from server merge; no cross-thread cache
           messagesLoadedRef.current = true;
 
           if (!hasInitiallyScrolled.current) {
             hasInitiallyScrolled.current = true;
-          }
-        }
-
-        // For shared pages, skip agent runs check (anon users don't have access)
-        if (!isShared && agentRunsQuery.data && !agentRunsCheckedRef.current && isMounted) {
-          // (debug logs removed)
-          
-          agentRunsCheckedRef.current = true;
-          
-          // Check for any running agents - no time restrictions!
-          const runningRuns = agentRunsQuery.data.filter(r => r.status === 'running');
-          if (runningRuns.length > 0) {
-            const latestRunning = runningRuns[0]; // Use first running agent
-            setAgentRunId(latestRunning.id);
-            setAgentStatus('running');
-          } else {
-            setAgentStatus('idle');
-            setAgentRunId(null);
           }
         }
 
@@ -167,7 +192,6 @@ export function useThreadData(
         if (requiredDataLoaded) {
           initialLoadCompleted.current = true;
           setIsLoading(false);
-          // Removed time-based final check to avoid incorrectly forcing idle while a stream is active
         }
 
       } catch (err) {
@@ -200,7 +224,8 @@ export function useThreadData(
     threadQuery.error,
     projectQuery.data,
     messagesQuery.data,
-    agentRunsQuery.data
+    agentRunsQuery.data,
+    isShared
   ]);
 
   // Force message reload when thread changes or new data arrives

@@ -209,9 +209,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }
   
-  // Stop polling once initial data is loaded (agentRunId exists OR initial load completed)
-  if (isNewThread && !hasDataLoaded.current && (agentRunId || initialLoadCompleted)) {
+  // Stop polling only when we have confirmed the agent is running (agentRunId exists)
+  // This prevents the race condition where polling stops before the agent is detected
+  if (isNewThread && !hasDataLoaded.current && agentRunId) {
     hasDataLoaded.current = true;
+    console.log('[ThreadComponent] Agent detected, stopping polling:', agentRunId);
     // Clean up the ?new=true URL param to prevent future polling issues
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
@@ -222,6 +224,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }
   
+  // Hide optimistic UI only when we have both agentRunId AND initialLoadCompleted
+  // This ensures the stream is ready before transitioning
   const shouldHideOptimisticUI = isNewThread 
     ? (agentRunId && initialLoadCompleted)
     : ((agentRunId || messages.length > 0 || threadStatus === 'ready') && initialLoadCompleted);
@@ -293,6 +297,32 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       resetKortixComputerStore();
     }
   }, [threadId, queryClient, isShared, resetKortixComputerStore]);
+
+  // Fallback timeout for new thread polling
+  // If we haven't detected an agent after 30 seconds, stop polling and hide optimistic UI
+  // This prevents infinite polling if the agent fails to start
+  useEffect(() => {
+    if (!isNewThread || hasDataLoaded.current || !showOptimisticUI) return;
+    
+    const timeoutId = setTimeout(() => {
+      if (!hasDataLoaded.current && showOptimisticUI) {
+        console.warn('[ThreadComponent] Polling timeout reached, no agent detected after 30s');
+        hasDataLoaded.current = true;
+        setShowOptimisticUI(false);
+        // Clean up URL param
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href);
+          if (url.searchParams.get('new') === 'true') {
+            url.searchParams.delete('new');
+            window.history.replaceState({}, '', url.pathname + url.search);
+          }
+        }
+        toast.error('Failed to start the conversation. Please try again.');
+      }
+    }, 30000); // 30 second timeout
+    
+    return () => clearTimeout(timeoutId);
+  }, [isNewThread, showOptimisticUI]);
 
   useEffect(() => {
     const handleSandboxActive = (event: Event) => {
