@@ -29,6 +29,8 @@ import {
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -59,6 +61,10 @@ import {
   useARRWeeklyActuals,
   useUpdateARRWeeklyActual,
   useDeleteARRWeeklyActual,
+  useToggleFieldOverride,
+  useARRMonthlyActuals,
+  useUpdateARRMonthlyActual,
+  useToggleMonthlyFieldOverride,
   useARRSimulatorConfig,
   useUpdateARRSimulatorConfig,
   useSignupsByDate,
@@ -70,6 +76,8 @@ import {
   type RetentionData,
   type ThreadBrowseParams,
   type WeeklyActualData,
+  type MonthlyActualData,
+  type FieldOverrides,
   type AnalyticsSource,
 } from '@/hooks/admin/use-admin-analytics';
 import { AdminUserTable } from '@/components/admin/admin-user-table';
@@ -639,9 +647,11 @@ interface WeeklyActual {
   views: number;
   signups: number;
   newPaid: number;
+  churn: number;
   subscribers: number;
   mrr: number;
   arr: number;
+  overrides?: FieldOverrides;  // Tracks which fields are locked/manually overridden
 }
 
 interface ARRSimulatorProps {
@@ -939,6 +949,12 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   const { data: arrActualsData, isLoading: actualsLoading } = useARRWeeklyActuals();
   const updateActualMutation = useUpdateARRWeeklyActual();
   const deleteActualMutation = useDeleteARRWeeklyActual();
+  const toggleOverrideMutation = useToggleFieldOverride();
+  
+  // Actual monthly data (persisted to database - direct monthly overrides)
+  const { data: arrMonthlyActualsData } = useARRMonthlyActuals();
+  const updateMonthlyActualMutation = useUpdateARRMonthlyActual();
+  const toggleMonthlyOverrideMutation = useToggleMonthlyFieldOverride();
 
   // Convert API data to local format
   const actualData: Record<number, WeeklyActual> = useMemo(() => {
@@ -949,9 +965,11 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         views: data.views || 0,
         signups: data.signups || 0,
         newPaid: data.new_paid || 0,
+        churn: data.churn || 0,
         subscribers: data.subscribers || 0,
         mrr: data.mrr || 0,
         arr: data.arr || 0,
+        overrides: data.overrides,  // Include overrides from API
       };
     });
     return result;
@@ -959,6 +977,16 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
 
   // Local state for pending edits (so we don't call API on every keystroke)
   const [pendingEdits, setPendingEdits] = useState<Record<string, string>>({});
+  
+  // Local state for optimistic override updates (shows input immediately without waiting for API)
+  const [pendingOverrides, setPendingOverrides] = useState<Record<string, boolean>>({});
+  
+  // Clear pending overrides when actual data updates (API call completed)
+  useEffect(() => {
+    if (arrActualsData) {
+      setPendingOverrides({});
+    }
+  }, [arrActualsData]);
 
   // Get display value for an input (pending edit or saved value)
   const getInputValue = (week: number, field: keyof WeeklyActual): string => {
@@ -974,7 +1002,13 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     setPendingEdits(prev => ({ ...prev, [key]: value }));
   };
 
-  // Save to API on blur
+  // Map local field names to API field names (for overrides)
+  const fieldToOverrideKey = (field: keyof WeeklyActual): keyof FieldOverrides => {
+    if (field === 'newPaid') return 'new_paid';
+    return field as keyof FieldOverrides;
+  };
+
+  // Save to API on blur - also marks the field as overridden (locked)
   const handleInputBlur = (week: number, field: keyof WeeklyActual) => {
     const key = `${week}-${field}`;
     const pendingValue = pendingEdits[key];
@@ -986,8 +1020,17 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     if (!weekProjection) return;
     
     const value = Number(pendingValue) || 0;
-    const currentData = actualData[week] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+    const currentData = actualData[week] || { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0, overrides: {} };
     const updatedData = { ...currentData, [field]: value };
+    
+    // Build overrides - mark this field as overridden since it was manually edited
+    // Map field name to override key (newPaid -> new_paid)
+    const currentOverrides = currentData.overrides || {};
+    const overrideKey = fieldToOverrideKey(field);
+    const updatedOverrides: FieldOverrides = {
+      ...currentOverrides,
+      [overrideKey]: true,  // Mark this field as locked/overridden
+    };
     
     // Map field names for API
     const apiData: WeeklyActualData = {
@@ -996,12 +1039,56 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       views: updatedData.views,
       signups: updatedData.signups,
       new_paid: updatedData.newPaid,
+      churn: updatedData.churn,
       subscribers: updatedData.subscribers,
       mrr: updatedData.mrr,
       arr: updatedData.arr,
+      overrides: updatedOverrides,
     };
     
     updateActualMutation.mutate(apiData);
+  };
+
+  // Toggle override for a specific field (with optimistic update)
+  const handleToggleOverride = (week: number, field: keyof FieldOverrides) => {
+    const pendingKey = `${week}-${field}`;
+    const currentOverride = isFieldOverridden(week, field);
+    const newOverrideState = !currentOverride;
+    
+    // Optimistic update for instant UI feedback
+    setPendingOverrides(prev => ({ ...prev, [pendingKey]: newOverrideState }));
+    
+    // Call API in background
+    toggleOverrideMutation.mutate({
+      weekNumber: week,
+      field,
+      override: newOverrideState,
+    });
+  };
+
+  // Check if a field is overridden (locked) - includes optimistic updates for instant UI
+  const isFieldOverridden = (week: number, field: keyof FieldOverrides): boolean => {
+    const pendingKey = `${week}-${field}`;
+    // Check pending overrides first (optimistic), then actual data
+    if (pendingKey in pendingOverrides) {
+      return pendingOverrides[pendingKey];
+    }
+    return actualData[week]?.overrides?.[field] || false;
+  };
+
+  // Instantly enable override mode (optimistic update) and save to API
+  const enableOverrideInstantly = (week: number, field: keyof WeeklyActual, currentValue: number) => {
+    const overrideKey = fieldToOverrideKey(field);
+    const pendingKey = `${week}-${overrideKey}`;
+    
+    // 1. Set pending override immediately for instant UI update
+    setPendingOverrides(prev => ({ ...prev, [pendingKey]: true }));
+    
+    // 2. Set the value in pending edits
+    handleInputChange(week, field, String(currentValue));
+    
+    // 3. Save to API in background
+    handleInputBlur(week, field);
   };
 
   const deleteWeekActual = (weekNumber: number) => {
@@ -1017,6 +1104,147 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     deleteActualMutation.mutate(weekNumber);
   };
 
+  // ============================================================================
+  // MONTHLY EDITING (Direct monthly overrides)
+  // ============================================================================
+  
+  // Convert monthly API data to local format
+  interface MonthlyActual {
+    views: number;
+    signups: number;
+    newPaid: number;
+    churn: number;
+    subscribers: number;
+    mrr: number;
+    arr: number;
+    overrides?: FieldOverrides;
+  }
+  
+  const monthlyActualData: Record<number, MonthlyActual> = useMemo(() => {
+    if (!arrMonthlyActualsData?.actuals) return {};
+    const result: Record<number, MonthlyActual> = {};
+    Object.entries(arrMonthlyActualsData.actuals).forEach(([monthIdx, data]) => {
+      result[Number(monthIdx)] = {
+        views: data.views || 0,
+        signups: data.signups || 0,
+        newPaid: data.new_paid || 0,
+        churn: data.churn || 0,
+        subscribers: data.subscribers || 0,
+        mrr: data.mrr || 0,
+        arr: data.arr || 0,
+        overrides: data.overrides,
+      };
+    });
+    return result;
+  }, [arrMonthlyActualsData]);
+  
+  // Local state for pending monthly edits
+  const [pendingMonthlyEdits, setPendingMonthlyEdits] = useState<Record<string, string>>({});
+  const [pendingMonthlyOverrides, setPendingMonthlyOverrides] = useState<Record<string, boolean>>({});
+  
+  // Clear pending monthly overrides when data updates
+  useEffect(() => {
+    if (arrMonthlyActualsData) {
+      setPendingMonthlyOverrides({});
+    }
+  }, [arrMonthlyActualsData]);
+  
+  // Get display value for monthly input
+  const getMonthlyInputValue = (monthIndex: number, field: keyof MonthlyActual): string => {
+    const key = `${monthIndex}-${field}`;
+    if (key in pendingMonthlyEdits) return pendingMonthlyEdits[key];
+    const saved = monthlyActualData[monthIndex]?.[field];
+    return saved ? String(saved) : '';
+  };
+  
+  // Handle monthly input change
+  const handleMonthlyInputChange = (monthIndex: number, field: keyof MonthlyActual, value: string) => {
+    const key = `${monthIndex}-${field}`;
+    setPendingMonthlyEdits(prev => ({ ...prev, [key]: value }));
+  };
+  
+  // Save monthly to API on blur
+  const handleMonthlyInputBlur = (monthIndex: number, monthName: string, field: keyof MonthlyActual) => {
+    const key = `${monthIndex}-${field}`;
+    const pendingValue = pendingMonthlyEdits[key];
+    
+    if (pendingValue === undefined) return;
+    
+    const value = Number(pendingValue) || 0;
+    const currentData = monthlyActualData[monthIndex] || { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0, overrides: {} };
+    const updatedData = { ...currentData, [field]: value };
+    
+    const currentOverrides = currentData.overrides || {};
+    const overrideKey = fieldToOverrideKey(field as keyof WeeklyActual);
+    const updatedOverrides: FieldOverrides = {
+      ...currentOverrides,
+      [overrideKey]: true,
+    };
+    
+    const apiData: MonthlyActualData = {
+      month_index: monthIndex,
+      month_name: monthName,
+      views: updatedData.views,
+      signups: updatedData.signups,
+      new_paid: updatedData.newPaid,
+      churn: updatedData.churn,
+      subscribers: updatedData.subscribers,
+      mrr: updatedData.mrr,
+      arr: updatedData.arr,
+      overrides: updatedOverrides,
+    };
+    
+    updateMonthlyActualMutation.mutate(apiData, {
+      onSuccess: () => {
+        setPendingMonthlyEdits(prev => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+        toast.success(`${monthName} ${field} updated`);
+      },
+      onError: (error) => {
+        toast.error(`Failed to update: ${error.message}`);
+      },
+    });
+  };
+  
+  // Toggle monthly override
+  const handleToggleMonthlyOverride = (monthIndex: number, field: keyof MonthlyActual) => {
+    const overrideKey = fieldToOverrideKey(field as keyof WeeklyActual);
+    const currentOverride = monthlyActualData[monthIndex]?.overrides?.[overrideKey] || false;
+    
+    toggleMonthlyOverrideMutation.mutate({
+      monthIndex,
+      field: overrideKey,
+      override: !currentOverride,
+    }, {
+      onSuccess: () => {
+        toast.success(`Field ${!currentOverride ? 'locked' : 'unlocked'}`);
+      },
+    });
+  };
+  
+  // Check if monthly field is overridden
+  const isMonthlyFieldOverridden = (monthIndex: number, field: keyof MonthlyActual): boolean => {
+    const overrideKey = fieldToOverrideKey(field as keyof WeeklyActual);
+    const pendingKey = `${monthIndex}-${overrideKey}`;
+    if (pendingKey in pendingMonthlyOverrides) {
+      return pendingMonthlyOverrides[pendingKey];
+    }
+    return monthlyActualData[monthIndex]?.overrides?.[overrideKey] || false;
+  };
+  
+  // Enable monthly override instantly (for clicking on auto-fetched value)
+  const enableMonthlyOverrideInstantly = (monthIndex: number, monthName: string, field: keyof MonthlyActual, currentValue: number) => {
+    const overrideKey = fieldToOverrideKey(field as keyof WeeklyActual);
+    const pendingKey = `${monthIndex}-${overrideKey}`;
+    
+    setPendingMonthlyOverrides(prev => ({ ...prev, [pendingKey]: true }));
+    handleMonthlyInputChange(monthIndex, field, String(currentValue));
+    handleMonthlyInputBlur(monthIndex, monthName, field);
+  };
+
   // Calculate variance percentage
   const getVariance = (actual: number | undefined, goal: number): { value: number; color: string } => {
     if (!actual || actual === 0) return { value: 0, color: 'text-muted-foreground' };
@@ -1027,53 +1255,72 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   };
 
   // Prepare weekly chart data for actual vs goal comparison
-  const weeklyChartData = weeklyProjections.map(w => ({
-    week: `W${w.week}`,
-    goalViews: w.visitors,
-    actualViews: viewsByWeek[w.week] || 0,
-    goalSignups: w.signups,
-    actualSignups: signupsByWeek[w.week] || 0,
-    goalNewPaid: w.newPaid,
-    // Use Stripe data for new paid, fallback to manual entry
-    actualNewPaid: newPaidByWeek[w.week] || actualData[w.week]?.newPaid || 0,
-    goalSubs: w.subscribers,
-    // Use calculated subscribers from newPaid - churn
-    actualSubs: actualSubsByWeek[w.week] || 0,
-    goalMRR: w.mrr,
-    actualMRR: actualData[w.week]?.mrr || 0,
-    goalARR: w.arr,
-    actualARR: actualData[w.week]?.arr || 0,
-  }));
+  // Respects overridden values when calculating actuals
+  const weeklyChartData = weeklyProjections.map(w => {
+    const weekData = actualData[w.week];
+    const overrides = weekData?.overrides || {};
+    
+    // Use overridden value if locked, otherwise use auto-fetched data
+    const effectiveViews = overrides.views ? (weekData?.views || 0) : (viewsByWeek[w.week] || 0);
+    const effectiveSignups = overrides.signups ? (weekData?.signups || 0) : (signupsByWeek[w.week] || 0);
+    const effectiveNewPaid = overrides.new_paid ? (weekData?.newPaid || 0) : (newPaidByWeek[w.week] || weekData?.newPaid || 0);
+    // Subscribers: use override if locked, otherwise calculated value
+    const effectiveSubs = overrides.subscribers ? (weekData?.subscribers || 0) : (actualSubsByWeek[w.week] || 0);
+    
+    return {
+      week: `W${w.week}`,
+      goalViews: w.visitors,
+      actualViews: effectiveViews,
+      goalSignups: w.signups,
+      actualSignups: effectiveSignups,
+      goalNewPaid: w.newPaid,
+      actualNewPaid: effectiveNewPaid,
+      goalSubs: w.subscribers,
+      actualSubs: effectiveSubs,
+      goalMRR: w.mrr,
+      actualMRR: weekData?.mrr || 0,
+      goalARR: w.arr,
+      actualARR: weekData?.arr || 0,
+    };
+  });
 
   // Aggregate weekly actuals into monthly actuals for comparison
+  // Respects overridden values when aggregating
   const monthlyActuals = useMemo(() => {
     const result: Record<number, { views: number; signups: number; newPaid: number; churn: number; subscribers: number; mrr: number; arr: number }> = {};
     
     weeklyProjections.forEach((week) => {
       const monthIdx = week.monthIndex;
       const weekActual = actualData[week.week];
-      const autoSignups = signupsByWeek[week.week] || 0;
-      const autoViews = viewsByWeek[week.week] || 0;
-      const autoNewPaid = newPaidByWeek[week.week] || 0;
+      const overrides = weekActual?.overrides || {};
+      
+      // Use overridden value if locked, otherwise use auto-fetched data
+      const effectiveViews = overrides.views ? (weekActual?.views || 0) : (viewsByWeek[week.week] || 0);
+      const effectiveSignups = overrides.signups ? (weekActual?.signups || 0) : (signupsByWeek[week.week] || 0);
+      const effectiveNewPaid = overrides.new_paid ? (weekActual?.newPaid || 0) : (newPaidByWeek[week.week] || weekActual?.newPaid || 0);
       const autoChurn = churnByWeek[week.week] || 0;
       
       if (!result[monthIdx]) {
         result[monthIdx] = { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0 };
       }
       
-      // Use auto-fetched signups from database
-      result[monthIdx].signups += autoSignups;
-      // Use auto-fetched views from analytics
-      result[monthIdx].views += autoViews;
-      // Use auto-fetched new paid from Stripe (fallback to manual)
-      result[monthIdx].newPaid += autoNewPaid || (weekActual?.newPaid || 0);
-      // Use auto-fetched churn from Stripe
+      // Use effective values (respecting overrides)
+      result[monthIdx].signups += effectiveSignups;
+      result[monthIdx].views += effectiveViews;
+      result[monthIdx].newPaid += effectiveNewPaid;
+      // Churn doesn't have override yet, use auto-fetched
       result[monthIdx].churn += autoChurn;
       
-      // Use calculated subscribers (take last week's value as end-of-month)
-      const calcSubs = actualSubsByWeek[week.week];
-      if (calcSubs !== undefined) {
-        result[monthIdx].subscribers = calcSubs;
+      // Use overridden weekly subscribers if locked, otherwise calculated
+      // This ensures weekly edits flow to monthly
+      const weeklySubsOverride = weekActual?.overrides?.subscribers;
+      const effectiveWeeklySubs = weeklySubsOverride 
+        ? (weekActual?.subscribers || 0) 
+        : (actualSubsByWeek[week.week] || 0);
+      
+      // Take last week's value as end-of-month subscribers
+      if (effectiveWeeklySubs > 0 || weeklySubsOverride) {
+        result[monthIdx].subscribers = effectiveWeeklySubs;
       }
       
       if (weekActual) {
@@ -1281,28 +1528,40 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     const monthNames = ['Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026', 'Jun 2026'];
     return monthNames.map((month, idx) => {
       const goal = goalsByMonth[idx];
+      const monthlyOverride = monthlyActualData[idx];
+      const overrides = monthlyOverride?.overrides || {};
+      
+      // Use overridden value if locked, otherwise auto-fetched
+      const effectiveViews = overrides.views ? (monthlyOverride?.views || 0) : (metricsByCalendarMonth.views[idx] || 0);
+      const effectiveSignups = overrides.signups ? (monthlyOverride?.signups || 0) : (metricsByCalendarMonth.signups[idx] || 0);
+      const effectiveNewPaid = overrides.new_paid ? (monthlyOverride?.newPaid || 0) : (metricsByCalendarMonth.newPaid[idx] || 0);
+      const effectiveChurn = overrides.churn ? (monthlyOverride?.churn || 0) : (metricsByCalendarMonth.churn[idx] || 0);
+      const effectiveSubs = overrides.subscribers ? (monthlyOverride?.subscribers || 0) : (monthlyActuals[idx]?.subscribers || 0);
+      const effectiveMrr = overrides.mrr ? (monthlyOverride?.mrr || 0) : (monthlyActuals[idx]?.mrr || 0);
+      const effectiveArr = overrides.arr ? (monthlyOverride?.arr || 0) : (monthlyActuals[idx]?.arr || 0);
+      
       return {
         month,
         monthIndex: idx,
-        // Actual data
-        actualNewPaid: metricsByCalendarMonth.newPaid[idx] || 0,
-        actualChurned: metricsByCalendarMonth.churn[idx] || 0,
-        negativeActualChurned: -(metricsByCalendarMonth.churn[idx] || 0),
-        signups: metricsByCalendarMonth.signups[idx] || 0,
-        views: metricsByCalendarMonth.views[idx] || 0,
-        actualSubs: monthlyActuals[idx]?.subscribers || 0,
-        actualMrr: monthlyActuals[idx]?.mrr || 0,
-        actualArr: monthlyActuals[idx]?.arr || 0,
+        // Actual data (respects overrides)
+        actualNewPaid: effectiveNewPaid,
+        actualChurned: effectiveChurn,
+        negativeActualChurned: -effectiveChurn,
+        signups: effectiveSignups,
+        views: effectiveViews,
+        actualSubs: effectiveSubs,
+        actualMrr: effectiveMrr,
+        actualArr: effectiveArr,
         // Goal data from monthlyFromWeekly (same source as table)
-          goalNewPaid: goal?.newPaid || 0,
-          goalChurned: 0,
-          negativeGoalChurned: 0,
+        goalNewPaid: goal?.newPaid || 0,
+        goalChurned: 0,
+        negativeGoalChurned: 0,
         goalSubs: goal?.totalSubs || 0,
         goalMrr: goal?.mrr || 0,
         goalArr: goal?.arr || 0,
       };
     });
-  }, [metricsByCalendarMonth, monthlyActuals, monthlyFromWeekly]);
+  }, [metricsByCalendarMonth, monthlyActuals, monthlyActualData, monthlyFromWeekly]);
 
   // View state
   const [simulatorView, setSimulatorView] = useState<'monthly' | 'weekly'>('monthly');
@@ -1814,36 +2073,46 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               <tbody>
                 {monthlyFromWeekly.map((month, idx) => {
                   const actual = monthlyActuals[month.monthIndex] || { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0 };
+                  const monthlyOverride = monthlyActualData[month.monthIndex];
                   const isLastMonth = idx === monthlyFromWeekly.length - 1;
                   
-                  // Use calendar month aggregations (from daily data)
-                  const calendarViews = metricsByCalendarMonth.views[month.monthIndex] || 0;
-                  const calendarSignups = metricsByCalendarMonth.signups[month.monthIndex] || 0;
-                  const calendarNewPaid = metricsByCalendarMonth.newPaid[month.monthIndex] || 0;
-                  const calendarChurn = metricsByCalendarMonth.churn[month.monthIndex] || 0;
+                  // Use calendar month aggregations (from daily data) - unless overridden
+                  const autoViews = metricsByCalendarMonth.views[month.monthIndex] || 0;
+                  const autoSignups = metricsByCalendarMonth.signups[month.monthIndex] || 0;
+                  const autoNewPaid = metricsByCalendarMonth.newPaid[month.monthIndex] || 0;
+                  const autoChurn = metricsByCalendarMonth.churn[month.monthIndex] || 0;
+                  
+                  // Effective values: use override if locked, otherwise auto-fetched
+                  const effectiveViews = isMonthlyFieldOverridden(month.monthIndex, 'views') ? (monthlyOverride?.views || 0) : autoViews;
+                  const effectiveSignups = isMonthlyFieldOverridden(month.monthIndex, 'signups') ? (monthlyOverride?.signups || 0) : autoSignups;
+                  const effectiveNewPaid = isMonthlyFieldOverridden(month.monthIndex, 'newPaid') ? (monthlyOverride?.newPaid || 0) : autoNewPaid;
+                  const effectiveChurn = isMonthlyFieldOverridden(month.monthIndex, 'churn') ? (monthlyOverride?.churn || 0) : autoChurn;
+                  const effectiveSubs = isMonthlyFieldOverridden(month.monthIndex, 'subscribers') ? (monthlyOverride?.subscribers || 0) : actual.subscribers;
+                  const effectiveMRR = isMonthlyFieldOverridden(month.monthIndex, 'mrr') ? (monthlyOverride?.mrr || 0) : actual.mrr;
+                  const effectiveARR = isMonthlyFieldOverridden(month.monthIndex, 'arr') ? (monthlyOverride?.arr || 0) : actual.arr;
                   
                   // Previous month values for growth calculation
                   const prevMonthIdx = idx > 0 ? monthlyFromWeekly[idx - 1].monthIndex : -1;
-                  const prevCalendarViews = prevMonthIdx >= 0 ? (metricsByCalendarMonth.views[prevMonthIdx] || 0) : 0;
-                  const prevCalendarSignups = prevMonthIdx >= 0 ? (metricsByCalendarMonth.signups[prevMonthIdx] || 0) : 0;
-                  const prevCalendarNewPaid = prevMonthIdx >= 0 ? (metricsByCalendarMonth.newPaid[prevMonthIdx] || 0) : 0;
+                  const prevEffectiveViews = prevMonthIdx >= 0 ? (isMonthlyFieldOverridden(prevMonthIdx, 'views') ? (monthlyActualData[prevMonthIdx]?.views || 0) : (metricsByCalendarMonth.views[prevMonthIdx] || 0)) : 0;
+                  const prevEffectiveSignups = prevMonthIdx >= 0 ? (isMonthlyFieldOverridden(prevMonthIdx, 'signups') ? (monthlyActualData[prevMonthIdx]?.signups || 0) : (metricsByCalendarMonth.signups[prevMonthIdx] || 0)) : 0;
+                  const prevEffectiveNewPaid = prevMonthIdx >= 0 ? (isMonthlyFieldOverridden(prevMonthIdx, 'newPaid') ? (monthlyActualData[prevMonthIdx]?.newPaid || 0) : (metricsByCalendarMonth.newPaid[prevMonthIdx] || 0)) : 0;
                   
-                  const hasActual = calendarViews > 0 || calendarSignups > 0 || actual.subscribers > 0;
+                  const hasActual = effectiveViews > 0 || effectiveSignups > 0 || effectiveSubs > 0;
                   
                   // Calculate growth rates (month-over-month)
-                  const viewsGrowth = prevCalendarViews > 0 && calendarViews > 0 ? ((calendarViews / prevCalendarViews) - 1) * 100 : null;
-                  const signupsGrowth = prevCalendarSignups > 0 && calendarSignups > 0 ? ((calendarSignups / prevCalendarSignups) - 1) * 100 : null;
-                  const newPaidGrowth = prevCalendarNewPaid > 0 && calendarNewPaid > 0 ? ((calendarNewPaid / prevCalendarNewPaid) - 1) * 100 : null;
+                  const viewsGrowth = prevEffectiveViews > 0 && effectiveViews > 0 ? ((effectiveViews / prevEffectiveViews) - 1) * 100 : null;
+                  const signupsGrowth = prevEffectiveSignups > 0 && effectiveSignups > 0 ? ((effectiveSignups / prevEffectiveSignups) - 1) * 100 : null;
+                  const newPaidGrowth = prevEffectiveNewPaid > 0 && effectiveNewPaid > 0 ? ((effectiveNewPaid / prevEffectiveNewPaid) - 1) * 100 : null;
                   
                   // Calculate signup conversion rate (signups / views)
-                  const signupConvRate = calendarViews > 0 && calendarSignups > 0 ? (calendarSignups / calendarViews) * 100 : null;
+                  const signupConvRate = effectiveViews > 0 && effectiveSignups > 0 ? (effectiveSignups / effectiveViews) * 100 : null;
                   
                   // Calculate new paid conversion rate (new paid / signups)
-                  const paidConvRate = calendarSignups > 0 && calendarNewPaid > 0 ? (calendarNewPaid / calendarSignups) * 100 : null;
+                  const paidConvRate = effectiveSignups > 0 && effectiveNewPaid > 0 ? (effectiveNewPaid / effectiveSignups) * 100 : null;
                   
                   // Churn rate
                   const monthStartSubs = subsAtMonthStart[month.monthIndex] || 0;
-                  const churnRate = monthStartSubs > 0 && calendarChurn > 0 ? (calendarChurn / monthStartSubs) * 100 : null;
+                  const churnRate = monthStartSubs > 0 && effectiveChurn > 0 ? (effectiveChurn / monthStartSubs) * 100 : null;
                   
                   // Helper to format growth
                   const formatGrowth = (value: number | null) => {
@@ -1857,23 +2126,64 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     return value >= 0 ? 'text-green-600' : 'text-red-500';
                   };
                   
+                  // Editable cell helper for monthly data
+                  const renderEditableMonthlyCell = (
+                    field: keyof MonthlyActual,
+                    autoValue: number,
+                    goalValue: number,
+                    isCurrency: boolean = false
+                  ) => {
+                    const isOverridden = isMonthlyFieldOverridden(month.monthIndex, field);
+                    const effectiveValue = isOverridden ? (monthlyOverride?.[field] || 0) : autoValue;
+                    const displayValue = isCurrency ? formatCurrency(effectiveValue as number) : formatNumber(effectiveValue as number);
+                    const meetsGoal = (effectiveValue as number) >= goalValue;
+                    
+                    return (
+                      <td className="text-right p-1">
+                        <div className="flex items-center justify-end gap-1">
+                          {isOverridden && (
+                            <button
+                              onClick={() => handleToggleMonthlyOverride(month.monthIndex, field)}
+                              className="text-amber-500 hover:text-amber-600"
+                              title="Click to unlock (use auto-fetched value)"
+                            >
+                              <Lock className="h-3 w-3" />
+                            </button>
+                          )}
+                          {isOverridden || `${month.monthIndex}-${fieldToOverrideKey(field as keyof WeeklyActual)}` in pendingMonthlyEdits ? (
+                            <Input
+                              type="number"
+                              value={getMonthlyInputValue(month.monthIndex, field)}
+                              onChange={(e) => handleMonthlyInputChange(month.monthIndex, field, e.target.value)}
+                              onBlur={() => handleMonthlyInputBlur(month.monthIndex, month.month, field)}
+                              className={`w-20 h-7 text-right text-xs ${isOverridden ? 'border-amber-400' : ''}`}
+                            />
+                          ) : (
+                            <button
+                              onClick={() => enableMonthlyOverrideInstantly(month.monthIndex, month.month, field, autoValue)}
+                              className={`font-medium hover:underline cursor-pointer ${hasActual && meetsGoal ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}
+                            >
+                              {(effectiveValue as number) > 0 ? displayValue : '—'}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    );
+                  };
+                  
                   return (
                     <tr key={month.month} className={`border-b ${isLastMonth ? 'bg-primary/5 font-medium' : ''}`}>
                       <td className="p-3">{month.month}</td>
                       {/* Visitors */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.visitors)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && calendarViews >= month.visitors ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {calendarViews > 0 ? formatNumber(calendarViews) : '—'}
-                      </td>
+                      {renderEditableMonthlyCell('views', autoViews, month.visitors)}
                       {/* % Growth */}
                       <td className={`text-right p-2 font-medium ${getGrowthColor(viewsGrowth)}`}>
                         {formatGrowth(viewsGrowth)}
                       </td>
                       {/* Signups */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.signups)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && calendarSignups >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {calendarSignups > 0 ? formatNumber(calendarSignups) : '—'}
-                      </td>
+                      {renderEditableMonthlyCell('signups', autoSignups, month.signups)}
                       {/* Signups Growth */}
                       <td className={`text-right p-2 font-medium ${getGrowthColor(signupsGrowth)}`}>
                         {formatGrowth(signupsGrowth)}
@@ -1884,9 +2194,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       </td>
                       {/* New Paid */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.newPaid)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && calendarNewPaid >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {calendarNewPaid > 0 ? formatNumber(calendarNewPaid) : '—'}
-                      </td>
+                      {renderEditableMonthlyCell('newPaid', autoNewPaid, month.newPaid)}
                       {/* New Paid Growth */}
                       <td className={`text-right p-2 font-medium ${getGrowthColor(newPaidGrowth)}`}>
                         {formatGrowth(newPaidGrowth)}
@@ -1895,29 +2203,21 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       <td className="text-right p-2 font-medium text-muted-foreground">
                         {paidConvRate !== null ? `${paidConvRate.toFixed(1)}%` : '—'}
                       </td>
-                      {/* Churn (by calendar month from daily data) */}
-                      <td className={`text-right p-2 font-medium ${calendarChurn > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {calendarChurn > 0 ? formatNumber(calendarChurn) : '—'}
-                      </td>
+                      {/* Churn */}
+                      {renderEditableMonthlyCell('churn', autoChurn, 0)}
                       {/* Churn Rate = Churn / Subs at 1st of month */}
                       <td className={`text-right p-2 font-medium ${churnRate !== null && churnRate > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
                         {churnRate !== null ? `${churnRate.toFixed(1)}%` : '—'}
                       </td>
                       {/* Total Subs */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.totalSubs)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actual.subscribers >= month.totalSubs ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.subscribers > 0 ? formatNumber(actual.subscribers) : '—'}
-                      </td>
+                      {renderEditableMonthlyCell('subscribers', actual.subscribers, month.totalSubs)}
                       {/* MRR */}
                       <td className="text-right p-2 text-muted-foreground">{formatCurrency(month.mrr)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actual.mrr >= month.mrr ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.mrr > 0 ? formatCurrency(actual.mrr) : '—'}
-                      </td>
+                      {renderEditableMonthlyCell('mrr', actual.mrr, month.mrr, true)}
                       {/* ARR */}
                       <td className="text-right p-2 text-muted-foreground">{formatCurrency(month.arr)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actual.arr >= month.arr ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.arr > 0 ? formatCurrency(actual.arr) : '—'}
-                      </td>
+                      {renderEditableMonthlyCell('arr', actual.arr, month.arr, true)}
                     </tr>
                   );
                 })}
@@ -2028,7 +2328,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
           <CardHeader>
             <CardTitle className="text-base">📊 Weekly Tracking (Dec 2025 - Jun 2026)</CardTitle>
             <CardDescription>
-              Enter actual weekly data to compare against goals. Click any Actual cell to edit.
+              Data is auto-synced from Stripe/Vercel. Edit any value to override it — once edited, it stays locked (🔒) and won't be overwritten by auto-sync. Click the lock icon to unlock and resume syncing.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
@@ -2089,29 +2389,52 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     const autoSignups = signupsByWeek[week.week] ?? 0;
                     const autoNewPaid = newPaidByWeek[week.week] ?? 0;
                     const calcSubs = actualSubsByWeek[week.week] ?? 0;
-                    // Use Stripe data for new paid, fallback to manual entry
-                    const effectiveNewPaid = autoNewPaid || actual.newPaid || 0;
-                    const subsVar = getVariance(calcSubs, week.subscribers);
+                    
+                    // Check if fields are overridden (locked) - use manual value instead of API
+                    const viewsOverridden = isFieldOverridden(week.week, 'views');
+                    const signupsOverridden = isFieldOverridden(week.week, 'signups');
+                    const newPaidOverridden = isFieldOverridden(week.week, 'new_paid');
+                    const subscribersOverridden = isFieldOverridden(week.week, 'subscribers');
+                    
+                    // Churn override check
+                    const churnOverridden = isFieldOverridden(week.week, 'churn');
+                    const autoChurn = churnByWeek[week.week] || 0;
+                    const effectiveChurn = churnOverridden ? (actual.churn || 0) : autoChurn;
+                    
+                    // Use overridden value if locked, otherwise use auto-fetched data
+                    const effectiveViews = viewsOverridden ? (actual.views || 0) : autoViews;
+                    const effectiveSignups = signupsOverridden ? (actual.signups || 0) : autoSignups;
+                    const effectiveNewPaid = newPaidOverridden ? (actual.newPaid || 0) : (autoNewPaid || actual.newPaid || 0);
+                    const effectiveSubs = subscribersOverridden ? (actual.subscribers || 0) : calcSubs;
+                    const subsVar = getVariance(effectiveSubs, week.subscribers);
                     const mrrVar = getVariance(actual.mrr, week.mrr);
                     const arrVar = getVariance(actual.arr, week.arr);
                     
                     // Get previous week's data for Growth calculations
                     const prevWeekNum = week.week - 1;
-                    // For Week 1, use week0Baseline; otherwise use fetched data
-                    const prevAutoViews = prevWeekNum === 0 ? week0Baseline.views : (prevWeekNum >= 1 ? (viewsByWeek[prevWeekNum] ?? 0) : 0);
-                    const prevAutoSignups = prevWeekNum === 0 ? week0Baseline.signups : (prevWeekNum >= 1 ? (signupsByWeek[prevWeekNum] ?? 0) : 0);
-                    const prevAutoNewPaid = prevWeekNum === 0 ? week0Baseline.newPaid : (prevWeekNum >= 1 ? (newPaidByWeek[prevWeekNum] ?? 0) : 0);
+                    const prevActual: Partial<WeeklyActual> = actualData[prevWeekNum] || {};
+                    const prevViewsOverridden = prevActual.overrides?.views || false;
+                    const prevSignupsOverridden = prevActual.overrides?.signups || false;
+                    const prevNewPaidOverridden = prevActual.overrides?.new_paid || false;
                     
-                    // Calculate growth rates (week-over-week)
-                    const viewsGrowth = prevAutoViews > 0 && autoViews > 0 ? ((autoViews / prevAutoViews) - 1) * 100 : null;
-                    const signupsGrowth = prevAutoSignups > 0 && autoSignups > 0 ? ((autoSignups / prevAutoSignups) - 1) * 100 : null;
+                    // For Week 1, use week0Baseline; otherwise use fetched data or overridden data
+                    const prevAutoViews = prevWeekNum === 0 ? week0Baseline.views : 
+                      (prevViewsOverridden ? (prevActual.views || 0) : (viewsByWeek[prevWeekNum] ?? 0));
+                    const prevAutoSignups = prevWeekNum === 0 ? week0Baseline.signups : 
+                      (prevSignupsOverridden ? (prevActual.signups || 0) : (signupsByWeek[prevWeekNum] ?? 0));
+                    const prevAutoNewPaid = prevWeekNum === 0 ? week0Baseline.newPaid : 
+                      (prevNewPaidOverridden ? (prevActual.newPaid || 0) : (newPaidByWeek[prevWeekNum] ?? 0));
+                    
+                    // Calculate growth rates (week-over-week) using effective values
+                    const viewsGrowth = prevAutoViews > 0 && effectiveViews > 0 ? ((effectiveViews / prevAutoViews) - 1) * 100 : null;
+                    const signupsGrowth = prevAutoSignups > 0 && effectiveSignups > 0 ? ((effectiveSignups / prevAutoSignups) - 1) * 100 : null;
                     const newPaidGrowth = prevAutoNewPaid > 0 && effectiveNewPaid > 0 ? ((effectiveNewPaid / prevAutoNewPaid) - 1) * 100 : null;
                     
-                    // Calculate signup conversion rate (signups / views)
-                    const signupConvRate = autoViews > 0 && autoSignups > 0 ? (autoSignups / autoViews) * 100 : null;
+                    // Calculate signup conversion rate (signups / views) using effective values
+                    const signupConvRate = effectiveViews > 0 && effectiveSignups > 0 ? (effectiveSignups / effectiveViews) * 100 : null;
                     
-                    // Calculate new paid conversion rate (new paid / signups)
-                    const paidConvRate = autoSignups > 0 && effectiveNewPaid > 0 ? (effectiveNewPaid / autoSignups) * 100 : null;
+                    // Calculate new paid conversion rate (new paid / signups) using effective values
+                    const paidConvRate = effectiveSignups > 0 && effectiveNewPaid > 0 ? (effectiveNewPaid / effectiveSignups) * 100 : null;
                     
                     // Helper to format growth
                     const formatGrowth = (value: number | null) => {
@@ -2132,9 +2455,35 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                         {/* Views */}
                         <td className="text-right p-1">{formatNumber(week.visitors)}</td>
                         <td className="text-right p-1">
-                          <span className={`text-[10px] font-medium ${autoViews > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
-                            {autoViews > 0 ? formatNumber(autoViews) : '—'}
-                          </span>
+                          <div className="flex items-center justify-end gap-1">
+                            {viewsOverridden && (
+                              <button
+                                onClick={() => handleToggleOverride(week.week, 'views')}
+                                className="text-amber-500 hover:text-amber-600 transition-colors"
+                                title="Locked (manual override). Click to unlock and sync from Vercel."
+                              >
+                                <Lock className="h-3 w-3" />
+                              </button>
+                            )}
+                            {viewsOverridden ? (
+                              <Input
+                                type="number"
+                                value={getInputValue(week.week, 'views')}
+                                onChange={(e) => handleInputChange(week.week, 'views', e.target.value)}
+                                onBlur={() => handleInputBlur(week.week, 'views')}
+                                className="h-5 w-14 text-[10px] text-right border-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                placeholder="—"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => enableOverrideInstantly(week.week, 'views', autoViews)}
+                                className={`text-[10px] font-medium hover:underline ${effectiveViews > 0 ? 'text-foreground' : 'text-muted-foreground'}`}
+                                title="Click to edit and override"
+                              >
+                                {effectiveViews > 0 ? formatNumber(effectiveViews) : '—'}
+                              </button>
+                            )}
+                          </div>
                         </td>
                         {/* % Growth */}
                         <td className={`text-right p-1 text-[10px] font-medium ${getGrowthColor(viewsGrowth)}`}>
@@ -2143,9 +2492,35 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                         {/* Signups */}
                         <td className="text-right p-1">{formatNumber(week.signups)}</td>
                         <td className="text-right p-1">
-                          <span className={`text-[10px] font-medium ${autoSignups > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
-                            {autoSignups > 0 ? formatNumber(autoSignups) : '—'}
-                          </span>
+                          <div className="flex items-center justify-end gap-1">
+                            {signupsOverridden && (
+                              <button
+                                onClick={() => handleToggleOverride(week.week, 'signups')}
+                                className="text-amber-500 hover:text-amber-600 transition-colors"
+                                title="Locked (manual override). Click to unlock and sync from database."
+                              >
+                                <Lock className="h-3 w-3" />
+                              </button>
+                            )}
+                            {signupsOverridden ? (
+                              <Input
+                                type="number"
+                                value={getInputValue(week.week, 'signups')}
+                                onChange={(e) => handleInputChange(week.week, 'signups', e.target.value)}
+                                onBlur={() => handleInputBlur(week.week, 'signups')}
+                                className="h-5 w-14 text-[10px] text-right border-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                placeholder="—"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => enableOverrideInstantly(week.week, 'signups', autoSignups)}
+                                className={`text-[10px] font-medium hover:underline ${effectiveSignups > 0 ? 'text-foreground' : 'text-muted-foreground'}`}
+                                title="Click to edit and override"
+                              >
+                                {effectiveSignups > 0 ? formatNumber(effectiveSignups) : '—'}
+                              </button>
+                            )}
+                          </div>
                         </td>
                         {/* Signups Growth */}
                         <td className={`text-right p-1 text-[10px] font-medium ${getGrowthColor(signupsGrowth)}`}>
@@ -2158,9 +2533,35 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                         {/* New Paid */}
                         <td className="text-right p-1">{formatNumber(week.newPaid)}</td>
                         <td className="text-right p-1">
-                          <span className={`text-[10px] font-medium ${effectiveNewPaid > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
-                            {effectiveNewPaid > 0 ? formatNumber(effectiveNewPaid) : '—'}
-                          </span>
+                          <div className="flex items-center justify-end gap-1">
+                            {newPaidOverridden && (
+                              <button
+                                onClick={() => handleToggleOverride(week.week, 'new_paid')}
+                                className="text-amber-500 hover:text-amber-600 transition-colors"
+                                title="Locked (manual override). Click to unlock and sync from Stripe."
+                              >
+                                <Lock className="h-3 w-3" />
+                              </button>
+                            )}
+                            {newPaidOverridden ? (
+                              <Input
+                                type="number"
+                                value={getInputValue(week.week, 'newPaid')}
+                                onChange={(e) => handleInputChange(week.week, 'newPaid', e.target.value)}
+                                onBlur={() => handleInputBlur(week.week, 'newPaid')}
+                                className="h-5 w-12 text-[10px] text-right border-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                placeholder="—"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => enableOverrideInstantly(week.week, 'newPaid', autoNewPaid || actual.newPaid || 0)}
+                                className={`text-[10px] font-medium hover:underline ${effectiveNewPaid > 0 ? 'text-foreground' : 'text-muted-foreground'}`}
+                                title="Click to edit and override"
+                              >
+                                {effectiveNewPaid > 0 ? formatNumber(effectiveNewPaid) : '—'}
+                              </button>
+                            )}
+                          </div>
                         </td>
                         {/* New Paid Growth */}
                         <td className={`text-right p-1 text-[10px] font-medium ${getGrowthColor(newPaidGrowth)}`}>
@@ -2172,13 +2573,39 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                         </td>
                         {/* Churn */}
                         <td className="text-right p-1">
-                          <span className={`text-[10px] font-medium ${(churnByWeek[week.week] || 0) > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
-                            {(churnByWeek[week.week] || 0) > 0 ? formatNumber(churnByWeek[week.week]) : '—'}
-                          </span>
+                          <div className="flex items-center justify-end gap-1">
+                            {churnOverridden && (
+                              <button
+                                onClick={() => handleToggleOverride(week.week, 'churn')}
+                                className="text-amber-500 hover:text-amber-600 transition-colors"
+                                title="Locked (manual override). Click to unlock and sync from Stripe."
+                              >
+                                <Lock className="h-3 w-3" />
+                              </button>
+                            )}
+                            {churnOverridden ? (
+                              <Input
+                                type="number"
+                                value={getInputValue(week.week, 'churn')}
+                                onChange={(e) => handleInputChange(week.week, 'churn', e.target.value)}
+                                onBlur={() => handleInputBlur(week.week, 'churn')}
+                                className="h-5 w-12 text-[10px] text-right border-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                placeholder="—"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => enableOverrideInstantly(week.week, 'churn', autoChurn)}
+                                className={`text-[10px] font-medium hover:underline ${effectiveChurn > 0 ? 'text-red-500' : 'text-muted-foreground'}`}
+                                title="Click to edit and override"
+                              >
+                                {effectiveChurn > 0 ? formatNumber(effectiveChurn) : '—'}
+                              </button>
+                            )}
+                          </div>
                         </td>
                         {/* Churn Rate = week churn / subs at 1st of month (week starts in) */}
                         {(() => {
-                          const weekChurn = churnByWeek[week.week] || 0;
+                          const weekChurn = effectiveChurn;
                           // Determine which month the week STARTS in
                           const weekStartDate = new Date(2025, 11, 15 + (week.week - 1) * 7);
                           const monthIdx = weekStartDate.getMonth() === 11 ? 0 : weekStartDate.getMonth() + 1;
@@ -2195,24 +2622,61 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                         {/* Subscribers */}
                         <td className="text-right p-1 font-medium">{formatNumber(week.subscribers)}</td>
                         <td className="text-right p-1">
-                          <span className={`text-[10px] font-medium ${calcSubs > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
-                            {calcSubs > 0 ? formatNumber(calcSubs) : '—'}
-                          </span>
+                          <div className="flex items-center justify-end gap-1">
+                            {subscribersOverridden && (
+                              <button
+                                onClick={() => handleToggleOverride(week.week, 'subscribers')}
+                                className="text-amber-500 hover:text-amber-600 transition-colors"
+                                title="Locked (manual override). Click to unlock and use calculated value."
+                              >
+                                <Lock className="h-3 w-3" />
+                              </button>
+                            )}
+                            {subscribersOverridden ? (
+                              <Input
+                                type="number"
+                                value={getInputValue(week.week, 'subscribers')}
+                                onChange={(e) => handleInputChange(week.week, 'subscribers', e.target.value)}
+                                onBlur={() => handleInputBlur(week.week, 'subscribers')}
+                                className="h-5 w-14 text-[10px] text-right border-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                placeholder="—"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => enableOverrideInstantly(week.week, 'subscribers', calcSubs)}
+                                className={`text-[10px] font-medium hover:underline ${effectiveSubs > 0 ? 'text-foreground' : 'text-muted-foreground'}`}
+                                title="Click to edit and override"
+                              >
+                                {effectiveSubs > 0 ? formatNumber(effectiveSubs) : '—'}
+                              </button>
+                            )}
+                          </div>
                         </td>
                         <td className={`text-right p-1 text-[10px] ${subsVar.color}`}>
-                          {calcSubs > 0 ? `${subsVar.value >= 0 ? '+' : ''}${subsVar.value.toFixed(1)}%` : '—'}
+                          {effectiveSubs > 0 ? `${subsVar.value >= 0 ? '+' : ''}${subsVar.value.toFixed(1)}%` : '—'}
                         </td>
                         {/* MRR */}
                         <td className="text-right p-1">{formatCurrency(week.mrr)}</td>
                         <td className="text-right p-1">
-                          <Input
-                            type="number"
-                            value={getInputValue(week.week, 'mrr')}
-                            onChange={(e) => handleInputChange(week.week, 'mrr', e.target.value)}
-                            onBlur={() => handleInputBlur(week.week, 'mrr')}
-                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            placeholder="—"
-                          />
+                          <div className="flex items-center justify-end gap-1">
+                            {isFieldOverridden(week.week, 'mrr') && (
+                              <button
+                                onClick={() => handleToggleOverride(week.week, 'mrr')}
+                                className="text-amber-500 hover:text-amber-600 transition-colors"
+                                title="Locked (manual override). Click to unlock."
+                              >
+                                <Lock className="h-3 w-3" />
+                              </button>
+                            )}
+                            <Input
+                              type="number"
+                              value={getInputValue(week.week, 'mrr')}
+                              onChange={(e) => handleInputChange(week.week, 'mrr', e.target.value)}
+                              onBlur={() => handleInputBlur(week.week, 'mrr')}
+                              className={`h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${isFieldOverridden(week.week, 'mrr') ? 'border-amber-400' : ''}`}
+                              placeholder="—"
+                            />
+                          </div>
                         </td>
                         <td className={`text-right p-1 text-[10px] ${mrrVar.color}`}>
                           {actual.mrr ? `${mrrVar.value >= 0 ? '+' : ''}${mrrVar.value.toFixed(1)}%` : '—'}
@@ -2220,14 +2684,25 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                         {/* ARR */}
                         <td className="text-right p-1 font-medium">{formatCurrency(week.arr)}</td>
                         <td className="text-right p-1">
-                          <Input
-                            type="number"
-                            value={getInputValue(week.week, 'arr')}
-                            onChange={(e) => handleInputChange(week.week, 'arr', e.target.value)}
-                            onBlur={() => handleInputBlur(week.week, 'arr')}
-                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            placeholder="—"
-                          />
+                          <div className="flex items-center justify-end gap-1">
+                            {isFieldOverridden(week.week, 'arr') && (
+                              <button
+                                onClick={() => handleToggleOverride(week.week, 'arr')}
+                                className="text-amber-500 hover:text-amber-600 transition-colors"
+                                title="Locked (manual override). Click to unlock."
+                              >
+                                <Lock className="h-3 w-3" />
+                              </button>
+                            )}
+                            <Input
+                              type="number"
+                              value={getInputValue(week.week, 'arr')}
+                              onChange={(e) => handleInputChange(week.week, 'arr', e.target.value)}
+                              onBlur={() => handleInputBlur(week.week, 'arr')}
+                              className={`h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${isFieldOverridden(week.week, 'arr') ? 'border-amber-400' : ''}`}
+                              placeholder="—"
+                            />
+                          </div>
                         </td>
                         <td className={`text-right p-1 text-[10px] ${arrVar.color}`}>
                           {actual.arr ? `${arrVar.value >= 0 ? '+' : ''}${arrVar.value.toFixed(1)}%` : '—'}
