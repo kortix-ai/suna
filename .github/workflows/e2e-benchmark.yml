@@ -194,6 +194,16 @@ jobs:
               echo "$RESULT" | jq '.summary' >> $GITHUB_STEP_SUMMARY
               echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
               
+              # Add tool validation section if there are missing tools
+              TESTS_WITH_MISSING=$(echo "$RESULT" | jq '[.results[]? | select(.expected_tools_present == false)] | length' 2>/dev/null || echo "0")
+              if [ "$TESTS_WITH_MISSING" != "0" ] && [ "$TESTS_WITH_MISSING" != "null" ]; then
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "### ⚠️ Tool Validation Issues ($TESTS_WITH_MISSING tests):" >> $GITHUB_STEP_SUMMARY
+                echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+                echo "$RESULT" | jq '[.results[]? | select(.expected_tools_present == false) | {prompt_id, missing_tools, called: .tool_call_breakdown}]' 2>/dev/null >> $GITHUB_STEP_SUMMARY
+                echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              fi
+              
               exit 0
             elif [ "$STATUS" = "failed" ]; then
               echo ""
