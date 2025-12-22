@@ -114,8 +114,7 @@ services:
       POSTGRES_DB: postgres
     volumes:
       - db_data:/var/lib/postgresql/data
-      - ./backend/supabase/migrations:/docker-entrypoint-initdb.d/migrations:ro
-      - ./backend/supabase/seed.sql:/docker-entrypoint-initdb.d/999999_seed.sql:ro
+      - ./backend/supabase/migrations:/docker-entrypoint-initdb.d:ro
     networks:
       - kortix-network
 
@@ -149,8 +148,6 @@ services:
         condition: service_healthy
     env_file:
       - ./docker/supabase.env
-    environment:
-      GOTRUE_DB_DATABASE_URL: postgres://postgres:postgres@db:5432/postgres
     networks:
       - kortix-network
 
@@ -224,6 +221,15 @@ services:
       - "54323:3000"
     env_file:
       - ./docker/supabase.env
+    networks:
+      - kortix-network
+
+  mailpit:
+    image: axllent/mailpit:latest
+    profiles: ["local-supabase"]
+    ports:
+      - "54324:8025"
+      - "1025:1025"
     networks:
       - kortix-network
 

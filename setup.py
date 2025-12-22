@@ -18,8 +18,8 @@ ENV_DATA_FILE = ".setup_env.json"
 DOCKER_LOCAL_SUPABASE = {
     "URL_INTERNAL": "http://kong:8000",
     "URL_HOST": "http://localhost:54321",
-    "ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvY2FsIiwicm9sZSI6ImFub24iLCJpYXQiOjE2MTY1NTMzNjMsImV4cCI6MTkzMjI3MzM2M30.KWlqM6x2k25bM1u2k_26_26_26_26_26_26_26_26_26",
-    "SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvY2FsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTYxNjU1MzM2MywiZXhwIjoxOTMyMjczMzYzfQ.26_26_26_26_26_26_26_26_26_26_26_26_26_26_26",
+    "ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvY2FsIiwicm9sZSI6ImFub24iLCJpYXQiOjE2MTY1NTMzNjMsImV4cCI6MTkzMjI3MzM2M30.TQK92x-DzfLpSgWoirEnopElEAVBk8faqfQrj3En-XI",
+    "SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvY2FsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTYxNjU1MzM2MywiZXhwIjoxOTMyMjczMzYzfQ.-Vh3Li-qlDOjxvEwDViujI06ihw1iVFLh4xa0t2_YhI",
     "JWT_SECRET": "super-secret-jwt-token-with-at-least-32-characters-long"
 }
 
@@ -293,15 +293,10 @@ def generate_webhook_secret():
 
 # --- Main Setup Class ---
 class SetupWizard:
-    def __init__(self):
-        progress = load_progress()
-        self.current_step = progress.get("step", 0)
-
-        # Load existing environment variables from .env files
+    def _build_env_vars(self):
+        """Builds the default env var structure from existing .env files."""
         existing_env_vars = load_existing_env_vars()
-
-        # Start with existing values, then override with any saved progress
-        self.env_vars = {
+        return {
             "setup_method": None,
             "supabase_setup_method": None,
             "supabase": existing_env_vars["supabase"],
@@ -321,6 +316,14 @@ class SetupWizard:
             "storage": existing_env_vars.get("storage", {}),
             "email": existing_env_vars.get("email", {}),
         }
+
+    def __init__(self):
+        progress = load_progress()
+        self.current_step = progress.get("step", 0)
+
+        # Load existing environment variables from .env files
+        # Start with existing values, then override with any saved progress
+        self.env_vars = self._build_env_vars()
 
         # Override with any progress data (in case user is resuming)
         saved_data = progress.get("data", {})
@@ -513,7 +516,7 @@ class SetupWizard:
                 # Delete progress file and reset
                 if os.path.exists(PROGRESS_FILE):
                     os.remove(PROGRESS_FILE)
-                self.env_vars = {}
+                self.env_vars = self._build_env_vars()
                 self.total_steps = 17
                 self.current_step = 0
                 # Continue with normal setup
