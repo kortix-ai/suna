@@ -100,6 +100,17 @@ async def initialize_async():
             except Exception:
                 # Connection is dead, need to recreate
                 logger.warning("Existing Redis connection is dead, recreating...")
+                # Close old resources before recreating
+                if client:
+                    try:
+                        await asyncio.wait_for(client.aclose(), timeout=2.0)
+                    except Exception:
+                        pass
+                if pool:
+                    try:
+                        await asyncio.wait_for(pool.aclose(), timeout=2.0)
+                    except Exception:
+                        pass
                 client = None
                 pool = None
                 _initialized = False
