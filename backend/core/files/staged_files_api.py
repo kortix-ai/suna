@@ -20,7 +20,6 @@ MAX_IMAGE_WIDTH = 2048
 MAX_IMAGE_HEIGHT = 2048
 JPEG_QUALITY = 85
 
-
 def sanitize_for_postgres(text: Optional[str]) -> Optional[str]:
     if text is None:
         return None
@@ -155,8 +154,13 @@ async def stage_file(
             logger.warning(f"Failed to compress/store image: {e}")
     
     def parse_file():
+        import time
+        parse_start = time.time()
         try:
+            logger.info(f"🔍 [FAST_PARSE] Starting parse for {original_filename} ({format_file_size(file_size)}, mime: {mime_type})")
             result = parse(content, original_filename, mime_type)
+            parse_time = (time.time() - parse_start) * 1000
+            
             if result.success and result.file_type != FileType.IMAGE:
                 header_parts = [f"# {original_filename}"]
                 meta = result.metadata
@@ -171,17 +175,27 @@ async def stage_file(
                 
                 formatted_content = "\n".join(header_parts) + result.content
                 preview = formatted_content[:5000] if len(formatted_content) > 5000 else formatted_content
+                content_len = len(formatted_content)
+                logger.info(f"✅ [FAST_PARSE] Success: {original_filename} -> {result.file_type.value}, {content_len:,} chars extracted in {parse_time:.1f}ms")
                 return formatted_content, preview
+            elif result.success and result.file_type == FileType.IMAGE:
+                logger.info(f"📷 [FAST_PARSE] Image detected: {original_filename} in {parse_time:.1f}ms (no text extraction)")
+            else:
+                logger.warning(f"⚠️ [FAST_PARSE] Parse failed for {original_filename}: {result.error or 'unknown'} in {parse_time:.1f}ms")
             return None, None
         except Exception as e:
-            logger.warning(f"Failed to parse staged file: {e}")
+            parse_time = (time.time() - parse_start) * 1000
+            logger.warning(f"❌ [FAST_PARSE] Exception parsing {original_filename}: {e} in {parse_time:.1f}ms")
             return None, None
     
     upload_task = asyncio.create_task(upload_to_storage())
     image_task = asyncio.create_task(compress_and_store_image())
     
+    import time
+    parse_executor_start = time.time()
     loop = asyncio.get_event_loop()
     parsed_content, parsed_preview = await loop.run_in_executor(None, parse_file)
+    logger.debug(f"⏱️ [FAST_PARSE] Executor completed in {(time.time() - parse_executor_start) * 1000:.1f}ms")
     
     await upload_task
     await image_task
@@ -295,11 +309,14 @@ async def get_staged_files_for_thread(
     db = DBConnection()
     client = await db.client
     
+    logger.info(f"📎 [STAGED_FILES] Retrieving {len(file_ids)} staged files for thread {thread_id}")
+    
     result = await client.table('staged_files').select(
         'file_id, filename, storage_path, mime_type, file_size, parsed_content, image_url'
     ).eq('account_id', user_id).in_('file_id', file_ids).execute()
     
     if not result.data:
+        logger.warning(f"⚠️ [STAGED_FILES] No staged files found for file_ids: {file_ids}")
         return []
     
     files = []
@@ -317,6 +334,10 @@ async def get_staged_files_for_thread(
         elif image_path:
             image_url = image_path
         
+        parsed_len = len(row['parsed_content']) if row['parsed_content'] else 0
+        has_image = bool(image_url)
+        logger.debug(f"  📄 [STAGED_FILES] {row['filename']}: {row['file_size']:,} bytes, parsed_content: {parsed_len:,} chars, has_image: {has_image}")
+        
         files.append({
             "file_id": row['file_id'],
             "filename": row['filename'],
@@ -327,7 +348,9 @@ async def get_staged_files_for_thread(
             "image_url": image_url
         })
     
-    logger.info(f"📎 Retrieved {len(files)} staged files for thread {thread_id}")
+    total_parsed = sum(len(f['parsed_content']) for f in files if f['parsed_content'])
+    total_images = sum(1 for f in files if f['image_url'])
+    logger.info(f"✅ [STAGED_FILES] Retrieved {len(files)} files for thread {thread_id}: {total_parsed:,} chars parsed, {total_images} images")
     
     return files
 
