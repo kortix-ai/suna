@@ -19,6 +19,7 @@ class TestPrompt:
     min_tool_calls: int
     max_duration_ms: int
     description: str
+    expected_tool_calls: Optional[dict] = None  # tool_name -> expected count (optional)
 
 
 # ============================================================================
@@ -39,6 +40,7 @@ FILE_OPS_PROMPTS = [
 7) Tell me the final contents of all three files""",
         category="file_operations",
         expected_tools=["create_file", "str_replace", "edit_file", "full_file_rewrite"],
+        expected_tool_calls={"create_file": 3, "str_replace": 1, "edit_file": 1, "full_file_rewrite": 1},
         min_tool_calls=6,
         max_duration_ms=45000,
         description="Comprehensive test of create_file, str_replace, edit_file, and full_file_rewrite operations"
@@ -63,6 +65,7 @@ SHELL_PROMPTS = [
 7) Run 'expr 25 + 17' and 'expr 100 - 35' and tell me both results""",
         category="shell_commands",
         expected_tools=["execute_command"],
+        expected_tool_calls={"execute_command": 7},
         min_tool_calls=7,
         max_duration_ms=50000,
         description="Comprehensive test of execute_command with blocking, chaining, piping, and directory operations"
@@ -84,6 +87,7 @@ WEB_SEARCH_PROMPTS = [
 4) Tell me the total number of results received across all searches and list the first title from each search""",
         category="web_search",
         expected_tools=["web_search"],
+        expected_tool_calls={"web_search": 3},
         min_tool_calls=3,
         max_duration_ms=60000,
         description="Comprehensive test of single queries, batch queries, and different num_results values"
@@ -105,6 +109,7 @@ IMAGE_SEARCH_PROMPTS = [
 4) Tell me the total number of image URLs found across all searches""",
         category="image_search",
         expected_tools=["image_search"],
+        expected_tool_calls={"image_search": 3},
         min_tool_calls=3,
         max_duration_ms=55000,
         description="Comprehensive test of single and batch image searches with varying result counts"
@@ -129,6 +134,7 @@ GIT_PROMPTS = [
 7) Tell me how many commits were made""",
         category="git_operations",
         expected_tools=["create_file", "edit_file", "git_commit"],
+        expected_tool_calls={"create_file": 3, "edit_file": 1, "git_commit": 3},
         min_tool_calls=9,
         max_duration_ms=60000,
         description="Comprehensive test of multiple git commits with file creation and editing"
@@ -152,6 +158,7 @@ KB_PROMPTS = [
 6) Tell me what files were indexed and what the search found""",
         category="knowledge_base",
         expected_tools=["create_file", "execute_command", "ls_kb", "semantic_search"],
+        expected_tool_calls={"create_file": 2, "execute_command": 1, "ls_kb": 1, "semantic_search": 1},
         min_tool_calls=6,
         max_duration_ms=50000,
         description="Comprehensive test of knowledge base indexing and semantic search"
@@ -174,6 +181,7 @@ BROWSER_PROMPTS = [
 5) Tell me what heading was extracted and confirm screenshot was taken""",
         category="browser_automation",
         expected_tools=["browser_navigate_to", "browser_screenshot", "browser_act", "browser_extract_content"],
+        expected_tool_calls={"browser_navigate_to": 1, "browser_screenshot": 1, "browser_act": 1, "browser_extract_content": 1},
         min_tool_calls=4,
         max_duration_ms=60000,
         description="Comprehensive test of browser navigation, actions, extraction, and screenshots"
@@ -201,6 +209,7 @@ MULTI_TOOL_PROMPTS = [
 7) Tell me how many lines are in the report""",
         category="multi_tool",
         expected_tools=["web_search", "image_search", "create_file", "git_commit", "execute_command"],
+        expected_tool_calls={"web_search": 1, "image_search": 1, "create_file": 2, "git_commit": 1, "execute_command": 1},
         min_tool_calls=7,
         max_duration_ms=80000,
         description="Complex workflow combining web search, image search, file operations, git, and shell"
@@ -217,6 +226,7 @@ MULTI_TOOL_PROMPTS = [
 7) Tell me the test results and how many Python files exist""",
         category="multi_tool",
         expected_tools=["create_file", "execute_command", "git_commit"],
+        expected_tool_calls={"create_file": 3, "execute_command": 2, "git_commit": 1},
         min_tool_calls=7,
         max_duration_ms=70000,
         description="Complete Python project creation, testing, and version control workflow"
@@ -233,6 +243,7 @@ EDGE_CASE_PROMPTS = [
         text="Hello! How are you today? What can you help me with?",
         category="edge_cases",
         expected_tools=[],
+        expected_tool_calls={},
         min_tool_calls=0,
         max_duration_ms=10000,
         description="Conversational greeting - no tools needed"
@@ -242,6 +253,7 @@ EDGE_CASE_PROMPTS = [
         text="Explain the difference between a compiler and an interpreter in programming languages",
         category="edge_cases",
         expected_tools=[],
+        expected_tool_calls={},
         min_tool_calls=0,
         max_duration_ms=15000,
         description="Knowledge question - no tools needed"

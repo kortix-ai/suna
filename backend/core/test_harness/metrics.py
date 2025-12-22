@@ -312,6 +312,10 @@ class MetricsCollector:
                     'total_duration_ms': r.get('total_duration_ms'),
                     'tool_calls_count': r.get('tool_calls_count', 0),
                     'tool_call_breakdown': r.get('tool_call_breakdown', {}),
+                    'tool_call_deviations': self._calculate_tool_deviations(
+                        r.get('tool_call_breakdown', {}),
+                        r.get('metadata', {}).get('expected_tool_calls', {})
+                    ),
                     'expected_tools_present': r.get('expected_tools_present', True),
                     'missing_tools': r.get('missing_tools', []),
                     'avg_tool_call_time_ms': r.get('avg_tool_call_time_ms'),
@@ -350,6 +354,31 @@ class MetricsCollector:
         result = await query.execute()
         
         return result.data if result.data else []
+    
+    def _calculate_tool_deviations(
+        self,
+        tool_call_breakdown: Dict[str, int],
+        expected_tool_calls: Dict[str, int]
+    ) -> Dict[str, Dict[str, int]]:
+        """
+        Calculate deviations between expected and actual tool calls
+        
+        Args:
+            tool_call_breakdown: Actual tool call counts
+            expected_tool_calls: Expected tool call counts
+        
+        Returns:
+            Dict with deviation data per tool
+        """
+        deviations = {}
+        for tool_name, expected_count in expected_tool_calls.items():
+            actual_count = tool_call_breakdown.get(tool_name, 0)
+            deviations[tool_name] = {
+                "expected": expected_count,
+                "actual": actual_count,
+                "deviation": actual_count - expected_count
+            }
+        return deviations
     
     async def cancel_run(self, run_id: str):
         """

@@ -659,6 +659,7 @@ class TestHarnessRunner:
                 'model': model,
                 'mock_mode': model == 'mock-ai',
                 'expected_tools': prompt.expected_tools,
+                'expected_tool_calls': prompt.expected_tool_calls or {},
                 'category': prompt.category,
             }
         )
