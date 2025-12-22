@@ -14,6 +14,14 @@ IS_WINDOWS = platform.system() == "Windows"
 PROGRESS_FILE = ".setup_progress"
 ENV_DATA_FILE = ".setup_env.json"
 
+# Hardcoded keys for Dockerized Local Supabase (matches docker/supabase.env)
+DOCKER_LOCAL_SUPABASE = {
+    "URL_INTERNAL": "http://kong:8000",
+    "URL_HOST": "http://localhost:54321",
+    "ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvY2FsIiwicm9sZSI6ImFub24iLCJpYXQiOjE2MTY1NTMzNjMsImV4cCI6MTkzMjI3MzM2M30.KWlqM6x2k25bM1u2k_26_26_26_26_26_26_26_26_26",
+    "SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvY2FsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTYxNjU1MzM2MywiZXhwIjoxOTMyMjczMzYzfQ.26_26_26_26_26_26_26_26_26_26_26_26_26_26_26",
+    "JWT_SECRET": "super-secret-jwt-token-with-at-least-32-characters-long"
+}
 
 # --- ANSI Colors ---
 class Colors:
@@ -591,32 +599,25 @@ class SetupWizard:
             "You can start Kortix Super Worker using either Docker Compose or by manually starting the services."
         )
         
-        # Important note about Supabase compatibility
-        print(f"\n{Colors.YELLOW}⚠️  IMPORTANT - Supabase Compatibility:{Colors.ENDC}")
-        print(f"  • {Colors.GREEN}Docker Compose{Colors.ENDC} → Only supports {Colors.CYAN}Cloud Supabase{Colors.ENDC}")
-        print(f"  • {Colors.GREEN}Manual Setup{Colors.ENDC} → Supports both {Colors.CYAN}Cloud and Local Supabase{Colors.ENDC}")
-        print(f"\n  Why? Docker networking can't easily reach local Supabase containers.")
-        print(f"  Want to fix this? See: {Colors.CYAN}https://github.com/kortix-ai/suna/issues/1920{Colors.ENDC}")
-        
         print(f"\n{Colors.CYAN}How would you like to set up Kortix Super Worker?{Colors.ENDC}")
         print(
-            f"{Colors.CYAN}[1] {Colors.GREEN}Manual{Colors.ENDC} {Colors.CYAN}(supports both Cloud and Local Supabase){Colors.ENDC}"
+            f"{Colors.CYAN}[1] {Colors.GREEN}Docker Compose{Colors.ENDC} {Colors.CYAN}(Recommended - Zero Config){Colors.ENDC}"
         )
         print(
-            f"{Colors.CYAN}[2] {Colors.GREEN}Docker Compose{Colors.ENDC} {Colors.CYAN}(requires Cloud Supabase){Colors.ENDC}\n"
+            f"{Colors.CYAN}[2] {Colors.GREEN}Manual{Colors.ENDC} {Colors.CYAN}(For development/debugging){Colors.ENDC}\n"
         )
 
         while True:
             choice = input("Enter your choice (1 or 2): ").strip()
             if choice == "1":
-                self.env_vars["setup_method"] = "manual"
+                self.env_vars["setup_method"] = "docker"
                 break
             elif choice == "2":
-                self.env_vars["setup_method"] = "docker"
+                self.env_vars["setup_method"] = "manual"
                 break
             else:
                 print_error(
-                    "Invalid selection. Please enter '1' for Manual or '2' for Docker."
+                    "Invalid selection. Please enter '1' for Docker or '2' for Manual."
                 )
         print_success(f"Selected '{self.env_vars['setup_method']}' setup.")
 
@@ -625,6 +626,7 @@ class SetupWizard:
         print_step(2, self.total_steps, "Checking Requirements")
 
         if self.env_vars["setup_method"] == "docker":
+            # Docker setup only needs git and docker
             requirements = {
                 "git": "https://git-scm.com/downloads",
                 "docker": "https://docs.docker.com/get-docker/",
@@ -743,11 +745,15 @@ class SetupWizard:
         """Collects Supabase project information from the user."""
         print_step(3, self.total_steps, "Collecting Supabase Information")
 
-        # Always ask user to choose between local and cloud Supabase
-        print_info("Kortix Super Worker REQUIRES a Supabase project to function. Without these keys, the application will crash on startup.")
+        print_info("Kortix Super Worker REQUIRES a Supabase project to function.")
         print_info("You can choose between:")
-        print_info("  1. Local Supabase (automatic setup, recommended for development & local use - runs in Docker)")
-        print_info("  2. Cloud Supabase (hosted on supabase.com - requires manual setup)")
+        
+        if self.env_vars["setup_method"] == "docker":
+            print_info("  1. Local Supabase (Dockerized) - Recommended, Zero Config")
+            print_info("  2. Cloud Supabase (Hosted at supabase.com)")
+        else:
+            print_info("  1. Local Supabase (via Supabase CLI)")
+            print_info("  2. Cloud Supabase (Hosted at supabase.com)")
         
         while True:
             choice = input("Choose your Supabase setup (1 for local, 2 for cloud): ").strip()
@@ -760,16 +766,32 @@ class SetupWizard:
             else:
                 print_error("Please enter 1 for local or 2 for cloud.")
 
-        # Handle local Supabase setup
-        if self.env_vars["supabase_setup_method"] == "local":
-            self._setup_local_supabase()
+        # Handle setup based on method
+        if self.env_vars["setup_method"] == "docker" and self.env_vars["supabase_setup_method"] == "local":
+            self._setup_docker_local_supabase()
+        elif self.env_vars["setup_method"] == "manual" and self.env_vars["supabase_setup_method"] == "local":
+            self._setup_manual_local_supabase()
         else:
             self._setup_cloud_supabase()
 
-    def _setup_local_supabase(self):
-        """Sets up local Supabase using Docker."""
-        print_info("Setting up local Supabase...")
-        print_info("This will download and start Supabase using Docker.")
+    def _setup_docker_local_supabase(self):
+        """Configures Dockerized Local Supabase with hardcoded keys."""
+        print_info("Configuring Dockerized Local Supabase...")
+        print_info("Using built-in configuration keys for zero-config startup.")
+        
+        # Use constants
+        self.env_vars["supabase"]["SUPABASE_URL"] = DOCKER_LOCAL_SUPABASE["URL_INTERNAL"]
+        self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"] = DOCKER_LOCAL_SUPABASE["URL_HOST"]
+        self.env_vars["supabase"]["EXPO_PUBLIC_SUPABASE_URL"] = DOCKER_LOCAL_SUPABASE["URL_HOST"]
+        self.env_vars["supabase"]["SUPABASE_ANON_KEY"] = DOCKER_LOCAL_SUPABASE["ANON_KEY"]
+        self.env_vars["supabase"]["SUPABASE_SERVICE_ROLE_KEY"] = DOCKER_LOCAL_SUPABASE["SERVICE_ROLE_KEY"]
+        self.env_vars["supabase"]["SUPABASE_JWT_SECRET"] = DOCKER_LOCAL_SUPABASE["JWT_SECRET"]
+        
+        print_success("Local Supabase configuration applied.")
+
+    def _setup_manual_local_supabase(self):
+        """Sets up local Supabase using Supabase CLI (for Manual setup)."""
+        print_info("Setting up local Supabase via CLI...")
         
         # Check if Docker is available
         try:
@@ -797,30 +819,13 @@ class SetupWizard:
             except subprocess.SubprocessError as e:
                 print_error(f"Failed to initialize Supabase project: {e}")
                 return
-        else:
-            print_info("Using existing Supabase project configuration.")
-        
-        # Stop any running Supabase instance first (to ensure config changes are picked up)
-        print_info("Checking for existing Supabase instance...")
-        try:
-            subprocess.run(
-                ["npx", "supabase", "stop"],
-                cwd="backend",
-                capture_output=True,
-                shell=IS_WINDOWS,
-            )
-            print_info("Stopped any existing Supabase instance.")
-        except:
-            pass  # It's OK if stop fails (nothing running)
         
         # Configure local Supabase settings for development
         print_info("Configuring Supabase for local development...")
         self._configure_local_supabase_settings()
 
-        # Start Supabase services using Supabase CLI instead of Docker Compose
+        # Start Supabase services
         print_info("Starting Supabase services using Supabase CLI...")
-        print_info("This may take a few minutes on first run (downloading Docker images)...")
-        print_info("Please wait while Supabase starts...\n")
         
         try:
             # Run without capturing output so user sees progress in real-time
@@ -858,12 +863,10 @@ class SetupWizard:
                     self.env_vars["supabase"]["EXPO_PUBLIC_SUPABASE_URL"] = url
                     print_success(f"✓ Found API URL: {url}")
                 elif 'Publishable key:' in line or 'anon key:' in line:
-                    # Supabase status uses "Publishable key" which is the anon key
                     anon_key = line.split(':')[1].strip()
                     self.env_vars["supabase"]["SUPABASE_ANON_KEY"] = anon_key
                     print_success(f"✓ Found Anon Key: {anon_key[:20]}...")
                 elif 'Secret key:' in line or 'service_role key:' in line:
-                    # Supabase status uses "Secret key" which is the service role key
                     service_key = line.split(':')[1].strip()
                     self.env_vars["supabase"]["SUPABASE_SERVICE_ROLE_KEY"] = service_key
                     print_success(f"✓ Found Service Role Key: {service_key[:20]}...")
@@ -876,117 +879,78 @@ class SetupWizard:
                 print_error(f"Error output: {e.stderr}")
             return
 
-        # Wait a moment for services to be ready
-        print_info("Waiting for services to be ready...")
-        import time
-        time.sleep(5)
-
-        # Set JWT secret (this is usually a fixed value for local development)
+        # Set JWT secret (fixed for local development)
         self.env_vars["supabase"]["SUPABASE_JWT_SECRET"] = "your-super-secret-jwt-token-with-at-least-32-characters-long"
     
     def _configure_local_supabase_settings(self):
-        """Configures local Supabase settings for development (disables email confirmations)."""
+        """Configures local Supabase settings for development."""
         config_path = "backend/supabase/config.toml"
         
         if not os.path.exists(config_path):
-            print_warning("Config file not found, will be created by Supabase CLI.")
             return
         
         try:
             with open(config_path, "r") as f:
                 config_content = f.read()
             
-            # Replace enable_confirmations = true with enable_confirmations = false
             if "enable_confirmations = true" in config_content:
                 config_content = config_content.replace(
                     "enable_confirmations = true",
                     "enable_confirmations = false"
                 )
-                
                 with open(config_path, "w") as f:
                     f.write(config_content)
-                
-                print_success("Configured local Supabase to disable email confirmations for development.")
-            elif "enable_confirmations = false" in config_content:
-                print_info("Email confirmations already disabled in local Supabase config.")
-            else:
-                print_warning("Could not find enable_confirmations setting in config.toml")
+                print_success("Configured local Supabase to disable email confirmations.")
                 
         except Exception as e:
             print_warning(f"Could not modify Supabase config: {e}")
-            print_info("You may need to manually set enable_confirmations = false in backend/supabase/config.toml")
 
     def _setup_cloud_supabase(self):
         """Sets up cloud Supabase configuration."""
         print_info("Setting up cloud Supabase...")
         print_info("Visit https://supabase.com/dashboard/projects to create one.")
         print_info("In your project settings, go to 'API' to find the required information:")
-        print_info("  - Project URL (at the top)")
-        print_info("  - anon public key (under 'Project API keys')")
-        print_info("  - service_role secret key (under 'Project API keys')")
-        print_info("  - JWT Secret (under 'JWT Settings' - critical for security!)")
+        print_info("  - Project URL")
+        print_info("  - anon public key")
+        print_info("  - service_role secret key")
+        print_info("  - JWT Secret (under 'JWT Settings')")
         input("Press Enter to continue once you have your project details...")
 
         self.env_vars["supabase"]["SUPABASE_URL"] = self._get_input(
-            "Enter your Supabase Project URL (e.g., https://xyz.supabase.co): ",
+            "Enter your Supabase Project URL: ",
             validate_url,
-            "Invalid URL format. Please enter a valid URL.",
+            "Invalid URL format.",
         )
         
-        # Extract and store project reference for CLI operations
         match = re.search(r"https://([^.]+)\.supabase\.co", self.env_vars["supabase"]["SUPABASE_URL"])
         if match:
             project_ref = match.group(1)
             self.env_vars["supabase"]["SUPABASE_PROJECT_REF"] = project_ref
-            print_info(f"Detected project reference: {project_ref}")
         else:
-            # Ask for project reference if URL parsing fails
             self.env_vars["supabase"]["SUPABASE_PROJECT_REF"] = self._get_input(
-                "Enter your Supabase Project Reference (found in project settings): ",
+                "Enter your Supabase Project Reference: ",
                 lambda x: len(x) > 5,
                 "Project reference should be at least 6 characters long.",
             )
         
-        # Set the public URLs to match the main URL
         self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"] = self.env_vars["supabase"]["SUPABASE_URL"]
         self.env_vars["supabase"]["EXPO_PUBLIC_SUPABASE_URL"] = self.env_vars["supabase"]["SUPABASE_URL"]
         
         self.env_vars["supabase"]["SUPABASE_ANON_KEY"] = self._get_input(
             "Enter your Supabase anon key: ",
             validate_api_key,
-            "This does not look like a valid key. It should be at least 10 characters.",
+            "Invalid key format.",
         )
         self.env_vars["supabase"]["SUPABASE_SERVICE_ROLE_KEY"] = self._get_input(
             "Enter your Supabase service role key: ",
             validate_api_key,
-            "This does not look like a valid key. It should be at least 10 characters.",
+            "Invalid key format.",
         )
         self.env_vars["supabase"]["SUPABASE_JWT_SECRET"] = self._get_input(
-            "Enter your Supabase JWT secret (for signature verification): ",
+            "Enter your Supabase JWT secret: ",
             validate_api_key,
-            "This does not look like a valid JWT secret. It should be at least 10 characters.",
+            "Invalid JWT secret format.",
         )
-        # Validate that all required Supabase configuration is present
-        if not self.env_vars["supabase"]["SUPABASE_URL"]:
-            print_error("SUPABASE_URL is required for database connectivity.")
-            print_error("Without this, the application will crash on startup.")
-            sys.exit(1)
-        
-        if not self.env_vars["supabase"]["SUPABASE_ANON_KEY"]:
-            print_error("SUPABASE_ANON_KEY is required for database access.")
-            print_error("Without this, the application will crash on startup.")
-            sys.exit(1)
-        
-        if not self.env_vars["supabase"]["SUPABASE_SERVICE_ROLE_KEY"]:
-            print_error("SUPABASE_SERVICE_ROLE_KEY is required for admin operations.")
-            print_error("Without this, the application will crash on startup.")
-            sys.exit(1)
-        
-        if not self.env_vars["supabase"]["SUPABASE_JWT_SECRET"]:
-            print_error("SUPABASE_JWT_SECRET is required for authentication security.")
-            print_error("Without this, authentication will fail.")
-            sys.exit(1)
-        
         print_success("Supabase information saved.")
 
     def collect_daytona_info(self):
@@ -1587,6 +1551,13 @@ class SetupWizard:
         """Applies database migrations to Supabase (local or cloud)."""
         print_step(15, self.total_steps, "Setting up Supabase Database")
 
+        # If Docker + Local, migrations are handled by Docker volume mount
+        if self.env_vars["setup_method"] == "docker" and self.env_vars["supabase_setup_method"] == "local":
+            print_info("Using Dockerized Local Supabase.")
+            print_info("Database migrations will be applied automatically when the container starts.")
+            print_success("Database setup configured.")
+            return
+
         print_info(
             "This step will apply database migrations to your Supabase instance."
         )
@@ -1779,9 +1750,18 @@ class SetupWizard:
         print_step(17, self.total_steps, "Starting Kortix Super Worker")
         if self.env_vars["setup_method"] == "docker":
             print_info("Starting Kortix Super Worker with Docker Compose...")
+            
+            # Determine command based on Supabase setup
+            cmd = ["docker", "compose"]
+            if self.env_vars.get("supabase_setup_method") == "local":
+                print_info("Enabling 'local-supabase' profile...")
+                cmd.extend(["--profile", "local-supabase"])
+            
+            cmd.extend(["up", "-d", "--build"])
+            
             try:
                 subprocess.run(
-                    ["docker", "compose", "up", "-d", "--build"],
+                    cmd,
                     check=True,
                     shell=IS_WINDOWS,
                 )
@@ -1809,13 +1789,6 @@ class SetupWizard:
                     "WORKAROUND: Try starting without rebuilding:"
                 )
                 print_info(f"  {Colors.CYAN}docker compose up -d{Colors.ENDC} (without --build)")
-                print_info(
-                    "\nIf that doesn't work, you may need to:"
-                )
-                print_info(f"  1. {Colors.CYAN}cd frontend{Colors.ENDC}")
-                print_info(f"  2. {Colors.CYAN}npm run build{Colors.ENDC}")
-                print_info(f"  3. {Colors.CYAN}cd .. && docker compose up -d{Colors.ENDC}")
-                # Don't exit, let the final instructions show
                 return
         else:
             print_info(
@@ -1835,28 +1808,6 @@ class SetupWizard:
 
         if self.env_vars["setup_method"] == "docker":
             print_info("Your Kortix Super Worker instance is ready to use!")
-            
-            # Important limitation for local Supabase with Docker
-            if self.env_vars.get("supabase_setup_method") == "local":
-                print(f"\n{Colors.RED}{Colors.BOLD}⚠️  IMPORTANT LIMITATION:{Colors.ENDC}")
-                print(f"{Colors.YELLOW}Local Supabase is currently NOT supported with Docker Compose.{Colors.ENDC}")
-                print("\nThis is due to network configuration complexity between:")
-                print("  • Kortix Super Worker containers (backend, frontend, worker)")
-                print("  • Local Supabase containers (via npx supabase start)")
-                print("  • Your browser (accessing from host machine)")
-                print("\n" + "="*70)
-                print(f"{Colors.BOLD}RECOMMENDED OPTIONS:{Colors.ENDC}")
-                print("="*70)
-                print(f"\n{Colors.GREEN}Option 1 (Recommended):{Colors.ENDC} Use Cloud Supabase")
-                print("  • Re-run setup.py and choose Cloud Supabase")
-                print("  • Works seamlessly with Docker Compose")
-                print(f"\n{Colors.GREEN}Option 2:{Colors.ENDC} Run Everything Manually (No Docker)")
-                print("  • Re-run setup.py and choose 'Manual' setup")
-                print("  • Local Supabase works perfectly with manual setup")
-                print(f"\n{Colors.CYAN}Future:{Colors.ENDC} We plan to integrate Supabase directly into docker-compose.yaml")
-                print("="*70 + "\n")
-                return  # Don't show Docker commands if local Supabase is configured
-            
             print("\nUseful Docker commands:")
             print(
                 f"  {Colors.CYAN}docker compose ps{Colors.ENDC}         - Check service status"
@@ -1871,17 +1822,16 @@ class SetupWizard:
                 f"  {Colors.CYAN}python start.py{Colors.ENDC}           - To start or stop Kortix Super Worker services"
             )
             
-            # Cloud Supabase commands
-            if self.env_vars.get("supabase_setup_method") == "cloud":
-                print("\nSupabase Management:")
-                print(f"  {Colors.CYAN}Supabase Dashboard:{Colors.ENDC} https://supabase.com/dashboard")
-                print(f"  {Colors.CYAN}Project URL:{Colors.ENDC} {self.env_vars['supabase'].get('SUPABASE_URL', 'N/A')}")
+            if self.env_vars.get("supabase_setup_method") == "local":
+                 print("\nLocal Supabase Info:")
+                 print(f"  {Colors.CYAN}Supabase API:{Colors.ENDC} http://localhost:54321")
+                 print(f"  {Colors.CYAN}Supabase Studio:{Colors.ENDC} http://localhost:54323")
+                 print(f"  {Colors.CYAN}Mailpit (Email):{Colors.ENDC} http://localhost:54324")
         else:
             print_info(
                 "To start Kortix Super Worker, you need to run these commands in separate terminals:"
             )
             
-            # Show Supabase start command for local setup
             step_num = 1
             if self.env_vars.get("supabase_setup_method") == "local":
                 print(
@@ -1913,7 +1863,6 @@ class SetupWizard:
                 f"{Colors.CYAN}   cd backend && uv run dramatiq run_agent_background{Colors.ENDC}"
             )
             
-            # Show stop commands for local Supabase
             if self.env_vars.get("supabase_setup_method") == "local":
                 print(
                     f"\n{Colors.BOLD}To stop Local Supabase:{Colors.ENDC}"

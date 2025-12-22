@@ -1,30 +1,27 @@
 # ============================================================================
-# KORTIX SUPER WORKER DOCKER COMPOSE - LOCAL DEVELOPMENT
+# KORTIX SUPER WORKER DOCKER COMPOSE
 # ============================================================================
-# This Docker Compose file runs Kortix Super Worker services (Backend, Worker, Frontend, Redis)
 #
-# ⚠️  IMPORTANT LIMITATION - LOCAL SUPABASE:
-# Currently, local Supabase (via `npx supabase start`) is NOT supported with
-# Docker Compose due to network configuration complexity.
+# MODES:
+# 1. CLOUD SUPABASE (Default):
+#    Uses the credentials in backend/.env to connect to a remote Supabase.
+#    Command: docker compose up -d
 #
-# TODO: Integrate Supabase services directly into this compose file to enable
-#       full Docker-based local development with proper network configuration.
-#
-# CURRENT WORKAROUND:
-# - Use cloud Supabase for Docker Compose setup
-# - OR run everything manually (no Docker) to use local Supabase
-#
-# Quick Start:
-#   docker compose up -d          # Start all services
-#   docker compose down           # Stop all services
-#   docker compose logs -f        # View all logs
+# 2. LOCAL SUPABASE (Dockerized):
+#    Spins up Supabase services locally alongside the app.
+#    Command: docker compose --profile local-supabase up -d
 #
 # Access:
-#   - Kortix Super Worker Frontend:     http://localhost:3000
-#   - Kortix Super Worker Backend API:  http://localhost:8000
+#   - Frontend:         http://localhost:3000
+#   - Backend API:      http://localhost:8000
+#   - Supabase API:     http://localhost:54321 (Kong Gateway)
+#   - Supabase Studio:  http://localhost:54323 (Only in local-supabase profile)
 # ============================================================================
 
 services:
+  # --------------------------------------------------------------------------
+  # CORE APPLICATION
+  # --------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
     ports:
@@ -38,6 +35,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+    networks:
+      - kortix-network
 
   backend:
     image: ghcr.io/suna-ai/suna-backend:latest
@@ -49,16 +48,21 @@ services:
       - "8000:8000"
     volumes:
       - ./backend/.env:/app/.env:ro
+      # Optional: Mount code for dev if needed
+      # - ./backend:/app
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=
       - REDIS_SSL=False
+      # If running local-supabase profile, these env vars in .env must match docker/supabase.env
     depends_on:
       redis:
         condition: service_healthy
       worker:
         condition: service_started
+    networks:
+      - kortix-network
 
   worker:
     image: ghcr.io/suna-ai/suna-backend:latest
@@ -77,6 +81,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    networks:
+      - kortix-network
 
   frontend:
     init: true
@@ -87,6 +93,144 @@ services:
       - "3000:3000"
     depends_on:
       - backend
+    networks:
+      - kortix-network
+
+  # --------------------------------------------------------------------------
+  # LOCAL SUPABASE SERVICES (Profile: local-supabase)
+  # --------------------------------------------------------------------------
+  db:
+    image: supabase/postgres:15.1.0.147
+    profiles: ["local-supabase"]
+    healthcheck:
+      test: pg_isready -U postgres -h localhost
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "54322:5432"
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./backend/supabase/migrations:/docker-entrypoint-initdb.d/migrations:ro
+      - ./backend/supabase/seed.sql:/docker-entrypoint-initdb.d/999999_seed.sql:ro
+    networks:
+      - kortix-network
+
+  kong:
+    image: kong:latest
+    profiles: ["local-supabase"]
+    depends_on:
+      auth:
+        condition: service_started
+      rest:
+        condition: service_started
+      realtime:
+        condition: service_started
+    ports:
+      - "54321:8000" # Maps internal 8000 to host 54321 (Standard Supabase Port)
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /usr/local/kong/declarative/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl
+    volumes:
+      - ./docker/config/kong.yml:/usr/local/kong/declarative/kong.yml:ro
+    networks:
+      - kortix-network
+
+  auth:
+    image: supabase/gotrue:v2.158.1
+    profiles: ["local-supabase"]
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - ./docker/supabase.env
+    environment:
+      GOTRUE_DB_DATABASE_URL: postgres://postgres:postgres@db:5432/postgres
+    networks:
+      - kortix-network
+
+  rest:
+    image: postgrest/postgrest:latest
+    profiles: ["local-supabase"]
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - ./docker/supabase.env
+    environment:
+      PGRST_DB_URI: postgres://postgres:postgres@db:5432/postgres
+    networks:
+      - kortix-network
+
+  realtime:
+    image: supabase/realtime:latest
+    profiles: ["local-supabase"]
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - ./docker/supabase.env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: postgres
+    networks:
+      - kortix-network
+
+  storage:
+    image: supabase/storage-api:latest
+    profiles: ["local-supabase"]
+    depends_on:
+      db:
+        condition: service_healthy
+      rest:
+        condition: service_started
+    env_file:
+      - ./docker/supabase.env
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/postgres
+      POSTGREST_URL: http://rest:3000
+    networks:
+      - kortix-network
+
+  meta:
+    image: supabase/postgres-meta:v0.84.2
+    profiles: ["local-supabase"]
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - ./docker/supabase.env
+    environment:
+      PG_META_DB_HOST: db
+      PG_META_DB_PASSWORD: postgres
+    networks:
+      - kortix-network
+
+  studio:
+    image: supabase/studio:latest
+    profiles: ["local-supabase"]
+    depends_on:
+      meta:
+        condition: service_started
+    ports:
+      - "54323:3000"
+    env_file:
+      - ./docker/supabase.env
+    networks:
+      - kortix-network
 
 volumes:
   redis_data:
+  db_data:
+
+networks:
+  kortix-network:
+    driver: bridge
