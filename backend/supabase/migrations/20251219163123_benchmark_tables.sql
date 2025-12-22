@@ -2,9 +2,23 @@
 -- Stores E2E test run metadata and detailed results for performance tracking
 
 -- Create enum types
-CREATE TYPE benchmark_run_type AS ENUM ('core_test', 'stress_test');
-CREATE TYPE benchmark_run_status AS ENUM ('running', 'completed', 'failed', 'cancelled');
-CREATE TYPE benchmark_result_status AS ENUM ('completed', 'failed', 'timeout', 'error');
+DO $$ BEGIN
+    CREATE TYPE benchmark_run_type AS ENUM ('core_test', 'stress_test');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE benchmark_run_status AS ENUM ('running', 'completed', 'failed', 'cancelled');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE benchmark_result_status AS ENUM ('completed', 'failed', 'timeout', 'error');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- Main benchmark runs table
 CREATE TABLE IF NOT EXISTS benchmark_runs (
@@ -48,15 +62,15 @@ CREATE TABLE IF NOT EXISTS benchmark_results (
 );
 
 -- Create indexes for performance
-CREATE INDEX idx_benchmark_runs_status ON benchmark_runs(status);
-CREATE INDEX idx_benchmark_runs_run_type ON benchmark_runs(run_type);
-CREATE INDEX idx_benchmark_runs_created_at ON benchmark_runs(created_at DESC);
-CREATE INDEX idx_benchmark_runs_created_by ON benchmark_runs(created_by);
+CREATE INDEX IF NOT EXISTS idx_benchmark_runs_status ON benchmark_runs(status);
+CREATE INDEX IF NOT EXISTS idx_benchmark_runs_run_type ON benchmark_runs(run_type);
+CREATE INDEX IF NOT EXISTS idx_benchmark_runs_created_at ON benchmark_runs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_benchmark_runs_created_by ON benchmark_runs(created_by);
 
-CREATE INDEX idx_benchmark_results_run_id ON benchmark_results(run_id);
-CREATE INDEX idx_benchmark_results_status ON benchmark_results(status);
-CREATE INDEX idx_benchmark_results_prompt_id ON benchmark_results(prompt_id);
-CREATE INDEX idx_benchmark_results_started_at ON benchmark_results(started_at);
+CREATE INDEX IF NOT EXISTS idx_benchmark_results_run_id ON benchmark_results(run_id);
+CREATE INDEX IF NOT EXISTS idx_benchmark_results_status ON benchmark_results(status);
+CREATE INDEX IF NOT EXISTS idx_benchmark_results_prompt_id ON benchmark_results(prompt_id);
+CREATE INDEX IF NOT EXISTS idx_benchmark_results_started_at ON benchmark_results(started_at);
 
 -- Add trigger for updated_at
 CREATE OR REPLACE FUNCTION update_benchmark_runs_updated_at()
@@ -67,6 +81,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_update_benchmark_runs_updated_at ON benchmark_runs;
 CREATE TRIGGER trigger_update_benchmark_runs_updated_at
     BEFORE UPDATE ON benchmark_runs
     FOR EACH ROW
@@ -77,13 +92,16 @@ ALTER TABLE benchmark_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE benchmark_results ENABLE ROW LEVEL SECURITY;
 
 -- Policy: Service role can do everything
+DROP POLICY IF EXISTS "Service role has full access to benchmark_runs" ON benchmark_runs;
 CREATE POLICY "Service role has full access to benchmark_runs" ON benchmark_runs
     FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "Service role has full access to benchmark_results" ON benchmark_results;
 CREATE POLICY "Service role has full access to benchmark_results" ON benchmark_results
     FOR ALL USING (true);
 
 -- Policy: Admin users can view all benchmark data
+DROP POLICY IF EXISTS "Admins can view benchmark_runs" ON benchmark_runs;
 CREATE POLICY "Admins can view benchmark_runs" ON benchmark_runs
     FOR SELECT
     USING (
@@ -94,6 +112,7 @@ CREATE POLICY "Admins can view benchmark_runs" ON benchmark_runs
         )
     );
 
+DROP POLICY IF EXISTS "Admins can view benchmark_results" ON benchmark_results;
 CREATE POLICY "Admins can view benchmark_results" ON benchmark_results
     FOR SELECT
     USING (

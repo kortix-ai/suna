@@ -71,6 +71,7 @@ export const unifiedAgentStart = async (options: {
   threadId?: string;
   prompt?: string;
   files?: File[];
+  file_ids?: string[];
   model_name?: string;
   agent_id?: string;
 }): Promise<{ thread_id: string; agent_run_id: string; status: string }> => {
@@ -105,6 +106,12 @@ export const unifiedAgentStart = async (options: {
     if (options.files && options.files.length > 0) {
       options.files.forEach((file) => {
         formData.append('files', file);
+      });
+    }
+    
+    if (options.file_ids && options.file_ids.length > 0) {
+      options.file_ids.forEach((fileId) => {
+        formData.append('file_ids', fileId);
       });
     }
 
@@ -349,6 +356,7 @@ export const optimisticAgentStart = async (options: {
   project_id: string;
   prompt: string;
   files?: File[];
+  file_ids?: string[];
   model_name?: string;
   agent_id?: string;
   memory_enabled?: boolean;
@@ -364,7 +372,7 @@ export const optimisticAgentStart = async (options: {
     
     formData.append('thread_id', options.thread_id);
     formData.append('project_id', options.project_id);
-    formData.append('optimistic', 'true');  // Enable optimistic mode
+    formData.append('optimistic', 'true');
     
     const promptValue = typeof options.prompt === 'string' ? options.prompt.trim() : options.prompt;
     formData.append('prompt', promptValue);
@@ -377,7 +385,11 @@ export const optimisticAgentStart = async (options: {
       formData.append('agent_id', options.agent_id);
     }
     
-    if (options.files && options.files.length > 0) {
+    if (options.file_ids && options.file_ids.length > 0) {
+      options.file_ids.forEach((fileId) => {
+        formData.append('file_ids', fileId);
+      });
+    } else if (options.files && options.files.length > 0) {
       options.files.forEach((file) => {
         formData.append('files', file);
       });

@@ -278,44 +278,30 @@ export function DashboardContent() {
     setIsSubmitting(true);
 
     try {
-      const files = chatInputRef.current?.getPendingFiles() || [];
+      const fileIds = chatInputRef.current?.getUploadedFileIds() || [];
+      const pendingFiles = chatInputRef.current?.getPendingFiles() || [];
       localStorage.removeItem(PENDING_PROMPT_KEY);
 
-      const formData = new FormData();
       const trimmedMessage = message.trim();
-      if (!trimmedMessage && files.length === 0) {
+      if (!trimmedMessage && fileIds.length === 0 && pendingFiles.length === 0) {
         setIsSubmitting(false);
         throw new Error('Prompt is required when starting a new Worker');
       }
-      formData.append('prompt', trimmedMessage || message);
-
-      if (selectedAgentId) {
-        formData.append('agent_id', selectedAgentId);
-      }
-
-      files.forEach((file, index) => {
-        const normalizedName = normalizeFilenameToNFC(file.name);
-        formData.append('files', file, normalizedName);
-      });
-
-      if (options?.model_name && options.model_name.trim()) {
-        formData.append('model_name', options.model_name.trim());
-      }
-      formData.append('stream', 'true');
-      formData.append('enable_context_manager', String(options?.enable_context_manager ?? false));
 
       console.log('[Dashboard] Starting agent with:', {
         prompt: message.substring(0, 100),
         promptLength: message.length,
         model_name: options?.model_name,
         agent_id: selectedAgentId,
-        filesCount: files.length,
+        fileIds: fileIds.length,
+        pendingFiles: pendingFiles.length,
       });
 
       const threadId = crypto.randomUUID();
       const projectId = crypto.randomUUID();
       
       chatInputRef.current?.clearPendingFiles();
+      chatInputRef.current?.clearUploadedFiles();
       setIsRedirecting(true);
       
       sessionStorage.setItem('optimistic_prompt', trimmedMessage || message);
@@ -327,7 +313,8 @@ export function DashboardContent() {
         thread_id: threadId,
         project_id: projectId,
         prompt: trimmedMessage || message,
-        files: files,
+        file_ids: fileIds.length > 0 ? fileIds : undefined,
+        files: fileIds.length === 0 && pendingFiles.length > 0 ? pendingFiles : undefined,
         model_name: options?.model_name,
         agent_id: selectedAgentId || undefined,
         memory_enabled: true,
