@@ -622,6 +622,18 @@ class TestHarnessRunner:
             if intervals:
                 avg_chunk_interval_ms = sum(intervals) / len(intervals)
         
+        # Calculate tool call breakdown
+        tool_call_breakdown = {}
+        for tool_call in tool_calls:
+            tool_name = tool_call.get('tool_name', 'unknown')
+            tool_call_breakdown[tool_name] = tool_call_breakdown.get(tool_name, 0) + 1
+        
+        # Validate expected tools are present
+        called_tools = set(tool_call_breakdown.keys())
+        expected_tools = set(prompt.expected_tools)
+        missing_tools = list(expected_tools - called_tools)
+        expected_tools_present = len(missing_tools) == 0
+        
         # Create result
         result = BenchmarkResult(
             prompt_id=prompt.id,
@@ -634,6 +646,9 @@ class TestHarnessRunner:
             total_duration_ms=total_duration_ms,
             tool_calls_count=tool_calls_count,
             tool_calls=tool_calls,
+            tool_call_breakdown=tool_call_breakdown,
+            expected_tools_present=expected_tools_present,
+            missing_tools=missing_tools,
             avg_tool_call_time_ms=avg_tool_call_time_ms,
             slowest_tool_call=slowest_tool_call,
             stream_chunk_count=stream_chunk_count,
