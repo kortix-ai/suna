@@ -961,31 +961,28 @@ export function PricingSection({
   const commitmentInfo = accountState?.subscription.commitment;
   const currentSubscription = accountState || null;
 
+  /**
+   * Detects the current billing period from the user's subscription.
+   * Returns null if user is not authenticated or no subscription exists.
+   */
   const getCurrentBillingPeriod = (): 'monthly' | 'yearly' | 'yearly_commitment' | null => {
     if (!isAuthenticated || !currentSubscription) {
-      console.log(`[BILLING-PERIOD-DEBUG] No auth or subscription: auth=${isAuthenticated}, sub=${!!currentSubscription}`);
       return null;
     }
 
-    console.log(`[BILLING-PERIOD-DEBUG] Current subscription billing_period:`, currentSubscription.subscription.billing_period);
-    console.log(`[BILLING-PERIOD-DEBUG] Current subscription plan_type:`, (currentSubscription as any).plan_type);
-
-    // Check API billing_period field first
+    // Check API billing_period field first (most reliable)
     if (currentSubscription.subscription.billing_period) {
-      console.log(`[BILLING-PERIOD-DEBUG] Using API billing_period: ${currentSubscription.subscription.billing_period}`);
       return currentSubscription.subscription.billing_period;
     }
 
     // Check plan_type field as backup
     if ((currentSubscription as any).plan_type) {
-      const planType = (currentSubscription as any).plan_type;
-      console.log(`[BILLING-PERIOD-DEBUG] Using API plan_type: ${planType}`);
-      return planType;
+      return (currentSubscription as any).plan_type;
     }
 
+    // Check for yearly commitment
     if (commitmentInfo?.has_commitment &&
       commitmentInfo?.commitment_type === 'yearly_commitment') {
-      console.log(`[BILLING-PERIOD-DEBUG] Using commitment from subscription: yearly_commitment`);
       return 'yearly_commitment';
     }
 
@@ -998,41 +995,36 @@ export function PricingSection({
       const now = Date.now();
       const daysInPeriod = Math.round((periodEnd - now) / (1000 * 60 * 60 * 24));
 
-      console.log(`[BILLING-PERIOD-DEBUG] Period length detection: ${daysInPeriod} days`);
-
       // If period is longer than 180 days, likely yearly; otherwise monthly
       if (daysInPeriod > 180) {
-        console.log(`[BILLING-PERIOD-DEBUG] Inferred yearly from period length`);
         return 'yearly';
       }
     }
 
-    // Default to monthly if period is short or can't determine
-    console.log(`[BILLING-PERIOD-DEBUG] Defaulting to yearly`);
-    return 'yearly';
+    return null;
   };
 
   const currentBillingPeriod = getCurrentBillingPeriod();
 
+  /**
+   * Gets the default billing period to display in the pricing section.
+   * Defaults to 'yearly' for new users, or uses the current subscription's billing period.
+   */
   const getDefaultBillingPeriod = useCallback((): 'monthly' | 'yearly' | 'yearly_commitment' => {
-    if (!isAuthenticated || !currentSubscription) {
-      return 'yearly_commitment';
-    }
+    // If user has an active subscription, use their current billing period
     if (currentBillingPeriod) {
-      console.log(`[BILLING-PERIOD-DEBUG] Using detected billing period: ${currentBillingPeriod}`);
       return currentBillingPeriod;
     }
-    console.log(`[BILLING-PERIOD-DEBUG] No billing period detected, defaulting to yearly_commitment`);
-    return 'yearly_commitment';
-  }, [isAuthenticated, currentSubscription, currentBillingPeriod]);
+    
+    // Default to yearly for all users (authenticated or not)
+    return 'yearly';
+  }, [currentBillingPeriod]);
 
   const [planLoadingStates, setPlanLoadingStates] = useState<Record<string, boolean>>({});
   const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
 
-  // Shared billing period state across all pricing tiers
-  const [sharedBillingPeriod, setSharedBillingPeriod] = useState<'monthly' | 'yearly' | 'yearly_commitment'>(() => {
-    return currentBillingPeriod || getDefaultBillingPeriod();
-  });
+  // Billing period toggle state - ALWAYS starts as 'yearly' (Annual preselected)
+  const [sharedBillingPeriod, setSharedBillingPeriod] = useState<'monthly' | 'yearly' | 'yearly_commitment'>('yearly');
 
   // Plan switcher state for paid tiers
   const paidTiers = siteConfig.cloudPricingItems.filter(
