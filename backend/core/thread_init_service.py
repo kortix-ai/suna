@@ -190,6 +190,7 @@ async def create_thread_optimistically(
     agent_id: Optional[str] = None,
     model_name: Optional[str] = None,
     files: Optional[List[UploadFile]] = None,
+    staged_files: Optional[List[Dict[str, Any]]] = None,
     memory_enabled: Optional[bool] = None,
 ) -> Dict[str, Any]:
     if not db._client:
@@ -215,20 +216,65 @@ async def create_thread_optimistically(
         logger.error(f"Failed to create project optimistically: {str(e)}")
         raise
     
-    if files and len(files) > 0:
+    image_urls_for_context = []
+    
+    if staged_files and len(staged_files) > 0:
         try:
-            from core.agent_runs import _ensure_sandbox_for_thread, _handle_file_uploads
+            from core.agent_runs import _upload_staged_files_to_sandbox_background
+            from core.services import redis
+            import json
             
-            logger.info(f"Processing {len(files)} files for optimistic thread {thread_id}")
-            sandbox, _ = await _ensure_sandbox_for_thread(client, project_id, files)
+            logger.info(f"Using {len(staged_files)} pre-staged files for optimistic thread {thread_id}")
             
-            if sandbox:
-                message_content = await _handle_file_uploads(files, sandbox, project_id, prompt)
-                logger.info(f"Successfully uploaded files for thread {thread_id}")
-            else:
-                logger.warning(f"No sandbox created for thread {thread_id}, files will not be uploaded")
+            file_refs = []
+            parsed_contents = []
+            for sf in staged_files:
+                filename = sf['filename']
+                
+                if sf.get('image_url'):
+                    image_urls_for_context.append({
+                        "filename": filename,
+                        "url": sf['image_url'],
+                        "mime_type": sf['mime_type']
+                    })
+                    file_refs.append(f"[Image: {filename} ({sf['file_size']:,} bytes) -> /workspace/uploads/{filename}]")
+                else:
+                    file_refs.append(f"[Attached: {filename} ({sf['file_size']:,} bytes) -> /workspace/uploads/{filename}]")
+                    if sf.get('parsed_content'):
+                        parsed_contents.append({
+                            "filename": filename,
+                            "content": sf['parsed_content'],
+                            "mime_type": sf['mime_type'],
+                            "size": sf['file_size']
+                        })
+            
+            message_content = prompt + "\n\n" + "\n".join(file_refs) if file_refs else prompt
+            
+            if parsed_contents:
+                cache_key = f"file_context:{thread_id}"
+                await redis.set(cache_key, json.dumps(parsed_contents), ex=3600)
+                logger.info(f"✅ Cached {len(parsed_contents)} staged files for thread {thread_id}")
+            
+            asyncio.create_task(_upload_staged_files_to_sandbox_background(
+                project_id=project_id,
+                thread_id=thread_id,
+                staged_files=staged_files,
+                account_id=account_id
+            ))
+            logger.debug(f"Scheduled background sandbox upload for {len(staged_files)} staged files")
+            
         except Exception as e:
-            logger.error(f"Error handling files in optimistic thread creation: {str(e)}\n{traceback.format_exc()}")
+            logger.error(f"Error processing staged files: {str(e)}\n{traceback.format_exc()}")
+    
+    elif files and len(files) > 0:
+        try:
+            from core.agent_runs import _handle_file_uploads_fast
+            
+            logger.info(f"Fast-processing {len(files)} files for optimistic thread {thread_id}")
+            message_content = await _handle_file_uploads_fast(files, project_id, prompt, thread_id)
+            logger.info(f"Fast-parsed files for thread {thread_id}, sandbox upload scheduled in background")
+        except Exception as e:
+            logger.error(f"Error fast-parsing files in optimistic thread creation: {str(e)}\n{traceback.format_exc()}")
             try:
                 await client.table('projects').delete().eq('project_id', project_id).execute()
                 logger.debug(f"Rolled back project {project_id} due to file handling error")
@@ -272,6 +318,34 @@ async def create_thread_optimistically(
     }).execute()
     
     logger.debug(f"Created user message for thread {thread_id} with content length: {len(message_content)}")
+    
+    for img_info in image_urls_for_context:
+        try:
+            image_message_content = {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": f"[Image loaded: {img_info['filename']}]"},
+                    {"type": "image_url", "image_url": {"url": img_info['url']}}
+                ]
+            }
+            
+            await client.table('messages').insert({
+                "message_id": str(uuid.uuid4()),
+                "thread_id": thread_id,
+                "type": "image_context",
+                "is_llm_message": True,
+                "content": image_message_content,
+                "metadata": {
+                    "file_path": img_info['filename'],
+                    "mime_type": img_info['mime_type'],
+                    "source": "user_upload"
+                },
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }).execute()
+            
+            logger.info(f"📷 Injected image context for {img_info['filename']} into thread {thread_id}")
+        except Exception as img_error:
+            logger.warning(f"Failed to inject image context for {img_info['filename']}: {img_error}")
     
     initialize_thread_background.send(
         thread_id=thread_id,

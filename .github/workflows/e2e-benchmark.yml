@@ -189,10 +189,56 @@ jobs:
               echo "- **Run ID**: \`$RUN_ID\`" >> $GITHUB_STEP_SUMMARY
               echo "- **Success Rate**: $SUCCESS/$TOTAL prompts" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "### Summary:" >> $GITHUB_STEP_SUMMARY
+              
+              # Add individual test results
+              echo "### 📋 Individual Test Results:" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              
+              # Loop through each result with color-coded deviations
+              echo "$RESULT" | jq -r '.results[]? | 
+                "#### \(.prompt_id)\n" +
+                "- **Status**: \(if .status == "completed" then "✅ Passed" else "❌ Failed" end)\n" +
+                "- **Duration**: \(.total_duration_ms)ms (cold start: \(.cold_start_ms)ms)\n" +
+                "- **Tool Calls**: \(.tool_calls_count) calls\n" +
+                "- **Expected Tools**: \(if .expected_tools_present then "✅ All present" else "⚠️ Missing: \(.missing_tools | join(", "))" end)\n" +
+                "- **Tool Call Accuracy**:\n" +
+                (if (.tool_call_deviations | length) > 0 then
+                  (.tool_call_deviations | to_entries | map(
+                    "  - `\(.key)`: " + 
+                    (if .value.deviation == 0 then 
+                      "$\\color{Green}{\\textsf{✓ \(.value.actual)/\(.value.expected)}}$"
+                    elif .value.deviation == 1 then
+                      "$\\color{Yellow}{\\textsf{⚠ \(.value.actual)/\(.value.expected) (+\(.value.deviation))}}$"
+                    elif .value.deviation == 2 then
+                      "$\\color{Orange}{\\textsf{⚠⚠ \(.value.actual)/\(.value.expected) (+\(.value.deviation))}}$"
+                    elif .value.deviation > 2 then
+                      "$\\color{Red}{\\textbf{✗ \(.value.actual)/\(.value.expected) (+\(.value.deviation))}}$"
+                    elif .value.deviation < 0 then
+                      "$\\color{Red}{\\textbf{✗ \(.value.actual)/\(.value.expected) (\(.value.deviation))}}$"
+                    else
+                      "\(.value.actual)/\(.value.expected)"
+                    end)
+                  ) | join("\n"))
+                else
+                  "  - _(No expected tool calls defined)_"
+                end) + "\n"
+              ' 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "_(Could not parse individual results)_" >> $GITHUB_STEP_SUMMARY
+              
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### 📊 Overall Summary:" >> $GITHUB_STEP_SUMMARY
               echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
               echo "$RESULT" | jq '.summary' >> $GITHUB_STEP_SUMMARY
               echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              
+              # Add tool validation section if there are missing tools
+              TESTS_WITH_MISSING=$(echo "$RESULT" | jq '[.results[]? | select(.expected_tools_present == false)] | length' 2>/dev/null || echo "0")
+              if [ "$TESTS_WITH_MISSING" != "0" ] && [ "$TESTS_WITH_MISSING" != "null" ]; then
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "### ⚠️ Tool Validation Issues ($TESTS_WITH_MISSING tests):" >> $GITHUB_STEP_SUMMARY
+                echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+                echo "$RESULT" | jq '[.results[]? | select(.expected_tools_present == false) | {prompt_id, missing_tools, called: .tool_call_breakdown}]' 2>/dev/null >> $GITHUB_STEP_SUMMARY
+                echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              fi
               
               exit 0
             elif [ "$STATUS" = "failed" ]; then

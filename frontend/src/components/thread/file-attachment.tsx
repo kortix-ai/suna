@@ -187,22 +187,13 @@ interface FileAttachmentProps {
     showPreview?: boolean;
     localPreviewUrl?: string;
     customStyle?: React.CSSProperties;
-    /**
-     * Controls whether HTML, Markdown, and CSV files show their content preview.
-     * - true: files are shown as regular file attachments (default)
-     * - false: HTML, MD, and CSV files show rendered content in grid layout
-     */
     collapsed?: boolean;
     project?: Project;
-    isSingleItemGrid?: boolean; // New prop to detect single item in grid
-    standalone?: boolean; // New prop for minimal standalone styling
-    alignRight?: boolean; // New prop to control right alignment
+    isSingleItemGrid?: boolean;
+    standalone?: boolean;
+    alignRight?: boolean;
+    uploadStatus?: 'uploading' | 'ready' | 'error';
 }
-
-// Cache fetched content between mounts to avoid duplicate fetches
-// Content caches for file attachment optimization
-// const contentCache = new Map<string, string>();
-// const errorCache = new Set<string>();
 
 export function FileAttachment({
     filepath,
@@ -216,7 +207,8 @@ export function FileAttachment({
     project,
     isSingleItemGrid = false,
     standalone = false,
-    alignRight = false
+    alignRight = false,
+    uploadStatus
 }: FileAttachmentProps) {
     // Authentication 
     const { session } = useAuth();
@@ -464,16 +456,11 @@ export function FileAttachment({
         }
     }
 
-    // Images are displayed with their natural aspect ratio
     if (isImage && showPreview) {
-        // Use custom height for images if provided through CSS variable
         const imageHeight = isGridLayout
             ? (customStyle as any)['--attachment-height'] as string
             : '54px';
 
-        // No separate loading state needed - we handle it inline in the main render
-
-        // Check for sandbox deleted state
         if (isSandboxDeleted) {
             return (
                 <div
@@ -558,31 +545,41 @@ export function FileAttachment({
 
         return (
             <button
-                onClick={handleClick}
+                onClick={uploadStatus === 'uploading' ? undefined : handleClick}
                 className={cn(
-                    "group relative rounded-2xl cursor-pointer",
+                    "group relative rounded-2xl",
+                    uploadStatus === 'uploading' ? "cursor-default" : "cursor-pointer",
                     "border border-black/10 dark:border-white/10",
                     "bg-black/5 dark:bg-black/20",
-                    "p-0 overflow-hidden", // No padding, content touches borders
-                    "flex items-center justify-center", // Center the image
-                    // For grid, full width with auto height; for inline, fixed height
+                    "p-0 overflow-hidden",
+                    "flex items-center justify-center",
                     isGridLayout ? "w-full" : "h-[54px] inline-block",
                     className
                 )}
                 style={{
                     ...customStyle,
-                    // Only apply minHeight if image hasn't loaded yet (prevents thin line)
                     minHeight: isGridLayout && !imageLoaded ? '200px' : undefined,
-                    // Use aspect ratio placeholder until image loads
                     aspectRatio: isGridLayout && !imageLoaded ? '4/3' : undefined,
                     height: isGridLayout ? 'auto' : customStyle?.height
                 }}
-                title={filename}
+                title={uploadStatus === 'uploading' ? 'Uploading...' : filename}
             >
+                {/* Upload progress overlay */}
+                {uploadStatus === 'uploading' && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-20">
+                        <Loader2 className="h-5 w-5 text-white animate-spin" />
+                    </div>
+                )}
+                {/* Upload error overlay */}
+                {uploadStatus === 'error' && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-red-500/20 z-20">
+                        <div className="text-xs text-red-500 font-medium bg-background/90 px-2 py-1 rounded">Failed</div>
+                    </div>
+                )}
                 {/* Show loading spinner overlay while image is loading */}
-                {!imageLoaded && isGridLayout && (
+                {!imageLoaded && isGridLayout && !uploadStatus && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-black/5 to-black/10 dark:from-white/5 dark:to-white/10 z-10">
-                        <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                        <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
                         {imageRetryAttempt > 0 && (
                             <div className="text-xs text-muted-foreground bg-background/80 px-2 py-1 rounded">
                                 Retrying... (attempt {imageRetryAttempt + 1})
@@ -924,32 +921,57 @@ export function FileAttachment({
         </div>
     ) : (
         <button
-            onClick={handleClick}
+            onClick={uploadStatus === 'uploading' ? undefined : handleClick}
             className={cn(
-                "group flex items-center rounded-xl transition-all duration-200 overflow-hidden cursor-pointer",
+                "group flex items-center rounded-xl transition-all duration-200 overflow-hidden",
+                uploadStatus === 'uploading' ? "cursor-default" : "cursor-pointer",
                 "border border-black/10 dark:border-white/10",
-                "bg-sidebar hover:bg-accent/5",
+                uploadStatus === 'error' 
+                    ? "bg-red-500/5 border-red-500/20" 
+                    : "bg-sidebar hover:bg-accent/5",
                 "text-left",
                 "h-[54px] w-fit min-w-[200px] max-w-[300px]",
                 className
             )}
             style={safeStyle}
-            title={filename}
+            title={uploadStatus === 'uploading' ? 'Uploading...' : uploadStatus === 'error' ? 'Upload failed' : filename}
         >
-            {/* Icon container */}
-            <div className="w-[54px] h-full flex items-center justify-center flex-shrink-0 bg-black/5 dark:bg-white/5">
-                <IconComponent className="h-5 w-5 text-black/60 dark:text-white/60" />
+            {/* Icon container with upload progress overlay */}
+            <div className="w-[54px] h-full flex items-center justify-center flex-shrink-0 bg-black/5 dark:bg-white/5 relative">
+                <IconComponent className={cn(
+                    "h-5 w-5",
+                    uploadStatus === 'error' ? "text-red-500" : "text-black/60 dark:text-white/60"
+                )} />
+                {uploadStatus === 'uploading' && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                        <Loader2 className="h-4 w-4 text-white animate-spin" />
+                    </div>
+                )}
             </div>
 
             {/* Text content */}
             <div className="flex-1 min-w-0 flex flex-col justify-center px-3 py-2 overflow-hidden">
-                <div className="text-sm font-medium text-foreground truncate">
+                <div className={cn(
+                    "text-sm font-medium truncate",
+                    uploadStatus === 'error' ? "text-red-500" : "text-foreground"
+                )}>
                     {filename}
                 </div>
-                <div className="text-xs text-muted-foreground flex items-center gap-1 truncate">
-                    <span className="truncate">{typeLabel}</span>
-                    <span className="flex-shrink-0">·</span>
-                    <span className="flex-shrink-0">{fileSize}</span>
+                <div className={cn(
+                    "text-xs flex items-center gap-1 truncate",
+                    uploadStatus === 'error' ? "text-red-500/70" : "text-muted-foreground"
+                )}>
+                    {uploadStatus === 'uploading' ? (
+                        <span className="truncate">Uploading...</span>
+                    ) : uploadStatus === 'error' ? (
+                        <span className="truncate">Upload failed</span>
+                    ) : (
+                        <>
+                            <span className="truncate">{typeLabel}</span>
+                            <span className="flex-shrink-0">·</span>
+                            <span className="flex-shrink-0">{fileSize}</span>
+                        </>
+                    )}
                 </div>
             </div>
         </button>

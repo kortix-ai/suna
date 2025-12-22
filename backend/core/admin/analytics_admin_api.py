@@ -1194,15 +1194,29 @@ async def get_conversion_funnel(
 # ARR WEEKLY ACTUALS ENDPOINTS
 # ============================================================================
 
+class FieldOverrides(BaseModel):
+    """Tracks which fields have been manually overridden by admin.
+    When a field is True, its value should NOT be overwritten by Stripe/API data."""
+    views: Optional[bool] = False
+    signups: Optional[bool] = False
+    new_paid: Optional[bool] = False
+    churn: Optional[bool] = False
+    subscribers: Optional[bool] = False
+    mrr: Optional[bool] = False
+    arr: Optional[bool] = False
+
+
 class WeeklyActualData(BaseModel):
     week_number: int
     week_start_date: str  # YYYY-MM-DD
     views: Optional[int] = 0
     signups: Optional[int] = 0
     new_paid: Optional[int] = 0
+    churn: Optional[int] = 0
     subscribers: Optional[int] = 0
     mrr: Optional[float] = 0
     arr: Optional[float] = 0
+    overrides: Optional[FieldOverrides] = None  # Tracks which fields are locked
 
 
 class WeeklyActualsResponse(BaseModel):
@@ -1610,15 +1624,29 @@ async def get_arr_weekly_actuals(
         
         actuals = {}
         for row in result.data or []:
+            # Parse overrides from JSONB
+            overrides_data = row.get('overrides') or {}
+            overrides = FieldOverrides(
+                views=overrides_data.get('views', False),
+                signups=overrides_data.get('signups', False),
+                new_paid=overrides_data.get('new_paid', False),
+                churn=overrides_data.get('churn', False),
+                subscribers=overrides_data.get('subscribers', False),
+                mrr=overrides_data.get('mrr', False),
+                arr=overrides_data.get('arr', False),
+            )
+            
             actuals[row['week_number']] = WeeklyActualData(
                 week_number=row['week_number'],
                 week_start_date=row['week_start_date'],
                 views=row.get('views', 0) or 0,
                 signups=row.get('signups', 0) or 0,
                 new_paid=row.get('new_paid', 0) or 0,
+                churn=row.get('churn', 0) or 0,
                 subscribers=row.get('subscribers', 0) or 0,
                 mrr=float(row.get('mrr', 0) or 0),
                 arr=float(row.get('arr', 0) or 0),
+                overrides=overrides,
             )
         
         return WeeklyActualsResponse(actuals=actuals)
@@ -1634,21 +1662,52 @@ async def update_arr_weekly_actual(
     data: WeeklyActualData,
     admin: dict = Depends(require_super_admin)
 ) -> WeeklyActualData:
-    """Update or create ARR weekly actual data for a specific week. Super admin only."""
+    """Update or create ARR weekly actual data for a specific week. Super admin only.
+    
+    When a value is explicitly provided (non-zero), it will be marked as overridden
+    and will NOT be replaced by Stripe/API data on subsequent fetches.
+    """
     try:
         db = DBConnection()
         client = await db.client
         
-        # Upsert the data
+        # Get existing overrides (if any) to merge with new ones
+        existing_result = await client.from_('arr_weekly_actuals').select('overrides').eq('week_number', week_number).execute()
+        existing_overrides = {}
+        if existing_result.data and len(existing_result.data) > 0:
+            existing_overrides = existing_result.data[0].get('overrides') or {}
+        
+        # Merge overrides: if data.overrides is provided, use it; otherwise keep existing
+        new_overrides = existing_overrides.copy()
+        if data.overrides:
+            # Update overrides from the request
+            if data.overrides.views is not None:
+                new_overrides['views'] = data.overrides.views
+            if data.overrides.signups is not None:
+                new_overrides['signups'] = data.overrides.signups
+            if data.overrides.new_paid is not None:
+                new_overrides['new_paid'] = data.overrides.new_paid
+            if data.overrides.churn is not None:
+                new_overrides['churn'] = data.overrides.churn
+            if data.overrides.subscribers is not None:
+                new_overrides['subscribers'] = data.overrides.subscribers
+            if data.overrides.mrr is not None:
+                new_overrides['mrr'] = data.overrides.mrr
+            if data.overrides.arr is not None:
+                new_overrides['arr'] = data.overrides.arr
+        
+        # Upsert the data including overrides
         upsert_data = {
             'week_number': week_number,
             'week_start_date': data.week_start_date,
             'views': data.views or 0,
             'signups': data.signups or 0,
             'new_paid': data.new_paid or 0,
+            'churn': data.churn or 0,
             'subscribers': data.subscribers or 0,
             'mrr': data.mrr or 0,
             'arr': data.arr or 0,
+            'overrides': new_overrides,
         }
         
         result = await client.from_('arr_weekly_actuals').upsert(
@@ -1656,6 +1715,8 @@ async def update_arr_weekly_actual(
             on_conflict='week_number'
         ).execute()
         
+        # Return with updated overrides
+        data.overrides = FieldOverrides(**new_overrides)
         return data
         
     except Exception as e:
@@ -1680,6 +1741,62 @@ async def delete_arr_weekly_actual(
     except Exception as e:
         logger.error(f"Failed to delete ARR weekly actual: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete ARR weekly actual")
+
+
+class ToggleOverrideRequest(BaseModel):
+    field: str  # One of: views, signups, new_paid, subscribers, mrr, arr
+    override: bool  # True to lock, False to unlock
+
+
+@router.patch("/arr/actuals/{week_number}/override")
+async def toggle_field_override(
+    week_number: int,
+    request: ToggleOverrideRequest,
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """Toggle the override status for a specific field in a week.
+    
+    When override is True, the field value is 'locked' and won't be overwritten by Stripe data.
+    When override is False, the field is 'unlocked' and will use Stripe data instead.
+    Super admin only.
+    """
+    try:
+        valid_fields = ['views', 'signups', 'new_paid', 'churn', 'subscribers', 'mrr', 'arr']
+        if request.field not in valid_fields:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid field. Must be one of: {', '.join(valid_fields)}"
+            )
+        
+        db = DBConnection()
+        client = await db.client
+        
+        # Get existing record
+        existing_result = await client.from_('arr_weekly_actuals').select('overrides').eq('week_number', week_number).execute()
+        
+        if not existing_result.data or len(existing_result.data) == 0:
+            raise HTTPException(status_code=404, detail=f"Week {week_number} not found")
+        
+        # Update overrides
+        overrides = existing_result.data[0].get('overrides') or {}
+        overrides[request.field] = request.override
+        
+        await client.from_('arr_weekly_actuals').update({
+            'overrides': overrides
+        }).eq('week_number', week_number).execute()
+        
+        return {
+            "week_number": week_number,
+            "field": request.field,
+            "override": request.override,
+            "message": f"Field '{request.field}' is now {'locked (manual)' if request.override else 'unlocked (sync from Stripe)'}"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to toggle field override: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to toggle field override")
 
 
 # ============================================================================
@@ -1768,3 +1885,216 @@ async def update_arr_simulator_config(
     except Exception as e:
         logger.error(f"Failed to update ARR simulator config: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update ARR simulator config")
+
+
+# ============================================================================
+# MONTHLY ACTUALS (Direct monthly editing with override support)
+# ============================================================================
+
+class MonthlyActualData(BaseModel):
+    month_index: int  # 0=Dec 2024, 1=Jan 2025, etc.
+    month_name: str  # 'Dec 2024', 'Jan 2025', etc.
+    views: Optional[int] = 0
+    signups: Optional[int] = 0
+    new_paid: Optional[int] = 0
+    churn: Optional[int] = 0
+    subscribers: Optional[int] = 0
+    mrr: Optional[float] = 0
+    arr: Optional[float] = 0
+    overrides: Optional[FieldOverrides] = None  # Tracks which fields are locked
+
+
+class MonthlyActualsResponse(BaseModel):
+    actuals: Dict[int, MonthlyActualData]
+
+
+@router.get("/arr/monthly-actuals")
+async def get_arr_monthly_actuals(
+    admin: dict = Depends(require_super_admin)
+) -> MonthlyActualsResponse:
+    """Get all ARR monthly actuals for the simulator. Super admin only."""
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        result = await client.from_('arr_monthly_actuals').select('*').order('month_index').execute()
+        
+        actuals = {}
+        for row in result.data or []:
+            # Parse overrides from JSONB
+            overrides_data = row.get('overrides') or {}
+            overrides = FieldOverrides(
+                views=overrides_data.get('views', False),
+                signups=overrides_data.get('signups', False),
+                new_paid=overrides_data.get('new_paid', False),
+                churn=overrides_data.get('churn', False),
+                subscribers=overrides_data.get('subscribers', False),
+                mrr=overrides_data.get('mrr', False),
+                arr=overrides_data.get('arr', False),
+            )
+            
+            actuals[row['month_index']] = MonthlyActualData(
+                month_index=row['month_index'],
+                month_name=row.get('month_name', ''),
+                views=row.get('views', 0) or 0,
+                signups=row.get('signups', 0) or 0,
+                new_paid=row.get('new_paid', 0) or 0,
+                churn=row.get('churn', 0) or 0,
+                subscribers=row.get('subscribers', 0) or 0,
+                mrr=float(row.get('mrr', 0) or 0),
+                arr=float(row.get('arr', 0) or 0),
+                overrides=overrides,
+            )
+        
+        return MonthlyActualsResponse(actuals=actuals)
+        
+    except Exception as e:
+        logger.error(f"Failed to get ARR monthly actuals: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get ARR monthly actuals")
+
+
+@router.put("/arr/monthly-actuals/{month_index}")
+async def update_arr_monthly_actual(
+    month_index: int,
+    data: MonthlyActualData,
+    admin: dict = Depends(require_super_admin)
+) -> MonthlyActualData:
+    """Update or create ARR monthly actual data for a specific month. Super admin only.
+    
+    When a value is explicitly provided (non-zero), it will be marked as overridden
+    and will NOT be replaced by auto-calculated data on subsequent fetches.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        # Get existing overrides (if any) to merge with new ones
+        existing_result = await client.from_('arr_monthly_actuals').select('overrides').eq('month_index', month_index).execute()
+        existing_overrides = {}
+        if existing_result.data and len(existing_result.data) > 0:
+            existing_overrides = existing_result.data[0].get('overrides') or {}
+        
+        # Merge overrides: if data.overrides is provided, use it; otherwise keep existing
+        new_overrides = existing_overrides.copy()
+        if data.overrides:
+            # Update overrides from the request
+            if data.overrides.views is not None:
+                new_overrides['views'] = data.overrides.views
+            if data.overrides.signups is not None:
+                new_overrides['signups'] = data.overrides.signups
+            if data.overrides.new_paid is not None:
+                new_overrides['new_paid'] = data.overrides.new_paid
+            if data.overrides.churn is not None:
+                new_overrides['churn'] = data.overrides.churn
+            if data.overrides.subscribers is not None:
+                new_overrides['subscribers'] = data.overrides.subscribers
+            if data.overrides.mrr is not None:
+                new_overrides['mrr'] = data.overrides.mrr
+            if data.overrides.arr is not None:
+                new_overrides['arr'] = data.overrides.arr
+        
+        # Upsert the data including overrides
+        upsert_data = {
+            'month_index': month_index,
+            'month_name': data.month_name,
+            'views': data.views or 0,
+            'signups': data.signups or 0,
+            'new_paid': data.new_paid or 0,
+            'churn': data.churn or 0,
+            'subscribers': data.subscribers or 0,
+            'mrr': data.mrr or 0,
+            'arr': data.arr or 0,
+            'overrides': new_overrides,
+        }
+        
+        await client.from_('arr_monthly_actuals').upsert(
+            upsert_data, 
+            on_conflict='month_index'
+        ).execute()
+        
+        return MonthlyActualData(
+            month_index=month_index,
+            month_name=data.month_name,
+            views=data.views or 0,
+            signups=data.signups or 0,
+            new_paid=data.new_paid or 0,
+            churn=data.churn or 0,
+            subscribers=data.subscribers or 0,
+            mrr=data.mrr or 0,
+            arr=data.arr or 0,
+            overrides=FieldOverrides(**new_overrides) if new_overrides else None,
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to update ARR monthly actual: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update ARR monthly actual")
+
+
+@router.delete("/arr/monthly-actuals/{month_index}")
+async def delete_arr_monthly_actual(
+    month_index: int,
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, str]:
+    """Delete ARR monthly actual for a specific month. Super admin only."""
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        await client.from_('arr_monthly_actuals').delete().eq('month_index', month_index).execute()
+        
+        return {"message": f"Month {month_index} actual data deleted"}
+        
+    except Exception as e:
+        logger.error(f"Failed to delete ARR monthly actual: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete ARR monthly actual")
+
+
+@router.patch("/arr/monthly-actuals/{month_index}/override")
+async def toggle_monthly_field_override(
+    month_index: int,
+    request: ToggleOverrideRequest,
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """Toggle the override status for a specific field in a month.
+    
+    When override is True, the field value is 'locked' and won't be overwritten by calculated data.
+    When override is False, the field is 'unlocked' and will use calculated data instead.
+    Super admin only.
+    """
+    try:
+        valid_fields = ['views', 'signups', 'new_paid', 'churn', 'subscribers', 'mrr', 'arr']
+        if request.field not in valid_fields:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid field. Must be one of: {', '.join(valid_fields)}"
+            )
+        
+        db = DBConnection()
+        client = await db.client
+        
+        # Get existing record
+        existing_result = await client.from_('arr_monthly_actuals').select('overrides').eq('month_index', month_index).execute()
+        
+        if not existing_result.data or len(existing_result.data) == 0:
+            raise HTTPException(status_code=404, detail=f"Month {month_index} not found")
+        
+        # Update overrides
+        overrides = existing_result.data[0].get('overrides') or {}
+        overrides[request.field] = request.override
+        
+        await client.from_('arr_monthly_actuals').update({
+            'overrides': overrides
+        }).eq('month_index', month_index).execute()
+        
+        return {
+            "month_index": month_index,
+            "field": request.field,
+            "override": request.override,
+            "message": f"Field '{request.field}' is now {'locked (manual)' if request.override else 'unlocked (auto-calculated)'}"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to toggle monthly field override: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to toggle monthly field override")

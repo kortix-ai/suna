@@ -50,19 +50,28 @@ If relevant context seems missing, ask a clarifying question.
         
         content = await PromptManager._append_jit_mcp_info(content, mcp_loader)
         
-        # Fetch user context (locale, username) in parallel with memory
+        # Fetch user context (locale, username), memory, and file context in parallel
         user_context_task = PromptManager._fetch_user_context_data(user_id, client)
         memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
+        file_task = PromptManager._fetch_file_context(thread_id)
         
-        user_context_data, memory_data = await asyncio.gather(user_context_task, memory_task)
+        user_context_data, memory_data, file_data = await asyncio.gather(
+            user_context_task, memory_task, file_task
+        )
         
         if user_context_data:
             content += user_context_data
         
         system_message = {"role": "system", "content": content}
         
+        context_parts = []
         if memory_data:
-            return system_message, {"role": "user", "content": f"[CONTEXT - User Memory]\n{memory_data}\n[END CONTEXT]"}
+            context_parts.append(f"[CONTEXT - User Memory]\n{memory_data}\n[END CONTEXT]")
+        if file_data:
+            context_parts.append(f"[CONTEXT - Attached Files]\n{file_data}\n[END CONTEXT]")
+        
+        if context_parts:
+            return system_message, {"role": "user", "content": "\n\n".join(context_parts)}
         
         return system_message, None
     
@@ -89,13 +98,14 @@ If relevant context seems missing, ask a clarifying question.
         kb_task = PromptManager._fetch_knowledge_base(agent_config, client)
         user_context_task = PromptManager._fetch_user_context_data(user_id, client)
         memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
+        file_task = PromptManager._fetch_file_context(thread_id)
         
         system_content = PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance)
         system_content = await PromptManager._append_jit_mcp_info(system_content, mcp_loader)
         system_content = PromptManager._append_xml_tool_calling_instructions(system_content, xml_tool_calling, tool_registry)
         system_content = PromptManager._append_datetime_info(system_content)
         
-        kb_data, user_context_data, memory_data = await asyncio.gather(kb_task, user_context_task, memory_task)
+        kb_data, user_context_data, memory_data, file_data = await asyncio.gather(kb_task, user_context_task, memory_task, file_task)
         
         if kb_data:
             system_content += kb_data
@@ -107,8 +117,14 @@ If relevant context seems missing, ask a clarifying question.
         
         system_message = {"role": "system", "content": system_content}
         
+        context_parts = []
         if memory_data:
-            return system_message, {"role": "user", "content": f"[CONTEXT - User Memory]\n{memory_data}\n[END CONTEXT]"}
+            context_parts.append(f"[CONTEXT - User Memory]\n{memory_data}\n[END CONTEXT]")
+        if file_data:
+            context_parts.append(f"[CONTEXT - Attached Files]\n{file_data}\n[END CONTEXT]")
+        
+        if context_parts:
+            return system_message, {"role": "user", "content": "\n\n".join(context_parts)}
         
         return system_message, None
     
@@ -567,6 +583,24 @@ Example of correct tool call format (multiple invokes in one block):
         except Exception as e:
             logger.warning(f"Failed to fetch user memories for {user_id}: {e}")
             return None
+    
+    @staticmethod
+    async def _fetch_file_context(thread_id: Optional[str]) -> Optional[str]:
+        if not thread_id:
+            return None
+        
+        try:
+            from core.agent_runs import get_cached_file_context, format_file_context_for_agent
+            
+            files = await get_cached_file_context(thread_id)
+            if files:
+                formatted = format_file_context_for_agent(files)
+                logger.info(f"Retrieved {len(files)} cached file(s) for thread {thread_id}")
+                return formatted
+        except Exception as e:
+            logger.warning(f"Failed to fetch file context for {thread_id}: {e}")
+        
+        return None
     
     @staticmethod
     def _log_prompt_stats(system_content: str, use_dynamic_tools: bool):
