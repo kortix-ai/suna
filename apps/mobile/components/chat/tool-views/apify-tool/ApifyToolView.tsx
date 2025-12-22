@@ -155,6 +155,8 @@ export function ApifyToolView({
     ? detailsData.actualIsSuccess
     : viewType === 'run'
     ? runData.actualIsSuccess
+    : viewType === 'approval'
+    ? (approvalData?.actualIsSuccess ?? isSuccess)
     : resultsData.actualIsSuccess;
 
   // Extract input parameters from toolCall

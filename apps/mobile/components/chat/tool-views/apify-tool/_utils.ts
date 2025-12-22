@@ -145,6 +145,14 @@ export function extractApifySearchData(
 
     if (toolResult?.output) {
       output = toolResult.output;
+      // Parse JSON string if needed
+      if (typeof output === 'string') {
+        try {
+          output = JSON.parse(output);
+        } catch {
+          // If parsing fails, keep as string
+        }
+      }
       if (toolResult.success !== undefined) {
         actualIsSuccess = toolResult.success;
       }
@@ -210,6 +218,14 @@ export function extractApifyActorDetails(
 
     if (toolResult?.output) {
       output = toolResult.output;
+      // Parse JSON string if needed
+      if (typeof output === 'string') {
+        try {
+          output = JSON.parse(output);
+        } catch {
+          // If parsing fails, keep as string
+        }
+      }
       if (toolResult.success !== undefined) {
         actualIsSuccess = toolResult.success;
       }
@@ -306,6 +322,14 @@ export function extractApifyRunData(
 
     if (toolResult?.output) {
       output = toolResult.output;
+      // Parse JSON string if needed
+      if (typeof output === 'string') {
+        try {
+          output = JSON.parse(output);
+        } catch {
+          // If parsing fails, keep as string
+        }
+      }
       if (toolResult.success !== undefined) {
         actualIsSuccess = toolResult.success;
       }
@@ -387,6 +411,14 @@ export function extractApifyApprovalData(
 
     if (toolResult?.output) {
       output = toolResult.output;
+      // Parse JSON string if needed
+      if (typeof output === 'string') {
+        try {
+          output = JSON.parse(output);
+        } catch {
+          // If parsing fails, keep as string
+        }
+      }
       if (toolResult.success !== undefined) {
         actualIsSuccess = toolResult.success;
       }
@@ -462,6 +494,14 @@ export function extractApifyRunResultsData(
 
     if (toolResult?.output) {
       output = toolResult.output;
+      // Parse JSON string if needed
+      if (typeof output === 'string') {
+        try {
+          output = JSON.parse(output);
+        } catch {
+          // If parsing fails, keep as string
+        }
+      }
       if (toolResult.success !== undefined) {
         actualIsSuccess = toolResult.success;
       }

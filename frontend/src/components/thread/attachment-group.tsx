@@ -4,7 +4,7 @@ import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/comp
 import { FileAttachment } from './file-attachment';
 import { cn } from '@/lib/utils';
 import { Project } from '@/lib/api/threads';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -85,6 +85,63 @@ export function AttachmentGroup({
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
 
+    // Deduplicate attachments if they are strings - do this before any conditional rendering
+    // Compute this before early return so hooks can use it
+    const uniqueFiles = (!files || files.length === 0)
+        ? []
+        : (typeof files[0] === 'string'
+            ? [...new Set(files)] as string[]
+            : files);
+
+    // Compute carousel navigation values before early return (safe even with no files)
+    const canGoPrev = currentIndex > 0;
+    const canGoNext = currentIndex < uniqueFiles.length - 1;
+    
+    const handlePrev = useCallback(() => {
+        setCurrentIndex(prev => {
+            if (prev > 0) {
+                return prev - 1;
+            }
+            return prev;
+        });
+    }, []);
+    
+    const handleNext = useCallback(() => {
+        setCurrentIndex(prev => {
+            if (prev < uniqueFiles.length - 1) {
+                return prev + 1;
+            }
+            return prev;
+        });
+    }, [uniqueFiles.length]);
+
+    // Keyboard navigation for carousel - MUST be before early return
+    useEffect(() => {
+        if (layout !== 'grid' || uniqueFiles.length < 2) return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Only handle if not typing in an input/textarea
+            if (
+                e.target instanceof HTMLInputElement ||
+                e.target instanceof HTMLTextAreaElement ||
+                (e.target instanceof HTMLElement && e.target.isContentEditable)
+            ) {
+                return;
+            }
+
+            if (e.key === 'ArrowLeft' && canGoPrev) {
+                e.preventDefault();
+                handlePrev();
+            } else if (e.key === 'ArrowRight' && canGoNext) {
+                e.preventDefault();
+                handleNext();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [layout, uniqueFiles.length, currentIndex, canGoPrev, canGoNext, handlePrev, handleNext]);
+
     // Return early with empty content if no files, but after hook initialization
     if (!files || files.length === 0) {
         return (
@@ -96,11 +153,6 @@ export function AttachmentGroup({
             />
         );
     }
-
-    // Deduplicate attachments if they are strings - do this before any conditional rendering
-    const uniqueFiles = typeof files[0] === 'string'
-        ? [...new Set(files)] as string[]
-        : files;
 
     // Get filepath from either string or UploadedFile
     const getFilePath = (file: string | UploadedFile): string => {
@@ -221,48 +273,6 @@ export function AttachmentGroup({
     
     // Determine if we should use carousel (3+ attachments for better UX)
     const shouldUseCarousel = layout === 'grid' && uniqueFiles.length >= 2;
-    
-    const canGoPrev = currentIndex > 0;
-    const canGoNext = currentIndex < uniqueFiles.length - 1;
-    
-    const handlePrev = () => {
-        if (canGoPrev) {
-            setCurrentIndex(prev => prev - 1);
-        }
-    };
-    
-    const handleNext = () => {
-        if (canGoNext) {
-            setCurrentIndex(prev => prev + 1);
-        }
-    };
-
-    // Keyboard navigation for carousel
-    useEffect(() => {
-        if (layout !== 'grid' || uniqueFiles.length < 2) return;
-
-        const handleKeyDown = (e: KeyboardEvent) => {
-            // Only handle if not typing in an input/textarea
-            if (
-                e.target instanceof HTMLInputElement ||
-                e.target instanceof HTMLTextAreaElement ||
-                (e.target instanceof HTMLElement && e.target.isContentEditable)
-            ) {
-                return;
-            }
-
-            if (e.key === 'ArrowLeft' && canGoPrev) {
-                e.preventDefault();
-                handlePrev();
-            } else if (e.key === 'ArrowRight' && canGoNext) {
-                e.preventDefault();
-                handleNext();
-            }
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [layout, uniqueFiles.length, currentIndex, canGoPrev, canGoNext]);
 
     // Now continue with the fully conditional rendering but with pre-computed values
     const renderContent = () => {
