@@ -71,6 +71,7 @@ export const unifiedAgentStart = async (options: {
   threadId?: string;
   prompt?: string;
   files?: File[];
+  file_ids?: string[];
   model_name?: string;
   agent_id?: string;
 }): Promise<{ thread_id: string; agent_run_id: string; status: string }> => {
@@ -105,6 +106,12 @@ export const unifiedAgentStart = async (options: {
     if (options.files && options.files.length > 0) {
       options.files.forEach((file) => {
         formData.append('files', file);
+      });
+    }
+    
+    if (options.file_ids && options.file_ids.length > 0) {
+      options.file_ids.forEach((fileId) => {
+        formData.append('file_ids', fileId);
       });
     }
 

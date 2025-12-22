@@ -568,7 +568,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const handleSubmitMessage = useCallback(
     async (
       message: string,
-      options?: { model_name?: string },
+      options?: { model_name?: string; file_ids?: string[] },
     ) => {
       if (!message.trim() || isShared || !addUserMessageMutation || !startAgentMutation) return;
 
@@ -609,6 +609,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           options: {
             ...options,
             agent_id: selectedAgentId,
+            file_ids: options?.file_ids,
           },
         });
 

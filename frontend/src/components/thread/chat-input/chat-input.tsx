@@ -634,6 +634,7 @@ export interface ChatInputProps {
     options?: {
       model_name?: string;
       agent_id?: string;
+      file_ids?: string[];
     },
   ) => void;
   placeholder?: string;
@@ -1088,12 +1089,17 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       }
 
       const baseModelName = selectedModel ? getActualModelId(selectedModel) : undefined;
+      
+      const fileIds = currentUploadedFiles
+        .filter((f) => f.fileId && f.status === 'ready')
+        .map((f) => f.fileId!);
 
       posthog.capture("task_prompt_submitted", { message });
 
       onSubmit(message, {
         agent_id: selectedAgentId,
         model_name: baseModelName && baseModelName.trim() ? baseModelName.trim() : undefined,
+        file_ids: fileIds.length > 0 ? fileIds : undefined,
       });
 
       // Keep files visible with loading spinner - they'll be cleared when agent starts running

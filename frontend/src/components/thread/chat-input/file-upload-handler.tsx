@@ -398,13 +398,7 @@ const handleFiles = async (
   messages: any[] = [],
   queryClient?: any,
 ) => {
-  if (sandboxId) {
-    await uploadFiles(files, sandboxId, setUploadedFiles, setIsUploading, messages, queryClient, setPendingFiles);
-  } else if (projectId) {
-    await uploadFilesToProject(files, projectId, setUploadedFiles, setIsUploading, setPendingFiles);
-  } else {
-    await handleLocalFiles(files, setPendingFiles, setUploadedFiles, setIsUploading);
-  }
+  await handleLocalFiles(files, setPendingFiles, setUploadedFiles, setIsUploading);
 };
 
 interface FileUploadHandlerProps {
