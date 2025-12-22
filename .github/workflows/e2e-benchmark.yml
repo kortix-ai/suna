@@ -189,7 +189,23 @@ jobs:
               echo "- **Run ID**: \`$RUN_ID\`" >> $GITHUB_STEP_SUMMARY
               echo "- **Success Rate**: $SUCCESS/$TOTAL prompts" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "### Summary:" >> $GITHUB_STEP_SUMMARY
+              
+              # Add individual test results
+              echo "### 📋 Individual Test Results:" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              
+              # Loop through each result
+              echo "$RESULT" | jq -r '.results[]? | 
+                "#### \(.prompt_id)\n" +
+                "- **Status**: \(if .status == "completed" then "✅ Passed" else "❌ Failed" end)\n" +
+                "- **Duration**: \(.total_duration_ms)ms (cold start: \(.cold_start_ms)ms)\n" +
+                "- **Tool Calls**: \(.tool_calls_count) calls\n" +
+                "- **Expected Tools**: \(if .expected_tools_present then "✅ All present" else "⚠️ Missing: \(.missing_tools | join(", "))" end)\n" +
+                "- **Tools Used**: \(.tool_call_breakdown | to_entries | map("\(.key): \(.value)") | join(", "))\n"
+              ' 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "_(Could not parse individual results)_" >> $GITHUB_STEP_SUMMARY
+              
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### 📊 Overall Summary:" >> $GITHUB_STEP_SUMMARY
               echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
               echo "$RESULT" | jq '.summary' >> $GITHUB_STEP_SUMMARY
               echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
