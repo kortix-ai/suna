@@ -32,6 +32,9 @@ import { BorderBeam } from '@/components/ui/border-beam';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { DowngradeConfirmationDialog } from '@/components/billing/downgrade-confirmation-dialog';
+import { useUserCurrency } from '@/hooks/use-user-currency';
+import { useLanguage } from '@/hooks/use-language';
+import { convertPriceString, parsePriceAmount, formatPrice } from '@/lib/utils/currency';
 
 // Constants
 export const SUBSCRIPTION_PLANS = {
@@ -116,32 +119,38 @@ function PricingTier({
   const t = useTranslations('billing');
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
+  
+  // Add currency detection
+  const { currency, symbol } = useUserCurrency();
+  // Get locale for Stripe adaptive pricing
+  const { locale } = useLanguage();
 
-  const isFreeTier = tier.price === '$0';
+  const isFreeTier = tier.price === '$0' || tier.price === '€0' || tier.price === '0€';
   const effectiveBillingPeriod = isFreeTier ? 'monthly' : billingPeriod;
   const isYearly = effectiveBillingPeriod === 'yearly' || effectiveBillingPeriod === 'yearly_commitment';
 
-  // Determine the price to display based on billing period
+  // Determine the price to display based on billing period AND currency
   const getDisplayPrice = () => {
-    // For $0 plans, always show $0
+    // For $0 plans, always show 0 with user's currency symbol
     if (tier.price === '$0') {
-      return '$0';
+      return currency === 'EUR' ? '0€' : '$0';
     }
 
+    let basePrice = tier.price;
+
+    // Calculate price based on billing period
     if (effectiveBillingPeriod === 'yearly_commitment') {
-      const regularPrice = parseFloat(tier.price.slice(1));
+      const regularPrice = parsePriceAmount(tier.price);
       const discountedPrice = Math.round(regularPrice * 0.85);
-      console.log(`[${tier.name}] Yearly Commitment: $${regularPrice} -> $${discountedPrice}`);
-      return `$${discountedPrice}`;
+      basePrice = `$${discountedPrice}`;
     } else if (effectiveBillingPeriod === 'yearly' && tier.yearlyPrice) {
       const yearlyTotal = tier.yearlyPrice;
-      const monthlyEquivalent = Math.round(parseFloat(yearlyTotal.slice(1)) / 12);
-      console.log(`[${tier.name}] Yearly: ${yearlyTotal} (${monthlyEquivalent}/mo)`);
-      return `$${monthlyEquivalent}`;
+      const monthlyEquivalent = Math.round(parsePriceAmount(yearlyTotal) / 12);
+      basePrice = `$${monthlyEquivalent}`;
     }
 
-    console.log(`[${tier.name}] Monthly: ${tier.price}`);
-    return tier.price;
+    // Convert to user's currency
+    return convertPriceString(basePrice, currency);
   };
 
   const displayPrice = getDisplayPrice();
@@ -210,6 +219,7 @@ function PricingTier({
           success_url: `${window.location.origin}/dashboard?subscription=success`,
           cancel_url: returnUrl,
           commitment_type: commitmentType,
+          locale: locale, // Pass locale for Stripe adaptive pricing
         } as CreateCheckoutSessionRequest);
 
       // Handle checkout URL - support both checkout_url and url fields
@@ -341,7 +351,7 @@ function PricingTier({
 
   if (isAuthenticated) {
     // Free tier has no billing period, so it's always "current" if user is on free tier
-    const isFreeTierCard = tier.price === '$0' || tier.tierKey === 'free';
+    const isFreeTierCard = tier.price === '$0' || tier.price === '€0' || tier.price === '0€' || tier.tierKey === 'free';
     const isCurrentPlan = isSameTier && (isSameBillingPeriod || isFreeTierCard);
 
     if (isCurrentPlan) {
@@ -401,13 +411,13 @@ function PricingTier({
         : '$0';
       const selectedPriceString = displayPrice;
       const currentAmount =
-        currentPriceString === '$0'
+        parsePriceAmount(currentPriceString) === 0
           ? 0
-          : parseFloat(currentPriceString.replace(/[^\d.]/g, '') || '0') * 100;
+          : parsePriceAmount(currentPriceString) * 100;
       const targetAmount =
-        selectedPriceString === '$0'
+        parsePriceAmount(selectedPriceString) === 0
           ? 0
-          : parseFloat(selectedPriceString.replace(/[^\d.]/g, '') || '0') * 100;
+          : parsePriceAmount(selectedPriceString) * 100;
 
       const isSameTier = currentTier && currentTier.tierKey === tier.tierKey;
 
@@ -490,15 +500,17 @@ function PricingTier({
   const isUltraPlan = tier.name === 'Ultra';
   const isPaidTier = !isFreeTier;
 
-  // Calculate annual savings
+  // Calculate annual savings in user's currency
   const calculateAnnualSavings = () => {
     if (isFreeTier) return null;
-    // Calculate savings for yearly billing
+    
     if (effectiveBillingPeriod === 'yearly' || effectiveBillingPeriod === 'yearly_commitment') {
-      const monthlyPrice = parseFloat(tier.price.slice(1));
+      const monthlyPrice = parsePriceAmount(tier.price);
       const annualTotal = monthlyPrice * 12;
-      const yearlyPrice = parseFloat(tier.yearlyPrice?.slice(1) || '0');
+      const yearlyPrice = parsePriceAmount(tier.yearlyPrice || '0');
+      
       if (yearlyPrice === 0) return null;
+      
       const savings = annualTotal - yearlyPrice;
       return savings > 0 ? Math.round(savings) : null;
     }
@@ -565,12 +577,12 @@ function PricingTier({
             {/* Price inline on mobile */}
             <div className="flex items-baseline gap-1.5 sm:hidden">
               <span className="text-2xl font-medium">{displayPrice}</span>
-              {(effectiveBillingPeriod === 'yearly' || effectiveBillingPeriod === 'yearly_commitment') && displayPrice !== '$0' && (
+              {(effectiveBillingPeriod === 'yearly' || effectiveBillingPeriod === 'yearly_commitment') && !isFreeTier && (
                 <span className="text-[10px] line-through text-muted-foreground">
-                  ${tier.price.slice(1)}
+                  {formatPrice(parsePriceAmount(tier.price), currency)}
                 </span>
               )}
-              {displayPrice !== '$0' && (
+              {!isFreeTier && (
                 <span className="text-[10px] text-muted-foreground">/mo</span>
               )}
             </div>
@@ -578,7 +590,7 @@ function PricingTier({
           <div className="flex items-center gap-1.5 sm:gap-2">
             {annualSavings ? (
               <Badge className="bg-green-500/15 text-green-600 dark:text-green-400 border border-green-500/30 sm:border-2 text-[10px] sm:text-sm font-bold px-1.5 sm:px-3 py-0.5 sm:py-1.5 shadow-sm">
-                SAVE ${annualSavings}
+                SAVE {formatPrice(annualSavings, currency)}
               </Badge>
             ) : null}
             {isAuthenticated && statusBadge}
@@ -619,21 +631,23 @@ function PricingTier({
           <div className="flex flex-col min-h-[50px] justify-center min-w-[120px]">
             <div className="flex items-baseline gap-2">
               <PriceDisplay price={displayPrice} isCompact={insideDialog} />
-              {(effectiveBillingPeriod === 'yearly' || effectiveBillingPeriod === 'yearly_commitment') && displayPrice !== '$0' && (
+              {(effectiveBillingPeriod === 'yearly' || effectiveBillingPeriod === 'yearly_commitment') && !isFreeTier && (
                 <span className="text-xs line-through text-muted-foreground">
-                  ${tier.price.slice(1)}
+                  {formatPrice(parsePriceAmount(tier.price), currency)}
                 </span>
               )}
             </div>
             <div className="h-[18px] flex items-center mt-1">
-              {effectiveBillingPeriod === 'yearly_commitment' && displayPrice !== '$0' ? (
+              {effectiveBillingPeriod === 'yearly_commitment' && !isFreeTier ? (
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-muted-foreground">{t('perMonth')}</span>
                   <Badge variant="secondary" className="text-[10px] px-1.5 py-0">12mo</Badge>
                 </div>
-              ) : effectiveBillingPeriod === 'yearly' && tier.yearlyPrice && displayPrice !== '$0' ? (
-                <span className="text-xs text-muted-foreground">{tier.yearlyPrice} billed annually</span>
-              ) : displayPrice !== '$0' ? (
+              ) : effectiveBillingPeriod === 'yearly' && tier.yearlyPrice && !isFreeTier ? (
+                <span className="text-xs text-muted-foreground">
+                  {convertPriceString(tier.yearlyPrice, currency)} billed annually
+                </span>
+              ) : !isFreeTier ? (
                 <span className="text-xs text-muted-foreground">{t('perMonth')}</span>
               ) : null}
             </div>
@@ -668,7 +682,7 @@ function PricingTier({
                 "text-xs transition-colors",
                 isYearly ? "text-foreground font-medium" : "text-muted-foreground"
               )}>Annual</span>
-              {effectiveBillingPeriod === 'yearly_commitment' && displayPrice !== '$0' && (
+              {effectiveBillingPeriod === 'yearly_commitment' && !isFreeTier && (
                 <Badge variant="secondary" className="text-[9px] px-1.5 py-0 ml-1">12mo</Badge>
               )}
             </div>
@@ -950,6 +964,9 @@ export function PricingSection({
   const { user } = useAuth();
   const isUserAuthenticated = !!user;
   const queryClient = useQueryClient();
+  
+  // Add currency detection at top level
+  const { currency, symbol } = useUserCurrency();
 
   const { data: accountState, isLoading: isFetchingPlan, error: subscriptionQueryError, refetch: refetchSubscription } = useAccountState({ enabled: isUserAuthenticated });
 
@@ -1005,20 +1022,6 @@ export function PricingSection({
   };
 
   const currentBillingPeriod = getCurrentBillingPeriod();
-
-  /**
-   * Gets the default billing period to display in the pricing section.
-   * Defaults to 'yearly' for new users, or uses the current subscription's billing period.
-   */
-  const getDefaultBillingPeriod = useCallback((): 'monthly' | 'yearly' | 'yearly_commitment' => {
-    // If user has an active subscription, use their current billing period
-    if (currentBillingPeriod) {
-      return currentBillingPeriod;
-    }
-    
-    // Default to yearly for all users (authenticated or not)
-    return 'yearly';
-  }, [currentBillingPeriod]);
 
   const [planLoadingStates, setPlanLoadingStates] = useState<Record<string, boolean>>({});
   const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
@@ -1132,7 +1135,7 @@ export function PricingSection({
                   >
                     <TierBadge planName={tier.name} size="sm" variant="default" />
                     {tier.price && (
-                      <span className="opacity-70">{tier.price}/mo</span>
+                      <span className="opacity-70">{convertPriceString(tier.price, currency)}/mo</span>
                     )}
                   </button>
                 ))}
@@ -1207,7 +1210,7 @@ export function PricingSection({
                       )}
                     >
                       <TierBadge planName={tier.name} size="xs" variant="default" />
-                      <span className="opacity-80">{tier.price}</span>
+                      <span className="opacity-80">{convertPriceString(tier.price, currency)}</span>
                     </button>
                   ))}
                 </div>

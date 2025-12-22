@@ -15,6 +15,8 @@ import { Loader2, AlertCircle } from 'lucide-react';
 import { billingApi } from '@/lib/api/billing';
 import { toast } from 'sonner';
 import { formatCredits } from '@/lib/utils/credit-formatter';
+import { useUserCurrency } from '@/hooks/use-user-currency';
+import { formatPrice, getCurrencySymbol } from '@/lib/utils/currency';
 
 interface CreditPurchaseProps {
     open: boolean;
@@ -46,6 +48,8 @@ export function CreditPurchaseModal({
     canPurchase,
     onPurchaseComplete
 }: CreditPurchaseProps) {
+    const { currency } = useUserCurrency();
+    const symbol = getCurrencySymbol(currency);
     const [selectedPackage, setSelectedPackage] = useState<CreditPackage | null>(null);
     const [customAmount, setCustomAmount] = useState<string>('');
     const [isProcessing, setIsProcessing] = useState(false);
@@ -53,11 +57,11 @@ export function CreditPurchaseModal({
 
     const handlePurchase = async (amount: number) => {
         if (amount < 10) {
-            setError('Minimum purchase amount is $10');
+            setError(`Minimum purchase amount is ${formatPrice(10, currency)}`);
             return;
         }
         if (amount > 5000) {
-            setError('Maximum purchase amount is $5000');
+            setError(`Maximum purchase amount is ${formatPrice(5000, currency)}`);
             return;
         }
         setIsProcessing(true);
@@ -111,13 +115,13 @@ export function CreditPurchaseModal({
                     <DialogHeader>
                         <DialogTitle>Credits Not Available</DialogTitle>
                         <DialogDescription>
-                            Credit purchases are only available for users on the $200/month subscription tier.
+                            Credit purchases are only available for users on the {formatPrice(200, currency)}/month subscription tier.
                         </DialogDescription>
                     </DialogHeader>
                     <Alert>
                         <AlertCircle className="h-4 w-4" />
                         <AlertDescription>
-                            Please upgrade your subscription to the $200/month tier to unlock credit purchases for unlimited usage.
+                            Please upgrade your subscription to the {formatPrice(200, currency)}/month tier to unlock credit purchases for unlimited usage.
                         </AlertDescription>
                     </Alert>
                     <div className="flex justify-end">
@@ -159,7 +163,7 @@ export function CreditPurchaseModal({
                                     onClick={() => handlePackageSelect(pkg)}
                                 >
                                     <CardContent className="p-4 text-center">
-                                        <div className="text-xl font-medium">${pkg.amount}</div>
+                                        <div className="text-xl font-medium">{formatPrice(pkg.amount, currency)}</div>
                                         <div className="text-xs text-muted-foreground mt-1">Credits</div>
                                     </CardContent>
                                 </Card>
