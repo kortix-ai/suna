@@ -988,12 +988,14 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     }
   }, [arrActualsData]);
 
-  // Get display value for an input (pending edit or saved value)
+  // Get display value for an input (pending edit or saved value in shorthand)
   const getInputValue = (week: number, field: keyof WeeklyActual): string => {
     const key = `${week}-${field}`;
+    // If user is actively typing, show their raw input
     if (key in pendingEdits) return pendingEdits[key];
+    // Otherwise show saved value in shorthand format (25500 → "25.5k")
     const saved = actualData[week]?.[field];
-    return saved ? String(saved) : '';
+    return saved ? toShorthand(Number(saved)) : '';
   };
 
   // Handle input change (local state only)
@@ -1008,6 +1010,43 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     return field as keyof FieldOverrides;
   };
 
+  // Parse shorthand input: "25.5k" → 25500, "1.5M" → 1500000, "1000" → 1000
+  const parseShorthand = (input: string): number => {
+    if (!input || input.trim() === '') return 0;
+    const cleaned = input.trim().toLowerCase();
+    
+    // Check for million suffix (M or m)
+    if (cleaned.endsWith('m')) {
+      const num = parseFloat(cleaned.slice(0, -1));
+      return isNaN(num) ? 0 : Math.round(num * 1_000_000);
+    }
+    
+    // Check for thousand suffix (K or k)
+    if (cleaned.endsWith('k')) {
+      const num = parseFloat(cleaned.slice(0, -1));
+      return isNaN(num) ? 0 : Math.round(num * 1_000);
+    }
+    
+    // Plain number
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : Math.round(num);
+  };
+
+  // Format number to shorthand for display: 25500 → "25.5k", 1500000 → "1.5M"
+  const toShorthand = (value: number): string => {
+    if (value === 0) return '';
+    if (value >= 1_000_000) {
+      const m = value / 1_000_000;
+      // Show decimal only if needed, max 2 decimal places
+      return m % 1 === 0 ? `${m}M` : `${parseFloat(m.toFixed(2))}M`;
+    }
+    if (value >= 1_000) {
+      const k = value / 1_000;
+      return k % 1 === 0 ? `${k}k` : `${parseFloat(k.toFixed(2))}k`;
+    }
+    return String(value);
+  };
+
   // Save to API on blur - also marks the field as overridden (locked)
   const handleInputBlur = (week: number, field: keyof WeeklyActual) => {
     const key = `${week}-${field}`;
@@ -1019,7 +1058,8 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     const weekProjection = weeklyProjections.find(w => w.week === week);
     if (!weekProjection) return;
     
-    const value = Number(pendingValue) || 0;
+    // Parse shorthand: "25.5k" → 25500, "1M" → 1000000
+    const value = parseShorthand(pendingValue);
     const currentData = actualData[week] || { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0, overrides: {} };
     const updatedData = { ...currentData, [field]: value };
     
@@ -1150,11 +1190,14 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   }, [arrMonthlyActualsData]);
   
   // Get display value for monthly input
+  // Get display value for monthly input (shorthand format)
   const getMonthlyInputValue = (monthIndex: number, field: keyof MonthlyActual): string => {
     const key = `${monthIndex}-${field}`;
+    // If user is actively typing, show their raw input
     if (key in pendingMonthlyEdits) return pendingMonthlyEdits[key];
+    // Otherwise show saved value in shorthand format
     const saved = monthlyActualData[monthIndex]?.[field];
-    return saved ? String(saved) : '';
+    return saved ? toShorthand(Number(saved)) : '';
   };
   
   // Handle monthly input change
@@ -1164,13 +1207,15 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   };
   
   // Save monthly to API on blur
+  // Save monthly to API on blur (with shorthand parsing)
   const handleMonthlyInputBlur = (monthIndex: number, monthName: string, field: keyof MonthlyActual) => {
     const key = `${monthIndex}-${field}`;
     const pendingValue = pendingMonthlyEdits[key];
     
     if (pendingValue === undefined) return;
     
-    const value = Number(pendingValue) || 0;
+    // Parse shorthand: "25.5k" → 25500, "1M" → 1000000
+    const value = parseShorthand(pendingValue);
     const currentData = monthlyActualData[monthIndex] || { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0, overrides: {} };
     const updatedData = { ...currentData, [field]: value };
     
@@ -2152,11 +2197,12 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           )}
                           {isOverridden || `${month.monthIndex}-${fieldToOverrideKey(field as keyof WeeklyActual)}` in pendingMonthlyEdits ? (
                             <Input
-                              type="number"
+                              type="text"
                               value={getMonthlyInputValue(month.monthIndex, field)}
                               onChange={(e) => handleMonthlyInputChange(month.monthIndex, field, e.target.value)}
                               onBlur={() => handleMonthlyInputBlur(month.monthIndex, month.month, field)}
                               className={`w-20 h-7 text-right text-xs ${isOverridden ? 'border-amber-400' : ''}`}
+                              placeholder="—"
                             />
                           ) : (
                             <button
@@ -2467,11 +2513,11 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                             )}
                             {viewsOverridden ? (
                               <Input
-                                type="number"
+                                type="text"
                                 value={getInputValue(week.week, 'views')}
                                 onChange={(e) => handleInputChange(week.week, 'views', e.target.value)}
                                 onBlur={() => handleInputBlur(week.week, 'views')}
-                                className="h-5 w-14 text-[10px] text-right border-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="h-5 w-14 text-[10px] text-right border-amber-400"
                                 placeholder="—"
                               />
                             ) : (
@@ -2504,11 +2550,11 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                             )}
                             {signupsOverridden ? (
                               <Input
-                                type="number"
+                                type="text"
                                 value={getInputValue(week.week, 'signups')}
                                 onChange={(e) => handleInputChange(week.week, 'signups', e.target.value)}
                                 onBlur={() => handleInputBlur(week.week, 'signups')}
-                                className="h-5 w-14 text-[10px] text-right border-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="h-5 w-14 text-[10px] text-right border-amber-400"
                                 placeholder="—"
                               />
                             ) : (
@@ -2545,11 +2591,11 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                             )}
                             {newPaidOverridden ? (
                               <Input
-                                type="number"
+                                type="text"
                                 value={getInputValue(week.week, 'newPaid')}
                                 onChange={(e) => handleInputChange(week.week, 'newPaid', e.target.value)}
                                 onBlur={() => handleInputBlur(week.week, 'newPaid')}
-                                className="h-5 w-12 text-[10px] text-right border-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="h-5 w-12 text-[10px] text-right border-amber-400"
                                 placeholder="—"
                               />
                             ) : (
@@ -2585,11 +2631,11 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                             )}
                             {churnOverridden ? (
                               <Input
-                                type="number"
+                                type="text"
                                 value={getInputValue(week.week, 'churn')}
                                 onChange={(e) => handleInputChange(week.week, 'churn', e.target.value)}
                                 onBlur={() => handleInputBlur(week.week, 'churn')}
-                                className="h-5 w-12 text-[10px] text-right border-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="h-5 w-12 text-[10px] text-right border-amber-400"
                                 placeholder="—"
                               />
                             ) : (
@@ -2634,11 +2680,11 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                             )}
                             {subscribersOverridden ? (
                               <Input
-                                type="number"
+                                type="text"
                                 value={getInputValue(week.week, 'subscribers')}
                                 onChange={(e) => handleInputChange(week.week, 'subscribers', e.target.value)}
                                 onBlur={() => handleInputBlur(week.week, 'subscribers')}
-                                className="h-5 w-14 text-[10px] text-right border-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="h-5 w-14 text-[10px] text-right border-amber-400"
                                 placeholder="—"
                               />
                             ) : (
@@ -2668,14 +2714,23 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                                 <Lock className="h-3 w-3" />
                               </button>
                             )}
-                            <Input
-                              type="number"
-                              value={getInputValue(week.week, 'mrr')}
-                              onChange={(e) => handleInputChange(week.week, 'mrr', e.target.value)}
-                              onBlur={() => handleInputBlur(week.week, 'mrr')}
-                              className={`h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${isFieldOverridden(week.week, 'mrr') ? 'border-amber-400' : ''}`}
-                              placeholder="—"
-                            />
+                            {isFieldOverridden(week.week, 'mrr') ? (
+                              <Input
+                                type="text"
+                                value={getInputValue(week.week, 'mrr')}
+                                onChange={(e) => handleInputChange(week.week, 'mrr', e.target.value)}
+                                onBlur={() => handleInputBlur(week.week, 'mrr')}
+                                className="h-5 w-16 text-[10px] text-right border-amber-400"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => enableOverrideInstantly(week.week, 'mrr', actual.mrr || 0)}
+                                className={`text-[10px] font-medium hover:underline ${actual.mrr > 0 ? 'text-foreground' : 'text-muted-foreground'}`}
+                                title="Click to edit and override"
+                              >
+                                {actual.mrr > 0 ? toShorthand(actual.mrr) : '—'}
+                              </button>
+                            )}
                           </div>
                         </td>
                         <td className={`text-right p-1 text-[10px] ${mrrVar.color}`}>
@@ -2694,14 +2749,23 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                                 <Lock className="h-3 w-3" />
                               </button>
                             )}
-                            <Input
-                              type="number"
-                              value={getInputValue(week.week, 'arr')}
-                              onChange={(e) => handleInputChange(week.week, 'arr', e.target.value)}
-                              onBlur={() => handleInputBlur(week.week, 'arr')}
-                              className={`h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${isFieldOverridden(week.week, 'arr') ? 'border-amber-400' : ''}`}
-                              placeholder="—"
-                            />
+                            {isFieldOverridden(week.week, 'arr') ? (
+                              <Input
+                                type="text"
+                                value={getInputValue(week.week, 'arr')}
+                                onChange={(e) => handleInputChange(week.week, 'arr', e.target.value)}
+                                onBlur={() => handleInputBlur(week.week, 'arr')}
+                                className="h-5 w-16 text-[10px] text-right border-amber-400"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => enableOverrideInstantly(week.week, 'arr', actual.arr || 0)}
+                                className={`text-[10px] font-medium hover:underline ${actual.arr > 0 ? 'text-foreground' : 'text-muted-foreground'}`}
+                                title="Click to edit and override"
+                              >
+                                {actual.arr > 0 ? toShorthand(actual.arr) : '—'}
+                              </button>
+                            )}
                           </div>
                         </td>
                         <td className={`text-right p-1 text-[10px] ${arrVar.color}`}>
