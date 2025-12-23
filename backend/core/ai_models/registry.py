@@ -12,6 +12,7 @@ AWS_BEDROCK_ACCOUNT_ID = "935064898258"
 KIMI_K2_PROFILE_ID = "hfgufmm5fgcq"
 SONNET_4_5_PROFILE_ID = "few7z4l830xh"
 HAIKU_4_5_PROFILE_ID = "heol2zyy5v48"
+MINIMAX_M2_PROFILE_ID = "zix3khptbyoe"
 
 def build_bedrock_profile_arn(profile_id: str) -> str:
     """Build Bedrock inference profile ARN."""
@@ -97,11 +98,17 @@ class ModelRegistry:
             )
         ))
         
-        # Kortix Test - uses Kimi K2 via Bedrock (only in LOCAL and STAGING, not PRODUCTION)
+        # Kortix Test - uses MiniMax M2 via Bedrock (only in LOCAL and STAGING, not PRODUCTION)
         if config.ENV_MODE != EnvMode.PRODUCTION:
-            # test_litellm_id = build_bedrock_profile_arn(KIMI_K2_PROFILE_ID)
-            test_litellm_id = "openai/gpt-5.2"
-            
+            # test_litellm_id = build_bedrock_profile_arn(MINIMAX_M2_PROFILE_ID)
+            test_litellm_id ="openrouter/minimax/minimax-m2" #  205K context $0.255/M input tokens $1.02/M output tokens
+            # test_litellm_id = "openrouter/z-ai/glm-4.7" # 203K context $0.44/M input tokens $1.74/M output tokens
+            # test_litellm_id = "openrouter/z-ai/glm-4.6v" # 131K context $0.30/M input tokens $0.90/M output tokens 
+            # test_litellm_id = "openrouter/google/gemini-3-flash-preview" #  1.05M context $0.50/M input tokens $3/M output tokens $1/M audio tokens
+            # test_litellm_id = "openrouter/x-ai/grok-4.1-fast" #2M context $0.20/M input tokens $0.50/M output tokens
+            # test_litellm_id = "openrouter/deepseek/deepseek-v3.2-speciale" 164K context $0.27/M input tokens $0.41/M output tokens
+            # test_litellm_id = "openrouter/deepseek/deepseek-v3.2" 164K context $0.26/M input tokens $0.38/M output tokens
+
             self.register(Model(
                 id="kortix/test",
                 name="Kortix Test",
@@ -113,10 +120,14 @@ class ModelRegistry:
                     ModelCapability.CHAT,
                     ModelCapability.FUNCTION_CALLING,
                     ModelCapability.VISION,
+                    ModelCapability.PROMPT_CACHING,
                 ],
                 pricing=ModelPricing(
-                    input_cost_per_million_tokens=0.50,
-                    output_cost_per_million_tokens=2.50,
+                    input_cost_per_million_tokens=0.30,
+                    output_cost_per_million_tokens=1.20,
+                    cached_read_cost_per_million_tokens=0.03,
+                    cache_write_5m_cost_per_million_tokens=0.375,
+                    cache_write_1h_cost_per_million_tokens=0.50,
                 ),
                 tier_availability=["free", "paid"],
                 priority=100,
@@ -212,6 +223,7 @@ class ModelRegistry:
                     HAIKU_4_5_PROFILE_ID: "kortix/basic",
                     SONNET_4_5_PROFILE_ID: "kortix/power",
                     KIMI_K2_PROFILE_ID: "kortix/test",
+                    MINIMAX_M2_PROFILE_ID: "kortix/test",
                 }
                 
                 registry_id = profile_to_model.get(profile_id)

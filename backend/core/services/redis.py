@@ -17,6 +17,10 @@ _reconnect_in_progress = False
 _last_reconnect_attempt = 0.0
 RECONNECT_DEBOUNCE_SECONDS = 2.0  # Don't reconnect more than once every 2 seconds
 
+# Semaphore to limit concurrent streaming operations
+_streaming_semaphore: Optional[asyncio.Semaphore] = None
+MAX_CONCURRENT_STREAMING_OPS = 20  # Limit concurrent publish_and_xadd calls
+
 REDIS_KEY_TTL = 3600 * 2
 
 MAX_RETRIES = int(os.getenv("REDIS_MAX_RETRIES", "3"))
@@ -64,7 +68,7 @@ def initialize():
     load_dotenv()
     config = get_redis_config()
     
-    max_connections = int(os.getenv("REDIS_MAX_CONNECTIONS", "10"))
+    max_connections = int(os.getenv("REDIS_MAX_CONNECTIONS", "50"))
     socket_timeout = 10.0
     connect_timeout = 5.0
     retry_on_timeout = os.getenv("REDIS_RETRY_ON_TIMEOUT", "true").lower() == "true"
@@ -175,25 +179,38 @@ async def get_client():
 
 
 async def force_reconnect():
+    """Force a Redis reconnection with proper debouncing and locking.
+    
+    IMPORTANT: All debounce checks happen INSIDE the lock to prevent thundering herd.
+    """
     global client, pool, _initialized, _circuit_breaker, _reconnect_in_progress, _last_reconnect_attempt
     
-    now = _time.time()
-    
-    # Debounce: Don't reconnect if we just tried recently
-    if now - _last_reconnect_attempt < RECONNECT_DEBOUNCE_SECONDS:
-        logger.debug(f"⏸️  Skipping reconnect (debounced, last attempt {now - _last_reconnect_attempt:.2f}s ago)")
-        return False
+    # Try to acquire lock without blocking - if we can't, someone else is reconnecting
+    try:
+        acquired = _reconnect_lock.locked()
+        if acquired:
+            # Lock is held by someone else - wait for them to finish
+            logger.debug("⏸️  Reconnect lock held by another coroutine, waiting...")
+            async with _reconnect_lock:
+                # By the time we get here, the other coroutine finished
+                # Check if reconnect was successful (circuit breaker reset)
+                if _circuit_breaker["state"] == "closed" and _initialized:
+                    logger.debug("✅ Reconnect completed by another coroutine")
+                    return True
+                # If not, we'll fall through and try ourselves
+    except Exception:
+        pass
     
     async with _reconnect_lock:
-        # Double-check: Another coroutine might have reconnected while we were waiting
-        if _reconnect_in_progress:
-            logger.debug("⏸️  Reconnect already in progress, skipping")
+        now = _time.time()
+        
+        # ALL debounce checks INSIDE the lock to prevent thundering herd
+        if now - _last_reconnect_attempt < RECONNECT_DEBOUNCE_SECONDS:
+            logger.debug(f"⏸️  Skipping reconnect (debounced, last attempt {now - _last_reconnect_attempt:.2f}s ago)")
             return False
         
-        # Check debounce again after acquiring lock
-        now = _time.time()  # Re-check time after acquiring lock
-        if now - _last_reconnect_attempt < RECONNECT_DEBOUNCE_SECONDS:
-            logger.debug("⏸️  Skipping reconnect (debounced after lock)")
+        if _reconnect_in_progress:
+            logger.debug("⏸️  Reconnect already in progress, skipping")
             return False
         
         _reconnect_in_progress = True
@@ -241,7 +258,25 @@ async def force_reconnect():
             _reconnect_in_progress = False
 
 
+def _is_pool_exhausted(exc: Exception) -> bool:
+    """Check if the error is due to connection pool exhaustion.
+    
+    Pool exhaustion should NOT trigger reconnection - it means we need to
+    wait for connections to be returned to the pool, not create a new pool.
+    """
+    error_str = str(exc).lower()
+    return "too many connections" in error_str or "connection pool" in error_str
+
+
 def _is_connection_error(exc: Exception) -> bool:
+    """Check if the error is a genuine connection error.
+    
+    Pool exhaustion is NOT a connection error - reconnecting would make it worse.
+    """
+    # Pool exhaustion is NOT a connection error
+    if _is_pool_exhausted(exc):
+        return False
+    
     return isinstance(exc, (
         RedisConnectionError,
         RedisTimeoutError,
@@ -366,6 +401,22 @@ async def _execute_with_retry(op_factory, operation_name: str = "redis_op"):
             
         except Exception as e:
             last_exception = e
+            
+            # Handle pool exhaustion separately - DON'T reconnect, just wait
+            if _is_pool_exhausted(e):
+                logger.warning(f"⚠️ Redis pool exhausted on {operation_name} (attempt {attempt + 1}/{MAX_RETRIES}): {e}")
+                # Don't record as failure - this is a temporary condition
+                # Just wait longer for connections to be released
+                if attempt < MAX_RETRIES - 1:
+                    backoff = RETRY_BACKOFF_BASE * (2 ** (attempt + 1))  # Longer backoff for pool exhaustion
+                    logger.info(f"⏳ Pool exhausted, waiting {backoff:.1f}s for connections to be released...")
+                    await asyncio.sleep(backoff)
+                    continue
+                else:
+                    # After all retries, still exhausted - this is a problem
+                    logger.error(f"❌ Pool still exhausted after {MAX_RETRIES} attempts for {operation_name}")
+                    raise
+            
             _record_failure()
             
             if _is_connection_error(e):
@@ -480,7 +531,21 @@ async def publish(channel: str, message: str):
     return await _execute_with_retry(_op, f"PUBLISH {channel}")
 
 
+def _get_streaming_semaphore() -> asyncio.Semaphore:
+    """Get or create the streaming semaphore (lazy initialization)."""
+    global _streaming_semaphore
+    if _streaming_semaphore is None:
+        _streaming_semaphore = asyncio.Semaphore(MAX_CONCURRENT_STREAMING_OPS)
+    return _streaming_semaphore
+
+
 async def publish_and_xadd(channel: str, message: str, stream_key: str, maxlen: int = None, approximate: bool = True):
+    """Publish to a channel and add to a stream atomically.
+    
+    Uses a semaphore to limit concurrent operations and prevent pool exhaustion.
+    """
+    semaphore = _get_streaming_semaphore()
+    
     async def _op():
         redis_client = await get_client()
         async with redis_client.pipeline() as pipe:
@@ -492,7 +557,10 @@ async def publish_and_xadd(channel: str, message: str, stream_key: str, maxlen: 
             pipe.xadd(stream_key, {'data': message}, **kwargs)
             results = await pipe.execute()
             return results
-    return await _execute_with_retry(_op, f"PUBLISH+XADD {channel}")
+    
+    # Use semaphore to limit concurrent streaming operations
+    async with semaphore:
+        return await _execute_with_retry(_op, f"PUBLISH+XADD {channel}")
 
 
 async def create_pubsub():

@@ -218,14 +218,15 @@ class ContextManager:
             try:
                 bedrock_client = self._get_bedrock_client()
                 if bedrock_client:
-                    # Import Kimi K2 profile ID
-                    from core.ai_models.registry import KIMI_K2_PROFILE_ID
+                    # Import profile IDs
+                    from core.ai_models.registry import KIMI_K2_PROFILE_ID, SONNET_4_5_PROFILE_ID, HAIKU_4_5_PROFILE_ID, MINIMAX_M2_PROFILE_ID
                     
                     model_id_mapping = {
                         KIMI_K2_PROFILE_ID: "moonshot.kimi-k2-thinking",  # Kimi K2 (Basic Mode)
-                        "few7z4l830xh": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",  # Sonnet 4.5 (Power Mode)
-                        "tyj1ks3nj9qf": "anthropic.claude-sonnet-4-20250514-v1:0",  # Sonnet 4
-                        "heol2zyy5v48": "anthropic.claude-haiku-4-5-20251001-v1:0",  # HAIKU 4.5 (Legacy - replaced by Kimi K2)
+                        SONNET_4_5_PROFILE_ID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",  # Sonnet 4.5 (Power Mode)
+                        "tyj1ks3nj9qf": "anthropic.claude-sonnet-4-20250514-v1:0",  # Sonnet 4 (no constant defined)
+                        HAIKU_4_5_PROFILE_ID: "anthropic.claude-haiku-4-5-20251001-v1:0",  # HAIKU 4.5 (Legacy - replaced by Kimi K2)
+                        MINIMAX_M2_PROFILE_ID: "minimax.minimax-m2",  # MiniMax M2
                     }
                     
                     # Extract profile ID from ARN
