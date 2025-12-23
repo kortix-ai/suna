@@ -107,6 +107,8 @@ export const KortixComputer = memo(function KortixComputer({
   const [isInitialized, setIsInitialized] = useState(false);
   const [vncRefreshKey, setVncRefreshKey] = useState(0);
   const [isMaximized, setIsMaximized] = useState(false);
+  const [isSuiteMode, setIsSuiteMode] = useState(false);
+  const [preSuiteWidth, setPreSuiteWidth] = useState<number | null>(null);
 
   const isMobile = useIsMobile();
   const { isOpen: isDocumentModalOpen } = useDocumentModalStore();
@@ -676,6 +678,8 @@ export const KortixComputer = memo(function KortixComputer({
             onViewChange={setActiveView}
             showFilesTab={true}
             isMaximized={isMaximized}
+            isSuiteMode={isSuiteMode}
+            onToggleSuiteMode={() => setIsSuiteMode(!isSuiteMode)}
           />
         )}
         <div className="flex-1 overflow-hidden max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>

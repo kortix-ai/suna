@@ -25,7 +25,8 @@ export type EditableFileType =
   | 'binary'
   | 'csv'
   | 'xlsx'
-  | 'pptx';
+  | 'pptx'
+  | 'canvas';
 
 export interface FileEditorProject {
   id?: string;
@@ -83,11 +84,13 @@ export function getEditableFileType(fileName: string): EditableFileType {
   const csvExtensions = ['csv', 'tsv'];
   const xlsxExtensions = ['xlsx', 'xls'];
   const pptxExtensions = ['pptx', 'ppt'];
+  const canvasExtensions = ['kanvax'];
 
   if (markdownExtensions.includes(extension)) return 'markdown';
   if (htmlExtensions.includes(extension)) return 'html';
   if (codeExtensions.includes(extension)) return 'code';
   if (textExtensions.includes(extension)) return 'text';
+  if (canvasExtensions.includes(extension)) return 'canvas';
   
   // Check for common plain text file patterns (e.g., .env.example, .env.local, .gitignore, etc.)
   if (fileNameLower.includes('.env') || 

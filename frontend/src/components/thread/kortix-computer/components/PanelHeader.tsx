@@ -110,6 +110,8 @@ interface PanelHeaderProps {
   onViewChange: (view: ViewType) => void;
   showFilesTab?: boolean;
   isMaximized?: boolean;
+  isSuiteMode?: boolean;
+  onToggleSuiteMode?: () => void;
   hideViewToggle?: boolean;
   sandboxInfoOpen?: boolean;
   setSandboxInfoOpen?: (open: boolean) => void;
@@ -128,6 +130,8 @@ export const PanelHeader = memo(function PanelHeader({
   onViewChange,
   showFilesTab = true,
   isMaximized = false,
+  isSuiteMode = false,
+  onToggleSuiteMode,
   hideViewToggle = false,
   sandboxInfoOpen,
   setSandboxInfoOpen,
@@ -189,6 +193,17 @@ export const PanelHeader = memo(function PanelHeader({
             <CircleDashed className="h-3 w-3 animate-spin" />
             <span>Running</span>
           </div>
+        )}
+        {isSuiteMode && onToggleSuiteMode && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onToggleSuiteMode}
+            className="h-7 text-xs"
+          >
+            <Minimize2 className="h-3 w-3 mr-1" />
+            Exit Suite Mode
+          </Button>
         )}
         {!hideViewToggle && (
           <ViewToggle currentView={currentView} onViewChange={onViewChange} showFilesTab={showFilesTab} />
