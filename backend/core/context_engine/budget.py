@@ -81,8 +81,9 @@ class TokenBudget:
             scale = available / total_allocated
             allocations = {k: int(v * scale) for k, v in allocations.items()}
             total_allocated = sum(allocations.values())
+            logger.debug(f"[CONTEXT_ENGINE] Budget scaled down by {scale:.2f} to fit available budget")
         
-        logger.debug(f"Budget allocation: {allocations} (total: {total_allocated}/{available})")
+        logger.info(f"[CONTEXT_ENGINE] Budget allocation: {allocations} (total: {total_allocated}/{available}, reserve: {self.reserve_tokens})")
         
         return AllocationResult(
             allocations=allocations,

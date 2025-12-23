@@ -29,6 +29,8 @@ class Compressor:
         
         new_tokens = count_tokens(content)
         
+        logger.debug(f"[CONTEXT_ENGINE] Compressor (light): {chunk.tokens} -> {new_tokens} tokens (role={role})")
+        
         return ContextChunk(
             content=content,
             source=chunk.source,
@@ -58,6 +60,8 @@ class Compressor:
             content = self._truncate_smart(chunk.content, self.heavy_max_tokens)
         
         new_tokens = count_tokens(content)
+        
+        logger.debug(f"[CONTEXT_ENGINE] Compressor (heavy): {chunk.tokens} -> {new_tokens} tokens (role={role})")
         
         return ContextChunk(
             content=content,

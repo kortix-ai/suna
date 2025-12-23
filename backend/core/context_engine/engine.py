@@ -62,6 +62,8 @@ class ContextEngine:
         query: Optional[str] = None,
         rules: Optional[Union[Dict[str, Any], CompileRules]] = None,
     ) -> CompileResult:
+        logger.info(f"[CONTEXT_ENGINE] Starting compilation for thread={thread_id}, account={account_id}, query={bool(query)}")
+        
         if isinstance(rules, dict):
             rules = CompileRules(
                 include_system_prompt=rules.get("include_system_prompt", True),
@@ -75,10 +77,14 @@ class ContextEngine:
         else:
             rules = rules or CompileRules()
         
+        logger.debug(f"[CONTEXT_ENGINE] Compile rules: semantic={rules.use_semantic_ranking}, dedupe={rules.deduplicate}, threshold={rules.relevance_threshold}")
+        
         allocations = self._budget.allocate_to_sources(
             self._sources,
             layer_requirements=self._compiler.get_layer_budgets(),
         )
+        
+        logger.debug(f"[CONTEXT_ENGINE] Budget allocations: {allocations.allocations}")
         
         all_chunks: List[ContextChunk] = []
         
@@ -104,8 +110,13 @@ class ContextEngine:
                 logger.error(f"Source '{source.name}' failed to fetch: {e}")
                 continue
         
+        logger.info(f"[CONTEXT_ENGINE] Fetched total {len(all_chunks)} chunks from {len(self._sources)} sources")
+        
         if self._enable_embeddings and rules.use_semantic_ranking and query:
+            logger.debug(f"[CONTEXT_ENGINE] Adding embeddings for semantic ranking")
             all_chunks = await self._add_embeddings(all_chunks)
+            chunks_with_embeddings = sum(1 for c in all_chunks if c.embedding)
+            logger.debug(f"[CONTEXT_ENGINE] {chunks_with_embeddings}/{len(all_chunks)} chunks now have embeddings")
         
         result = await self._compiler.compile(
             chunks=all_chunks,
@@ -116,7 +127,7 @@ class ContextEngine:
         
         self._budget.reset_usage()
         
-        logger.info(f"Context compiled: {result.summary()}")
+        logger.info(f"[CONTEXT_ENGINE] Compilation complete: {result.summary()}")
         
         return result
     

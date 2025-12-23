@@ -3,6 +3,7 @@ from typing import List, Optional
 from datetime import datetime, timezone
 from ..types import ContextChunk
 from .embeddings import cosine_similarity, normalize_similarity
+from core.utils.logger import logger
 
 class SemanticRanker:
     def __init__(
@@ -89,6 +90,8 @@ class SemanticRanker:
         if not chunks:
             return []
         
+        logger.debug(f"[CONTEXT_ENGINE] Ranker selecting optimal chunks: {len(chunks)} candidates, budget={token_budget}")
+        
         pinned = [c for c in chunks if c.is_pinned()]
         non_pinned = [c for c in chunks if not c.is_pinned()]
         
@@ -96,21 +99,31 @@ class SemanticRanker:
         used_tokens = sum(c.tokens for c in pinned)
         remaining_budget = token_budget - used_tokens
         
+        logger.debug(f"[CONTEXT_ENGINE] Ranker: {len(pinned)} pinned chunks using {used_tokens} tokens, {remaining_budget} remaining")
+        
         if remaining_budget <= 0:
+            logger.warning(f"[CONTEXT_ENGINE] Ranker: No budget remaining after pinned chunks")
             return selected
         
         for chunk in non_pinned:
             if chunk.relevance_score == 0.0:
                 chunk.relevance_score = self._score_chunk(chunk)
         
+        avg_score = sum(c.relevance_score for c in non_pinned) / len(non_pinned) if non_pinned else 0
+        logger.debug(f"[CONTEXT_ENGINE] Ranker: Average relevance score = {avg_score:.3f}")
+        
         fitting = [c for c in non_pinned if c.tokens <= remaining_budget]
         
         if not fitting:
+            logger.warning(f"[CONTEXT_ENGINE] Ranker: No chunks fit remaining budget")
             return selected
         
         greedy_selected = self._greedy_knapsack(fitting, remaining_budget)
         selected.extend(greedy_selected)
         selected.sort(key=lambda c: c.created_at.timestamp() if c.created_at else 0)
+        
+        final_tokens = sum(c.tokens for c in selected)
+        logger.info(f"[CONTEXT_ENGINE] Ranker selected {len(selected)} chunks ({final_tokens}/{token_budget} tokens)")
         
         return selected
     

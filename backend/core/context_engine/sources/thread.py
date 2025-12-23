@@ -24,6 +24,7 @@ class ThreadSource(ContextSource):
         query: Optional[str] = None,
         limit_tokens: Optional[int] = None,
     ) -> List[ContextChunk]:
+        logger.debug(f"[CONTEXT_ENGINE] ThreadSource fetching from thread={thread_id}, limit={limit_tokens}")
         client = await self.db.client
         
         try:
@@ -49,6 +50,7 @@ class ThreadSource(ContextSource):
                 offset += batch_size
             
             if not all_messages:
+                logger.debug(f"[CONTEXT_ENGINE] ThreadSource: No messages found for thread {thread_id}")
                 return []
             
             chunks = []
@@ -57,7 +59,8 @@ class ThreadSource(ContextSource):
                 if chunk:
                     chunks.append(chunk)
             
-            logger.debug(f"ThreadSource fetched {len(chunks)} chunks from thread {thread_id}")
+            total_tokens = sum(c.tokens for c in chunks)
+            logger.info(f"[CONTEXT_ENGINE] ThreadSource fetched {len(chunks)} chunks ({total_tokens} tokens) from {len(all_messages)} messages")
             return chunks
             
         except Exception as e:

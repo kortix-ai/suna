@@ -55,6 +55,7 @@ class ContextCompiler:
         query: Optional[str] = None,
         rules: Optional[CompileRules] = None,
     ) -> CompileResult:
+        logger.info(f"[CONTEXT_ENGINE] Compiler starting with {len(chunks)} chunks")
         rules = rules or CompileRules()
         
         for layer in self._layers.values():
@@ -68,21 +69,32 @@ class ContextCompiler:
             if chunk.message_id
         }
         self.summarizer.set_message_id_mapping(message_id_mapping)
+        logger.debug(f"[CONTEXT_ENGINE] Created message ID mapping for {len(message_id_mapping)} chunks")
         
         chunks = self.importance_marker.mark(chunks)
+        pinned_count = sum(1 for c in chunks if c.is_pinned())
+        high_count = sum(1 for c in chunks if c.is_high_importance())
+        logger.info(f"[CONTEXT_ENGINE] Importance marking: {pinned_count} pinned, {high_count} high importance")
         
         if rules.use_semantic_ranking and query:
+            logger.debug(f"[CONTEXT_ENGINE] Generating query embedding for semantic ranking")
             query_embedding = await get_embedding(query)
             self.ranker.set_query_embedding(query_embedding)
+            logger.debug(f"[CONTEXT_ENGINE] Query embedding generated: dim={len(query_embedding) if query_embedding else 0}")
         else:
             self.ranker.set_query_embedding(None)
+            logger.debug(f"[CONTEXT_ENGINE] Semantic ranking disabled")
         
         sorted_chunks = self._sort_by_recency(chunks)
         
         if rules.deduplicate:
+            before_dedup = len(sorted_chunks)
             sorted_chunks = self._deduplicate(sorted_chunks)
+            logger.debug(f"[CONTEXT_ENGINE] Deduplication: {before_dedup} -> {len(sorted_chunks)} chunks")
         
         sorted_chunks = self._group_tool_calls(sorted_chunks)
+        tool_groups = len(set(c.tool_call_group_id for c in sorted_chunks if c.tool_call_group_id))
+        logger.debug(f"[CONTEXT_ENGINE] Tool call grouping: {tool_groups} groups identified")
         
         layer_assignments = self._assign_to_layers(sorted_chunks)
         
@@ -92,13 +104,16 @@ class ContextCompiler:
             layer = self._layers[layer_type]
             assigned_chunks = layer_assignments.get(layer_type, [])
             
+            logger.debug(f"[CONTEXT_ENGINE] Processing {layer_type.value} layer: {len(assigned_chunks)} chunks assigned")
+            
             if layer_type == LayerType.HISTORICAL and len(assigned_chunks) > 0:
                 layer_budget = self.layers_config.historical.tokens
                 total_tokens = sum(c.tokens for c in assigned_chunks)
                 
                 if total_tokens > layer_budget:
+                    before_selection = len(assigned_chunks)
                     assigned_chunks = self.ranker.select_optimal(assigned_chunks, layer_budget)
-                    logger.debug(f"Optimal selection: {len(assigned_chunks)} chunks for historical layer")
+                    logger.info(f"[CONTEXT_ENGINE] Historical layer ranking: {before_selection} -> {len(assigned_chunks)} chunks (budget: {total_tokens} -> {sum(c.tokens for c in assigned_chunks)}/{layer_budget})")
             
             processed = await layer.process(
                 assigned_chunks,
@@ -106,16 +121,20 @@ class ContextCompiler:
                 summarizer=self.summarizer if layer_type in [LayerType.HISTORICAL, LayerType.ARCHIVED] else None,
             )
             
+            compressed_count = sum(1 for c in processed if c.metadata.get("compressed"))
+            logger.debug(f"[CONTEXT_ENGINE] {layer_type.value} layer processed: {len(processed)} chunks, {compressed_count} compressed")
+            
             chunks_by_layer[layer_type] = processed
         
         important_ids = self.summarizer.get_important_message_ids()
         if important_ids:
+            logger.info(f"[CONTEXT_ENGINE] LLM identified {len(important_ids)} important messages, re-marking chunks")
             self.importance_marker.set_important_message_ids(important_ids)
             for layer_chunks in chunks_by_layer.values():
                 self.importance_marker.mark(layer_chunks)
-            logger.debug(f"Re-marked importance for {len(important_ids)} LLM-identified important messages")
         
         messages = self._assemble_messages(chunks_by_layer)
+        logger.debug(f"[CONTEXT_ENGINE] Assembled {len(messages)} messages from layers")
         
         preserved_facts = self.summarizer.get_preserved_facts_context()
         if preserved_facts:
@@ -124,7 +143,7 @@ class ContextCompiler:
                 "content": f"[PRESERVED FACTS - Never forget this information]\n{preserved_facts}",
             }
             messages.insert(0, facts_message)
-            logger.info(f"Injected {self.summarizer.fact_store.count} preserved facts into context")
+            logger.info(f"[CONTEXT_ENGINE] Injected {self.summarizer.fact_store.count} preserved facts into context")
         
         total_tokens = sum(layer.token_count for layer in self._layers.values())
         if preserved_facts:

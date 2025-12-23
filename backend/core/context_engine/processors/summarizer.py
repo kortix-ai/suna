@@ -139,10 +139,12 @@ JSON response:"""
         if not messages:
             return ""
         
+        logger.debug(f"[CONTEXT_ENGINE] Summarizer: Processing {len(messages)} messages, target={target_tokens} tokens")
+        
         cache_key = self._get_cache_key(messages)
         cached = await self._get_cached(cache_key)
         if cached:
-            logger.debug(f"Using cached summary for {len(messages)} messages")
+            logger.debug(f"[CONTEXT_ENGINE] Summarizer: Using cached summary for {len(messages)} messages")
             if "facts" in cached:
                 self._fact_store.add_many(cached["facts"])
             if "important_message_indices" in cached:
@@ -150,6 +152,7 @@ JSON response:"""
             return cached.get("summary", "")
         
         if self.can_use_llm():
+            logger.debug(f"[CONTEXT_ENGINE] Summarizer: Using LLM (call {self._llm_calls_made + 1}/{self.max_llm_calls_per_compile})")
             try:
                 result = await self._llm_summarize_and_extract(messages, target_tokens)
                 if result:
@@ -162,9 +165,12 @@ JSON response:"""
                         "important_message_indices": important_indices,
                     })
                     self._llm_calls_made += 1
+                    logger.info(f"[CONTEXT_ENGINE] Summarizer: Extracted {len(facts)} facts, {len(important_indices)} important messages")
                     return summary
             except Exception as e:
-                logger.warning(f"LLM summarization failed, falling back to rule-based: {e}")
+                logger.warning(f"[CONTEXT_ENGINE] Summarizer: LLM failed, falling back to rule-based: {e}")
+        else:
+            logger.debug(f"[CONTEXT_ENGINE] Summarizer: LLM limit reached, using rule-based extraction")
         
         return self._rule_based_extract(messages, target_tokens)
     
