@@ -20,17 +20,55 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { LoadingState } from '../shared/LoadingState';
-import { extractFileReaderData, formatFileSize, FileReadResult, SearchHit } from './_utils';
+import { extractFileReaderData, FileReadResult, SearchHit } from './_utils';
 
-function SearchResultCard({ hit, index }: { hit: SearchHit; index: number }) {
-  const [expanded, setExpanded] = useState(true);
+function getFileIcon(fileType?: string, isSearch?: boolean) {
+  const colorClass = isSearch ? "text-blue-500" : "text-emerald-500";
+  switch (fileType) {
+    case 'pdf':
+      return <FileType className={cn("w-4 h-4", colorClass)} />;
+    case 'doc':
+    case 'docx':
+      return <FileType className={cn("w-4 h-4", colorClass)} />;
+    default:
+      return <FileText className={cn("w-4 h-4", colorClass)} />;
+  }
+}
+
+interface UnifiedCardProps {
+  filename: string;
+  content?: string;
+  success?: boolean;
+  error?: string;
+  fileType?: string;
+  contentLength?: number;
+  truncated?: boolean;
+  isSearch?: boolean;
+  defaultExpanded?: boolean;
+  metadata?: string;
+}
+
+function UnifiedResultCard({
+  filename,
+  content,
+  success = true,
+  error,
+  fileType,
+  contentLength,
+  truncated,
+  isSearch = false,
+  defaultExpanded = true,
+  metadata,
+}: UnifiedCardProps) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [copied, setCopied] = useState(false);
-  
-  const filename = hit.file.split('/').pop() || hit.file;
+
+  const hasContent = success && content;
 
   const copyToClipboard = async () => {
+    if (!content) return;
     try {
-      await navigator.clipboard.writeText(hit.content);
+      await navigator.clipboard.writeText(content);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
@@ -41,37 +79,70 @@ function SearchResultCard({ hit, index }: { hit: SearchHit; index: number }) {
   return (
     <Card className="overflow-hidden transition-all duration-200 hover:bg-muted/20">
       <div
-        className="flex items-center gap-3 px-4 cursor-pointer transition-colors"
-        onClick={() => setExpanded(!expanded)}
+        className={cn(
+          "flex items-center gap-3 px-4 transition-colors",
+          hasContent ? "cursor-pointer" : ""
+        )}
+        onClick={() => hasContent && setExpanded(!expanded)}
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          {expanded
-            ? <ChevronDown className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-            : <ChevronRight className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-          }
-          <FileText className="w-4 h-4 text-blue-500" />
+          {hasContent ? (
+            expanded
+              ? <ChevronDown className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+              : <ChevronRight className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+          ) : (
+            <div className="w-4" />
+          )}
+          {getFileIcon(fileType, isSearch)}
           <span className="font-medium text-sm truncate text-zinc-900 dark:text-zinc-100">
             {filename}
           </span>
+          {metadata && (
+            <span className="text-xs text-zinc-400 dark:text-zinc-500 hidden sm:inline">
+              {metadata}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 px-2" onClick={(e) => { e.stopPropagation(); copyToClipboard(); }}>
-                  {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Copy content</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          {!success && (
+            <span className="text-xs text-red-500 dark:text-red-400 max-w-[150px] truncate">
+              {error || 'Failed'}
+            </span>
+          )}
+          {truncated && (
+            <Badge variant="outline" className="text-xs text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-700">
+              Truncated
+            </Badge>
+          )}
+          {hasContent && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-7 px-2" 
+                    onClick={(e) => { e.stopPropagation(); copyToClipboard(); }}
+                  >
+                    {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Copy content</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          {success ? (
+            <CheckCircle className="w-4 h-4 text-emerald-500" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-red-500" />
+          )}
         </div>
       </div>
-      {expanded && (
-        <div>
-          <div className="overflow-auto">
-            <pre className="px-4 pb-4 -pt-2 text-sm whitespace-pre-wrap break-words text-muted-foreground">
-              {hit.content}
+      {expanded && hasContent && (
+        <div className="border-t border-zinc-100 dark:border-zinc-800">
+          <div className="max-h-[400px] overflow-auto">
+            <pre className="px-4 py-3 text-sm whitespace-pre-wrap break-words text-muted-foreground">
+              {content}
             </pre>
           </div>
         </div>
@@ -80,139 +151,39 @@ function SearchResultCard({ hit, index }: { hit: SearchHit; index: number }) {
   );
 }
 
-function FileResultCard({ result, defaultExpanded = false }: { result: FileReadResult; defaultExpanded?: boolean }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
-  const [copied, setCopied] = useState(false);
-
-  const filename = result.file_path.split('/').pop() || result.file_path;
-  const hasContent = result.success && result.content;
-
-  const copyToClipboard = async () => {
-    if (!result.content) return;
-    try {
-      await navigator.clipboard.writeText(result.content);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy:', err);
-    }
-  };
-
-  const getFileIcon = () => {
-    switch (result.file_type) {
-      case 'pdf':
-        return <FileType className="w-4 h-4 text-red-500" />;
-      case 'doc':
-      case 'docx':
-        return <FileType className="w-4 h-4 text-blue-500" />;
-      default:
-        return <FileText className="w-4 h-4 text-zinc-500" />;
-    }
-  };
+function SearchResultCard({ hit, index }: { hit: SearchHit; index: number }) {
+  const filename = hit.file.split('/').pop() || hit.file;
 
   return (
-    <Card className={cn(
-      "overflow-hidden transition-all duration-200",
-    )}>
-      <div
-        className={cn(
-          "flex items-center gap-3 p-3 cursor-pointer transition-colors",
-          hasContent ? "hover:bg-zinc-50 dark:hover:bg-zinc-800/50" : "",
-        )}
-        onClick={() => hasContent && setExpanded(!expanded)}
-      >
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          {hasContent && (
-            expanded
-              ? <ChevronDown className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-              : <ChevronRight className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-          )}
-          {!hasContent && <div className="w-4" />}
+    <UnifiedResultCard
+      filename={filename}
+      content={hit.content}
+      isSearch={true}
+      defaultExpanded={true}
+    />
+  );
+}
 
-          {getFileIcon()}
+function FileResultCard({ result, defaultExpanded = false }: { result: FileReadResult; defaultExpanded?: boolean }) {
+  const filename = result.file_path.split('/').pop() || result.file_path;
+  
+  const metadata = result.success && result.content_length !== undefined
+    ? `${result.content_length.toLocaleString()} chars`
+    : undefined;
 
-          <span className="font-medium text-sm truncate text-zinc-900 dark:text-zinc-100">
-            {filename}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {result.success ? (
-            <>
-              {result.file_type && (
-                <Badge variant="outline" className="text-xs uppercase">
-                  {result.file_type}
-                </Badge>
-              )}
-              {result.content_length !== undefined && (
-                <Badge variant="secondary" className="text-xs">
-                  {result.content_length.toLocaleString()} chars
-                </Badge>
-              )}
-              {result.truncated && (
-                <Badge variant="outline" className="text-xs text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-700">
-                  Truncated
-                </Badge>
-              )}
-              <CheckCircle className="w-4 h-4 text-emerald-500" />
-            </>
-          ) : (
-            <>
-              <span className="text-xs text-red-600 dark:text-red-400 max-w-[200px] truncate">
-                {result.error || 'Failed to read'}
-              </span>
-              <AlertTriangle className="w-4 h-4 text-red-500" />
-            </>
-          )}
-        </div>
-      </div>
-
-      {expanded && hasContent && (
-        <div>
-          <div className="flex items-center justify-between px-3 py-2 bg-zinc-100/50 dark:bg-zinc-800/50">
-            <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-              {result.extraction_method && (
-                <span>Extracted via {result.extraction_method}</span>
-              )}
-              {result.size_bytes !== undefined && (
-                <>
-                  <span>•</span>
-                  <span>{formatFileSize(result.size_bytes)}</span>
-                </>
-              )}
-            </div>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      copyToClipboard();
-                    }}
-                  >
-                    {copied ? (
-                      <Check className="h-3.5 w-3.5 text-emerald-500" />
-                    ) : (
-                      <Copy className="h-3.5 w-3.5" />
-                    )}
-                    <span className="ml-1.5 text-xs">{copied ? 'Copied!' : 'Copy'}</span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Copy content to clipboard</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-          <div className="h-[400px] overflow-auto">
-            <pre className="px-4 pb-4 text-sm whitespace-pre-wrap break-words text-muted-foreground">
-              {result.content}
-            </pre>
-          </div>
-        </div>
-      )}
-    </Card>
+  return (
+    <UnifiedResultCard
+      filename={filename}
+      content={result.content}
+      success={result.success}
+      error={result.error}
+      fileType={result.file_type}
+      contentLength={result.content_length}
+      truncated={result.truncated}
+      isSearch={false}
+      defaultExpanded={defaultExpanded}
+      metadata={metadata}
+    />
   );
 }
 
