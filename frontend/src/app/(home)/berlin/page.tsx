@@ -17,6 +17,7 @@ import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { useQuery } from '@tanstack/react-query';
 import { agentKeys } from '@/hooks/agents/keys';
 import { getAgents } from '@/hooks/agents/utils';
+import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 
 const SunaModesPanel = lazy(() => 
   import('@/components/dashboard/suna-modes-panel').then(mod => ({ default: mod.SunaModesPanel }))
@@ -70,6 +71,7 @@ export default function BerlinPage() {
     ? agents.find(agent => agent.agent_id === selectedAgentId)
     : null;
   const isSunaAgent = !user || selectedAgent?.metadata?.is_suna_default || false;
+  const addOptimisticFiles = useOptimisticFilesStore((state) => state.addFiles);
 
   const handleChatInputSubmit = async (
     message: string,
@@ -96,7 +98,17 @@ export default function BerlinPage() {
       chatInputRef.current?.clearPendingFiles();
       setInputValue('');
       
-      sessionStorage.setItem('optimistic_prompt', trimmedMessage);
+      let promptWithFiles = trimmedMessage;
+      if (normalizedFiles.length > 0) {
+        addOptimisticFiles(threadId, projectId, normalizedFiles);
+        sessionStorage.setItem('optimistic_files', 'true');
+        const fileRefs = normalizedFiles.map((f) => 
+          `[Uploaded File: /workspace/uploads/${f.name}]`
+        ).join('\n');
+        promptWithFiles = `${trimmedMessage}\n\n${fileRefs}`;
+      }
+      
+      sessionStorage.setItem('optimistic_prompt', promptWithFiles);
       sessionStorage.setItem('optimistic_thread', threadId);
       
       router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
@@ -104,8 +116,7 @@ export default function BerlinPage() {
       optimisticAgentStart({
         thread_id: threadId,
         project_id: projectId,
-        prompt: trimmedMessage,
-        files: normalizedFiles.length > 0 ? normalizedFiles : undefined,
+        prompt: promptWithFiles,
         model_name: options?.model_name,
         agent_id: selectedAgentId || undefined,
         memory_enabled: true,

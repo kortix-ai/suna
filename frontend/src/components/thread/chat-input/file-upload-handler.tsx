@@ -80,6 +80,48 @@ const stageFileToS3 = async (
   }
 };
 
+const handleLocalFilesOptimistic = async (
+  files: File[],
+  setPendingFiles: React.Dispatch<React.SetStateAction<File[]>>,
+  setUploadedFiles: React.Dispatch<React.SetStateAction<UploadedFile[]>>,
+) => {
+  const processedFiles: File[] = [];
+  
+  for (const file of files) {
+    if (isExtractableArchive(file)) {
+      const extracted = await extractZipFiles(file);
+      processedFiles.push(...extracted);
+    } else {
+      const validation = isAllowedFile(file);
+      if (!validation.allowed) {
+        toast.error(`${file.name}: ${validation.reason}`);
+        continue;
+      }
+      processedFiles.push(file);
+    }
+  }
+  
+  if (processedFiles.length === 0) return;
+
+  const newUploadedFiles: UploadedFile[] = processedFiles.map((file) => {
+    const normalizedName = normalizeFilenameToNFC(file.name);
+    const fileId = crypto.randomUUID();
+
+    return {
+      name: normalizedName,
+      path: `/workspace/uploads/${normalizedName}`,
+      size: file.size,
+      type: file.type || 'application/octet-stream',
+      localUrl: URL.createObjectURL(file),
+      fileId,
+      status: 'pending' as const,
+    };
+  });
+
+  setPendingFiles((prevFiles) => [...prevFiles, ...processedFiles]);
+  setUploadedFiles((prev) => [...prev, ...newUploadedFiles]);
+};
+
 const extractZipFiles = async (zipFile: File): Promise<File[]> => {
   try {
     const zip = await JSZip.loadAsync(zipFile);
@@ -158,8 +200,6 @@ const handleLocalFiles = async (
 
   if (filteredFiles.length === 0) return;
 
-  setIsUploading?.(true);
-
   const newUploadedFiles: UploadedFile[] = filteredFiles.map((file) => {
     const normalizedName = normalizeFilenameToNFC(file.name);
     const fileId = crypto.randomUUID();
@@ -171,20 +211,12 @@ const handleLocalFiles = async (
       type: file.type || 'application/octet-stream',
       localUrl: URL.createObjectURL(file),
       fileId,
-      status: 'uploading' as const,
+      status: 'pending' as const,
     };
   });
 
   setPendingFiles((prevFiles) => [...prevFiles, ...filteredFiles]);
   setUploadedFiles((prev) => [...prev, ...newUploadedFiles]);
-
-  const uploadPromises = filteredFiles.map((file, index) => 
-    stageFileToS3(file, newUploadedFiles[index].fileId!, setUploadedFiles)
-  );
-
-  await Promise.allSettled(uploadPromises);
-  
-  setIsUploading?.(false);
 };
 
 const uploadFiles = async (
@@ -520,4 +552,94 @@ export const FileUploadHandler = memo(forwardRef<
 ));
 
 FileUploadHandler.displayName = 'FileUploadHandler';
-export { handleFiles, handleLocalFiles, uploadFiles };
+
+export const uploadPendingFilesToProject = async (
+  files: File[],
+  projectId: string,
+  onProgress?: (fileIndex: number, status: 'uploading' | 'ready' | 'error', error?: string) => void,
+): Promise<{ success: boolean; uploadedPaths: string[] }> => {
+  const uploadedPaths: string[] = [];
+  let allSuccess = true;
+
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    throw new Error('No access token available');
+  }
+
+  try {
+    await fetch(`${API_URL}/project/${projectId}/files/upload-started`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ file_count: files.length }),
+    });
+  } catch (e) {
+    console.warn('Failed to signal upload start:', e);
+  }
+
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      onProgress?.(i, 'uploading');
+
+      try {
+        if (file.size > UPLOAD_LIMITS.MAX_FILE_SIZE_BYTES) {
+          throw new Error(`File size exceeds ${UPLOAD_LIMITS.MAX_FILE_SIZE_MB}MB limit`);
+        }
+
+        const normalizedName = normalizeFilenameToNFC(file.name);
+        const uploadPath = `/workspace/uploads/${normalizedName}`;
+
+        const formData = new FormData();
+        formData.append('file', file, normalizedName);
+        formData.append('path', uploadPath);
+
+        const response = await fetch(`${API_URL}/project/${projectId}/files`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: formData,
+        });
+
+        if (!response.ok) {
+          if (response.status === 431) {
+            throw new Error('Request is too large');
+          }
+          throw new Error(`Upload failed: ${response.statusText}`);
+        }
+
+        const responseData = await response.json();
+        const actualPath = responseData.path || uploadPath;
+        uploadedPaths.push(actualPath);
+        
+        onProgress?.(i, 'ready');
+      } catch (error) {
+        console.error(`Failed to upload file ${file.name}:`, error);
+        onProgress?.(i, 'error', error instanceof Error ? error.message : 'Upload failed');
+        allSuccess = false;
+      }
+    }
+  } finally {
+    try {
+      await fetch(`${API_URL}/project/${projectId}/files/upload-completed`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+    } catch (e) {
+      console.warn('Failed to signal upload complete:', e);
+    }
+  }
+
+  return { success: allSuccess, uploadedPaths };
+};
+
+export { handleFiles, handleLocalFiles, handleLocalFilesOptimistic, uploadFiles, uploadPendingFilesToProject as uploadFilesToProjectDirect };

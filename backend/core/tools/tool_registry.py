@@ -11,6 +11,7 @@ CORE_TOOLS = [
 SANDBOX_TOOLS = [
     ('sb_shell_tool', 'core.tools.sb_shell_tool', 'SandboxShellTool'),
     ('sb_files_tool', 'core.tools.sb_files_tool', 'SandboxFilesTool'),
+    ('sb_file_reader_tool', 'core.tools.sb_file_reader_tool', 'SandboxFileReaderTool'),
     ('sb_expose_tool', 'core.tools.sb_expose_tool', 'SandboxExposeTool'),
     ('sb_vision_tool', 'core.tools.sb_vision_tool', 'SandboxVisionTool'),
     ('sb_image_edit_tool', 'core.tools.sb_image_edit_tool', 'SandboxImageEditTool'),

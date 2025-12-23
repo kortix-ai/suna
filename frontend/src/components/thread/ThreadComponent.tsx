@@ -64,6 +64,8 @@ import { useTranslations } from 'next-intl';
 import { backendApi } from '@/lib/api-client';
 import { useKortixComputerStore, useSetIsSidePanelOpen } from '@/stores/kortix-computer-store';
 import { useToolStreamStore } from '@/stores/tool-stream-store';
+import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
+import { uploadPendingFilesToProject } from '@/components/thread/chat-input/file-upload-handler';
 
 interface ThreadComponentProps {
   projectId: string;
@@ -147,6 +149,16 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const [optimisticPrompt, setOptimisticPrompt] = useState<string | null>(null);
   const [showOptimisticUI, setShowOptimisticUI] = useState(false);
   const setStorePanelOpen = useSetIsSidePanelOpen();
+  
+  const allOptimisticFiles = useOptimisticFilesStore((state) => state.files);
+  const updateFileStatus = useOptimisticFilesStore((state) => state.updateFileStatus);
+  const clearOptimisticFiles = useOptimisticFilesStore((state) => state.clearFilesForThread);
+  const optimisticFiles = useMemo(
+    () => allOptimisticFiles.filter((f) => f.threadId === threadId),
+    [allOptimisticFiles, threadId]
+  );
+  const [optimisticFilesUploading, setOptimisticFilesUploading] = useState(false);
+  const optimisticFilesUploadedRef = useRef(false);
   
   const {
     messages,
@@ -340,6 +352,58 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     window.addEventListener('sandbox-active', handleSandboxActive);
     return () => window.removeEventListener('sandbox-active', handleSandboxActive);
   }, [projectId, queryClient]);
+
+  useEffect(() => {
+    if (
+      optimisticFilesUploadedRef.current ||
+      optimisticFilesUploading ||
+      optimisticFiles.length === 0
+    ) {
+      return;
+    }
+
+    const pendingFiles = optimisticFiles.filter((f) => f.status === 'pending');
+    if (pendingFiles.length === 0) {
+      return;
+    }
+
+    const uploadFiles = async () => {
+      setOptimisticFilesUploading(true);
+      optimisticFilesUploadedRef.current = true;
+
+      pendingFiles.forEach((f) => updateFileStatus(f.id, 'uploading'));
+
+      const files = pendingFiles.map((f) => f.file);
+      
+      try {
+        await uploadPendingFilesToProject(files, projectId, (fileIndex, status, error) => {
+          const file = pendingFiles[fileIndex];
+          if (file) {
+            updateFileStatus(file.id, status, error);
+          }
+        });
+        
+        setTimeout(() => {
+          clearOptimisticFiles(threadId);
+          sessionStorage.removeItem('optimistic_files');
+        }, 2000);
+      } catch (error) {
+        console.error('Failed to upload optimistic files:', error);
+        pendingFiles.forEach((f) => updateFileStatus(f.id, 'error', 'Upload failed'));
+      } finally {
+        setOptimisticFilesUploading(false);
+      }
+    };
+
+    uploadFiles();
+  }, [
+    optimisticFiles,
+    optimisticFilesUploading,
+    projectId,
+    threadId,
+    updateFileStatus,
+    clearOptimisticFiles,
+  ]);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -1056,9 +1120,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       const wasNewMessageAdded = messages.length > prevMessagesLengthRef.current;
       prevMessagesLengthRef.current = messages.length;
 
-      if (!wasNewMessageAdded) {
-        return;
-      }
+      if (!wasNewMessageAdded) return;
 
       const scrollContainer = scrollContainerRef.current;
       const scrollTop = scrollContainer.scrollTop;
@@ -1080,6 +1142,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   const optimisticMessages: UnifiedMessage[] = useMemo(() => {
     if (!showOptimisticUI || !optimisticPrompt) return [];
+    
     return [{
       message_id: 'optimistic-user',
       thread_id: threadId,
