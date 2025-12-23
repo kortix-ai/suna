@@ -69,27 +69,28 @@ export function parsePresentationSlidePath(filePath: string | null): {
  * @param presentationName - Name of the presentation
  * @param filePath - Path to the slide file
  * @param slideNumber - Slide number
- * @returns JSON stringified tool content that matches expected structure
+ * @returns JSON stringified tool content that matches expected structure for PresentationViewer
  */
 export function createPresentationViewerToolContent(
   presentationName: string,
   filePath: string,
   slideNumber: number
 ): string {
-  const mockToolOutput = {
+  // PresentationViewer expects presentation_path to be the directory, not the file
+  // e.g., "presentations/mypresentation" not "presentations/mypresentation/slide_01.html"
+  const presentationPath = `presentations/${presentationName}`;
+  
+  // Return a flat structure that PresentationViewer can directly parse
+  const toolOutput = {
     presentation_name: presentationName,
-    presentation_path: filePath,
+    presentation_path: presentationPath,
     slide_number: slideNumber,
-    presentation_title: `Slide ${slideNumber}`
+    slide_file: filePath,
+    presentation_title: presentationName,
+    message: `Slide ${slideNumber} edited successfully`
   };
 
-  return JSON.stringify({
-    result: {
-      output: JSON.stringify(mockToolOutput),
-      success: true
-    },
-    tool_name: 'presentation-viewer'
-  });
+  return JSON.stringify(toolOutput);
 }
 
 /**

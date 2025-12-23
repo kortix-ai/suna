@@ -1383,36 +1383,64 @@ async def stream_agent_run(
     stream_key = f"agent_run:{agent_run_id}:stream"
 
     def find_last_safe_boundary(entries):
+        """Find the last safe boundary for trimming stream entries.
+        
+        Structure-aware: Only trims at COMPLETE response boundaries.
+        A safe boundary is defined as:
+        1. `llm_response_end` - marks the complete end of an LLM response cycle
+        2. Final status messages (completed, failed, stopped, error) - marks agent run end
+        
+        NOTE: We do NOT treat individual assistant messages with stream_status='complete'
+        as safe boundaries because with multiple tool calls in a single response,
+        the assistant message completes before all tool executions finish.
+        Only `llm_response_end` signals that the ENTIRE response (including all tool calls)
+        has been processed.
+        """
         last_safe_index = -1
+        
+        # Track response boundaries to ensure we only trim complete cycles
+        # Each llm_response_start must have a matching llm_response_end
+        open_responses = 0  # Count of llm_response_start without matching llm_response_end
+        last_complete_response_end_index = -1
         
         for i, (entry_id, fields) in enumerate(entries):
             try:
                 data = json.loads(fields.get('data', '{}'))
                 msg_type = data.get('type')
                 
-                if msg_type == 'llm_response_end':
-                    last_safe_index = i
-                    logger.debug(f"Found safe boundary at index {i}: llm_response_end")
+                if msg_type == 'llm_response_start':
+                    open_responses += 1
+                    logger.debug(f"Found llm_response_start at index {i}, open_responses={open_responses}")
+                
+                elif msg_type == 'llm_response_end':
+                    open_responses = max(0, open_responses - 1)
+                    if open_responses == 0:
+                        # This llm_response_end closes a complete response cycle
+                        last_complete_response_end_index = i
+                        last_safe_index = i
+                        logger.debug(f"Found safe boundary at index {i}: llm_response_end (complete cycle)")
+                    else:
+                        logger.debug(f"Found llm_response_end at index {i}, but {open_responses} responses still open")
                 
                 elif msg_type == 'status':
                     status = data.get('status')
                     if status in ['completed', 'failed', 'stopped', 'error']:
+                        # Final status - safe to trim up to here
                         last_safe_index = i
                         logger.debug(f"Found safe boundary at index {i}: status={status}")
                 
-                elif msg_type == 'assistant':
-                    metadata = data.get('metadata', {})
-                    if isinstance(metadata, str):
-                        try:
-                            metadata = json.loads(metadata)
-                        except (json.JSONDecodeError, TypeError):
-                            metadata = {}
-                    if metadata.get('stream_status') == 'complete':
-                        last_safe_index = i
-                        logger.debug(f"Found safe boundary at index {i}: assistant with stream_status=complete")
+                # NOTE: We intentionally do NOT treat assistant stream_status='complete' as safe
+                # because with multiple tool calls, the assistant message completes but tools
+                # may still be executing. Only llm_response_end signals full completion.
+                
             except (json.JSONDecodeError, KeyError, TypeError) as e:
                 logger.debug(f"Skipping malformed entry at index {i}: {e}")
                 continue
+        
+        # Safety check: if there are still open responses, don't trim
+        if open_responses > 0 and last_safe_index == last_complete_response_end_index:
+            logger.debug(f"Still have {open_responses} open responses - skipping trim for safety")
+            return -1
         
         return last_safe_index
 

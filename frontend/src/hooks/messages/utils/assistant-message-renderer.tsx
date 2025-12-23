@@ -20,7 +20,7 @@ import { ApifyApprovalInline } from '@/components/thread/content/ApifyApprovalIn
 export interface AssistantMessageRendererProps {
   message: UnifiedMessage;
   toolResults?: UnifiedMessage[]; // Tool result messages linked to this assistant message
-  onToolClick: (assistantMessageId: string | null, toolName: string) => void;
+  onToolClick: (assistantMessageId: string | null, toolName: string, toolCallId?: string) => void;
   onFileClick?: (filePath?: string, filePathList?: string[]) => void;
   sandboxId?: string;
   project?: Project;
@@ -186,7 +186,7 @@ function renderCompleteToolCall(
  * Renders a regular tool call as a clickable button
  */
 function renderRegularToolCall(
-  toolCall: { function_name: string; arguments?: Record<string, any> },
+  toolCall: { function_name: string; arguments?: Record<string, any>; tool_call_id?: string },
   index: number,
   toolName: string,
   props: AssistantMessageRendererProps
@@ -201,7 +201,7 @@ function renderRegularToolCall(
   return (
     <div key={`tool-${index}`} className="my-1.5">
       <button
-        onClick={() => onToolClick(message.message_id, toolName)}
+        onClick={() => onToolClick(message.message_id, toolName, toolCall.tool_call_id)}
         className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
       >
         <div className='flex items-center justify-center'>

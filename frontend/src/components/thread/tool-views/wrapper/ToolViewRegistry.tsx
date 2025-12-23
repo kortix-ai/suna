@@ -306,6 +306,13 @@ export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
   let modifiedToolResult = toolResult;
   if (isPresentationSlide && filePath && presentationName && slideNumber && !isAlreadyPresentationTool && toolResult) {
     const viewerContent = createPresentationViewerToolContent(presentationName, filePath, slideNumber);
+    console.log('[ToolViewRegistry] Detected presentation slide in file operation:', {
+      toolName: name,
+      filePath,
+      presentationName,
+      slideNumber,
+      viewerContent: JSON.parse(viewerContent),
+    });
     modifiedToolResult = {
       ...toolResult,
       output: viewerContent,

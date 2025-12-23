@@ -123,8 +123,17 @@ export function useAgentStream(
   const setMessagesRef = useRef(setMessages);
   
   // DELTA STREAMING: Track accumulated tool call arguments with sequence numbers
-  // Structure: Map<toolCallId, Array<{sequence: number, delta: string}>>
-  const accumulatedToolCallsRef = useRef<Map<string, Array<{sequence: number, delta: string}>>>(new Map());
+  // Structure: Map<toolCallId, { metadata: ToolCallMetadata, chunks: Array<{sequence: number, delta: string}> }>
+  interface AccumulatedToolCall {
+    metadata: {
+      tool_call_id: string;
+      function_name: string;
+      index?: number;
+      [key: string]: any;
+    };
+    chunks: Array<{sequence: number, delta: string}>;
+  }
+  const accumulatedToolCallsRef = useRef<Map<string, AccumulatedToolCall>>(new Map());
   
   // Store callbacks in ref to prevent handler recreation on every parent render
   const callbacksRef = useRef(callbacks);
@@ -538,62 +547,83 @@ export function useAgentStream(
             const toolCalls = parsedMetadata.tool_calls || [];
             if (toolCalls.length > 0) {
               // DELTA STREAMING: Accumulate deltas into full tool calls with sequence ordering
-              const reconstructedToolCalls = toolCalls.map((tc: any) => {
+              // First, update the accumulator with new deltas from this chunk
+              for (const tc of toolCalls as any[]) {
+                const toolCallId = tc.tool_call_id || 'unknown';
+                const sequence = message.sequence ?? 0;
+                
+                // Get or create the accumulated entry for this tool call
+                let accumulated = accumulatedToolCallsRef.current.get(toolCallId);
+                if (!accumulated) {
+                  accumulated = {
+                    metadata: {
+                      tool_call_id: tc.tool_call_id,
+                      function_name: tc.function_name,
+                      index: tc.index,
+                    },
+                    chunks: [],
+                  };
+                  accumulatedToolCallsRef.current.set(toolCallId, accumulated);
+                }
+                
+                // Update metadata if we have newer info (function_name might come later)
+                if (tc.function_name) {
+                  accumulated.metadata.function_name = tc.function_name;
+                }
+                if (tc.index !== undefined) {
+                  accumulated.metadata.index = tc.index;
+                }
+                
                 if (tc.is_delta && tc.arguments_delta) {
                   // This is a delta update - store it with sequence number
-                  const toolCallId = tc.tool_call_id || 'unknown';
-                  const sequence = message.sequence ?? 0;
-                  
-                  // Get or create the chunks array for this tool call
-                  let chunks = accumulatedToolCallsRef.current.get(toolCallId);
-                  if (!chunks) {
-                    chunks = [];
-                    accumulatedToolCallsRef.current.set(toolCallId, chunks);
-                  }
-                  
-                  // Check if we already have this sequence (avoid duplicates)
-                  const existingIndex = chunks.findIndex(c => c.sequence === sequence);
+                  const existingIndex = accumulated.chunks.findIndex(c => c.sequence === sequence);
                   if (existingIndex >= 0) {
-                    // Update existing chunk
-                    chunks[existingIndex].delta = tc.arguments_delta;
+                    accumulated.chunks[existingIndex].delta = tc.arguments_delta;
                   } else {
-                    // Add new chunk
-                    chunks.push({ sequence, delta: tc.arguments_delta });
+                    accumulated.chunks.push({ sequence, delta: tc.arguments_delta });
                   }
-                  
                   // Sort chunks by sequence number
-                  chunks.sort((a, b) => a.sequence - b.sequence);
-                  
-                  // Merge ALL chunks we have in sequence order (progressive display)
-                  // This ensures correct ordering while still showing updates even if chunks arrive out of order
+                  accumulated.chunks.sort((a, b) => a.sequence - b.sequence);
+                } else if (tc.arguments) {
+                  // Full arguments (non-delta) - replace all chunks with single full argument
+                  const argsStr = typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments);
+                  accumulated.chunks = [{ sequence, delta: argsStr }];
+                }
+              }
+              
+              // Now reconstruct ALL accumulated tool calls (not just from this message)
+              const allReconstructedToolCalls = Array.from(accumulatedToolCallsRef.current.values())
+                .sort((a, b) => (a.metadata.index ?? 0) - (b.metadata.index ?? 0))
+                .map(accumulated => {
+                  // Merge all chunks for this tool call
                   let mergedArgs = '';
-                  
-                  for (const chunk of chunks) {
+                  for (const chunk of accumulated.chunks) {
                     mergedArgs += chunk.delta;
                   }
                   
-                  // Return reconstructed tool call with full accumulated arguments
                   return {
-                    ...tc,
+                    tool_call_id: accumulated.metadata.tool_call_id,
+                    function_name: accumulated.metadata.function_name,
+                    index: accumulated.metadata.index,
                     arguments: mergedArgs,
                     is_delta: false, // Mark as assembled
                   };
-                } else {
-                  // Full tool call (legacy mode or complete)
-                  return tc;
-                }
-              });
+                });
               
-              // Create updated message with reconstructed tool calls
+              // Create updated message with ALL reconstructed tool calls
               const updatedMessage = {
                 ...message,
                 metadata: JSON.stringify({
                   ...parsedMetadata,
-                  tool_calls: reconstructedToolCalls,
+                  tool_calls: allReconstructedToolCalls,
                 }),
               };
               
-              // Set toolCall state with the reconstructed UnifiedMessage (non-urgent update)
+              // Debug log to track multiple tool calls accumulation
+              console.log(`[useAgentStream] Accumulated ${allReconstructedToolCalls.length} tool calls:`, 
+                allReconstructedToolCalls.map(tc => ({ id: tc.tool_call_id, fn: tc.function_name, argsLen: tc.arguments.length })));
+              
+              // Set toolCall state with ALL reconstructed tool calls (non-urgent update)
               React.startTransition(() => {
                 setToolCall(updatedMessage);
               });

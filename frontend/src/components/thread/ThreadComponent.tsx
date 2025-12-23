@@ -47,7 +47,7 @@ import {
   useThreadAgent,
   useAgents,
 } from '@/hooks/agents/use-agents';
-import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
+import { AgentRunLimitBanner } from '@/components/thread/agent-run-limit-banner';
 import { 
   useSelectedAgentId, 
   useSetSelectedAgent, 
@@ -106,6 +106,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const [userInitiatedRun, setUserInitiatedRun] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [showAgentLimitDialog, setShowAgentLimitDialog] = useState(false);
+  const [showAgentLimitBanner, setShowAgentLimitBanner] = useState(false);
   const [agentLimitData, setAgentLimitData] = useState<{
     runningCount: number;
     runningThreadIds: string[];
@@ -700,7 +701,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
               runningCount: running_count,
               runningThreadIds: running_thread_ids,
             });
-            setShowAgentLimitDialog(true);
+            // Show inline banner for better UX context
+            setShowAgentLimitBanner(true);
             return;
           }
 
@@ -760,6 +762,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       }
     }
   }, [stopStreaming, agentRunId, stopAgentMutation, setAgentStatus, isShared]);
+
 
   const handleOpenFileViewer = useCallback(
     (filePath?: string, filePathList?: string[]) => {
@@ -1280,15 +1283,19 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           creditsExhausted={creditsExhausted}
         />
 
-        {agentLimitData && (
-          <AgentRunLimitDialog
-            open={showAgentLimitDialog}
-            onOpenChange={setShowAgentLimitDialog}
-            runningCount={agentLimitData.runningCount}
-            runningThreadIds={agentLimitData.runningThreadIds}
-            projectId={projectId}
-          />
-        )}
+      {agentLimitData && (
+        <AgentRunLimitBanner
+          open={showAgentLimitBanner}
+          onOpenChange={(open) => {
+            setShowAgentLimitBanner(open);
+            if (!open) {
+              setAgentLimitData(null);
+            }
+          }}
+          runningCount={agentLimitData.runningCount}
+          runningThreadIds={agentLimitData.runningThreadIds}
+        />
+      )}
       </>
     );
   }
@@ -1404,12 +1411,16 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       />
 
       {agentLimitData && (
-        <AgentRunLimitDialog
-          open={showAgentLimitDialog}
-          onOpenChange={setShowAgentLimitDialog}
+        <AgentRunLimitBanner
+          open={showAgentLimitBanner}
+          onOpenChange={(open) => {
+            setShowAgentLimitBanner(open);
+            if (!open) {
+              setAgentLimitData(null);
+            }
+          }}
           runningCount={agentLimitData.runningCount}
           runningThreadIds={agentLimitData.runningThreadIds}
-          projectId={projectId}
         />
       )}
     </>

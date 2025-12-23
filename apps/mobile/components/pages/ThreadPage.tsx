@@ -374,8 +374,9 @@ export function ThreadPage({
 
   // Memoized handlers for ThreadContent
   const handleToolClick = React.useCallback(
-    (assistantMessageId: string | null, toolName: string) => {
+    (assistantMessageId: string | null, toolName: string, toolCallId?: string) => {
       // Tool click handler - can be extended for analytics
+      // toolCallId can be used for precise tool navigation in the future
     },
     []
   );
