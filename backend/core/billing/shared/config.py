@@ -76,7 +76,7 @@ TIERS: Dict[str, Tier] = {
         },
         daily_credit_config={
             'enabled': True,
-            'amount': Decimal('2.00'),
+            'amount': Decimal('1.00'),
             'refresh_interval_hours': 24
         },
         monthly_refill_enabled=False
@@ -92,7 +92,7 @@ TIERS: Dict[str, Tier] = {
         display_name='Plus',
         can_purchase_credits=False,
         models=['all'],
-        project_limit=200,  # 2x thread_limit
+        project_limit=200,
         thread_limit=100,
         concurrent_runs=3,
         custom_workers_limit=5,

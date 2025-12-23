@@ -63,7 +63,7 @@ class FactStore:
 
 class HybridSummarizer:
     
-    SUMMARIZE_AND_EXTRACT_PROMPT = """Analyze this conversation and produce two outputs:
+    SUMMARIZE_AND_EXTRACT_PROMPT = """Analyze this conversation and produce three outputs:
 
 1. **FACTS**: Extract ALL important facts that should NEVER be forgotten. Include:
    - User identity (name, role, company, team)
@@ -75,7 +75,11 @@ class HybridSummarizer:
    - Preferences expressed
    - Anything explicitly asked to remember
 
-2. **SUMMARY**: Brief narrative of what happened (~{target_words} words)
+2. **IMPORTANT_MESSAGES**: List the message indices (0-based) that contain critical information.
+   Include messages with: credentials, key decisions, explicit memory requests, complex instructions, project requirements.
+   EXCLUDE trivial messages like "ok", "thanks", "got it", "yes", "no", short acknowledgments.
+
+3. **SUMMARY**: Brief narrative of what happened (~{target_words} words)
 
 Respond in this exact JSON format:
 {{
@@ -83,6 +87,7 @@ Respond in this exact JSON format:
     {{"fact": "User's name is X", "confidence": 1.0}},
     {{"fact": "Working on project Y", "confidence": 0.9}}
   ],
+  "important_message_indices": [0, 3, 7],
   "summary": "Brief narrative..."
 }}
 
@@ -102,9 +107,13 @@ JSON response:"""
         self.max_llm_calls_per_compile = max_llm_calls_per_compile
         self._llm_calls_made = 0
         self._fact_store = FactStore()
+        self._important_message_ids: List[str] = []
+        self._message_id_mapping: Dict[int, str] = {}
     
     def reset_call_counter(self):
         self._llm_calls_made = 0
+        self._important_message_ids = []
+        self._message_id_mapping = {}
     
     def can_use_llm(self) -> bool:
         return self.use_llm and self._llm_calls_made < self.max_llm_calls_per_compile
@@ -115,6 +124,12 @@ JSON response:"""
     
     def get_preserved_facts_context(self) -> str:
         return self._fact_store.to_context()
+    
+    def get_important_message_ids(self) -> List[str]:
+        return self._important_message_ids.copy()
+    
+    def set_message_id_mapping(self, mapping: Dict[int, str]):
+        self._message_id_mapping = mapping
     
     async def summarize(
         self,
@@ -130,21 +145,35 @@ JSON response:"""
             logger.debug(f"Using cached summary for {len(messages)} messages")
             if "facts" in cached:
                 self._fact_store.add_many(cached["facts"])
+            if "important_message_indices" in cached:
+                self._process_important_indices(cached["important_message_indices"])
             return cached.get("summary", "")
         
         if self.can_use_llm():
             try:
                 result = await self._llm_summarize_and_extract(messages, target_tokens)
                 if result:
-                    summary, facts = result
+                    summary, facts, important_indices = result
                     self._fact_store.add_many(facts)
-                    await self._cache(cache_key, {"summary": summary, "facts": facts})
+                    self._process_important_indices(important_indices)
+                    await self._cache(cache_key, {
+                        "summary": summary, 
+                        "facts": facts,
+                        "important_message_indices": important_indices,
+                    })
                     self._llm_calls_made += 1
                     return summary
             except Exception as e:
                 logger.warning(f"LLM summarization failed, falling back to rule-based: {e}")
         
         return self._rule_based_extract(messages, target_tokens)
+    
+    def _process_important_indices(self, indices: List[int]):
+        for idx in indices:
+            if idx in self._message_id_mapping:
+                msg_id = self._message_id_mapping[idx]
+                if msg_id not in self._important_message_ids:
+                    self._important_message_ids.append(msg_id)
     
     async def extract_facts_only(
         self,
@@ -156,8 +185,9 @@ JSON response:"""
         try:
             result = await self._llm_summarize_and_extract(messages, 200)
             if result:
-                _, facts = result
+                _, facts, important_indices = result
                 self._fact_store.add_many(facts)
+                self._process_important_indices(important_indices)
                 self._llm_calls_made += 1
                 return facts
         except Exception as e:
@@ -169,7 +199,7 @@ JSON response:"""
         self,
         messages: List[Dict[str, Any]],
         target_tokens: int,
-    ) -> Optional[Tuple[str, List[Dict[str, Any]]]]:
+    ) -> Optional[Tuple[str, List[Dict[str, Any]], List[int]]]:
         try:
             from core.services.llm import make_llm_api_call
         except ImportError:
@@ -208,7 +238,7 @@ JSON response:"""
             logger.error(f"LLM call failed: {e}")
             return None
     
-    def _parse_llm_response(self, response: str) -> Optional[Tuple[str, List[Dict[str, Any]]]]:
+    def _parse_llm_response(self, response: str) -> Optional[Tuple[str, List[Dict[str, Any]], List[int]]]:
         response = response.strip()
         
         if response.startswith("```"):
@@ -223,18 +253,23 @@ JSON response:"""
             data = json.loads(response)
             facts = data.get("facts", [])
             summary = data.get("summary", "")
-            return summary, facts
+            important_indices = data.get("important_message_indices", [])
+            return summary, facts, important_indices
         except json.JSONDecodeError:
             start = response.find("{")
             end = response.rfind("}") + 1
             if start != -1 and end > start:
                 try:
                     data = json.loads(response[start:end])
-                    return data.get("summary", ""), data.get("facts", [])
+                    return (
+                        data.get("summary", ""), 
+                        data.get("facts", []),
+                        data.get("important_message_indices", []),
+                    )
                 except:
                     pass
         
-        return response, []
+        return response, [], []
     
     def _rule_based_extract(
         self,
@@ -309,13 +344,15 @@ JSON response:"""
     
     def _format_messages(self, messages: List[Dict[str, Any]]) -> str:
         parts = []
-        for msg in messages[-30:]:
+        start_idx = max(0, len(messages) - 30)
+        for i, msg in enumerate(messages[-30:]):
+            actual_idx = start_idx + i
             role = msg.get("role", "user")
             content = self._get_content(msg)
             
             if content:
                 truncated = content[:800] + "..." if len(content) > 800 else content
-                parts.append(f"{role.upper()}: {truncated}")
+                parts.append(f"[{actual_idx}] {role.upper()}: {truncated}")
         
         return "\n\n".join(parts)
     

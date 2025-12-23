@@ -60,6 +60,14 @@ class ContextCompiler:
         for layer in self._layers.values():
             layer.clear()
         self.summarizer.reset_call_counter()
+        self.importance_marker.clear()
+        
+        message_id_mapping = {
+            i: chunk.message_id 
+            for i, chunk in enumerate(chunks) 
+            if chunk.message_id
+        }
+        self.summarizer.set_message_id_mapping(message_id_mapping)
         
         chunks = self.importance_marker.mark(chunks)
         
@@ -99,6 +107,13 @@ class ContextCompiler:
             )
             
             chunks_by_layer[layer_type] = processed
+        
+        important_ids = self.summarizer.get_important_message_ids()
+        if important_ids:
+            self.importance_marker.set_important_message_ids(important_ids)
+            for layer_chunks in chunks_by_layer.values():
+                self.importance_marker.mark(layer_chunks)
+            logger.debug(f"Re-marked importance for {len(important_ids)} LLM-identified important messages")
         
         messages = self._assemble_messages(chunks_by_layer)
         

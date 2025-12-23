@@ -5,7 +5,6 @@ from ..types import ContextChunk, ImportanceLevel
 from .embeddings import cosine_similarity, normalize_similarity
 from core.utils.logger import logger
 
-
 class SemanticRanker:
     def __init__(
         self,
@@ -110,32 +109,32 @@ class SemanticRanker:
         if not fitting:
             return selected
         
-        n = len(fitting)
-        
-        if remaining_budget > 50000 or n > 300:
-            sorted_chunks = sorted(fitting, key=lambda c: c.relevance_score, reverse=True)
-            for chunk in sorted_chunks:
-                if used_tokens + chunk.tokens <= token_budget:
-                    selected.append(chunk)
-                    used_tokens += chunk.tokens
-            selected.sort(key=lambda c: c.created_at.timestamp() if c.created_at else 0)
-            return selected
-        
-        values = [int(c.relevance_score * 1000) for c in fitting]
-        weights = [c.tokens for c in fitting]
-        
-        dp = [0] * (remaining_budget + 1)
-        choice = [[] for _ in range(remaining_budget + 1)]
-        
-        for i in range(n):
-            for w in range(remaining_budget, weights[i] - 1, -1):
-                if dp[w - weights[i]] + values[i] > dp[w]:
-                    dp[w] = dp[w - weights[i]] + values[i]
-                    choice[w] = choice[w - weights[i]] + [i]
-        
-        selected_indices = choice[remaining_budget]
-        selected.extend(fitting[i] for i in selected_indices)
+        greedy_selected = self._greedy_knapsack(fitting, remaining_budget)
+        selected.extend(greedy_selected)
         selected.sort(key=lambda c: c.created_at.timestamp() if c.created_at else 0)
+        
+        return selected
+    
+    def _greedy_knapsack(
+        self,
+        chunks: List[ContextChunk],
+        budget: int,
+    ) -> List[ContextChunk]:
+        scored = []
+        for chunk in chunks:
+            if chunk.tokens > 0:
+                efficiency = chunk.relevance_score / chunk.tokens
+                scored.append((efficiency, chunk.relevance_score, chunk))
+        
+        scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        
+        selected = []
+        used = 0
+        
+        for _, _, chunk in scored:
+            if used + chunk.tokens <= budget:
+                selected.append(chunk)
+                used += chunk.tokens
         
         return selected
     
