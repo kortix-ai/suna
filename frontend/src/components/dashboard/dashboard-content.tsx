@@ -41,6 +41,7 @@ import { useSidebar } from '@/components/ui/sidebar';
 import { useWelcomeBannerStore } from '@/stores/welcome-banner-store';
 import { cn } from '@/lib/utils';
 import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
+import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 
 // Lazy load heavy components that aren't immediately visible
 const PlanSelectionModal = lazy(() => 
@@ -269,6 +270,8 @@ export function DashboardContent() {
     }
   }, [searchParams, router, tAuth]);
 
+  const addOptimisticFiles = useOptimisticFilesStore((state) => state.addFiles);
+
   const handleSubmit = async (
     message: string,
     options?: {
@@ -312,7 +315,22 @@ export function DashboardContent() {
       chatInputRef.current?.clearUploadedFiles();
       setIsRedirecting(true);
       
-      sessionStorage.setItem('optimistic_prompt', trimmedMessage || message);
+      const normalizedPendingFiles = pendingFiles.map((file) => {
+        const normalizedName = normalizeFilenameToNFC(file.name);
+        return new File([file], normalizedName, { type: file.type });
+      });
+      
+      let promptWithFiles = trimmedMessage || message;
+      if (normalizedPendingFiles.length > 0 && fileIds.length === 0) {
+        addOptimisticFiles(threadId, projectId, normalizedPendingFiles);
+        sessionStorage.setItem('optimistic_files', 'true');
+        const fileRefs = normalizedPendingFiles.map((f) => 
+          `[Uploaded File: /workspace/uploads/${f.name}]`
+        ).join('\n');
+        promptWithFiles = `${trimmedMessage || message}\n\n${fileRefs}`;
+      }
+      
+      sessionStorage.setItem('optimistic_prompt', promptWithFiles);
       sessionStorage.setItem('optimistic_thread', threadId);
       
       router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
@@ -320,9 +338,8 @@ export function DashboardContent() {
       optimisticAgentStart({
         thread_id: threadId,
         project_id: projectId,
-        prompt: trimmedMessage || message,
+        prompt: promptWithFiles,
         file_ids: fileIds.length > 0 ? fileIds : undefined,
-        files: fileIds.length === 0 && pendingFiles.length > 0 ? pendingFiles : undefined,
         model_name: options?.model_name,
         agent_id: selectedAgentId || undefined,
         memory_enabled: true,

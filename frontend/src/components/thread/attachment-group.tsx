@@ -23,7 +23,7 @@ interface UploadedFile {
     type: string;
     localUrl?: string;
     fileId?: string;
-    status?: 'uploading' | 'ready' | 'error';
+    status?: 'pending' | 'uploading' | 'ready' | 'error';
 }
 
 interface AttachmentGroupProps {
@@ -176,7 +176,7 @@ export function AttachmentGroup({
         return !sandboxId ? file.localUrl : undefined;
     };
 
-    const getUploadStatus = (file: string | UploadedFile): 'uploading' | 'ready' | 'error' | undefined => {
+    const getUploadStatus = (file: string | UploadedFile): 'pending' | 'uploading' | 'ready' | 'error' | undefined => {
         if (typeof file === 'string') return undefined;
         return file.status;
     };

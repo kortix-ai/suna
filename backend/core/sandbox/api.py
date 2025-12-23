@@ -648,6 +648,56 @@ async def create_file_in_project(
         logger.error(f"Error uploading file to project {project_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+class FileUploadStateRequest(BaseModel):
+    file_count: int
+
+
+@router.post("/project/{project_id}/files/upload-started")
+async def file_upload_started(
+    project_id: str,
+    request: FileUploadStateRequest,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    from core.services import redis
+    
+    key = f"file_upload_pending:{project_id}"
+    await redis.set(key, str(request.file_count), ex=300)
+    logger.info(f"File upload started for project {project_id}: {request.file_count} files")
+    
+    return {"status": "ok", "pending_files": request.file_count}
+
+
+@router.post("/project/{project_id}/files/upload-completed")
+async def file_upload_completed(
+    project_id: str,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    from core.services import redis
+    
+    key = f"file_upload_pending:{project_id}"
+    await redis.delete(key)
+    logger.info(f"File upload completed for project {project_id}")
+    
+    return {"status": "ok"}
+
+
+@router.get("/project/{project_id}/files/upload-status")
+async def get_file_upload_status(
+    project_id: str,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    from core.services import redis
+    
+    key = f"file_upload_pending:{project_id}"
+    pending = await redis.get(key)
+    
+    return {
+        "uploading": pending is not None,
+        "pending_files": int(pending) if pending else 0
+    }
+
+
 @router.get("/sandboxes/{sandbox_id}/files/content-by-hash")
 async def read_file_by_hash(
     sandbox_id: str,
@@ -656,7 +706,6 @@ async def read_file_by_hash(
     request: Request = None,
     user_id: Optional[str] = Depends(get_optional_user_id)
 ):
-    """Read a file from the sandbox at a specific git commit, without changing HEAD"""
     import shlex
 
     original_path = path

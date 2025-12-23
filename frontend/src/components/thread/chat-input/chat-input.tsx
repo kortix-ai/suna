@@ -684,9 +684,8 @@ export interface UploadedFile {
   type: string;
   localUrl?: string;
   fileId?: string;
-  status?: 'uploading' | 'ready' | 'error';
+  status?: 'pending' | 'uploading' | 'ready' | 'error';
 }
-
 
 
 export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(

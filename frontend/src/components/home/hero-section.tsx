@@ -28,6 +28,7 @@ import { useAgentSelection } from '@/stores/agent-selection-store';
 import { useTranslations } from 'next-intl';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
+import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
 const AgentRunLimitBanner = lazy(() => 
@@ -170,6 +171,8 @@ export function HeroSection() {
         };
     }, [inputValue, isSubmitting, router]);
 
+    const addOptimisticFiles = useOptimisticFilesStore((state) => state.addFiles);
+
     const handleChatInputSubmit = async (
         message: string,
         options?: { model_name?: string; enable_thinking?: boolean }
@@ -198,7 +201,17 @@ export function HeroSection() {
             chatInputRef.current?.clearPendingFiles();
             setInputValue('');
             
-            sessionStorage.setItem('optimistic_prompt', trimmedMessage);
+            let promptWithFiles = trimmedMessage;
+            if (normalizedFiles.length > 0) {
+                addOptimisticFiles(threadId, projectId, normalizedFiles);
+                sessionStorage.setItem('optimistic_files', 'true');
+                const fileRefs = normalizedFiles.map((f) => 
+                    `[Uploaded File: /workspace/uploads/${f.name}]`
+                ).join('\n');
+                promptWithFiles = `${trimmedMessage}\n\n${fileRefs}`;
+            }
+            
+            sessionStorage.setItem('optimistic_prompt', promptWithFiles);
             sessionStorage.setItem('optimistic_thread', threadId);
             
             router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
@@ -206,8 +219,7 @@ export function HeroSection() {
             optimisticAgentStart({
                 thread_id: threadId,
                 project_id: projectId,
-                prompt: trimmedMessage,
-                files: normalizedFiles.length > 0 ? normalizedFiles : undefined,
+                prompt: promptWithFiles,
                 model_name: options?.model_name,
                 agent_id: selectedAgentId || undefined,
                 memory_enabled: true,

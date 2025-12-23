@@ -255,13 +255,13 @@ async def create_thread_optimistically(
                 await redis.set(cache_key, json.dumps(parsed_contents), ex=3600)
                 logger.info(f"✅ Cached {len(parsed_contents)} staged files for thread {thread_id}")
             
-            asyncio.create_task(_upload_staged_files_to_sandbox_background(
+            await _upload_staged_files_to_sandbox_background(
                 project_id=project_id,
                 thread_id=thread_id,
                 staged_files=staged_files,
                 account_id=account_id
-            ))
-            logger.debug(f"Scheduled background sandbox upload for {len(staged_files)} staged files")
+            )
+            logger.info(f"✅ Completed sandbox upload for {len(staged_files)} staged files")
             
         except Exception as e:
             logger.error(f"Error processing staged files: {str(e)}\n{traceback.format_exc()}")

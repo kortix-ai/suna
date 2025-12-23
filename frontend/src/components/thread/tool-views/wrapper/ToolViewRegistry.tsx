@@ -58,6 +58,7 @@ import { KbToolView } from '../KbToolView';
 import { ExpandMessageToolView } from '../expand-message-tool/ExpandMessageToolView';
 import { RealityDefenderToolView } from '../reality-defender-tool/RealityDefenderToolView';
 import { ApifyToolView } from '../apify-tool/ToolView';
+import { FileReaderToolView } from '../file-reader-tool/FileReaderToolView';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;
@@ -78,10 +79,14 @@ const defaultRegistry: ToolViewRegistryType = {
   'create-file': FileOperationToolView,
   'delete-file': FileOperationToolView,
   'full-file-rewrite': FileOperationToolView,
-  'read-file': FileOperationToolView,
   'edit-file': FileOperationToolView,
 
   'parse-document': DocumentParserToolView,
+
+  'read-file': FileReaderToolView,
+  'read_file': FileReaderToolView,
+  'search-file': FileReaderToolView,
+  'search_file': FileReaderToolView,
 
   'str-replace': FileOperationToolView,
 

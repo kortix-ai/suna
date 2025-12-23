@@ -202,7 +202,7 @@ interface FileAttachmentProps {
     isSingleItemGrid?: boolean;
     standalone?: boolean;
     alignRight?: boolean;
-    uploadStatus?: 'uploading' | 'ready' | 'error';
+    uploadStatus?: 'pending' | 'uploading' | 'ready' | 'error';
 }
 
 export function FileAttachment({
