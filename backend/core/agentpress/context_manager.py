@@ -78,6 +78,8 @@ class ContextManager:
         - metadata.compressed_content = the compressed content
         
         This allows future reads to use compressed content directly without re-compressing.
+        Always updates compressed_content when provided - allows tiered compression to
+        upgrade already-compressed messages to more aggressive compression.
         
         Args:
             compressed_messages: List of dicts with 'message_id' and 'compressed_content'
@@ -89,7 +91,6 @@ class ContextManager:
             return 0
         
         saved_count = 0
-        skipped_count = 0
         upgraded_count = 0
         client = await self.db.client
         
@@ -107,22 +108,10 @@ class ContextManager:
                 
                 if result.data:
                     existing_metadata = result.data.get('metadata', {}) or {}
+                    was_already_compressed = existing_metadata.get('compressed', False)
                     
-                    # Check if already compressed
-                    if existing_metadata.get('compressed'):
-                        # Allow omission to override compression (placeholder is smaller)
-                        if is_omission and not existing_metadata.get('omitted'):
-                            existing_metadata['omitted'] = True
-                            existing_metadata['compressed_content'] = compressed_content
-                            await client.table('messages').update({
-                                'metadata': existing_metadata
-                            }).eq('message_id', message_id).execute()
-                            upgraded_count += 1
-                        else:
-                            skipped_count += 1
-                        continue
-                    
-                    # Update metadata with compressed content
+                    # Always update compressed content - allows upgrading to more aggressive compression
+                    # (e.g., tiered compression placeholder replacing LLM summary)
                     existing_metadata['compressed'] = True
                     existing_metadata['compressed_content'] = compressed_content
                     if is_omission:
@@ -132,15 +121,18 @@ class ContextManager:
                         'metadata': existing_metadata
                     }).eq('message_id', message_id).execute()
                     
-                    saved_count += 1
+                    if was_already_compressed:
+                        upgraded_count += 1
+                    else:
+                        saved_count += 1
                     
             except Exception as e:
                 logger.warning(f"Failed to save compressed message {message_id}: {e}")
         
-        if saved_count > 0 or skipped_count > 0 or upgraded_count > 0:
-            logger.info(f"💾 Compression save: {saved_count} new, {upgraded_count} upgraded to omitted, {skipped_count} skipped")
+        if saved_count > 0 or upgraded_count > 0:
+            logger.info(f"💾 Compression save: {saved_count} new, {upgraded_count} upgraded")
         
-        return saved_count
+        return saved_count + upgraded_count
     
     def _get_bedrock_client(self):
         """Get the singleton Bedrock client."""
@@ -226,14 +218,15 @@ class ContextManager:
             try:
                 bedrock_client = self._get_bedrock_client()
                 if bedrock_client:
-                    # Import Kimi K2 profile ID
-                    from core.ai_models.registry import KIMI_K2_PROFILE_ID
+                    # Import profile IDs
+                    from core.ai_models.registry import KIMI_K2_PROFILE_ID, SONNET_4_5_PROFILE_ID, HAIKU_4_5_PROFILE_ID, MINIMAX_M2_PROFILE_ID
                     
                     model_id_mapping = {
                         KIMI_K2_PROFILE_ID: "moonshot.kimi-k2-thinking",  # Kimi K2 (Basic Mode)
-                        "few7z4l830xh": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",  # Sonnet 4.5 (Power Mode)
-                        "tyj1ks3nj9qf": "anthropic.claude-sonnet-4-20250514-v1:0",  # Sonnet 4
-                        "heol2zyy5v48": "anthropic.claude-haiku-4-5-20251001-v1:0",  # HAIKU 4.5 (Legacy - replaced by Kimi K2)
+                        SONNET_4_5_PROFILE_ID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",  # Sonnet 4.5 (Power Mode)
+                        "tyj1ks3nj9qf": "anthropic.claude-sonnet-4-20250514-v1:0",  # Sonnet 4 (no constant defined)
+                        HAIKU_4_5_PROFILE_ID: "anthropic.claude-haiku-4-5-20251001-v1:0",  # HAIKU 4.5 (Legacy - replaced by Kimi K2)
+                        MINIMAX_M2_PROFILE_ID: "minimax.minimax-m2",  # MiniMax M2
                     }
                     
                     # Extract profile ID from ARN

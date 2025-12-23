@@ -112,7 +112,6 @@ class ToolGuideRegistry:
             'sb_vision_tool': 'media',
             'sb_image_edit_tool': 'media',
             'sb_presentation_tool': 'media',
-            'data_providers_tool': 'utility',
             'vapi_voice_tool': 'utility',
             'reality_defender_tool': 'utility',
             'apify_tool': 'utility',

@@ -49,33 +49,12 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
         logger.error(f"Failed to update database status for stopped/failed run {agent_run_id}")
         raise HTTPException(status_code=500, detail="Failed to update agent run status in database")
 
-    # Send STOP signal to the global control channel
-    global_control_channel = f"agent_run:{agent_run_id}:control"
+    # Set STOP signal using simple Redis key (no pubsub needed)
     try:
-        await redis.publish(global_control_channel, "STOP")
-        logger.warning(f"🛑 Published STOP signal to global channel {global_control_channel} (source: {stop_source})")
+        await redis.set_stop_signal(agent_run_id)
+        logger.warning(f"🛑 Set STOP signal for agent run {agent_run_id} (source: {stop_source})")
     except Exception as e:
-        logger.error(f"Failed to publish STOP signal to global channel {global_control_channel}: {str(e)}")
-
-    # Find all instances handling this agent run and send STOP to instance-specific channels
-    try:
-        # Use scan_keys instead of keys() to avoid blocking Redis
-        instance_keys = await redis.scan_keys(f"active_run:*:{agent_run_id}")
-        logger.debug(f"Found {len(instance_keys)} active instance keys for agent run {agent_run_id}")
-
-        for key in instance_keys:
-            # Key format: active_run:{instance_id}:{agent_run_id}
-            parts = key.split(":")
-            if len(parts) == 3:
-                instance_id_from_key = parts[1]
-                instance_control_channel = f"agent_run:{agent_run_id}:control:{instance_id_from_key}"
-                try:
-                    await redis.publish(instance_control_channel, "STOP")
-                    logger.warning(f"🛑 Published STOP signal to instance channel {instance_control_channel} (source: {stop_source})")
-                except Exception as e:
-                    logger.warning(f"Failed to publish STOP signal to instance channel {instance_control_channel}: {str(e)}")
-            else:
-                 logger.warning(f"Unexpected key format found: {key}")
+        logger.error(f"Failed to set STOP signal for agent run {agent_run_id}: {str(e)}")
 
         # Comprehensive cleanup of all Redis keys for this agent run
         await cleanup_redis_keys_for_agent_run(agent_run_id)

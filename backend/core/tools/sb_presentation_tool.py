@@ -72,6 +72,50 @@ presentations/
 **Final Phase: Deliver**
 - Review for visual consistency
 - Deliver with first slide attached using 'complete' tool
+
+### TYPOGRAPHY & ICONS
+
+**Google Fonts (Inter) is pre-loaded** - All slides automatically use Inter font family for modern, clean typography. No need to load additional fonts unless specifically required.
+
+**Icons & Graphics:**
+- **Use emoji** for icons: 📊 📈 💡 🚀 ⚡ 🎯 ✅ ❤️ 👥 🌍 🏭 👤 🕐 🏆 etc.
+- **Unicode symbols** for simple graphics: → ← ↑ ↓ • ✓ ✗ ⚡ ★
+- **NO Font Awesome** - Use emoji or Unicode symbols instead
+- For bullet points, use emoji or styled divs with Unicode symbols
+
+**Typography Guidelines:**
+- **Titles**: 48-72px (bold, weight: 700-900)
+- **Subtitles**: 32-42px (semi-bold, weight: 600-700)
+- **Headings**: 28-36px (semi-bold, weight: 600)
+- **Body**: 20-24px (normal, weight: 400-500)
+- **Small**: 16-18px (light, weight: 300-400)
+- **Line Height**: 1.5-1.8 for readability
+
+### DESIGN PRINCIPLES
+
+**Visual Consistency:**
+- Maintain consistent color scheme throughout entire presentation
+- Use theme colors: Primary (backgrounds), Secondary (subtle backgrounds), Accent (highlights), Text (all text)
+- Consistent spacing: 40-60px between major sections, 20-30px between related items
+
+**Content Richness:**
+- Include real data: specific numbers, percentages, metrics
+- Add quotes & testimonials for credibility
+- Use case examples to illustrate concepts
+- Include emotional hooks and storytelling elements
+
+**Layout Best Practices:**
+- Focus on 1-2 main ideas per slide
+- Limit to 3-5 bullet points max
+- Use `overflow: hidden` on containers
+- Always use `box-sizing: border-box` on containers with padding
+- Embrace whitespace - don't fill every pixel
+- Grid columns: Use `gap: 50-60px` for spacing
+
+**Dimension Requirements:**
+- Slide size: 1920x1080 pixels (16:9 aspect ratio)
+- Container padding: Maximum 40px on all edges
+- **CRITICAL**: Never add conflicting body styles - template already sets fixed dimensions
 """
 )
 class SandboxPresentationTool(SandboxToolsBase):
@@ -112,7 +156,7 @@ class SandboxPresentationTool(SandboxToolsBase):
 
 
     def _create_slide_html(self, slide_content: str, slide_number: int, total_slides: int, presentation_title: str) -> str:
-        """Create a basic HTML document without predefined CSS"""
+        """Create a basic HTML document with Google Fonts"""
         
         html_template = f"""<!DOCTYPE html>
 <html lang="en">
@@ -120,17 +164,23 @@ class SandboxPresentationTool(SandboxToolsBase):
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{presentation_title} - Slide {slide_number}</title>
+    <!-- Google Fonts - Inter for modern, clean typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <!-- Optional libraries loaded asynchronously - won't block page rendering -->
     <script src="https://d3js.org/d3.v7.min.js" async></script>
-    <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
-    <noscript><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet"></noscript>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1" async></script>
     <style>
+        * {{
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        }}
         body {{
             height: 1080px;
             width: 1920px;
             margin: 0;
             padding: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
         }}
     </style>
 </head>
@@ -521,7 +571,7 @@ class SandboxPresentationTool(SandboxToolsBase):
                     },
                     "content": {
                         "type": "string",
-                        "description": """HTML body content only (DO NOT include <!DOCTYPE>, <html>, <head>, or <body> tags - these are added automatically). Include your content with inline CSS or <style> blocks. Design for 1920x1080 resolution. D3.js, Font Awesome, and Chart.js are available asynchronously (won't block page load) - use them if needed, but pure CSS/HTML is recommended for static presentations.
+                        "description": """HTML body content only (DO NOT include <!DOCTYPE>, <html>, <head>, or <body> tags - these are added automatically). Include your content with inline CSS or <style> blocks. Design for 1920x1080 resolution. Google Fonts (Inter) is pre-loaded for typography. D3.js and Chart.js are available asynchronously (won't block page load) - use them if needed, but pure CSS/HTML is recommended for static presentations. For icons, use emoji (📊 📈 💡 🚀 ⚡ 🎯) or Unicode symbols instead of icon libraries.
                         
                         **🚨 IMPORTANT - Pre-configured Body Styles**: The slide template ALREADY includes base body styling in the <head>:
                         ```

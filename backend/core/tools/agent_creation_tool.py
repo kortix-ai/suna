@@ -87,7 +87,7 @@ class AgentCreationTool(Tool):
                     },
                     "agentpress_tools": {
                         "type": "object",
-                        "description": "Configuration for AgentPress tools. Each key is a tool name, value is boolean for enabled/disabled. Available tools: sb_shell_tool, sb_files_tool, web_search_tool, browser_tool, sb_vision_tool, data_providers_tool, etc.",
+                        "description": "Configuration for AgentPress tools. Each key is a tool name, value is boolean for enabled/disabled. Available tools: sb_shell_tool, sb_files_tool, web_search_tool, browser_tool, sb_vision_tool, etc.",
                         "additionalProperties": {
                             "type": "boolean"
                         }

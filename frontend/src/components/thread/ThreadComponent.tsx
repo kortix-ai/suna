@@ -47,7 +47,7 @@ import {
   useThreadAgent,
   useAgents,
 } from '@/hooks/agents/use-agents';
-import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
+import { AgentRunLimitBanner } from '@/components/thread/agent-run-limit-banner';
 import { 
   useSelectedAgentId, 
   useSetSelectedAgent, 
@@ -106,6 +106,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const [userInitiatedRun, setUserInitiatedRun] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [showAgentLimitDialog, setShowAgentLimitDialog] = useState(false);
+  const [showAgentLimitBanner, setShowAgentLimitBanner] = useState(false);
   const [agentLimitData, setAgentLimitData] = useState<{
     runningCount: number;
     runningThreadIds: string[];
@@ -165,7 +166,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     projectQuery,
     agentRunsQuery,
   } = useThreadData(threadId, projectId, isShared, {
-    enablePolling: isNewThread && !hasDataLoaded.current,
+    // Only actively poll for agent when: new thread + haven't found agent yet
+    waitingForAgent: isNewThread && !hasDataLoaded.current,
   });
   
   const threadStatus = threadQuery.data?.status;
@@ -209,10 +211,23 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }
   
-  if (isNewThread && agentRunId && !hasDataLoaded.current) {
+  // Stop polling only when we have confirmed the agent is running (agentRunId exists)
+  // This prevents the race condition where polling stops before the agent is detected
+  if (isNewThread && !hasDataLoaded.current && agentRunId) {
     hasDataLoaded.current = true;
+    console.log('[ThreadComponent] Agent detected, stopping polling:', agentRunId);
+    // Clean up the ?new=true URL param to prevent future polling issues
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('new') === 'true') {
+        url.searchParams.delete('new');
+        window.history.replaceState({}, '', url.pathname + url.search);
+      }
+    }
   }
   
+  // Hide optimistic UI only when we have both agentRunId AND initialLoadCompleted
+  // This ensures the stream is ready before transitioning
   const shouldHideOptimisticUI = isNewThread 
     ? (agentRunId && initialLoadCompleted)
     : ((agentRunId || messages.length > 0 || threadStatus === 'ready') && initialLoadCompleted);
@@ -284,6 +299,32 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       resetKortixComputerStore();
     }
   }, [threadId, queryClient, isShared, resetKortixComputerStore]);
+
+  // Fallback timeout for new thread polling
+  // If we haven't detected an agent after 30 seconds, stop polling and hide optimistic UI
+  // This prevents infinite polling if the agent fails to start
+  useEffect(() => {
+    if (!isNewThread || hasDataLoaded.current || !showOptimisticUI) return;
+    
+    const timeoutId = setTimeout(() => {
+      if (!hasDataLoaded.current && showOptimisticUI) {
+        console.warn('[ThreadComponent] Polling timeout reached, no agent detected after 30s');
+        hasDataLoaded.current = true;
+        setShowOptimisticUI(false);
+        // Clean up URL param
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href);
+          if (url.searchParams.get('new') === 'true') {
+            url.searchParams.delete('new');
+            window.history.replaceState({}, '', url.pathname + url.search);
+          }
+        }
+        toast.error('Failed to start the conversation. Please try again.');
+      }
+    }, 30000); // 30 second timeout
+    
+    return () => clearTimeout(timeoutId);
+  }, [isNewThread, showOptimisticUI]);
 
   useEffect(() => {
     const handleSandboxActive = (event: Event) => {
@@ -660,7 +701,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
               runningCount: running_count,
               runningThreadIds: running_thread_ids,
             });
-            setShowAgentLimitDialog(true);
+            // Show inline banner for better UX context
+            setShowAgentLimitBanner(true);
             return;
           }
 
@@ -720,6 +762,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       }
     }
   }, [stopStreaming, agentRunId, stopAgentMutation, setAgentStatus, isShared]);
+
 
   const handleOpenFileViewer = useCallback(
     (filePath?: string, filePathList?: string[]) => {
@@ -946,11 +989,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   }, [subscriptionData, subscriptionStatus, initialLoadCompleted, openBillingModal]);
 
 
-  useEffect(() => {
-    if (streamingToolCall) {
-      handleStreamingToolCall(streamingToolCall);
-    }
-  }, [streamingToolCall, handleStreamingToolCall]);
+  // Note: handleStreamingToolCall is called via the onToolCallChunk callback in useAgentStream
+  // No need for a separate useEffect here - it would cause duplicate processing
 
   useEffect(() => {
     setIsSidePanelAnimating(true);
@@ -1243,15 +1283,19 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           creditsExhausted={creditsExhausted}
         />
 
-        {agentLimitData && (
-          <AgentRunLimitDialog
-            open={showAgentLimitDialog}
-            onOpenChange={setShowAgentLimitDialog}
-            runningCount={agentLimitData.runningCount}
-            runningThreadIds={agentLimitData.runningThreadIds}
-            projectId={projectId}
-          />
-        )}
+      {agentLimitData && (
+        <AgentRunLimitBanner
+          open={showAgentLimitBanner}
+          onOpenChange={(open) => {
+            setShowAgentLimitBanner(open);
+            if (!open) {
+              setAgentLimitData(null);
+            }
+          }}
+          runningCount={agentLimitData.runningCount}
+          runningThreadIds={agentLimitData.runningThreadIds}
+        />
+      )}
       </>
     );
   }
@@ -1367,12 +1411,16 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       />
 
       {agentLimitData && (
-        <AgentRunLimitDialog
-          open={showAgentLimitDialog}
-          onOpenChange={setShowAgentLimitDialog}
+        <AgentRunLimitBanner
+          open={showAgentLimitBanner}
+          onOpenChange={(open) => {
+            setShowAgentLimitBanner(open);
+            if (!open) {
+              setAgentLimitData(null);
+            }
+          }}
           runningCount={agentLimitData.runningCount}
           runningThreadIds={agentLimitData.runningThreadIds}
-          projectId={projectId}
         />
       )}
     </>

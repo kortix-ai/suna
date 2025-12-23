@@ -13,7 +13,7 @@ interface WaitToolViewProps extends ToolViewProps {
 }
 
 const extractWaitData = (
-  toolCall: { function_name: string; arguments?: Record<string, any> },
+  toolCall: { function_name: string; arguments?: Record<string, any>; rawArguments?: string },
   toolResult?: { success?: boolean; output?: any },
   isSuccess: boolean = true,
   streamingText?: string,
@@ -21,10 +21,11 @@ const extractWaitData = (
 ) => {
   let seconds = 0;
   
-  // STREAMING: First try to extract from streamingText (live streaming JSON arguments)
-  if (isStreaming && streamingText) {
+  // STREAMING: Use toolCall.rawArguments (per-tool-call) instead of shared streamingText
+  const streamingSource = toolCall.rawArguments || streamingText;
+  if (isStreaming && streamingSource) {
     try {
-      const parsed = JSON.parse(streamingText);
+      const parsed = JSON.parse(streamingSource);
       if (parsed.seconds !== undefined && parsed.seconds !== null) {
         seconds = typeof parsed.seconds === 'string' ? parseInt(parsed.seconds, 10) : Number(parsed.seconds);
       } else if (parsed.duration !== undefined && parsed.duration !== null) {
@@ -32,11 +33,11 @@ const extractWaitData = (
       }
     } catch {
       // JSON incomplete - try to extract partial seconds value
-      const secondsMatch = streamingText.match(/"seconds"\s*:\s*(\d+)/);
+      const secondsMatch = streamingSource.match(/"seconds"\s*:\s*(\d+)/);
       if (secondsMatch) {
         seconds = parseInt(secondsMatch[1], 10);
       } else {
-        const durationMatch = streamingText.match(/"duration"\s*:\s*(\d+)/);
+        const durationMatch = streamingSource.match(/"duration"\s*:\s*(\d+)/);
         if (durationMatch) {
           seconds = parseInt(durationMatch[1], 10);
         }

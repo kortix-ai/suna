@@ -75,8 +75,9 @@ export function useGetApifyApprovalStatus(approvalId: string | null, threadId: s
       return response.data.data;
     },
     enabled: !!approvalId,
+    staleTime: 3000, // Prevent rapid refetches
     refetchInterval: (query) => {
-      // Poll if pending
+      // Poll every 5s only if pending
       const data = query.state.data;
       return data?.status === 'pending' ? 5000 : false;
     },

@@ -11,7 +11,6 @@ from core.utils.logger import logger
 class ToolOutputStreamingContext:
     """Context for streaming tool output during agent run execution."""
     agent_run_id: str
-    pubsub_channel: str
     stream_key: str
     tool_call_id: Optional[str] = None
 
@@ -24,14 +23,12 @@ _tool_output_streaming_context: ContextVar[Optional[ToolOutputStreamingContext]]
 
 def set_tool_output_streaming_context(
     agent_run_id: str,
-    pubsub_channel: str,
     stream_key: str,
     tool_call_id: Optional[str] = None
 ) -> None:
     """Set the tool output streaming context for the current execution."""
     ctx = ToolOutputStreamingContext(
         agent_run_id=agent_run_id,
-        pubsub_channel=pubsub_channel,
         stream_key=stream_key,
         tool_call_id=tool_call_id
     )
@@ -67,7 +64,7 @@ async def stream_tool_output(
     is_final: bool = False,
     tool_name: str = "execute_command"
 ) -> None:
-    """Stream tool output to the agent run's pubsub channel and stream."""
+    """Stream tool output to the agent run's stream."""
     ctx = get_tool_output_streaming_context()
     if not ctx:
         logger.debug(f"[STREAM] No tool output streaming context available, skipping output stream")
@@ -87,12 +84,11 @@ async def stream_tool_output(
         
         message_json = json.dumps(message)
         
-        logger.debug(f"[TOOL OUTPUT] Publishing to {ctx.pubsub_channel}: tool_call_id={tool_call_id}, chunk_len={len(output_chunk)}, is_final={is_final}")
+        logger.debug(f"[TOOL OUTPUT] Writing to stream {ctx.stream_key}: tool_call_id={tool_call_id}, chunk_len={len(output_chunk)}, is_final={is_final}")
         
-        await redis.publish_and_xadd(
-            ctx.pubsub_channel,
-            message_json,
+        await redis.stream_add(
             ctx.stream_key,
+            {"data": message_json},
             maxlen=200,
             approximate=True
         )

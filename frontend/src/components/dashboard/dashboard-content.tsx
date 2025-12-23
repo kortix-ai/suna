@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, Suspense, lazy } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { accountStateKeys } from '@/hooks/billing';
@@ -52,8 +52,8 @@ const UpgradeCelebration = lazy(() =>
 const SunaModesPanel = lazy(() => 
   import('./suna-modes-panel').then(mod => ({ default: mod.SunaModesPanel }))
 );
-const AgentRunLimitDialog = lazy(() => 
-  import('@/components/thread/agent-run-limit-dialog').then(mod => ({ default: mod.AgentRunLimitDialog }))
+const AgentRunLimitBanner = lazy(() => 
+  import('@/components/thread/agent-run-limit-banner').then(mod => ({ default: mod.AgentRunLimitBanner }))
 );
 const CustomAgentsSection = lazy(() => 
   import('./custom-agents-section').then(mod => ({ default: mod.CustomAgentsSection }))
@@ -100,11 +100,19 @@ export function DashboardContent() {
     getCurrentAgent
   } = useAgentSelection();
   const [initiatedThreadId, setInitiatedThreadId] = useState<string | null>(null);
-  const [showAgentLimitDialog, setShowAgentLimitDialog] = useState(false);
+  const [showAgentLimitBanner, setShowAgentLimitBanner] = useState(false);
   const [agentLimitData, setAgentLimitData] = useState<{
     runningCount: number;
     runningThreadIds: string[];
   } | null>(null);
+
+  // Ensure dialog opens when agentLimitData is set
+  useEffect(() => {
+    if (agentLimitData && !showAgentLimitBanner) {
+      console.log('agentLimitData set, opening dialog');
+      setShowAgentLimitBanner(true);
+    }
+  }, [agentLimitData, showAgentLimitBanner]);
   const [showUpgradeCelebration, setShowUpgradeCelebration] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -323,6 +331,8 @@ export function DashboardContent() {
         queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });
       }).catch((error) => {
         console.error('Background agent start failed:', error);
+        console.error('Error type:', error?.constructor?.name);
+        console.error('Is AgentRunLimitError?', error instanceof AgentRunLimitError);
         
         if (error instanceof BillingError || error?.status === 402) {
           const message = error.detail?.message?.toLowerCase() || error.message?.toLowerCase() || '';
@@ -357,13 +367,33 @@ export function DashboardContent() {
         }
         
         if (error instanceof AgentRunLimitError) {
+          console.log('Caught AgentRunLimitError, showing dialog');
           const { running_thread_ids, running_count } = error.detail;
-          router.replace('/dashboard');
+          console.log('Running threads:', running_thread_ids, 'Count:', running_count);
+          // Set state BEFORE navigation to ensure it persists
           setAgentLimitData({
             runningCount: running_count,
             runningThreadIds: running_thread_ids,
           });
-          setShowAgentLimitDialog(true);
+          setShowAgentLimitBanner(true);
+          console.log('State set, navigating...');
+          router.replace('/dashboard');
+          return;
+        }
+        
+        // Also check for error code in case instanceof check fails
+        if (error?.detail?.error_code === 'AGENT_RUN_LIMIT_EXCEEDED' || 
+            error?.code === 'AGENT_RUN_LIMIT_EXCEEDED' ||
+            (error?.status === 402 && error?.detail?.running_count !== undefined)) {
+          console.log('Caught agent run limit error by code, showing dialog');
+          const running_thread_ids = error.detail?.running_thread_ids || [];
+          const running_count = error.detail?.running_count || 0;
+          setAgentLimitData({
+            runningCount: running_count,
+            runningThreadIds: running_thread_ids,
+          });
+          setShowAgentLimitBanner(true);
+          router.replace('/dashboard');
           return;
         }
         
@@ -434,7 +464,7 @@ export function DashboardContent() {
           runningCount: running_count,
           runningThreadIds: running_thread_ids,
         });
-        setShowAgentLimitDialog(true);
+        setShowAgentLimitBanner(true);
       } else {
         const errorMessage = error instanceof Error ? error.message : 'Operation failed';
         toast.error(errorMessage);
@@ -685,12 +715,16 @@ export function DashboardContent() {
 
       {agentLimitData && (
         <Suspense fallback={null}>
-          <AgentRunLimitDialog
-            open={showAgentLimitDialog}
-            onOpenChange={setShowAgentLimitDialog}
+          <AgentRunLimitBanner
+            open={showAgentLimitBanner && !!agentLimitData}
+            onOpenChange={(open) => {
+              setShowAgentLimitBanner(open);
+              if (!open) {
+                setAgentLimitData(null);
+              }
+            }}
             runningCount={agentLimitData.runningCount}
             runningThreadIds={agentLimitData.runningThreadIds}
-            projectId={undefined}
           />
         </Suspense>
       )}

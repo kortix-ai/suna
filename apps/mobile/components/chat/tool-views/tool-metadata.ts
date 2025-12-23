@@ -392,29 +392,6 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
     defaultTitle: 'Task Complete',
   },
 
-  // Data Provider
-  'data-provider': {
-    icon: FileSpreadsheet,
-    iconColor: 'text-emerald-600',
-    iconBgColor: 'bg-emerald-50',
-    subtitle: 'Data Provider',
-    defaultTitle: 'Data Retrieved',
-  },
-  'execute-data-provider-call': {
-    icon: Network,
-    iconColor: 'text-purple-600',
-    iconBgColor: 'bg-purple-50',
-    subtitle: 'Data Provider',
-    defaultTitle: 'API Call',
-  },
-  'get-data-provider-endpoints': {
-    icon: Database,
-    iconColor: 'text-blue-600',
-    iconBgColor: 'bg-blue-50',
-    subtitle: 'Data Provider',
-    defaultTitle: 'Endpoints Loaded',
-  },
-
   // Document Parser
   'document-parser': {
     icon: FileText,

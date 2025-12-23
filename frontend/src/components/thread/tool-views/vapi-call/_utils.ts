@@ -76,8 +76,8 @@ export function extractMakeCallData(
           output = JSON.parse(toolResult.output);
         } catch (e) {
           // If it's an error message, store it
-          if (!toolResult.success) {
-            output = { error_message: toolResult.output };
+          if (!toolResult?.success) {
+            output = { error_message: toolResult?.output };
           } else {
             output = {};
           }

@@ -30,7 +30,6 @@ SEARCH_TOOLS = [
 ]
 
 UTILITY_TOOLS = [
-    ('data_providers_tool', 'core.tools.data_providers_tool', 'DataProvidersTool'),
     ('browser_tool', 'core.tools.browser_tool', 'BrowserTool'),
     ('vapi_voice_tool', 'core.tools.vapi_voice_tool', 'VapiVoiceTool'),
     ('reality_defender_tool', 'core.tools.reality_defender_tool', 'RealityDefenderTool'),

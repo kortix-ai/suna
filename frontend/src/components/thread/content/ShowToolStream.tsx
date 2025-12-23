@@ -66,7 +66,7 @@ const isStreamableTool = (toolName: string) => {
 interface ShowToolStreamProps {
     content: string;
     messageId?: string | null;
-    onToolClick?: (messageId: string | null, toolName: string) => void;
+    onToolClick?: (messageId: string | null, toolName: string, toolCallId?: string) => void;
     showExpanded?: boolean;
     startTime?: number;
     toolCall?: any;
@@ -276,7 +276,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                     }`}>
                     {/* Tool name header */}
                     <button
-                        onClick={() => onToolClick?.(messageId, toolName)}
+                        onClick={() => onToolClick?.(messageId ?? null, toolName, effectiveToolCall?.tool_call_id)}
                         className={`w-full flex items-center gap-1.5 py-1 px-2 text-xs text-muted-foreground hover:bg-muted/80 transition-all duration-400 ease-in-out cursor-pointer ${shouldShowContent ? 'bg-muted' : 'bg-muted rounded-lg'
                             }`}
                     >
@@ -371,11 +371,11 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     return (
         <div className="my-1.5">
             <button
-                onClick={() => onToolClick?.(messageId, toolName)}
+                onClick={() => onToolClick?.(messageId ?? null, toolName, effectiveToolCall?.tool_call_id)}
                 className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
             >
-                <div className='border-2 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center p-0.5 rounded-sm border-neutral-400/20 dark:border-neutral-600'>
-                    <AppIcon toolCall={effectiveToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                <div className='flex items-center justify-center'>
+                    <AppIcon toolCall={effectiveToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fallbackIcon={IconComponent} />
                 </div>
                 <span className="font-mono text-xs text-foreground">{displayName}</span>
                 {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}

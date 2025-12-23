@@ -23,9 +23,6 @@ import { TerminateCommandToolView } from './terminate-command-tool/TerminateComm
 import { ListCommandsToolView } from './list-commands-tool/ListCommandsToolView';
 import { AskToolView } from './ask-tool/AskToolView';
 import { CompleteToolView } from './complete-tool/CompleteToolView';
-import { DataProviderToolView } from './data-provider-tool/DataProviderToolView';
-import { DataProviderEndpointsToolView } from './data-provider-tool/DataProviderEndpointsToolView';
-import { ExecuteDataProviderCallToolView } from './data-provider-tool/ExecuteDataProviderCallToolView';
 import { DocumentParserToolView } from './document-parser-tool/DocumentParserToolView';
 import { DocsToolView } from './docs-tool/DocsToolView';
 import { PeopleSearchToolView } from './people-search-tool/PeopleSearchToolView';
@@ -129,9 +126,6 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'ask': AskToolView,
   'complete': CompleteToolView,
   
-  // Data provider tools
-  'execute-data-provider-call': ExecuteDataProviderCallToolView,
-  'get-data-provider-endpoints': DataProviderEndpointsToolView,
   
   // Research tools
   'people-search': PeopleSearchToolView,

@@ -1381,64 +1381,89 @@ async def stream_agent_run(
     )
 
     stream_key = f"agent_run:{agent_run_id}:stream"
-    pubsub_channel = f"agent_run:{agent_run_id}:pubsub"
-    control_channel = f"agent_run:{agent_run_id}:control"
 
     def find_last_safe_boundary(entries):
+        """Find the last safe boundary for trimming stream entries.
+        
+        Structure-aware: Only trims at COMPLETE response boundaries.
+        A safe boundary is defined as:
+        1. `llm_response_end` - marks the complete end of an LLM response cycle
+        2. Final status messages (completed, failed, stopped, error) - marks agent run end
+        
+        NOTE: We do NOT treat individual assistant messages with stream_status='complete'
+        as safe boundaries because with multiple tool calls in a single response,
+        the assistant message completes before all tool executions finish.
+        Only `llm_response_end` signals that the ENTIRE response (including all tool calls)
+        has been processed.
+        """
         last_safe_index = -1
+        
+        # Track response boundaries to ensure we only trim complete cycles
+        # Each llm_response_start must have a matching llm_response_end
+        open_responses = 0  # Count of llm_response_start without matching llm_response_end
+        last_complete_response_end_index = -1
         
         for i, (entry_id, fields) in enumerate(entries):
             try:
                 data = json.loads(fields.get('data', '{}'))
                 msg_type = data.get('type')
                 
-                if msg_type == 'llm_response_end':
-                    last_safe_index = i
-                    logger.debug(f"Found safe boundary at index {i}: llm_response_end")
+                if msg_type == 'llm_response_start':
+                    open_responses += 1
+                    logger.debug(f"Found llm_response_start at index {i}, open_responses={open_responses}")
+                
+                elif msg_type == 'llm_response_end':
+                    open_responses = max(0, open_responses - 1)
+                    if open_responses == 0:
+                        # This llm_response_end closes a complete response cycle
+                        last_complete_response_end_index = i
+                        last_safe_index = i
+                        logger.debug(f"Found safe boundary at index {i}: llm_response_end (complete cycle)")
+                    else:
+                        logger.debug(f"Found llm_response_end at index {i}, but {open_responses} responses still open")
                 
                 elif msg_type == 'status':
                     status = data.get('status')
                     if status in ['completed', 'failed', 'stopped', 'error']:
+                        # Final status - safe to trim up to here
                         last_safe_index = i
                         logger.debug(f"Found safe boundary at index {i}: status={status}")
                 
-                elif msg_type == 'assistant':
-                    metadata = data.get('metadata', {})
-                    if isinstance(metadata, str):
-                        try:
-                            metadata = json.loads(metadata)
-                        except (json.JSONDecodeError, TypeError):
-                            metadata = {}
-                    if metadata.get('stream_status') == 'complete':
-                        last_safe_index = i
-                        logger.debug(f"Found safe boundary at index {i}: assistant with stream_status=complete")
+                # NOTE: We intentionally do NOT treat assistant stream_status='complete' as safe
+                # because with multiple tool calls, the assistant message completes but tools
+                # may still be executing. Only llm_response_end signals full completion.
+                
             except (json.JSONDecodeError, KeyError, TypeError) as e:
                 logger.debug(f"Skipping malformed entry at index {i}: {e}")
                 continue
         
+        # Safety check: if there are still open responses, don't trim
+        if open_responses > 0 and last_safe_index == last_complete_response_end_index:
+            logger.debug(f"Still have {open_responses} open responses - skipping trim for safety")
+            return -1
+        
         return last_safe_index
 
     async def stream_generator(agent_run_data):
-        logger.debug(f"Streaming responses for {agent_run_id} (pubsub: {pubsub_channel}, stream: {stream_key})")
+        logger.debug(f"Streaming responses for {agent_run_id} (stream: {stream_key})")
         terminate_stream = False
         initial_yield_complete = False
-        pubsub = None
-        listener_task = None
+        last_id = "0"  # Start from beginning for initial read
 
         try:
-            initial_entries = await redis.xrange(stream_key)
+            initial_entries = await redis.stream_range(stream_key)
             if initial_entries:
                 logger.debug(f"Sending {len(initial_entries)} catch-up responses for {agent_run_id}")
-                last_entry_id = None
                 for entry_id, fields in initial_entries:
                     response = json.loads(fields.get('data', '{}'))
                     yield f"data: {json.dumps(response)}\n\n"
-                    last_entry_id = entry_id
+                    last_id = entry_id
                     if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
                         logger.debug(f"Detected completion in catch-up: {response.get('status')}")
                         terminate_stream = True
+                        return
                 
-                if last_entry_id:
+                if last_id != "0":
                     try:
                         last_safe_index = find_last_safe_boundary(initial_entries)
                         
@@ -1483,63 +1508,34 @@ async def stream_agent_run(
                 thread_id=agent_run_data.get('thread_id'),
             )
 
-            pubsub = await redis.create_pubsub()
-            await pubsub.subscribe(pubsub_channel, control_channel)
-            logger.debug(f"Subscribed to: {pubsub_channel}, {control_channel}")
-
-            message_queue = asyncio.Queue()
-
-            async def pubsub_listener():
-                try:
-                    async for message in pubsub.listen():
-                        if terminate_stream:
-                            break
-                        if message and message.get("type") == "message":
-                            await message_queue.put(message)
-                except asyncio.CancelledError:
-                    pass
-                except Exception as e:
-                    logger.warning(f"Pubsub listener error: {e}")
-                    await message_queue.put({"type": "error", "error": str(e)})
-
-            listener_task = asyncio.create_task(pubsub_listener())
-
+            # Use blocking XREAD to wait for new stream entries
+            # After catch-up, only read new entries
+            if last_id != "0":
+                last_id = "$"  # "$" means only new entries
+            
             while not terminate_stream:
                 try:
-                    try:
-                        message = await asyncio.wait_for(message_queue.get(), timeout=30.0)
-                    except asyncio.TimeoutError:
-                        yield f"data: {json.dumps({'type': 'ping'})}\n\n"
-                        continue
-
-                    if message.get("type") == "error":
-                        yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': message.get('error')})}\n\n"
-                        terminate_stream = True
-                        break
-
-                    channel = message.get("channel")
-                    data = message.get("data")
-                    if isinstance(data, bytes):
-                        data = data.decode('utf-8')
-                    if isinstance(channel, bytes):
-                        channel = channel.decode('utf-8')
-
-                    if channel == pubsub_channel:
-                        yield f"data: {data}\n\n"
-                        
-                        try:
-                            response = json.loads(data)
-                            if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
-                                logger.debug(f"Detected completion via pubsub: {response.get('status')}")
-                                terminate_stream = True
-                        except json.JSONDecodeError:
-                            pass
+                    # Blocking XREAD - waits up to 5 seconds for new entries
+                    entries = await redis.stream_read(stream_key, last_id, block_ms=5000)
+                    
+                    if entries:
+                        for entry_id, fields in entries:
+                            data = fields.get('data', '{}')
+                            yield f"data: {data}\n\n"
+                            last_id = entry_id
                             
-                    elif channel == control_channel:
-                        if data in ["STOP", "END_STREAM", "ERROR"]:
-                            logger.debug(f"Received control signal '{data}' for {agent_run_id}")
-                            yield f"data: {json.dumps({'type': 'status', 'status': data})}\n\n"
-                            terminate_stream = True
+                            # Check for completion status
+                            try:
+                                response = json.loads(data)
+                                if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
+                                    logger.debug(f"Detected completion via stream: {response.get('status')}")
+                                    terminate_stream = True
+                                    break
+                            except json.JSONDecodeError:
+                                pass
+                    else:
+                        # Timeout - send ping to keep connection alive
+                        yield f"data: {json.dumps({'type': 'ping'})}\n\n"
 
                 except asyncio.CancelledError:
                     logger.debug(f"Stream generator cancelled for {agent_run_id}")
@@ -1558,21 +1554,7 @@ async def stream_agent_run(
 
         finally:
             terminate_stream = True
-            
-            if listener_task and not listener_task.done():
-                listener_task.cancel()
-                try:
-                    await listener_task
-                except asyncio.CancelledError:
-                    pass
-            
-            if pubsub:
-                try:
-                    await pubsub.unsubscribe(pubsub_channel, control_channel)
-                    await pubsub.close()
-                    logger.debug(f"PubSub cleaned up for {agent_run_id}")
-                except Exception as e:
-                    logger.warning(f"Error during pubsub cleanup for {agent_run_id}: {e}")
+            # No cleanup needed - streams don't hold connections
 
             logger.debug(f"Streaming cleanup complete for agent run: {agent_run_id}")
 

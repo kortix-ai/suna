@@ -83,7 +83,7 @@ export function UploadFileToolView({
       rawContent = output;
       uploadResult = {
         message: output,
-        success: toolResult.success !== undefined ? toolResult.success : true,
+        success: toolResult?.success !== undefined ? toolResult.success : true,
       };
 
       // Extract structured data from the output message
@@ -105,7 +105,7 @@ export function UploadFileToolView({
         file_size: (output as any).file_size,
         secure_url: (output as any).secure_url || (output as any).secure_url,
         expires_at: (output as any).expires_at,
-        success: toolResult.success !== undefined ? toolResult.success : true,
+        success: toolResult?.success !== undefined ? toolResult.success : true,
       };
     }
   }

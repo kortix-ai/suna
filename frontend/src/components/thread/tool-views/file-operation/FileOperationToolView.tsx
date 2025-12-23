@@ -25,7 +25,7 @@ import {
   getFileTypeFromExtension,
 } from '@/components/file-editors';
 import { UnifiedMarkdown } from '@/components/markdown';
-import { CsvRenderer, XlsxRenderer, HtmlRenderer } from '@/components/file-renderers';
+import { CsvRenderer, XlsxRenderer, HtmlRenderer, JsonRenderer } from '@/components/file-renderers';
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
@@ -260,10 +260,12 @@ export function FileOperationToolView({
   }
 
   // STREAMING: Extract content from live streaming JSON arguments
-  if (isStreaming && streamingText) {
+  // Use toolCall.rawArguments (per-tool-call) instead of shared streamingText
+  const streamingSource = toolCall.rawArguments || streamingText;
+  if (isStreaming && streamingSource) {
     try {
       // Try parsing as complete JSON first
-      const parsed = JSON.parse(streamingText);
+      const parsed = JSON.parse(streamingSource);
 
       // Extract based on operation type
       if (operation === 'create' || operation === 'rewrite') {
@@ -291,11 +293,11 @@ export function FileOperationToolView({
       // JSON incomplete - extract partial content
       if (operation === 'create' || operation === 'rewrite') {
         // Find the start of file_contents value
-        const startMatch = streamingText.match(/"file_contents"\s*:\s*"/);
+        const startMatch = streamingSource.match(/"file_contents"\s*:\s*"/);
         if (startMatch) {
           const startIndex = startMatch.index! + startMatch[0].length;
           // Extract everything after "file_contents": " until we hit the end or a closing quote
-          let rawContent = streamingText.substring(startIndex);
+          let rawContent = streamingSource.substring(startIndex);
 
           // Try to find the end quote (but it might not exist yet during streaming)
           const endQuoteMatch = rawContent.match(/(?<!\\)"/);
@@ -317,10 +319,10 @@ export function FileOperationToolView({
           }
         }
       } else if (operation === 'edit') {
-        const startMatch = streamingText.match(/"code_edit"\s*:\s*"/);
+        const startMatch = streamingSource.match(/"code_edit"\s*:\s*"/);
         if (startMatch) {
           const startIndex = startMatch.index! + startMatch[0].length;
-          let rawContent = streamingText.substring(startIndex);
+          let rawContent = streamingSource.substring(startIndex);
 
           const endQuoteMatch = rawContent.match(/(?<!\\)"/);
           if (endQuoteMatch) {
@@ -340,10 +342,10 @@ export function FileOperationToolView({
         }
       } else if (isStrReplace) {
         // Extract old_str
-        const oldStrMatch = streamingText.match(/"(?:old_str|old_string)"\s*:\s*"/);
+        const oldStrMatch = streamingSource.match(/"(?:old_str|old_string)"\s*:\s*"/);
         if (oldStrMatch) {
           const startIndex = oldStrMatch.index! + oldStrMatch[0].length;
-          let rawContent = streamingText.substring(startIndex);
+          let rawContent = streamingSource.substring(startIndex);
           const endQuoteMatch = rawContent.match(/(?<!\\)"/);
           if (endQuoteMatch) {
             rawContent = rawContent.substring(0, endQuoteMatch.index);
@@ -355,10 +357,10 @@ export function FileOperationToolView({
           }
         }
         // Extract new_str
-        const newStrMatch = streamingText.match(/"(?:new_str|new_string)"\s*:\s*"/);
+        const newStrMatch = streamingSource.match(/"(?:new_str|new_string)"\s*:\s*"/);
         if (newStrMatch) {
           const startIndex = newStrMatch.index! + newStrMatch[0].length;
-          let rawContent = streamingText.substring(startIndex);
+          let rawContent = streamingSource.substring(startIndex);
           const endQuoteMatch = rawContent.match(/(?<!\\)"/);
           if (endQuoteMatch) {
             rawContent = rawContent.substring(0, endQuoteMatch.index);
@@ -373,7 +375,7 @@ export function FileOperationToolView({
 
       // Extract file_path from partial JSON
       if (!filePath) {
-        const pathMatch = streamingText.match(/"file_path"\s*:\s*"([^"]+)"/);
+        const pathMatch = streamingSource.match(/"file_path"\s*:\s*"([^"]+)"/);
         if (pathMatch) {
           filePath = pathMatch[1];
         }
@@ -678,6 +680,7 @@ export function FileOperationToolView({
     // Determine file type for rendering
     const fileType = getFileTypeFromExtension(fileName);
     const isMarkdown = fileExtension === 'md' || fileExtension === 'markdown';
+    const isJson = fileExtension === 'json';
     const isCsv = fileExtension === 'csv' || fileExtension === 'tsv';
     const isXlsx = fileExtension === 'xlsx' || fileExtension === 'xls';
     
@@ -701,6 +704,13 @@ export function FileOperationToolView({
         <div className="h-full overflow-auto p-4 bg-white dark:bg-zinc-900">
           <UnifiedMarkdown content={processUnicodeContent(fileContent)} />
         </div>
+      );
+    }
+
+    // For JSON files
+    if (isJson) {
+      return (
+        <JsonRenderer content={fileContent} />
       );
     }
 

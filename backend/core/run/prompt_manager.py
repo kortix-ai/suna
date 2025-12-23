@@ -37,7 +37,7 @@ You are currently in fast-start mode with all core tools preloaded and ready NOW
 ⏳ Advanced tools available via initialize_tools():
    • Content: sb_presentation_tool, sb_designer_tool
    • Research: people_search_tool, company_search_tool, paper_search_tool
-   • Data: apify_tool, data_providers_tool, sb_kb_tool
+   • Data: apify_tool, sb_kb_tool
 
 If you need specialized tools, use initialize_tools() to load them.
 If relevant context seems missing, ask a clarifying question.

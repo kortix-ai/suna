@@ -54,7 +54,7 @@ function extractCheckCommandOutputData(
             output = toolResult.output;
         }
         
-        if (toolResult.success !== undefined) {
+        if (toolResult?.success !== undefined) {
             actualIsSuccess = toolResult.success;
         }
     }

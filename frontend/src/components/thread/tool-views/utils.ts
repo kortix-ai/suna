@@ -58,8 +58,6 @@ export function getToolTitle(toolName: string): string {
     
     'ask': 'Ask',
     'complete': 'Task Complete',
-    'execute-data-provider-call': 'Data Provider Call',
-    'get-data-provider-endpoints': 'Data Endpoints',
     'search-mcp-servers': 'Search MCP Servers',
     'get-app-details': 'Get App Details',
     'create-credential-profile': 'Create Credential Profile',
@@ -1111,10 +1109,6 @@ export function getToolComponent(toolName: string): string {
     case 'scrape-webpage':
       return 'WebScrapeToolView';
 
-    // Data provider operations
-    case 'execute-data-provider-call':
-    case 'get-data-provider-endpoints':
-      return 'DataProviderToolView';
 
     // MCP operations
     case 'search-mcp-servers':

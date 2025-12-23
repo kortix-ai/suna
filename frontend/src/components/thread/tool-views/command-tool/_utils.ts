@@ -62,7 +62,7 @@ export function extractCommandData(
     }
 
     // Use success from toolResult if available
-    if (toolResult.success !== undefined) {
+    if (toolResult?.success !== undefined) {
       actualIsSuccess = toolResult.success;
     }
   }

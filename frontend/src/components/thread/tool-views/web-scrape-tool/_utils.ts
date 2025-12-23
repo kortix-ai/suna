@@ -208,7 +208,7 @@ export function extractWebScrapeData(
 
   if (toolResult?.output) {
     const output = toolResult.output;
-    success = toolResult.success !== undefined ? toolResult.success : isSuccess;
+    success = toolResult?.success !== undefined ? toolResult.success : isSuccess;
 
     if (typeof output === 'string') {
       message = output;
