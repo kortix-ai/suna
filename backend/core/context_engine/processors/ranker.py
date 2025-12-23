@@ -1,9 +1,8 @@
 import math
 from typing import List, Optional
 from datetime import datetime, timezone
-from ..types import ContextChunk, ImportanceLevel
+from ..types import ContextChunk
 from .embeddings import cosine_similarity, normalize_similarity
-from core.utils.logger import logger
 
 class SemanticRanker:
     def __init__(
