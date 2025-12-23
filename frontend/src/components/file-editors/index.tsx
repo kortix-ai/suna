@@ -12,6 +12,7 @@ import { CsvRenderer } from '@/components/file-renderers/csv-renderer';
 import { XlsxRenderer } from '@/components/file-renderers/xlsx-renderer';
 import { PptxRenderer } from '@/components/file-renderers/pptx-renderer';
 import { HtmlRenderer } from '@/components/file-renderers/html-renderer';
+import { CanvasRenderer } from '@/components/file-renderers/canvas-renderer';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { processUnicodeContent, getFileTypeFromExtension, getLanguageFromExtension } from './utils';
 
@@ -217,6 +218,14 @@ export function EditableFileRenderer({
           onDownload={onDownload}
           isDownloading={isDownloading}
           onFullScreen={onFullScreen}
+        />
+      ) : fileType === 'canvas' ? (
+        <CanvasRenderer
+          content={content}
+          filePath={filePath}
+          fileName={fileName}
+          sandboxId={project?.sandbox?.id}
+          className="h-full w-full"
         />
       ) : fileType === 'html' && htmlPreviewUrl ? (
         // HTML files - show preview (could add split view editor later)

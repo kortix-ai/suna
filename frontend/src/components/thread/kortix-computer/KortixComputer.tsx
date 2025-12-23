@@ -67,6 +67,7 @@ interface KortixComputerProps {
   streamingText?: string;
   sandboxId?: string;
   projectId?: string;
+  sidePanelRef?: React.RefObject<any>;
 }
 
 interface ToolCallSnapshot {
@@ -98,6 +99,7 @@ export const KortixComputer = memo(function KortixComputer({
   streamingText,
   sandboxId,
   projectId,
+  sidePanelRef,
 }: KortixComputerProps) {
   const t = useTranslations('thread');
   const [dots, setDots] = useState('');
@@ -108,7 +110,7 @@ export const KortixComputer = memo(function KortixComputer({
   const [vncRefreshKey, setVncRefreshKey] = useState(0);
   const [isMaximized, setIsMaximized] = useState(false);
   const [isSuiteMode, setIsSuiteMode] = useState(false);
-  const [preSuiteWidth, setPreSuiteWidth] = useState<number | null>(null);
+  const [preSuiteSize, setPreSuiteSize] = useState<number | null>(null);
 
   const isMobile = useIsMobile();
   const { isOpen: isDocumentModalOpen } = useDocumentModalStore();
@@ -679,7 +681,24 @@ export const KortixComputer = memo(function KortixComputer({
             showFilesTab={true}
             isMaximized={isMaximized}
             isSuiteMode={isSuiteMode}
-            onToggleSuiteMode={() => setIsSuiteMode(!isSuiteMode)}
+            onToggleSuiteMode={() => {
+              if (isSuiteMode) {
+                // Exit suite mode - restore previous size
+                if (preSuiteSize !== null && sidePanelRef?.current) {
+                  sidePanelRef.current.resize(preSuiteSize);
+                }
+                setPreSuiteSize(null);
+                setIsSuiteMode(false);
+              } else {
+                // Enter suite mode - save current size and maximize
+                if (sidePanelRef?.current) {
+                  const currentSize = sidePanelRef.current.getSize();
+                  setPreSuiteSize(currentSize);
+                  sidePanelRef.current.resize(70); // Max size from ResizablePanel config
+                }
+                setIsSuiteMode(true);
+              }
+            }}
           />
         )}
         <div className="flex-1 overflow-hidden max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>

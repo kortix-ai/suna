@@ -2,6 +2,7 @@ from typing import Optional, Dict, Any, List
 from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
+from core.utils.logger import logger
 import json
 import uuid
 from datetime import datetime
@@ -15,35 +16,43 @@ from datetime import datetime
     weight=215,
     visible=True,
     usage_guide="""
-### CANVAS EDITOR WORKFLOW
+### CANVAS EDITOR - OPTIMAL WORKFLOW
 
-**Creating a Canvas:**
-1. `create_canvas(name="project-mockup", width=1920, height=1080)` - Initialize new canvas
-2. Canvas opens automatically in suite mode for maximum working space
+**🎯 BEST PRACTICE: Generate images FIRST, then create canvas with them**
 
-**Adding Images:**
-1. Use `designer_create_or_edit()` to generate images
-2. Use `add_image_to_canvas()` to place images on canvas
-3. User can then move, scale, rotate interactively
+**Step 1: Generate ALL images first**
+```python
+image_edit_or_generate(mode="generate", prompt="modern logo design")
+# Returns: generated_image_abc123.png
+image_edit_or_generate(mode="generate", prompt="background pattern")  
+# Returns: generated_image_def456.png
+```
 
-**Canvas Features:**
-- Drag images to reposition
-- Scale and rotate with transform handles
-- Layer management (bring forward/send back)
-- Grid and snap-to-grid
-- Lock elements to prevent accidental changes
-- Properties panel for precise control
+**Step 2: Create canvas (infinite - no dimensions needed)**
+```python
+create_canvas(name="my-design")
+# Returns canvas_path: "canvases/my-design.kanvax"
+```
 
-**File Format:**
-- Canvases are saved as `.kanvax` files
-- JSON format internally for easy parsing
-- Stores all element positions, sizes, and properties
+**Step 3: Add ALL images to canvas (MUST WAIT for canvas creation)**
+```python
+add_image_to_canvas(
+    canvas_path="canvases/my-design.kanvax",  
+    image_path="generated_image_abc123.png",
+    x=100, y=100, width=400, height=400
+)
+add_image_to_canvas(
+    canvas_path="canvases/my-design.kanvax",
+    image_path="generated_image_def456.png",  
+    x=600, y=100, width=800, height=600
+)
+```
 
-**Best Practices:**
-- Start with appropriate canvas dimensions for the use case
-- Add descriptive names to canvas elements
-- Use the designer tool to generate high-quality images first
-- Lock elements when composition is finalized
+**⚠️ CRITICAL:**
+- NEVER create empty canvas - always have images ready first
+- Canvas shows nothing until images are added
+- Use EXACT filenames returned (e.g., "generated_image_abc123.png")
+- Canvas will appear in Kortix Computer view once it has elements
 """
 )
 class SandboxCanvasTool(SandboxToolsBase):
@@ -59,19 +68,28 @@ class SandboxCanvasTool(SandboxToolsBase):
 
     async def _ensure_canvases_dir(self):
         """Ensure the canvases directory exists"""
+        await self._ensure_sandbox()
         full_path = f"{self.workspace_path}/{self.canvases_dir}"
+        logger.debug(f"[Canvas] Creating directory: {full_path} in sandbox {self._sandbox_id}")
         try:
-            await self.sandbox.fs.create_folder(full_path, "755")
-        except:
-            pass
+            result = await self.sandbox.process.exec(f"mkdir -p '{full_path}'")
+            # Verify directory was created
+            verify = await self.sandbox.process.exec(f"test -d '{full_path}' && echo 'EXISTS'")
+            if hasattr(verify, 'stdout') and 'EXISTS' in str(verify.stdout):
+                logger.debug(f"[Canvas] Directory verified: {full_path}")
+            else:
+                logger.warning(f"[Canvas] Directory may not exist: {full_path}")
+        except Exception as e:
+            logger.error(f"[Canvas] Failed to create directory {full_path}: {e}")
 
     async def _ensure_images_dir(self):
         """Ensure the images directory exists"""
+        await self._ensure_sandbox()
         full_path = f"{self.workspace_path}/{self.images_dir}"
         try:
-            await self.sandbox.fs.create_folder(full_path, "755")
-        except:
-            pass
+            await self.sandbox.process.exec(f"mkdir -p '{full_path}'")
+        except Exception as e:
+            logger.error(f"[Canvas] Failed to create images dir {full_path}: {e}")
 
     def _sanitize_filename(self, name: str) -> str:
         """Convert canvas name to safe filename"""
@@ -80,18 +98,14 @@ class SandboxCanvasTool(SandboxToolsBase):
     def _create_canvas_data(
         self, 
         name: str, 
-        width: int, 
-        height: int, 
         description: Optional[str] = None,
-        background: str = "#ffffff"
+        background: str = "#1a1a1a"  # Dark background by default
     ) -> Dict[str, Any]:
-        """Create initial canvas data structure"""
+        """Create initial canvas data structure - infinite canvas, no fixed dimensions"""
         now = datetime.utcnow().isoformat() + "Z"
         return {
             "name": name,
             "version": "1.0",
-            "width": width,
-            "height": height,
             "background": background,
             "description": description or "",
             "elements": [],
@@ -99,32 +113,46 @@ class SandboxCanvasTool(SandboxToolsBase):
             "updated_at": now
         }
 
-    async def _load_canvas_data(self, canvas_path: str) -> Dict[str, Any]:
+    async def _load_canvas_data(self, canvas_path: str) -> Optional[Dict[str, Any]]:
         """Load canvas data from .kanvax file"""
         try:
-            content = await self.sandbox.fs.read_file(f"{self.workspace_path}/{canvas_path}")
-            return json.loads(content)
+            await self._ensure_sandbox()
+            content = await self.sandbox.fs.download_file(f"{self.workspace_path}/{canvas_path}")
+            return json.loads(content.decode() if isinstance(content, bytes) else content)
         except Exception as e:
-            raise Exception(f"Failed to load canvas: {str(e)}")
+            return None
 
     async def _save_canvas_data(self, canvas_path: str, canvas_data: Dict[str, Any]):
         """Save canvas data to .kanvax file"""
         try:
+            await self._ensure_sandbox()
+            await self._ensure_canvases_dir()  # Ensure directory exists!
+            
             canvas_data["updated_at"] = datetime.utcnow().isoformat() + "Z"
             content = json.dumps(canvas_data, indent=2)
-            await self.sandbox.fs.write_file(
-                f"{self.workspace_path}/{canvas_path}",
-                content,
-                "644"
-            )
+            full_path = f"{self.workspace_path}/{canvas_path}"
+            
+            logger.debug(f"[Canvas] Saving canvas to: {full_path} in sandbox {self._sandbox_id}")
+            await self.sandbox.fs.upload_file(content.encode(), full_path)
+            
+            # Verify file was saved
+            try:
+                verify = await self.sandbox.process.exec(f"test -f '{full_path}' && echo 'SAVED'")
+                if hasattr(verify, 'stdout') and 'SAVED' in str(verify.stdout):
+                    logger.debug(f"[Canvas] File verified: {full_path}")
+                else:
+                    logger.warning(f"[Canvas] File may not have been saved: {full_path}")
+            except:
+                pass
         except Exception as e:
+            logger.error(f"[Canvas] Failed to save canvas {full_path}: {e}")
             raise Exception(f"Failed to save canvas: {str(e)}")
 
     @openapi_schema({
         "type": "function",
         "function": {
             "name": "create_canvas",
-            "description": "Create a new interactive canvas for image composition and design. Canvas opens in suite mode for maximum working space.",
+            "description": "Create a new infinite canvas for image composition and design. Canvas is infinite - no fixed dimensions. Just add images at any position.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -132,28 +160,14 @@ class SandboxCanvasTool(SandboxToolsBase):
                         "type": "string",
                         "description": "Name for the canvas (will be sanitized for filename). Use descriptive names like 'product-mockup' or 'social-media-banner'."
                     },
-                    "width": {
-                        "type": "integer",
-                        "description": "Canvas width in pixels. Common sizes: 1920 (desktop), 1080 (square), 1200 (portrait). Range: 256-4096px",
-                        "minimum": 256,
-                        "maximum": 4096,
-                        "default": 1920
-                    },
-                    "height": {
-                        "type": "integer",
-                        "description": "Canvas height in pixels. Common sizes: 1080 (desktop), 1920 (portrait), 1200 (square). Range: 256-4096px",
-                        "minimum": 256,
-                        "maximum": 4096,
-                        "default": 1080
-                    },
                     "description": {
                         "type": "string",
                         "description": "Optional description of the canvas purpose or content"
                     },
                     "background": {
                         "type": "string",
-                        "description": "Background color in hex format (e.g., '#ffffff' for white, '#f0f0f0' for light gray)",
-                        "default": "#ffffff"
+                        "description": "Background color in hex format (e.g., '#1a1a1a' for dark, '#ffffff' for white)",
+                        "default": "#1a1a1a"
                     }
                 },
                 "required": ["name"]
@@ -163,13 +177,13 @@ class SandboxCanvasTool(SandboxToolsBase):
     async def create_canvas(
         self,
         name: str,
-        width: int = 1920,
-        height: int = 1080,
         description: Optional[str] = None,
-        background: str = "#ffffff"
+        background: str = "#1a1a1a"
     ) -> ToolResult:
-        """Create a new canvas with specified dimensions"""
+        """Create a new infinite canvas"""
         try:
+            await self._ensure_sandbox()
+            logger.info(f"[Canvas] Creating canvas '{name}' in sandbox {self._sandbox_id} for project {self.project_id}")
             await self._ensure_canvases_dir()
             await self._ensure_images_dir()
 
@@ -179,13 +193,13 @@ class SandboxCanvasTool(SandboxToolsBase):
 
             # Check if canvas already exists
             try:
-                await self.sandbox.fs.read_file(full_path)
+                await self.sandbox.fs.download_file(full_path)
                 return self.fail_response(f"Canvas '{name}' already exists at {canvas_path}")
             except:
                 pass  # File doesn't exist, continue
 
-            # Create canvas data
-            canvas_data = self._create_canvas_data(name, width, height, description, background)
+            # Create canvas data (infinite canvas - no dimensions)
+            canvas_data = self._create_canvas_data(name, description, background)
 
             # Save canvas file
             await self._save_canvas_data(canvas_path, canvas_data)
@@ -193,20 +207,91 @@ class SandboxCanvasTool(SandboxToolsBase):
             result = {
                 "canvas_name": name,
                 "canvas_path": canvas_path,
-                "width": width,
-                "height": height,
                 "background": background,
                 "description": description or "",
+                "sandbox_id": self.sandbox_id,
                 "message": f"Canvas '{name}' created successfully at {canvas_path}"
             }
 
-            return self.success_response(
-                message=f"Created canvas '{name}' ({width}x{height}px) at {canvas_path}",
-                data=result
-            )
+            return self.success_response(result)
 
         except Exception as e:
             return self.fail_response(f"Failed to create canvas: {str(e)}")
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "save_canvas",
+            "description": "Save canvas data with all elements. Used to persist user changes from the canvas editor.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "canvas_path": {
+                        "type": "string",
+                        "description": "Path to the canvas file (e.g., 'canvases/project-mockup.kanvax')"
+                    },
+                    "elements": {
+                        "type": "array",
+                        "description": "Array of canvas elements with their properties",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "type": {"type": "string"},
+                                "src": {"type": "string"},
+                                "x": {"type": "number"},
+                                "y": {"type": "number"},
+                                "width": {"type": "number"},
+                                "height": {"type": "number"},
+                                "rotation": {"type": "number"},
+                                "scaleX": {"type": "number"},
+                                "scaleY": {"type": "number"},
+                                "opacity": {"type": "number"},
+                                "locked": {"type": "boolean"},
+                                "name": {"type": "string"}
+                            }
+                        }
+                    }
+                },
+                "required": ["canvas_path", "elements"]
+            }
+        }
+    })
+    async def save_canvas(
+        self,
+        canvas_path: str,
+        elements: List[Dict[str, Any]]
+    ) -> ToolResult:
+        """
+        Save canvas with updated elements.
+        """
+        try:
+            await self._ensure_sandbox()
+            
+            # Load existing canvas
+            canvas_data = await self._load_canvas_data(canvas_path)
+            if not canvas_data:
+                return self.fail_response(f"Canvas not found: {canvas_path}")
+            
+            # Update elements
+            canvas_data["elements"] = elements
+            canvas_data["updated_at"] = datetime.now().isoformat()
+            
+            # Save back to file
+            await self._save_canvas_data(canvas_path, canvas_data)
+            
+            result = {
+                "canvas_path": canvas_path,
+                "canvas_name": canvas_data.get("name", ""),
+                "element_count": len(elements),
+                "sandbox_id": self.sandbox_id,
+                "message": f"Canvas saved with {len(elements)} element(s)"
+            }
+            
+            return self.success_response(result)
+        
+        except Exception as e:
+            return self.fail_response(f"Failed to save canvas: {str(e)}")
 
     @openapi_schema({
         "type": "function",
@@ -265,28 +350,54 @@ class SandboxCanvasTool(SandboxToolsBase):
     ) -> ToolResult:
         """Add an image element to the canvas"""
         try:
+            await self._ensure_sandbox()
+            
             # Load canvas data
             canvas_data = await self._load_canvas_data(canvas_path)
+            if not canvas_data:
+                return self.fail_response(f"Canvas not found: {canvas_path}")
 
             # Verify image exists
             image_full_path = f"{self.workspace_path}/{image_path}"
             try:
-                await self.sandbox.fs.read_file(image_full_path)
+                await self.sandbox.fs.download_file(image_full_path)
             except:
                 return self.fail_response(f"Image not found at {image_path}")
 
             # Create element
             element_id = str(uuid.uuid4())
             element_name = name or image_path.split('/')[-1]
+            
+            # Default size
+            elem_width = width or 400
+            elem_height = height or 400
+            
+            # Auto-calculate position if not specified (x=100 and y=100 are defaults)
+            # Create a grid layout based on existing elements
+            actual_x = x
+            actual_y = y
+            if x == 100 and y == 100 and len(canvas_data["elements"]) > 0:
+                # Calculate next position in grid
+                existing = canvas_data["elements"]
+                cols = 3  # 3 columns
+                gap = 50  # Gap between elements
+                
+                index = len(existing)
+                col = index % cols
+                row = index // cols
+                
+                # Find max width/height in each row for better alignment
+                actual_x = col * (elem_width + gap) + 100
+                actual_y = row * (elem_height + gap) + 100
 
             element = {
                 "id": element_id,
                 "type": "image",
                 "src": image_path,
-                "x": x,
-                "y": y,
-                "width": width or 400,  # Default width if not specified
-                "height": height or 400,  # Default height if not specified
+                "x": actual_x,
+                "y": actual_y,
+                "width": elem_width,
+                "height": elem_height,
                 "rotation": 0,
                 "scaleX": 1,
                 "scaleY": 1,
@@ -306,16 +417,14 @@ class SandboxCanvasTool(SandboxToolsBase):
                 "element_id": element_id,
                 "element_name": element_name,
                 "image_path": image_path,
-                "position": {"x": x, "y": y},
-                "size": {"width": element["width"], "height": element["height"]},
+                "position": {"x": actual_x, "y": actual_y},
+                "size": {"width": elem_width, "height": elem_height},
                 "total_elements": len(canvas_data["elements"]),
-                "message": f"Added '{element_name}' to canvas at position ({x}, {y})"
+                "sandbox_id": self.sandbox_id,
+                "message": f"Added '{element_name}' to canvas at position ({actual_x}, {actual_y})"
             }
 
-            return self.success_response(
-                message=f"Added image '{element_name}' to canvas",
-                data=result
-            )
+            return self.success_response(result)
 
         except Exception as e:
             return self.fail_response(f"Failed to add image to canvas: {str(e)}")
@@ -340,10 +449,14 @@ class SandboxCanvasTool(SandboxToolsBase):
     async def list_canvas_elements(self, canvas_path: str) -> ToolResult:
         """List all elements in a canvas"""
         try:
+            await self._ensure_sandbox()
             canvas_data = await self._load_canvas_data(canvas_path)
+            
+            if not canvas_data:
+                return self.fail_response(f"Canvas not found: {canvas_path}")
 
             elements_info = []
-            for element in canvas_data["elements"]:
+            for element in canvas_data.get("elements", []):
                 elements_info.append({
                     "id": element["id"],
                     "name": element["name"],
@@ -359,16 +472,13 @@ class SandboxCanvasTool(SandboxToolsBase):
             result = {
                 "canvas_name": canvas_data["name"],
                 "canvas_path": canvas_path,
-                "canvas_size": {"width": canvas_data["width"], "height": canvas_data["height"]},
-                "background": canvas_data["background"],
+                "background": canvas_data.get("background", "#1a1a1a"),
                 "total_elements": len(elements_info),
-                "elements": elements_info
+                "elements": elements_info,
+                "sandbox_id": self.sandbox_id
             }
 
-            return self.success_response(
-                message=f"Canvas '{canvas_data['name']}' has {len(elements_info)} element(s)",
-                data=result
-            )
+            return self.success_response(result)
 
         except Exception as e:
             return self.fail_response(f"Failed to list canvas elements: {str(e)}")
@@ -410,11 +520,15 @@ class SandboxCanvasTool(SandboxToolsBase):
     ) -> ToolResult:
         """Update element properties"""
         try:
+            await self._ensure_sandbox()
             canvas_data = await self._load_canvas_data(canvas_path)
+            
+            if not canvas_data:
+                return self.fail_response(f"Canvas not found: {canvas_path}")
 
             # Find element
             element = None
-            for el in canvas_data["elements"]:
+            for el in canvas_data.get("elements", []):
                 if el["id"] == element_id:
                     element = el
                     break
@@ -438,13 +552,11 @@ class SandboxCanvasTool(SandboxToolsBase):
                 "element_id": element_id,
                 "element_name": element["name"],
                 "updated_properties": updated_props,
+                "sandbox_id": self.sandbox_id,
                 "message": f"Updated element '{element['name']}' ({len(updated_props)} properties)"
             }
 
-            return self.success_response(
-                message=f"Updated element '{element['name']}'",
-                data=result
-            )
+            return self.success_response(result)
 
         except Exception as e:
             return self.fail_response(f"Failed to update element: {str(e)}")
@@ -473,12 +585,16 @@ class SandboxCanvasTool(SandboxToolsBase):
     async def remove_canvas_element(self, canvas_path: str, element_id: str) -> ToolResult:
         """Remove an element from the canvas"""
         try:
+            await self._ensure_sandbox()
             canvas_data = await self._load_canvas_data(canvas_path)
+            
+            if not canvas_data:
+                return self.fail_response(f"Canvas not found: {canvas_path}")
 
             # Find and remove element
             element_name = None
             new_elements = []
-            for el in canvas_data["elements"]:
+            for el in canvas_data.get("elements", []):
                 if el["id"] == element_id:
                     element_name = el["name"]
                 else:
@@ -497,13 +613,11 @@ class SandboxCanvasTool(SandboxToolsBase):
                 "removed_element_id": element_id,
                 "removed_element_name": element_name,
                 "remaining_elements": len(new_elements),
+                "sandbox_id": self.sandbox_id,
                 "message": f"Removed element '{element_name}' from canvas"
             }
 
-            return self.success_response(
-                message=f"Removed element '{element_name}' from canvas",
-                data=result
-            )
+            return self.success_response(result)
 
         except Exception as e:
             return self.fail_response(f"Failed to remove element: {str(e)}")

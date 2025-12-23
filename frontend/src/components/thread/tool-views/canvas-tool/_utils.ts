@@ -1,4 +1,8 @@
-import { ToolCall, ToolResult } from '../types';
+import { ToolCallData, ToolResultData } from '../types';
+
+// Legacy type aliases for compatibility
+type ToolCall = ToolCallData | { name?: string; arguments?: Record<string, any>; metadata?: any };
+type ToolResult = ToolResultData | { output?: any; success?: boolean } | null;
 
 export interface CanvasElement {
   id: string;
@@ -13,27 +17,27 @@ export interface CanvasElement {
   scaleY: number;
   opacity: number;
   locked: boolean;
+  visible: boolean;
   name: string;
 }
 
 export interface CanvasData {
   name: string;
   version: string;
-  width: number;
-  height: number;
   background: string;
   description?: string;
   elements: CanvasElement[];
   created_at: string;
   updated_at: string;
+  // Optional - canvas is infinite, no fixed dimensions
+  width?: number;
+  height?: number;
 }
 
 export interface ExtractedCanvasData {
   canvasName: string | null;
   canvasPath: string | null;
   canvasData: CanvasData | null;
-  width: number | null;
-  height: number | null;
   background: string | null;
   totalElements: number;
   status: string | undefined;
@@ -58,8 +62,6 @@ export function extractCanvasData(
     canvasName: null,
     canvasPath: null,
     canvasData: null,
-    width: null,
-    height: null,
     background: null,
     totalElements: 0,
     status: undefined,
@@ -79,9 +81,7 @@ export function extractCanvasData(
   
   let canvasName = args.name || args.canvas_name || null;
   let canvasPath = args.canvas_path || null;
-  let width = args.width || null;
-  let height = args.height || null;
-  let background = args.background || '#ffffff';
+  let background = args.background || '#1a1a1a';
 
   // Parse tool result if available
   let parsedResult: any = null;
@@ -101,9 +101,7 @@ export function extractCanvasData(
   if (parsedResult) {
     canvasName = canvasName || parsedResult.canvas_name || parsedResult.name;
     canvasPath = canvasPath || parsedResult.canvas_path;
-    width = width || parsedResult.width;
-    height = height || parsedResult.height;
-    background = background || parsedResult.background || '#ffffff';
+    background = parsedResult.background || background;
   }
 
   const actualIsSuccess = toolResult?.success ?? isSuccess;
@@ -115,10 +113,8 @@ export function extractCanvasData(
     canvasName,
     canvasPath,
     canvasData: parsedResult?.canvas_data || null,
-    width,
-    height,
     background,
-    totalElements: parsedResult?.total_elements || 0,
+    totalElements: parsedResult?.total_elements || parsedResult?.element_count || 0,
     status,
     error,
     actualIsSuccess,

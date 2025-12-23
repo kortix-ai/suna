@@ -36,8 +36,14 @@ import { SheetsToolView } from '../sheets-tools/sheets-tool-view';
 import { GetProjectStructureView } from '../web-dev/GetProjectStructureView';
 import { ImageEditGenerateToolView } from '../image-edit-generate-tool/ImageEditGenerateToolView';
 import { DesignerToolView } from '../designer-tool/DesignerToolView';
-import { CanvasToolView } from '../canvas-tool/CanvasToolView';
+import dynamic from 'next/dynamic';
 import { UploadFileToolView } from '../UploadFileToolView';
+
+// Dynamically import CanvasToolView to avoid SSR issues with react-konva
+const CanvasToolView = dynamic(
+  () => import('../canvas-tool/CanvasToolView').then((mod) => mod.CanvasToolView),
+  { ssr: false }
+);
 import { CreateNewAgentToolView } from '../create-new-agent/create-new-agent';
 import { UpdateAgentToolView } from '../update-agent/update-agent';
 import { SearchMcpServersForAgentToolView } from '../search-mcp-servers-for-agent/search-mcp-servers-for-agent';
@@ -303,12 +309,12 @@ export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
 
   // define canvas-related tools that shouldn't be transformed
   const canvasTools = [
-    'create-canvas',
-    'save-canvas',
-    'add-image-to-canvas',
-    'list-canvas-elements',
-    'update-canvas-element',
-    'remove-canvas-element',
+    'create-canvas', 'create_canvas',
+    'save-canvas', 'save_canvas',
+    'add-image-to-canvas', 'add_image_to_canvas',
+    'list-canvas-elements', 'list_canvas_elements',
+    'update-canvas-element', 'update_canvas_element',
+    'remove-canvas-element', 'remove_canvas_element',
   ]
 
   const isAlreadyPresentationTool = presentationTools.includes(name);

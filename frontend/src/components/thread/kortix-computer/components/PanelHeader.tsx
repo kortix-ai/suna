@@ -1,7 +1,7 @@
 'use client';
 
 import { memo, useState, useEffect } from 'react';
-import { CircleDashed, Minimize2, Wifi, Battery, BatteryLow, BatteryMedium, BatteryFull, BatteryCharging } from 'lucide-react';
+import { CircleDashed, Minimize2, Maximize2, Wifi, Battery, BatteryLow, BatteryMedium, BatteryFull, BatteryCharging } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DrawerTitle } from '@/components/ui/drawer';
 import { ViewType } from '@/stores/kortix-computer-store';
@@ -193,17 +193,6 @@ export const PanelHeader = memo(function PanelHeader({
             <CircleDashed className="h-3 w-3 animate-spin" />
             <span>Running</span>
           </div>
-        )}
-        {isSuiteMode && onToggleSuiteMode && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onToggleSuiteMode}
-            className="h-7 text-xs"
-          >
-            <Minimize2 className="h-3 w-3 mr-1" />
-            Exit Suite Mode
-          </Button>
         )}
         {!hideViewToggle && (
           <ViewToggle currentView={currentView} onViewChange={onViewChange} showFilesTab={showFilesTab} />

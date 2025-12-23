@@ -139,15 +139,40 @@ export const ThreadLayout = memo(function ThreadLayout({
     }
   }, [shouldOpenPanel, isSidePanelOpen, onToggleSidePanel, clearShouldOpenPanel]);
 
+  // Get selected file path from store
+  const selectedFilePath = useKortixComputerStore((state) => state.selectedFilePath);
+  
+  // Suite Mode - ONLY activates when VIEWING files in file browser
+  // NOT for tool views in chat - those stay normal size
+  const isSuiteMode = useMemo(() => {
+    // ONLY check file being viewed in file browser
+    if (selectedFilePath) {
+      const ext = selectedFilePath.split('.').pop()?.toLowerCase();
+      if (['kanvax', 'pptx', 'ppt'].includes(ext || '')) {
+        return true;
+      }
+    }
+    return false;
+  }, [selectedFilePath]);
+
   useEffect(() => {
     if (shouldShowPanel) {
-      sidePanelRef.current?.resize(50);
-      mainPanelRef.current?.resize(50);
+      // Auto-expand for suite mode with animation delay
+      if (isSuiteMode) {
+        const timer = setTimeout(() => {
+          sidePanelRef.current?.resize(70);
+          mainPanelRef.current?.resize(30);
+        }, 100);
+        return () => clearTimeout(timer);
+      } else {
+        sidePanelRef.current?.resize(50);
+        mainPanelRef.current?.resize(50);
+      }
     } else {
       sidePanelRef.current?.resize(0);
       mainPanelRef.current?.resize(100);
     }
-  }, [shouldShowPanel]);
+  }, [shouldShowPanel, isSuiteMode]);
 
   if (compact) {
     return (
@@ -280,10 +305,11 @@ export const ThreadLayout = memo(function ThreadLayout({
           )}
         </ResizablePanel>
 
-        {/* Resizable handle - always render */}
+        {/* Resizable handle - hidden in suite mode */}
         <ResizableHandle
-          withHandle={true}
-          className="z-20 w-0"
+          withHandle={!isSuiteMode}
+          disabled={isSuiteMode}
+          className={cn("z-20 w-0", isSuiteMode && "opacity-0 pointer-events-none")}
         />
 
         {/* Side panel - always render but control size */}
@@ -318,6 +344,7 @@ export const ThreadLayout = memo(function ThreadLayout({
             streamingText={streamingToolArgsJson}
             sandboxId={sandboxId || undefined}
             projectId={projectId}
+            sidePanelRef={sidePanelRef}
           />
         </ResizablePanel>
       </ResizablePanelGroup>
