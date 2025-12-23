@@ -7,13 +7,13 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, Pressable, ScrollView } from 'react-native';
+import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import { Brain, Wrench, Server, Zap, X, ArrowLeft } from 'lucide-react-native';
-import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
 import { Loading } from '../loading/loading';
@@ -115,11 +115,11 @@ export function WorkerConfigDrawer({
         {/* Header */}
         <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
           <View className="flex-row items-center gap-3">
-            <Pressable
+            <BottomSheetTouchable
               onPress={onClose}
-              className="h-10 w-10 items-center justify-center rounded-xl active:opacity-80">
+              style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 12 }}>
               <Icon as={ArrowLeft} size={20} className="text-foreground" />
-            </Pressable>
+            </BottomSheetTouchable>
             <View>
               {isLoading || !agent ? (
                 <>
@@ -136,11 +136,11 @@ export function WorkerConfigDrawer({
               )}
             </View>
           </View>
-          <Pressable
+          <BottomSheetTouchable
             onPress={onClose}
-            className="h-10 w-10 items-center justify-center rounded-xl active:opacity-80">
+            style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 12 }}>
             <Icon as={X} size={20} className="text-muted-foreground" />
-          </Pressable>
+          </BottomSheetTouchable>
         </View>
 
         {/* Tab Menu */}
@@ -155,15 +155,20 @@ export function WorkerConfigDrawer({
               const isActive = activeView === item.id;
 
               return (
-                <Pressable
+                <BottomSheetTouchable
                   key={item.id}
                   onPress={() => {
                     setActiveView(item.id);
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   }}
-                  className={`items-center justify-center border-b-2 px-4 py-3 ${
-                    isActive ? 'border-primary' : 'border-transparent'
-                  }`}>
+                  style={{
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingHorizontal: 16,
+                    paddingVertical: 12,
+                    borderBottomWidth: 2,
+                    borderBottomColor: isActive ? '#10b981' : 'transparent',
+                  }}>
                   <View className="flex-row items-center gap-2">
                     <Icon
                       as={IconComponent}
@@ -177,7 +182,7 @@ export function WorkerConfigDrawer({
                       {item.label}
                     </Text>
                   </View>
-                </Pressable>
+                </BottomSheetTouchable>
               );
             })}
           </ScrollView>

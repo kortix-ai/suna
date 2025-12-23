@@ -16,7 +16,7 @@ import {
   ChatDrawers,
   type ToolMessagePair,
 } from '@/components/chat';
-import { ThreadHeader, ThreadActionsDrawer } from '@/components/threads';
+import { ThreadHeader, ThreadActionsMenu } from '@/components/threads';
 import { KortixComputer } from '@/components/kortix-computer';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useChatCommons, type UseChatReturn, useDeleteThread, useShareThread } from '@/hooks';
@@ -423,7 +423,8 @@ export function ThreadPage({
 
   return (
     <View className="flex-1 bg-background">
-      <View className="flex-1">
+      {/* Main content area - positioned below header but above nothing */}
+      <View className="flex-1" style={{ zIndex: 1 }}>
         {isLoading ? (
           <View className="flex-1 items-center justify-center">
             <View className="h-20 w-20 items-center justify-center rounded-full">
@@ -446,12 +447,14 @@ export function ThreadPage({
           <ScrollView
             className="flex-1"
             contentContainerStyle={{
-              flex: 1,
+              flexGrow: 1,
               justifyContent: 'center',
               alignItems: 'center',
               paddingHorizontal: 32,
               paddingTop: Math.max(insets.top, 16) + 80,
+              paddingBottom: 200,
             }}
+            keyboardShouldPersistTaps="handled"
             refreshControl={
               <RefreshControl
                 refreshing={isRefreshing}
@@ -674,7 +677,7 @@ export function ThreadPage({
         onChooseFiles={chat.handleChooseFiles}
       />
 
-      <ThreadActionsDrawer
+      <ThreadActionsMenu
         visible={isThreadActionsVisible}
         onClose={() => setIsThreadActionsVisible(false)}
         onShare={async () => {

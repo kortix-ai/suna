@@ -174,17 +174,23 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
     },
   }), []);
 
+  // On Android with softwareKeyboardLayoutMode: "pan", we don't need KeyboardAvoidingView
+  // as the system handles keyboard avoidance. Using it causes layout conflicts.
+  const Container = Platform.OS === 'ios' ? KeyboardAvoidingView : View;
+  const containerProps = Platform.OS === 'ios' 
+    ? { behavior: 'padding' as const, keyboardVerticalOffset: 0 }
+    : {};
+
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    <Container
+      {...containerProps}
       className="absolute bottom-0 left-0 right-0"
-      keyboardVerticalOffset={0}
-      style={Platform.OS === 'android' ? { elevation: 100, zIndex: 100 } : undefined}
+      style={Platform.OS === 'android' ? { elevation: 5, zIndex: 5 } : undefined}
     >
       {/* Gradient fade from transparent to background */}
       <LinearGradient
-        colors={gradientColors as unknown as string[]}
-        locations={GRADIENT_LOCATIONS as unknown as number[]}
+        colors={[...gradientColors]}
+        locations={[...GRADIENT_LOCATIONS]}
         style={GRADIENT_STYLE}
         pointerEvents="none"
       />
@@ -254,7 +260,7 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
       {!showQuickActions && !isKeyboardVisible && (
         <View style={{ paddingBottom: Math.max(insets.bottom - 8, 0) }} />
       )}
-    </KeyboardAvoidingView>
+    </Container>
   );
 }));
 
