@@ -1,0 +1,38 @@
+[
+  {
+    "messages": 50,
+    "description": "Short conversation",
+    "output_messages": 49,
+    "tokens": 1010,
+    "facts_found": 3,
+    "facts_total": 3,
+    "retention_rate": 100.0
+  },
+  {
+    "messages": 150,
+    "description": "Medium conversation",
+    "output_messages": 126,
+    "tokens": 3304,
+    "facts_found": 5,
+    "facts_total": 6,
+    "retention_rate": 83.33333333333334
+  },
+  {
+    "messages": 300,
+    "description": "Long conversation",
+    "output_messages": 126,
+    "tokens": 3246,
+    "facts_found": 8,
+    "facts_total": 8,
+    "retention_rate": 100.0
+  },
+  {
+    "messages": 500,
+    "description": "Very long conversation",
+    "output_messages": 126,
+    "tokens": 3288,
+    "facts_found": 8,
+    "facts_total": 8,
+    "retention_rate": 100.0
+  }
+]

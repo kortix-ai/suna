@@ -15,6 +15,8 @@ from core.agentpress.tool_registry import ToolRegistry
 from core.agentpress.context_manager import ContextManager
 from core.agentpress.response_processor import ResponseProcessor, ProcessorConfig
 from core.agentpress.error_processor import ErrorProcessor
+from core.context_engine import ContextEngine
+from core.context_engine.sources import MemorySource
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from langfuse.client import StatefulGenerationClient, StatefulTraceClient
@@ -411,6 +413,7 @@ class ThreadManager:
             # ===== CENTRAL CONFIGURATION =====
             ENABLE_CONTEXT_MANAGER = True   # Set to False to disable context compression
             ENABLE_PROMPT_CACHING = True    # Set to False to disable prompt caching
+            USE_CONTEXT_ENGINE = True       # Set to True to use new hierarchical ContextEngine
             # ==================================
             
             # Fast path: Check stored token count + new message tokens
@@ -531,50 +534,64 @@ class ThreadManager:
                 except Exception as e:
                     logger.debug(f"Fast path check failed, falling back to full fetch: {e}")
             
-            # Always fetch messages (needed for LLM call)
-            # Fast path just skips compression, not fetching!
             import time
-            fetch_start = time.time()
-            messages = await self.get_llm_messages(thread_id)
-            logger.debug(f"⏱️ [TIMING] get_llm_messages(): {(time.time() - fetch_start) * 1000:.1f}ms ({len(messages)} messages)")
             
-            # Note: We no longer need to manually append partial assistant messages
-            # because we now save complete assistant messages with tool calls before auto-continuing
-
-            # Apply context compression (only if needed based on fast path check)
-            if ENABLE_CONTEXT_MANAGER:
-                # Skip compression for first message (minimal context)
-                if len(messages) <= 2:
-                    logger.debug(f"First message: Skipping compression ({len(messages)} messages)")
-                elif skip_fetch:
-                    # Fast path: We know we're under threshold, skip compression entirely
-                    logger.debug(f"Fast path: Skipping compression check (under threshold)")
-                elif need_compression:
-                    # We know we're over threshold, compress now
-                    compress_start = time.time()
-                    logger.debug(f"Applying context compression on {len(messages)} messages")
-                    context_manager = ContextManager()
-                    compressed_messages = await context_manager.compress_messages(
-                        messages, llm_model, max_tokens=llm_max_tokens, 
-                        actual_total_tokens=estimated_total_tokens,  # Use estimated from fast check!
-                        system_prompt=system_prompt,
-                        thread_id=thread_id
-                    )
-                    logger.debug(f"⏱️ [TIMING] Context compression: {(time.time() - compress_start) * 1000:.1f}ms ({len(messages)} -> {len(compressed_messages)} messages)")
-                    messages = compressed_messages
-                else:
-                    # First turn or no fast path data: Run compression check
-                    compress_start = time.time()
-                    logger.debug(f"Running compression check on {len(messages)} messages")
-                    context_manager = ContextManager()
-                    compressed_messages = await context_manager.compress_messages(
-                        messages, llm_model, max_tokens=llm_max_tokens, 
-                        actual_total_tokens=None,
-                        system_prompt=system_prompt,
-                        thread_id=thread_id
-                    )
-                    logger.debug(f"⏱️ [TIMING] Compression check: {(time.time() - compress_start) * 1000:.1f}ms")
-                    messages = compressed_messages
+            if USE_CONTEXT_ENGINE:
+                fetch_start = time.time()
+                ctx_engine = ContextEngine.create_default(
+                    include_memory=True,
+                    total_budget=150_000,
+                )
+                
+                compile_result = await ctx_engine.compile(
+                    thread_id=thread_id,
+                    account_id=self.account_id or "",
+                    system_prompt=None,
+                    query=latest_user_message_content,
+                    rules={
+                        "include_system_prompt": False,
+                        "include_thread_memory": True,
+                        "deduplicate": True,
+                    },
+                )
+                
+                messages = compile_result.messages
+                logger.debug(f"⏱️ [TIMING] ContextEngine.compile(): {(time.time() - fetch_start) * 1000:.1f}ms ({len(messages)} messages, {compile_result.token_count} tokens)")
+                logger.info(f"ContextEngine: {compile_result.summary()}")
+            else:
+                fetch_start = time.time()
+                messages = await self.get_llm_messages(thread_id)
+                logger.debug(f"⏱️ [TIMING] get_llm_messages(): {(time.time() - fetch_start) * 1000:.1f}ms ({len(messages)} messages)")
+                
+                if ENABLE_CONTEXT_MANAGER:
+                    if len(messages) <= 2:
+                        logger.debug(f"First message: Skipping compression ({len(messages)} messages)")
+                    elif skip_fetch:
+                        logger.debug(f"Fast path: Skipping compression check (under threshold)")
+                    elif need_compression:
+                        compress_start = time.time()
+                        logger.debug(f"Applying context compression on {len(messages)} messages")
+                        context_manager = ContextManager()
+                        compressed_messages = await context_manager.compress_messages(
+                            messages, llm_model, max_tokens=llm_max_tokens, 
+                            actual_total_tokens=estimated_total_tokens,
+                            system_prompt=system_prompt,
+                            thread_id=thread_id
+                        )
+                        logger.debug(f"⏱️ [TIMING] Context compression: {(time.time() - compress_start) * 1000:.1f}ms ({len(messages)} -> {len(compressed_messages)} messages)")
+                        messages = compressed_messages
+                    else:
+                        compress_start = time.time()
+                        logger.debug(f"Running compression check on {len(messages)} messages")
+                        context_manager = ContextManager()
+                        compressed_messages = await context_manager.compress_messages(
+                            messages, llm_model, max_tokens=llm_max_tokens, 
+                            actual_total_tokens=None,
+                            system_prompt=system_prompt,
+                            thread_id=thread_id
+                        )
+                        logger.debug(f"⏱️ [TIMING] Compression check: {(time.time() - compress_start) * 1000:.1f}ms")
+                        messages = compressed_messages
 
             # Check if cache needs rebuild due to compression
             force_rebuild = False
