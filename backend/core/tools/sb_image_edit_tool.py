@@ -299,7 +299,7 @@ class SandboxImageEditTool(SandboxToolsBase):
                 return image_filename
             
             # Real API implementation
-            model = "gpt-image-1"
+            model = "gpt-image-1.5"
 
             if mode == "generate":
                 response = await aimage_generation(
