@@ -159,7 +159,7 @@ export function OtpVerification({
   };
 
   return (
-    <Card className="w-full border-border/50 shadow-lg">
+    <Card className="w-full border-border">
       <CardContent className="pt-6">
         {(error || localError) && (
           <Alert variant="destructive" className="mb-6 py-2">
