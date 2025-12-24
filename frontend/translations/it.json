@@ -176,19 +176,7 @@
       "insufficientCreditsMessage": "Controllo fatturazione fallito: Crediti insufficienti. Il tuo saldo è {balance}. Aggiungi crediti per continuare.",
       "creditsExhausted": "Hai esaurito i crediti. Aggiorna ora.",
       "billingCheckFailed": "Controllo fatturazione fallito. Aggiorna per continuare.",
-      "failedToStartAgent": "Impossibile avviare l'agente {agentName}: {message}",
-      "holidayPromo": {
-        "badge": "Offerta di Natale",
-        "countdown": "Termina tra {time}",
-        "discount": "50% di sconto sui primi 3 mesi",
-        "window": "Valida dal 24 al 25 dicembre",
-        "headerLine": "Usa il codice {code} per ottenere {discount}",
-        "description": "Usa il codice {code} al checkout per ottenere {discount}. {window}",
-        "copyCode": "Copia codice",
-        "copied": "Copiato",
-        "codeCopied": "{code} copiato",
-        "copyFailed": "Impossibile copiare il codice promozionale"
-      }
+      "failedToStartAgent": "Impossibile avviare l'agente {agentName}: {message}"
     },
     "usage": {
       "title": "Utilizzo"
@@ -567,6 +555,18 @@
     "cannotDowngradeDuringCommitment": "Impossibile passare a un piano inferiore durante il periodo di impegno",
     "alreadyOnThisPlan": "Sei già su questo Piano.",
     "localModeMessage": "Esecuzione in modalità sviluppo locale - le funzionalità di fatturazione sono disabilitate",
+    "holidayPromo": {
+      "badge": "Offerta di Natale",
+      "countdown": "Termina tra {time}",
+      "discount": "50% di sconto sui primi 3 mesi",
+      "window": "Valida dal 24 al 25 dicembre",
+      "headerLine": "Usa il codice {code} per ottenere {discount}",
+      "description": "Usa il codice {code} al checkout per ottenere {discount}. {window}",
+      "copyCode": "Copia codice",
+      "copied": "Copiato",
+      "codeCopied": "{code} copiato",
+      "copyFailed": "Impossibile copiare il codice promozionale"
+    },
     "creditsExplainedPage": {
       "title": "Crediti spiegati",
       "subtitle": "Tutto ciò che devi sapere su come funzionano i crediti su Kortix",
