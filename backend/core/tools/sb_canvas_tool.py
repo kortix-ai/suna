@@ -7,7 +7,9 @@ import json
 import uuid
 import base64
 import asyncio
+import io
 from datetime import datetime
+from PIL import Image
 
 # Global lock for canvas file operations to prevent race conditions
 _canvas_locks: Dict[str, asyncio.Lock] = {}
@@ -21,47 +23,34 @@ _canvas_locks: Dict[str, asyncio.Lock] = {}
     weight=215,
     visible=True,
     usage_guide="""
-### CANVAS EDITOR - OPTIMAL WORKFLOW
+### CANVAS EDITOR
 
-**🎯 BEST PRACTICE: Generate images FIRST, then create canvas with them**
-
-**Step 1: Generate ALL images first**
+**🚀 PREFERRED WORKFLOW: Use image_edit_or_generate with canvas_path**
 ```python
-image_edit_or_generate(mode="generate", prompt="modern logo design")
-# Returns: generated_image_abc123.png
-image_edit_or_generate(mode="generate", prompt="background pattern")  
-# Returns: generated_image_def456.png
-```
-
-**Step 2: Create canvas (infinite - no dimensions needed)**
-```python
-create_canvas(name="my-design")
-# Returns canvas_path: "canvases/my-design.kanvax"
-```
-
-**Step 3: Add images to canvas ONE AT A TIME (SEQUENTIAL - NEVER PARALLEL!)**
-```python
-# MUST call these ONE BY ONE, wait for each to complete!
-add_image_to_canvas(
-    canvas_path="canvases/my-design.kanvax",  
-    image_path="generated_image_abc123.png",
-    x=100, y=100, width=400, height=400
+# BEST: Single call generates AND adds to canvas (auto-creates canvas if needed)
+image_edit_or_generate(
+    mode="generate",
+    prompt=["logo design", "background pattern", "icon set"],
+    canvas_path="canvases/my-design.kanvax"
 )
-# Wait for above to complete, then:
-add_image_to_canvas(
-    canvas_path="canvases/my-design.kanvax",
-    image_path="generated_image_def456.png",  
-    x=600, y=100, width=800, height=600
-)
+# This: generates 3 images, creates canvas if needed, adds all images automatically
 ```
 
-**⚠️ CRITICAL:**
-- **NEVER call add_image_to_canvas in PARALLEL** - it causes race conditions and loses elements!
-- Call add_image_to_canvas ONE AT A TIME, wait for each to complete before the next
-- NEVER create empty canvas - always have images ready first
-- Canvas shows nothing until images are added
-- Use EXACT filenames returned (e.g., "generated_image_abc123.png")
-- Canvas will appear in Kortix Computer view once it has elements
+**📦 MANUAL WORKFLOW (backup/advanced control):**
+Use these tools when you need fine control over canvas or element positioning:
+
+```python
+# 1. Create canvas manually
+create_canvas(name="my-design", background="#1a1a1a")
+
+# 2. Add images one at a time (NEVER parallel!)
+add_image_to_canvas(canvas_path="canvases/my-design.kanvax", image_path="image.png", x=100, y=100)
+```
+
+**⚠️ MANUAL WORKFLOW RULES:**
+- NEVER call add_image_to_canvas in PARALLEL - causes race conditions!
+- Call ONE AT A TIME, wait for each to complete
+- Use EXACT filenames returned from image generation
 """
 )
 class SandboxCanvasTool(SandboxToolsBase):
@@ -392,6 +381,15 @@ class SandboxCanvasTool(SandboxToolsBase):
                 else:
                     image_bytes = image_data.encode()
                 
+                # Get actual image dimensions using PIL
+                try:
+                    img = Image.open(io.BytesIO(image_bytes))
+                    actual_img_width, actual_img_height = img.size
+                    img.close()
+                except Exception as e:
+                    logger.warning(f"Could not read image dimensions: {e}")
+                    actual_img_width, actual_img_height = 400, 400
+                
                 # Determine MIME type from extension
                 ext = image_path.lower().split('.')[-1] if '.' in image_path else 'png'
                 mime_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif', 'webp': 'image/webp'}
@@ -404,9 +402,44 @@ class SandboxCanvasTool(SandboxToolsBase):
                 element_id = str(uuid.uuid4())
                 element_name = name or image_path.split('/')[-1]
                 
-                # Default size
-                elem_width = width or 400
-                elem_height = height or 400
+                # Calculate element size based on actual image dimensions
+                # If user provided both width and height, scale proportionally to fit
+                # If user provided only one, scale to maintain aspect ratio
+                # If user provided neither, use actual image size (capped at reasonable max)
+                aspect_ratio = actual_img_width / actual_img_height if actual_img_height > 0 else 1
+                
+                if width is not None and height is not None:
+                    # User specified both - scale to fit while maintaining aspect ratio
+                    target_aspect = width / height if height > 0 else 1
+                    if aspect_ratio > target_aspect:
+                        # Image is wider, fit to width
+                        elem_width = width
+                        elem_height = width / aspect_ratio
+                    else:
+                        # Image is taller, fit to height
+                        elem_height = height
+                        elem_width = height * aspect_ratio
+                elif width is not None:
+                    # User specified only width
+                    elem_width = width
+                    elem_height = width / aspect_ratio
+                elif height is not None:
+                    # User specified only height
+                    elem_height = height
+                    elem_width = height * aspect_ratio
+                else:
+                    # No size specified - use actual image size, capped
+                    max_size = 600
+                    if actual_img_width > max_size or actual_img_height > max_size:
+                        if actual_img_width > actual_img_height:
+                            elem_width = max_size
+                            elem_height = max_size / aspect_ratio
+                        else:
+                            elem_height = max_size
+                            elem_width = max_size * aspect_ratio
+                    else:
+                        elem_width = actual_img_width
+                        elem_height = actual_img_height
                 
                 # Auto-calculate position if not specified (x=100 and y=100 are defaults)
                 # Create a grid layout based on existing elements

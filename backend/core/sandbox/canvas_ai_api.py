@@ -423,12 +423,127 @@ The result should be a high-quality merged image."""
         )
 
 
+class ConvertToSvgRequest(BaseModel):
+    """Request model for PNG to SVG conversion"""
+    image_base64: str  # Base64 encoded PNG image
+    # VTracer options
+    colormode: Optional[str] = "color"  # 'color' or 'bw'
+    filter_speckle: Optional[int] = 4  # Filter out small speckles
+    color_precision: Optional[int] = 6  # Color precision bits
+    corner_threshold: Optional[int] = 60  # Corner detection threshold
+    segment_length: Optional[float] = 4.0  # Max segment length
+    splice_threshold: Optional[int] = 45  # Splice angle threshold
+    mode: Optional[str] = "spline"  # 'pixel', 'polygon', or 'spline'
+
+
+class ConvertToSvgResponse(BaseModel):
+    """Response model for SVG conversion"""
+    success: bool
+    svg: Optional[str] = None  # SVG string content
+    error: Optional[str] = None
+
+
+@router.post("/convert-svg", response_model=ConvertToSvgResponse)
+async def convert_to_svg(
+    request: ConvertToSvgRequest,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+) -> ConvertToSvgResponse:
+    """
+    Convert a PNG/JPG image to SVG using VTracer.
+    VTracer is a high-quality raster to vector converter.
+    """
+    try:
+        import vtracer
+        from PIL import Image
+        import io
+        
+        # Extract base64 data
+        image_data = request.image_base64
+        if "," in image_data:
+            image_data = image_data.split(",", 1)[1]
+        
+        # Decode base64 to bytes
+        try:
+            image_bytes = base64.b64decode(image_data)
+        except Exception as e:
+            return ConvertToSvgResponse(
+                success=False,
+                error=f"Invalid base64 image data: {str(e)}"
+            )
+        
+        # Load image and ensure it's in a format vtracer can handle
+        try:
+            img = Image.open(io.BytesIO(image_bytes))
+            # Convert to RGBA if needed
+            if img.mode != 'RGBA':
+                img = img.convert('RGBA')
+            
+            # Save as PNG bytes for vtracer
+            png_buffer = io.BytesIO()
+            img.save(png_buffer, format='PNG')
+            png_bytes = png_buffer.getvalue()
+        except Exception as e:
+            return ConvertToSvgResponse(
+                success=False,
+                error=f"Failed to process image: {str(e)}"
+            )
+        
+        # Convert to SVG using vtracer
+        try:
+            svg_str = vtracer.convert_raw_image_to_svg(
+                png_bytes,
+                img_format='png',
+                colormode=request.colormode or 'color',
+                filter_speckle=request.filter_speckle or 4,
+                color_precision=request.color_precision or 6,
+                corner_threshold=request.corner_threshold or 60,
+                segment_length=request.segment_length or 4.0,
+                splice_threshold=request.splice_threshold or 45,
+                mode=request.mode or 'spline',
+            )
+            
+            logger.info(f"Successfully converted image to SVG ({len(svg_str)} chars)")
+            
+            return ConvertToSvgResponse(
+                success=True,
+                svg=svg_str
+            )
+            
+        except Exception as e:
+            logger.error(f"VTracer conversion failed: {e}")
+            return ConvertToSvgResponse(
+                success=False,
+                error=f"SVG conversion failed: {str(e)}"
+            )
+        
+    except ImportError:
+        return ConvertToSvgResponse(
+            success=False,
+            error="vtracer library not installed. Run: pip install vtracer"
+        )
+    except Exception as e:
+        logger.error(f"SVG conversion error: {e}")
+        return ConvertToSvgResponse(
+            success=False,
+            error=str(e)
+        )
+
+
 @router.get("/health")
 async def health_check():
     """Check if Canvas AI API is available"""
+    # Check if vtracer is available
+    vtracer_available = False
+    try:
+        import vtracer
+        vtracer_available = True
+    except ImportError:
+        pass
+    
     return {
         "status": "ok",
         "default_model": DEFAULT_MODEL,
         "available_models": MODELS,
-        "openrouter_configured": bool(OPENROUTER_API_KEY)
+        "openrouter_configured": bool(OPENROUTER_API_KEY),
+        "vtracer_available": vtracer_available
     }

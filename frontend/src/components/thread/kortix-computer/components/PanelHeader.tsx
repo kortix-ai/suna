@@ -178,7 +178,7 @@ export const PanelHeader = memo(function PanelHeader({
           isMaximized={isMaximized}
         />
       </div>
-      <div onClick={() => setSandboxInfoOpen(!sandboxInfoOpen)} className="flex items-center justify-center gap-2 cursor-default">
+      <div onClick={() => setSandboxInfoOpen?.(!sandboxInfoOpen)} className="flex items-center justify-center gap-2 cursor-default">
         <div className="w-6 h-6 flex items-center justify-center">
           <KortixLogo size={18}/>
         </div>

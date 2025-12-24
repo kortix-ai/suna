@@ -13,6 +13,8 @@ import asyncio
 import time
 import json
 import re
+from datetime import datetime
+from PIL import Image
 from core.utils.logger import logger
 
 
@@ -51,6 +53,30 @@ def parse_image_paths(image_path: Optional[str | list[str]]) -> list[str]:
     usage_guide="""
 ### IMAGE GENERATION & EDITING
 
+**🎯 CANVAS INTEGRATION (PREFERRED WORKFLOW):**
+When user wants a canvas with images, use `canvas_path` parameter to auto-add images:
+```python
+# Single call: generates image AND adds to canvas (creates canvas if doesn't exist)
+image_edit_or_generate(
+    mode="generate", 
+    prompt="modern tech logo",
+    canvas_path="canvases/my-design.kanvax"
+)
+```
+- If canvas doesn't exist, it's auto-created
+- Images are positioned automatically (or use canvas_x, canvas_y)
+- Much faster than separate generate + add_image_to_canvas calls
+
+**BATCH CANVAS WORKFLOW:**
+```python
+# Generate multiple images and add all to same canvas
+image_edit_or_generate(
+    mode="generate",
+    prompt=["logo design", "background pattern", "icon set"],
+    canvas_path="canvases/brand-assets.kanvax"
+)
+```
+
 **CRITICAL: USE EDIT MODE FOR MULTI-TURN IMAGE MODIFICATIONS**
 - **When user wants to modify an existing image:** ALWAYS use mode="edit" with the image_path parameter
 - **When user wants to create a new image:** Use mode="generate" without image_path
@@ -72,30 +98,14 @@ def parse_image_paths(image_path: Optional[str | list[str]]) -> list[str]:
   ```
   image_edit_or_generate(mode="edit", prompt="Add a red hat to the person", image_path="generated_image_abc123.png")
   ```
-- Example with URL:
-  ```
-  image_edit_or_generate(mode="edit", prompt="Change background to mountains", image_path="https://example.com/photo.png")
-  ```
-
-**MULTI-TURN WORKFLOW EXAMPLE:**
-- Step 1 - User: "Create a logo for my company" → Use generate mode: creates "generated_image_abc123.png"
-- Step 2 - User: "Can you make it more colorful?" → Use edit mode with "generated_image_abc123.png" (AUTOMATIC)
-- Step 3 - User: "Add some text to it" → Use edit mode with the most recent image (AUTOMATIC)
 
 **MANDATORY USAGE RULES:**
 - ALWAYS use this tool for any image creation or editing tasks
 - NEVER attempt to generate or edit images by any other means
 - MUST use edit mode when user asks to edit, modify, change, or alter an existing image
 - MUST use generate mode when user asks to create a new image from scratch
-- **MULTI-TURN CONVERSATION RULE:** If you've created an image and user provides ANY follow-up feedback, AUTOMATICALLY use edit mode
-- **FOLLOW-UP DETECTION:** Phrases like "can you change...", "make it more...", "add a...", "remove the..." = EDIT MODE
-- After image generation/editing, ALWAYS display the result using the ask tool with the image attached
-- The tool automatically saves images to the workspace with unique filenames
+- **PREFER CANVAS INTEGRATION:** When user wants canvas, use canvas_path param instead of separate calls
 - **REMEMBER THE LAST IMAGE:** Always use the most recently generated image filename for follow-up edits
-
-**OPTIONAL CLOUD SHARING:**
-- Ask user if they want to upload images: "Would you like me to upload this image to secure cloud storage for sharing?"
-- **CLOUD WORKFLOW (if requested):** Generate/Edit → Save to workspace → Ask user → Upload to "file-uploads" bucket if requested → Share public URL
 """
 )
 class SandboxImageEditTool(SandboxToolsBase):
@@ -152,6 +162,18 @@ class SandboxImageEditTool(SandboxToolsBase):
                             ],
                             "description": "(edit mode only) Path(s) to image file(s) to edit. Can be relative paths (e.g., 'image.png') or URLs. For batch mode: provide an array of paths matching your prompts array - each prompt[i] edits image_path[i]. If fewer images than prompts, the first image is used for remaining prompts.",
                         },
+                        "canvas_path": {
+                            "type": "string",
+                            "description": "Optional: Path to a canvas file to automatically add the generated image(s) to. If canvas doesn't exist, it will be created. Example: 'canvases/my-design.kanvax'. When provided, images are added to the canvas automatically after generation.",
+                        },
+                        "canvas_x": {
+                            "type": "number",
+                            "description": "Optional: X position on canvas (default: auto-calculated based on existing elements)",
+                        },
+                        "canvas_y": {
+                            "type": "number",
+                            "description": "Optional: Y position on canvas (default: auto-calculated based on existing elements)",
+                        },
                     },
                     "required": ["mode", "prompt"],
                 },
@@ -163,6 +185,9 @@ class SandboxImageEditTool(SandboxToolsBase):
         mode: str,
         prompt: str | list[str],
         image_path: Optional[str | list[str]] = None,
+        canvas_path: Optional[str] = None,
+        canvas_x: Optional[float] = None,
+        canvas_y: Optional[float] = None,
     ) -> ToolResult:
         """Generate or edit images using OpenAI GPT Image 1 via OpenAI SDK (no mask support). Supports both single and batch operations."""
         try:
@@ -233,12 +258,21 @@ class SandboxImageEditTool(SandboxToolsBase):
                 
                 logger.info(f"Batch completed: {len(image_files)}/{len(prompts)} successful")
                 
+                # If canvas_path provided, add all successful images to canvas
+                canvas_info = None
+                if canvas_path and image_files:
+                    canvas_info = await self._add_images_to_canvas(
+                        image_files, canvas_path, canvas_x, canvas_y
+                    )
+                
                 # Build concise output
                 lines = []
                 if image_files:
                     lines.append(f"Images saved ({len(image_files)}):")
                     for f in image_files:
                         lines.append(f"- {f}")
+                if canvas_info:
+                    lines.append(f"Added to canvas: {canvas_path} ({canvas_info['total_elements']} total elements)")
                 if errors:
                     unique_errors = list(dict.fromkeys(errors))  # Dedupe preserving order
                     lines.append(f"Failed ({len(errors)}): {unique_errors[0]}")
@@ -262,7 +296,17 @@ class SandboxImageEditTool(SandboxToolsBase):
                     return ToolResult(success=True, output=f"Failed: {result.output}")
                 
                 # Success - result is filename
-                return ToolResult(success=True, output=f"Image saved as: {result}")
+                output_lines = [f"Image saved as: {result}"]
+                
+                # If canvas_path provided, add to canvas
+                if canvas_path:
+                    canvas_info = await self._add_images_to_canvas(
+                        [result], canvas_path, canvas_x, canvas_y
+                    )
+                    if canvas_info:
+                        output_lines.append(f"Added to canvas: {canvas_path} ({canvas_info['total_elements']} total elements)")
+                
+                return ToolResult(success=True, output="\n".join(output_lines))
 
         except Exception as e:
             friendly_error = self._extract_friendly_error(e)
@@ -459,3 +503,138 @@ class SandboxImageEditTool(SandboxToolsBase):
             
         except Exception as e:
             return self.fail_response(f"Failed to download placeholder image: {str(e)}")
+    
+    async def _add_images_to_canvas(
+        self,
+        image_files: list[str],
+        canvas_path: str,
+        start_x: Optional[float] = None,
+        start_y: Optional[float] = None,
+    ) -> Optional[dict]:
+        """
+        Add images to a canvas. Creates the canvas if it doesn't exist.
+        Returns info about the canvas update or None on failure.
+        """
+        try:
+            # Ensure canvas_path has correct format
+            if not canvas_path.endswith('.kanvax'):
+                canvas_path = f"{canvas_path}.kanvax"
+            if not canvas_path.startswith('canvases/'):
+                canvas_path = f"canvases/{canvas_path}"
+            
+            # Ensure canvases directory exists
+            canvases_dir = f"{self.workspace_path}/canvases"
+            await self.sandbox.process.exec(f"mkdir -p '{canvases_dir}'")
+            
+            full_canvas_path = f"{self.workspace_path}/{canvas_path}"
+            
+            # Try to load existing canvas or create new one
+            try:
+                content = await self.sandbox.fs.download_file(full_canvas_path)
+                canvas_data = json.loads(content.decode() if isinstance(content, bytes) else content)
+            except:
+                # Canvas doesn't exist - create it
+                canvas_name = canvas_path.split('/')[-1].replace('.kanvax', '')
+                canvas_data = {
+                    "name": canvas_name,
+                    "version": "1.0",
+                    "background": "#1a1a1a",
+                    "description": f"Auto-created canvas for {canvas_name}",
+                    "elements": [],
+                    "created_at": datetime.utcnow().isoformat() + "Z",
+                    "updated_at": datetime.utcnow().isoformat() + "Z",
+                }
+                logger.info(f"Created new canvas: {canvas_path}")
+            
+            # Calculate starting position
+            current_x = start_x if start_x is not None else 50
+            current_y = start_y if start_y is not None else 50
+            
+            # If no position specified and canvas has elements, calculate next position
+            if start_x is None and start_y is None and canvas_data["elements"]:
+                # Find max Y of existing elements to place new ones below
+                max_y = 0
+                for el in canvas_data["elements"]:
+                    el_bottom = float(el.get("y", 0)) + float(el.get("height", 400))
+                    max_y = max(max_y, el_bottom)
+                current_y = max_y + 50  # 50px gap
+            
+            # Add each image to canvas
+            for i, image_file in enumerate(image_files):
+                try:
+                    # Read the image to get dimensions
+                    image_full_path = f"{self.workspace_path}/{image_file}"
+                    image_bytes = await self.sandbox.fs.download_file(image_full_path)
+                    
+                    # Get actual dimensions using PIL
+                    try:
+                        img = Image.open(BytesIO(image_bytes))
+                        actual_width, actual_height = img.size
+                        img.close()
+                    except:
+                        actual_width, actual_height = 1024, 1024
+                    
+                    # Scale down if needed (max 600px)
+                    max_size = 600
+                    aspect_ratio = actual_width / actual_height if actual_height > 0 else 1
+                    if actual_width > max_size or actual_height > max_size:
+                        if actual_width > actual_height:
+                            elem_width = max_size
+                            elem_height = max_size / aspect_ratio
+                        else:
+                            elem_height = max_size
+                            elem_width = max_size * aspect_ratio
+                    else:
+                        elem_width = actual_width
+                        elem_height = actual_height
+                    
+                    # Convert to base64 for embedding
+                    ext = image_file.lower().split('.')[-1] if '.' in image_file else 'png'
+                    mime_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif', 'webp': 'image/webp'}
+                    mime_type = mime_map.get(ext, 'image/png')
+                    image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                    image_data_url = f"data:{mime_type};base64,{image_base64}"
+                    
+                    # Create element
+                    element = {
+                        "id": str(uuid.uuid4()),
+                        "type": "image",
+                        "src": image_data_url,
+                        "x": current_x,
+                        "y": current_y,
+                        "width": elem_width,
+                        "height": elem_height,
+                        "rotation": 0,
+                        "scaleX": 1,
+                        "scaleY": 1,
+                        "opacity": 1,
+                        "locked": False,
+                        "name": image_file,
+                    }
+                    
+                    canvas_data["elements"].append(element)
+                    
+                    # Move position for next image (horizontal layout with wrapping)
+                    current_x += elem_width + 50
+                    if current_x > 1200:  # Wrap to next row
+                        current_x = 50
+                        current_y += elem_height + 50
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to add {image_file} to canvas: {e}")
+                    continue
+            
+            # Update timestamp and save
+            canvas_data["updated_at"] = datetime.utcnow().isoformat() + "Z"
+            content = json.dumps(canvas_data, indent=2)
+            await self.sandbox.fs.upload_file(content.encode(), full_canvas_path)
+            
+            return {
+                "canvas_path": canvas_path,
+                "total_elements": len(canvas_data["elements"]),
+                "added": len(image_files),
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to add images to canvas: {e}")
+            return None

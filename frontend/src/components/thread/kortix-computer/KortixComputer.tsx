@@ -13,7 +13,8 @@ import { HealthCheckedVncIframe } from '../HealthCheckedVncIframe';
 import { BrowserHeader } from '../tool-views/BrowserToolView';
 import { useTranslations } from 'next-intl';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useDocumentModalStore } from '@/stores/use-document-modal-store';
 import { 
   useKortixComputerStore,
@@ -791,6 +792,7 @@ export const KortixComputer = memo(function KortixComputer({
             className="max-w-[100vw] max-h-[100vh] w-[100vw] h-[100vh] p-0 border-0 rounded-none bg-transparent"
             style={{ contain: 'strict' }}
           >
+            <VisuallyHidden><DialogTitle>Kortix Computer</DialogTitle></VisuallyHidden>
             <SandboxDesktop
               toolCalls={toolCallSnapshots.map(s => s.toolCall)}
               currentIndex={safeInternalIndex}
@@ -895,6 +897,7 @@ export const KortixComputer = memo(function KortixComputer({
           className="max-w-[100vw] max-h-[100vh] w-[100vw] h-[100vh] p-0 border-0 rounded-none bg-transparent"
           style={{ contain: 'strict' }}
         >
+          <VisuallyHidden><DialogTitle>Kortix Computer</DialogTitle></VisuallyHidden>
           <SandboxDesktop
             toolCalls={toolCallSnapshots.map(s => s.toolCall)}
             currentIndex={safeInternalIndex}

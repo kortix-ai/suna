@@ -36,6 +36,12 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -397,7 +403,7 @@ function CanvasImageElement({
       }}
     >
       <div className={cn("w-full h-full rounded overflow-hidden relative", isSelected && "ring-2 ring-blue-500")}>
-        <img src={imageSrc} alt={element.name} draggable={false} className="w-full h-full object-contain pointer-events-none" />
+        <img src={imageSrc} alt={element.name} draggable={false} className="w-full h-full object-fill pointer-events-none" />
         <AIProcessingOverlay isVisible={isProcessing} />
       </div>
       
@@ -426,7 +432,8 @@ function FloatingToolbar({
   stagePosition,
   onDuplicate,
   onDelete,
-  onDownload,
+  onDownloadPng,
+  onDownloadSvg,
   onImageUpdate,
   onProcessingChange,
   onTextEditStateChange,
@@ -440,7 +447,8 @@ function FloatingToolbar({
   stagePosition: { x: number; y: number };
   onDuplicate: () => void;
   onDelete: () => void;
-  onDownload: () => void;
+  onDownloadPng: () => void;
+  onDownloadSvg: () => void;
   onImageUpdate: (newSrc: string, newDimensions?: { width: number; height: number }) => void;
   onProcessingChange: (isProcessing: boolean) => void;
   onTextEditStateChange: (state: { regions: TextRegion[]; ocrImageSize: { width: number; height: number } } | null) => void;
@@ -987,15 +995,29 @@ function FloatingToolbar({
 
           <div className="w-px h-5 bg-border mx-0.5" />
 
-          {/* Download - icon only */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" onClick={onDownload}>
-                <Download className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Download</TooltipContent>
-          </Tooltip>
+          {/* Download - dropdown menu */}
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full">
+                    <Download className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent>Download</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="center" className="min-w-[140px]">
+              <DropdownMenuItem onClick={onDownloadPng} className="cursor-pointer">
+                <span className="font-medium">PNG</span>
+                <span className="ml-auto text-xs text-muted-foreground">Default</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onDownloadSvg} className="cursor-pointer">
+                <span className="font-medium">SVG</span>
+                <span className="ml-auto text-xs text-muted-foreground">Vector</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Copy - icon only */}
           <Tooltip>
@@ -1325,24 +1347,71 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   const [isMounted, setIsMounted] = useState(false);
   const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
   const [selectionRect, setSelectionRect] = useState<{ startX: number; startY: number; x: number; y: number; w: number; h: number } | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const panStartRef = useRef<{ x: number; y: number; stageX: number; stageY: number } | null>(null);
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null);
   const hasCenteredRef = useRef(false);
+  const isSavingRef = useRef(false);
   
   const authToken = session?.access_token;
+  
+  // Keep ref in sync with state
+  useEffect(() => { isSavingRef.current = isSaving; }, [isSaving]);
 
+  // Parse content - handle empty, invalid, and valid JSON
   useEffect(() => {
-    if (content) {
-      try {
-        const parsed: CanvasData = JSON.parse(content);
+    if (!content) {
+      // No content yet - create empty canvas structure
+      const emptyCanvas: CanvasData = {
+        name: fileName.replace('.kanvax', ''),
+        version: '1.0',
+        background: '#1a1a1a',
+        description: '',
+        elements: [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      setCanvasData(emptyCanvas);
+      setElements([]);
+      return;
+    }
+    
+    try {
+      const parsed: CanvasData = JSON.parse(content);
+      // Compare with current data to see if this is actually a new update
+      const newElementCount = (parsed.elements || []).length;
+      const currentElementCount = elements.length;
+      
+      // Only update if structure changed (avoids unnecessary re-renders during user editing)
+      if (!canvasData || 
+          JSON.stringify(parsed.elements?.map(e => e.id)) !== JSON.stringify(elements.map(e => e.id)) ||
+          parsed.background !== canvasData.background) {
         setCanvasData(parsed);
         setElements(parsed.elements || []);
-        hasCenteredRef.current = false; // Reset so centering happens for new content
-      } catch (e) {
-        console.error('[CanvasRenderer] Parse error:', e);
+        // Only reset centering if this is first load or elements were added
+        if (!hasCenteredRef.current || (newElementCount > currentElementCount)) {
+          hasCenteredRef.current = false;
+        }
+      }
+    } catch (e) {
+      console.error('[CanvasRenderer] Parse error:', e, 'Content:', content?.substring(0, 100));
+      // If parsing fails and we don't have canvas data, create empty structure
+      if (!canvasData) {
+        const emptyCanvas: CanvasData = {
+          name: fileName.replace('.kanvax', ''),
+          version: '1.0',
+          background: '#1a1a1a',
+          description: '',
+          elements: [],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        setCanvasData(emptyCanvas);
+        setElements([]);
       }
     }
-  }, [content]);
+  }, [content, fileName]);
 
   useEffect(() => { setIsMounted(true); }, []);
 
@@ -1358,6 +1427,64 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     updateSize();
     return () => observer.disconnect();
   }, []);
+
+  // Live updates: Poll for canvas file changes when not actively editing
+  // This allows AI updates to appear in real-time
+  const lastFetchTimeRef = useRef<number>(0);
+  const isUserEditingRef = useRef(false);
+  
+  useEffect(() => {
+    if (!sandboxId || !filePath || !authToken) return;
+    
+    // Poll interval: 2 seconds when not editing, skip when user is editing
+    const POLL_INTERVAL = 2000;
+    
+    const fetchLatestContent = async () => {
+      // Skip if user is actively editing (has unsaved changes)
+      if (hasUnsavedChanges || isUserEditingRef.current) return;
+      
+      // Skip if we just fetched
+      const now = Date.now();
+      if (now - lastFetchTimeRef.current < POLL_INTERVAL - 100) return;
+      lastFetchTimeRef.current = now;
+      
+      try {
+        const url = getSandboxFileUrl(sandboxId, filePath);
+        const response = await fetch(url, {
+          headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+          credentials: 'include',
+        });
+        
+        if (!response.ok) return;
+        
+        const newContent = await response.text();
+        if (!newContent || newContent === content) return;
+        
+        // Parse and update if different
+        try {
+          const parsed: CanvasData = JSON.parse(newContent);
+          const newElementIds = (parsed.elements || []).map(e => e.id).sort().join(',');
+          const currentElementIds = elements.map(e => e.id).sort().join(',');
+          
+          // Only update if structure actually changed
+          if (newElementIds !== currentElementIds) {
+            console.log('[CanvasRenderer] Live update: new elements detected', parsed.elements?.length);
+            setCanvasData(parsed);
+            setElements(parsed.elements || []);
+            hasCenteredRef.current = false; // Re-center to show new content
+          }
+        } catch (parseErr) {
+          // Ignore parse errors during polling
+        }
+      } catch (err) {
+        // Ignore network errors during polling
+      }
+    };
+    
+    const interval = setInterval(fetchLatestContent, POLL_INTERVAL);
+    
+    return () => clearInterval(interval);
+  }, [sandboxId, filePath, authToken, hasUnsavedChanges, content, elements]);
 
   // Center canvas ONCE on initial load only
   useEffect(() => {
@@ -1561,13 +1688,6 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     }
   };
 
-  const [isSaving, setIsSaving] = useState(false);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const isSavingRef = useRef(false);
-  
-  // Keep ref in sync
-  useEffect(() => { isSavingRef.current = isSaving; }, [isSaving]);
-  
   // Track unsaved changes
   useEffect(() => {
     if (canvasData && elements.length > 0) {
@@ -1773,23 +1893,15 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     return <div className="flex items-center justify-center h-full w-full bg-card"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
   }
 
-  if (!content) {
+  // If no content AND no canvasData yet, show loading state
+  // The useEffect creates empty canvas structure when content is null/empty
+  if (!content && !canvasData) {
     return (
-      <div className="flex flex-col items-center justify-center h-full w-full gap-4 bg-card">
-        <AlertCircle className="h-12 w-12 text-muted-foreground" />
-        <div className="text-muted-foreground text-center">
-          <p>No canvas content</p>
-          <p className="text-sm">File: {filePath || 'unknown'}</p>
+      <div className="flex flex-col items-center justify-center h-full w-full gap-4" style={{ backgroundColor: '#1a1a1a' }}>
+        <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
+        <div className="text-muted-foreground text-center text-sm">
+          Loading canvas...
         </div>
-      </div>
-    );
-  }
-
-  if (!canvasData && content) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full w-full gap-4 bg-card">
-        <AlertCircle className="h-12 w-12 text-muted-foreground" />
-        <div className="text-muted-foreground text-center">Failed to parse canvas</div>
       </div>
     );
   }
@@ -1979,14 +2091,64 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
               setTextEditState(null);
               setSelectedTextRegion(null);
             }}
-            onDownload={() => {
+            onDownloadPng={() => {
               if (selectedElement.src.startsWith('data:')) {
                 const link = document.createElement('a');
                 link.href = selectedElement.src;
-                link.download = selectedElement.name || 'image.png';
+                link.download = (selectedElement.name || 'image').replace(/\.[^.]+$/, '') + '.png';
                 link.click();
               } else {
                 toast.info('Downloading from sandbox...');
+              }
+            }}
+            onDownloadSvg={async () => {
+              try {
+                toast.info('Converting to SVG...');
+                
+                // Get base64 data
+                let imageBase64 = selectedElement.src;
+                if (!imageBase64.startsWith('data:')) {
+                  toast.error('SVG conversion requires base64 image data');
+                  return;
+                }
+                
+                // Call backend API for SVG conversion
+                const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/canvas-ai/convert-svg`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+                  },
+                  body: JSON.stringify({
+                    image_base64: imageBase64,
+                    colormode: 'color',
+                    mode: 'spline',
+                  }),
+                });
+                
+                if (!response.ok) {
+                  const error = await response.text();
+                  throw new Error(error || 'SVG conversion failed');
+                }
+                
+                const result = await response.json();
+                
+                if (result.success && result.svg) {
+                  // Download the SVG
+                  const blob = new Blob([result.svg], { type: 'image/svg+xml' });
+                  const url = URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  link.href = url;
+                  link.download = (selectedElement.name || 'image').replace(/\.[^.]+$/, '') + '.svg';
+                  link.click();
+                  URL.revokeObjectURL(url);
+                  toast.success('SVG downloaded!');
+                } else {
+                  toast.error(result.error || 'SVG conversion failed');
+                }
+              } catch (err) {
+                console.error('SVG conversion error:', err);
+                toast.error('Failed to convert to SVG: ' + (err instanceof Error ? err.message : 'Unknown error'));
               }
             }}
             onImageUpdate={(newSrc, newDimensions) => {

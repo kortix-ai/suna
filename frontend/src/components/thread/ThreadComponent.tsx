@@ -213,18 +213,20 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   
   // Stop polling only when we have confirmed the agent is running (agentRunId exists)
   // This prevents the race condition where polling stops before the agent is detected
-  if (isNewThread && !hasDataLoaded.current && agentRunId) {
-    hasDataLoaded.current = true;
-    console.log('[ThreadComponent] Agent detected, stopping polling:', agentRunId);
-    // Clean up the ?new=true URL param to prevent future polling issues
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      if (url.searchParams.get('new') === 'true') {
-        url.searchParams.delete('new');
-        window.history.replaceState({}, '', url.pathname + url.search);
+  useEffect(() => {
+    if (isNewThread && !hasDataLoaded.current && agentRunId) {
+      hasDataLoaded.current = true;
+      console.log('[ThreadComponent] Agent detected, stopping polling:', agentRunId);
+      // Clean up the ?new=true URL param to prevent future polling issues
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get('new') === 'true') {
+          url.searchParams.delete('new');
+          window.history.replaceState({}, '', url.pathname + url.search);
+        }
       }
     }
-  }
+  }, [isNewThread, agentRunId]);
   
   // Hide optimistic UI only when we have both agentRunId AND initialLoadCompleted
   // This ensures the stream is ready before transitioning
@@ -232,9 +234,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     ? (agentRunId && initialLoadCompleted)
     : ((agentRunId || messages.length > 0 || threadStatus === 'ready') && initialLoadCompleted);
   
-  if (shouldHideOptimisticUI && showOptimisticUI) {
-    setShowOptimisticUI(false);
-  }
+  useEffect(() => {
+    if (shouldHideOptimisticUI && showOptimisticUI) {
+      setShowOptimisticUI(false);
+    }
+  }, [shouldHideOptimisticUI, showOptimisticUI]);
   
   const effectivePanelOpen = isSidePanelOpen || (isNewThread && showOptimisticUI);
 
