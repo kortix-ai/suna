@@ -1,7 +1,10 @@
 'use client';
 import { siteConfig } from '@/lib/site-config';
 import { AnimatedBg } from '@/components/ui/animated-bg';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/utils';
+import { useHolidayPromoCountdown } from '@/hooks/utils/use-holiday-promo';
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -29,6 +32,7 @@ import { useTranslations } from 'next-intl';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
 import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
+import { Copy, Gift, Timer } from 'lucide-react';
 
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
 const AgentRunLimitBanner = lazy(() => 
@@ -53,6 +57,8 @@ export function HeroSection() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [inputValue, setInputValue] = useState('');
     const [memoryEnabled, setMemoryEnabled] = useState(true);
+    const holidayPromo = useHolidayPromoCountdown();
+    const [promoCopied, setPromoCopied] = useState(false);
 
     const {
         selectedAgentId,
@@ -76,11 +82,20 @@ export function HeroSection() {
     const pricingModalStore = usePricingModalStore();
     const queryClient = useQueryClient();
     const chatInputRef = useRef<ChatInputHandles>(null);
+    const promoCopyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [showAgentLimitBanner, setShowAgentLimitBanner] = useState(false);
     const [agentLimitData, setAgentLimitData] = useState<{
         runningCount: number;
         runningThreadIds: string[];
     } | null>(null);
+
+    useEffect(() => {
+        return () => {
+            if (promoCopyTimeoutRef.current) {
+                clearTimeout(promoCopyTimeoutRef.current);
+            }
+        };
+    }, []);
 
     // Ensure dialog opens when agentLimitData is set
     useEffect(() => {
@@ -172,6 +187,34 @@ export function HeroSection() {
     }, [inputValue, isSubmitting, router]);
 
     const addOptimisticFiles = useOptimisticFilesStore((state) => state.addFiles);
+
+    const handlePromoCodeCopy = async () => {
+        if (!holidayPromo.isActive) {
+            return;
+        }
+        try {
+            if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+                throw new Error('Clipboard not available');
+            }
+            await navigator.clipboard.writeText(holidayPromo.promoCode);
+            setPromoCopied(true);
+            toast.success(`Copied ${holidayPromo.promoCode}`);
+            if (promoCopyTimeoutRef.current) {
+                clearTimeout(promoCopyTimeoutRef.current);
+            }
+            promoCopyTimeoutRef.current = setTimeout(() => setPromoCopied(false), 2000);
+        } catch (error) {
+            console.error('Failed to copy promo code', error);
+            toast.error('Unable to copy promo code');
+        }
+    };
+
+    const handleHolidayPromoUpgrade = () => {
+        pricingModalStore.openPricingModal({
+            alertTitle: 'Holiday discount active',
+            alertSubtitle: `Use code ${holidayPromo.promoCode} at checkout for ${holidayPromo.discountCopy}. ${holidayPromo.windowCopy}.`,
+        });
+    };
 
     const handleChatInputSubmit = async (
         message: string,
@@ -366,6 +409,67 @@ export function HeroSection() {
                 />
 
                 <div className="relative z-10 pt-20 sm:pt-24 md:pt-32 mx-auto h-full w-full max-w-6xl flex flex-col items-center justify-center min-h-[60vh] sm:min-h-0">
+
+                    {holidayPromo.isActive && (
+                        <div className="w-full max-w-4xl mx-auto px-4 sm:px-0 mb-8 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
+                            <div className="relative overflow-hidden rounded-[28px] border border-border/70 bg-background/90 dark:bg-background/40 shadow-[0_25px_90px_rgba(8,8,9,0.18)]">
+                                <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-secondary/15 opacity-80 pointer-events-none" />
+                                <div className="relative flex flex-col gap-4 p-5 sm:p-6 md:p-8">
+                                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                        <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
+                                            <Badge
+                                                variant="outline"
+                                                className="flex items-center gap-1 rounded-full border-primary/30 bg-primary/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary"
+                                            >
+                                                <Gift className="h-3.5 w-3.5" />
+                                                Holiday special
+                                            </Badge>
+                                            <span className="flex items-center gap-1 text-muted-foreground tracking-normal normal-case">
+                                                <Timer className="h-3.5 w-3.5" />
+                                                Ends in {holidayPromo.timeLabel}
+                                            </span>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="font-mono text-sm sm:text-base tracking-[0.4em] px-4 py-2 rounded-full bg-primary text-primary-foreground shadow-sm">
+                                                {holidayPromo.promoCode}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={handlePromoCodeCopy}
+                                                className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/90 dark:bg-background/60 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-background"
+                                            >
+                                                <Copy className="h-3.5 w-3.5" />
+                                                {promoCopied ? 'Copied' : 'Copy code'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                                        <div className="space-y-2">
+                                            <p className="text-2xl sm:text-3xl font-medium tracking-tight text-balance">
+                                                {holidayPromo.discountCopy}
+                                            </p>
+                                            <p className="text-sm text-muted-foreground">
+                                                Use code <span className="font-semibold text-foreground">{holidayPromo.promoCode}</span> at checkout. {holidayPromo.windowCopy}.
+                                            </p>
+                                        </div>
+                                        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                                            <Button
+                                                onClick={handleHolidayPromoUpgrade}
+                                                className="h-11 rounded-full px-6 text-base"
+                                            >
+                                                Upgrade with {holidayPromo.promoCode}
+                                            </Button>
+                                            <Button variant="outline" className="h-11 rounded-full px-6" asChild>
+                                                <Link href="/subscription?promo=XMAS50">
+                                                    View plans
+                                                </Link>
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-12 sm:pt-20 max-w-4xl mx-auto pb-6 sm:pb-7 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
                         <DynamicGreeting className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium text-balance text-center px-4 sm:px-2" />
