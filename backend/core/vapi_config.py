@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 
 @dataclass
 class VoiceConfig:
-    provider: str = "elevenlabs"
-    voice_id: str = "rachel"
+    provider: str = "azure"
+    voice_id: str = "multilingual-auto"
     settings: Dict[str, Any] = field(default_factory=lambda: {
         "speed": 1.0
     })
@@ -40,22 +40,24 @@ class VapiConfig:
     max_duration_seconds: int = 600
     
     voice_options: Dict[str, Dict[str, str]] = field(default_factory=lambda: {
-        "elevenlabs": {
-            "rachel": "Rachel (Female, English)",
-            "domi": "Domi (Female, Multilingual)",
-            "bella": "Bella (Female, Multilingual)",
-            "antoni": "Antoni (Male, Multilingual)",
-            "elli": "Elli (Female, Multilingual)",
-            "josh": "Josh (Male, English)",
-            "arnold": "Arnold (Male, English)",
-            "adam": "Adam (Male, English)",
-            "sam": "Sam (Male, English)"
+        "azure": {
+            "multilingual-auto": "Automatic Multilingual (Recommended)",
+            "en-US-AriaNeural": "Aria (Female, US English)",
+            "en-US-GuyNeural": "Guy (Male, US English)",
+            "es-ES-ElviraNeural": "Elvira (Female, Spanish)",
+            "fr-FR-DeniseNeural": "Denise (Female, French)",
+            "de-DE-KatjaNeural": "Katja (Female, German)",
+            "it-IT-ElsaNeural": "Elsa (Female, Italian)",
+            "pt-BR-FranciscaNeural": "Francisca (Female, Portuguese)",
+            "ja-JP-NanamiNeural": "Nanami (Female, Japanese)",
+            "zh-CN-XiaoxiaoNeural": "Xiaoxiao (Female, Chinese)"
+        },
+        "11labs": {
+            "multilingual": "Multilingual Voice (Auto-adapts)"
         },
         "playht": {
             "jennifer-playht": "Jennifer (Female, American)",
-            "matthew-playht": "Matthew (Male, American)",
-            "s3://voice-cloning-zero-shot/d9ff78ba-d016-47f6-b0ef-dd630f59414e/female-us/manifest.json": "AI Assistant (Female)",
-            "s3://voice-cloning-zero-shot/2bc098a7-c1fc-4b32-9452-556c5ab4814e/jason/manifest.json": "Jason (Male)"
+            "matthew-playht": "Matthew (Male, American)"
         }
     })
     
@@ -174,7 +176,8 @@ Your goals are:
 DEFAULT_FIRST_MESSAGE = "Hello! I'm an AI assistant and I can communicate in multiple languages. How can I help you today?"
 
 VOICE_PROVIDERS = {
-    "elevenlabs": "ElevenLabs",
+    "azure": "Azure (Recommended for Multilingual)",
+    "11labs": "ElevenLabs",
     "playht": "PlayHT",
     "deepgram": "Deepgram",
     "openai": "OpenAI"
