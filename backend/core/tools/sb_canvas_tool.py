@@ -5,7 +5,12 @@ from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
 import json
 import uuid
+import base64
+import asyncio
 from datetime import datetime
+
+# Global lock for canvas file operations to prevent race conditions
+_canvas_locks: Dict[str, asyncio.Lock] = {}
 
 
 @tool_metadata(
@@ -34,13 +39,15 @@ create_canvas(name="my-design")
 # Returns canvas_path: "canvases/my-design.kanvax"
 ```
 
-**Step 3: Add ALL images to canvas (MUST WAIT for canvas creation)**
+**Step 3: Add images to canvas ONE AT A TIME (SEQUENTIAL - NEVER PARALLEL!)**
 ```python
+# MUST call these ONE BY ONE, wait for each to complete!
 add_image_to_canvas(
     canvas_path="canvases/my-design.kanvax",  
     image_path="generated_image_abc123.png",
     x=100, y=100, width=400, height=400
 )
+# Wait for above to complete, then:
 add_image_to_canvas(
     canvas_path="canvases/my-design.kanvax",
     image_path="generated_image_def456.png",  
@@ -49,6 +56,8 @@ add_image_to_canvas(
 ```
 
 **⚠️ CRITICAL:**
+- **NEVER call add_image_to_canvas in PARALLEL** - it causes race conditions and loses elements!
+- Call add_image_to_canvas ONE AT A TIME, wait for each to complete before the next
 - NEVER create empty canvas - always have images ready first
 - Canvas shows nothing until images are added
 - Use EXACT filenames returned (e.g., "generated_image_abc123.png")
@@ -65,6 +74,14 @@ class SandboxCanvasTool(SandboxToolsBase):
         super().__init__(project_id, thread_manager)
         self.canvases_dir = "canvases"
         self.images_dir = f"{self.canvases_dir}/images"
+    
+    def _get_canvas_lock(self, canvas_path: str) -> asyncio.Lock:
+        """Get or create a lock for a specific canvas file to prevent race conditions"""
+        global _canvas_locks
+        lock_key = f"{self.project_id}:{canvas_path}"
+        if lock_key not in _canvas_locks:
+            _canvas_locks[lock_key] = asyncio.Lock()
+        return _canvas_locks[lock_key]
 
     async def _ensure_canvases_dir(self):
         """Ensure the canvases directory exists"""
@@ -349,85 +366,104 @@ class SandboxCanvasTool(SandboxToolsBase):
         name: Optional[str] = None
     ) -> ToolResult:
         """Add an image element to the canvas"""
-        try:
-            await self._ensure_sandbox()
-            
-            # Load canvas data
-            canvas_data = await self._load_canvas_data(canvas_path)
-            if not canvas_data:
-                return self.fail_response(f"Canvas not found: {canvas_path}")
-
-            # Verify image exists
-            image_full_path = f"{self.workspace_path}/{image_path}"
+        # Use lock to prevent race conditions when parallel calls try to add images
+        canvas_lock = self._get_canvas_lock(canvas_path)
+        
+        async with canvas_lock:
             try:
-                await self.sandbox.fs.download_file(image_full_path)
-            except:
-                return self.fail_response(f"Image not found at {image_path}")
-
-            # Create element
-            element_id = str(uuid.uuid4())
-            element_name = name or image_path.split('/')[-1]
-            
-            # Default size
-            elem_width = width or 400
-            elem_height = height or 400
-            
-            # Auto-calculate position if not specified (x=100 and y=100 are defaults)
-            # Create a grid layout based on existing elements
-            actual_x = x
-            actual_y = y
-            if x == 100 and y == 100 and len(canvas_data["elements"]) > 0:
-                # Calculate next position in grid
-                existing = canvas_data["elements"]
-                cols = 3  # 3 columns
-                gap = 50  # Gap between elements
+                await self._ensure_sandbox()
                 
-                index = len(existing)
-                col = index % cols
-                row = index // cols
+                # Load canvas data (inside lock to ensure atomic read-modify-write)
+                canvas_data = await self._load_canvas_data(canvas_path)
+                if not canvas_data:
+                    return self.fail_response(f"Canvas not found: {canvas_path}")
+
+                # Verify image exists and load it
+                image_full_path = f"{self.workspace_path}/{image_path}"
+                try:
+                    image_data = await self.sandbox.fs.download_file(image_full_path)
+                except:
+                    return self.fail_response(f"Image not found at {image_path}")
                 
-                # Find max width/height in each row for better alignment
-                actual_x = col * (elem_width + gap) + 100
-                actual_y = row * (elem_height + gap) + 100
+                # Convert image to base64 data URL for embedding in canvas
+                # This makes the canvas self-contained
+                if isinstance(image_data, bytes):
+                    image_bytes = image_data
+                else:
+                    image_bytes = image_data.encode()
+                
+                # Determine MIME type from extension
+                ext = image_path.lower().split('.')[-1] if '.' in image_path else 'png'
+                mime_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif', 'webp': 'image/webp'}
+                mime_type = mime_map.get(ext, 'image/png')
+                
+                image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                image_data_url = f"data:{mime_type};base64,{image_base64}"
 
-            element = {
-                "id": element_id,
-                "type": "image",
-                "src": image_path,
-                "x": actual_x,
-                "y": actual_y,
-                "width": elem_width,
-                "height": elem_height,
-                "rotation": 0,
-                "scaleX": 1,
-                "scaleY": 1,
-                "opacity": 1,
-                "locked": False,
-                "name": element_name
-            }
+                # Create element
+                element_id = str(uuid.uuid4())
+                element_name = name or image_path.split('/')[-1]
+                
+                # Default size
+                elem_width = width or 400
+                elem_height = height or 400
+                
+                # Auto-calculate position if not specified (x=100 and y=100 are defaults)
+                # Create a grid layout based on existing elements
+                actual_x = x
+                actual_y = y
+                if x == 100 and y == 100 and len(canvas_data["elements"]) > 0:
+                    # Calculate next position in grid
+                    existing = canvas_data["elements"]
+                    cols = 3  # 3 columns
+                    gap = 50  # Gap between elements
+                    
+                    index = len(existing)
+                    col = index % cols
+                    row = index // cols
+                    
+                    # Find max width/height in each row for better alignment
+                    actual_x = col * (elem_width + gap) + 100
+                    actual_y = row * (elem_height + gap) + 100
 
-            # Add to canvas
-            canvas_data["elements"].append(element)
+                element = {
+                    "id": element_id,
+                    "type": "image",
+                    "src": image_data_url,  # Embedded base64 data URL - canvas is self-contained
+                    "x": actual_x,
+                    "y": actual_y,
+                    "width": elem_width,
+                    "height": elem_height,
+                    "rotation": 0,
+                    "scaleX": 1,
+                    "scaleY": 1,
+                    "opacity": 1,
+                    "locked": False,
+                    "name": element_name
+                }
 
-            # Save canvas
-            await self._save_canvas_data(canvas_path, canvas_data)
+                # Add to canvas
+                canvas_data["elements"].append(element)
 
-            result = {
-                "canvas_path": canvas_path,
-                "element_id": element_id,
-                "element_name": element_name,
-                "image_path": image_path,
-                "position": {"x": actual_x, "y": actual_y},
-                "size": {"width": elem_width, "height": elem_height},
-                "total_elements": len(canvas_data["elements"]),
-                "sandbox_id": self.sandbox_id,
-                "message": f"Added '{element_name}' to canvas at position ({actual_x}, {actual_y})"
-            }
+                # Save canvas
+                await self._save_canvas_data(canvas_path, canvas_data)
 
-            return self.success_response(result)
+                result = {
+                    "canvas_path": canvas_path,
+                    "element_id": element_id,
+                    "element_name": element_name,
+                    "image_path": image_path,
+                    "position": {"x": actual_x, "y": actual_y},
+                    "size": {"width": elem_width, "height": elem_height},
+                    "total_elements": len(canvas_data["elements"]),
+                    "sandbox_id": self.sandbox_id,
+                    "message": f"Added '{element_name}' to canvas at position ({actual_x}, {actual_y})"
+                }
 
-        except Exception as e:
-            return self.fail_response(f"Failed to add image to canvas: {str(e)}")
+                return self.success_response(result)
+
+            except Exception as e:
+                return self.fail_response(f"Failed to add image to canvas: {str(e)}")
 
     @openapi_schema({
         "type": "function",

@@ -461,6 +461,7 @@ function FloatingToolbar({
   const [newTextContent, setNewTextContent] = useState('');
   const [ocrImageSize, setOcrImageSize] = useState<{ width: number; height: number } | null>(null);
   const [showTextEditDialog, setShowTextEditDialog] = useState(false);
+  const [isLowQualityOcr, setIsLowQualityOcr] = useState(false); // Skip bboxes, just prompt
 
   // Sync with external selected region (from canvas-level clicks)
   useEffect(() => {
@@ -562,20 +563,39 @@ function FloatingToolbar({
         });
       }
       
-      // Debug: log if no regions found
-      // if (regions.length === 0) console.log('No text regions detected');
+      // Check OCR quality - if too poor, skip bounding boxes and just prompt
+      const avgConfidence = regions.length > 0 
+        ? regions.reduce((sum, r) => sum + r.confidence, 0) / regions.length 
+        : 0;
+      const lowConfidenceCount = regions.filter(r => r.confidence < 40).length;
+      const isLowQuality = avgConfidence < 35 || (regions.length > 0 && lowConfidenceCount / regions.length > 0.7);
       
       if (regions.length === 0) {
         const fullText = (result.data.text || '').trim();
         if (fullText.length > 0) {
-          toast.warning('Text found but no bounding boxes. Check console for debug info.');
+          // Text detected but no good bounding boxes - open generic prompt
+          setIsLowQualityOcr(true);
+          setSelectedTextRegion(null);
+          setNewTextContent('');
+          setShowTextEditDialog(true);
+          toast.info('Opening text editor - describe the text you want to replace');
         } else {
           toast.warning('No text detected in this image');
+          setTextEditMode(false);
         }
-        setTextEditMode(false);
+      } else if (isLowQuality) {
+        // OCR quality too low - skip bounding boxes, just prompt
+        setIsLowQualityOcr(true);
+        setDetectedTextRegions([]); // Don't draw bboxes
+        onTextEditStateChange(null); // Don't show overlay
+        setSelectedTextRegion(null);
+        setNewTextContent('');
+        setShowTextEditDialog(true);
+        toast.info('Low OCR quality - describe the text you want to replace');
       } else {
+        // Good quality - show bounding boxes
+        setIsLowQualityOcr(false);
         setDetectedTextRegions(regions);
-        // Report to parent for canvas-level rendering
         onTextEditStateChange({ regions, ocrImageSize: { width: originalWidth, height: originalHeight } });
         toast.success(`Found ${regions.length} text region${regions.length > 1 ? 's' : ''}`);
       }
@@ -604,6 +624,7 @@ function FloatingToolbar({
     setSelectedTextRegion(null);
     setNewTextContent('');
     setShowTextEditDialog(false);
+    setIsLowQualityOcr(false);
     onTextEditStateChange(null); // Clear parent state
   };
   
@@ -618,22 +639,32 @@ function FloatingToolbar({
   
   // Apply text replacement
   const applyTextReplacement = async () => {
-    if (!selectedTextRegion || !newTextContent.trim()) return;
+    if (!newTextContent.trim()) return;
     
     setShowTextEditDialog(false);
     
-    // For low confidence OCR, describe the region location instead of using garbled text
     let prompt: string;
-    if (selectedTextRegion.confidence > 60) {
-      prompt = `Replace the text "${selectedTextRegion.text}" with "${newTextContent}" in this image. Keep the same font style, size, color, and position.`;
+    
+    if (isLowQualityOcr) {
+      // Low quality OCR - user describes what to replace in the newTextContent field
+      // The field contains a description like "change 'hello' to 'world'" or "replace the title with 'New Title'"
+      prompt = `${newTextContent}. Keep the same font style, size, color, and position as the original text.`;
+    } else if (selectedTextRegion) {
+      // Good OCR with selected region
+      if (selectedTextRegion.confidence > 60) {
+        prompt = `Replace the text "${selectedTextRegion.text}" with "${newTextContent}" in this image. Keep the same font style, size, color, and position.`;
+      } else {
+        // Use bounding box description for low confidence
+        const bbox = selectedTextRegion.bbox;
+        const centerX = ((bbox.x0 + bbox.x1) / 2 / (ocrImageSize?.width || 1)) * 100;
+        const centerY = ((bbox.y0 + bbox.y1) / 2 / (ocrImageSize?.height || 1)) * 100;
+        const position = centerY < 33 ? 'top' : centerY > 66 ? 'bottom' : 'middle';
+        const hPosition = centerX < 33 ? 'left' : centerX > 66 ? 'right' : 'center';
+        prompt = `Replace the text in the ${position}-${hPosition} area of this image with "${newTextContent}". Keep the same font style, size, color, and background.`;
+      }
     } else {
-      // Use bounding box description for low confidence
-      const bbox = selectedTextRegion.bbox;
-      const centerX = ((bbox.x0 + bbox.x1) / 2 / (ocrImageSize?.width || 1)) * 100;
-      const centerY = ((bbox.y0 + bbox.y1) / 2 / (ocrImageSize?.height || 1)) * 100;
-      const position = centerY < 33 ? 'top' : centerY > 66 ? 'bottom' : 'middle';
-      const hPosition = centerX < 33 ? 'left' : centerX > 66 ? 'right' : 'center';
-      prompt = `Replace the text in the ${position}-${hPosition} area of this image with "${newTextContent}". Keep the same font style, size, color, and background.`;
+      // Fallback
+      prompt = `${newTextContent}. Keep the same font style, size, color, and position.`;
     }
     
     await handleAIAction('edit_text', prompt);
@@ -782,30 +813,35 @@ function FloatingToolbar({
         <Dialog open={showTextEditDialog} onOpenChange={setShowTextEditDialog}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Replace text</DialogTitle>
-              {selectedTextRegion && selectedTextRegion.confidence <= 60 && (
-                <p className="text-sm text-muted-foreground">
-                  Type what text you want in this area
-                </p>
-              )}
+              <DialogTitle>{isLowQualityOcr ? 'Edit Text' : 'Replace text'}</DialogTitle>
+              <p className="text-sm text-muted-foreground">
+                {isLowQualityOcr 
+                  ? "Describe what text to change and what to replace it with"
+                  : selectedTextRegion && selectedTextRegion.confidence <= 60 
+                    ? "Type what text you want in this area"
+                    : `Replacing: "${selectedTextRegion?.text || ''}"`
+                }
+              </p>
             </DialogHeader>
             <div className="space-y-4">
               <Textarea
                 value={newTextContent}
                 onChange={(e) => setNewTextContent(e.target.value)}
-                placeholder={selectedTextRegion && selectedTextRegion.confidence <= 60 
-                  ? "Type the new text you want here..." 
-                  : "Enter replacement text..."}
+                placeholder={isLowQualityOcr
+                  ? "e.g., Replace 'Hello' with 'Welcome' or Change the title to 'New Title'"
+                  : selectedTextRegion && selectedTextRegion.confidence <= 60 
+                    ? "Type the new text you want here..." 
+                    : "Enter replacement text..."}
                 className="min-h-[100px]"
                 autoFocus
               />
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setShowTextEditDialog(false)}>
+                <Button variant="outline" onClick={cancelTextEditMode}>
                   Cancel
                 </Button>
                 <Button onClick={applyTextReplacement} disabled={!newTextContent.trim() || isProcessing}>
                   {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Replace
+                  {isLowQualityOcr ? 'Apply' : 'Replace'}
                 </Button>
               </div>
             </div>
