@@ -712,7 +712,7 @@ function PricingTier({
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs sm:text-sm font-medium">{match?.[1] || '200'} Daily Credits</span>
+                      <span className="text-xs sm:text-sm font-medium">{match?.[1] || '100'} Daily Credits</span>
                       </div>
                       {description && (
                         <span className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 hidden sm:block">{description}</span>
