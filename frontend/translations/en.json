@@ -543,7 +543,7 @@
     "credits": "Credits",
     "popular": "Popular",
     "creditsExplained": "Credits explained",
-    "creditsExhausted": "+200 Credits in {time}. Upgrade to use now.",
+      "creditsExhausted": "+100 Credits in {time}. Upgrade to use now.",
     "creditsExhaustedRefreshIn": "You've exhausted your credits. They will refresh in {time}",
     "trialActive": "Trial Active",
     "trialBadge": "7-Day Trial",

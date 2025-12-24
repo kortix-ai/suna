@@ -538,7 +538,7 @@
     "credits": "Crediti",
     "popular": "Popolare",
     "creditsExplained": "Crediti spiegati",
-    "creditsExhausted": "+200 Crediti tra {time}. Aggiorna per usare ora.",
+    "creditsExhausted": "+100 Crediti tra {time}. Aggiorna per usare ora.",
     "creditsExhaustedRefreshIn": "Hai esaurito i tuoi crediti. Si rinnoveranno tra {time}",
     "trialActive": "Prova attiva",
     "trialBadge": "Prova di 7 giorni",

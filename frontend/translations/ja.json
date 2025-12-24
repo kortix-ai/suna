@@ -535,7 +535,7 @@
     "credits": "クレジット",
     "popular": "人気",
     "creditsExplained": "クレジットの説明",
-    "creditsExhausted": "+200クレジットが{time}後に追加されます。今すぐアップグレードして使用してください。",
+    "creditsExhausted": "+100クレジットが{time}後に追加されます。今すぐアップグレードして使用してください。",
     "creditsExhaustedRefreshIn": "クレジットを使い果たしました。{time}後に更新されます",
     "trialActive": "トライアル有効",
     "trialBadge": "7日間トライアル",

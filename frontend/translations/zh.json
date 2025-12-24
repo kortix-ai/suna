@@ -535,7 +535,7 @@
     "credits": "积分",
     "popular": "热门",
     "creditsExplained": "积分说明",
-    "creditsExhausted": "+200积分将在{time}后到账。立即升级即可使用。",
+    "creditsExhausted": "+100积分将在{time}后到账。立即升级即可使用。",
     "creditsExhaustedRefreshIn": "您的积分已用完。将在{time}后刷新",
     "trialActive": "试用激活",
     "trialBadge": "7天试用",
