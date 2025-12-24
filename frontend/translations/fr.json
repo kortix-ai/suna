@@ -176,7 +176,19 @@
       "insufficientCreditsMessage": "Vérification de facturation échouée : Crédits insuffisants. Votre solde est {balance}. Veuillez ajouter des crédits pour continuer.",
       "creditsExhausted": "Vous avez épuisé vos crédits. Mettez à niveau maintenant.",
       "billingCheckFailed": "Vérification de facturation échouée. Veuillez mettre à niveau pour continuer.",
-      "failedToStartAgent": "Échec du démarrage de l'agent {agentName} : {message}"
+      "failedToStartAgent": "Échec du démarrage de l'agent {agentName} : {message}",
+      "holidayPromo": {
+        "badge": "Offre de Noël",
+        "countdown": "Se termine dans {time}",
+        "discount": "-50 % sur vos 3 premiers mois",
+        "window": "Valable du 24 au 25 décembre",
+        "headerLine": "Utilisez le code {code} pour obtenir {discount}",
+        "description": "Utilisez le code {code} lors du paiement pour obtenir {discount}. {window}",
+        "copyCode": "Copier le code",
+        "copied": "Copié",
+        "codeCopied": "{code} copié",
+        "copyFailed": "Impossible de copier le code promo"
+      }
     },
     "usage": {
       "title": "Utilisation"

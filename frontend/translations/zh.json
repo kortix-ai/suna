@@ -176,7 +176,19 @@
       "insufficientCreditsMessage": "账单检查失败：积分不足。您的余额为 {balance}。请添加积分以继续。",
       "creditsExhausted": "您的积分已用完。立即升级。",
       "billingCheckFailed": "账单检查失败。请升级以继续。",
-      "failedToStartAgent": "启动智能体 {agentName} 失败：{message}"
+      "failedToStartAgent": "启动智能体 {agentName} 失败：{message}",
+      "holidayPromo": {
+        "badge": "节日优惠",
+        "countdown": "{time} 后结束",
+        "discount": "前三个月立减 50%",
+        "window": "有效期：12 月 24–25 日",
+        "headerLine": "使用代码 {code} 可享 {discount}",
+        "description": "结账时输入 {code} 即可享受 {discount}。{window}",
+        "copyCode": "复制代码",
+        "copied": "已复制",
+        "codeCopied": "{code} 已复制",
+        "copyFailed": "无法复制优惠码"
+      }
     },
     "usage": {
       "title": "使用情况"

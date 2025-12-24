@@ -176,7 +176,19 @@
       "insufficientCreditsMessage": "Abrechnungsprüfung fehlgeschlagen: Unzureichende Credits. Dein Guthaben beträgt {balance}. Bitte füge Credits hinzu, um fortzufahren.",
       "creditsExhausted": "Dir sind die Credits ausgegangen. Jetzt upgraden.",
       "billingCheckFailed": "Abrechnungsprüfung fehlgeschlagen. Bitte upgraden, um fortzufahren.",
-      "failedToStartAgent": "Agent {agentName} konnte nicht gestartet werden: {message}"
+      "failedToStartAgent": "Agent {agentName} konnte nicht gestartet werden: {message}",
+      "holidayPromo": {
+        "badge": "Holiday-Angebot",
+        "countdown": "Endet in {time}",
+        "discount": "50 % Rabatt auf deine ersten 3 Monate",
+        "window": "Gültig vom 24.–25. Dezember",
+        "headerLine": "Nutze den Code {code} für {discount}",
+        "description": "Verwende den Code {code} an der Kasse für {discount}. {window}",
+        "copyCode": "Code kopieren",
+        "copied": "Kopiert",
+        "codeCopied": "{code} kopiert",
+        "copyFailed": "Promo-Code konnte nicht kopiert werden"
+      }
     },
     "usage": {
       "title": "Nutzung"

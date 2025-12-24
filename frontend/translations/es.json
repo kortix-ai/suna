@@ -176,7 +176,19 @@
       "insufficientCreditsMessage": "Verificación de facturación fallida: Créditos insuficientes. Tu saldo es {balance}. Por favor, añade créditos para continuar.",
       "creditsExhausted": "Te has quedado sin créditos. Actualiza ahora.",
       "billingCheckFailed": "Verificación de facturación fallida. Por favor, actualiza para continuar.",
-      "failedToStartAgent": "Error al iniciar el agente {agentName}: {message}"
+      "failedToStartAgent": "Error al iniciar el agente {agentName}: {message}",
+      "holidayPromo": {
+        "badge": "Oferta navideña",
+        "countdown": "Termina en {time}",
+        "discount": "50 % de descuento en tus primeros 3 meses",
+        "window": "Válido del 24 al 25 de diciembre",
+        "headerLine": "Usa el código {code} para obtener {discount}",
+        "description": "Usa el código {code} al finalizar la compra para obtener {discount}. {window}",
+        "copyCode": "Copiar código",
+        "copied": "Copiado",
+        "codeCopied": "{code} copiado",
+        "copyFailed": "No se pudo copiar el código promocional"
+      }
     },
     "usage": {
       "title": "Uso"

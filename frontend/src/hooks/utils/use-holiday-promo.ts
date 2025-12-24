@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
 const HOLIDAY_PROMO_CODE = 'XMAS50';
-const PROMO_DISCOUNT_COPY = '50% off your first 3 months';
-const PROMO_WINDOW_COPY = 'Valid December 24–25';
 
 // Promo runs from Dec 24, 2025 00:00:00 PST through Dec 25, 2025 23:59:59 PST
 const HOLIDAY_PROMO_START = Date.UTC(2025, 11, 24, 8, 0, 0); // 00:00 PST => 08:00 UTC
@@ -14,8 +12,6 @@ interface HolidayPromoState {
   msRemaining: number;
   timeLabel: string;
   promoCode: string;
-  discountCopy: string;
-  windowCopy: string;
   expiresAt: number;
 }
 
@@ -64,8 +60,6 @@ export function useHolidayPromoCountdown(pollInterval = 60_000): HolidayPromoSta
       msRemaining: Math.max(msRemaining, 0),
       timeLabel: isActive ? formatTimeLeft(msRemaining) : 'Expired',
       promoCode: HOLIDAY_PROMO_CODE,
-      discountCopy: PROMO_DISCOUNT_COPY,
-      windowCopy: PROMO_WINDOW_COPY,
       expiresAt: HOLIDAY_PROMO_END,
     };
   }, [now]);

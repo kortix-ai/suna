@@ -176,7 +176,19 @@
       "insufficientCreditsMessage": "Billing check failed: Insufficient credits. Your balance is {balance}. Please add credits to continue.",
       "creditsExhausted": "You ran out of credits. Upgrade now.",
       "billingCheckFailed": "Billing check failed. Please upgrade to continue.",
-      "failedToStartAgent": "Failed to start worker {agentName}: {message}"
+      "failedToStartAgent": "Failed to start worker {agentName}: {message}",
+      "holidayPromo": {
+        "badge": "Holiday special",
+        "countdown": "Ends in {time}",
+        "discount": "50% off your first 3 months",
+        "window": "Valid December 24–25",
+        "headerLine": "Use code {code} for {discount}",
+        "description": "Use code {code} at checkout for {discount}. {window}",
+        "copyCode": "Copy code",
+        "copied": "Copied",
+        "codeCopied": "{code} copied",
+        "copyFailed": "Unable to copy promo code"
+      }
     },
     "usage": {
       "title": "Usage"

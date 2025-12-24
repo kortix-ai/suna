@@ -969,6 +969,21 @@ export function PricingSection({
   const holidayPromo = useHolidayPromoCountdown();
   const [promoCodeCopied, setPromoCodeCopied] = useState(false);
   const promoCopyTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holidayPromoBadgeLabel = t('holidayPromo.badge');
+  const holidayPromoHeadline = t('holidayPromo.headerLine', {
+    code: holidayPromo.promoCode,
+    discount: t('holidayPromo.discount'),
+  });
+  const holidayPromoDescription = t('holidayPromo.description', {
+    code: holidayPromo.promoCode,
+    discount: t('holidayPromo.discount'),
+    window: t('holidayPromo.window'),
+  });
+  const holidayPromoCountdown = t('holidayPromo.countdown', { time: holidayPromo.timeLabel });
+  const holidayPromoCopyLabel = t('holidayPromo.copyCode');
+  const holidayPromoCopiedLabel = t('holidayPromo.copied');
+  const holidayPromoCopyToast = t('holidayPromo.codeCopied', { code: holidayPromo.promoCode });
+  const holidayPromoCopyError = t('holidayPromo.copyFailed');
   const isUserAuthenticated = !!user;
   const queryClient = useQueryClient();
   
@@ -1087,16 +1102,16 @@ export function PricingSection({
       }
       await navigator.clipboard.writeText(holidayPromo.promoCode);
       setPromoCodeCopied(true);
-      toast.success(`Copied ${holidayPromo.promoCode}`);
+      toast.success(holidayPromoCopyToast);
       if (promoCopyTimeoutRef.current) {
         clearTimeout(promoCopyTimeoutRef.current);
       }
       promoCopyTimeoutRef.current = setTimeout(() => setPromoCodeCopied(false), 2000);
     } catch (error) {
       console.error('Failed to copy promo code', error);
-      toast.error('Unable to copy promo code');
+      toast.error(holidayPromoCopyError);
     }
-  }, [holidayPromo.isActive, holidayPromo.promoCode]);
+  }, [holidayPromo.isActive, holidayPromo.promoCode, holidayPromoCopyError, holidayPromoCopyToast]);
 
   const handleSubscriptionUpdate = () => {
     // Note: Cache invalidation is handled by mutation hooks (useScheduleDowngrade, etc.)
@@ -1183,13 +1198,11 @@ export function PricingSection({
           {showTitleAndTabs && !isAlert && (
             holidayPromo.isActive ? (
               <p className="text-xs sm:text-sm text-muted-foreground">
-                <span className="font-semibold text-primary">HOLIDAY SPECIAL</span>
+                <span className="font-semibold text-primary">
+                  {holidayPromoBadgeLabel}
+                </span>
                 <span className="mx-1 sm:mx-1.5">·</span>
-                Use code{' '}
-                <span className="font-mono tracking-[0.3em] text-foreground">
-                  {holidayPromo.promoCode}
-                </span>{' '}
-                by Dec 25 for {holidayPromo.discountCopy}.
+                {holidayPromoHeadline}
               </p>
             ) : (
               <p className="text-xs sm:text-sm text-muted-foreground">
@@ -1207,19 +1220,13 @@ export function PricingSection({
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
                   <Gift className="h-3.5 w-3.5" />
-                  Holiday special
+                  {holidayPromoBadgeLabel}
                   <span className="flex items-center gap-1 text-muted-foreground tracking-normal normal-case">
                     <Timer className="h-3.5 w-3.5" />
-                    Ends in {holidayPromo.timeLabel}
+                    {holidayPromoCountdown}
                   </span>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Use code{' '}
-                  <span className="font-mono tracking-[0.3em] text-foreground">
-                    {holidayPromo.promoCode}
-                  </span>{' '}
-                  at checkout for {holidayPromo.discountCopy}. {holidayPromo.windowCopy}.
-                </p>
+                <p className="text-sm text-muted-foreground">{holidayPromoDescription}</p>
               </div>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
                 <span className="font-mono text-sm tracking-[0.35em] px-4 py-2 rounded-full bg-primary text-primary-foreground shadow-sm">
@@ -1231,7 +1238,7 @@ export function PricingSection({
                   className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-background/90 dark:bg-background/50 px-3 py-1.5 text-xs font-medium text-primary shadow-sm transition hover:bg-background"
                 >
                   <Copy className="h-3.5 w-3.5" />
-                  {promoCodeCopied ? 'Copied' : 'Copy code'}
+                  {promoCodeCopied ? holidayPromoCopiedLabel : holidayPromoCopyLabel}
                 </button>
               </div>
             </div>

@@ -176,7 +176,19 @@
       "insufficientCreditsMessage": "請求チェックに失敗しました：クレジット不足。残高は {balance} です。続行するにはクレジットを追加してください。",
       "creditsExhausted": "クレジットがなくなりました。今すぐアップグレードしてください。",
       "billingCheckFailed": "請求チェックに失敗しました。続行するにはアップグレードしてください。",
-      "failedToStartAgent": "エージェント {agentName} の起動に失敗しました：{message}"
+      "failedToStartAgent": "エージェント {agentName} の起動に失敗しました：{message}",
+      "holidayPromo": {
+        "badge": "ホリデー特典",
+        "countdown": "{time}で終了",
+        "discount": "最初の3か月が50%オフ",
+        "window": "12月24日〜25日まで有効",
+        "headerLine": "コード{code}で{discount}",
+        "description": "チェックアウト時にコード{code}を入力すると{discount}になります。{window}",
+        "copyCode": "コードをコピー",
+        "copied": "コピー完了",
+        "codeCopied": "{code}をコピーしました",
+        "copyFailed": "プロモコードをコピーできませんでした"
+      }
     },
     "usage": {
       "title": "使用状況"
