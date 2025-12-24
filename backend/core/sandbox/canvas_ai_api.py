@@ -426,14 +426,18 @@ The result should be a high-quality merged image."""
 class ConvertToSvgRequest(BaseModel):
     """Request model for PNG to SVG conversion"""
     image_base64: str  # Base64 encoded PNG image
-    # VTracer options
+    # VTracer options - optimized for logos: small size, clean edges
     colormode: Optional[str] = "color"  # 'color' or 'bw'
-    filter_speckle: Optional[int] = 4  # Filter out small speckles
-    color_precision: Optional[int] = 6  # Color precision bits
-    corner_threshold: Optional[int] = 60  # Corner detection threshold
-    segment_length: Optional[float] = 4.0  # Max segment length
-    splice_threshold: Optional[int] = 45  # Splice angle threshold
-    mode: Optional[str] = "spline"  # 'pixel', 'polygon', or 'spline'
+    hierarchical: Optional[str] = "cutout"  # Clean non-overlapping
+    filter_speckle: Optional[int] = 10  # Filter small noise aggressively
+    color_precision: Optional[int] = 4  # Quantize colors = fewer paths
+    corner_threshold: Optional[int] = 90  # Sharp geometric corners
+    length_threshold: Optional[float] = 4.0  # Simplify paths = smaller file
+    splice_threshold: Optional[int] = 45
+    mode: Optional[str] = "polygon"  # Clean polygon edges, not curves
+    layer_difference: Optional[int] = 48  # Fewer color layers = simpler
+    max_iterations: Optional[int] = 4
+    path_precision: Optional[int] = 2  # Less decimal precision = smaller
 
 
 class ConvertToSvgResponse(BaseModel):
@@ -488,18 +492,22 @@ async def convert_to_svg(
                 error=f"Failed to process image: {str(e)}"
             )
         
-        # Convert to SVG using vtracer
+        # Convert to SVG - logo optimized: small size, clean edges
         try:
             svg_str = vtracer.convert_raw_image_to_svg(
                 png_bytes,
                 img_format='png',
                 colormode=request.colormode or 'color',
-                filter_speckle=request.filter_speckle or 4,
-                color_precision=request.color_precision or 6,
-                corner_threshold=request.corner_threshold or 60,
-                segment_length=request.segment_length or 4.0,
-                splice_threshold=request.splice_threshold or 45,
-                mode=request.mode or 'spline',
+                hierarchical=request.hierarchical or 'cutout',
+                filter_speckle=request.filter_speckle if request.filter_speckle is not None else 10,
+                color_precision=request.color_precision if request.color_precision is not None else 4,
+                corner_threshold=request.corner_threshold if request.corner_threshold is not None else 90,
+                length_threshold=request.length_threshold if request.length_threshold is not None else 4.0,
+                splice_threshold=request.splice_threshold if request.splice_threshold is not None else 45,
+                mode=request.mode or 'polygon',
+                layer_difference=request.layer_difference if request.layer_difference is not None else 48,
+                max_iterations=request.max_iterations if request.max_iterations is not None else 4,
+                path_precision=request.path_precision if request.path_precision is not None else 2,
             )
             
             logger.info(f"Successfully converted image to SVG ({len(svg_str)} chars)")
