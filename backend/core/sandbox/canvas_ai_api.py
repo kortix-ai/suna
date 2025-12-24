@@ -55,7 +55,7 @@ class ImageMergeResponse(BaseModel):
 
 # Model mapping per action - backend decides which model to use
 ACTION_MODELS = {
-    "remove_bg": "gemini-flash",  # Gemini Flash for background removal
+    "remove_bg": "gpt",  # Gemini Flash for background removal
     "upscale": "gpt",             # GPT for upscaling
     "edit_text": "gpt",           # GPT for text editing
     "mark_edit": "gemini-pro",           # GPT for general edits
@@ -86,7 +86,7 @@ def get_action_prompt(action: str, user_prompt: Optional[str] = None) -> str:
     """Generate the appropriate prompt for each action type"""
     prompts = {
         "upscale": "Upscale this image to higher resolution. Enhance details, improve clarity, and increase quality while maintaining the original content and style exactly. Make it sharper and more detailed.",
-        "remove_bg": "Remove the background from this image completely. Keep only the main subject/object with a transparent or pure white background. Preserve all details of the subject.",
+        "remove_bg": "Remove the background from this image and make it TRANSPARENT. Output a PNG with alpha channel transparency. The background MUST be fully transparent (alpha = 0), not white, not any color - completely see-through transparent. Keep only the main subject/object with perfectly clean edges. Preserve all details of the subject.",
         "edit_text": f"{user_prompt}" if user_prompt else "Edit the text in this image as requested.",
         "mark_edit": f"{user_prompt}" if user_prompt else "Edit this image as requested.",
     }

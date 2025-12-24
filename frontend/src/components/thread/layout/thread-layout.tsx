@@ -165,8 +165,8 @@ export const ThreadLayout = memo(function ThreadLayout({
         }, 100);
         return () => clearTimeout(timer);
       } else {
-        sidePanelRef.current?.resize(50);
-        mainPanelRef.current?.resize(50);
+      sidePanelRef.current?.resize(50);
+      mainPanelRef.current?.resize(50);
       }
     } else {
       sidePanelRef.current?.resize(0);

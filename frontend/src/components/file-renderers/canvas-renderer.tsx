@@ -1366,7 +1366,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       const emptyCanvas: CanvasData = {
         name: fileName.replace('.kanvax', ''),
         version: '1.0',
-        background: '#1a1a1a',
+        background: 'var(--background)',
         description: '',
         elements: [],
         created_at: new Date().toISOString(),
@@ -1401,7 +1401,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         const emptyCanvas: CanvasData = {
           name: fileName.replace('.kanvax', ''),
           version: '1.0',
-          background: '#1a1a1a',
+          background: 'var(--background)',
           description: '',
           elements: [],
           created_at: new Date().toISOString(),
@@ -1897,7 +1897,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   // The useEffect creates empty canvas structure when content is null/empty
   if (!content && !canvasData) {
     return (
-      <div className="flex flex-col items-center justify-center h-full w-full gap-4" style={{ backgroundColor: '#1a1a1a' }}>
+      <div className="flex flex-col items-center justify-center h-full w-full gap-4 bg-background">
         <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
         <div className="text-muted-foreground text-center text-sm">
           Loading canvas...
@@ -1909,7 +1909,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   const selectedElement = selectedIds.length === 1 ? elements.find(el => el.id === selectedIds[0]) : null;
 
   return (
-    <div className={cn("flex flex-col h-full w-full", className)} style={{ backgroundColor: canvasData?.background || '#1a1a1a' }}>
+    <div className={cn("flex flex-col h-full w-full bg-background", className)} style={canvasData?.background ? { backgroundColor: canvasData.background } : undefined}>
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
 
       {/* Header */}
@@ -1946,18 +1946,19 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       {/* Canvas */}
       <div 
         ref={containerRef} 
-        className="flex-1 relative overflow-hidden"
+        className="flex-1 relative overflow-hidden bg-background"
         style={{ 
           cursor: isPanning ? 'grabbing' : toolMode === 'pan' ? 'grab' : selectionRect ? 'crosshair' : 'default',
           touchAction: 'none', // Prevent default touch behaviors
         }}
         onMouseDown={handleCanvasMouseDown}
       >
-        {/* Grid */}
+        {/* Grid - theme aware */}
         <div className="absolute inset-0 pointer-events-none opacity-10" style={{
-          backgroundImage: 'linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)',
+          backgroundImage: 'linear-gradient(var(--foreground) 1px, transparent 1px), linear-gradient(90deg, var(--foreground) 1px, transparent 1px)',
           backgroundSize: `${50 * scale}px ${50 * scale}px`,
           backgroundPosition: `${stagePosition.x}px ${stagePosition.y}px`,
+          opacity: 0.05,
         }} />
 
         {elements.length === 0 && (

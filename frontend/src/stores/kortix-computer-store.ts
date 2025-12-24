@@ -128,7 +128,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
             currentFileIndex: -1,
           });
         } else {
-          set({ activeView: view });
+        set({ activeView: view });
         }
       },
       
