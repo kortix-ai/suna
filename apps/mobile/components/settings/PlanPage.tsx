@@ -471,7 +471,7 @@ export function PlanPage({
                 const isScheduledTarget = isScheduledTargetPlan(option);
                 const credits = parseCreditsFromFeatures(option.tier.features);
                 const keyFeatures = getKeyFeatures(option.tier.features, 4, isFree);
-                const dailyCredits = isFree ? 200 : null;
+                const dailyCredits = isFree ? 100 : null;
 
                 return (
                   <Pressable

@@ -1195,8 +1195,14 @@ export function PricingSection({
           </div>
 
           {/* Promo text - compact on mobile */}
-          {showTitleAndTabs && !isAlert && (
-            holidayPromo.isActive ? (
+          {showTitleAndTabs && !isAlert && (() => {
+            // Only show holiday promo for FREE tier users (not authenticated or on free tier)
+            const isFreeTier = !isAuthenticated || !accountState || 
+              accountState.subscription.tier_key === 'free' || 
+              accountState.subscription.tier_key === 'none' ||
+              (accountState.tier?.monthly_credits ?? 0) === 0;
+            
+            return holidayPromo.isActive && isFreeTier ? (
               <p className="text-xs sm:text-sm text-muted-foreground">
                 <span className="font-semibold text-primary">
                   {holidayPromoBadgeLabel}
@@ -1210,40 +1216,48 @@ export function PricingSection({
                 <span className="mx-1 sm:mx-1.5">·</span>
                 Subscribe now &amp; get <span className="font-medium text-foreground">2X credits</span>
               </p>
-            )
-          )}
+            );
+          })()}
         </div>
 
-        {holidayPromo.isActive && (
-          <div className="w-full max-w-6xl mx-auto mb-3 sm:mb-6">
-            <div className="flex flex-col gap-3 rounded-2xl border border-dashed border-primary/30 bg-primary/5 px-4 py-3 sm:px-6 sm:py-4 md:flex-row md:items-center md:justify-between">
-              <div className="space-y-1">
-                <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
-                  <Gift className="h-3.5 w-3.5" />
-                  {holidayPromoBadgeLabel}
-                  <span className="flex items-center gap-1 text-muted-foreground tracking-normal normal-case">
-                    <Timer className="h-3.5 w-3.5" />
-                    {holidayPromoCountdown}
-                  </span>
+        {(() => {
+          // Only show holiday promo for FREE tier users (not authenticated or on free tier)
+          const isFreeTier = !isAuthenticated || !accountState || 
+            accountState.subscription.tier_key === 'free' || 
+            accountState.subscription.tier_key === 'none' ||
+            (accountState.tier?.monthly_credits ?? 0) === 0;
+          
+          return holidayPromo.isActive && isFreeTier && (
+            <div className="w-full max-w-6xl mx-auto mb-3 sm:mb-6">
+              <div className="flex flex-col gap-3 rounded-2xl border border-dashed border-primary/30 bg-primary/5 px-4 py-3 sm:px-6 sm:py-4 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
+                    <Gift className="h-3.5 w-3.5" />
+                    {holidayPromoBadgeLabel}
+                    <span className="flex items-center gap-1 text-muted-foreground tracking-normal normal-case">
+                      <Timer className="h-3.5 w-3.5" />
+                      {holidayPromoCountdown}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{holidayPromoDescription}</p>
                 </div>
-                <p className="text-sm text-muted-foreground">{holidayPromoDescription}</p>
-              </div>
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-                <span className="font-mono text-sm tracking-[0.35em] px-4 py-2 rounded-full bg-primary text-primary-foreground shadow-sm">
-                  {holidayPromo.promoCode}
-                </span>
-                <button
-                  type="button"
-                  onClick={handlePromoCopy}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-background/90 dark:bg-background/50 px-3 py-1.5 text-xs font-medium text-primary shadow-sm transition hover:bg-background"
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                  {promoCodeCopied ? holidayPromoCopiedLabel : holidayPromoCopyLabel}
-                </button>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                  <span className="font-mono text-sm tracking-[0.35em] px-4 py-2 rounded-full bg-primary text-primary-foreground shadow-sm">
+                    {holidayPromo.promoCode}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handlePromoCopy}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-background/90 dark:bg-background/50 px-3 py-1.5 text-xs font-medium text-primary shadow-sm transition hover:bg-background"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    {promoCodeCopied ? holidayPromoCopiedLabel : holidayPromoCopyLabel}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Scheduled Downgrade Alert - Show above pricing tiers */}
         {isAuthenticated && hasScheduledChange && scheduledChange && (
