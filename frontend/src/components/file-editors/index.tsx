@@ -116,7 +116,7 @@ export function getEditableFileType(fileName: string): EditableFileType {
 
 // Check if file type supports editing
 export function isEditableFileType(fileType: EditableFileType): boolean {
-  return ['markdown', 'code', 'text', 'html'].includes(fileType);
+  return ['markdown', 'code', 'text', 'html', 'canvas'].includes(fileType);
 }
 
 export function EditableFileRenderer({
@@ -226,6 +226,7 @@ export function EditableFileRenderer({
           fileName={fileName}
           sandboxId={project?.sandbox?.id}
           className="h-full w-full"
+          onSave={onSave}
         />
       ) : fileType === 'html' && htmlPreviewUrl ? (
         // HTML files - show preview (could add split view editor later)
