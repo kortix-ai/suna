@@ -560,6 +560,18 @@
     "cannotDowngradeDuringCommitment": "Cannot downgrade during commitment period",
     "alreadyOnThisPlan": "You are already on this plan.",
     "localModeMessage": "Running in local development mode - billing features are disabled",
+    "holidayPromo": {
+      "badge": "Holiday special",
+      "countdown": "Ends in {time}",
+      "discount": "50% off your first 3 months",
+      "window": "Valid December 24–25",
+      "headerLine": "Use code {code} for {discount}",
+      "description": "Use code {code} at checkout for {discount}. {window}",
+      "copyCode": "Copy code",
+      "copied": "Copied",
+      "codeCopied": "{code} copied",
+      "copyFailed": "Unable to copy promo code"
+    },
     "creditsExplainedPage": {
       "title": "Credits Explained",
       "subtitle": "Everything you need to know about how credits work on Kortix",

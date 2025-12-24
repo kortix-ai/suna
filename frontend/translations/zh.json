@@ -552,6 +552,18 @@
     "cannotDowngradeDuringCommitment": "在承诺期内无法降级",
     "alreadyOnThisPlan": "你已在此计划上。",
     "localModeMessage": "在本地开发模式下运行 - 账单功能已禁用",
+    "holidayPromo": {
+      "badge": "节日优惠",
+      "countdown": "{time} 后结束",
+      "discount": "前三个月立减 50%",
+      "window": "有效期：12 月 24–25 日",
+      "headerLine": "使用代码 {code} 可享 {discount}",
+      "description": "结账时输入 {code} 即可享受 {discount}。{window}",
+      "copyCode": "复制代码",
+      "copied": "已复制",
+      "codeCopied": "{code} 已复制",
+      "copyFailed": "无法复制优惠码"
+    },
     "creditsExplainedPage": {
       "title": "积分说明",
       "subtitle": "关于 Kortix 积分工作原理你需要知道的一切",

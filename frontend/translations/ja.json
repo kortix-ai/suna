@@ -552,6 +552,18 @@
     "cannotDowngradeDuringCommitment": "コミットメント期間中はダウングレードできません",
     "alreadyOnThisPlan": "既にこのプランにいます。",
     "localModeMessage": "ローカル開発モードで実行中 - 請求機能は無効です",
+    "holidayPromo": {
+      "badge": "ホリデー特典",
+      "countdown": "{time}で終了",
+      "discount": "最初の3か月が50%オフ",
+      "window": "12月24日〜25日まで有効",
+      "headerLine": "コード{code}で{discount}",
+      "description": "チェックアウト時にコード{code}を入力すると{discount}になります。{window}",
+      "copyCode": "コードをコピー",
+      "copied": "コピー完了",
+      "codeCopied": "{code}をコピーしました",
+      "copyFailed": "プロモコードをコピーできませんでした"
+    },
     "creditsExplainedPage": {
       "title": "クレジットの説明",
       "subtitle": "Kortixでのクレジットの仕組みについて知っておくべきすべて",

@@ -471,6 +471,18 @@
     "cannotDowngradeDuringCommitment": "Während der Verpflichtungsperiode kann nicht herabgestuft werden",
     "alreadyOnThisPlan": "Du bist bereits auf diesem Plan.",
     "localModeMessage": "Läuft im lokalen Entwicklungsmodus - Abrechnungsfunktionen sind deaktiviert",
+    "holidayPromo": {
+      "badge": "Holiday-Angebot",
+      "countdown": "Endet in {time}",
+      "discount": "50 % Rabatt auf deine ersten 3 Monate",
+      "window": "Gültig vom 24.–25. Dezember",
+      "headerLine": "Nutze den Code {code} für {discount}",
+      "description": "Verwende den Code {code} an der Kasse für {discount}. {window}",
+      "copyCode": "Code kopieren",
+      "copied": "Kopiert",
+      "codeCopied": "{code} kopiert",
+      "copyFailed": "Promo-Code konnte nicht kopiert werden"
+    },
     "creditsExplainedPage": {
       "title": "Credits erklärt",
       "subtitle": "Alles, was du über die Funktionsweise von Credits bei Kortix wissen musst",

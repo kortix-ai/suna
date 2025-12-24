@@ -1,7 +1,9 @@
 'use client';
 import { siteConfig } from '@/lib/site-config';
 import { AnimatedBg } from '@/components/ui/animated-bg';
+import { Badge } from '@/components/ui/badge';
 import { useIsMobile } from '@/hooks/utils';
+import { useHolidayPromoCountdown } from '@/hooks/utils/use-holiday-promo';
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -53,6 +55,7 @@ export function HeroSection() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [inputValue, setInputValue] = useState('');
     const [memoryEnabled, setMemoryEnabled] = useState(true);
+    const holidayPromo = useHolidayPromoCountdown();
 
     const {
         selectedAgentId,
@@ -366,6 +369,25 @@ export function HeroSection() {
                 />
 
                 <div className="relative z-10 pt-20 sm:pt-24 md:pt-32 mx-auto h-full w-full max-w-6xl flex flex-col items-center justify-center min-h-[60vh] sm:min-h-0">
+
+                    {holidayPromo.isActive && (
+                        <div className="w-full max-w-4xl mx-auto px-4 sm:px-0 mb-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
+                            <div className="flex flex-col items-center gap-2 text-center">
+                                <div className="flex flex-wrap items-center justify-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                                    <Badge className="rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]">
+                                        {tBilling('holidayPromo.badge')}
+                                    </Badge>
+                                    <span>{tBilling('holidayPromo.countdown', { time: holidayPromo.timeLabel })}</span>
+                                </div>
+                                <p className="text-sm font-medium text-muted-foreground tracking-tight">
+                                    {tBilling('holidayPromo.headerLine', {
+                                        code: holidayPromo.promoCode,
+                                        discount: tBilling('holidayPromo.discount'),
+                                    })}
+                                </p>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-12 sm:pt-20 max-w-4xl mx-auto pb-6 sm:pb-7 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
                         <DynamicGreeting className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium text-balance text-center px-4 sm:px-2" />

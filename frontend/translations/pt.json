@@ -552,6 +552,18 @@
     "cannotDowngradeDuringCommitment": "Não podes rebaixar durante o período de compromisso",
     "alreadyOnThisPlan": "Já estás neste plano.",
     "localModeMessage": "Executando em modo de desenvolvimento local - recursos de cobrança desabilitados",
+    "holidayPromo": {
+      "badge": "Oferta de Natal",
+      "countdown": "Encerra em {time}",
+      "discount": "50% de desconto nos primeiros 3 meses",
+      "window": "Válido de 24 a 25 de dezembro",
+      "headerLine": "Use o código {code} para obter {discount}",
+      "description": "Use o código {code} no checkout para obter {discount}. {window}",
+      "copyCode": "Copiar código",
+      "copied": "Copiado",
+      "codeCopied": "{code} copiado",
+      "copyFailed": "Não foi possível copiar o código promocional"
+    },
     "creditsExplainedPage": {
       "title": "Créditos Explicados",
       "subtitle": "Tudo o que precisas saber sobre como os créditos funcionam no Kortix",
