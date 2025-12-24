@@ -171,9 +171,10 @@ export function AttachmentGroup({
     };
 
     // Get local preview URL if available (for UploadedFile)
+    // Always use local preview (blob URL) when available - it's instant and independent of upload
     const getLocalPreviewUrl = (file: string | UploadedFile): string | undefined => {
         if (typeof file === 'string') return undefined;
-        return !sandboxId ? file.localUrl : undefined;
+        return file.localUrl;
     };
 
     const getUploadStatus = (file: string | UploadedFile): 'pending' | 'uploading' | 'ready' | 'error' | undefined => {

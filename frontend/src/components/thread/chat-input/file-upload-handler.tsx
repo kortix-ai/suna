@@ -231,7 +231,7 @@ const uploadFiles = async (
   try {
     setIsUploading(true);
 
-    const newUploadedFiles: UploadedFile[] = [];
+    const fileUploadResults: Array<{ originalName: string; uploadedFile: UploadedFile }> = [];
 
     for (const file of files) {
       if (file.size > UPLOAD_LIMITS.MAX_FILE_SIZE_BYTES) {
@@ -297,11 +297,14 @@ const uploadFiles = async (
         });
       }
 
-      newUploadedFiles.push({
-        name: finalFilename,
-        path: actualPath,
-        size: file.size,
-        type: file.type || 'application/octet-stream',
+      fileUploadResults.push({
+        originalName: normalizedName,
+        uploadedFile: {
+          name: finalFilename,
+          path: actualPath,
+          size: file.size,
+          type: file.type || 'application/octet-stream',
+        },
       });
 
       if (wasRenamed) {
@@ -311,7 +314,18 @@ const uploadFiles = async (
       }
     }
 
-    setUploadedFiles((prev) => [...prev, ...newUploadedFiles]);
+    setUploadedFiles((prev) => {
+      const updated = [...prev];
+      for (const { originalName, uploadedFile } of fileUploadResults) {
+        const index = updated.findIndex(f => normalizeFilenameToNFC(f.name) === normalizeFilenameToNFC(originalName) && f.status === 'pending');
+        if (index !== -1) {
+          updated[index] = { ...updated[index], ...uploadedFile, status: 'ready' as const };
+        } else {
+          updated.push({ ...uploadedFile, status: 'ready' as const });
+        }
+      }
+      return updated;
+    });
 
     // Clear pending files after successful upload
     if (setPendingFiles) {
@@ -341,7 +355,7 @@ const uploadFilesToProject = async (
   try {
     setIsUploading(true);
 
-    const newUploadedFiles: UploadedFile[] = [];
+    const fileUploadResults: Array<{ originalName: string; uploadedFile: UploadedFile }> = [];
 
     for (const file of files) {
       if (file.size > UPLOAD_LIMITS.MAX_FILE_SIZE_BYTES) {
@@ -386,11 +400,14 @@ const uploadFilesToProject = async (
       const finalFilename = responseData.final_filename || normalizedName;
       const wasRenamed = responseData.renamed || false;
 
-      newUploadedFiles.push({
-        name: finalFilename,
-        path: actualPath,
-        size: file.size,
-        type: file.type || 'application/octet-stream',
+      fileUploadResults.push({
+        originalName: normalizedName,
+        uploadedFile: {
+          name: finalFilename,
+          path: actualPath,
+          size: file.size,
+          type: file.type || 'application/octet-stream',
+        },
       });
 
       if (wasRenamed) {
@@ -400,7 +417,18 @@ const uploadFilesToProject = async (
       }
     }
 
-    setUploadedFiles((prev) => [...prev, ...newUploadedFiles]);
+    setUploadedFiles((prev) => {
+      const updated = [...prev];
+      for (const { originalName, uploadedFile } of fileUploadResults) {
+        const index = updated.findIndex(f => normalizeFilenameToNFC(f.name) === normalizeFilenameToNFC(originalName) && f.status === 'pending');
+        if (index !== -1) {
+          updated[index] = { ...updated[index], ...uploadedFile, status: 'ready' as const };
+        } else {
+          updated.push({ ...uploadedFile, status: 'ready' as const });
+        }
+      }
+      return updated;
+    });
     
     // Clear pending files after successful upload
     if (setPendingFiles) {
@@ -431,6 +459,12 @@ const handleFiles = async (
   queryClient?: any,
 ) => {
   await handleLocalFiles(files, setPendingFiles, setUploadedFiles, setIsUploading);
+
+  if (sandboxId && files.length > 0) {
+    await uploadFiles(files, sandboxId, setUploadedFiles, setIsUploading, messages, queryClient, setPendingFiles);
+  } else if (projectId && files.length > 0) {
+    await uploadFilesToProject(files, projectId, setUploadedFiles, setIsUploading, setPendingFiles);
+  }
 };
 
 interface FileUploadHandlerProps {
