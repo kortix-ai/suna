@@ -5,7 +5,7 @@ from core.agentpress.thread_manager import ThreadManager
 import httpx
 from io import BytesIO
 import uuid
-from litellm import aimage_generation, aimage_edit
+import replicate
 import base64
 import os
 import random
@@ -16,6 +16,7 @@ import re
 from datetime import datetime
 from PIL import Image
 from core.utils.logger import logger
+from core.utils.config import get_config
 
 
 def parse_image_paths(image_path: Optional[str | list[str]]) -> list[str]:
@@ -44,72 +45,80 @@ def parse_image_paths(image_path: Optional[str | list[str]]) -> list[str]:
     return [trimmed] if trimmed else []
 
 @tool_metadata(
-    display_name="Image Editor",
-    description="Generate and edit images with AI assistance",
+    display_name="Image & Video Editor",
+    description="Generate and edit images/videos with AI assistance",
     icon="Wand",
     color="bg-purple-100 dark:bg-purple-800/50",
     weight=50,
     visible=True,
     usage_guide="""
-### IMAGE GENERATION & EDITING
+### IMAGE & VIDEO GENERATION
 
-**🎯 CANVAS INTEGRATION (PREFERRED WORKFLOW):**
-When user wants a canvas with images, use `canvas_path` parameter to auto-add images:
+**🚨 CRITICAL: WHEN USER UPLOADS AN IMAGE, USE IT!**
+If user uploads/attaches an image file, you MUST use it as `image_path`:
 ```python
-# Single call: generates image AND adds to canvas (creates canvas if doesn't exist)
+# User uploaded: /workspace/uploads/image.png
+# CORRECT - use the uploaded image:
 image_edit_or_generate(
-    mode="generate", 
-    prompt="modern tech logo",
-    canvas_path="canvases/my-design.kanvax"
-)
-```
-- If canvas doesn't exist, it's auto-created
-- Images are positioned automatically (or use canvas_x, canvas_y)
-- Much faster than separate generate + add_image_to_canvas calls
-
-**BATCH CANVAS WORKFLOW:**
-```python
-# Generate multiple images and add all to same canvas
-image_edit_or_generate(
-    mode="generate",
-    prompt=["logo design", "background pattern", "icon set"],
-    canvas_path="canvases/brand-assets.kanvax"
+    mode="edit",  # or mode="video" for video
+    prompt="Make the sky purple",
+    image_path="/workspace/uploads/image.png"  # USE THE UPLOADED FILE!
 )
 ```
 
-**CRITICAL: USE EDIT MODE FOR MULTI-TURN IMAGE MODIFICATIONS**
-- **When user wants to modify an existing image:** ALWAYS use mode="edit" with the image_path parameter
-- **When user wants to create a new image:** Use mode="generate" without image_path
-- **MULTI-TURN WORKFLOW:** If you've generated an image and user asks for ANY follow-up changes, ALWAYS use edit mode
-- **ASSUME FOLLOW-UPS ARE EDITS:** When user says "change this", "add that", "make it different", etc. - use edit mode
-- **Image path sources:** Can be a workspace file path (e.g., "generated_image_abc123.png") OR a full URL
+**GENERATE MODE (Creating NEW images from scratch - NO input image):**
+```python
+image_edit_or_generate(mode="generate", prompt="A futuristic cityscape at sunset")
+```
 
-**GENERATE MODE (Creating new images):**
-- Set mode="generate" and provide a descriptive prompt
-- Example:
-  ```
-  image_edit_or_generate(mode="generate", prompt="A futuristic cityscape at sunset with neon lights")
-  ```
+**EDIT MODE (Modifying an EXISTING image - requires image_path):**
+```python
+image_edit_or_generate(
+    mode="edit", 
+    prompt="Add a red hat", 
+    image_path="uploads/image.png"  # path to existing image
+)
+```
 
-**EDIT MODE (Modifying existing images):**
-- Set mode="edit", provide editing prompt, and specify the image_path
-- Use this when user asks to: modify, change, add to, remove from, or alter existing images
-- Example with workspace file:
-  ```
-  image_edit_or_generate(mode="edit", prompt="Add a red hat to the person", image_path="generated_image_abc123.png")
-  ```
+**🎬 VIDEO MODE (AI Video Generation):**
+```python
+# Text-to-video (no image)
+image_edit_or_generate(
+    mode="video",
+    prompt="An astronaut in a spacecraft...",
+    video_options={"duration": 5, "generate_audio": True}
+)
 
-**MANDATORY USAGE RULES:**
-- ALWAYS use this tool for any image creation or editing tasks
-- NEVER attempt to generate or edit images by any other means
-- MUST use edit mode when user asks to edit, modify, change, or alter an existing image
-- MUST use generate mode when user asks to create a new image from scratch
-- **PREFER CANVAS INTEGRATION:** When user wants canvas, use canvas_path param instead of separate calls
-- **REMEMBER THE LAST IMAGE:** Always use the most recently generated image filename for follow-up edits
+# Image-to-video (ANIMATE an uploaded/existing image)
+image_edit_or_generate(
+    mode="video",
+    prompt="The astronaut slowly turns their head",
+    image_path="uploads/image.png",  # START FRAME - the image to animate!
+    video_options={
+        "duration": 5,
+        "generate_audio": True,
+        "last_frame_image": "end_frame.png"  # optional end frame
+    }
+)
+```
+
+**VIDEO OPTIONS:**
+- `duration`: 2-12 seconds (default: 5)
+- `aspect_ratio`: "16:9", "9:16", "1:1" (ignored if image provided)
+- `fps`: frames per second (default: 24)
+- `camera_fixed`: lock camera (default: false)
+- `generate_audio`: generate audio (default: false)
+
+**MANDATORY RULES:**
+1. **USER UPLOADS IMAGE → USE IT AS image_path** (mode="edit" or mode="video")
+2. Use mode="generate" ONLY when creating from scratch with NO input image
+3. Use mode="edit" to modify/transform existing images
+4. Use mode="video" for video generation (with or without input image)
+5. REMEMBER previous generated filenames for follow-up operations
 """
 )
 class SandboxImageEditTool(SandboxToolsBase):
-    """Tool for generating or editing images using OpenAI GPT Image 1 via OpenAI SDK (no mask support)."""
+    """Tool for generating/editing images and videos using AI models via Replicate."""
 
     def __init__(self, project_id: str, thread_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
@@ -121,59 +130,36 @@ class SandboxImageEditTool(SandboxToolsBase):
             "type": "function",
             "function": {
                 "name": "image_edit_or_generate",
-                "description": "Generate new images from prompts, or edit existing images (no mask support) using OpenAI GPT Image 1 via OpenAI SDK. Stores the results in the thread context. This tool supports both single and batch operations for efficient image generation/editing. You can process multiple prompts simultaneously by providing an array of prompts, which executes operations concurrently for faster results. Use batch mode when generating or editing multiple images at once.",
+                "description": "Generate/edit images or generate videos. IMPORTANT: If user uploaded/attached an image, you MUST use mode='edit' with image_path pointing to that uploaded file to use it as input! Only use mode='generate' when creating from scratch with NO input image.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "mode": {
                             "type": "string",
-                            "enum": ["generate", "edit"],
-                            "description": "'generate' to create new images from prompts, 'edit' to edit existing images.",
+                            "enum": ["generate", "edit", "video"],
+                            "description": "CRITICAL: 'generate' = create from scratch (NO input image). 'edit' = modify/transform an existing image (REQUIRES image_path). 'video' = generate video (optionally from image). If user uploaded an image, use 'edit' or 'video' with image_path!",
                         },
                         "prompt": {
                             "oneOf": [
-                                {
-                                    "type": "string",
-                                    "description": "A single text prompt describing the desired image or edit. Be specific and include key details to improve image quality."
-                                },
-                                {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "string"
-                                    },
-                                    "description": "Multiple text prompts to execute concurrently. Use this for batch processing when you need to generate or edit multiple images simultaneously. Each prompt will be processed in parallel for faster results. Example: [\"a sunset over mountains\", \"a cat playing piano\", \"a futuristic city\"]"
-                                }
+                                {"type": "string"},
+                                {"type": "array", "items": {"type": "string"}}
                             ],
-                            "description": "Either a single prompt (string) or multiple prompts (array of strings) to execute concurrently. Use batch mode (array) for faster processing when creating or editing multiple images."
+                            "description": "Text prompt describing the desired output."
                         },
                         "image_path": {
                             "oneOf": [
-                                {
-                                    "type": "string",
-                                    "description": "A single image path to edit."
-                                },
-                                {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "string"
-                                    },
-                                    "description": "Multiple image paths for batch editing. Each image will be paired with the corresponding prompt by index."
-                                }
+                                {"type": "string"},
+                                {"type": "array", "items": {"type": "string"}}
                             ],
-                            "description": "(edit mode only) Path(s) to image file(s) to edit. Can be relative paths (e.g., 'image.png') or URLs. For batch mode: provide an array of paths matching your prompts array - each prompt[i] edits image_path[i]. If fewer images than prompts, the first image is used for remaining prompts.",
+                            "description": "IMPORTANT: Path to input image file. If user uploaded an image (e.g. /workspace/uploads/image.png), PUT THAT PATH HERE! Required for 'edit' mode, optional for 'video' mode (animates the image).",
                         },
-                        "canvas_path": {
-                            "type": "string",
-                            "description": "Optional: Path to a canvas file to automatically add the generated image(s) to. If canvas doesn't exist, it will be created. Example: 'canvases/my-design.kanvax'. When provided, images are added to the canvas automatically after generation.",
+                        "video_options": {
+                            "type": "object",
+                            "description": "(video mode) Options: {\"duration\": 5, \"aspect_ratio\": \"16:9\", \"fps\": 24, \"generate_audio\": true, \"camera_fixed\": false, \"last_frame_image\": \"path/to/end.png\"}",
                         },
-                        "canvas_x": {
-                            "type": "number",
-                            "description": "Optional: X position on canvas (default: auto-calculated based on existing elements)",
-                        },
-                        "canvas_y": {
-                            "type": "number",
-                            "description": "Optional: Y position on canvas (default: auto-calculated based on existing elements)",
-                        },
+                        "canvas_path": {"type": "string", "description": "Optional: Canvas file path to auto-add result."},
+                        "canvas_x": {"type": "number", "description": "Optional: X position on canvas"},
+                        "canvas_y": {"type": "number", "description": "Optional: Y position on canvas"},
                     },
                     "required": ["mode", "prompt"],
                 },
@@ -185,11 +171,12 @@ class SandboxImageEditTool(SandboxToolsBase):
         mode: str,
         prompt: str | list[str],
         image_path: Optional[str | list[str]] = None,
+        video_options: Optional[dict] = None,
         canvas_path: Optional[str] = None,
         canvas_x: Optional[float] = None,
         canvas_y: Optional[float] = None,
     ) -> ToolResult:
-        """Generate or edit images using OpenAI GPT Image 1 via OpenAI SDK (no mask support). Supports both single and batch operations."""
+        """Generate/edit images or generate videos using AI via Replicate."""
         try:
             await self._ensure_sandbox()
             
@@ -287,6 +274,17 @@ class SandboxImageEditTool(SandboxToolsBase):
                 if not prompt:
                     return ToolResult(success=True, output="Error: A valid prompt is required.")
                 
+                # Handle video mode separately
+                if mode == "video":
+                    logger.info(f"Executing video generation for prompt: '{prompt[:50]}...'")
+                    result = await self._execute_video_generation(prompt, image_path, video_options, use_mock)
+                    
+                    if isinstance(result, ToolResult):
+                        return ToolResult(success=True, output=f"Failed: {result.output}")
+                    
+                    return ToolResult(success=True, output=f"Video saved as: {result}")
+                
+                # Image mode (generate/edit)
                 logger.info(f"Executing single image operation with mode '{mode}' for prompt: '{prompt[:50]}...'")
                 
                 result = await self._execute_single_image_operation(mode, prompt, image_path, use_mock)
@@ -313,6 +311,15 @@ class SandboxImageEditTool(SandboxToolsBase):
             logger.error(f"Image operation error: {friendly_error}")
             return ToolResult(success=True, output=f"Failed: {friendly_error}")
     
+    def _get_replicate_token(self) -> str:
+        """Get Replicate API token from config"""
+        config = get_config()
+        token = config.REPLICATE_API_TOKEN
+        if not token:
+            raise Exception("Replicate API token not configured. Add REPLICATE_API_TOKEN to your .env")
+        os.environ["REPLICATE_API_TOKEN"] = token
+        return token
+
     async def _execute_single_image_operation(
         self,
         mode: str,
@@ -322,6 +329,7 @@ class SandboxImageEditTool(SandboxToolsBase):
     ) -> str | ToolResult:
         """
         Helper function to execute a single image generation or edit operation.
+        Uses Replicate with GPT Image 1.5 for both generation and editing.
         
         Parameters:
         - mode: 'generate' or 'edit'
@@ -342,15 +350,17 @@ class SandboxImageEditTool(SandboxToolsBase):
                     return image_filename
                 return image_filename
             
-            # Real API implementation
-            model = "gpt-image-1.5"
+            # Ensure Replicate token is set
+            self._get_replicate_token()
 
             if mode == "generate":
-                response = await aimage_generation(
-                    model=model,
-                    prompt=prompt,
-                    n=1,
-                    size="1024x1024",
+                logger.info(f"Calling Replicate openai/gpt-image-1.5 for generation")
+                output = replicate.run(
+                    "openai/gpt-image-1.5",
+                    input={
+                        "prompt": prompt,
+                        "size": "1024x1024",
+                    }
                 )
             elif mode == "edit":
                 if not image_path:
@@ -360,32 +370,156 @@ class SandboxImageEditTool(SandboxToolsBase):
                 if isinstance(image_bytes, ToolResult):  # Error occurred
                     return image_bytes
 
-                # Create BytesIO object with proper filename to set MIME type
-                image_io = BytesIO(image_bytes)
-                image_io.name = "image.png"  # Set filename to ensure proper MIME type detection
+                # Convert image to base64 data URL
+                image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+                image_data_url = f"data:image/png;base64,{image_b64}"
 
-                response = await aimage_edit(
-                    image=[image_io],  # Type in the LiteLLM SDK is wrong
-                    prompt=prompt,
-                    model=model,
-                    n=1,
-                    size="1024x1024",
+                logger.info(f"Calling Replicate openai/gpt-image-1.5 for editing")
+                output = replicate.run(
+                    "openai/gpt-image-1.5",
+                    input={
+                        "image": image_data_url,
+                        "prompt": prompt,
+                        "size": "1024x1024",
+                    }
                 )
             else:
                 return self.fail_response("Invalid mode. Use 'generate' or 'edit'.")
 
-            # Download and save the generated image to sandbox
-            image_filename = await self._process_image_response(response)
-            if isinstance(image_filename, ToolResult):  # Error occurred
-                return image_filename
+            # Process Replicate output - it returns a list of FileOutput objects
+            output_list = list(output) if hasattr(output, '__iter__') and not hasattr(output, 'read') else [output]
+            if len(output_list) == 0:
+                return self.fail_response("No output from image model")
+            
+            # Get the first result and convert to bytes
+            first_output = output_list[0]
+            if hasattr(first_output, 'read'):
+                result_bytes = first_output.read()
+            else:
+                # Fetch from URL if it's a URL string
+                url = str(first_output.url) if hasattr(first_output, 'url') else str(first_output)
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    result_bytes = response.content
 
-            return image_filename
+            # Save to sandbox with random filename
+            random_filename = f"generated_image_{uuid.uuid4().hex[:8]}.png"
+            sandbox_path = f"{self.workspace_path}/{random_filename}"
+            await self.sandbox.fs.upload_file(result_bytes, sandbox_path)
+            
+            return random_filename
 
         except Exception as e:
             error_message = str(e)
             logger.error(f"Error executing image operation for prompt '{prompt[:50]}...': {error_message}")
             
             # Extract user-friendly error message
+            friendly_message = self._extract_friendly_error(e)
+            return self.fail_response(friendly_message)
+
+    async def _execute_video_generation(
+        self,
+        prompt: str,
+        image_path: Optional[str],
+        video_options: Optional[dict],
+        use_mock: bool
+    ) -> str | ToolResult:
+        """
+        Generate video using bytedance/seedance-1.5-pro via Replicate.
+        
+        Parameters:
+        - prompt: Text prompt describing the video
+        - image_path: Optional input image for image-to-video
+        - video_options: Dict with duration, aspect_ratio, fps, camera_fixed, generate_audio, seed, last_frame_image
+        - use_mock: Whether to use mock mode
+        
+        Returns:
+        - str: Filename of the generated video on success
+        - ToolResult: Error result on failure
+        """
+        try:
+            if use_mock:
+                logger.warning(f"🎬 Video generation running in MOCK mode for prompt: '{prompt[:50]}...'")
+                # For mock, just return a fake filename
+                return f"generated_video_{uuid.uuid4().hex[:8]}.mp4"
+            
+            # Ensure Replicate token is set
+            self._get_replicate_token()
+            
+            # Build input payload
+            input_params = {
+                "prompt": prompt,
+            }
+            
+            # Add video options with defaults
+            opts = video_options or {}
+            input_params["duration"] = opts.get("duration", 5)
+            input_params["aspect_ratio"] = opts.get("aspect_ratio", "16:9")
+            input_params["fps"] = opts.get("fps", 24)
+            input_params["camera_fixed"] = opts.get("camera_fixed", False)
+            input_params["generate_audio"] = opts.get("generate_audio", False)
+            
+            if "seed" in opts:
+                input_params["seed"] = opts["seed"]
+            
+            # Handle input image for image-to-video
+            if image_path:
+                if isinstance(image_path, list):
+                    image_path = image_path[0] if image_path else None
+                
+                if image_path:
+                    image_bytes = await self._get_image_bytes(image_path)
+                    if isinstance(image_bytes, ToolResult):
+                        return image_bytes
+                    
+                    image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+                    input_params["image"] = f"data:image/png;base64,{image_b64}"
+            
+            # Handle last frame image if provided
+            if opts.get("last_frame_image") and image_path:  # Only works with start image
+                last_frame_bytes = await self._get_image_bytes(opts["last_frame_image"])
+                if not isinstance(last_frame_bytes, ToolResult):
+                    last_frame_b64 = base64.b64encode(last_frame_bytes).decode('utf-8')
+                    input_params["last_frame_image"] = f"data:image/png;base64,{last_frame_b64}"
+            
+            logger.info(f"Calling Replicate bytedance/seedance-1.5-pro for video generation")
+            logger.debug(f"Video params: duration={input_params.get('duration')}, aspect_ratio={input_params.get('aspect_ratio')}, generate_audio={input_params.get('generate_audio')}")
+            
+            output = replicate.run(
+                "bytedance/seedance-1.5-pro",
+                input=input_params
+            )
+            
+            # Output is a FileOutput object with .url and .read()
+            if hasattr(output, 'read'):
+                result_bytes = output.read()
+            elif hasattr(output, 'url'):
+                url = str(output.url)
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    result_bytes = response.content
+            else:
+                # Try to fetch from string URL
+                url = str(output)
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    result_bytes = response.content
+            
+            # Save to sandbox with random filename
+            random_filename = f"generated_video_{uuid.uuid4().hex[:8]}.mp4"
+            sandbox_path = f"{self.workspace_path}/{random_filename}"
+            await self.sandbox.fs.upload_file(result_bytes, sandbox_path)
+            
+            logger.info(f"Video saved: {random_filename}")
+            return random_filename
+
+        except Exception as e:
+            error_message = str(e)
+            logger.error(f"Error generating video for prompt '{prompt[:50]}...': {error_message}")
+            
             friendly_message = self._extract_friendly_error(e)
             return self.fail_response(friendly_message)
     

@@ -1,36 +1,39 @@
 """
 Canvas AI Image Operations API
 Provides endpoints for AI-powered image editing operations in the canvas editor.
-Supports multiple models: GPT Image (via LiteLLM) and Gemini (via OpenRouter).
+Supports multiple models: GPT Image (via Replicate), Gemini (via OpenRouter), and other Replicate models.
 """
 
 import os
 import base64
 import httpx
+import replicate
 from io import BytesIO
 from typing import Optional, Literal
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from litellm import aimage_edit
 
 from core.utils.logger import logger
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
+from core.utils.config import get_config
 
 router = APIRouter(prefix="/canvas-ai", tags=["Canvas AI"])
 
 # Model configurations
 MODELS = {
-    "gpt": "gpt-image-1.5",
+    "replicate-gpt": "openai/gpt-image-1.5",  # GPT Image via Replicate
     "gemini-pro": "google/gemini-3-pro-image-preview",
-    "gemini-flash": "google/gemini-2.5-flash-image",
+    "gemini-flash": "google/gemini-2.5-flash-image",  # Default - fast & cheap
+    "replicate-remove-bg": "851-labs/background-remover",
+    "replicate-upscale": "recraft-ai/recraft-crisp-upscale",
 }
 
 # OpenRouter config
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-# Default model
-DEFAULT_MODEL = "gpt"  # Use GPT by default, can switch to gemini
+# Default model - Gemini Flash (nano banana) for speed and cost
+DEFAULT_MODEL = "gemini-flash"
 
 
 class ImageEditRequest(BaseModel):
@@ -53,12 +56,49 @@ class ImageMergeResponse(BaseModel):
     error: Optional[str] = None
 
 
+class ImageGenerateRequest(BaseModel):
+    """Request model for AI image generation"""
+    prompt: str
+    num_images: int = 2  # Default to 2 images
+    aspect_ratio: str = "1:1"  # 1:1, 16:9, 9:16, 4:3, 3:4
+
+
+class ImageGenerateResponse(BaseModel):
+    """Response model for AI image generation"""
+    success: bool
+    images: list[str] = []  # List of base64 encoded images
+    error: Optional[str] = None
+
+
+class OCRTextLine(BaseModel):
+    """Detected text line with polygon bounding box"""
+    id: str
+    text: str
+    confidence: float
+    bbox: list[int]  # [x1, y1, x2, y2]
+    polygon: list[list[int]]  # [[x1,y1], [x2,y2], [x3,y3], [x4,y4]] - perspective-aware corners
+
+
+class OCRRequest(BaseModel):
+    """Request model for OCR text detection"""
+    image_base64: str  # Base64 encoded image
+
+
+class OCRResponse(BaseModel):
+    """Response model for OCR detection"""
+    success: bool
+    text: Optional[str] = None  # Full extracted text
+    text_lines: list[OCRTextLine] = []  # Individual text lines with polygons
+    image_size: Optional[list[int]] = None  # [width, height] of the analyzed image
+    error: Optional[str] = None
+
+
 # Model mapping per action - backend decides which model to use
 ACTION_MODELS = {
-    "remove_bg": "gpt",  # Gemini Flash for background removal
-    "upscale": "gpt",             # GPT for upscaling
-    "edit_text": "gpt",           # GPT for text editing
-    "mark_edit": "gemini-pro",           # GPT for general edits
+    "remove_bg": "replicate-remove-bg",   # Replicate 851-labs/background-remover
+    "upscale": "replicate-upscale",       # Replicate recraft-ai/recraft-crisp-upscale
+    "edit_text": "gemini-flash",          # Gemini Flash for text editing (fast & cheap)
+    "mark_edit": "gemini-flash",          # Gemini Flash for general edits (fast & cheap)
 }
 
 
@@ -93,28 +133,35 @@ def get_action_prompt(action: str, user_prompt: Optional[str] = None) -> str:
     return prompts.get(action, user_prompt or "Process this image")
 
 
-async def process_with_gpt(image_bytes: bytes, prompt: str) -> str:
-    """Process image using GPT Image via LiteLLM"""
-    # Create BytesIO object with proper filename to set MIME type
-    image_io = BytesIO(image_bytes)
-    image_io.name = "image.png"
+async def process_with_replicate_gpt(image_bytes: bytes, mime_type: str, prompt: str) -> str:
+    """Process image using GPT Image via Replicate (openai/gpt-image-1.5)"""
+    _get_replicate_token()
     
-    logger.info(f"Calling LiteLLM aimage_edit with gpt-image-1.5")
+    # Convert bytes to data URL
+    image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+    image_data_url = f"data:{mime_type};base64,{image_b64}"
     
-    response = await aimage_edit(
-        image=[image_io],
-        prompt=prompt,
-        model="gpt-image-1.5",
-        n=1,
-        size="1024x1024",
-    )
+    logger.info("Calling Replicate openai/gpt-image-1.5")
     
-    if response.data and len(response.data) > 0:
-        b64_json = response.data[0].b64_json
-        if b64_json:
-            return f"data:image/png;base64,{b64_json}"
-    
-    raise Exception("No image data in GPT response")
+    try:
+        output = replicate.run(
+            "openai/gpt-image-1.5",
+            input={
+                "image": image_data_url,
+                "prompt": prompt,
+                "size": "1024x1024",
+            }
+        )
+        
+        # Output is a list of FileOutput objects - get the first one
+        output_list = list(output) if hasattr(output, '__iter__') and not hasattr(output, 'read') else [output]
+        if len(output_list) == 0:
+            raise Exception("No output from GPT image model")
+        
+        return _replicate_output_to_base64(output_list[0], "png")
+    except Exception as e:
+        logger.error(f"Replicate GPT error: {e}")
+        raise Exception(f"GPT image edit failed: {str(e)}")
 
 
 async def process_with_gemini(
@@ -201,6 +248,78 @@ async def process_with_gemini(
         raise Exception("No image in Gemini response")
 
 
+def _get_replicate_token() -> str:
+    """Get Replicate API token from config"""
+    config = get_config()
+    token = config.REPLICATE_API_TOKEN
+    if not token:
+        raise Exception("Replicate API token not configured. Add REPLICATE_API_TOKEN to your .env")
+    os.environ["REPLICATE_API_TOKEN"] = token
+    return token
+
+
+def _replicate_output_to_base64(output, output_format: str = "png") -> str:
+    """Convert Replicate FileOutput to base64 data URL"""
+    # FileOutput has .read() method for sync reading
+    if hasattr(output, 'read'):
+        result_bytes = output.read()
+        result_b64 = base64.b64encode(result_bytes).decode('utf-8')
+        mime = f"image/{output_format}"
+        return f"data:{mime};base64,{result_b64}"
+    
+    # Fallback: fetch from URL if it's a URL string
+    url = str(output.url) if hasattr(output, 'url') else str(output)
+    import urllib.request
+    with urllib.request.urlopen(url) as response:
+        result_bytes = response.read()
+        result_b64 = base64.b64encode(result_bytes).decode('utf-8')
+        mime = f"image/{output_format}"
+        return f"data:{mime};base64,{result_b64}"
+
+
+async def process_with_replicate_remove_bg(image_bytes: bytes, mime_type: str) -> str:
+    """Remove background using Replicate's 851-labs/background-remover"""
+    _get_replicate_token()
+    
+    # Convert bytes to data URL
+    image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+    image_data_url = f"data:{mime_type};base64,{image_b64}"
+    
+    logger.info("Calling Replicate 851-labs/background-remover")
+    
+    try:
+        output = replicate.run(
+            "851-labs/background-remover:a029dff38972b5fda4ec5d75d7d1cd25aeff621d2cf4946a41055d7db66b80bc",
+            input={"image": image_data_url}
+        )
+        return _replicate_output_to_base64(output, "png")
+    except Exception as e:
+        logger.error(f"Replicate remove_bg error: {e}")
+        raise Exception(f"Background removal failed: {str(e)}")
+
+
+async def process_with_replicate_upscale(image_bytes: bytes, mime_type: str) -> str:
+    """Upscale image using Replicate's recraft-ai/recraft-crisp-upscale"""
+    _get_replicate_token()
+    
+    # Convert bytes to data URL
+    image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+    image_data_url = f"data:{mime_type};base64,{image_b64}"
+    
+    logger.info("Calling Replicate recraft-ai/recraft-crisp-upscale")
+    
+    try:
+        output = replicate.run(
+            "recraft-ai/recraft-crisp-upscale",
+            input={"image": image_data_url}
+        )
+        # Output is webp format
+        return _replicate_output_to_base64(output, "webp")
+    except Exception as e:
+        logger.error(f"Replicate upscale error: {e}")
+        raise Exception(f"Upscale failed: {str(e)}")
+
+
 @router.post("/process", response_model=ImageEditResponse)
 async def process_image(
     request: ImageEditRequest,
@@ -210,10 +329,10 @@ async def process_image(
     Process an image with AI operations.
     
     Actions:
-    - upscale: Enhance image resolution and quality (GPT)
-    - remove_bg: Remove background from image (Gemini Flash)
+    - upscale: Enhance image resolution (Replicate recraft-ai/recraft-crisp-upscale)
+    - remove_bg: Remove background (Replicate 851-labs/background-remover)
     - edit_text: Edit text content in the image (GPT)
-    - mark_edit: Apply AI edits based on prompt (GPT)
+    - mark_edit: Apply AI edits based on prompt (Gemini Pro)
     """
     # Backend decides which model to use per action
     model_key = ACTION_MODELS.get(request.action, DEFAULT_MODEL)
@@ -250,13 +369,17 @@ async def process_image(
         prompt = get_action_prompt(request.action, request.prompt)
         
         # Process based on model
-        if model_key == "gpt":
-            result_base64 = await process_with_gpt(image_bytes, prompt)
+        if model_key == "replicate-remove-bg":
+            result_base64 = await process_with_replicate_remove_bg(image_bytes, mime_type)
+        elif model_key == "replicate-upscale":
+            result_base64 = await process_with_replicate_upscale(image_bytes, mime_type)
+        elif model_key == "replicate-gpt":
+            result_base64 = await process_with_replicate_gpt(image_bytes, mime_type, prompt)
         elif model_key in ["gemini-pro", "gemini-flash"]:
             result_base64 = await process_with_gemini(image_bytes, mime_type, prompt, model_key)
         else:
-            # Default to GPT
-            result_base64 = await process_with_gpt(image_bytes, prompt)
+            # Default to Gemini Flash (nano banana) - fast & cheap
+            result_base64 = await process_with_gemini(image_bytes, mime_type, prompt, "gemini-flash")
         
         return ImageEditResponse(
             success=True,
@@ -423,6 +546,85 @@ The result should be a high-quality merged image."""
         )
 
 
+@router.post("/generate", response_model=ImageGenerateResponse)
+async def generate_images(
+    request: ImageGenerateRequest,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """
+    Generate images from text prompt using Flux Schnell (fast generation).
+    Returns multiple images as base64.
+    """
+    logger.info(f"Canvas AI: Generating {request.num_images} images for user {user_id}")
+    
+    try:
+        if not request.prompt.strip():
+            return ImageGenerateResponse(
+                success=False,
+                error="Prompt is required"
+            )
+        
+        _get_replicate_token()
+        
+        num_to_generate = min(request.num_images, 4)
+        logger.info(f"Generating {num_to_generate} images with flux-schnell")
+        
+        try:
+            output = replicate.run(
+                "black-forest-labs/flux-schnell",
+                input={
+                    "prompt": request.prompt,
+                    "aspect_ratio": request.aspect_ratio,
+                    "num_outputs": num_to_generate,
+                    "output_format": "webp",
+                    "output_quality": 90,
+                    "go_fast": True,
+                }
+            )
+            
+            # Output can be a list or iterator of FileOutput objects
+            generated_images: list[str] = []
+            
+            # Convert to list if it's an iterator
+            output_list = list(output) if hasattr(output, '__iter__') else [output]
+            logger.info(f"Replicate returned {len(output_list)} outputs")
+            
+            for img_output in output_list:
+                try:
+                    image_b64 = _replicate_output_to_base64(img_output, "webp")
+                    generated_images.append(image_b64)
+                except Exception as e:
+                    logger.error(f"Failed to process output: {e}")
+                    continue
+                
+        except Exception as e:
+            logger.error(f"Flux generation failed: {e}")
+            return ImageGenerateResponse(success=False, error=str(e)[:150])
+        
+        if len(generated_images) == 0:
+            return ImageGenerateResponse(
+                success=False,
+                error="Failed to generate any images"
+            )
+        
+        return ImageGenerateResponse(
+            success=True,
+            images=generated_images
+        )
+        
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Canvas AI generate error: {error_msg}")
+        
+        if len(error_msg) > 150:
+            error_msg = error_msg[:150] + "..."
+        
+        return ImageGenerateResponse(
+            success=False,
+            error=error_msg
+        )
+
+
 class ConvertToSvgRequest(BaseModel):
     """Request model for PNG to SVG conversion"""
     image_base64: str  # Base64 encoded PNG image
@@ -537,6 +739,116 @@ async def convert_to_svg(
         )
 
 
+@router.post("/ocr", response_model=OCRResponse)
+async def detect_text(
+    request: OCRRequest,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+) -> OCRResponse:
+    """
+    Detect text in an image using Replicate's datalab-to/ocr model.
+    Returns text content with polygon bounding boxes for perspective-aware text regions.
+    """
+    logger.info(f"Canvas AI OCR: Processing for user {user_id}")
+    
+    try:
+        _get_replicate_token()
+        
+        # Extract image data
+        try:
+            mime_type, image_bytes, clean_b64 = extract_image_data(request.image_base64)
+            logger.debug(f"OCR input: {len(image_bytes)} bytes, mime: {mime_type}")
+        except Exception as e:
+            return OCRResponse(
+                success=False,
+                error=f"Invalid base64 image data: {str(e)}"
+            )
+        
+        # Build data URL for Replicate
+        if request.image_base64.startswith('data:'):
+            image_data_url = request.image_base64
+        else:
+            image_data_url = f"data:{mime_type};base64,{clean_b64}"
+        
+        logger.info("Calling Replicate datalab-to/ocr")
+        
+        try:
+            output = replicate.run(
+                "datalab-to/ocr",
+                input={
+                    "file": image_data_url,
+                    "visualize": False,
+                    "skip_cache": False,
+                    "return_pages": True,
+                }
+            )
+        except Exception as e:
+            logger.error(f"Replicate OCR error: {e}")
+            return OCRResponse(
+                success=False,
+                error=f"OCR failed: {str(e)[:100]}"
+            )
+        
+        # Parse the response
+        full_text = output.get("text", "") if isinstance(output, dict) else ""
+        pages = output.get("pages", []) if isinstance(output, dict) else []
+        
+        text_lines: list[OCRTextLine] = []
+        image_size: list[int] = [0, 0]
+        
+        if pages and len(pages) > 0:
+            page = pages[0]
+            
+            # Get image dimensions
+            image_bbox = page.get("image_bbox", [0, 0, 1024, 1024])
+            if len(image_bbox) >= 4:
+                image_size = [image_bbox[2], image_bbox[3]]  # width, height
+            
+            # Process text lines
+            raw_lines = page.get("text_lines", [])
+            for idx, line in enumerate(raw_lines):
+                text = line.get("text", "").strip()
+                if not text:
+                    continue
+                
+                confidence = line.get("confidence", 0.0)
+                bbox = line.get("bbox", [0, 0, 0, 0])
+                polygon = line.get("polygon", [])
+                
+                # Ensure polygon has 4 points, fall back to bbox corners if missing
+                if len(polygon) != 4:
+                    x1, y1, x2, y2 = bbox if len(bbox) == 4 else [0, 0, 0, 0]
+                    polygon = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
+                
+                text_lines.append(OCRTextLine(
+                    id=f"line-{idx}",
+                    text=text,
+                    confidence=confidence,
+                    bbox=bbox,
+                    polygon=polygon,
+                ))
+        
+        logger.info(f"OCR detected {len(text_lines)} text lines, image size: {image_size}")
+        
+        return OCRResponse(
+            success=True,
+            text=full_text,
+            text_lines=text_lines,
+            image_size=image_size,
+        )
+        
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Canvas AI OCR error: {error_msg}")
+        
+        if len(error_msg) > 150:
+            error_msg = error_msg[:150] + "..."
+        
+        return OCRResponse(
+            success=False,
+            error=error_msg
+        )
+
+
 @router.get("/health")
 async def health_check():
     """Check if Canvas AI API is available"""
@@ -553,5 +865,6 @@ async def health_check():
         "default_model": DEFAULT_MODEL,
         "available_models": MODELS,
         "openrouter_configured": bool(OPENROUTER_API_KEY),
-        "vtracer_available": vtracer_available
+        "vtracer_available": vtracer_available,
+        "replicate_configured": bool(get_config().REPLICATE_API_TOKEN),
     }

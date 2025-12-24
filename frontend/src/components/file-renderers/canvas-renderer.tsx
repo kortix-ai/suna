@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import Tesseract from 'tesseract.js';
 import {
   Plus,
   Minus,
@@ -21,6 +20,7 @@ import {
   Type,
   Layers,
   ArrowLeftRight,
+  Wand2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -52,11 +52,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/AuthProvider';
 
-// OCR detected text region
+// OCR detected text region with polygon bounding box
 interface TextRegion {
   id: string;
   text: string;
-  bbox: { x0: number; y0: number; x1: number; y1: number };
+  bbox: [number, number, number, number]; // [x1, y1, x2, y2]
+  polygon: [number, number][]; // [[x1,y1], [x2,y2], [x3,y3], [x4,y4]] - perspective-aware corners
   confidence: number;
 }
 
@@ -68,12 +69,13 @@ interface CanvasElement {
   y: number;
   width: number;
   height: number;
-  rotation: number;
-  scaleX: number;
-  scaleY: number;
-  opacity: number;
-  locked: boolean;
+  rotation?: number;
+  scaleX?: number;
+  scaleY?: number;
+  opacity?: number;
+  locked?: boolean;
   name: string;
+  visible?: boolean;
 }
 
 interface CanvasData {
@@ -83,6 +85,9 @@ interface CanvasData {
   elements: CanvasElement[];
   width?: number;
   height?: number;
+  description?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface CanvasRendererProps {
@@ -107,14 +112,14 @@ function getSandboxFileUrl(sandboxId: string | undefined, path: string): string 
 // AI Processing Overlay with strong diagonal shimmer waves
 function AIProcessingOverlay({ isVisible }: { isVisible: boolean }) {
   if (!isVisible) return null;
-  
+
   return (
     <div className="absolute inset-0 overflow-hidden rounded pointer-events-none z-20">
       {/* Dim overlay to make shimmer more visible */}
       <div className="absolute inset-0 bg-black/30" />
-      
+
       {/* Strong diagonal shimmer waves - slower animation */}
-      <div 
+      <div
         className="absolute inset-0"
         style={{
           background: `
@@ -134,7 +139,7 @@ function AIProcessingOverlay({ isVisible }: { isVisible: boolean }) {
         }}
       />
       {/* Second wave for more intensity - slower */}
-      <div 
+      <div
         className="absolute inset-0"
         style={{
           background: `
@@ -152,7 +157,7 @@ function AIProcessingOverlay({ isVisible }: { isVisible: boolean }) {
           animationDelay: '0.8s',
         }}
       />
-      
+
       <style>{`
         @keyframes shimmer {
           0% { background-position: 200% 0; }
@@ -210,7 +215,7 @@ function CanvasImageElement({
       setLoading(false);
       return;
     }
-    
+
     const loadImage = async () => {
       try {
         setLoading(true);
@@ -349,14 +354,14 @@ function CanvasImageElement({
 
   if (loading || isProcessing) {
     return (
-      <div 
-        style={{ position: 'absolute', left: posX, top: posY, width, height }} 
+      <div
+        style={{ position: 'absolute', left: posX, top: posY, width, height }}
         className="rounded overflow-hidden bg-card/50"
       >
         {/* Shimmer loading effect - no text */}
         <div className="relative w-full h-full">
           <div className="absolute inset-0 bg-black/30" />
-          <div 
+          <div
             className="absolute inset-0"
             style={{
               background: 'linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.15) 50%, transparent 70%)',
@@ -406,7 +411,7 @@ function CanvasImageElement({
         <img src={imageSrc} alt={element.name} draggable={false} className="w-full h-full object-fill pointer-events-none" />
         <AIProcessingOverlay isVisible={isProcessing} />
       </div>
-      
+
       {isSelected && !element.locked && (
         <>
           {/* Corner handles - blue */}
@@ -460,7 +465,7 @@ function FloatingToolbar({
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [editPrompt, setEditPrompt] = useState('');
-  
+
   // Text edit mode state
   const [textEditMode, setTextEditMode] = useState(false);
   const [isDetectingText, setIsDetectingText] = useState(false);
@@ -475,111 +480,70 @@ function FloatingToolbar({
   useEffect(() => {
     if (externalSelectedRegion && externalSelectedRegion.id !== selectedTextRegion?.id) {
       setSelectedTextRegion(externalSelectedRegion);
-      // Only pre-fill text if confidence is high enough (> 60), otherwise let user type
-      const prefillText = externalSelectedRegion.confidence > 60 ? externalSelectedRegion.text : '';
+      // Only pre-fill text if confidence is high enough (> 0.6), otherwise let user type
+      const prefillText = externalSelectedRegion.confidence > 0.6 ? externalSelectedRegion.text : '';
       setNewTextContent(prefillText);
       setShowTextEditDialog(true);
     }
   }, [externalSelectedRegion]);
 
-  // Run OCR to detect text regions using worker for full data
+  // Run OCR to detect text regions using backend Replicate model
   const detectTextRegions = async () => {
     setIsDetectingText(true);
     onProcessingChange(true); // Show shimmer on image
-    
+
     try {
       const imageBase64 = await getImageAsBase64(element.src);
-      
-      // Get actual image dimensions for proper bbox scaling
-      const img = new Image();
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error('Failed to load image'));
-        img.src = imageBase64;
-      });
-      const originalWidth = img.naturalWidth;
-      const originalHeight = img.naturalHeight;
-      // console.log('Original image size:', originalWidth, 'x', originalHeight);
-      setOcrImageSize({ width: originalWidth, height: originalHeight });
-      
-      // Use createWorker and request detailed output
-      const worker = await Tesseract.createWorker('eng', 1, {
-        logger: m => {
-          if (m.status === 'recognizing text') {
-            console.log('[Tesseract] Progress:', Math.round((m.progress || 0) * 100) + '%');
-          }
+
+      // Call backend OCR endpoint
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/canvas-ai/ocr`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
         },
+        body: JSON.stringify({ image_base64: imageBase64 }),
       });
-      
-      // Set parameters for better text detection
-      // PSM 11 = Sparse text - find as much text as possible in no particular order
-      // PSM 6 = Assume a single uniform block of text
-      await worker.setParameters({
-        tessedit_pageseg_mode: '11', // Sparse text mode - better for signs/logos
-      });
-      
-      // The 3rd param 'output' specifies what data to return!
-      // recognize(image, options, output, jobId)
-      const result = await (worker.recognize as (
-        image: string,
-        options?: object,
-        output?: { blocks?: boolean; text?: boolean; hocr?: boolean; tsv?: boolean },
-        jobId?: string
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ) => Promise<any>)(imageBase64, {}, { 
-        blocks: true, 
-        text: true,
-        hocr: true,
-        tsv: true,
-      });
-      await worker.terminate();
-      
-      // Debug output check (disabled)
-      // console.log('blocks:', result.data.blocks);
-      // console.log('TSV:', result.data.tsv ? 'available' : 'null');
-      
-      // Parse TSV output which contains bounding boxes
-      // TSV format: level, page_num, block_num, par_num, line_num, word_num, left, top, width, height, conf, text
-      const tsv = result.data.tsv;
-      const regions: TextRegion[] = [];
-      
-      if (tsv) {
-        const tsvLines = tsv.split('\n');
-        
-        tsvLines.forEach((line, idx) => {
-          if (idx === 0) return; // Skip header
-          const parts = line.split('\t');
-          if (parts.length >= 12) {
-            const level = parseInt(parts[0]);
-            const left = parseInt(parts[6]);
-            const top = parseInt(parts[7]);
-            const width = parseInt(parts[8]);
-            const height = parseInt(parts[9]);
-            const conf = parseFloat(parts[10]);
-            const text = parts[11];
-            
-            // Level 5 = word level - include all with valid size
-            if (level === 5 && text && text.trim().length > 0 && width > 0 && height > 0) {
-              regions.push({
-                id: `word-${regions.length}`,
-                text: text.trim(),
-                bbox: { x0: left, y0: top, x1: left + width, y1: top + height },
-                confidence: conf,
-              });
-            }
-          }
-        });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || 'OCR request failed');
       }
-      
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'OCR failed');
+      }
+
+      // Store image size for overlay calculations
+      const [ocrWidth, ocrHeight] = result.image_size || [1024, 1024];
+      setOcrImageSize({ width: ocrWidth, height: ocrHeight });
+
+      // Convert backend response to TextRegion format
+      const regions: TextRegion[] = (result.text_lines || []).map((line: {
+        id: string;
+        text: string;
+        confidence: number;
+        bbox: [number, number, number, number];
+        polygon: [number, number][];
+      }) => ({
+        id: line.id,
+        text: line.text,
+        confidence: line.confidence,
+        bbox: line.bbox as [number, number, number, number],
+        polygon: line.polygon as [number, number][],
+      }));
+
       // Check OCR quality - if too poor, skip bounding boxes and just prompt
-      const avgConfidence = regions.length > 0 
-        ? regions.reduce((sum, r) => sum + r.confidence, 0) / regions.length 
+      const avgConfidence = regions.length > 0
+        ? regions.reduce((sum, r) => sum + r.confidence, 0) / regions.length
         : 0;
-      const lowConfidenceCount = regions.filter(r => r.confidence < 40).length;
-      const isLowQuality = avgConfidence < 35 || (regions.length > 0 && lowConfidenceCount / regions.length > 0.7);
-      
+      const lowConfidenceCount = regions.filter(r => r.confidence < 0.4).length;
+      const isLowQuality = avgConfidence < 0.35 || (regions.length > 0 && lowConfidenceCount / regions.length > 0.7);
+
       if (regions.length === 0) {
-        const fullText = (result.data.text || '').trim();
+        const fullText = (result.text || '').trim();
         if (fullText.length > 0) {
           // Text detected but no good bounding boxes - open generic prompt
           setIsLowQualityOcr(true);
@@ -601,10 +565,10 @@ function FloatingToolbar({
         setShowTextEditDialog(true);
         toast.info('Low OCR quality - describe the text you want to replace');
       } else {
-        // Good quality - show bounding boxes
+        // Good quality - show bounding boxes with polygons
         setIsLowQualityOcr(false);
         setDetectedTextRegions(regions);
-        onTextEditStateChange({ regions, ocrImageSize: { width: originalWidth, height: originalHeight } });
+        onTextEditStateChange({ regions, ocrImageSize: { width: ocrWidth, height: ocrHeight } });
         toast.success(`Found ${regions.length} text region${regions.length > 1 ? 's' : ''}`);
       }
     } catch (err) {
@@ -616,7 +580,7 @@ function FloatingToolbar({
       onProcessingChange(false); // Hide shimmer
     }
   };
-  
+
   // Start text edit mode
   const startTextEditMode = () => {
     setTextEditMode(true);
@@ -624,7 +588,7 @@ function FloatingToolbar({
     setSelectedTextRegion(null);
     detectTextRegions();
   };
-  
+
   // Cancel text edit mode
   const cancelTextEditMode = () => {
     setTextEditMode(false);
@@ -635,37 +599,38 @@ function FloatingToolbar({
     setIsLowQualityOcr(false);
     onTextEditStateChange(null); // Clear parent state
   };
-  
+
   // Handle text region click
   const handleTextRegionClick = (region: TextRegion) => {
     setSelectedTextRegion(region);
-    // Only pre-fill text if confidence is high (> 60), otherwise let user type
-    setNewTextContent(region.confidence > 60 ? region.text : '');
+    // Only pre-fill text if confidence is high (> 0.6), otherwise let user type
+    setNewTextContent(region.confidence > 0.6 ? region.text : '');
     setShowTextEditDialog(true);
     onTextRegionSelect?.(region);
   };
-  
+
   // Apply text replacement
   const applyTextReplacement = async () => {
     if (!newTextContent.trim()) return;
-    
+
     setShowTextEditDialog(false);
-    
+
     let prompt: string;
-    
+
     if (isLowQualityOcr) {
       // Low quality OCR - user describes what to replace in the newTextContent field
       // The field contains a description like "change 'hello' to 'world'" or "replace the title with 'New Title'"
       prompt = `${newTextContent}. Keep the same font style, size, color, and position as the original text.`;
     } else if (selectedTextRegion) {
       // Good OCR with selected region
-      if (selectedTextRegion.confidence > 60) {
+      if (selectedTextRegion.confidence > 0.6) {
         prompt = `Replace the text "${selectedTextRegion.text}" with "${newTextContent}" in this image. Keep the same font style, size, color, and position.`;
       } else {
         // Use bounding box description for low confidence
-        const bbox = selectedTextRegion.bbox;
-        const centerX = ((bbox.x0 + bbox.x1) / 2 / (ocrImageSize?.width || 1)) * 100;
-        const centerY = ((bbox.y0 + bbox.y1) / 2 / (ocrImageSize?.height || 1)) * 100;
+        // bbox format: [x1, y1, x2, y2]
+        const [x0, y0, x1, y1] = selectedTextRegion.bbox;
+        const centerX = ((x0 + x1) / 2 / (ocrImageSize?.width || 1)) * 100;
+        const centerY = ((y0 + y1) / 2 / (ocrImageSize?.height || 1)) * 100;
         const position = centerY < 33 ? 'top' : centerY > 66 ? 'bottom' : 'middle';
         const hPosition = centerX < 33 ? 'left' : centerX > 66 ? 'right' : 'center';
         prompt = `Replace the text in the ${position}-${hPosition} area of this image with "${newTextContent}". Keep the same font style, size, color, and background.`;
@@ -674,7 +639,7 @@ function FloatingToolbar({
       // Fallback
       prompt = `${newTextContent}. Keep the same font style, size, color, and position.`;
     }
-    
+
     await handleAIAction('edit_text', prompt);
     cancelTextEditMode();
   };
@@ -685,22 +650,22 @@ function FloatingToolbar({
     if (src.startsWith('data:')) {
       return src;
     }
-    
+
     // Construct proper URL for sandbox files
     const url = sandboxId ? getSandboxFileUrl(sandboxId, src) : src;
-    
+
     // Fetch the image and convert to base64
     try {
       const headers: Record<string, string> = {};
       if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-      
+
       const response = await fetch(url, {
         headers,
         credentials: 'include',
       });
-      
+
       if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
-      
+
       const blob = await response.blob();
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -718,20 +683,20 @@ function FloatingToolbar({
     setIsProcessing(true);
     setActiveAction(action);
     onProcessingChange(true);
-    
+
     const actionLabels: Record<string, string> = {
       upscale: 'Upscaling image...',
       remove_bg: 'Removing background...',
       edit_text: 'Editing text...',
       mark_edit: 'Applying edit...',
     };
-    
+
     toast.info(actionLabels[action], { description: prompt || 'Processing with AI...' });
-    
+
     try {
       // Get actual base64 data (fetch if needed)
       const imageBase64 = await getImageAsBase64(element.src);
-      
+
       // Call backend Canvas AI API
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/canvas-ai/process`, {
         method: 'POST',
@@ -745,14 +710,14 @@ function FloatingToolbar({
           prompt: prompt || undefined,
         }),
       });
-      
+
       if (!response.ok) {
         const error = await response.text();
         throw new Error(error || 'API request failed');
       }
-      
+
       const result = await response.json();
-      
+
       if (result.success && result.image_base64) {
         // For upscale, get the new image dimensions
         if (action === 'upscale') {
@@ -778,7 +743,7 @@ function FloatingToolbar({
           description: result.message || 'Please try again'
         });
       }
-      
+
     } catch (err) {
       console.error('AI action error:', err);
       toast.error('Failed to process image', {
@@ -806,9 +771,9 @@ function FloatingToolbar({
       >
         <div className="flex items-center gap-2 bg-card border border-border rounded-full px-3 py-1.5">
           <span className="text-xs text-muted-foreground">Click on text to edit</span>
-          <Button 
-            variant="ghost" 
-            size="sm" 
+          <Button
+            variant="ghost"
+            size="sm"
             className="h-6 px-2 rounded-full text-xs"
             onClick={cancelTextEditMode}
           >
@@ -816,16 +781,16 @@ function FloatingToolbar({
             Cancel
           </Button>
         </div>
-        
+
         {/* Text edit dialog - keep it here */}
         <Dialog open={showTextEditDialog} onOpenChange={setShowTextEditDialog}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>{isLowQualityOcr ? 'Edit Text' : 'Replace text'}</DialogTitle>
               <p className="text-sm text-muted-foreground">
-                {isLowQualityOcr 
+                {isLowQualityOcr
                   ? "Describe what text to change and what to replace it with"
-                  : selectedTextRegion && selectedTextRegion.confidence <= 60 
+                  : selectedTextRegion && selectedTextRegion.confidence <= 60
                     ? "Type what text you want in this area"
                     : `Replacing: "${selectedTextRegion?.text || ''}"`
                 }
@@ -837,8 +802,8 @@ function FloatingToolbar({
                 onChange={(e) => setNewTextContent(e.target.value)}
                 placeholder={isLowQualityOcr
                   ? "e.g., Replace 'Hello' with 'Welcome' or Change the title to 'New Title'"
-                  : selectedTextRegion && selectedTextRegion.confidence <= 60 
-                    ? "Type the new text you want here..." 
+                  : selectedTextRegion && selectedTextRegion.confidence <= 60
+                    ? "Type the new text you want here..."
                     : "Enter replacement text..."}
                 className="min-h-[100px]"
                 autoFocus
@@ -874,16 +839,16 @@ function FloatingToolbar({
         <span className="text-xs text-muted-foreground truncate max-w-[150px]">{element.name}</span>
         <span className="text-xs text-muted-foreground">{Math.round(element.width)}×{Math.round(element.height)}</span>
       </div>
-      
+
       {/* Main AI toolbar */}
       <div className="flex items-center gap-0.5 bg-card border border-border rounded-full px-1.5 py-1">
         <TooltipProvider delayDuration={0}>
           {/* Upscale */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="h-7 px-2 rounded-full gap-1.5 text-xs"
                 onClick={() => handleAIAction('upscale')}
                 disabled={isProcessing}
@@ -902,9 +867,9 @@ function FloatingToolbar({
           {/* Remove Background */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="h-7 px-2 rounded-full gap-1.5 text-xs"
                 onClick={() => handleAIAction('remove_bg')}
                 disabled={isProcessing}
@@ -928,9 +893,9 @@ function FloatingToolbar({
           {/* Edit Text - OCR-based selection */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="h-7 px-2 rounded-full gap-1.5 text-xs"
                 onClick={startTextEditMode}
                 disabled={isProcessing || textEditMode}
@@ -947,9 +912,9 @@ function FloatingToolbar({
             <Tooltip>
               <TooltipTrigger asChild>
                 <PopoverTrigger asChild>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     className="h-7 px-2 rounded-full gap-1.5 text-xs"
                     disabled={isProcessing}
                   >
@@ -970,7 +935,7 @@ function FloatingToolbar({
             <PopoverContent className="w-72 p-3" align="center">
               <div className="space-y-2">
                 <label className="text-xs font-medium">Describe the edit you want</label>
-                <Input 
+                <Input
                   placeholder='e.g., "Make the sky sunset colors"'
                   value={editPrompt}
                   onChange={(e) => setEditPrompt(e.target.value)}
@@ -980,8 +945,8 @@ function FloatingToolbar({
                     }
                   }}
                 />
-                <Button 
-                  size="sm" 
+                <Button
+                  size="sm"
                   className="w-full"
                   onClick={() => handleAIAction('mark_edit', editPrompt)}
                   disabled={!editPrompt.trim() || isProcessing}
@@ -1072,16 +1037,16 @@ function MultiSelectToolbar({
   const [mergePrompt, setMergePrompt] = useState('');
   const [showMergeDialog, setShowMergeDialog] = useState(false);
   const [imageOrder, setImageOrder] = useState<string[]>([]); // IDs in order
-  
+
   // Initialize image order when dialog opens
   const openMergeDialog = () => {
     setImageOrder(elements.map(el => el.id));
     setShowMergeDialog(true);
   };
-  
+
   // Get ordered elements based on current order
   const orderedElements = imageOrder.map(id => elements.find(el => el.id === id)).filter(Boolean) as CanvasElement[];
-  
+
   // Swap two images in the order
   const swapImages = (idx1: number, idx2: number) => {
     setImageOrder(prev => {
@@ -1090,7 +1055,7 @@ function MultiSelectToolbar({
       return newOrder;
     });
   };
-  
+
   // Calculate center position of all selected elements
   const bounds = elements.reduce((acc, el) => ({
     minX: Math.min(acc.minX, el.x),
@@ -1098,21 +1063,21 @@ function MultiSelectToolbar({
     maxX: Math.max(acc.maxX, el.x + el.width),
     maxY: Math.max(acc.maxY, el.y + el.height),
   }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
-  
+
   const centerX = ((bounds.minX + bounds.maxX) / 2) * scale + stagePosition.x;
   const bottomY = bounds.maxY * scale + stagePosition.y + 8;
 
   // Convert image to base64
   const getImageAsBase64 = async (src: string): Promise<string> => {
     if (src.startsWith('data:')) return src;
-    
+
     const url = sandboxId ? getSandboxFileUrl(sandboxId, src) : src;
     const headers: Record<string, string> = {};
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-    
+
     const response = await fetch(url, { headers, credentials: 'include' });
     if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
-    
+
     const blob = await response.blob();
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -1124,15 +1089,15 @@ function MultiSelectToolbar({
 
   const handleMerge = async () => {
     if (!mergePrompt.trim() || elements.length < 2) return;
-    
+
     setIsProcessing(true);
     onProcessingChange(true);
-    
+
     // Create temporary placeholder element with shimmer
     const tempId = onStartMerge();
-    
+
     toast.info('Merging images...', { description: mergePrompt });
-    
+
     try {
       // Get all images as base64 in the user-specified order
       const imagesBase64 = await Promise.all(
@@ -1143,7 +1108,7 @@ function MultiSelectToolbar({
           height: el.height,
         }))
       );
-      
+
       // Send to backend - use correct backend URL
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
       const response = await fetch(`${backendUrl}/canvas-ai/merge`, {
@@ -1157,14 +1122,14 @@ function MultiSelectToolbar({
           prompt: mergePrompt,
         }),
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.detail || 'Failed to merge images');
       }
-      
+
       const result = await response.json();
-      
+
       if (result.image) {
         toast.success('Images merged successfully!');
         onMergeComplete(tempId, result.image);
@@ -1198,16 +1163,16 @@ function MultiSelectToolbar({
       <div className="flex items-center justify-center gap-2 mb-1">
         <span className="text-xs text-muted-foreground">{elements.length} images selected</span>
       </div>
-      
+
       {/* Merge toolbar */}
       <div className="flex items-center gap-1 bg-card border border-border rounded-full px-2 py-1">
         <TooltipProvider delayDuration={0}>
           {/* Merge button - opens dialog */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="h-7 px-2 rounded-full gap-1.5 text-xs"
                 disabled={isProcessing}
                 onClick={openMergeDialog}
@@ -1229,9 +1194,9 @@ function MultiSelectToolbar({
           {/* Delete all */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="icon" 
+              <Button
+                variant="ghost"
+                size="icon"
                 className="h-7 w-7 rounded-full text-destructive hover:text-destructive"
                 onClick={onDelete}
                 disabled={isProcessing}
@@ -1260,8 +1225,8 @@ function MultiSelectToolbar({
                     <div className="relative group">
                       <div className="w-16 h-16 rounded border border-border overflow-hidden bg-card flex-shrink-0 relative">
                         {el.src?.startsWith('data:') ? (
-                          <img 
-                            src={el.src} 
+                          <img
+                            src={el.src}
                             alt={el.name}
                             className="w-full h-full object-cover"
                           />
@@ -1291,7 +1256,7 @@ function MultiSelectToolbar({
                 ))}
               </div>
             </div>
-            
+
             {/* Merge prompt */}
             <div className="space-y-2">
               <label className="text-xs font-medium text-muted-foreground">How should these images be merged?</label>
@@ -1303,13 +1268,13 @@ function MultiSelectToolbar({
                 autoFocus
               />
             </div>
-            
+
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => { setShowMergeDialog(false); setMergePrompt(''); }}>
                 Cancel
               </Button>
-              <Button 
-                onClick={() => { setShowMergeDialog(false); handleMerge(); }} 
+              <Button
+                onClick={() => { setShowMergeDialog(false); handleMerge(); }}
                 disabled={!mergePrompt.trim() || isProcessing}
               >
                 {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
@@ -1327,11 +1292,11 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   const { session } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   const [elements, setElements] = useState<CanvasElement[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [processingElementId, setProcessingElementId] = useState<string | null>(null);
-  
+
   // Text edit mode state - managed at canvas level for proper positioning
   const [textEditState, setTextEditState] = useState<{
     elementId: string;
@@ -1349,13 +1314,19 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   const [selectionRect, setSelectionRect] = useState<{ startX: number; startY: number; x: number; y: number; w: number; h: number } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // AI Generate state
+  const [generatePrompt, setGeneratePrompt] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedPreviews, setGeneratedPreviews] = useState<string[]>([]);
+
   const panStartRef = useRef<{ x: number; y: number; stageX: number; stageY: number } | null>(null);
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null);
   const hasCenteredRef = useRef(false);
   const isSavingRef = useRef(false);
-  
+
   const authToken = session?.access_token;
-  
+
   // Keep ref in sync with state
   useEffect(() => { isSavingRef.current = isSaving; }, [isSaving]);
 
@@ -1376,17 +1347,17 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       setElements([]);
       return;
     }
-    
+
     try {
       const parsed: CanvasData = JSON.parse(content);
       // Compare with current data to see if this is actually a new update
       const newElementCount = (parsed.elements || []).length;
       const currentElementCount = elements.length;
-      
+
       // Only update if structure changed (avoids unnecessary re-renders during user editing)
-      if (!canvasData || 
-          JSON.stringify(parsed.elements?.map(e => e.id)) !== JSON.stringify(elements.map(e => e.id)) ||
-          parsed.background !== canvasData.background) {
+      if (!canvasData ||
+        JSON.stringify(parsed.elements?.map(e => e.id)) !== JSON.stringify(elements.map(e => e.id)) ||
+        parsed.background !== canvasData.background) {
         setCanvasData(parsed);
         setElements(parsed.elements || []);
         // Only reset centering if this is first load or elements were added
@@ -1432,40 +1403,40 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   // This allows AI updates to appear in real-time
   const lastFetchTimeRef = useRef<number>(0);
   const isUserEditingRef = useRef(false);
-  
+
   useEffect(() => {
     if (!sandboxId || !filePath || !authToken) return;
-    
+
     // Poll interval: 2 seconds when not editing, skip when user is editing
     const POLL_INTERVAL = 2000;
-    
+
     const fetchLatestContent = async () => {
       // Skip if user is actively editing (has unsaved changes)
       if (hasUnsavedChanges || isUserEditingRef.current) return;
-      
+
       // Skip if we just fetched
       const now = Date.now();
       if (now - lastFetchTimeRef.current < POLL_INTERVAL - 100) return;
       lastFetchTimeRef.current = now;
-      
+
       try {
         const url = getSandboxFileUrl(sandboxId, filePath);
         const response = await fetch(url, {
           headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
           credentials: 'include',
         });
-        
+
         if (!response.ok) return;
-        
+
         const newContent = await response.text();
         if (!newContent || newContent === content) return;
-        
+
         // Parse and update if different
         try {
           const parsed: CanvasData = JSON.parse(newContent);
           const newElementIds = (parsed.elements || []).map(e => e.id).sort().join(',');
           const currentElementIds = elements.map(e => e.id).sort().join(',');
-          
+
           // Only update if structure actually changed
           if (newElementIds !== currentElementIds) {
             console.log('[CanvasRenderer] Live update: new elements detected', parsed.elements?.length);
@@ -1480,9 +1451,9 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         // Ignore network errors during polling
       }
     };
-    
+
     const interval = setInterval(fetchLatestContent, POLL_INTERVAL);
-    
+
     return () => clearInterval(interval);
   }, [sandboxId, filePath, authToken, hasUnsavedChanges, content, elements]);
 
@@ -1490,7 +1461,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   useEffect(() => {
     if (hasCenteredRef.current) return; // Already centered, don't run again
     if (elements.length === 0 || containerSize.width === 0 || containerSize.height === 0) return;
-    
+
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     elements.forEach(el => {
       minX = Math.min(minX, el.x);
@@ -1498,16 +1469,16 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       maxX = Math.max(maxX, el.x + el.width);
       maxY = Math.max(maxY, el.y + el.height);
     });
-    
+
     const contentWidth = maxX - minX;
     const contentHeight = maxY - minY;
     const contentCenterX = minX + contentWidth / 2;
     const contentCenterY = minY + contentHeight / 2;
-    
+
     // Position so content is centered in the container
     const newX = (containerSize.width / 2) - (contentCenterX * scale);
     const newY = (containerSize.height / 2) - (contentCenterY * scale);
-    
+
     setStagePosition({ x: newX, y: newY });
     hasCenteredRef.current = true;
   }, [elements, containerSize.width, containerSize.height, scale]);
@@ -1519,14 +1490,14 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   // Store current scale and position in refs for wheel handler (to avoid stale closures)
   const scaleRef = useRef(scale);
   const stagePositionRef = useRef(stagePosition);
-  
+
   useEffect(() => { scaleRef.current = scale; }, [scale]);
   useEffect(() => { stagePositionRef.current = stagePosition; }, [stagePosition]);
-  
+
   // Attach wheel listener with passive: false
   useEffect(() => {
     if (!isMounted) return;
-    
+
     // Use requestAnimationFrame to ensure DOM is ready
     const rafId = requestAnimationFrame(() => {
       const container = containerRef.current;
@@ -1534,29 +1505,29 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         console.warn('Canvas container not found for wheel handler');
         return;
       }
-      
+
       const handler = (e: WheelEvent) => {
         e.preventDefault();
         e.stopPropagation();
-        
+
         // Pinch-to-zoom on trackpad (ctrlKey is true for pinch gestures)
         if (e.ctrlKey || e.metaKey) {
           // ZOOM mode - zoom towards cursor
           const rect = container.getBoundingClientRect();
           const mouseX = e.clientX - rect.left;
           const mouseY = e.clientY - rect.top;
-          
+
           const currentScale = scaleRef.current;
           const currentPos = stagePositionRef.current;
-          
+
           const zoomSensitivity = 0.01;
           const zoomFactor = 1 - e.deltaY * zoomSensitivity;
           const newScale = Math.max(0.1, Math.min(5, currentScale * zoomFactor));
-          
+
           const scaleRatio = newScale / currentScale;
           const newPosX = mouseX - (mouseX - currentPos.x) * scaleRatio;
           const newPosY = mouseY - (mouseY - currentPos.y) * scaleRatio;
-          
+
           setScale(newScale);
           setStagePosition({ x: newPosX, y: newPosY });
         } else {
@@ -1567,13 +1538,13 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           }));
         }
       };
-      
+
       container.addEventListener('wheel', handler, { passive: false });
-      
+
       // Store handler ref for cleanup
       (container as HTMLDivElement & { _wheelHandler?: (e: WheelEvent) => void })._wheelHandler = handler;
     });
-    
+
     return () => {
       cancelAnimationFrame(rafId);
       const container = containerRef.current;
@@ -1588,7 +1559,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     if (e.target !== e.currentTarget) return;
-    
+
     if (toolMode === 'pan' || e.button === 1) {
       setIsPanning(true);
       panStartRef.current = { x: e.clientX, y: e.clientY, stageX: stagePosition.x, stageY: stagePosition.y };
@@ -1640,9 +1611,9 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           const elTop = el.y * scale + stagePosition.y;
           const elRight = elLeft + el.width * scale;
           const elBottom = elTop + el.height * scale;
-          
+
           if (elLeft < selectionRect.x + selectionRect.w && elRight > selectionRect.x &&
-              elTop < selectionRect.y + selectionRect.h && elBottom > selectionRect.y) {
+            elTop < selectionRect.y + selectionRect.h && elBottom > selectionRect.y) {
             selected.push(el.id);
           }
         });
@@ -1700,14 +1671,14 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   // Calculate next image position based on existing elements
   const getNextImagePosition = useCallback((imgWidth: number, imgHeight: number) => {
     const PADDING = 24;
-    
+
     if (elements.length === 0) {
       // First image - center in visible area
       const centerX = (containerSize.width / 2 - stagePosition.x) / scale - imgWidth / 2;
       const centerY = (containerSize.height / 2 - stagePosition.y) / scale - imgHeight / 2;
       return { x: centerX, y: centerY };
     }
-    
+
     // Find the rightmost edge of existing elements
     let maxRight = -Infinity;
     let topAtMaxRight = 0;
@@ -1718,7 +1689,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         topAtMaxRight = el.y;
       }
     });
-    
+
     // Place new image to the right of the rightmost element with padding
     return { x: maxRight + PADDING, y: topAtMaxRight };
   }, [elements, containerSize, stagePosition, scale]);
@@ -1727,16 +1698,16 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   const handlePaste = useCallback(async (e: ClipboardEvent) => {
     // Don't interfere with input fields
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-    
+
     const items = e.clipboardData?.items;
     if (!items) return;
-    
+
     for (const item of Array.from(items)) {
       if (item.type.startsWith('image/')) {
         e.preventDefault();
         const file = item.getAsFile();
         if (!file) continue;
-        
+
         const reader = new FileReader();
         reader.onload = (event) => {
           const img = new Image();
@@ -1751,7 +1722,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
               imgHeight = Math.round(imgHeight * scaleFactor);
             }
             const { x, y } = getNextImagePosition(imgWidth, imgHeight);
-            
+
             const newElement: CanvasElement = {
               id: `img-${Date.now()}`,
               type: 'image',
@@ -1776,7 +1747,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      
+
       // Ctrl/Cmd + S to save
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
@@ -1785,17 +1756,17 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         }
         return;
       }
-      
+
       // V without modifier = select tool, with modifier = paste (handled by paste event)
       if (e.key.toLowerCase() === 'v' && !e.metaKey && !e.ctrlKey) {
         setToolMode('select');
         return;
       }
-      
+
       switch (e.key.toLowerCase()) {
         case 'h': setToolMode('pan'); break;
-        case 'escape': 
-          setSelectedIds([]); 
+        case 'escape':
+          setSelectedIds([]);
           setTextEditState(null);
           setSelectedTextRegion(null);
           break;
@@ -1809,7 +1780,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           break;
       }
     };
-    
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('paste', handlePaste);
     return () => {
@@ -1823,9 +1794,9 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       toast.error('Cannot save - missing data or save handler');
       return;
     }
-    
+
     setIsSaving(true);
-    
+
     try {
       // Create updated canvas data with current elements
       // Base64 images are stored directly in the JSON
@@ -1833,14 +1804,14 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         ...canvasData,
         elements: elements,
       };
-      
+
       // Save the JSON
       await onSave(JSON.stringify(updatedCanvasData, null, 2));
-      
+
       // Update canvasData to match saved state
       setCanvasData(updatedCanvasData);
       setHasUnsavedChanges(false);
-      
+
       toast.success('Canvas saved');
     } catch (err) {
       console.error('Save error:', err);
@@ -1869,7 +1840,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           imgHeight = Math.round(imgHeight * scaleFactor);
         }
         const { x, y } = getNextImagePosition(imgWidth, imgHeight);
-        
+
         const newElement: CanvasElement = {
           id: `img-${Date.now()}`,
           type: 'image',
@@ -1887,6 +1858,78 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     };
     reader.readAsDataURL(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // AI Image Generation
+  const handleAIGenerate = async () => {
+    if (!generatePrompt.trim()) return;
+
+    setIsGenerating(true);
+    setGeneratedPreviews([]);
+
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/canvas-ai/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify({
+          prompt: generatePrompt,
+          num_images: 2,
+          aspect_ratio: '1:1',
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error || 'Generation failed');
+      }
+
+      const result = await response.json();
+
+      if (result.success && result.images?.length > 0) {
+        setGeneratedPreviews(result.images);
+        toast.success(`Generated ${result.images.length} images!`);
+      } else {
+        toast.error(result.error || 'Failed to generate images');
+      }
+    } catch (err) {
+      console.error('AI generate error:', err);
+      toast.error('Failed to generate images: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Add generated image to canvas
+  const addGeneratedImageToCanvas = (imageSrc: string) => {
+    const img = new Image();
+    img.onload = () => {
+      const maxSize = 512;
+      let imgWidth = img.width;
+      let imgHeight = img.height;
+      if (imgWidth > maxSize || imgHeight > maxSize) {
+        const scaleFactor = Math.min(maxSize / imgWidth, maxSize / imgHeight);
+        imgWidth = Math.round(imgWidth * scaleFactor);
+        imgHeight = Math.round(imgHeight * scaleFactor);
+      }
+      const { x, y } = getNextImagePosition(imgWidth, imgHeight);
+
+      const newElement: CanvasElement = {
+        id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        type: 'image',
+        src: imageSrc,
+        x, y,
+        width: imgWidth,
+        height: imgHeight,
+        rotation: 0, scaleX: 1, scaleY: 1, opacity: 1, locked: false,
+        name: `generated-${Date.now()}.webp`,
+      };
+      setElements(prev => [...prev, newElement]);
+      toast.success('Added to canvas');
+    };
+    img.src = imageSrc;
   };
 
   if (!isMounted) {
@@ -1938,27 +1981,91 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleResetView}><Maximize className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Reset View</TooltipContent></Tooltip>
             <Tooltip><TooltipTrigger asChild><Button id="canvas-save-btn" variant="ghost" size="icon" className={cn("h-8 w-8 relative", hasUnsavedChanges && "text-primary")} onClick={handleSave} disabled={isSaving || !onSave}>{isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{hasUnsavedChanges && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-primary rounded-full" />}</Button></TooltipTrigger><TooltipContent>{isSaving ? 'Saving...' : hasUnsavedChanges ? 'Save changes (⌘S)' : 'No changes'}</TooltipContent></Tooltip>
             <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleUploadClick}><ImagePlus className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Add Image</TooltipContent></Tooltip>
+
+            {/* AI Generate */}
+            <Popover>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <Wand2 className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent>Generate with AI</TooltipContent>
+              </Tooltip>
+              <PopoverContent className="w-80 p-3" align="end">
+                <div className="space-y-3">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Generate images</div>
+                  <Textarea
+                    placeholder="Describe the image you want to create..."
+                    value={generatePrompt}
+                    onChange={(e) => setGeneratePrompt(e.target.value)}
+                    className="min-h-[80px] resize-none shadow-none"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && e.metaKey && generatePrompt.trim()) {
+                        handleAIGenerate();
+                      }
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    onClick={handleAIGenerate}
+                    disabled={!generatePrompt.trim() || isGenerating}
+                  >
+                    {isGenerating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        Generating...
+                      </>
+                    ) : (
+                      'Generate'
+                    )}
+                  </Button>
+
+                  {/* Generated previews */}
+                  {generatedPreviews.length > 0 && (
+                    <div className="grid grid-cols-2 gap-2 pt-2">
+                      {generatedPreviews.map((src, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => addGeneratedImageToCanvas(src)}
+                          style={{ borderColor: 'var(--border)' }}
+                          className="relative aspect-square rounded-lg overflow-hidden border outline-none transition-colors group cursor-pointer"
+                        >
+                          <img src={src} alt={`Generated ${idx + 1}`} className="w-full h-full object-cover" />
+                          <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Plus className="h-3 w-3" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
           </TooltipProvider>
         </div>
         <div className="text-sm text-muted-foreground">{canvasData?.name || fileName?.replace('.kanvax', '')}</div>
       </div>
 
       {/* Canvas */}
-      <div 
-        ref={containerRef} 
+      <div
+        ref={containerRef}
         className="flex-1 relative overflow-hidden bg-background"
-        style={{ 
+        style={{
           cursor: isPanning ? 'grabbing' : toolMode === 'pan' ? 'grab' : selectionRect ? 'crosshair' : 'default',
           touchAction: 'none', // Prevent default touch behaviors
         }}
         onMouseDown={handleCanvasMouseDown}
       >
-        {/* Grid - theme aware */}
-        <div className="absolute inset-0 pointer-events-none opacity-10" style={{
+        {/* Grid - subtle */}
+        <div className="absolute inset-0 pointer-events-none" style={{
           backgroundImage: 'linear-gradient(var(--foreground) 1px, transparent 1px), linear-gradient(90deg, var(--foreground) 1px, transparent 1px)',
           backgroundSize: `${50 * scale}px ${50 * scale}px`,
           backgroundPosition: `${stagePosition.x}px ${stagePosition.y}px`,
-          opacity: 0.05,
+          opacity: 0.02,
         }} />
 
         {elements.length === 0 && (
@@ -1990,20 +2097,20 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         {textEditState && selectedIds.length === 1 && (() => {
           const selectedElement = elements.find(el => el.id === textEditState.elementId);
           if (!selectedElement) return null;
-          
+
           // The element dimensions vs actual image dimensions may differ (object-fit: contain)
           // We need to calculate where the image actually renders within the element
           const elementWidth = selectedElement.width;
           const elementHeight = selectedElement.height;
           const ocrWidth = textEditState.ocrImageSize.width;
           const ocrHeight = textEditState.ocrImageSize.height;
-          
+
           // Calculate how image fits in element (object-fit: contain behavior)
           const elementAspect = elementWidth / elementHeight;
           const imageAspect = ocrWidth / ocrHeight;
-          
+
           let displayWidth: number, displayHeight: number, offsetX: number, offsetY: number;
-          
+
           if (imageAspect > elementAspect) {
             // Image is wider - fit to width, letterbox top/bottom
             displayWidth = elementWidth;
@@ -2017,53 +2124,59 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             offsetX = (elementWidth - displayWidth) / 2;
             offsetY = 0;
           }
-          
+
           // Calculate the actual image position in screen coordinates
           const imageScreenX = (selectedElement.x + offsetX) * scale + stagePosition.x;
           const imageScreenY = (selectedElement.y + offsetY) * scale + stagePosition.y;
           const imageScreenWidth = displayWidth * scale;
           const imageScreenHeight = displayHeight * scale;
-          
-          
+
+          // Scale factor from OCR coordinates to screen coordinates
+          const scaleX = imageScreenWidth / ocrWidth;
+          const scaleY = imageScreenHeight / ocrHeight;
+
           return (
-            <div 
-              className="absolute pointer-events-none z-[50] overflow-hidden"
+            <svg
+              className="absolute pointer-events-none z-[50]"
               style={{
                 left: imageScreenX,
                 top: imageScreenY,
                 width: imageScreenWidth,
                 height: imageScreenHeight,
               }}
+              viewBox={`0 0 ${ocrWidth} ${ocrHeight}`}
+              preserveAspectRatio="none"
             >
               {textEditState.regions.map((region) => {
-                // Calculate position as percentage of OCR image dimensions
-                const left = (region.bbox.x0 / ocrWidth) * 100;
-                const top = (region.bbox.y0 / ocrHeight) * 100;
-                const width = ((region.bbox.x1 - region.bbox.x0) / ocrWidth) * 100;
-                const height = ((region.bbox.y1 - region.bbox.y0) / ocrHeight) * 100;
                 const isSelected = selectedTextRegion?.id === region.id;
-                
+
+                // Use polygon points for perspective-aware bounding box
+                const polygon = region.polygon;
+                if (!polygon || polygon.length < 4) return null;
+
+                // Create SVG polygon points string
+                const points = polygon.map(([x, y]) => `${x},${y}`).join(' ');
+
                 return (
-                  <div
+                  <polygon
                     key={region.id}
+                    points={points}
                     className={cn(
-                      "absolute cursor-pointer border-2 transition-all pointer-events-auto",
-                      isSelected 
-                        ? "border-blue-500 bg-blue-500/20" 
-                        : "border-blue-400/50 hover:border-blue-500 hover:bg-blue-500/10"
+                      "cursor-pointer transition-all pointer-events-auto",
+                      isSelected
+                        ? "fill-blue-500/20 stroke-blue-500"
+                        : "fill-transparent stroke-blue-400/50 hover:stroke-blue-500 hover:fill-blue-500/10"
                     )}
                     style={{
-                      left: `${left}%`,
-                      top: `${top}%`,
-                      width: `${width}%`,
-                      height: `${height}%`,
+                      strokeWidth: 2 / Math.min(scaleX, scaleY), // Keep stroke width consistent regardless of scale
                     }}
                     onClick={() => setSelectedTextRegion(region)}
-                    title={region.text}
-                  />
+                  >
+                    <title>{region.text}</title>
+                  </polygon>
                 );
               })}
-            </div>
+            </svg>
           );
         })()}
 
@@ -2086,8 +2199,8 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
               setElements(prev => [...prev, newEl]);
               setSelectedIds([newEl.id]);
             }}
-            onDelete={() => { 
-              setElements(prev => prev.filter(el => el.id !== selectedElement.id)); 
+            onDelete={() => {
+              setElements(prev => prev.filter(el => el.id !== selectedElement.id));
               setSelectedIds([]);
               setTextEditState(null);
               setSelectedTextRegion(null);
@@ -2105,14 +2218,14 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             onDownloadSvg={async () => {
               try {
                 toast.info('Converting to SVG...');
-                
+
                 // Get base64 data
                 let imageBase64 = selectedElement.src;
                 if (!imageBase64.startsWith('data:')) {
                   toast.error('SVG conversion requires base64 image data');
                   return;
                 }
-                
+
                 // Call backend API for SVG conversion
                 const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/canvas-ai/convert-svg`, {
                   method: 'POST',
@@ -2126,14 +2239,14 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                     mode: 'spline',
                   }),
                 });
-                
+
                 if (!response.ok) {
                   const error = await response.text();
                   throw new Error(error || 'SVG conversion failed');
                 }
-                
+
                 const result = await response.json();
-                
+
                 if (result.success && result.svg) {
                   // Download the SVG
                   const blob = new Blob([result.svg], { type: 'image/svg+xml' });
@@ -2155,8 +2268,8 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             onImageUpdate={(newSrc, newDimensions) => {
               if (newDimensions) {
                 // Update src and resize element to new dimensions
-                handleElementChange(selectedElement.id, { 
-                  src: newSrc, 
+                handleElementChange(selectedElement.id, {
+                  src: newSrc,
                   width: newDimensions.width,
                   height: newDimensions.height,
                 });
@@ -2192,13 +2305,13 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
               // Get the first selected element's size for the merged result
               const selectedEls = elements.filter(el => selectedIds.includes(el.id));
               const firstEl = selectedEls[0];
-              
+
               // Get bounds to position new image to the right
               const bounds = selectedEls.reduce((acc, el) => ({
                 maxX: Math.max(acc.maxX, el.x + el.width),
                 minY: Math.min(acc.minY, el.y),
               }), { maxX: -Infinity, minY: Infinity });
-              
+
               // Create temporary placeholder element - use first image's size
               const tempId = `merge-temp-${Date.now()}`;
               const tempElement: CanvasElement = {
@@ -2212,18 +2325,18 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                 height: firstEl?.height || 400,
                 visible: true,
               };
-              
+
               // KEEP original elements, just add the temp placeholder
               setElements(prev => [...prev, tempElement]);
               setSelectedIds([tempId]);
               setProcessingElementId(tempId); // Show shimmer on it
-              
+
               return tempId;
             }}
             onMergeComplete={(tempId, mergedImageSrc) => {
               // Replace temp element with actual merged image
-              setElements(prev => prev.map(el => 
-                el.id === tempId 
+              setElements(prev => prev.map(el =>
+                el.id === tempId
                   ? { ...el, src: mergedImageSrc, name: 'merged-image.png' }
                   : el
               ));
