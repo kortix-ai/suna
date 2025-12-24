@@ -256,6 +256,10 @@ class ExpandMessageTool(Tool):
         if activation_failures:
             logger.error(f"❌ [INIT TOOLS] Failed to activate some tools: {activation_failures}")
         
+        successfully_activated = [t for t in valid_tool_names if t not in activation_failures]
+        if successfully_activated:
+            await self._save_dynamic_tools_to_metadata(successfully_activated)
+        
         total_guide_size = sum(len(g) for g in guides)
         total_time = (time.time() - start) * 1000
         logger.info(f"✅ [INIT TOOLS] Returned {len(guides)} guide(s) in {total_time:.1f}ms, total size: {total_guide_size:,} chars")
@@ -360,6 +364,40 @@ class ExpandMessageTool(Tool):
         execution_context = MCPExecutionContext(self.thread_manager)
         
         return await mcp_registry.execute_tool(tool_name, args, execution_context)
+
+    async def _save_dynamic_tools_to_metadata(self, new_tool_names: List[str]) -> None:
+        """Save dynamically loaded tools to thread metadata for persistence across runs"""
+        from core.utils.logger import logger
+        
+        try:
+            client = await self.thread_manager.db.client
+            
+            result = await client.table('threads')\
+                .select('metadata')\
+                .eq('thread_id', self.thread_id)\
+                .single()\
+                .execute()
+            
+            if not result.data:
+                logger.warning(f"⚠️  [DYNAMIC TOOLS] Thread {self.thread_id} not found, cannot save tools")
+                return
+            
+            metadata = result.data.get('metadata') or {}
+            
+            existing_tools = set(metadata.get('dynamic_tools', []))
+            updated_tools = list(existing_tools | set(new_tool_names))
+            
+            metadata['dynamic_tools'] = updated_tools
+            
+            await client.table('threads')\
+                .update({'metadata': metadata})\
+                .eq('thread_id', self.thread_id)\
+                .execute()
+            
+            logger.info(f"💾 [DYNAMIC TOOLS] Saved {len(new_tool_names)} tools to thread metadata (total: {len(updated_tools)})")
+            
+        except Exception as e:
+            logger.error(f"❌ [DYNAMIC TOOLS] Failed to save tools to metadata: {e}", exc_info=True)
 
 if __name__ == "__main__":
     import asyncio
