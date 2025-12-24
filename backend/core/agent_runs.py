@@ -875,7 +875,8 @@ async def unified_agent_start(
             raise HTTPException(status_code=400, detail="prompt is required for optimistic mode")
         
         try:
-            import uuid
+            # Note: uuid module is already imported at module level (line 4)
+            # Validate UUID format for thread_id and project_id
             try:
                 uuid.UUID(thread_id)
                 uuid.UUID(project_id)

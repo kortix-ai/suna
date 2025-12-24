@@ -437,7 +437,7 @@ class ThreadManager:
                         .maybe_single()\
                         .execute()
                     
-                    if last_usage_result.data:
+                    if last_usage_result and last_usage_result.data:
                         llm_end_content = last_usage_result.data.get('content', {})
                         if isinstance(llm_end_content, str):
                             llm_end_content = json.loads(llm_end_content)
@@ -484,7 +484,7 @@ class ThreadManager:
                                     .single()\
                                     .execute()
                                 
-                                if latest_msg_result.data:
+                                if latest_msg_result and latest_msg_result.data:
                                     # DB stores content as {"role": "user", "content": "actual text"}
                                     db_content = latest_msg_result.data.get('content', {})
                                     if isinstance(db_content, dict):
@@ -582,7 +582,7 @@ class ThreadManager:
                 try:
                     client = await self.db.client
                     result = await client.table('threads').select('metadata').eq('thread_id', thread_id).single().execute()
-                    if result.data:
+                    if result and result.data:
                         metadata = result.data.get('metadata', {})
                         if metadata.get('cache_needs_rebuild'):
                             force_rebuild = True
