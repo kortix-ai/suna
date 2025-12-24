@@ -419,6 +419,8 @@ class AgentRunner:
             parallel_start = time.time()
             setup_tools_task = asyncio.create_task(self._setup_tools_async())
             await setup_tools_task
+
+            await self._restore_dynamic_tools()
             
             if (hasattr(self.thread_manager, 'mcp_loader') and 
                 self.config.agent_config and 
@@ -732,3 +734,62 @@ class AgentRunner:
         if removed_count > 0:
             logger.info(f"⚡ [MCP JIT] Registry cleaned: {tools_before} → {tools_after} tools ({removed_count} legacy tools removed)")
 
+    async def _restore_dynamic_tools(self) -> None:
+        """Restore dynamically loaded tools from previous turns"""
+        try:
+            restore_start = time.time()
+            
+            result = await self.client.table('threads')\
+                .select('metadata')\
+                .eq('thread_id', self.config.thread_id)\
+                .single()\
+                .execute()
+            
+            if not result.data:
+                logger.debug("📦 [DYNAMIC TOOLS] No thread metadata found")
+                return
+            
+            metadata = result.data.get('metadata') or {}
+            dynamic_tools = metadata.get('dynamic_tools', [])
+            
+            if not dynamic_tools:
+                logger.debug("📦 [DYNAMIC TOOLS] No previously loaded tools to restore")
+                return
+            
+            logger.info(f"📦 [DYNAMIC TOOLS] Restoring {len(dynamic_tools)} previously loaded tools: {dynamic_tools}")
+            
+            from core.jit import JITLoader
+            jit_config = getattr(self.thread_manager, 'jit_config', None)
+            
+            activation_tasks = [
+                JITLoader.activate_tool(tool_name, self.thread_manager, self.config.project_id, jit_config=jit_config)
+                for tool_name in dynamic_tools
+            ]
+            
+            activation_results = await asyncio.gather(*activation_tasks, return_exceptions=True)
+            
+            from core.jit.result_types import ActivationSuccess, ActivationError
+            
+            restored = []
+            failed = []
+            
+            for tool_name, result in zip(dynamic_tools, activation_results):
+                if isinstance(result, ActivationSuccess):
+                    restored.append(tool_name)
+                else:
+                    failed.append(tool_name)
+                    if isinstance(result, Exception):
+                        logger.warning(f"⚠️  [DYNAMIC TOOLS] Failed to restore '{tool_name}': {result}")
+                    elif isinstance(result, ActivationError):
+                        logger.warning(f"⚠️  [DYNAMIC TOOLS] {result.to_user_message()}")
+            
+            elapsed_ms = (time.time() - restore_start) * 1000
+            
+            if restored:
+                logger.info(f"✅ [DYNAMIC TOOLS] Restored {len(restored)} tools in {elapsed_ms:.1f}ms: {restored}")
+            
+            if failed:
+                logger.warning(f"⚠️  [DYNAMIC TOOLS] Failed to restore {len(failed)} tools: {failed}")
+        
+        except Exception as e:
+            logger.error(f"❌ [DYNAMIC TOOLS] Failed to restore tools: {e}", exc_info=True)
