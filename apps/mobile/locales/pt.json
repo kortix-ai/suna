@@ -782,6 +782,9 @@
     "upgradeRequired": "Upgrade Necessário",
     "upgradeRequiredMessage": "Compartilhar conversas está disponível em planos pagos. Faça upgrade para desbloquear esta funcionalidade.",
     "upgrade": "Fazer Upgrade",
+    "share": "Compartilhar",
+    "files": "Arquivos",
+    "delete": "Excluir",
     "shareThread": "Compartilhar Conversa",
     "shareThreadUpgrade": "Compartilhar Conversa (Upgrade)",
     "availableOnPaidPlans": "Disponível em planos pagos",
@@ -789,6 +792,7 @@
     "manageFiles": "Gerenciar Arquivos",
     "viewManageAttachments": "Ver e gerenciar anexos",
     "deleteThread": "Excluir Conversa",
+    "deleteConfirm": "Tem certeza de que deseja excluir esta conversa? Esta ação não pode ser desfeita.",
     "permanentlyDelete": "Excluir permanentemente esta conversa"
   },
   "triggers": {

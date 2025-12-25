@@ -780,6 +780,9 @@
     "upgradeRequired": "アップグレードが必要",
     "upgradeRequiredMessage": "スレッドの共有は有料プランで利用可能です。この機能のロックを解除するにはアップグレードしてください。",
     "upgrade": "アップグレード",
+    "share": "共有",
+    "files": "ファイル",
+    "delete": "削除",
     "shareThread": "スレッドを共有",
     "shareThreadUpgrade": "スレッドを共有（アップグレード）",
     "availableOnPaidPlans": "有料プランで利用可能",
@@ -787,6 +790,7 @@
     "manageFiles": "ファイルを管理",
     "viewManageAttachments": "添付ファイルを表示・管理",
     "deleteThread": "スレッドを削除",
+    "deleteConfirm": "このスレッドを削除しますか？この操作は取り消せません。",
     "permanentlyDelete": "この会話を完全に削除"
   },
   "triggers": {

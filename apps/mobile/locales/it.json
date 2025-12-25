@@ -781,6 +781,9 @@
     "upgradeRequired": "Upgrade Richiesto",
     "upgradeRequiredMessage": "La condivisione dei thread è disponibile nei piani a pagamento. Aggiorna per sbloccare questa funzione.",
     "upgrade": "Aggiorna",
+    "share": "Condividi",
+    "files": "File",
+    "delete": "Elimina",
     "shareThread": "Condividi Thread",
     "shareThreadUpgrade": "Condividi Thread (Upgrade)",
     "availableOnPaidPlans": "Disponibile nei piani a pagamento",
@@ -788,6 +791,7 @@
     "manageFiles": "Gestisci File",
     "viewManageAttachments": "Visualizza e gestisci allegati",
     "deleteThread": "Elimina Thread",
+    "deleteConfirm": "Sei sicuro di voler eliminare questo thread? Questa azione non può essere annullata.",
     "permanentlyDelete": "Elimina definitivamente questa conversazione"
   },
   "triggers": {
