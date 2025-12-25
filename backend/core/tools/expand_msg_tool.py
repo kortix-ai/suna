@@ -337,10 +337,28 @@ class ExpandMessageTool(Tool):
         }
         
         friendly_status = f'Executing {tool_name}'
-        for prefix, label in integration_labels.items():
-            if tool_name.startswith(prefix):
-                friendly_status = label
-                break
+        
+        from core.agentpress.mcp_registry import get_mcp_registry
+        mcp_registry = get_mcp_registry()
+        tool_info = mcp_registry.get_tool_info(tool_name)
+        
+        if tool_info and tool_info.toolkit_slug:
+             toolkit_name = tool_info.toolkit_slug.replace('_', ' ').replace('-', ' ').title()
+             friendly_status = f"Accessing {toolkit_name}"
+        else:
+             integration_labels = {
+                'TWITTER_': 'Accessing Twitter',
+                'GMAIL_': 'Accessing Gmail',  
+                'SLACK_': 'Accessing Slack',
+                'GITHUB_': 'Accessing GitHub',
+                'GOOGLESHEETS_': 'Accessing Google Sheets',
+                'LINEAR_': 'Accessing Linear',
+                'NOTION_': 'Accessing Notion'
+             }
+             for prefix, label in integration_labels.items():
+                if tool_name.startswith(prefix):
+                    friendly_status = label
+                    break
         
         logger.info(f"🔧 [MCP_ACTION] {friendly_status}")
         from core.agentpress.mcp_registry import get_mcp_registry, MCPExecutionContext
@@ -348,7 +366,6 @@ class ExpandMessageTool(Tool):
         mcp_registry = get_mcp_registry()
         mcp_loader = getattr(self.thread_manager, 'mcp_loader', None)
         if mcp_loader:
-            # Always sync registry with current request's mcp_loader to avoid race conditions
             loader_tool_count = len(mcp_loader.tool_map) if mcp_loader.tool_map else 0
             registry_tool_count = len(mcp_registry._tools)
             
@@ -366,7 +383,6 @@ class ExpandMessageTool(Tool):
         return await mcp_registry.execute_tool(tool_name, args, execution_context)
 
     async def _save_dynamic_tools_to_metadata(self, new_tool_names: List[str]) -> None:
-        """Save dynamically loaded tools to thread metadata for persistence across runs"""
         from core.utils.logger import logger
         
         try:
