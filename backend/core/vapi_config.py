@@ -4,10 +4,12 @@ from dataclasses import dataclass, field
 
 @dataclass
 class VoiceConfig:
-    provider: str = "azure"
-    voice_id: str = "multilingual-auto"
+    provider: str = "11labs"
+    voice_id: str = "EXAVITQu4vr4xnSDxMaL"
     settings: Dict[str, Any] = field(default_factory=lambda: {
-        "speed": 1.0
+        "speed": 1.0,
+        "stability": 0.5,
+        "similarity_boost": 0.75
     })
 
 @dataclass
@@ -40,20 +42,16 @@ class VapiConfig:
     max_duration_seconds: int = 600
     
     voice_options: Dict[str, Dict[str, str]] = field(default_factory=lambda: {
+        "11labs": {
+            "EXAVITQu4vr4xnSDxMaL": "Sarah/Bella (Female, Multilingual - Default)"
+        },
         "azure": {
-            "multilingual-auto": "Automatic Multilingual (Recommended)",
+            "multilingual-auto": "Automatic Multilingual",
             "en-US-AriaNeural": "Aria (Female, US English)",
             "en-US-GuyNeural": "Guy (Male, US English)",
             "es-ES-ElviraNeural": "Elvira (Female, Spanish)",
             "fr-FR-DeniseNeural": "Denise (Female, French)",
-            "de-DE-KatjaNeural": "Katja (Female, German)",
-            "it-IT-ElsaNeural": "Elsa (Female, Italian)",
-            "pt-BR-FranciscaNeural": "Francisca (Female, Portuguese)",
-            "ja-JP-NanamiNeural": "Nanami (Female, Japanese)",
-            "zh-CN-XiaoxiaoNeural": "Xiaoxiao (Female, Chinese)"
-        },
-        "11labs": {
-            "multilingual": "Multilingual Voice (Auto-adapts)"
+            "de-DE-KatjaNeural": "Katja (Female, German)"
         },
         "playht": {
             "jennifer-playht": "Jennifer (Female, American)",
@@ -176,8 +174,8 @@ Your goals are:
 DEFAULT_FIRST_MESSAGE = "Hello! I'm an AI assistant and I can communicate in multiple languages. How can I help you today?"
 
 VOICE_PROVIDERS = {
-    "azure": "Azure (Recommended for Multilingual)",
     "11labs": "ElevenLabs",
+    "azure": "Azure",
     "playht": "PlayHT",
     "deepgram": "Deepgram",
     "openai": "OpenAI"
