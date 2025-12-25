@@ -3,6 +3,15 @@ import { CircleDashed } from 'lucide-react';
 import { getToolIcon, getUserFriendlyToolName, extractPrimaryParam } from '@/components/thread/utils';
 import { AppIcon } from '../tool-views/shared/AppIcon';
 
+// Media generation tools that show shimmer preview
+const MEDIA_GENERATION_TOOLS = new Set([
+    'image-edit-or-generate',
+    'image_edit_or_generate',
+    'Generating Image',
+    'Editing Image', 
+    'Generate Media',
+]);
+
 // Define tool categories for different streaming behaviors
 const STREAMABLE_TOOLS = {
     // File operation tools - show full content streaming
@@ -259,6 +268,56 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
 
     if (!toolName) {
         return null;
+    }
+
+    // Check if this is a media generation tool - show shimmer card
+    const isMediaGenTool = MEDIA_GENERATION_TOOLS.has(rawToolName || '') || MEDIA_GENERATION_TOOLS.has(toolName);
+    
+    if (isMediaGenTool) {
+        const IconComponent = getToolIcon(rawToolName || '');
+        const blobColors = [
+            'from-purple-300/60 to-pink-300/60',
+            'from-blue-300/60 to-cyan-300/60',
+            'from-emerald-300/60 to-teal-300/60',
+            'from-orange-300/60 to-amber-300/60',
+            'from-rose-300/60 to-red-300/60',
+            'from-indigo-300/60 to-violet-300/60',
+        ];
+        const colorClass = blobColors[Math.floor(Math.random() * blobColors.length)];
+
+        return (
+            <div className="my-1.5 space-y-2">
+                {/* Tool button - exactly like regular tools */}
+                <button
+                    onClick={() => onToolClick?.(messageId ?? null, toolName, effectiveToolCall?.tool_call_id)}
+                    className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
+                >
+                    <AppIcon toolCall={effectiveToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground shrink-0" fallbackIcon={IconComponent} />
+                    <span className="font-mono text-xs text-foreground">Generate Media</span>
+                    <CircleDashed className="h-3.5 w-3.5 text-muted-foreground shrink-0 animate-spin ml-1" />
+                </button>
+
+                {/* Shimmer below - outside wrapper */}
+                <div className="relative w-80 aspect-square rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-700/50">
+                    <div className={`absolute inset-0 bg-gradient-to-br ${colorClass} blur-2xl scale-150`} />
+                    <div className="absolute inset-0 bg-zinc-100/30 dark:bg-zinc-900/30 backdrop-blur-sm" />
+                    <div
+                        className="absolute inset-0"
+                        style={{
+                            background: 'linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.4) 50%, transparent 70%)',
+                            backgroundSize: '200% 100%',
+                            animation: 'media-shimmer 1.8s ease-in-out infinite',
+                        }}
+                    />
+                    <style>{`
+                        @keyframes media-shimmer {
+                            0% { background-position: 200% 0; }
+                            100% { background-position: -200% 0; }
+                        }
+                    `}</style>
+                </div>
+            </div>
+        );
     }
 
     // Check if this is a streamable tool

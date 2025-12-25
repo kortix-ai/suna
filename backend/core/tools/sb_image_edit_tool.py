@@ -45,73 +45,56 @@ def parse_image_paths(image_path: Optional[str | list[str]]) -> list[str]:
     return [trimmed] if trimmed else []
 
 @tool_metadata(
-    display_name="Image & Video Editor",
-    description="Generate and edit images/videos with AI assistance",
+    display_name="Generate Media",
+    description="Generate and edit images/videos with AI",
     icon="Wand",
     color="bg-purple-100 dark:bg-purple-800/50",
     weight=50,
     visible=True,
     usage_guide="""
-### IMAGE & VIDEO GENERATION
+### MEDIA GENERATION (Images & Videos)
 
-**🚨 CRITICAL: WHEN USER UPLOADS AN IMAGE, USE IT!**
-If user uploads/attaches an image file, you MUST use it as `image_path`:
+**AUTO-DETECTION:** Mode is automatically determined:
+- `image_path` provided → edits/transforms that image
+- `video_options` provided → generates video
+- Neither → generates new image from scratch
+
+**GENERATE NEW IMAGE (no input image):**
 ```python
-# User uploaded: /workspace/uploads/image.png
-# CORRECT - use the uploaded image:
+image_edit_or_generate(prompt="A futuristic cityscape at sunset")
+```
+
+**EDIT/TRANSFORM EXISTING IMAGE (provide image_path):**
+```python
+# User uploaded /workspace/uploads/image.png → use it!
 image_edit_or_generate(
-    mode="edit",  # or mode="video" for video
-    prompt="Make the sky purple",
-    image_path="/workspace/uploads/image.png"  # USE THE UPLOADED FILE!
+    prompt="Add a red hat to the person", 
+    image_path="/workspace/uploads/image.png"
 )
 ```
 
-**GENERATE MODE (Creating NEW images from scratch - NO input image):**
+**🎬 GENERATE VIDEO (include video_options):**
 ```python
-image_edit_or_generate(mode="generate", prompt="A futuristic cityscape at sunset")
-```
-
-**EDIT MODE (Modifying an EXISTING image - requires image_path):**
-```python
+# Text-to-video (no input image)
 image_edit_or_generate(
-    mode="edit", 
-    prompt="Add a red hat", 
-    image_path="uploads/image.png"  # path to existing image
-)
-```
-
-**🎬 VIDEO MODE (AI Video Generation):**
-```python
-# Text-to-video (no image)
-image_edit_or_generate(
-    mode="video",
-    prompt="An astronaut in a spacecraft...",
+    prompt="An astronaut floating in space...",
     video_options={"duration": 5, "generate_audio": True}
 )
 
-# Image-to-video (ANIMATE an uploaded/existing image)
+# Image-to-video (animate an uploaded image)
 image_edit_or_generate(
-    mode="video",
-    prompt="The astronaut slowly turns their head",
-    image_path="uploads/image.png",  # START FRAME - the image to animate!
-    video_options={
-        "duration": 5,
-        "generate_audio": True,
-        "last_frame_image": "end_frame.png"  # optional end frame
-    }
+    prompt="The person slowly turns their head",
+    image_path="/workspace/uploads/photo.png",  # Image to animate
+    video_options={"duration": 5, "generate_audio": True}
 )
 ```
 
 **VIDEO OPTIONS:**
 - `duration`: 2-12 seconds (default: 5)
 - `aspect_ratio`: "16:9", "9:16", "1:1" (ignored if image provided)
-- `fps`: frames per second (default: 24)
-- `camera_fixed`: lock camera (default: false)
 - `generate_audio`: generate audio (default: false)
 
-**MANDATORY RULES:**
-1. **USER UPLOADS IMAGE → USE IT AS image_path** (mode="edit" or mode="video")
-2. Use mode="generate" ONLY when creating from scratch with NO input image
+**RULE: If user uploads an image, use it as image_path!**
 3. Use mode="edit" to modify/transform existing images
 4. Use mode="video" for video generation (with or without input image)
 5. REMEMBER previous generated filenames for follow-up operations
@@ -130,15 +113,10 @@ class SandboxImageEditTool(SandboxToolsBase):
             "type": "function",
             "function": {
                 "name": "image_edit_or_generate",
-                "description": "Generate/edit images or generate videos. IMPORTANT: If user uploaded/attached an image, you MUST use mode='edit' with image_path pointing to that uploaded file to use it as input! Only use mode='generate' when creating from scratch with NO input image.",
+                "description": "Generate images/videos with AI. Behavior is AUTO-DETECTED: if image_path provided → edit/transform that image. If video_options provided → generate video. Otherwise → generate new image from scratch.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "mode": {
-                            "type": "string",
-                            "enum": ["generate", "edit", "video"],
-                            "description": "CRITICAL: 'generate' = create from scratch (NO input image). 'edit' = modify/transform an existing image (REQUIRES image_path). 'video' = generate video (optionally from image). If user uploaded an image, use 'edit' or 'video' with image_path!",
-                        },
                         "prompt": {
                             "oneOf": [
                                 {"type": "string"},
@@ -151,24 +129,23 @@ class SandboxImageEditTool(SandboxToolsBase):
                                 {"type": "string"},
                                 {"type": "array", "items": {"type": "string"}}
                             ],
-                            "description": "IMPORTANT: Path to input image file. If user uploaded an image (e.g. /workspace/uploads/image.png), PUT THAT PATH HERE! Required for 'edit' mode, optional for 'video' mode (animates the image).",
+                            "description": "Path to input image. If user uploaded an image (e.g. /workspace/uploads/image.png), provide that path here to use it as input for editing or video generation.",
                         },
                         "video_options": {
                             "type": "object",
-                            "description": "(video mode) Options: {\"duration\": 5, \"aspect_ratio\": \"16:9\", \"fps\": 24, \"generate_audio\": true, \"camera_fixed\": false, \"last_frame_image\": \"path/to/end.png\"}",
+                            "description": "Include this to generate VIDEO instead of image. Options: {\"duration\": 5, \"aspect_ratio\": \"16:9\", \"fps\": 24, \"generate_audio\": true, \"camera_fixed\": false, \"last_frame_image\": \"path/to/end.png\"}",
                         },
                         "canvas_path": {"type": "string", "description": "Optional: Canvas file path to auto-add result."},
                         "canvas_x": {"type": "number", "description": "Optional: X position on canvas"},
                         "canvas_y": {"type": "number", "description": "Optional: Y position on canvas"},
                     },
-                    "required": ["mode", "prompt"],
+                    "required": ["prompt"],
                 },
             },
         }
     )
     async def image_edit_or_generate(
         self,
-        mode: str,
         prompt: str | list[str],
         image_path: Optional[str | list[str]] = None,
         video_options: Optional[dict] = None,
@@ -179,6 +156,19 @@ class SandboxImageEditTool(SandboxToolsBase):
         """Generate/edit images or generate videos using AI via Replicate."""
         try:
             await self._ensure_sandbox()
+            
+            # Auto-detect mode based on parameters
+            # video_options → video mode
+            # image_path → edit mode  
+            # neither → generate mode
+            if video_options is not None:
+                mode = "video"
+            elif image_path is not None:
+                mode = "edit"
+            else:
+                mode = "generate"
+            
+            logger.info(f"Auto-detected mode: {mode} (image_path={image_path is not None}, video_options={video_options is not None})")
             
             # Check if mock mode is enabled (for development/testing)
             use_mock = os.getenv("MOCK_IMAGE_GENERATION", "false").lower() == "true"

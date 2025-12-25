@@ -148,6 +148,19 @@ export function extractImageEditGenerateData(
   const args = toolCall.arguments || {};
   const output = toolResult?.output;
   
+  // Auto-detect mode based on parameters (same logic as backend)
+  // video_options → video, image_path → edit, neither → generate
+  let detectedMode: 'generate' | 'edit' | 'video' | null = args.mode || null;
+  if (!detectedMode) {
+    if (args.video_options) {
+      detectedMode = 'video';
+    } else if (args.image_path) {
+      detectedMode = 'edit';
+    } else {
+      detectedMode = 'generate';
+    }
+  }
+  
   // Extract prompts - handle array (batch) or string (single)
   const promptArg = args.prompt;
   let prompts: string[] = [];
@@ -219,7 +232,7 @@ export function extractImageEditGenerateData(
   }
 
   return {
-    mode: args.mode || null,
+    mode: detectedMode,
     prompt,
     prompts,
     inputImagePaths,

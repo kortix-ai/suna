@@ -16,6 +16,7 @@ import { PromptExamples } from '@/components/shared/prompt-examples';
 import type { Project } from '@/lib/api/threads';
 import { AppIcon } from '@/components/thread/tool-views/shared/AppIcon';
 import { ApifyApprovalInline } from '@/components/thread/content/ApifyApprovalInline';
+import { MediaGenerationInline } from '@/components/thread/content/MediaGenerationInline';
 
 export interface AssistantMessageRendererProps {
   message: UnifiedMessage;
@@ -293,6 +294,27 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
       contentParts.push(renderAskToolCall(normalizedToolCall, index, props));
     } else if (toolName === 'complete') {
       contentParts.push(renderCompleteToolCall(normalizedToolCall, index, props));
+    } else if (toolName === 'image-edit-or-generate') {
+      // Find matching tool result for this call
+      const toolResult = toolResults.find(tr => {
+        const trMeta = safeJsonParse<ParsedMetadata>(tr.metadata, {});
+        return trMeta.tool_call_id === toolCall.tool_call_id;
+      });
+      
+      // Extract result data
+      const resultMeta = toolResult ? safeJsonParse<ParsedMetadata>(toolResult.metadata, {}) : null;
+      const resultData = resultMeta?.result;
+      
+      contentParts.push(
+        <MediaGenerationInline
+          key={`media-gen-${index}`}
+          toolCall={normalizedToolCall}
+          toolResult={resultData}
+          onToolClick={() => props.onToolClick(message.message_id, toolName, toolCall.tool_call_id)}
+          sandboxId={props.sandboxId}
+          project={props.project}
+        />
+      );
     } else {
       contentParts.push(renderRegularToolCall(normalizedToolCall, index, toolName, props));
     }
