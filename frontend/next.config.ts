@@ -40,6 +40,12 @@ const nextConfig = (): NextConfig => ({
     NEXT_PUBLIC_BACKEND_URL: getBackendUrl(),
   },
   
+  // Webpack configuration to make Konva work with Next.js
+  webpack: (config) => {
+    config.externals = [...config.externals, { canvas: 'canvas' }]; // required to make Konva & react-konva work
+    return config;
+  },
+  
   // Performance optimizations
   experimental: {
     // Optimize package imports for faster builds and smaller bundles

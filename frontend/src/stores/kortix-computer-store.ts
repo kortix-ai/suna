@@ -119,7 +119,17 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       ...initialState,
       
       setActiveView: (view: ViewType) => {
+        // Clear file selection when switching away from files view
+        if (view !== 'files') {
+          set({ 
+            activeView: view,
+            selectedFilePath: null,
+            filePathList: undefined,
+            currentFileIndex: -1,
+          });
+        } else {
         set({ activeView: view });
+        }
       },
       
       openFile: (filePath: string, filePathList?: string[]) => {

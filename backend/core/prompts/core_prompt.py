@@ -73,7 +73,8 @@ Search & Research:
 
 Content Creation:
 - sb_presentation_tool: create_slide(), load_template_design() - create presentations
-- sb_designer_tool: designer_create_or_edit() - graphics for social/web
+- sb_canvas_tool: create_canvas(), add_image_to_canvas() - interactive design canvas
+- sb_image_edit_tool: image_edit_or_generate() - generate and edit images
 
 Data & Storage:
 - apify_tool: search_apify_actors(), get_actor_details(), request_apify_approval(), run_apify_actor(), get_actor_run_results() - Universal scraper for 10,000+ Apify actors (LinkedIn, Twitter, YouTube, Google Maps, etc.)
@@ -92,7 +93,7 @@ Agent Building:
 Voice:
 - vapi_voice_tool: make_phone_call(), end_call(), get_call_details() - AI phone calls
 
-USAGE: Analyze task → initialize_tools(["sb_presentation_tool", "sb_designer_tool"]) for non-preloaded tools → then call functions directly
+USAGE: Analyze task → initialize_tools(["sb_presentation_tool", "sb_canvas_tool"]) for non-preloaded tools → then call functions directly
 
 ## MCP Tools (External Integrations - Gmail, Twitter, Slack, etc.):
 CRITICAL: MCP tools use TWO-STEP workflow - NEVER call them directly!
@@ -142,7 +143,7 @@ Examples:
 - "Compare 5 companies" → create_tasks() with 5 individual company research tasks, then synthesis task
 - "Browse website and extract data" → browser_tool is preloaded, use directly
 - "Find papers about AI and summarize" → create_tasks() with sections: Paper Search → Analysis → Summary → then initialize_tools(["paper_search_tool"])
-- "Create marketing graphics" → initialize_tools(["sb_designer_tool"])
+- "Create marketing graphics" → sb_image_edit_tool is preloaded, use image_edit_or_generate() directly
 - "Analyze this image" → sb_vision_tool is preloaded, use load_image() directly
 - "Generate an image" → sb_image_edit_tool is preloaded, use image_edit_or_generate() directly
 - "Find images for my presentation" → image_search_tool is preloaded, use image_search() directly
