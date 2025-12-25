@@ -37,11 +37,12 @@ function ShimmerBox({ className }: { className?: string }) {
   const colorClass = useMemo(() => BLOB_COLORS[Math.floor(Math.random() * BLOB_COLORS.length)], []);
 
   return (
-    <div className={cn("relative rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-700/50", className)}>
-      <div className={`absolute inset-0 bg-gradient-to-br ${colorClass} blur-2xl scale-150`} />
-      <div className="absolute inset-0 bg-zinc-100/30 dark:bg-zinc-900/30 backdrop-blur-sm" />
+    <div className={cn("relative rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-700/50", className)}>
+      {/* Background blob - use inset-[-50%] instead of scale to prevent overflow */}
+      <div className={`absolute inset-[-50%] bg-gradient-to-br ${colorClass} blur-2xl rounded-2xl`} />
+      <div className="absolute inset-0 bg-zinc-100/30 dark:bg-zinc-900/30 backdrop-blur-sm rounded-2xl" />
       <div
-        className="absolute inset-0"
+        className="absolute inset-0 rounded-2xl"
         style={{
           background: 'linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.4) 50%, transparent 70%)',
           backgroundSize: '200% 100%',
@@ -71,7 +72,7 @@ function ImagePreview({ imagePath, sandboxId }: { imagePath: string; sandboxId?:
     <img
       src={imageUrl}
       alt={imagePath}
-      className="w-full rounded-lg border border-neutral-200 dark:border-neutral-700/50 object-cover aspect-video"
+      className="w-full rounded-2xl border border-neutral-200 dark:border-neutral-700/50 object-cover aspect-video"
     />
   );
 }
@@ -102,7 +103,7 @@ export function CanvasToolView({
     error
   } = extractedData || {};
 
-  const toolName = toolCall?.function_name || toolCall?.name || '';
+  const toolName = toolCall?.function_name || '';
   const args = toolCall?.arguments || {};
 
   // Determine what action was taken
