@@ -21,24 +21,20 @@ from core.billing.credits.media_integration import media_billing
 router = APIRouter(prefix="/canvas-ai", tags=["Canvas AI"])
 
 # Model configurations
-# Primary: Replicate (known fixed pricing)
-# Fallback: OpenRouter (token-based pricing)
 MODELS = {
     "replicate-gpt": "openai/gpt-image-1.5",  # GPT Image via Replicate
-    "replicate-nano-banana": "google/nano-banana",  # Gemini Flash via Replicate (PRIMARY)
-    "replicate-nano-banana-pro": "google/nano-banana-pro",  # Gemini Pro via Replicate
-    "gemini-pro": "google/gemini-3-pro-image-preview",  # OpenRouter fallback
-    "gemini-flash": "google/gemini-2.5-flash-image",  # OpenRouter fallback
+    "gemini-pro": "google/gemini-3-pro-image-preview",  # OpenRouter
+    "gemini-flash": "google/gemini-2.5-flash-image",  # OpenRouter - fast & reliable
     "replicate-remove-bg": "851-labs/background-remover",
     "replicate-upscale": "recraft-ai/recraft-crisp-upscale",
 }
 
-# OpenRouter config (fallback only)
+# OpenRouter config
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-# Default model - Replicate Nano Banana (Gemini Flash) for speed and known pricing
-DEFAULT_MODEL = "replicate-nano-banana"
+# Default model - Gemini Flash via OpenRouter (fast, reliable, ~$0.04/image)
+DEFAULT_MODEL = "gemini-flash"
 
 
 class ImageEditRequest(BaseModel):
@@ -99,13 +95,11 @@ class OCRResponse(BaseModel):
 
 
 # Model mapping per action - backend decides which model to use
-# Primary: Replicate nano-banana (known fixed pricing)
-# Fallback: OpenRouter gemini-flash (token-based)
 ACTION_MODELS = {
-    "remove_bg": "replicate-remove-bg",        # Replicate 851-labs/background-remover
-    "upscale": "replicate-upscale",            # Replicate recraft-ai/recraft-crisp-upscale
-    "edit_text": "replicate-nano-banana",      # Replicate Nano Banana (Gemini Flash)
-    "mark_edit": "replicate-nano-banana",      # Replicate Nano Banana (Gemini Flash)
+    "remove_bg": "replicate-remove-bg",   # Replicate 851-labs/background-remover
+    "upscale": "replicate-upscale",       # Replicate recraft-ai/recraft-crisp-upscale
+    "edit_text": "gemini-flash",          # OpenRouter Gemini Flash (fast & reliable)
+    "mark_edit": "gemini-flash",          # OpenRouter Gemini Flash (fast & reliable)
 }
 
 
@@ -327,62 +321,6 @@ async def process_with_replicate_upscale(image_bytes: bytes, mime_type: str) -> 
         raise Exception(f"Upscale failed: {str(e)}")
 
 
-async def process_with_replicate_nano_banana(
-    image_bytes: bytes, 
-    mime_type: str, 
-    prompt: str, 
-    model: str = "google/nano-banana",
-    resolution: str = "2K"  # For pro model: "1K", "2K", "4K"
-) -> str:
-    """
-    Process image using Google Nano Banana (Gemini) via Replicate.
-    Primary choice for edit_text and mark_edit - known fixed pricing.
-    Falls back to OpenRouter Gemini on failure.
-    
-    Models:
-    - google/nano-banana: Gemini Flash (fast, cheap) - $0.039/image
-    - google/nano-banana-pro: Gemini Pro (higher quality) - $0.15 (1K/2K), $0.30 (4K)
-    """
-    _get_replicate_token()
-    
-    # Convert bytes to data URL for image_input array
-    image_b64 = base64.b64encode(image_bytes).decode('utf-8')
-    image_data_url = f"data:{mime_type};base64,{image_b64}"
-    
-    logger.info(f"Calling Replicate {model} for image editing")
-    
-    try:
-        # Build input params based on model
-        input_params = {
-            "prompt": prompt,
-            "image_input": [image_data_url],  # Array of images
-            "aspect_ratio": "match_input_image",
-            "output_format": "png",
-        }
-        
-        # Pro model has additional options
-        if model == "google/nano-banana-pro":
-            input_params["resolution"] = resolution
-            input_params["safety_filter_level"] = "block_only_high"
-        
-        output = replicate.run(model, input=input_params)
-        
-        # Output can be FileOutput or list
-        output_list = list(output) if hasattr(output, '__iter__') and not isinstance(output, (str, bytes)) else [output]
-        
-        if output_list and len(output_list) > 0:
-            return _replicate_output_to_base64(output_list[0], "png")
-        
-        raise Exception("No output from Nano Banana model")
-        
-    except Exception as e:
-        logger.warning(f"Replicate Nano Banana failed: {e}, falling back to OpenRouter Gemini")
-        
-        # Fallback to OpenRouter Gemini
-        fallback_model = "gemini-flash" if model == "google/nano-banana" else "gemini-pro"
-        return await process_with_gemini(image_bytes, mime_type, prompt, fallback_model)
-
-
 @router.post("/process", response_model=ImageEditResponse)
 async def process_image(
     request: ImageEditRequest,
@@ -447,18 +385,12 @@ async def process_image(
             result_base64 = await process_with_replicate_upscale(image_bytes, mime_type)
         elif model_key == "replicate-gpt":
             result_base64 = await process_with_replicate_gpt(image_bytes, mime_type, prompt)
-        elif model_key == "replicate-nano-banana":
-            # Primary: Replicate Nano Banana (Gemini Flash) - known fixed pricing
-            result_base64 = await process_with_replicate_nano_banana(image_bytes, mime_type, prompt, "google/nano-banana")
-        elif model_key == "replicate-nano-banana-pro":
-            # Primary: Replicate Nano Banana Pro (Gemini Pro) - known fixed pricing
-            result_base64 = await process_with_replicate_nano_banana(image_bytes, mime_type, prompt, "google/nano-banana-pro")
         elif model_key in ["gemini-pro", "gemini-flash"]:
-            # Fallback: OpenRouter Gemini
+            # OpenRouter Gemini - fast & reliable
             result_base64 = await process_with_gemini(image_bytes, mime_type, prompt, model_key)
         else:
-            # Default: Replicate Nano Banana (Gemini Flash) - known pricing
-            result_base64 = await process_with_replicate_nano_banana(image_bytes, mime_type, prompt, "google/nano-banana")
+            # Default: OpenRouter Gemini Flash
+            result_base64 = await process_with_gemini(image_bytes, mime_type, prompt, "gemini-flash")
         
         # BILLING: Deduct credits for successful processing
         # Determine the actual Replicate/OpenRouter model used

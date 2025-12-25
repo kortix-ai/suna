@@ -69,22 +69,6 @@ REPLICATE_PRICING: Dict[str, Dict] = {
         "cost_usd": Decimal("0.01"),
         "description": "Flux Schnell Image Generation"
     },
-    
-    # Google Nano Banana (Gemini Flash via Replicate) - fast & cheap
-    "google/nano-banana": {
-        "type": "per_image",
-        "cost_usd": Decimal("0.039"),  # Flash pricing
-        "description": "Gemini Flash Image"
-    },
-    
-    # Google Nano Banana Pro (Gemini Pro via Replicate)
-    # 1K/2K = $0.15, 4K = $0.30 - using 1K/2K as default
-    "google/nano-banana-pro": {
-        "type": "per_image",
-        "cost_usd": Decimal("0.15"),  # Default 1K/2K resolution
-        "cost_usd_4k": Decimal("0.30"),  # 4K resolution
-        "description": "Gemini Pro Image"
-    },
 }
 
 # OpenRouter model pricing (USD per image) - FALLBACK only
