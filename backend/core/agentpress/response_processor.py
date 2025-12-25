@@ -1862,10 +1862,29 @@ class ResponseProcessor:
 
             tool_fn = available_functions.get(function_name)
             if not tool_fn:
-                mcp_patterns = ['TWITTER_', 'GMAIL_', 'SLACK_', 'GITHUB_', 'LINEAR_', 
-                               'NOTION_', 'GOOGLESHEETS_', 'COMPOSIO_']
-                is_mcp_tool = any(pattern in function_name for pattern in mcp_patterns)
+                is_mcp_tool = False
                 
+                if self.thread_manager and hasattr(self.thread_manager, 'mcp_loader'):
+                    mcp_loader = self.thread_manager.mcp_loader
+                    if mcp_loader and mcp_loader.tool_map and function_name in mcp_loader.tool_map:
+                        logger.debug(f"✅ [MCP DISCOVERY] Found '{function_name}' in thread-local MCP loader")
+                        is_mcp_tool = True
+                
+                if not is_mcp_tool:
+                    from core.agentpress.mcp_registry import get_mcp_registry, init_mcp_registry_from_loader
+                    mcp_registry = get_mcp_registry()
+                    
+                    if self.thread_manager and hasattr(self.thread_manager, 'mcp_loader'):
+                         mcp_loader = self.thread_manager.mcp_loader
+                         if mcp_loader:
+                             if not mcp_registry._initialized or (len(mcp_loader.tool_map) if mcp_loader.tool_map else 0) > len(mcp_registry._tools):
+                                 init_mcp_registry_from_loader(mcp_loader)
+                                 mcp_registry._initialized = True
+                    
+                    if mcp_registry.is_tool_available(function_name):
+                        logger.debug(f"✅ [MCP DISCOVERY] Found '{function_name}' in global MCP registry")
+                        is_mcp_tool = True
+
                 if is_mcp_tool:
                     logger.info(f"🔀 [AUTO REDIRECT] Redirecting MCP tool '{function_name}' through execute_mcp_tool wrapper")
                     execute_mcp_tool_fn = available_functions.get('execute_mcp_tool')
@@ -2038,12 +2057,20 @@ class ResponseProcessor:
             else:
                 logger.error(f"❌ [JIT AUTO] Regular tool activation failed: {result.to_user_message()}")
 
-        # CRITICAL: MCP tools should NOT be auto-activated into main registry
-        # They must use the isolated MCP registry via execute_tool wrapper
-        mcp_patterns = ['TWITTER_', 'GMAIL_', 'SLACK_', 'GITHUB_', 'LINEAR_', 
-                       'NOTION_', 'GOOGLESHEETS_', 'COMPOSIO_']
-        is_mcp_tool = any(pattern in function_name for pattern in mcp_patterns)
+        is_mcp_tool = False
         
+        if thread_manager and hasattr(thread_manager, 'mcp_loader'):
+             mcp_loader = thread_manager.mcp_loader
+             if mcp_loader and mcp_loader.tool_map and function_name in mcp_loader.tool_map:
+                 is_mcp_tool = True
+        
+
+        if not is_mcp_tool:
+            from core.agentpress.mcp_registry import get_mcp_registry
+            mcp_registry = get_mcp_registry()
+            if mcp_registry.is_tool_available(function_name):
+                is_mcp_tool = True
+
         if is_mcp_tool:
             logger.info(f"🔒 [ARCH PROTECTION] Blocked MCP tool '{function_name}' from main registry - must use execute_tool wrapper")
             return False
