@@ -23,7 +23,7 @@ interface UploadedFile {
     type: string;
     localUrl?: string;
     fileId?: string;
-    status?: 'uploading' | 'ready' | 'error';
+    status?: 'pending' | 'uploading' | 'ready' | 'error';
 }
 
 interface AttachmentGroupProps {
@@ -171,12 +171,13 @@ export function AttachmentGroup({
     };
 
     // Get local preview URL if available (for UploadedFile)
+    // Always use local preview (blob URL) when available - it's instant and independent of upload
     const getLocalPreviewUrl = (file: string | UploadedFile): string | undefined => {
         if (typeof file === 'string') return undefined;
-        return !sandboxId ? file.localUrl : undefined;
+        return file.localUrl;
     };
 
-    const getUploadStatus = (file: string | UploadedFile): 'uploading' | 'ready' | 'error' | undefined => {
+    const getUploadStatus = (file: string | UploadedFile): 'pending' | 'uploading' | 'ready' | 'error' | undefined => {
         if (typeof file === 'string') return undefined;
         return file.status;
     };

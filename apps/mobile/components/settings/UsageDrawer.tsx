@@ -1,11 +1,11 @@
 import * as React from 'react';
-import { View, Pressable, Platform } from 'react-native';
+import { View, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import * as Haptics from 'expo-haptics';
 import { UsageContent } from './UsageContent';
 import { useLanguage } from '@/contexts';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -110,8 +110,8 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
         overflow: 'hidden',
-        zIndex: 9999,
-        elevation: Platform.OS === 'android' ? 9999 : undefined,
+        zIndex: 50,
+        elevation: Platform.OS === 'android' ? 10 : undefined,
       }}
     >
       <BottomSheetScrollView
@@ -119,10 +119,9 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
         showsVerticalScrollIndicator={false}
       >
         <View className="px-6 pt-4 pb-6 flex-row items-center gap-3">
-          <Pressable
+          <BottomSheetTouchable
             onPress={handleClose}
-            className="w-8 h-8 items-center justify-center bg-primary/10 rounded-full p-2"
-            hitSlop={8}
+            style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16 }}
           >
             <Icon
               as={X}
@@ -130,7 +129,7 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
               className="text-foreground"
               strokeWidth={2}
             />
-          </Pressable>
+          </BottomSheetTouchable>
 
           <Text className="text-xl font-roobert-medium text-foreground tracking-tight">
             {t('usage.title')}

@@ -45,13 +45,18 @@ DEFAULT_PNG_COMPRESS_LEVEL = 6
     usage_guide="""
 ### VISUAL INPUT & IMAGE CONTEXT MANAGEMENT
 
-**CRITICAL: You MUST use the 'load_image' tool to see image files. There is NO other way to access visual information.**
+**CRITICAL: `load_image()` is ONLY for actual IMAGE files. For PDFs and documents, use `read_file()` instead.**
+
+**SUPPORTED FILE TYPES (IMAGES ONLY):**
+- JPG, JPEG, PNG, GIF, WEBP, SVG
+- ❌ PDFs are NOT images - use `read_file(file_path="uploads/document.pdf")` instead
+- ❌ Documents (doc, docx, txt) are NOT images - use `read_file()` instead
+- ❌ Data files (csv, json) are NOT images - use `read_file()` instead
 
 **HOW TO LOAD IMAGES:**
 - Provide the relative path to the image in the `/workspace` directory
-- Example: `load_image(file_path="docs/diagram.png")`
-- ALWAYS use this tool when visual information from a file is necessary
-- Supported formats: JPG, PNG, GIF, WEBP, and other common image formats
+- Example: `load_image(file_path="uploads/photo.jpg")`
+- ALWAYS use this tool when visual information from an IMAGE file is necessary
 - Maximum file size: 10 MB
 
 **IMAGE CONTEXT MANAGEMENT - HARD LIMIT:**

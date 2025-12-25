@@ -202,7 +202,7 @@ interface FileAttachmentProps {
     isSingleItemGrid?: boolean;
     standalone?: boolean;
     alignRight?: boolean;
-    uploadStatus?: 'uploading' | 'ready' | 'error';
+    uploadStatus?: 'pending' | 'uploading' | 'ready' | 'error';
 }
 
 export function FileAttachment({
@@ -576,8 +576,8 @@ export function FileAttachment({
                 }}
                 title={uploadStatus === 'uploading' ? 'Uploading...' : filename}
             >
-                {/* Upload progress overlay */}
-                {uploadStatus === 'uploading' && (
+                {/* Upload progress overlay - show while uploading, or pending when upload will happen (sandboxId exists) */}
+                {(uploadStatus === 'uploading' || (uploadStatus === 'pending' && sandboxId)) && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-20">
                         <Loader2 className="h-5 w-5 text-white animate-spin" />
                     </div>
@@ -601,7 +601,7 @@ export function FileAttachment({
                 )}
                 
                 <img
-                    src={sandboxId && session?.access_token ? imageUrl : (fileUrl || '')}
+                    src={localPreviewUrl || (sandboxId && session?.access_token ? imageUrl : (fileUrl || ''))}
                     alt={filename}
                     className={cn(
                         // Preserve natural aspect ratio - let image dictate dimensions
@@ -959,7 +959,7 @@ export function FileAttachment({
                     "h-5 w-5",
                     uploadStatus === 'error' ? "text-red-500" : "text-black/60 dark:text-white/60"
                 )} />
-                {uploadStatus === 'uploading' && (
+                {(uploadStatus === 'uploading' || (uploadStatus === 'pending' && sandboxId)) && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/40">
                         <Loader2 className="h-4 w-4 text-white animate-spin" />
                     </div>

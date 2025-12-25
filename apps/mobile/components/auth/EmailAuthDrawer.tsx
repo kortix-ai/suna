@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { View, TextInput, KeyboardAvoidingView, Platform, Keyboard, TouchableOpacity } from 'react-native';
-import { BottomSheetModal, BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
+import { View, TextInput, Keyboard, Platform } from 'react-native';
+import { BottomSheetModal, BottomSheetView, BottomSheetBackdrop, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
@@ -139,22 +139,18 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
         backgroundColor: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)',
       }}
     >
+      {/* BottomSheetModal handles keyboard avoidance natively - no KeyboardAvoidingView needed */}
       <BottomSheetView style={{ flex: 1 }}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={{ flex: 1 }}
-        >
-          <View className="flex-1 px-6 pt-6 pb-20">
+        <View className="flex-1 px-6 pt-6 pb-20">
             {emailSent ? (
               // Success State
               <View className="gap-6">
                 <View className="flex-row items-center justify-end">
-                  <TouchableOpacity
+                  <BottomSheetTouchable
                     onPress={() => bottomSheetRef.current?.dismiss()}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
                     <Icon as={X} size={24} className="text-muted-foreground" />
-                  </TouchableOpacity>
+                  </BottomSheetTouchable>
                 </View>
 
                 <View className="items-center gap-5">
@@ -236,12 +232,11 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
               // Email Form
               <View className="gap-6">
                 <View className="flex-row items-center justify-end">
-                  <TouchableOpacity
+                  <BottomSheetTouchable
                     onPress={() => bottomSheetRef.current?.dismiss()}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
                     <Icon as={X} size={24} className="text-muted-foreground" />
-                  </TouchableOpacity>
+                  </BottomSheetTouchable>
                 </View>
 
                 <View className="gap-4">
@@ -274,13 +269,12 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                 />
 
                 <View className="flex-row items-start">
-                  <TouchableOpacity
+                  <BottomSheetTouchable
                     onPress={() => {
                       setAcceptedTerms(!acceptedTerms);
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     }}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    className="mr-3 mt-0.5"
+                    style={{ marginRight: 12, marginTop: 2 }}
                   >
                     <View
                       style={{
@@ -298,13 +292,13 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                         <Icon as={Check} size={16} color={isDark ? '#000000' : '#FFFFFF'} />
                       )}
                     </View>
-                  </TouchableOpacity>
+                  </BottomSheetTouchable>
 
                   <View className="flex-1 flex-row flex-wrap">
                     <Text className="text-[14px] font-roobert text-muted-foreground leading-5">
                       {t('auth.agreeTerms')}{' '}
                     </Text>
-                    <TouchableOpacity onPress={async () => {
+                    <BottomSheetTouchable onPress={async () => {
                       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       const WebBrowser = await import('expo-web-browser');
                       await WebBrowser.openBrowserAsync('https://www.kortix.com/legal?tab=terms', {
@@ -315,11 +309,11 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                       <Text className="text-[14px] font-roobert text-foreground leading-5 underline">
                         {t('auth.userTerms')}
                       </Text>
-                    </TouchableOpacity>
+                    </BottomSheetTouchable>
                     <Text className="text-[14px] font-roobert text-muted-foreground leading-5">
                       {' '}{t('auth.and')}{' '}
                     </Text>
-                    <TouchableOpacity onPress={async () => {
+                    <BottomSheetTouchable onPress={async () => {
                       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       const WebBrowser = await import('expo-web-browser');
                       await WebBrowser.openBrowserAsync('https://www.kortix.com/legal?tab=privacy', {
@@ -330,7 +324,7 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                       <Text className="text-[14px] font-roobert text-foreground leading-5 underline">
                         {t('auth.privacyNotice')}
                       </Text>
-                    </TouchableOpacity>
+                    </BottomSheetTouchable>
                   </View>
                 </View>
 
@@ -350,7 +344,6 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
               </View>
             )}
           </View>
-        </KeyboardAvoidingView>
       </BottomSheetView>
     </BottomSheetModal>
   );

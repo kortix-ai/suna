@@ -52,11 +52,12 @@ async def get_worker_metrics() -> dict:
     import time
     
     try:
-        # Configuration: threads per worker process
-        # From ECS config: 8 processes × 12 threads = 96 threads per worker task
-        WORKER_PROCESSES = int(os.getenv("WORKER_PROCESSES", "8"))
+        # Configuration: threads per Dramatiq worker process
+        # Each ECS task runs: `dramatiq --processes 8 --threads 12`
+        # Dramatiq registers each PROCESS as a worker in Redis (not each ECS task)
+        # So each "worker" in Redis corresponds to one process with 12 threads
         WORKER_THREADS = int(os.getenv("WORKER_THREADS", "12"))
-        THREADS_PER_WORKER_TASK = WORKER_PROCESSES * WORKER_THREADS
+        THREADS_PER_DRAMATIQ_PROCESS = WORKER_THREADS  # 12 threads per process
         
         # Dramatiq uses a sorted set for worker heartbeats
         # Key: dramatiq:__heartbeats__
@@ -108,14 +109,15 @@ async def get_worker_metrics() -> dict:
             total_in_progress_tasks += worker_tasks
         
         # Calculate thread utilization
-        total_threads = active_worker_count * THREADS_PER_WORKER_TASK
+        # active_worker_count = number of Dramatiq processes (not ECS tasks)
+        total_threads = active_worker_count * THREADS_PER_DRAMATIQ_PROCESS
         busy_threads = total_in_progress_tasks
         idle_threads = max(0, total_threads - busy_threads)
         utilization_percent = (busy_threads / total_threads * 100) if total_threads > 0 else 0
         
-        # Get worker details (optional, for debugging)
+        # Get worker details for all active workers
         worker_details = []
-        for worker_id in active_worker_ids[:5]:  # Limit to first 5 for performance
+        for worker_id in active_worker_ids:
             try:
                 # Get heartbeat timestamp for this worker
                 score = await redis.zscore(heartbeat_key, worker_id)
@@ -126,7 +128,7 @@ async def get_worker_metrics() -> dict:
                         "last_heartbeat_ms": int(score),
                         "heartbeat_age_seconds": round(heartbeat_age_ms / 1000, 2),
                         "busy_threads": worker_task_counts.get(worker_id, 0),
-                        "idle_threads": max(0, THREADS_PER_WORKER_TASK - worker_task_counts.get(worker_id, 0))
+                        "idle_threads": max(0, THREADS_PER_DRAMATIQ_PROCESS - worker_task_counts.get(worker_id, 0))
                     })
             except Exception as e:
                 logger.debug(f"Failed to get details for worker {worker_id}: {e}")
@@ -139,7 +141,7 @@ async def get_worker_metrics() -> dict:
             "idle_threads": idle_threads,
             "utilization_percent": round(utilization_percent, 2),
             "in_progress_tasks": total_in_progress_tasks,
-            "threads_per_worker_task": THREADS_PER_WORKER_TASK,
+            "threads_per_dramatiq_process": THREADS_PER_DRAMATIQ_PROCESS,
             "worker_details": worker_details,
             "heartbeat_timeout_seconds": heartbeat_timeout_ms / 1000,
             "timestamp": datetime.now(timezone.utc).isoformat()

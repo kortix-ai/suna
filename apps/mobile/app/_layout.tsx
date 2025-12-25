@@ -19,6 +19,7 @@ import * as Linking from 'expo-linking';
 import React, { useEffect, useState } from 'react';
 import { useColorScheme } from 'nativewind';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { Platform, LogBox } from 'react-native';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import { supabase } from '@/api/supabase';
@@ -306,55 +307,57 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <TrackingProvider>
-          <LanguageProvider>
-            <AuthProvider>
-              <BillingProvider>
-                <AgentProvider>
-                  <AdvancedFeaturesProvider>
-                    <PresenceProvider>
-                      <ToastProvider>
-                        <BottomSheetModalProvider>
-                          <ThemeProvider value={NAV_THEME[activeColorScheme]}>
-                            <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
-                            <AuthProtection>
-                              <Stack
-                                screenOptions={{
-                                  headerShown: false,
-                                  animation: 'fade',
-                                }}
-                              >
-                                <Stack.Screen name="index" options={{ animation: 'none' }} />
-                                <Stack.Screen name="setting-up" />
-                                <Stack.Screen name="onboarding" />
-                                <Stack.Screen
-                                  name="home"
-                                  options={{
-                                    gestureEnabled: false,
-                                  }}
-                                />
-                                <Stack.Screen
-                                  name="auth"
-                                  options={{
-                                    gestureEnabled: false,
-                                    animation: 'fade',
-                                  }}
-                                />
-                                <Stack.Screen name="trigger-detail" />
-                                <Stack.Screen name="worker-config" />
-                              </Stack>
-                            </AuthProtection>
-                            <PortalHost />
-                          </ThemeProvider>
-                        </BottomSheetModalProvider>
-                      </ToastProvider>
-                    </PresenceProvider>
-                  </AdvancedFeaturesProvider>
-                </AgentProvider>
-              </BillingProvider>
-            </AuthProvider>
-          </LanguageProvider>
-        </TrackingProvider>
+        <KeyboardProvider statusBarTranslucent navigationBarTranslucent enabled>
+          <TrackingProvider>
+            <LanguageProvider>
+              <AuthProvider>
+                <BillingProvider>
+                  <AgentProvider>
+                    <AdvancedFeaturesProvider>
+                      <PresenceProvider>
+                        <ToastProvider>
+                          <BottomSheetModalProvider>
+                            <ThemeProvider value={NAV_THEME[activeColorScheme]}>
+                              <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
+<AuthProtection>
+                                  <Stack
+                                    screenOptions={{
+                                      headerShown: false,
+                                      animation: 'fade',
+                                    }}
+                                  >
+                                    <Stack.Screen name="index" options={{ animation: 'none' }} />
+                                    <Stack.Screen name="setting-up" />
+                                    <Stack.Screen name="onboarding" />
+                                    <Stack.Screen
+                                      name="home"
+                                      options={{
+                                        gestureEnabled: false,
+                                      }}
+                                    />
+                                    <Stack.Screen
+                                      name="auth"
+                                      options={{
+                                        gestureEnabled: false,
+                                        animation: 'fade',
+                                      }}
+                                    />
+                                    <Stack.Screen name="trigger-detail" />
+                                    <Stack.Screen name="worker-config" />
+                                  </Stack>
+                                </AuthProtection>
+                              <PortalHost />
+                            </ThemeProvider>
+                          </BottomSheetModalProvider>
+                        </ToastProvider>
+                      </PresenceProvider>
+                    </AdvancedFeaturesProvider>
+                  </AgentProvider>
+                </BillingProvider>
+              </AuthProvider>
+            </LanguageProvider>
+          </TrackingProvider>
+        </KeyboardProvider>
       </GestureHandlerRootView>
     </QueryClientProvider>
   );

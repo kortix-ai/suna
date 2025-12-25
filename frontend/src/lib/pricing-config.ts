@@ -42,7 +42,7 @@ export const pricingTiers: PricingTier[] = [
     isPopular: false,
     hours: '0 hours',
     features: [
-      '200 daily credits - Refreshes every 24 hours (applies to all tiers)',
+      '100 daily credits - Refreshes every 24 hours (applies to all tiers)',
       '1 concurrent run',
       '10 Total Chats',
       'Basic Mode - Core Kortix experience with basic autonomy',

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Platform, Pressable, View, ScrollView, Alert, Modal, RefreshControl } from 'react-native';
+import { Platform, Pressable, View, ScrollView, Alert, Modal, RefreshControl, Keyboard } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import Animated, {
@@ -15,8 +15,9 @@ import {
   ChatInputSection,
   ChatDrawers,
   type ToolMessagePair,
+  CHAT_INPUT_SECTION_HEIGHT,
 } from '@/components/chat';
-import { ThreadHeader, ThreadActionsDrawer } from '@/components/threads';
+import { ThreadHeader, ThreadActionsMenu } from '@/components/threads';
 import { KortixComputer } from '@/components/kortix-computer';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useChatCommons, type UseChatReturn, useDeleteThread, useShareThread } from '@/hooks';
@@ -187,42 +188,6 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
           </Animated.View>
         </View>
       )}
-
-      {Platform.OS === 'android' && (
-        <View
-          className="absolute w-full items-center"
-          style={{
-            top: insets.top + 10,
-            zIndex: 9999,
-            elevation: 999,
-          }}
-          pointerEvents="none">
-          <Animated.View
-            style={[
-              animatedContainerStyle,
-              {
-                width: 150,
-                backgroundColor: '#000000',
-                justifyContent: 'center',
-                alignItems: 'center',
-              },
-            ]}>
-            <Animated.View style={contentStyle} className="flex-row items-center gap-2">
-              <LottieView
-                ref={lottieRef}
-                source={require('@/components/animations/loading.json')}
-                style={{ width: 20, height: 20 }}
-                autoPlay={false}
-                loop
-                speed={1.5}
-              />
-              <Text style={{ color: 'white', fontSize: 13, fontFamily: 'Roobert-Medium' }}>
-                Refreshing
-              </Text>
-            </Animated.View>
-          </Animated.View>
-        </View>
-      )}
     </>
   );
 });
@@ -303,6 +268,9 @@ export function ThreadPage({
   const isLoading = chat.isLoading;
   const hasMessages = messages.length > 0 || streamingContent.length > 0;
   const scrollViewRef = React.useRef<ScrollView>(null);
+  
+  // Calculate bottom padding for content to account for input section + safe area
+  const contentBottomPadding = CHAT_INPUT_SECTION_HEIGHT.THREAD_PAGE + insets.bottom;
   const [isUserScrolling, setIsUserScrolling] = React.useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = React.useState(false);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
@@ -423,7 +391,8 @@ export function ThreadPage({
 
   return (
     <View className="flex-1 bg-background">
-      <View className="flex-1">
+      {/* Main content area - positioned below header but above nothing */}
+      <View className="flex-1" style={{ zIndex: 1 }}>
         {isLoading ? (
           <View className="flex-1 items-center justify-center">
             <View className="h-20 w-20 items-center justify-center rounded-full">
@@ -446,12 +415,16 @@ export function ThreadPage({
           <ScrollView
             className="flex-1"
             contentContainerStyle={{
-              flex: 1,
+              flexGrow: 1,
               justifyContent: 'center',
               alignItems: 'center',
               paddingHorizontal: 32,
               paddingTop: Math.max(insets.top, 16) + 80,
+              paddingBottom: contentBottomPadding,
             }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            onTouchStart={Keyboard.dismiss}
             refreshControl={
               <RefreshControl
                 refreshing={isRefreshing}
@@ -482,14 +455,16 @@ export function ThreadPage({
             contentContainerStyle={{
               flexGrow: 1,
               paddingTop: Math.max(insets.top, 16) + 80,
-              paddingBottom: 200,
+              paddingBottom: contentBottomPadding,
               paddingHorizontal: 16,
             }}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             scrollEventThrottle={16}
             bounces={true}
             alwaysBounceVertical={true}
             onScroll={handleScroll}
+            onTouchStart={Keyboard.dismiss}
             maintainVisibleContentPosition={{
               minIndexForVisible: 0,
               autoscrollToTopThreshold: 100,
@@ -531,7 +506,9 @@ export function ThreadPage({
           onPress={scrollToBottom}
           className="absolute right-6 h-12 w-12 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
           style={{
-            bottom: 200,
+            bottom: contentBottomPadding + 20,
+            zIndex: 50,
+            elevation: 8,
           }}>
           <Icon as={ArrowDown} size={20} className="text-foreground" strokeWidth={2} />
         </Pressable>
@@ -674,7 +651,7 @@ export function ThreadPage({
         onChooseFiles={chat.handleChooseFiles}
       />
 
-      <ThreadActionsDrawer
+      <ThreadActionsMenu
         visible={isThreadActionsVisible}
         onClose={() => setIsThreadActionsVisible(false)}
         onShare={async () => {

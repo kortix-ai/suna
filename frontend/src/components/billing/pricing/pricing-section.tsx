@@ -11,7 +11,10 @@ import {
   ShoppingCart,
   Lightbulb,
   X,
-  RotateCcw
+  RotateCcw,
+  Copy,
+  Gift,
+  Timer,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -35,6 +38,7 @@ import { DowngradeConfirmationDialog } from '@/components/billing/downgrade-conf
 import { useUserCurrency } from '@/hooks/use-user-currency';
 import { useLanguage } from '@/hooks/use-language';
 import { convertPriceString, parsePriceAmount, formatPrice } from '@/lib/utils/currency';
+import { useHolidayPromoCountdown } from '@/hooks/utils/use-holiday-promo';
 
 // Constants
 export const SUBSCRIPTION_PLANS = {
@@ -708,7 +712,7 @@ function PricingTier({
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs sm:text-sm font-medium">{match?.[1] || '200'} Daily Credits</span>
+                      <span className="text-xs sm:text-sm font-medium">{match?.[1] || '100'} Daily Credits</span>
                       </div>
                       {description && (
                         <span className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 hidden sm:block">{description}</span>
@@ -962,6 +966,24 @@ export function PricingSection({
 }: PricingSectionProps) {
   const t = useTranslations('billing');
   const { user } = useAuth();
+  const holidayPromo = useHolidayPromoCountdown();
+  const [promoCodeCopied, setPromoCodeCopied] = useState(false);
+  const promoCopyTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holidayPromoBadgeLabel = t('holidayPromo.badge');
+  const holidayPromoHeadline = t('holidayPromo.headerLine', {
+    code: holidayPromo.promoCode,
+    discount: t('holidayPromo.discount'),
+  });
+  const holidayPromoDescription = t('holidayPromo.description', {
+    code: holidayPromo.promoCode,
+    discount: t('holidayPromo.discount'),
+    window: t('holidayPromo.window'),
+  });
+  const holidayPromoCountdown = t('holidayPromo.countdown', { time: holidayPromo.timeLabel });
+  const holidayPromoCopyLabel = t('holidayPromo.copyCode');
+  const holidayPromoCopiedLabel = t('holidayPromo.copied');
+  const holidayPromoCopyToast = t('holidayPromo.codeCopied', { code: holidayPromo.promoCode });
+  const holidayPromoCopyError = t('holidayPromo.copyFailed');
   const isUserAuthenticated = !!user;
   const queryClient = useQueryClient();
   
@@ -1026,6 +1048,14 @@ export function PricingSection({
   const [planLoadingStates, setPlanLoadingStates] = useState<Record<string, boolean>>({});
   const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
 
+  useEffect(() => {
+    return () => {
+      if (promoCopyTimeoutRef.current) {
+        clearTimeout(promoCopyTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Billing period toggle state - ALWAYS starts as 'yearly' (Annual preselected)
   const [sharedBillingPeriod, setSharedBillingPeriod] = useState<'monthly' | 'yearly' | 'yearly_commitment'>('yearly');
 
@@ -1061,6 +1091,27 @@ export function PricingSection({
   const handlePlanSelect = (planId: string) => {
     setPlanLoadingStates((prev) => ({ ...prev, [planId]: true }));
   };
+
+  const handlePromoCopy = useCallback(async () => {
+    if (!holidayPromo.isActive) {
+      return;
+    }
+    try {
+      if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+        throw new Error('Clipboard not available');
+      }
+      await navigator.clipboard.writeText(holidayPromo.promoCode);
+      setPromoCodeCopied(true);
+      toast.success(holidayPromoCopyToast);
+      if (promoCopyTimeoutRef.current) {
+        clearTimeout(promoCopyTimeoutRef.current);
+      }
+      promoCopyTimeoutRef.current = setTimeout(() => setPromoCodeCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy promo code', error);
+      toast.error(holidayPromoCopyError);
+    }
+  }, [holidayPromo.isActive, holidayPromo.promoCode, holidayPromoCopyError, holidayPromoCopyToast]);
 
   const handleSubscriptionUpdate = () => {
     // Note: Cache invalidation is handled by mutation hooks (useScheduleDowngrade, etc.)
@@ -1144,14 +1195,69 @@ export function PricingSection({
           </div>
 
           {/* Promo text - compact on mobile */}
-          {showTitleAndTabs && !isAlert && (
-            <p className="text-xs sm:text-sm text-muted-foreground">
-              <span className="font-semibold text-primary">LIMITED TIME</span>
-              <span className="mx-1 sm:mx-1.5">·</span>
-              Subscribe now & get <span className="font-medium text-foreground">2X credits</span>
-            </p>
-          )}
+          {showTitleAndTabs && !isAlert && (() => {
+            // Only show holiday promo for FREE tier users (not authenticated or on free tier)
+            const isFreeTier = !isAuthenticated || !accountState || 
+              accountState.subscription.tier_key === 'free' || 
+              accountState.subscription.tier_key === 'none' ||
+              (accountState.tier?.monthly_credits ?? 0) === 0;
+            
+            return holidayPromo.isActive && isFreeTier ? (
+              <p className="text-xs sm:text-sm text-muted-foreground">
+                <span className="font-semibold text-primary">
+                  {holidayPromoBadgeLabel}
+                </span>
+                <span className="mx-1 sm:mx-1.5">·</span>
+                {holidayPromoHeadline}
+              </p>
+            ) : (
+              <p className="text-xs sm:text-sm text-muted-foreground">
+                <span className="font-semibold text-primary">LIMITED TIME</span>
+                <span className="mx-1 sm:mx-1.5">·</span>
+                Subscribe now &amp; get <span className="font-medium text-foreground">2X credits</span>
+              </p>
+            );
+          })()}
         </div>
+
+        {(() => {
+          // Only show holiday promo for FREE tier users (not authenticated or on free tier)
+          const isFreeTier = !isAuthenticated || !accountState || 
+            accountState.subscription.tier_key === 'free' || 
+            accountState.subscription.tier_key === 'none' ||
+            (accountState.tier?.monthly_credits ?? 0) === 0;
+          
+          return holidayPromo.isActive && isFreeTier && (
+            <div className="w-full max-w-6xl mx-auto mb-3 sm:mb-6">
+              <div className="flex flex-col gap-3 rounded-2xl border border-dashed border-primary/30 bg-primary/5 px-4 py-3 sm:px-6 sm:py-4 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
+                    <Gift className="h-3.5 w-3.5" />
+                    {holidayPromoBadgeLabel}
+                    <span className="flex items-center gap-1 text-muted-foreground tracking-normal normal-case">
+                      <Timer className="h-3.5 w-3.5" />
+                      {holidayPromoCountdown}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{holidayPromoDescription}</p>
+                </div>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                  <span className="font-mono text-sm tracking-[0.35em] px-4 py-2 rounded-full bg-primary text-primary-foreground shadow-sm">
+                    {holidayPromo.promoCode}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handlePromoCopy}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-background/90 dark:bg-background/50 px-3 py-1.5 text-xs font-medium text-primary shadow-sm transition hover:bg-background"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    {promoCodeCopied ? holidayPromoCopiedLabel : holidayPromoCopyLabel}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Scheduled Downgrade Alert - Show above pricing tiers */}
         {isAuthenticated && hasScheduledChange && scheduledChange && (

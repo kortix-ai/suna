@@ -12,8 +12,8 @@ eas login
 ```bash
 cd apps/mobile
 npm run android:setup
-npm run android:build        # EAS cloud build (reliable, consistent)
-npm run android:dev          # Start dev server
+npm run android:build    
+npm run android:dev      
 ```
 
 ## Build & Submit

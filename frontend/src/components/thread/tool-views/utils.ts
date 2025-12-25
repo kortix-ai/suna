@@ -1091,9 +1091,13 @@ export function getToolComponent(toolName: string): string {
     case 'create-file':
     case 'delete-file':
     case 'full-file-rewrite':
-    case 'read-file':
     case 'edit-file':
       return 'FileOperationToolView';
+
+    // File reader (documents, PDFs, text files)
+    case 'read-file':
+    case 'read_file':
+      return 'FileReaderToolView';
 
     // String operations
     case 'str-replace':
