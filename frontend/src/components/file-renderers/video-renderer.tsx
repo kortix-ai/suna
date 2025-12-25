@@ -112,7 +112,16 @@ export function VideoRenderer({
     }
   };
 
-  const handleError = () => {
+  const handleError = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
+    const videoElement = e.currentTarget;
+    const error = videoElement.error;
+    console.error('[VideoRenderer] Video error:', {
+      code: error?.code,
+      message: error?.message,
+      url: videoElement.src,
+      networkState: videoElement.networkState,
+      readyState: videoElement.readyState,
+    });
     setHasError(true);
     setIsLoading(false);
   };

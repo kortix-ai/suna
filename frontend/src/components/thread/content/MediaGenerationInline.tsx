@@ -119,35 +119,28 @@ function InlineVideo({ filePath, sandboxId }: { filePath: string; sandboxId?: st
   const [isPlaying, setIsPlaying] = useState(false);
   const [isVideoLoading, setIsVideoLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const videoRef = React.useRef<HTMLVideoElement>(null);
-  const urlCacheRef = React.useRef<Map<Blob, string>>(new Map());
 
   // Use the same file content hook that images use - this handles auth and proper URL
   const { data: videoBlob, isLoading: isBlobLoading } = useFileContent(sandboxId, filePath, {
     enabled: !!sandboxId && !!filePath,
   });
   
-  // Create blob URL from the video data - cache to survive navigation
-  const videoUrl = useMemo(() => {
-    if (videoBlob instanceof Blob) {
-      if (urlCacheRef.current.has(videoBlob)) {
-        return urlCacheRef.current.get(videoBlob)!;
-      }
-      const newUrl = URL.createObjectURL(videoBlob);
-      urlCacheRef.current.set(videoBlob, newUrl);
-      return newUrl;
-    }
-    return null;
-  }, [videoBlob]);
-  
-  // Only cleanup on final unmount
+  // Create and manage blob URL
   useEffect(() => {
-    return () => {
-      const cachedUrls = Array.from(urlCacheRef.current.values());
-      cachedUrls.forEach(url => URL.revokeObjectURL(url));
-      urlCacheRef.current.clear();
-    };
-  }, []);
+    if (videoBlob instanceof Blob) {
+      const newUrl = URL.createObjectURL(videoBlob);
+      setVideoUrl(newUrl);
+      
+      return () => {
+        URL.revokeObjectURL(newUrl);
+        setVideoUrl(null);
+      };
+    } else {
+      setVideoUrl(null);
+    }
+  }, [videoBlob]);
 
   const togglePlay = () => {
     if (videoRef.current) {

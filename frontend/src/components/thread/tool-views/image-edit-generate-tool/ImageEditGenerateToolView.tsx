@@ -80,35 +80,28 @@ function VideoDisplay({ filePath, sandboxId }: { filePath: string; sandboxId?: s
   const [isPlaying, setIsPlaying] = useState(false);
   const [isVideoLoading, setIsVideoLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const urlCacheRef = useRef<Map<Blob, string>>(new Map());
 
   // Use the same file content approach that images use - fetch blob with proper auth
   const { data: videoBlob, isLoading: isBlobLoading } = useVideoContent(sandboxId, filePath, {
     enabled: !!sandboxId && !!filePath,
   });
   
-  // Create blob URL from the video data - cache to prevent revocation on navigation
-  const videoUrl = useMemo(() => {
-    if (videoBlob instanceof Blob) {
-      if (urlCacheRef.current.has(videoBlob)) {
-        return urlCacheRef.current.get(videoBlob)!;
-      }
-      const newUrl = URL.createObjectURL(videoBlob);
-      urlCacheRef.current.set(videoBlob, newUrl);
-      return newUrl;
-    }
-    return null;
-  }, [videoBlob]);
-  
-  // Only cleanup on final unmount
+  // Create and manage blob URL
   React.useEffect(() => {
-    return () => {
-      const cachedUrls = Array.from(urlCacheRef.current.values());
-      cachedUrls.forEach(url => URL.revokeObjectURL(url));
-      urlCacheRef.current.clear();
-    };
-  }, []);
+    if (videoBlob instanceof Blob) {
+      const newUrl = URL.createObjectURL(videoBlob);
+      setVideoUrl(newUrl);
+      
+      return () => {
+        URL.revokeObjectURL(newUrl);
+        setVideoUrl(null);
+      };
+    } else {
+      setVideoUrl(null);
+    }
+  }, [videoBlob]);
 
   const togglePlay = () => {
     if (videoRef.current) {
@@ -195,39 +188,37 @@ function useVideoContent(
 // Full featured video renderer component for tool view (Computer)
 // Uses the full VideoRenderer with all controls (slider, volume, etc.)
 function VideoRendererFull({ filePath, sandboxId }: { filePath: string; sandboxId?: string }) {
-  const urlCacheRef = useRef<Map<Blob, string>>(new Map());
   const [hasVideoError, setHasVideoError] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   
   // Fetch video blob with proper auth
   const { data: videoBlob, isLoading, error: fetchError } = useVideoContent(sandboxId, filePath, {
     enabled: !!sandboxId && !!filePath,
   });
   
-  // Create blob URL from the video data - cache URLs per blob to prevent recreation
-  const videoUrl = useMemo(() => {
-    if (videoBlob instanceof Blob) {
-      // Check if we already have a URL for this blob
-      if (urlCacheRef.current.has(videoBlob)) {
-        return urlCacheRef.current.get(videoBlob)!;
-      }
-      // Create new URL and cache it
-      const newUrl = URL.createObjectURL(videoBlob);
-      urlCacheRef.current.set(videoBlob, newUrl);
-      return newUrl;
-    }
-    return null;
-  }, [videoBlob]);
-  
-  // Only cleanup blob URLs when component permanently unmounts (not on navigation)
-  // This prevents "blob not found" errors when going back in history
+  // Create and manage blob URL
   React.useEffect(() => {
-    return () => {
-      // Cleanup all cached URLs on final unmount
-      const cachedUrls = Array.from(urlCacheRef.current.values());
-      cachedUrls.forEach(url => URL.revokeObjectURL(url));
-      urlCacheRef.current.clear();
-    };
-  }, []); // Empty deps = only run on mount/unmount
+    if (videoBlob instanceof Blob) {
+      console.log('[VideoRendererFull] Creating blob URL for video:', {
+        filePath,
+        blobSize: videoBlob.size,
+        blobType: videoBlob.type,
+      });
+      const newUrl = URL.createObjectURL(videoBlob);
+      console.log('[VideoRendererFull] Created blob URL:', newUrl);
+      setVideoUrl(newUrl);
+      
+      // Cleanup function to revoke URL when blob changes or component unmounts
+      return () => {
+        console.log('[VideoRendererFull] Revoking blob URL:', newUrl);
+        URL.revokeObjectURL(newUrl);
+        setVideoUrl(null);
+      };
+    } else {
+      console.log('[VideoRendererFull] No blob available:', { videoBlob, isLoading, fetchError });
+      setVideoUrl(null);
+    }
+  }, [videoBlob, filePath, isLoading, fetchError]);
 
   // Show shimmer while loading
   if (isLoading) {
@@ -325,9 +316,7 @@ export function ImageEditGenerateToolView({
     (!!error || (batchResults.length > 0 && !batchResults[0].success));
 
   const actualIsSuccess = hasMedia && !hasActualError;
-
-  // Cache for download URLs to prevent revocation issues on navigation
-  const downloadUrlCacheRef = useRef<Map<Blob, string>>(new Map());
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   // Get media blob URL for download
   const { data: mediaBlob } = useFileContentQuery(sandboxId, videoPath || imagePath, {
@@ -335,27 +324,20 @@ export function ImageEditGenerateToolView({
     enabled: !!sandboxId && !!(videoPath || imagePath) && actualIsSuccess,
   });
 
-  // Create download URL - cache per blob to survive navigation
-  const downloadUrl = useMemo(() => {
-    if (mediaBlob instanceof Blob) {
-      if (downloadUrlCacheRef.current.has(mediaBlob)) {
-        return downloadUrlCacheRef.current.get(mediaBlob)!;
-      }
-      const newUrl = URL.createObjectURL(mediaBlob);
-      downloadUrlCacheRef.current.set(mediaBlob, newUrl);
-      return newUrl;
-    }
-    return null;
-  }, [mediaBlob]);
-
-  // Only cleanup on final unmount, not on navigation
+  // Create and manage download URL
   React.useEffect(() => {
-    return () => {
-      const cachedUrls = Array.from(downloadUrlCacheRef.current.values());
-      cachedUrls.forEach(url => URL.revokeObjectURL(url));
-      downloadUrlCacheRef.current.clear();
-    };
-  }, []);
+    if (mediaBlob instanceof Blob) {
+      const newUrl = URL.createObjectURL(mediaBlob);
+      setDownloadUrl(newUrl);
+      
+      return () => {
+        URL.revokeObjectURL(newUrl);
+        setDownloadUrl(null);
+      };
+    } else {
+      setDownloadUrl(null);
+    }
+  }, [mediaBlob]);
 
   const handleDownload = () => {
     if (!downloadUrl) return;
