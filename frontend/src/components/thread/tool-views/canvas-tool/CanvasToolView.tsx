@@ -1,27 +1,79 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Layout,
   ImagePlus,
-  Check,
-  X,
+  CheckCircle,
+  AlertTriangle,
   Layers,
-  FileImage,
   Loader2,
   Sparkles,
   Save,
   Trash2,
   Edit3,
+  MousePointerClick,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
 import { extractCanvasData } from './_utils';
 import { cn } from '@/lib/utils';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { useImageContent } from '@/hooks/files';
 
 interface CanvasToolViewProps extends ToolViewProps {
   onFileClick?: (filePath: string) => void;
+}
+
+const BLOB_COLORS = [
+  'from-purple-300/60 to-pink-300/60',
+  'from-blue-300/60 to-cyan-300/60',
+  'from-emerald-300/60 to-teal-300/60',
+  'from-orange-300/60 to-amber-300/60',
+];
+
+function ShimmerBox({ className }: { className?: string }) {
+  const colorClass = useMemo(() => BLOB_COLORS[Math.floor(Math.random() * BLOB_COLORS.length)], []);
+  
+  return (
+    <div className={cn("relative rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-700/50", className)}>
+      <div className={`absolute inset-0 bg-gradient-to-br ${colorClass} blur-2xl scale-150`} />
+      <div className="absolute inset-0 bg-zinc-100/30 dark:bg-zinc-900/30 backdrop-blur-sm" />
+      <div
+        className="absolute inset-0"
+        style={{
+          background: 'linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.4) 50%, transparent 70%)',
+          backgroundSize: '200% 100%',
+          animation: 'shimmer 1.8s ease-in-out infinite',
+        }}
+      />
+      <style>{`
+        @keyframes shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function ImagePreview({ imagePath, sandboxId }: { imagePath: string; sandboxId?: string }) {
+  const { data: imageUrl, isLoading } = useImageContent(sandboxId, imagePath, {
+    enabled: !!sandboxId && !!imagePath,
+  });
+
+  if (isLoading || !imageUrl) {
+    return <ShimmerBox className="w-full aspect-video" />;
+  }
+
+  return (
+    <img
+      src={imageUrl}
+      alt={imagePath}
+      className="w-full rounded-lg border border-neutral-200 dark:border-neutral-700/50 object-cover aspect-video"
+    />
+  );
 }
 
 /**
@@ -51,179 +103,197 @@ export function CanvasToolView({
   } = extractedData || {};
 
   const toolName = toolCall?.function_name || toolCall?.name || '';
+  const args = toolCall?.arguments || {};
 
   // Determine what action was taken
   const getActionInfo = () => {
     if (toolName.includes('create_canvas') || toolName.includes('create-canvas')) {
       return {
-        icon: <Sparkles className="h-4 w-4" />,
+        icon: Sparkles,
         title: 'Canvas Created',
-        badge: 'Created',
-        badgeVariant: 'default' as const,
-        description: canvasName ? `"${canvasName}"` : 'New canvas',
+        color: 'text-purple-600 dark:text-purple-400',
+        bgColor: 'bg-purple-200/60 dark:bg-purple-900',
+        borderColor: 'border-purple-300 dark:border-purple-700',
       };
     }
     if (toolName.includes('add_image') || toolName.includes('add-image')) {
-      const args = toolCall?.arguments || {};
       return {
-        icon: <ImagePlus className="h-4 w-4" />,
+        icon: ImagePlus,
         title: 'Image Added',
-        badge: 'Added',
-        badgeVariant: 'secondary' as const,
-        description: args.name || args.image_path?.split('/').pop() || 'Image added',
+        color: 'text-blue-600 dark:text-blue-400',
+        bgColor: 'bg-blue-200/60 dark:bg-blue-900',
+        borderColor: 'border-blue-300 dark:border-blue-700',
       };
     }
     if (toolName.includes('list_canvas') || toolName.includes('list-canvas')) {
       return {
-        icon: <Layers className="h-4 w-4" />,
-        title: 'Canvas Elements',
-        badge: `${totalElements || 0} elements`,
-        badgeVariant: 'outline' as const,
-        description: canvasName || 'Listed elements',
+        icon: Layers,
+        title: 'Elements Listed',
+        color: 'text-zinc-600 dark:text-zinc-400',
+        bgColor: 'bg-zinc-200/60 dark:bg-zinc-900',
+        borderColor: 'border-zinc-300 dark:border-zinc-700',
       };
     }
     if (toolName.includes('save_canvas') || toolName.includes('save-canvas')) {
       return {
-        icon: <Save className="h-4 w-4" />,
+        icon: Save,
         title: 'Canvas Saved',
-        badge: 'Saved',
-        badgeVariant: 'default' as const,
-        description: canvasPath || 'Changes saved',
+        color: 'text-green-600 dark:text-green-400',
+        bgColor: 'bg-green-200/60 dark:bg-green-900',
+        borderColor: 'border-green-300 dark:border-green-700',
       };
     }
     if (toolName.includes('remove_canvas') || toolName.includes('remove-canvas')) {
       return {
-        icon: <Trash2 className="h-4 w-4" />,
+        icon: Trash2,
         title: 'Element Removed',
-        badge: 'Removed',
-        badgeVariant: 'destructive' as const,
-        description: 'Element removed from canvas',
+        color: 'text-rose-600 dark:text-rose-400',
+        bgColor: 'bg-rose-200/60 dark:bg-rose-900',
+        borderColor: 'border-rose-300 dark:border-rose-700',
       };
     }
     if (toolName.includes('update_canvas') || toolName.includes('update-canvas')) {
       return {
-        icon: <Edit3 className="h-4 w-4" />,
+        icon: Edit3,
         title: 'Element Updated',
-        badge: 'Updated',
-        badgeVariant: 'secondary' as const,
-        description: 'Canvas element updated',
+        color: 'text-amber-600 dark:text-amber-400',
+        bgColor: 'bg-amber-200/60 dark:bg-amber-900',
+        borderColor: 'border-amber-300 dark:border-amber-700',
       };
     }
     return {
-      icon: <Layout className="h-4 w-4" />,
+      icon: Layout,
       title: 'Canvas Operation',
-      badge: 'Done',
-      badgeVariant: 'outline' as const,
-      description: canvasPath || 'Operation completed',
+      color: 'text-zinc-600 dark:text-zinc-400',
+      bgColor: 'bg-zinc-200/60 dark:bg-zinc-900',
+      borderColor: 'border-zinc-300 dark:border-zinc-700',
     };
   };
 
   const actionInfo = getActionInfo();
+  const IconComponent = actionInfo.icon;
+
+  // Check if we have an image to show
+  const isAddImage = toolName.includes('add_image') || toolName.includes('add-image');
+  const addedImagePath = isAddImage ? (args.image_path || args.name) : null;
+  const sandboxId = project?.sandbox?.id;
 
   // Handle click to open canvas file
   const handleOpenCanvas = () => {
-    if (canvasPath && onFileClick) {
-      onFileClick(canvasPath);
+    if (onFileClick) {
+      // Use canvasPath if available, otherwise construct from canvasName
+      const path = canvasPath || (canvasName ? `canvases/${canvasName}.kanvax` : null);
+      if (path) {
+        onFileClick(path);
+      }
     }
   };
 
-  // Streaming state
-  if (isStreaming) {
-    return (
-      <Card className="w-full border-border/50 bg-card/50">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-primary/10">
-              <Loader2 className="h-5 w-5 text-primary animate-spin" />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-sm">Processing canvas...</span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Please wait
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+  if (!toolCall) return null;
 
-  // Error state
-  if (!actualIsSuccess) {
-    return (
-      <Card className="w-full border-destructive/30 bg-destructive/5">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-destructive/10">
-              <X className="h-5 w-5 text-destructive" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-sm text-destructive">Operation Failed</span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                {error || 'An error occurred'}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Success state
   return (
-    <Card 
-      className={cn(
-        "w-full border-border/50 bg-card/50 transition-all duration-200",
-        canvasPath && "hover:border-primary/30 hover:bg-accent/30 cursor-pointer"
-      )}
-      onClick={canvasPath ? handleOpenCanvas : undefined}
-    >
-      <CardContent className="p-4">
-        <div className="flex items-center gap-3">
-          {/* Icon */}
-          <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-primary/10 text-primary shrink-0">
-            {actionInfo.icon}
+    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
+      {/* Header */}
+      <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+        <div className="flex flex-row items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className={cn(
+              "relative p-2 rounded-lg border flex-shrink-0",
+              actionInfo.bgColor,
+              actionInfo.borderColor
+            )}>
+              <IconComponent className={cn("w-5 h-5", actionInfo.color)} />
+            </div>
+            <div>
+              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
+                {actionInfo.title}
+              </CardTitle>
+            </div>
           </div>
 
-          {/* Content */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-sm">{actionInfo.title}</span>
-              <Badge variant={actionInfo.badgeVariant} className="text-[10px] px-1.5 py-0">
-                {actionInfo.badge}
+          <div className="flex items-center gap-2">
+            {!isStreaming && (
+              <Badge
+                variant="secondary"
+                className={
+                  actualIsSuccess
+                    ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
+                    : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
+                }
+              >
+                {actualIsSuccess ? (
+                  <>
+                    <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                    Success
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="h-3.5 w-3.5 mr-1" />
+                    Failed
+                  </>
+                )}
               </Badge>
+            )}
+
+            {isStreaming && (
+              <Badge className="bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300">
+                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                Processing
+              </Badge>
+            )}
+
+            {/* Open canvas button in header */}
+            {(canvasPath || canvasName) && !isStreaming && (
+              <Button
+                onClick={handleOpenCanvas}
+                variant="outline"
+                size="sm"
+                className="h-7"
+              >
+                <MousePointerClick className="h-3.5 w-3.5 mr-1.5" />
+                Open Canvas
+              </Button>
+            )}
+          </div>
+        </div>
+      </CardHeader>
+
+      {/* Content */}
+      <CardContent className="p-4">
+        {isStreaming ? (
+          <ShimmerBox className="w-full h-32" />
+        ) : !actualIsSuccess ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3 bg-gradient-to-b from-rose-100 to-rose-50 dark:from-rose-800/40 dark:to-rose-900/60">
+              <AlertTriangle className="h-6 w-6 text-rose-500 dark:text-rose-400" />
             </div>
-            <p className="text-xs text-muted-foreground mt-0.5 truncate">
-              {actionInfo.description}
+            <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100 mb-1">
+              Operation Failed
+            </h3>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              {error || 'An error occurred during the canvas operation'}
             </p>
           </div>
+        ) : (
+          <div className="space-y-3">
+            {/* Show image preview if adding image */}
+            {isAddImage && addedImagePath && (
+              <ImagePreview imagePath={addedImagePath} sandboxId={sandboxId} />
+            )}
 
-          {/* Action hint */}
-          {canvasPath && (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
-              <FileImage className="h-3.5 w-3.5" />
-              <span>Click to edit</span>
-            </div>
-          )}
-        </div>
-
-        {/* Elements count if available */}
-        {totalElements !== undefined && totalElements > 0 && (
-          <div className="mt-3 pt-3 border-t border-border/50">
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <Layers className="h-3.5 w-3.5" />
-                {totalElements} element{totalElements !== 1 ? 's' : ''}
-              </span>
-              {canvasPath && (
-                <span className="flex items-center gap-1.5">
-                  <FileImage className="h-3.5 w-3.5" />
-                  {canvasPath}
+            {/* Canvas info */}
+            <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <Layout className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="text-sm font-medium truncate">
+                  {canvasName || canvasPath?.split('/').pop() || 'Canvas'}
                 </span>
+              </div>
+              {totalElements !== undefined && totalElements > 0 && (
+                <Badge variant="secondary" className="ml-2 shrink-0">
+                  <Layers className="h-3 w-3 mr-1" />
+                  {totalElements}
+                </Badge>
               )}
             </div>
           </div>

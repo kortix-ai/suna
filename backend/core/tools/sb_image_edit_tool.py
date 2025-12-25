@@ -349,7 +349,9 @@ class SandboxImageEditTool(SandboxToolsBase):
                     "openai/gpt-image-1.5",
                     input={
                         "prompt": prompt,
-                        "size": "1024x1024",
+                        "aspect_ratio": "1:1",
+                        "number_of_images": 1,
+                        "quality": "high",
                     }
                 )
             elif mode == "edit":
@@ -364,13 +366,15 @@ class SandboxImageEditTool(SandboxToolsBase):
                 image_b64 = base64.b64encode(image_bytes).decode('utf-8')
                 image_data_url = f"data:image/png;base64,{image_b64}"
 
-                logger.info(f"Calling Replicate openai/gpt-image-1.5 for editing")
+                logger.info(f"Calling Replicate openai/gpt-image-1.5 for editing with image_path='{image_path}' (image size: {len(image_bytes)} bytes, base64 length: {len(image_b64)} chars)")
                 output = replicate.run(
                     "openai/gpt-image-1.5",
                     input={
-                        "image": image_data_url,
                         "prompt": prompt,
-                        "size": "1024x1024",
+                        "input_images": [image_data_url],  # Note: input_images is an ARRAY
+                        "aspect_ratio": "1:1",
+                        "number_of_images": 1,
+                        "quality": "high",
                     }
                 )
             else:
@@ -465,6 +469,7 @@ class SandboxImageEditTool(SandboxToolsBase):
                     
                     image_b64 = base64.b64encode(image_bytes).decode('utf-8')
                     input_params["image"] = f"data:image/png;base64,{image_b64}"
+                    logger.info(f"Video: Using input image_path='{image_path}' (size: {len(image_bytes)} bytes)")
             
             # Handle last frame image if provided
             if opts.get("last_frame_image") and image_path:  # Only works with start image
@@ -472,9 +477,10 @@ class SandboxImageEditTool(SandboxToolsBase):
                 if not isinstance(last_frame_bytes, ToolResult):
                     last_frame_b64 = base64.b64encode(last_frame_bytes).decode('utf-8')
                     input_params["last_frame_image"] = f"data:image/png;base64,{last_frame_b64}"
+                    logger.info(f"Video: Using last frame image (size: {len(last_frame_bytes)} bytes)")
             
             logger.info(f"Calling Replicate bytedance/seedance-1.5-pro for video generation")
-            logger.debug(f"Video params: duration={input_params.get('duration')}, aspect_ratio={input_params.get('aspect_ratio')}, generate_audio={input_params.get('generate_audio')}")
+            logger.debug(f"Video params: duration={input_params.get('duration')}, aspect_ratio={input_params.get('aspect_ratio')}, generate_audio={input_params.get('generate_audio')}, has_image={'image' in input_params}")
             
             output = replicate.run(
                 "bytedance/seedance-1.5-pro",
@@ -570,6 +576,13 @@ class SandboxImageEditTool(SandboxToolsBase):
         """Read image from sandbox filesystem."""
         try:
             cleaned_path = self.clean_path(image_path)
+            
+            # If path already starts with /workspace/, strip it to avoid doubling
+            if cleaned_path.startswith("/workspace/"):
+                cleaned_path = cleaned_path[len("/workspace/"):]
+            elif cleaned_path.startswith("workspace/"):
+                cleaned_path = cleaned_path[len("workspace/"):]
+            
             full_path = f"{self.workspace_path}/{cleaned_path}"
 
             # Check if file exists and is not a directory
