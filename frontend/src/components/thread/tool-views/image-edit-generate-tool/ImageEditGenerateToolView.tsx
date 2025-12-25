@@ -32,16 +32,16 @@ function ShimmerBox({ aspectVideo = false }: { aspectVideo?: boolean }) {
   
   return (
     <div className={`relative w-full ${aspectVideo ? 'aspect-video' : 'aspect-square'} rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-700/50`}>
-      {/* Gray base layer */}
-      <div className="absolute inset-0 bg-gradient-to-br from-zinc-300/60 to-zinc-400/60 dark:from-zinc-600/60 dark:to-zinc-700/60 blur-2xl scale-150" />
-      {/* Color layer that fades in */}
+      {/* Gray base layer - contained with rounded corners */}
+      <div className="absolute inset-[-50%] bg-gradient-to-br from-zinc-300/60 to-zinc-400/60 dark:from-zinc-600/60 dark:to-zinc-700/60 blur-2xl" />
+      {/* Color layer that fades in - contained with rounded corners */}
       <div 
-        className={`absolute inset-0 bg-gradient-to-br ${colorRef.current} blur-2xl scale-150 transition-opacity duration-1000`}
+        className={`absolute inset-[-50%] bg-gradient-to-br ${colorRef.current} blur-2xl transition-opacity duration-1000`}
         style={{ opacity: showColor ? 1 : 0 }}
       />
-      <div className="absolute inset-0 bg-zinc-100/30 dark:bg-zinc-900/30 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-zinc-100/30 dark:bg-zinc-900/30 backdrop-blur-sm rounded-2xl" />
       <div
-        className="absolute inset-0"
+        className="absolute inset-0 rounded-2xl"
         style={{
           background: 'linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.4) 50%, transparent 70%)',
           backgroundSize: '200% 100%',
@@ -196,9 +196,10 @@ function useVideoContent(
 // Uses the full VideoRenderer with all controls (slider, volume, etc.)
 function VideoRendererFull({ filePath, sandboxId }: { filePath: string; sandboxId?: string }) {
   const urlCacheRef = useRef<Map<Blob, string>>(new Map());
+  const [hasVideoError, setHasVideoError] = useState(false);
   
   // Fetch video blob with proper auth
-  const { data: videoBlob, isLoading } = useVideoContent(sandboxId, filePath, {
+  const { data: videoBlob, isLoading, error: fetchError } = useVideoContent(sandboxId, filePath, {
     enabled: !!sandboxId && !!filePath,
   });
   
@@ -228,8 +229,54 @@ function VideoRendererFull({ filePath, sandboxId }: { filePath: string; sandboxI
     };
   }, []); // Empty deps = only run on mount/unmount
 
-  if (isLoading || !videoUrl) {
+  // Show shimmer while loading
+  if (isLoading) {
     return <ShimmerBox aspectVideo />;
+  }
+
+  // Show error if fetch failed
+  if (fetchError || (!videoBlob && !isLoading)) {
+    return (
+      <div className="aspect-video flex flex-col items-center justify-center p-6 text-center rounded-2xl border border-neutral-200 dark:border-neutral-700/50 bg-muted/30">
+        <AlertTriangle className="h-10 w-10 text-rose-500 dark:text-rose-400 mb-3" />
+        <h3 className="text-base font-medium text-zinc-900 dark:text-zinc-100 mb-2">
+          Failed to load video
+        </h3>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          {fetchError ? String(fetchError) : 'The video could not be loaded'}
+        </p>
+      </div>
+    );
+  }
+
+  // Show error if no URL could be created
+  if (!videoUrl) {
+    return (
+      <div className="aspect-video flex flex-col items-center justify-center p-6 text-center rounded-2xl border border-neutral-200 dark:border-neutral-700/50 bg-muted/30">
+        <AlertTriangle className="h-10 w-10 text-rose-500 dark:text-rose-400 mb-3" />
+        <h3 className="text-base font-medium text-zinc-900 dark:text-zinc-100 mb-2">
+          Failed to load video
+        </h3>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Could not create video URL
+        </p>
+      </div>
+    );
+  }
+
+  // Video error handler
+  if (hasVideoError) {
+    return (
+      <div className="aspect-video flex flex-col items-center justify-center p-6 text-center rounded-2xl border border-neutral-200 dark:border-neutral-700/50 bg-muted/30">
+        <AlertTriangle className="h-10 w-10 text-rose-500 dark:text-rose-400 mb-3" />
+        <h3 className="text-base font-medium text-zinc-900 dark:text-zinc-100 mb-2">
+          Failed to play video
+        </h3>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          The video file may be corrupted or in an unsupported format
+        </p>
+      </div>
+    );
   }
 
   return (

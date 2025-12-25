@@ -311,16 +311,16 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
 
                 {/* Shimmer below - aspect-video for video, aspect-square for image */}
                 <div className={`relative w-80 ${isVideoGeneration ? 'aspect-video' : 'aspect-square'} rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-700/50`}>
-                    {/* Gray base layer */}
-                    <div className="absolute inset-0 bg-gradient-to-br from-zinc-300/60 to-zinc-400/60 dark:from-zinc-600/60 dark:to-zinc-700/60 blur-2xl scale-150" />
-                    {/* Color layer that fades in */}
+                    {/* Gray base layer - contained with rounded corners */}
+                    <div className="absolute inset-[-50%] bg-gradient-to-br from-zinc-300/60 to-zinc-400/60 dark:from-zinc-600/60 dark:to-zinc-700/60 blur-2xl" />
+                    {/* Color layer that fades in - contained with rounded corners */}
                     <div 
-                        className={`absolute inset-0 bg-gradient-to-br ${shimmerColorRef.current} blur-2xl scale-150 transition-opacity duration-1000`}
+                        className={`absolute inset-[-50%] bg-gradient-to-br ${shimmerColorRef.current} blur-2xl transition-opacity duration-1000`}
                         style={{ opacity: showShimmerColor ? 1 : 0 }}
                     />
-                    <div className="absolute inset-0 bg-zinc-100/30 dark:bg-zinc-900/30 backdrop-blur-sm" />
+                    <div className="absolute inset-0 bg-zinc-100/30 dark:bg-zinc-900/30 backdrop-blur-sm rounded-2xl" />
                     <div
-                        className="absolute inset-0"
+                        className="absolute inset-0 rounded-2xl"
                         style={{
                             background: 'linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.4) 50%, transparent 70%)',
                             backgroundSize: '200% 100%',
