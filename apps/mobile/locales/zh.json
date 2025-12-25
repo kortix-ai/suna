@@ -787,6 +787,9 @@
     "upgradeRequired": "需要升级",
     "upgradeRequiredMessage": "分享会话仅在付费计划中可用。升级以解锁此功能。",
     "upgrade": "升级",
+    "share": "分享",
+    "files": "文件",
+    "delete": "删除",
     "shareThread": "分享会话",
     "shareThreadUpgrade": "分享会话（升级）",
     "availableOnPaidPlans": "在付费计划中可用",
@@ -794,6 +797,7 @@
     "manageFiles": "管理文件",
     "viewManageAttachments": "查看和管理附件",
     "deleteThread": "删除会话",
+    "deleteConfirm": "确定要删除此会话吗？此操作无法撤消。",
     "permanentlyDelete": "永久删除此对话"
   },
   "triggers": {

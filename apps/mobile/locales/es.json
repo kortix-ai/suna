@@ -801,6 +801,9 @@
     "upgradeRequired": "Se Requiere Upgrade",
     "upgradeRequiredMessage": "Compartir hilos está disponible en planes pagos. Actualiza para desbloquear esta función.",
     "upgrade": "Actualizar",
+    "share": "Compartir",
+    "files": "Archivos",
+    "delete": "Eliminar",
     "shareThread": "Compartir Hilo",
     "shareThreadUpgrade": "Compartir Hilo (Upgrade)",
     "availableOnPaidPlans": "Disponible en planes pagos",
@@ -808,6 +811,7 @@
     "manageFiles": "Administrar Archivos",
     "viewManageAttachments": "Ver y administrar adjuntos",
     "deleteThread": "Eliminar Hilo",
+    "deleteConfirm": "¿Estás seguro de que deseas eliminar este hilo? Esta acción no se puede deshacer.",
     "permanentlyDelete": "Eliminar esta conversación permanentemente"
   },
   "triggers": {

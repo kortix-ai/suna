@@ -199,13 +199,14 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
     return (
       <View className="flex-row items-center gap-3 p-3 rounded-3xl border border-border bg-card">
         <View className="h-8 w-8 rounded-xl border border-border bg-background items-center justify-center">
-          <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
+          <Icon as={CircleDashed} size={16} className="text-primary" />
         </View>
         <View className="flex-1">
-          <Text className="text-sm font-roobert-medium text-foreground">
+          <Text className="text-sm font-roobert-medium text-foreground mb-0.5">
             Loading...
           </Text>
         </View>
+        <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
       </View>
     );
   }
@@ -216,7 +217,7 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
     return (
       <View className="flex-row items-center gap-3 p-3 rounded-3xl border border-border bg-card">
         <View className="h-8 w-8 rounded-xl border border-border bg-background items-center justify-center">
-          <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
+          <Icon as={IconComponent} size={16} className="text-primary" />
         </View>
         <View className="flex-1">
           <Text className="text-sm font-roobert-medium text-foreground mb-0.5">
@@ -228,6 +229,7 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
             </Text>
           )}
         </View>
+        <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
       </View>
     );
   }
@@ -236,7 +238,7 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
     <View className="rounded-3xl border border-border bg-card overflow-hidden">
       <View className="flex-row items-center gap-3 p-3 border-b border-border">
         <View className="h-8 w-8 rounded-xl border border-border bg-background items-center justify-center">
-          <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
+          <Icon as={IconComponent} size={16} className="text-primary" />
         </View>
         <View className="flex-1">
           <Text className="text-sm font-roobert-medium text-foreground mb-0.5">
@@ -248,6 +250,7 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
             </Text>
           )}
         </View>
+        <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
       </View>
 
       <ScrollView

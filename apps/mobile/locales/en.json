@@ -981,6 +981,9 @@
     "upgradeRequired": "Upgrade Required",
     "upgradeRequiredMessage": "Sharing threads is available on paid plans. Upgrade to unlock this feature.",
     "upgrade": "Upgrade",
+    "share": "Share",
+    "files": "Files",
+    "delete": "Delete",
     "shareThread": "Share Thread",
     "shareThreadUpgrade": "Share Thread (Upgrade)",
     "availableOnPaidPlans": "Available on paid plans",
@@ -988,6 +991,7 @@
     "manageFiles": "Manage Files",
     "viewManageAttachments": "View and manage attachments",
     "deleteThread": "Delete Thread",
+    "deleteConfirm": "Are you sure you want to delete this thread? This action cannot be undone.",
     "permanentlyDelete": "Permanently delete this conversation"
   },
   "triggers": {

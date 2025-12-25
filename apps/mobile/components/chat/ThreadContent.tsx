@@ -601,7 +601,7 @@ const StreamingToolCallIndicator = React.memo(function StreamingToolCallIndicato
         {/* Header */}
         <View className="flex-row items-center gap-3 p-3 border-b border-border">
           <View className="h-8 w-8 items-center justify-center rounded-xl border border-border bg-background">
-            <Icon as={CircleDashed} size={16} className="animate-spin text-primary" />
+            <Icon as={IconComponent} size={16} className="text-primary" />
           </View>
           <View className="flex-1">
             <Text className="mb-0.5 font-roobert-medium text-sm text-foreground">{displayName}</Text>
@@ -611,6 +611,7 @@ const StreamingToolCallIndicator = React.memo(function StreamingToolCallIndicato
               </Text>
             )}
           </View>
+          <Icon as={CircleDashed} size={16} className="animate-spin text-primary" />
         </View>
         
         {/* Streaming content */}
@@ -632,24 +633,21 @@ const StreamingToolCallIndicator = React.memo(function StreamingToolCallIndicato
     );
   }
 
-  // Simple indicator - matches regular tool call button style
+  // Simple indicator - matches finished ToolCard style exactly
   return (
-    <View className="my-1">
-      <Pressable
-        disabled
-        className="flex-row items-center gap-1.5 py-1 px-1 pr-1.5 bg-muted rounded-lg border border-neutral-200 dark:border-neutral-700/50"
-      >
-        <View className="flex items-center justify-center">
-          <Icon as={IconComponent} size={14} className="text-muted-foreground" />
-        </View>
-        <Text className="font-mono text-xs text-foreground">{displayName}</Text>
+    <View className="flex-row items-center gap-3 rounded-3xl border border-border bg-card p-3">
+      <View className="h-8 w-8 items-center justify-center rounded-xl border border-border bg-background">
+        <Icon as={IconComponent} size={16} className="text-primary" />
+      </View>
+      <View className="flex-1">
+        <Text className="mb-0.5 font-roobert-medium text-sm text-foreground">{displayName}</Text>
         {paramDisplay && (
-          <Text className="ml-1 text-xs text-muted-foreground" numberOfLines={1} style={{ maxWidth: 200 }}>
+          <Text className="text-xs text-muted-foreground" numberOfLines={1}>
             {paramDisplay}
           </Text>
         )}
-        <Icon as={CircleDashed} size={14} className="animate-spin text-muted-foreground ml-1" />
-      </Pressable>
+      </View>
+      <Icon as={CircleDashed} size={16} className="animate-spin text-primary" />
     </View>
   );
 });
@@ -956,7 +954,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
     );
 
     return (
-      <View className="flex-1 pt-4">
+      <View className="flex-1 pt-4" pointerEvents="box-none">
         {groupedMessages.map((group, groupIndex) => {
           if (group.type === 'user') {
             const message = group.messages[0];
