@@ -455,7 +455,7 @@ function FloatingToolbar({
   onDownloadPng: () => void;
   onDownloadSvg: () => void;
   onImageUpdate: (newSrc: string, newDimensions?: { width: number; height: number }) => void;
-  onProcessingChange: (isProcessing: boolean) => void;
+  onProcessingChange: (isProcessing: boolean, failed?: boolean) => void;
   onTextEditStateChange: (state: { regions: TextRegion[]; ocrImageSize: { width: number; height: number } } | null) => void;
   onTextRegionSelect?: (region: TextRegion) => void;
   externalSelectedRegion?: TextRegion | null;
@@ -693,6 +693,8 @@ function FloatingToolbar({
 
     toast.info(actionLabels[action], { description: prompt || 'Processing with AI...' });
 
+    let succeeded = false;
+
     try {
       // Get actual base64 data (fetch if needed)
       const imageBase64 = await getImageAsBase64(element.src);
@@ -719,6 +721,7 @@ function FloatingToolbar({
       const result = await response.json();
 
       if (result.success && result.image_base64) {
+        succeeded = true;
         // For upscale, get the new image dimensions
         if (action === 'upscale') {
           // Load the image to get its actual dimensions
@@ -753,7 +756,8 @@ function FloatingToolbar({
       setIsProcessing(false);
       setActiveAction(null);
       setEditPrompt('');
-      onProcessingChange(false);
+      // Pass failed=true if not succeeded (to remove placeholder)
+      onProcessingChange(false, !succeeded);
     }
   };
 
@@ -926,21 +930,22 @@ function FloatingToolbar({
                         <path d="M6 8L7.5 9.5L10 6" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     )}
-                    Mark edit
+                    Edit
                   </Button>
                 </PopoverTrigger>
               </TooltipTrigger>
               <TooltipContent>AI-powered image editing</TooltipContent>
             </Tooltip>
-            <PopoverContent className="w-72 p-3" align="center">
-              <div className="space-y-2">
-                <label className="text-xs font-medium">Describe the edit you want</label>
-                <Input
-                  placeholder='e.g., "Make the sky sunset colors"'
+            <PopoverContent className="w-80 p-3" align="end">
+              <div className="space-y-3">
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wide">AI Image Edit</div>
+                <Textarea
+                  placeholder="Describe the edit you want to make..."
                   value={editPrompt}
                   onChange={(e) => setEditPrompt(e.target.value)}
+                  className="min-h-[80px] resize-none shadow-none"
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && editPrompt.trim()) {
+                    if (e.key === 'Enter' && e.metaKey && editPrompt.trim()) {
                       handleAIAction('mark_edit', editPrompt);
                     }
                   }}
@@ -951,8 +956,14 @@ function FloatingToolbar({
                   onClick={() => handleAIAction('mark_edit', editPrompt)}
                   disabled={!editPrompt.trim() || isProcessing}
                 >
-                  {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
-                  Generate Edit
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Generating...
+                    </>
+                  ) : (
+                    'Generate'
+                  )}
                 </Button>
               </div>
             </PopoverContent>
@@ -1296,6 +1307,8 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   const [elements, setElements] = useState<CanvasElement[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [processingElementId, setProcessingElementId] = useState<string | null>(null);
+  const [pendingPlaceholderId, setPendingPlaceholderId] = useState<string | null>(null);
+  const pendingPlaceholderIdRef = useRef<string | null>(null);
 
   // Text edit mode state - managed at canvas level for proper positioning
   const [textEditState, setTextEditState] = useState<{
@@ -1996,7 +2009,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
               </Tooltip>
               <PopoverContent className="w-80 p-3" align="end">
                 <div className="space-y-3">
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Generate images</div>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Quick Image Generation</div>
                   <Textarea
                     placeholder="Describe the image you want to create..."
                     value={generatePrompt}
@@ -2266,19 +2279,70 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
               }
             }}
             onImageUpdate={(newSrc, newDimensions) => {
-              if (newDimensions) {
-                // Update src and resize element to new dimensions
-                handleElementChange(selectedElement.id, {
-                  src: newSrc,
-                  width: newDimensions.width,
-                  height: newDimensions.height,
-                });
-              } else {
-                handleElementChange(selectedElement.id, { src: newSrc });
+              // Non-destructive editing: Update the pending placeholder with actual image
+              const newWidth = newDimensions?.width || selectedElement.width;
+              const newHeight = newDimensions?.height || selectedElement.height;
+
+              // Use ref for reliable access even if selection changed
+              const currentPlaceholderId = pendingPlaceholderIdRef.current;
+              if (currentPlaceholderId) {
+                // Update the placeholder with the actual image
+                setElements(prev => prev.map(el =>
+                  el.id === currentPlaceholderId
+                    ? {
+                      ...el,
+                      src: newSrc,
+                      width: newWidth,
+                      height: newHeight,
+                      locked: false, // Unlock after processing
+                      name: el.name.replace('_processing', '_processed'),
+                    }
+                    : el
+                ));
+                setSelectedIds([currentPlaceholderId]);
+                pendingPlaceholderIdRef.current = null;
+                setPendingPlaceholderId(null);
+                setProcessingElementId(null);
               }
             }}
-            onProcessingChange={(isProcessing) => {
-              setProcessingElementId(isProcessing ? selectedElement.id : null);
+            onProcessingChange={(isProcessing, failed = false) => {
+              if (isProcessing) {
+                // Create placeholder element to the RIGHT immediately
+                const gap = 20;
+                const placeholderId = `placeholder-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+                const placeholderElement: CanvasElement = {
+                  id: placeholderId,
+                  type: 'image',
+                  src: '', // Empty src = loading state
+                  x: selectedElement.x + selectedElement.width + gap,
+                  y: selectedElement.y,
+                  width: selectedElement.width,
+                  height: selectedElement.height,
+                  rotation: 0,
+                  scaleX: 1,
+                  scaleY: 1,
+                  opacity: 1,
+                  locked: true, // Lock during processing
+                  visible: true,
+                  name: `${selectedElement.name}_processing`,
+                };
+
+                setElements(prev => [...prev, placeholderElement]);
+                pendingPlaceholderIdRef.current = placeholderId; // Store in ref for reliable access
+                setPendingPlaceholderId(placeholderId);
+                setProcessingElementId(placeholderId); // Show shimmer on placeholder, not original
+              } else if (failed) {
+                // Only cleanup on FAILURE - success is handled by onImageUpdate
+                const currentPlaceholderId = pendingPlaceholderIdRef.current;
+                if (currentPlaceholderId) {
+                  setElements(prev => prev.filter(el => el.id !== currentPlaceholderId));
+                }
+                pendingPlaceholderIdRef.current = null;
+                setPendingPlaceholderId(null);
+                setProcessingElementId(null);
+              }
+              // On success (failed=false), onImageUpdate handles cleanup
             }}
             onTextEditStateChange={(state) => {
               if (state) {
