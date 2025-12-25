@@ -349,16 +349,29 @@ export function useAuth() {
             return { success: false, error };
           }
 
+          console.log('🔧 Configuring GoogleSignin with webClientId:', webClientId.substring(0, 20) + '...');
+          console.log('📦 Package name: com.kortix.app');
+          console.log('🌐 Web Client ID format:', webClientId.includes('.apps.googleusercontent.com') ? '✅ Valid format' : '❌ Invalid format');
+          
           GoogleSignin.configure({
             webClientId, // Use Web Client ID, not Android Client ID (Supabase requirement)
             offlineAccess: false, // We don't need offline access
           });
+          
+          console.log('✅ GoogleSignin configured, checking Play Services...');
 
           // Check if Play Services are available
-          await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+          const hasPlayServices = await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+          console.log('✅ Play Services available:', hasPlayServices);
 
           // Sign in
+          console.log('🔐 Attempting Google Sign-In...');
           const response = await GoogleSignin.signIn();
+          console.log('📥 Google Sign-In response received:', {
+            hasData: !!response.data,
+            hasIdToken: !!response.data?.idToken,
+            userEmail: response.data?.user?.email,
+          });
 
           if (!response.data?.idToken) {
             console.error('❌ No ID token received from Google Sign-In');
@@ -387,25 +400,60 @@ export function useAuth() {
           setAuthState((prev) => ({ ...prev, isLoading: false }));
           return { success: true, data };
         } catch (googleErr: any) {
+          const errorCode = googleErr.code;
+          const errorMessage = googleErr.message || 'Unknown error';
+          
           console.error('❌ Google sign in exception:', googleErr);
+          console.error('❌ Google sign in error details:', {
+            code: errorCode,
+            message: errorMessage,
+            fullError: JSON.stringify(googleErr, null, 2),
+          });
           
           // Handle specific Google Sign-In errors
-          if (googleErr.code === statusCodes?.SIGN_IN_CANCELLED) {
+          if (errorCode === statusCodes?.SIGN_IN_CANCELLED) {
             console.log('⚠️ Google sign in cancelled by user');
             setAuthState((prev) => ({ ...prev, isLoading: false }));
             return { success: false, error: { message: 'Sign in cancelled' } };
-          } else if (googleErr.code === statusCodes?.IN_PROGRESS) {
+          } else if (errorCode === statusCodes?.IN_PROGRESS) {
             console.log('⚠️ Google sign in already in progress');
             setAuthState((prev) => ({ ...prev, isLoading: false }));
             return { success: false, error: { message: 'Sign in already in progress' } };
-          } else if (googleErr.code === statusCodes?.PLAY_SERVICES_NOT_AVAILABLE) {
+          } else if (errorCode === statusCodes?.PLAY_SERVICES_NOT_AVAILABLE) {
             console.error('❌ Google Play Services not available');
             setError({ message: 'Google Play Services is required for sign in. Please install or update Google Play Services.' });
             setAuthState((prev) => ({ ...prev, isLoading: false }));
             return { success: false, error: { message: 'Google Play Services is required' } };
+          } else if (errorCode === statusCodes?.DEVELOPER_ERROR || errorMessage?.includes('DEVELOPER_ERROR')) {
+            console.error('❌ DEVELOPER_ERROR - Configuration issue detected');
+            console.error('📋 Configuration Checklist:');
+            console.error('   1. ✅ Package name: com.kortix.app');
+            console.error('   2. ❓ Android OAuth Client ID created in Google Cloud Console?');
+            console.error('   3. ❓ SHA-1 fingerprint matches? (Get via: cd android && ./gradlew signingReport)');
+            console.error('   4. ❓ Both Web Client ID AND Android Client ID added to Supabase Dashboard?');
+            console.error('      → Supabase Dashboard → Auth → Providers → Google → Authorized Client IDs');
+            console.error('   5. ❓ Did you rebuild the app after adding Android Client ID?');
+            console.error('      → Run: npx expo prebuild --platform android --clean');
+            console.error('   6. ❓ Wait 5-15 minutes after Google Cloud Console changes');
+            
+            const detailedError = {
+              message: 'Google Sign-In configuration error. Check console logs for details.',
+              code: 'DEVELOPER_ERROR',
+              troubleshooting: {
+                step1: 'Verify Android OAuth Client ID exists in Google Cloud Console',
+                step2: 'Ensure SHA-1 fingerprint matches (run: cd android && ./gradlew signingReport)',
+                step3: 'Add both Web and Android Client IDs to Supabase Dashboard → Auth → Providers → Google → Authorized Client IDs',
+                step4: 'Rebuild app: npx expo prebuild --platform android --clean',
+                step5: 'Wait 5-15 minutes for Google Cloud Console changes to propagate',
+              },
+            };
+            
+            setError(detailedError);
+            setAuthState((prev) => ({ ...prev, isLoading: false }));
+            return { success: false, error: detailedError };
           }
           
-          const error = { message: googleErr.message || 'An unexpected error occurred during Google sign in' };
+          const error = { message: errorMessage || 'An unexpected error occurred during Google sign in' };
           setError(error);
           setAuthState((prev) => ({ ...prev, isLoading: false }));
           return { success: false, error };

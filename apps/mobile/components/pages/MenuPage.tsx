@@ -125,7 +125,7 @@ function EmptyState({
 
   if (type === 'loading') {
     return (
-      <View className="items-center justify-center px-8 py-16">
+      <View className="flex-1 items-center justify-center px-8" style={{ minHeight: 300 }}>
         <KortixLoader size="large" />
         <Text className="mt-4 text-center font-roobert text-sm text-muted-foreground">{title}</Text>
       </View>
@@ -652,7 +652,11 @@ export function MenuPage({
               className="flex-1"
               contentContainerClassName="px-6"
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingTop: 0, paddingBottom: 40 }}
+              contentContainerStyle={{ 
+                paddingTop: 0, 
+                paddingBottom: 40,
+                flexGrow: 1,
+              }}
               onScroll={handleScroll}
               scrollEventThrottle={16}>
               {activeTab === 'chats' && (

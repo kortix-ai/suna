@@ -61,7 +61,7 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
 
   // Dynamic snap point based on state - always 85% height
   const snapPoints = React.useMemo(() => {
-    return ['85%'];
+    return ['90%'];
   }, []);
 
   const renderBackdrop = React.useCallback(
