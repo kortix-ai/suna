@@ -52,52 +52,35 @@ def parse_image_paths(image_path: Optional[str | list[str]]) -> list[str]:
     weight=50,
     visible=True,
     usage_guide="""
-### MEDIA GENERATION (Images & Videos)
+### IMAGE & VIDEO GENERATION
 
-**AUTO-DETECTION:** Mode is automatically determined:
-- `image_path` provided → edits/transforms that image
-- `video_options` provided → generates video
-- Neither → generates new image from scratch
+**IMPORTANT:** If user uploaded an image, pass it as `image_path` to use it.
 
-**GENERATE NEW IMAGE (no input image):**
 ```python
-image_edit_or_generate(prompt="A futuristic cityscape at sunset")
-```
-
-**EDIT/TRANSFORM EXISTING IMAGE (provide image_path):**
-```python
-# User uploaded /workspace/uploads/image.png → use it!
+# User uploaded /workspace/uploads/image.png → include image_path
 image_edit_or_generate(
-    prompt="Add a red hat to the person", 
+    prompt="Put this person on Mars with red landscape", 
     image_path="/workspace/uploads/image.png"
 )
-```
 
-**🎬 GENERATE VIDEO (include video_options):**
-```python
-# Text-to-video (no input image)
+# No upload → just prompt
+image_edit_or_generate(prompt="A futuristic city at sunset")
+
+# Video with uploaded image
 image_edit_or_generate(
-    prompt="An astronaut floating in space...",
-    video_options={"duration": 5, "generate_audio": True}
+    prompt="The person turns their head",
+    image_path="/workspace/uploads/image.png",
+    video_options={"duration": 5}
 )
 
-# Image-to-video (animate an uploaded image)
+# Video without image
 image_edit_or_generate(
-    prompt="The person slowly turns their head",
-    image_path="/workspace/uploads/photo.png",  # Image to animate
+    prompt="An astronaut floating in space",
     video_options={"duration": 5, "generate_audio": True}
 )
 ```
 
-**VIDEO OPTIONS:**
-- `duration`: 2-12 seconds (default: 5)
-- `aspect_ratio`: "16:9", "9:16", "1:1" (ignored if image provided)
-- `generate_audio`: generate audio (default: false)
-
-**RULE: If user uploads an image, use it as image_path!**
-3. Use mode="edit" to modify/transform existing images
-4. Use mode="video" for video generation (with or without input image)
-5. REMEMBER previous generated filenames for follow-up operations
+**video_options:** duration (2-12s), aspect_ratio ("16:9"), generate_audio (bool)
 """
 )
 class SandboxImageEditTool(SandboxToolsBase):
@@ -113,7 +96,7 @@ class SandboxImageEditTool(SandboxToolsBase):
             "type": "function",
             "function": {
                 "name": "image_edit_or_generate",
-                "description": "Generate images/videos with AI. Behavior is AUTO-DETECTED: if image_path provided → edit/transform that image. If video_options provided → generate video. Otherwise → generate new image from scratch.",
+                "description": "Generate images or videos with AI. If user uploaded an image, include image_path to use it. Add video_options for video generation.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -129,7 +112,7 @@ class SandboxImageEditTool(SandboxToolsBase):
                                 {"type": "string"},
                                 {"type": "array", "items": {"type": "string"}}
                             ],
-                            "description": "Path to input image. If user uploaded an image (e.g. /workspace/uploads/image.png), provide that path here to use it as input for editing or video generation.",
+                            "description": "Path to input image. If user uploaded an image, include that path here to use it.",
                         },
                         "video_options": {
                             "type": "object",
@@ -272,7 +255,7 @@ class SandboxImageEditTool(SandboxToolsBase):
                     if isinstance(result, ToolResult):
                         return ToolResult(success=True, output=f"Failed: {result.output}")
                     
-                    return ToolResult(success=True, output=f"Video saved as: {result}")
+                    return ToolResult(success=True, output=f"Video saved as: /workspace/{result}")
                 
                 # Image mode (generate/edit)
                 logger.info(f"Executing single image operation with mode '{mode}' for prompt: '{prompt[:50]}...'")
@@ -283,8 +266,8 @@ class SandboxImageEditTool(SandboxToolsBase):
                     # Error - return gracefully with friendly message
                     return ToolResult(success=True, output=f"Failed: {result.output}")
                 
-                # Success - result is filename
-                output_lines = [f"Image saved as: {result}"]
+                # Success - result is filename (include full path so AI knows exact location)
+                output_lines = [f"Image saved as: /workspace/{result}"]
                 
                 # If canvas_path provided, add to canvas
                 if canvas_path:
@@ -446,16 +429,36 @@ class SandboxImageEditTool(SandboxToolsBase):
                 "prompt": prompt,
             }
             
-            # Add video options with defaults
+            # Add video options with defaults - ensure proper types
             opts = video_options or {}
-            input_params["duration"] = opts.get("duration", 5)
-            input_params["aspect_ratio"] = opts.get("aspect_ratio", "16:9")
-            input_params["fps"] = opts.get("fps", 24)
-            input_params["camera_fixed"] = opts.get("camera_fixed", False)
-            input_params["generate_audio"] = opts.get("generate_audio", False)
+            
+            # Duration must be integer between 2-12
+            duration = opts.get("duration", 5)
+            try:
+                duration = int(duration)
+            except (ValueError, TypeError):
+                duration = 5
+            duration = max(2, min(12, duration))  # Clamp to valid range
+            input_params["duration"] = duration
+            
+            # Other params
+            input_params["aspect_ratio"] = str(opts.get("aspect_ratio", "16:9"))
+            
+            fps = opts.get("fps", 24)
+            try:
+                fps = int(fps)
+            except (ValueError, TypeError):
+                fps = 24
+            input_params["fps"] = fps
+            
+            input_params["camera_fixed"] = bool(opts.get("camera_fixed", False))
+            input_params["generate_audio"] = bool(opts.get("generate_audio", False))
             
             if "seed" in opts:
-                input_params["seed"] = opts["seed"]
+                try:
+                    input_params["seed"] = int(opts["seed"])
+                except (ValueError, TypeError):
+                    pass  # Skip invalid seed
             
             # Handle input image for image-to-video
             if image_path:

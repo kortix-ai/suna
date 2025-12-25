@@ -90,6 +90,32 @@ interface CanvasData {
   updated_at?: string;
 }
 
+// Sanitize element to ensure all numeric fields are actually numbers
+// (AI sometimes passes strings like "700" instead of 700)
+function sanitizeElement(el: Partial<CanvasElement>): CanvasElement {
+  return {
+    ...el,
+    id: el.id || '',
+    type: 'image',
+    src: el.src || '',
+    name: el.name || '',
+    x: Number(el.x) || 0,
+    y: Number(el.y) || 0,
+    width: Number(el.width) || 100,
+    height: Number(el.height) || 100,
+    rotation: Number(el.rotation) || 0,
+    scaleX: Number(el.scaleX) || 1,
+    scaleY: Number(el.scaleY) || 1,
+    opacity: el.opacity !== undefined ? Number(el.opacity) : 1,
+    locked: Boolean(el.locked),
+    visible: el.visible !== false,
+  } as CanvasElement;
+}
+
+function sanitizeElements(elements: Partial<CanvasElement>[]): CanvasElement[] {
+  return (elements || []).map(sanitizeElement);
+}
+
 interface CanvasRendererProps {
   content: string | null;
   filePath?: string;
@@ -1372,7 +1398,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         JSON.stringify(parsed.elements?.map(e => e.id)) !== JSON.stringify(elements.map(e => e.id)) ||
         parsed.background !== canvasData.background) {
         setCanvasData(parsed);
-        setElements(parsed.elements || []);
+        setElements(sanitizeElements(parsed.elements || []));
         // Only reset centering if this is first load or elements were added
         if (!hasCenteredRef.current || (newElementCount > currentElementCount)) {
           hasCenteredRef.current = false;
@@ -1454,7 +1480,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           if (newElementIds !== currentElementIds) {
             console.log('[CanvasRenderer] Live update: new elements detected', parsed.elements?.length);
             setCanvasData(parsed);
-            setElements(parsed.elements || []);
+            setElements(sanitizeElements(parsed.elements || []));
             hasCenteredRef.current = false; // Re-center to show new content
           }
         } catch (parseErr) {

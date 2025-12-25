@@ -355,6 +355,16 @@ class SandboxCanvasTool(SandboxToolsBase):
         name: Optional[str] = None
     ) -> ToolResult:
         """Add an image element to the canvas"""
+        # Ensure x, y, width, height are numbers (AI sometimes passes strings)
+        try:
+            x = float(x) if x is not None else 100
+            y = float(y) if y is not None else 100
+            width = float(width) if width is not None else None
+            height = float(height) if height is not None else None
+        except (ValueError, TypeError):
+            x, y = 100, 100
+            width, height = None, None
+        
         # Use lock to prevent race conditions when parallel calls try to add images
         canvas_lock = self._get_canvas_lock(canvas_path)
         

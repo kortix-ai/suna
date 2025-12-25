@@ -273,17 +273,29 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     // Check if this is a media generation tool - show shimmer card
     const isMediaGenTool = MEDIA_GENERATION_TOOLS.has(rawToolName || '') || MEDIA_GENERATION_TOOLS.has(toolName);
     
+    // Stable color ref for shimmer - placed before conditional return
+    const shimmerColorRef = useRef(
+        ['from-purple-300/60 to-pink-300/60', 'from-blue-300/60 to-cyan-300/60', 
+         'from-emerald-300/60 to-teal-300/60', 'from-orange-300/60 to-amber-300/60',
+         'from-rose-300/60 to-red-300/60', 'from-indigo-300/60 to-violet-300/60']
+        [Math.floor(Math.random() * 6)]
+    );
+    const [showShimmerColor, setShowShimmerColor] = useState(false);
+    
+    // Fade in shimmer color after delay
+    useEffect(() => {
+        if (isMediaGenTool) {
+            const timer = setTimeout(() => setShowShimmerColor(true), 800);
+            return () => clearTimeout(timer);
+        }
+    }, [isMediaGenTool]);
+    
     if (isMediaGenTool) {
         const IconComponent = getToolIcon(rawToolName || '');
-        const blobColors = [
-            'from-purple-300/60 to-pink-300/60',
-            'from-blue-300/60 to-cyan-300/60',
-            'from-emerald-300/60 to-teal-300/60',
-            'from-orange-300/60 to-amber-300/60',
-            'from-rose-300/60 to-red-300/60',
-            'from-indigo-300/60 to-violet-300/60',
-        ];
-        const colorClass = blobColors[Math.floor(Math.random() * blobColors.length)];
+        
+        // Check if this is a video generation (has video_options in arguments)
+        const isVideoGeneration = effectiveToolCall?.arguments?.video_options !== undefined ||
+            (typeof effectiveToolCall?.arguments === 'string' && effectiveToolCall.arguments.includes('video_options'));
 
         return (
             <div className="my-1.5 space-y-2">
@@ -297,9 +309,15 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                     <CircleDashed className="h-3.5 w-3.5 text-muted-foreground shrink-0 animate-spin ml-1" />
                 </button>
 
-                {/* Shimmer below - outside wrapper */}
-                <div className="relative w-80 aspect-square rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-700/50">
-                    <div className={`absolute inset-0 bg-gradient-to-br ${colorClass} blur-2xl scale-150`} />
+                {/* Shimmer below - aspect-video for video, aspect-square for image */}
+                <div className={`relative w-80 ${isVideoGeneration ? 'aspect-video' : 'aspect-square'} rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-700/50`}>
+                    {/* Gray base layer */}
+                    <div className="absolute inset-0 bg-gradient-to-br from-zinc-300/60 to-zinc-400/60 dark:from-zinc-600/60 dark:to-zinc-700/60 blur-2xl scale-150" />
+                    {/* Color layer that fades in */}
+                    <div 
+                        className={`absolute inset-0 bg-gradient-to-br ${shimmerColorRef.current} blur-2xl scale-150 transition-opacity duration-1000`}
+                        style={{ opacity: showShimmerColor ? 1 : 0 }}
+                    />
                     <div className="absolute inset-0 bg-zinc-100/30 dark:bg-zinc-900/30 backdrop-blur-sm" />
                     <div
                         className="absolute inset-0"

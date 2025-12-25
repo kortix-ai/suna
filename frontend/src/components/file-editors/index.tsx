@@ -7,6 +7,7 @@ import { UnifiedMarkdown } from '@/components/markdown';
 import { CodeEditor } from './code-editor';
 import { PdfRenderer } from '@/components/file-renderers/pdf-renderer';
 import { ImageRenderer } from '@/components/file-renderers/image-renderer';
+import { VideoRenderer } from '@/components/file-renderers/video-renderer';
 import { BinaryRenderer } from '@/components/file-renderers/binary-renderer';
 import { CsvRenderer } from '@/components/file-renderers/csv-renderer';
 import { XlsxRenderer } from '@/components/file-renderers/xlsx-renderer';
@@ -23,6 +24,7 @@ export type EditableFileType =
   | 'html'
   | 'pdf'
   | 'image'
+  | 'video'
   | 'binary'
   | 'csv'
   | 'xlsx'
@@ -81,6 +83,7 @@ export function getEditableFileType(fileName: string): EditableFileType {
   ];
   const textExtensions = ['txt', 'log', 'env', 'ini', 'conf', 'cfg', 'gitignore', 'editorconfig'];
   const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'];
+  const videoExtensions = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v', 'ogg'];
   const pdfExtensions = ['pdf'];
   const csvExtensions = ['csv', 'tsv'];
   const xlsxExtensions = ['xlsx', 'xls'];
@@ -106,6 +109,7 @@ export function getEditableFileType(fileName: string): EditableFileType {
   }
   
   if (imageExtensions.includes(extension)) return 'image';
+  if (videoExtensions.includes(extension)) return 'video';
   if (pdfExtensions.includes(extension)) return 'pdf';
   if (csvExtensions.includes(extension)) return 'csv';
   if (xlsxExtensions.includes(extension)) return 'xlsx';
@@ -195,6 +199,8 @@ export function EditableFileRenderer({
         />
       ) : fileType === 'image' && binaryUrl ? (
         <ImageRenderer url={binaryUrl} />
+      ) : fileType === 'video' && binaryUrl ? (
+        <VideoRenderer url={binaryUrl} />
       ) : fileType === 'pdf' && binaryUrl ? (
         <PdfRenderer url={binaryUrl} />
       ) : fileType === 'csv' ? (
