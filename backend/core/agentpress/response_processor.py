@@ -467,6 +467,7 @@ class ResponseProcessor:
         yielded_tool_indices = set() # Stores indices of tools whose *status* has been yielded
         executed_native_tool_indices = set() # Track which native tool call indices have been executed
         tool_index = 0
+        tool_results_buffer = [] # Buffer for tool results (initialized early for immediate saving)
         xml_tool_call_count = 0
         finish_reason = None
         should_auto_continue = False
@@ -476,6 +477,8 @@ class ResponseProcessor:
         agent_should_terminate = False # Flag to track if a terminating tool has been executed
         complete_native_tool_calls = [] # Initialize early for use in assistant_response_end
         xml_tool_calls_with_ids = [] # Track XML tool calls with their IDs for metadata storage
+        partial_assistant_message_id = None # Track the message_id of the partial assistant message we're updating
+        complete_tool_calls_for_partial = [] # Track which tool calls are complete and ready to save
         content_chunk_buffer = {} # Buffer to reorder content chunks: sequence -> chunk_data
         next_expected_sequence = 0 # Track the next expected sequence number for ordering
         
@@ -795,9 +798,50 @@ class ResponseProcessor:
                                 execution_task = asyncio.create_task(self._execute_tool(tool_call_data))
                                 pending_tool_executions.append({
                                     "task": execution_task, "tool_call": tool_call_data,
-                                    "tool_index": tool_index, "context": context
+                                    "tool_index": tool_index, "context": context,
+                                    "saved": False  # Track if already saved during streaming
                                 })
                                 tool_index += 1
+                        
+                        # --- Check for completed tool executions and save immediately ---
+                        if config.execute_tools and config.execute_on_stream:
+                            for execution in pending_tool_executions:
+                                if execution["task"].done() and not execution.get("saved", False):
+                                    try:
+                                        result = execution["task"].result()
+                                        execution["context"].result = result
+                                        
+                                        # Save immediately
+                                        updated_id, saved_result, saved_assistant = await self._handle_tool_execution_completion(
+                                            thread_id, thread_run_id,
+                                            execution["tool_call"], result, execution["tool_index"],
+                                            execution["context"], tool_calls_buffer, accumulated_content,
+                                            xml_tool_calls_with_ids, config, partial_assistant_message_id
+                                        )
+                                        
+                                        if updated_id:
+                                            partial_assistant_message_id = updated_id
+                                        
+                                        if saved_assistant:
+                                            # Update last_assistant_message_object with the saved/updated message
+                                            last_assistant_message_object = saved_assistant
+                                            # Yield assistant message immediately so frontend can match tool results
+                                            yield format_for_yield(saved_assistant)
+                                        
+                                        execution["saved"] = True  # Mark as saved to avoid duplicate saves
+                                        
+                                        # Still add to buffer for final processing (if needed)
+                                        tool_results_buffer.append((
+                                            execution["tool_call"], result,
+                                            execution["tool_index"], execution["context"]
+                                        ))
+                                        
+                                        # Yield the saved tool result immediately
+                                        if saved_result:
+                                            yield format_for_yield(saved_result)
+                                            
+                                    except Exception as e:
+                                        logger.error(f"Error handling immediate tool save: {e}", exc_info=True)
                         
                         # --- Unified Streaming Chunk Yield (combines XML + Native tool calls) ---
                         if xml_tool_calls_updated or native_tool_calls_updated:
@@ -927,9 +971,6 @@ class ResponseProcessor:
             # Verify usage was captured
             if not final_llm_response:
                 logger.warning("⚠️ No usage data captured from streaming chunks")
-
-
-            tool_results_buffer = []
             if pending_tool_executions:
                 logger.debug(f"Waiting for {len(pending_tool_executions)} pending streamed tool executions")
                 self.trace.event(name="waiting_for_pending_streamed_tool_executions", level="DEFAULT", status_message=(f"Waiting for {len(pending_tool_executions)} pending streamed tool executions"))
@@ -1068,10 +1109,30 @@ class ResponseProcessor:
                     assistant_metadata["tool_calls"] = unified_tool_calls
                     logger.debug(f"Storing {len(unified_tool_calls)} unified tool calls in assistant message metadata ({len(complete_native_tool_calls) if complete_native_tool_calls else 0} native, {len(xml_tool_calls_with_ids)} XML)")
 
-                last_assistant_message_object = await self._add_message_with_agent_info(
-                    thread_id=thread_id, type="assistant", content=message_data,
-                    is_llm_message=True, metadata=assistant_metadata
-                )
+                # Update existing partial message if it exists, otherwise create new
+                if partial_assistant_message_id:
+                    # Update existing partial message to final complete version
+                    client = await self.thread_manager.db.client
+                    result = await client.table('messages').update({
+                        'content': message_data,
+                        'metadata': assistant_metadata
+                    }).eq('message_id', partial_assistant_message_id).execute()
+                    
+                    if result.data and len(result.data) > 0:
+                        last_assistant_message_object = result.data[0]
+                        logger.debug(f"Updated partial assistant message {partial_assistant_message_id} to final complete version")
+                    else:
+                        logger.warning(f"Failed to update partial assistant message {partial_assistant_message_id}, creating new message")
+                        last_assistant_message_object = await self._add_message_with_agent_info(
+                            thread_id=thread_id, type="assistant", content=message_data,
+                            is_llm_message=True, metadata=assistant_metadata
+                        )
+                else:
+                    # Create new message (no tools executed during streaming)
+                    last_assistant_message_object = await self._add_message_with_agent_info(
+                        thread_id=thread_id, type="assistant", content=message_data,
+                        is_llm_message=True, metadata=assistant_metadata
+                    )
 
                 if last_assistant_message_object:
                     # Yield the complete saved object, adding stream_status metadata just for yield
@@ -1149,8 +1210,22 @@ class ResponseProcessor:
                     logger.debug(f"Processing {len(tool_results_buffer)} buffered tool results")
                     self.trace.event(name="processing_buffered_tool_results", level="DEFAULT", status_message=(f"Processing {len(tool_results_buffer)} buffered tool results"))
                     for tool_call, result, tool_idx, context in tool_results_buffer:
-                        if last_assistant_message_object: context.assistant_message_id = last_assistant_message_object['message_id']
-                        tool_results_map[tool_idx] = (tool_call, result, context)
+                        # Check if already saved during streaming
+                        if hasattr(context, 'saved_during_streaming') and context.saved_during_streaming:
+                            # Already saved, just use the saved result object
+                            saved_tool_result_object = getattr(context, 'saved_result_object', None)
+                            if saved_tool_result_object:
+                                tool_result_message_objects[tool_idx] = saved_tool_result_object
+                                logger.debug(f"Tool result for index {tool_idx} already saved during streaming, skipping duplicate save")
+                            # Still add to map for yielding
+                            if last_assistant_message_object and not context.assistant_message_id:
+                                context.assistant_message_id = last_assistant_message_object['message_id']
+                            tool_results_map[tool_idx] = (tool_call, result, context)
+                        else:
+                            # Not saved yet, will be saved below
+                            if last_assistant_message_object: 
+                                context.assistant_message_id = last_assistant_message_object['message_id']
+                            tool_results_map[tool_idx] = (tool_call, result, context)
                 # Or execute now if not streamed (or if streamed but no buffered results)
                 elif final_tool_calls_to_process:
                     logger.debug(f"🔄 STREAMING: Executing {len(final_tool_calls_to_process)} tools ({config.tool_execution_strategy}) after stream")
@@ -1198,11 +1273,22 @@ class ResponseProcessor:
                             if started_msg_obj: yield format_for_yield(started_msg_obj)
                             yielded_tool_indices.add(tool_idx) # Mark status yielded
 
-                        # Save the tool result message to DB
-                        saved_tool_result_object = await self._add_tool_result( # Returns full object or None
-                            thread_id, tool_call, result,
-                            context.assistant_message_id
-                        )
+                        # Save the tool result message to DB (skip if already saved during streaming)
+                        if hasattr(context, 'saved_during_streaming') and context.saved_during_streaming:
+                            # Already saved during streaming, use the saved object
+                            saved_tool_result_object = getattr(context, 'saved_result_object', None)
+                            if not saved_tool_result_object:
+                                logger.warning(f"Tool result for index {tool_idx} marked as saved but saved_result_object missing, re-saving")
+                                saved_tool_result_object = await self._add_tool_result(
+                                    thread_id, tool_call, result,
+                                    context.assistant_message_id
+                                )
+                        else:
+                            # Not saved yet, save now
+                            saved_tool_result_object = await self._add_tool_result( # Returns full object or None
+                                thread_id, tool_call, result,
+                                context.assistant_message_id
+                            )
 
                         # Yield completed/failed status (linked to saved result ID if available)
                         completed_msg_obj = await self._yield_and_save_tool_completed(
@@ -2294,6 +2380,176 @@ class ResponseProcessor:
                     error_results.append((tool_call, error_result))
 
             return error_results
+
+    async def _save_or_update_partial_assistant_message(
+        self,
+        thread_id: str,
+        thread_run_id: str,
+        tool_calls_buffer: Dict[int, Dict[str, Any]],
+        accumulated_content: str,
+        xml_tool_calls_with_ids: List[Dict[str, Any]],
+        config: ProcessorConfig,
+        partial_assistant_message_id: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Save or update a partial assistant message with complete tool calls.
+        Returns the saved/updated message object with message_id.
+        """
+        try:
+            # Extract complete tool calls from buffer (only those with complete JSON arguments)
+            complete_native_tool_calls = []
+            if config.native_tool_calling:
+                complete_native_tool_calls = convert_buffer_to_complete_tool_calls(tool_calls_buffer)
+            
+            # Build partial message data with complete tool calls only
+            final_content = accumulated_content
+            if "|||STOP_AGENT|||" in final_content:
+                final_content = final_content.replace("|||STOP_AGENT|||", "").strip()
+            
+            message_data = {
+                "role": "assistant",
+                "content": final_content
+            }
+            
+            # Only add tool_calls field for NATIVE tool calling
+            if config.native_tool_calling and complete_native_tool_calls:
+                message_data["tool_calls"] = complete_native_tool_calls
+            
+            # Build unified metadata with all tool calls (native + XML) and clean text
+            assistant_metadata = {"thread_run_id": thread_run_id}
+            
+            # Extract clean text content (without tool calls)
+            text_content = strip_xml_tool_calls(final_content) if config.xml_tool_calling else final_content
+            if text_content.strip():
+                assistant_metadata["text_content"] = text_content
+            
+            # Unify all tool calls into single tool_calls array
+            unified_tool_calls = []
+            
+            # Add native tool calls
+            if config.native_tool_calling and complete_native_tool_calls:
+                for tc in complete_native_tool_calls:
+                    # Transform execute_tool calls to appear as real tool calls for frontend
+                    transformed_tc = self._transform_execute_tool_call(tc)
+                    unified_tc = convert_to_unified_tool_call_format(transformed_tc)
+                    # Apply streaming transformation as well for consistency
+                    final_tc = self._transform_streaming_execute_tool_call(unified_tc)
+                    unified_tool_calls.append(final_tc)
+            
+            # Add XML tool calls
+            if config.xml_tool_calling and xml_tool_calls_with_ids:
+                for xml_tc in xml_tool_calls_with_ids:
+                    # Transform execute_tool calls for XML as well
+                    transformed_xml_tc = self._transform_xml_execute_tool_call(xml_tc)
+                    unified_xml_tc = {
+                        "tool_call_id": transformed_xml_tc.get("tool_call_id"),
+                        "function_name": transformed_xml_tc.get("function_name"),
+                        "arguments": transformed_xml_tc.get("arguments"),
+                        "source": "xml"
+                    }
+                    # Apply streaming transformation for consistency
+                    final_xml_tc = self._transform_streaming_execute_tool_call(unified_xml_tc)
+                    unified_tool_calls.append(final_xml_tc)
+            
+            if unified_tool_calls:
+                assistant_metadata["tool_calls"] = unified_tool_calls
+            
+            # If partial_assistant_message_id exists, UPDATE the existing message
+            if partial_assistant_message_id:
+                client = await self.thread_manager.db.client
+                result = await client.table('messages').update({
+                    'content': message_data,
+                    'metadata': assistant_metadata
+                }).eq('message_id', partial_assistant_message_id).execute()
+                
+                if result.data and len(result.data) > 0:
+                    logger.debug(f"Updated partial assistant message {partial_assistant_message_id} with {len(unified_tool_calls)} tool calls")
+                    return result.data[0]
+                else:
+                    logger.warning(f"Failed to update partial assistant message {partial_assistant_message_id}")
+                    return None
+            else:
+                # CREATE a new message
+                message_obj = await self._add_message_with_agent_info(
+                    thread_id=thread_id,
+                    type="assistant",
+                    content=message_data,
+                    is_llm_message=True,
+                    metadata=assistant_metadata
+                )
+                if message_obj:
+                    logger.debug(f"Created partial assistant message {message_obj.get('message_id')} with {len(unified_tool_calls)} tool calls")
+                return message_obj
+                
+        except Exception as e:
+            logger.error(f"Error saving/updating partial assistant message: {str(e)}", exc_info=True)
+            return None
+
+    async def _handle_tool_execution_completion(
+        self,
+        thread_id: str,
+        thread_run_id: str,
+        tool_call: Dict[str, Any],
+        result: ToolResult,
+        tool_idx: int,
+        context: ToolExecutionContext,
+        tool_calls_buffer: Dict[int, Dict[str, Any]],
+        accumulated_content: str,
+        xml_tool_calls_with_ids: List[Dict[str, Any]],
+        config: ProcessorConfig,
+        partial_assistant_message_id: Optional[str]
+    ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        """
+        Handle immediate saving when a tool execution completes during streaming.
+        Returns: (updated_partial_assistant_message_id, saved_tool_result_object, saved_assistant_message_object)
+        """
+        try:
+            # Step 1: Save or update partial assistant message to ensure it exists
+            saved_assistant_message = await self._save_or_update_partial_assistant_message(
+                thread_id=thread_id,
+                thread_run_id=thread_run_id,
+                tool_calls_buffer=tool_calls_buffer,
+                accumulated_content=accumulated_content,
+                xml_tool_calls_with_ids=xml_tool_calls_with_ids,
+                config=config,
+                partial_assistant_message_id=partial_assistant_message_id
+            )
+            
+            if not saved_assistant_message:
+                logger.error("Failed to save/update partial assistant message, cannot save tool result")
+                return None, None, None
+            
+            # Step 2: Extract assistant_message_id from the saved/updated message
+            assistant_message_id = saved_assistant_message.get('message_id')
+            if not assistant_message_id:
+                logger.error("Saved assistant message missing message_id")
+                return None, None, None
+            
+            # Step 3: Update context with assistant_message_id
+            context.assistant_message_id = assistant_message_id
+            
+            # Step 4: Save the tool result immediately
+            saved_tool_result_object = await self._add_tool_result(
+                thread_id=thread_id,
+                tool_call=tool_call,
+                result=result,
+                assistant_message_id=assistant_message_id
+            )
+            
+            if saved_tool_result_object:
+                logger.debug(f"Immediately saved tool result for tool {tool_idx} (function: {context.function_name}) with assistant_message_id {assistant_message_id}")
+                # Mark context as saved during streaming
+                context.saved_during_streaming = True
+                context.saved_result_object = saved_tool_result_object
+            else:
+                logger.error(f"Failed to save tool result for tool {tool_idx}")
+            
+            # Return the assistant_message_id, saved tool result object, and saved assistant message object
+            return assistant_message_id, saved_tool_result_object, saved_assistant_message
+            
+        except Exception as e:
+            logger.error(f"Error handling tool execution completion: {str(e)}", exc_info=True)
+            return None, None, None
 
     async def _add_tool_result(
         self, 
