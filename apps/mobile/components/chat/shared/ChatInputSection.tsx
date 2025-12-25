@@ -272,7 +272,11 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
 
         {/* Quick Action Bar - Below input (camera-style mode selector, only on home) */}
         {showQuickActions && onQuickActionPress && (
-          <View className="pb-8" pointerEvents="box-none" collapsable={false}>
+          <View 
+            style={{ paddingBottom: Math.max(insets.bottom, 32) + 16 }}
+            pointerEvents="box-none" 
+            collapsable={false}
+          >
             <QuickActionBar
               onActionPress={onQuickActionPress}
               selectedActionId={selectedQuickAction}

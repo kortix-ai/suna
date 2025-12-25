@@ -14,6 +14,7 @@ import {
   MoreHorizontal,
   X,
   Check,
+  type LucideIcon,
 } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
@@ -38,7 +39,7 @@ interface ThreadHeaderProps {
 }
 
 interface ActionPillProps {
-  icon: React.ComponentType<any>;
+  icon: LucideIcon;
   label: string;
   onPress: () => void;
   destructive?: boolean;

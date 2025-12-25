@@ -123,7 +123,8 @@
             "useFrameworks": "static"
           }
         }
-      ]
+      ],
+      "./plugins/withGoogleSignInConfig"
     ],
     "experiments": {
       "typedRoutes": true

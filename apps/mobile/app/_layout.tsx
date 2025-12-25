@@ -78,6 +78,7 @@ export default function RootLayout() {
     }
   }, [colorScheme]);
 
+
   useEffect(() => {
     if (fontsLoaded || fontError) {
       SplashScreen.hideAsync();
@@ -385,10 +386,19 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
     // Index/splash screen has no segment or empty segment
     const onSplashScreen = !currentSegment;
 
-    // Simple rule: Unauthenticated users can only be on auth or splash screens
+    // RULE 1: Unauthenticated users can only be on auth or splash screens
     if (!isAuthenticated && !inAuthGroup && !onSplashScreen) {
       console.log('🚫 Unauthenticated user on protected route, redirecting to /auth');
       router.replace('/auth');
+      return;
+    }
+
+    // RULE 2: Authenticated users should NEVER see auth screens
+    // This prevents back navigation/gestures from showing auth to logged-in users
+    if (isAuthenticated && inAuthGroup) {
+      console.log('🚫 Authenticated user on auth screen, redirecting to /home');
+      router.replace('/home');
+      return;
     }
   }, [isAuthenticated, authLoading, segments, router]);
 
