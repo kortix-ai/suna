@@ -467,6 +467,7 @@ function FloatingToolbar({
   onDownloadSvg,
   onImageUpdate,
   onProcessingChange,
+  onOcrProcessing,
   onTextEditStateChange,
   onTextRegionSelect,
   externalSelectedRegion,
@@ -482,6 +483,7 @@ function FloatingToolbar({
   onDownloadSvg: () => void;
   onImageUpdate: (newSrc: string, newDimensions?: { width: number; height: number }) => void;
   onProcessingChange: (isProcessing: boolean, failed?: boolean) => void;
+  onOcrProcessing: (isProcessing: boolean) => void; // OCR shimmer on SAME element (no duplicate)
   onTextEditStateChange: (state: { regions: TextRegion[]; ocrImageSize: { width: number; height: number } } | null) => void;
   onTextRegionSelect?: (region: TextRegion) => void;
   externalSelectedRegion?: TextRegion | null;
@@ -513,10 +515,24 @@ function FloatingToolbar({
     }
   }, [externalSelectedRegion]);
 
+  // Reset text edit mode when element changes (user clicks different image)
+  useEffect(() => {
+    // Cancel any ongoing text edit mode when switching elements
+    setTextEditMode(false);
+    setIsDetectingText(false);
+    setDetectedTextRegions([]);
+    setSelectedTextRegion(null);
+    setNewTextContent('');
+    setShowTextEditDialog(false);
+    setIsLowQualityOcr(false);
+    onTextEditStateChange(null); // Clear canvas-level overlay
+  }, [element.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Run OCR to detect text regions using backend Replicate model
+  // NOTE: OCR does NOT create a duplicate - it just detects text for overlay
   const detectTextRegions = async () => {
     setIsDetectingText(true);
-    onProcessingChange(true); // Show shimmer on image
+    onOcrProcessing(true); // Show shimmer on SAME image (no duplicate created)
 
     try {
       const imageBase64 = await getImageAsBase64(element.src);
@@ -603,7 +619,7 @@ function FloatingToolbar({
       setTextEditMode(false);
     } finally {
       setIsDetectingText(false);
-      onProcessingChange(false); // Hide shimmer
+      onOcrProcessing(false); // Hide shimmer on same image
     }
   };
 
@@ -2369,6 +2385,10 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                 setProcessingElementId(null);
               }
               // On success (failed=false), onImageUpdate handles cleanup
+            }}
+            onOcrProcessing={(isProcessing) => {
+              // OCR shimmer on SAME element - no duplicate created
+              setProcessingElementId(isProcessing ? selectedElement.id : null);
             }}
             onTextEditStateChange={(state) => {
               if (state) {
