@@ -23,19 +23,19 @@ function ShimmerBox({ aspectVideo = false }: { aspectVideo?: boolean }) {
   // Use ref to store color so it doesn't change on re-renders
   const colorRef = useRef(BLOB_COLORS[Math.floor(Math.random() * BLOB_COLORS.length)]);
   const [showColor, setShowColor] = useState(false);
-  
+
   // Fade in color after a delay
   React.useEffect(() => {
     const timer = setTimeout(() => setShowColor(true), 800);
     return () => clearTimeout(timer);
   }, []);
-  
+
   return (
     <div className={`relative w-full ${aspectVideo ? 'aspect-video' : 'aspect-square'} rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-700/50`}>
       {/* Gray base layer - contained with rounded corners */}
       <div className="absolute inset-[-50%] bg-gradient-to-br from-zinc-300/60 to-zinc-400/60 dark:from-zinc-600/60 dark:to-zinc-700/60 blur-2xl" />
       {/* Color layer that fades in - contained with rounded corners */}
-      <div 
+      <div
         className={`absolute inset-[-50%] bg-gradient-to-br ${colorRef.current} blur-2xl transition-opacity duration-1000`}
         style={{ opacity: showColor ? 1 : 0 }}
       />
@@ -87,13 +87,13 @@ function VideoDisplay({ filePath, sandboxId }: { filePath: string; sandboxId?: s
   const { data: videoBlob, isLoading: isBlobLoading } = useVideoContent(sandboxId, filePath, {
     enabled: !!sandboxId && !!filePath,
   });
-  
+
   // Create and manage blob URL
   React.useEffect(() => {
     if (videoBlob instanceof Blob) {
       const newUrl = URL.createObjectURL(videoBlob);
       setVideoUrl(newUrl);
-      
+
       return () => {
         URL.revokeObjectURL(newUrl);
         setVideoUrl(null);
@@ -190,12 +190,12 @@ function useVideoContent(
 function VideoRendererFull({ filePath, sandboxId }: { filePath: string; sandboxId?: string }) {
   const [hasVideoError, setHasVideoError] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  
+
   // Fetch video blob with proper auth
   const { data: videoBlob, isLoading, error: fetchError } = useVideoContent(sandboxId, filePath, {
     enabled: !!sandboxId && !!filePath,
   });
-  
+
   // Create and manage blob URL
   React.useEffect(() => {
     if (videoBlob instanceof Blob) {
@@ -207,7 +207,7 @@ function VideoRendererFull({ filePath, sandboxId }: { filePath: string; sandboxI
       const newUrl = URL.createObjectURL(videoBlob);
       console.log('[VideoRendererFull] Created blob URL:', newUrl);
       setVideoUrl(newUrl);
-      
+
       // Cleanup function to revoke URL when blob changes or component unmounts
       return () => {
         console.log('[VideoRendererFull] Revoking blob URL:', newUrl);
@@ -272,7 +272,7 @@ function VideoRendererFull({ filePath, sandboxId }: { filePath: string; sandboxI
 
   return (
     <div className="w-full rounded-2xl overflow-hidden">
-      <VideoRenderer 
+      <VideoRenderer
         url={videoUrl}
         loop={true}
       />
@@ -304,15 +304,15 @@ export function ImageEditGenerateToolView({
   const imagePath = generatedImagePaths[0];
   const videoPath = generatedVideoPaths[0];
   const hasMedia = imagePath || videoPath;
-  
+
   // ONLY show error if:
   // 1. Not streaming (still processing)
   // 2. We have a result (toolResult exists)
   // 3. The result explicitly failed (has error or failed batch)
   // 4. No media was produced
-  const hasActualError = !isStreaming && 
-    toolResult && 
-    !hasMedia && 
+  const hasActualError = !isStreaming &&
+    toolResult &&
+    !hasMedia &&
     (!!error || (batchResults.length > 0 && !batchResults[0].success));
 
   const actualIsSuccess = hasMedia && !hasActualError;
@@ -329,7 +329,7 @@ export function ImageEditGenerateToolView({
     if (mediaBlob instanceof Blob) {
       const newUrl = URL.createObjectURL(mediaBlob);
       setDownloadUrl(newUrl);
-      
+
       return () => {
         URL.revokeObjectURL(newUrl);
         setDownloadUrl(null);
@@ -403,10 +403,12 @@ export function ImageEditGenerateToolView({
                 onClick={handleDownload}
                 variant="outline"
                 size="sm"
-                className="h-7"
+                className="h-8 gap-1.5 px-2"
               >
-                <Download className="h-3.5 w-3.5 mr-1.5" />
-                Download
+                <Download className="h-3.5 w-3.5"
+
+                />
+                <span className="text-xs hidden sm:inline">Download</span>
               </Button>
             )}
           </div>

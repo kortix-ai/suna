@@ -17,6 +17,7 @@ from datetime import datetime
 from PIL import Image
 from core.utils.logger import logger
 from core.utils.config import get_config
+from core.billing.credits.media_integration import media_billing
 
 
 def parse_image_paths(image_path: Optional[str | list[str]]) -> list[str]:
@@ -156,6 +157,17 @@ class SandboxImageEditTool(SandboxToolsBase):
             # Check if mock mode is enabled (for development/testing)
             use_mock = os.getenv("MOCK_IMAGE_GENERATION", "false").lower() == "true"
             
+            # BILLING: Check if user has sufficient credits before proceeding
+            # Skip billing check in development/local mode
+            account_id = getattr(self, '_account_id', None) or getattr(self, 'account_id', None)
+            thread_id = getattr(self, 'thread_id', None)
+            
+            if account_id and not use_mock:
+                has_credits, credit_msg, balance = await media_billing.check_credits(account_id)
+                if not has_credits:
+                    logger.warning(f"[MEDIA_BILLING] Credit check failed for {account_id}: {credit_msg}")
+                    return ToolResult(success=True, output=f"Insufficient credits: {credit_msg}")
+            
             # Determine if this is a batch operation or single operation
             is_batch = isinstance(prompt, list)
             
@@ -218,6 +230,16 @@ class SandboxImageEditTool(SandboxToolsBase):
                 
                 logger.info(f"Batch completed: {len(image_files)}/{len(prompts)} successful")
                 
+                # BILLING: Deduct credits for successful batch images
+                if account_id and not use_mock and len(image_files) > 0:
+                    await media_billing.deduct_replicate_image(
+                        account_id=account_id,
+                        model="openai/gpt-image-1.5",
+                        count=len(image_files),
+                        description=f"Batch image {mode} ({len(image_files)} images)",
+                        thread_id=thread_id,
+                    )
+                
                 # If canvas_path provided, add all successful images to canvas
                 canvas_info = None
                 if canvas_path and image_files:
@@ -255,6 +277,19 @@ class SandboxImageEditTool(SandboxToolsBase):
                     if isinstance(result, ToolResult):
                         return ToolResult(success=True, output=f"Failed: {result.output}")
                     
+                    # BILLING: Deduct credits for successful video generation
+                    if account_id and not use_mock:
+                        video_duration = (video_options or {}).get("duration", 5)
+                        generate_audio = (video_options or {}).get("generate_audio", False)
+                        await media_billing.deduct_replicate_video(
+                            account_id=account_id,
+                            model="bytedance/seedance-1.5-pro",
+                            duration_seconds=video_duration,
+                            with_audio=generate_audio,
+                            description=f"Video generation ({video_duration}s{' + audio' if generate_audio else ''})",
+                            thread_id=thread_id,
+                        )
+                    
                     return ToolResult(success=True, output=f"Video saved as: /workspace/{result}")
                 
                 # Image mode (generate/edit)
@@ -265,6 +300,16 @@ class SandboxImageEditTool(SandboxToolsBase):
                 if isinstance(result, ToolResult):
                     # Error - return gracefully with friendly message
                     return ToolResult(success=True, output=f"Failed: {result.output}")
+                
+                # BILLING: Deduct credits for successful image generation
+                if account_id and not use_mock:
+                    await media_billing.deduct_replicate_image(
+                        account_id=account_id,
+                        model="openai/gpt-image-1.5",
+                        count=1,
+                        description=f"Image {mode}",
+                        thread_id=thread_id,
+                    )
                 
                 # Success - result is filename (include full path so AI knows exact location)
                 output_lines = [f"Image saved as: /workspace/{result}"]

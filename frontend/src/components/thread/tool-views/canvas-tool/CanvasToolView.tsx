@@ -35,7 +35,7 @@ const BLOB_COLORS = [
 
 function ShimmerBox({ className }: { className?: string }) {
   const colorClass = useMemo(() => BLOB_COLORS[Math.floor(Math.random() * BLOB_COLORS.length)], []);
-  
+
   return (
     <div className={cn("relative rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-700/50", className)}>
       <div className={`absolute inset-0 bg-gradient-to-br ${colorClass} blur-2xl scale-150`} />
@@ -94,12 +94,12 @@ export function CanvasToolView({
     toolCall, toolResult, isSuccess, toolTimestamp, assistantTimestamp
   ) : null;
 
-  const { 
-    canvasName, 
-    canvasPath, 
+  const {
+    canvasName,
+    canvasPath,
     totalElements,
     actualIsSuccess,
-    error 
+    error
   } = extractedData || {};
 
   const toolName = toolCall?.function_name || toolCall?.name || '';
@@ -248,10 +248,10 @@ export function CanvasToolView({
                 onClick={handleOpenCanvas}
                 variant="outline"
                 size="sm"
-                className="h-7"
+                className="h-8 gap-1.5 px-2"
               >
-                <MousePointerClick className="h-3.5 w-3.5 mr-1.5" />
-                Open Canvas
+                <MousePointerClick className="h-3.5 w-3.5" />
+                <span className="text-xs hidden sm:inline">Open Canvas</span>
               </Button>
             )}
           </div>
