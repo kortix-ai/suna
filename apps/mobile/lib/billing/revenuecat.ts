@@ -1,5 +1,4 @@
 import Purchases, {
-  LOG_LEVEL,
   PurchasesOffering,
   PurchasesPackage,
   CustomerInfo,

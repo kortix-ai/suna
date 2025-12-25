@@ -270,9 +270,9 @@ export function useAuth() {
    * Sign in with OAuth provider (Supabase standard implementation)
    * 
    * Uses Supabase's OAuth flow:
-   * - iOS: WebBrowser.openAuthSessionAsync (ASWebAuthenticationSession)
-   * - Android + Google: Native Google Sign-In SDK (@react-native-google-signin/google-signin)
-   * - Android + Other: Linking.openURL (external browser) + deep link callback
+   * - iOS Google: WebBrowser.openAuthSessionAsync (ASWebAuthenticationSession)
+   * - Android Google: Linking.openURL (external browser) + deep link callback
+   * - Android Other: Linking.openURL (external browser) + deep link callback
    * - Apple: Native Apple Authentication on iOS
    */
   const signInWithOAuth = useCallback(async (provider: OAuthProvider) => {
@@ -325,146 +325,11 @@ export function useAuth() {
       }
 
       // ========================================
-      // NATIVE GOOGLE SIGN-IN (Android only)
-      // Uses @react-native-google-signin/google-signin for reliable native auth
-      // Bypasses browser-based OAuth which has callback issues on Android
-      // ========================================
-      if (provider === 'google' && Platform.OS === 'android') {
-        console.log('🤖 Android: Using native Google Sign-In');
-        
-        // Dynamically import to avoid loading on iOS
-        let statusCodes: any;
-        try {
-          const googleSignInModule = await import('@react-native-google-signin/google-signin');
-          const { GoogleSignin } = googleSignInModule;
-          statusCodes = googleSignInModule.statusCodes;
-          
-          // Configure Google Sign-In with Web Client ID (required by Supabase)
-          const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-          if (!webClientId) {
-            console.error('❌ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is not configured');
-            const error = { message: 'Google Sign-In is not properly configured. Please contact support.' };
-            setError(error);
-            setAuthState((prev) => ({ ...prev, isLoading: false }));
-            return { success: false, error };
-          }
-
-          console.log('🔧 Configuring GoogleSignin with webClientId:', webClientId.substring(0, 20) + '...');
-          console.log('📦 Package name: com.kortix.app');
-          console.log('🌐 Web Client ID format:', webClientId.includes('.apps.googleusercontent.com') ? '✅ Valid format' : '❌ Invalid format');
-          
-          GoogleSignin.configure({
-            webClientId, // Use Web Client ID, not Android Client ID (Supabase requirement)
-            offlineAccess: false, // We don't need offline access
-          });
-          
-          console.log('✅ GoogleSignin configured, checking Play Services...');
-
-          // Check if Play Services are available
-          const hasPlayServices = await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-          console.log('✅ Play Services available:', hasPlayServices);
-
-          // Sign in
-          console.log('🔐 Attempting Google Sign-In...');
-          const response = await GoogleSignin.signIn();
-          console.log('📥 Google Sign-In response received:', {
-            hasData: !!response.data,
-            hasIdToken: !!response.data?.idToken,
-            userEmail: response.data?.user?.email,
-          });
-
-          if (!response.data?.idToken) {
-            console.error('❌ No ID token received from Google Sign-In');
-            const error = { message: 'Failed to get authentication token from Google' };
-            setError(error);
-            setAuthState((prev) => ({ ...prev, isLoading: false }));
-            return { success: false, error };
-          }
-
-          console.log('✅ Google ID token received, exchanging with Supabase...');
-
-          // Exchange ID token with Supabase
-          const { data, error: googleError } = await supabase.auth.signInWithIdToken({
-            provider: 'google',
-            token: response.data.idToken,
-          });
-
-          if (googleError) {
-            console.error('❌ Google sign in error:', googleError.message);
-            setError({ message: googleError.message });
-            setAuthState((prev) => ({ ...prev, isLoading: false }));
-            return { success: false, error: googleError };
-          }
-
-          console.log('✅ Google sign in successful:', data.user?.email);
-          setAuthState((prev) => ({ ...prev, isLoading: false }));
-          return { success: true, data };
-        } catch (googleErr: any) {
-          const errorCode = googleErr.code;
-          const errorMessage = googleErr.message || 'Unknown error';
-          
-          console.error('❌ Google sign in exception:', googleErr);
-          console.error('❌ Google sign in error details:', {
-            code: errorCode,
-            message: errorMessage,
-            fullError: JSON.stringify(googleErr, null, 2),
-          });
-          
-          // Handle specific Google Sign-In errors
-          if (errorCode === statusCodes?.SIGN_IN_CANCELLED) {
-            console.log('⚠️ Google sign in cancelled by user');
-            setAuthState((prev) => ({ ...prev, isLoading: false }));
-            return { success: false, error: { message: 'Sign in cancelled' } };
-          } else if (errorCode === statusCodes?.IN_PROGRESS) {
-            console.log('⚠️ Google sign in already in progress');
-            setAuthState((prev) => ({ ...prev, isLoading: false }));
-            return { success: false, error: { message: 'Sign in already in progress' } };
-          } else if (errorCode === statusCodes?.PLAY_SERVICES_NOT_AVAILABLE) {
-            console.error('❌ Google Play Services not available');
-            setError({ message: 'Google Play Services is required for sign in. Please install or update Google Play Services.' });
-            setAuthState((prev) => ({ ...prev, isLoading: false }));
-            return { success: false, error: { message: 'Google Play Services is required' } };
-          } else if (errorCode === statusCodes?.DEVELOPER_ERROR || errorMessage?.includes('DEVELOPER_ERROR')) {
-            console.error('❌ DEVELOPER_ERROR - Configuration issue detected');
-            console.error('📋 Configuration Checklist:');
-            console.error('   1. ✅ Package name: com.kortix.app');
-            console.error('   2. ❓ Android OAuth Client ID created in Google Cloud Console?');
-            console.error('   3. ❓ SHA-1 fingerprint matches? (Get via: cd android && ./gradlew signingReport)');
-            console.error('   4. ❓ Both Web Client ID AND Android Client ID added to Supabase Dashboard?');
-            console.error('      → Supabase Dashboard → Auth → Providers → Google → Authorized Client IDs');
-            console.error('   5. ❓ Did you rebuild the app after adding Android Client ID?');
-            console.error('      → Run: npx expo prebuild --platform android --clean');
-            console.error('   6. ❓ Wait 5-15 minutes after Google Cloud Console changes');
-            
-            const detailedError = {
-              message: 'Google Sign-In configuration error. Check console logs for details.',
-              code: 'DEVELOPER_ERROR',
-              troubleshooting: {
-                step1: 'Verify Android OAuth Client ID exists in Google Cloud Console',
-                step2: 'Ensure SHA-1 fingerprint matches (run: cd android && ./gradlew signingReport)',
-                step3: 'Add both Web and Android Client IDs to Supabase Dashboard → Auth → Providers → Google → Authorized Client IDs',
-                step4: 'Rebuild app: npx expo prebuild --platform android --clean',
-                step5: 'Wait 5-15 minutes for Google Cloud Console changes to propagate',
-              },
-            };
-            
-            setError(detailedError);
-            setAuthState((prev) => ({ ...prev, isLoading: false }));
-            return { success: false, error: detailedError };
-          }
-          
-          const error = { message: errorMessage || 'An unexpected error occurred during Google sign in' };
-          setError(error);
-          setAuthState((prev) => ({ ...prev, isLoading: false }));
-          return { success: false, error };
-        }
-      }
-
-      // ========================================
-      // SUPABASE OAUTH FLOW (iOS Google and other providers)
-      // Android Google uses native sign-in above, so this handles:
-      // - iOS Google (WebBrowser.openAuthSessionAsync)
-      // - Other providers on both platforms
+      // SUPABASE OAUTH FLOW (Google and other providers)
+      // Uses web-based OAuth for all providers:
+      // - iOS Google: WebBrowser.openAuthSessionAsync (ASWebAuthenticationSession)
+      // - Android Google: External browser via Linking.openURL (reliable callback handling)
+      // - Other providers: Platform-specific browser handling
       // ========================================
       
       // Create redirect URL using expo-auth-session
@@ -512,10 +377,9 @@ export function useAuth() {
         oauthSessionActiveRef.current = true;
         
         // ========================================
-        // ANDROID: Use external browser via Linking.openURL (for non-Google providers)
+        // ANDROID: Use external browser via Linking.openURL
         // Chrome Custom Tabs don't properly handle custom URL scheme redirects
-        // The external browser (Chrome, Firefox, etc.) works correctly
-        // Note: Google provider uses native sign-in above, so this is for other providers
+        // The external browser (Chrome, Firefox, etc.) works correctly for all OAuth providers
         // ========================================
         if (Platform.OS === 'android') {
           console.log('🤖 Android: Opening OAuth in external browser');
