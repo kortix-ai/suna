@@ -107,7 +107,7 @@ export function extractCanvasData(
   const actualIsSuccess = toolResult?.success ?? isSuccess;
   const status = parsedResult?.status;
   const error = parsedResult?.error;
-  const sandbox_id = parsedResult?.sandbox_id || toolCall.metadata?.sandbox_id;
+  const sandbox_id = parsedResult?.sandbox_id || (toolCall as any).metadata?.sandbox_id;
 
   return {
     canvasName,

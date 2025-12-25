@@ -290,15 +290,24 @@ export function ImageEditGenerateToolView({
   isStreaming = false,
   project,
 }: ImageEditGenerateToolViewProps) {
-  if (!toolCall) return null;
-
   const {
     generatedImagePaths,
     generatedVideoPaths,
     isVideoMode,
     error,
     batchResults,
-  } = extractImageEditGenerateData(toolCall, toolResult, true);
+  } = useMemo(() => {
+    if (!toolCall) {
+      return {
+        generatedImagePaths: [] as string[],
+        generatedVideoPaths: [] as string[],
+        isVideoMode: false,
+        error: null as string | null,
+        batchResults: [] as Array<{ success: boolean; error?: string }>,
+      };
+    }
+    return extractImageEditGenerateData(toolCall, toolResult, true);
+  }, [toolCall, toolResult]);
 
   const sandboxId = project?.sandbox?.id;
   const imagePath = generatedImagePaths[0];
@@ -321,7 +330,7 @@ export function ImageEditGenerateToolView({
   // Get media blob URL for download
   const { data: mediaBlob } = useFileContentQuery(sandboxId, videoPath || imagePath, {
     contentType: 'blob',
-    enabled: !!sandboxId && !!(videoPath || imagePath) && actualIsSuccess,
+    enabled: !!sandboxId && !!(videoPath || imagePath) && actualIsSuccess && !!toolCall,
   });
 
   // Create and manage download URL
@@ -338,6 +347,8 @@ export function ImageEditGenerateToolView({
       setDownloadUrl(null);
     }
   }, [mediaBlob]);
+
+  if (!toolCall) return null;
 
   const handleDownload = () => {
     if (!downloadUrl) return;

@@ -266,14 +266,10 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     // Calculate paramDisplay before early return to satisfy Rules of Hooks
     const paramDisplay = useMemo(() => extractPrimaryParam(rawToolName || '', content), [rawToolName, content]);
 
-    if (!toolName) {
-        return null;
-    }
-
     // Check if this is a media generation tool - show shimmer card
-    const isMediaGenTool = MEDIA_GENERATION_TOOLS.has(rawToolName || '') || MEDIA_GENERATION_TOOLS.has(toolName);
+    const isMediaGenTool = MEDIA_GENERATION_TOOLS.has(rawToolName || '') || MEDIA_GENERATION_TOOLS.has(toolName || '');
     
-    // Stable color ref for shimmer - placed before conditional return
+    // Stable color ref for shimmer - placed before conditional return to satisfy Rules of Hooks
     const shimmerColorRef = useRef(
         ['from-purple-300/60 to-pink-300/60', 'from-blue-300/60 to-cyan-300/60', 
          'from-emerald-300/60 to-teal-300/60', 'from-orange-300/60 to-amber-300/60',
@@ -289,6 +285,10 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
             return () => clearTimeout(timer);
         }
     }, [isMediaGenTool]);
+
+    if (!toolName) {
+        return null;
+    }
     
     if (isMediaGenTool) {
         const IconComponent = getToolIcon(rawToolName || '');
