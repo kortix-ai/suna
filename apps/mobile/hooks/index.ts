@@ -24,6 +24,30 @@ export * from './media';
 // Animation hooks
 export { useBackgroundScale } from './useBackgroundScale';
 
+// Keyboard hooks (using react-native-keyboard-controller for native animations)
+export {
+  useKeyboard,
+  useKeyboardVisible,
+  useAnimatedKeyboard,
+  useKeyboardBottomOffset,
+  useReanimatedKeyboardAnimation,
+  useKeyboardHandler,
+  useResizeMode,
+  isKeyboardCurrentlyVisible,
+  getKeyboardState,
+  dismissKeyboard,
+  focusNextInput,
+  focusPreviousInput,
+  setAndroidInputMode,
+  resetAndroidInputMode,
+  KeyboardController,
+  AndroidSoftInputModes,
+  type KeyboardState,
+  type AnimatedKeyboardOptions,
+  type AnimatedKeyboardResult,
+  type KeyboardBottomOffsetResult,
+} from './useKeyboard';
+
 // Composite chat hooks
 export { useChatCommons } from './useChatCommons';
 

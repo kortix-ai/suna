@@ -29,7 +29,7 @@
     },
     "android": {
       "edgeToEdgeEnabled": true,
-      "softwareKeyboardLayoutMode": "pan",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#F0F0E9"
@@ -54,6 +54,25 @@
               "scheme": "https",
               "host": "staging.suna.so",
               "pathPrefix": "/auth/callback"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        },
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "kortix",
+              "host": "auth",
+              "pathPrefix": "/callback"
+            },
+            {
+              "scheme": "kortix",
+              "host": "auth",
+              "pathPrefix": "/reset-password"
             }
           ],
           "category": [

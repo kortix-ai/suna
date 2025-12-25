@@ -1,14 +1,12 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import * as Haptics from 'expo-haptics';
-import { Share, FolderOpen, Trash2, Lock, X } from 'lucide-react-native';
+import { Share, FolderOpen, Trash2, X } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { View, Pressable, Modal, TouchableWithoutFeedback, Platform } from 'react-native';
 import Animated, { FadeIn, FadeOut, SlideInUp, SlideOutUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useBillingContext } from '@/contexts/BillingContext';
-import { useRouter } from 'expo-router';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 interface ThreadActionsMenuProps {
@@ -28,36 +26,58 @@ interface ActionItemProps {
 
 function ActionItem({ icon, label, onPress, destructive = false }: ActionItemProps) {
   const { colorScheme } = useColorScheme();
+  const [isPressed, setIsPressed] = React.useState(false);
+
+  const handlePressIn = () => {
+    setIsPressed(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const handlePressOut = () => {
+    setIsPressed(false);
+  };
 
   const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onPress();
   };
+
+  const iconColor = destructive 
+    ? '#ef4444' 
+    : colorScheme === 'dark' ? '#f8f8f8' : '#121215';
+  
+  const textColor = destructive 
+    ? '#ef4444' 
+    : colorScheme === 'dark' ? '#f8f8f8' : '#121215';
+
+  const backgroundColor = isPressed
+    ? colorScheme === 'dark' 
+      ? 'rgba(255,255,255,0.05)' 
+      : 'rgba(0,0,0,0.03)'
+    : 'transparent';
 
   return (
     <Pressable
       onPress={handlePress}
-      className="flex-row items-center gap-3 px-4 py-3 active:opacity-70"
-      android_ripple={{ color: colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      className="flex-row items-center gap-3 px-4 py-3.5"
+      style={{ backgroundColor }}
+      android_ripple={{ 
+        color: colorScheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+        borderless: false,
+      }}
       accessibilityRole="button"
       accessibilityLabel={label}
     >
       <Icon
         as={icon}
         size={20}
-        color={destructive 
-          ? '#ef4444' 
-          : colorScheme === 'dark' ? '#f8f8f8' : '#121215'
-        }
-        strokeWidth={2}
+        color={iconColor}
+        strokeWidth={2.5}
       />
       <Text
-        style={{ 
-          color: destructive 
-            ? '#ef4444' 
-            : colorScheme === 'dark' ? '#f8f8f8' : '#121215' 
-        }}
-        className="font-roobert-medium text-base flex-1"
+        style={{ color: textColor }}
+        className="font-roobert-medium text-[15px] flex-1 leading-5"
       >
         {label}
       </Text>
@@ -68,8 +88,8 @@ function ActionItem({ icon, label, onPress, destructive = false }: ActionItemPro
 /**
  * ThreadActionsMenu Component
  * 
- * Simple dropdown menu for thread actions.
- * Uses Modal for proper layering without bottom sheet complexity.
+ * Elegant dropdown menu for thread actions with smooth animations
+ * and refined visual design.
  */
 export function ThreadActionsMenu({
   visible,
@@ -80,93 +100,103 @@ export function ThreadActionsMenu({
 }: ThreadActionsMenuProps) {
   const { colorScheme } = useColorScheme();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
-  const { hasFreeTier } = useBillingContext();
   const { t } = useLanguage();
 
-  const handleUpgradePrompt = React.useCallback(() => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+  const handleClose = React.useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
-    router.push('/plans');
-  }, [onClose, router]);
-
-  const handleAction = (action: () => void) => {
-    action();
-  };
+  }, [onClose]);
 
   if (!visible) return null;
+
+  const backgroundColor = colorScheme === 'dark' ? '#1c1c1e' : '#ffffff';
+  const borderColor = colorScheme === 'dark' ? '#2c2c2e' : '#e5e5e5';
+  const separatorColor = colorScheme === 'dark' ? '#2c2c2e' : '#e5e5e5';
+  const headerTextColor = colorScheme === 'dark' ? 'rgba(248,248,248,0.65)' : 'rgba(18,18,21,0.65)';
 
   return (
     <Modal
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
       statusBarTranslucent
     >
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View className="flex-1 bg-black/40">
+      <TouchableWithoutFeedback onPress={handleClose}>
+        <Animated.View 
+          entering={FadeIn.duration(150)}
+          exiting={FadeOut.duration(100)}
+          className="flex-1 bg-black/50"
+        >
           <TouchableWithoutFeedback>
             <Animated.View
-              entering={SlideInUp.duration(200)}
-              exiting={SlideOutUp.duration(150)}
+              entering={SlideInUp.duration(250).springify()}
+              exiting={SlideOutUp.duration(200)}
               style={{
                 position: 'absolute',
                 top: Math.max(insets.top, 16) + 60,
                 right: 16,
-                minWidth: 220,
-                backgroundColor: colorScheme === 'dark' ? '#1c1c1e' : '#ffffff',
-                borderRadius: 14,
+                minWidth: 240,
+                maxWidth: 280,
+                backgroundColor,
+                borderRadius: 16,
                 overflow: 'hidden',
                 ...Platform.select({
                   ios: {
                     shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.25,
-                    shadowRadius: 12,
+                    shadowOffset: { width: 0, height: 8 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 16,
                   },
                   android: {
-                    elevation: 8,
+                    elevation: 12,
                   },
                 }),
               }}
             >
               {/* Header */}
               <View 
-                className="flex-row items-center justify-between px-4 py-3 border-b"
-                style={{ borderColor: colorScheme === 'dark' ? '#2c2c2e' : '#e5e5e5' }}
+                className="flex-row items-center justify-between px-4 py-3.5"
+                style={{ 
+                  borderBottomWidth: 1,
+                  borderBottomColor: borderColor,
+                }}
               >
                 <Text
-                  style={{ color: colorScheme === 'dark' ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.6)' }}
-                  className="font-roobert-medium text-sm"
+                  style={{ color: headerTextColor }}
+                  className="font-roobert-semibold text-[13px] uppercase tracking-wide"
                 >
                   {t('threadActions.title')}
                 </Text>
                 <Pressable 
-                  onPress={onClose}
-                  hitSlop={8}
-                  className="active:opacity-70"
+                  onPress={handleClose}
+                  hitSlop={10}
+                  className="w-7 h-7 items-center justify-center rounded-full active:opacity-60"
+                  style={{
+                    backgroundColor: colorScheme === 'dark' 
+                      ? 'rgba(255,255,255,0.08)' 
+                      : 'rgba(0,0,0,0.04)',
+                  }}
                 >
                   <Icon 
                     as={X} 
-                    size={18} 
-                    color={colorScheme === 'dark' ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.6)'} 
+                    size={16} 
+                    color={headerTextColor}
+                    strokeWidth={2.5}
                   />
                 </Pressable>
               </View>
 
               {/* Actions */}
-              <View className="py-1">
+              <View className="py-1.5">
                 {onShare && (
                   <ActionItem
-                    icon={hasFreeTier ? Lock : Share}
-                    label={hasFreeTier ? t('threadActions.shareThreadUpgrade') : t('threadActions.shareThread')}
+                    icon={Share}
+                    label={t('threadActions.shareThread')}
                     onPress={() => {
-                      if (hasFreeTier) {
-                        handleUpgradePrompt();
-                      } else {
-                        handleAction(onShare);
-                      }
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      onShare();
+                      handleClose();
                     }}
                   />
                 )}
@@ -175,20 +205,28 @@ export function ThreadActionsMenu({
                   <ActionItem
                     icon={FolderOpen}
                     label={t('threadActions.manageFiles')}
-                    onPress={() => handleAction(onFiles)}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      onFiles();
+                      handleClose();
+                    }}
                   />
                 )}
 
                 {onDelete && (
                   <>
                     <View 
-                      className="mx-4 my-1 h-px" 
-                      style={{ backgroundColor: colorScheme === 'dark' ? '#2c2c2e' : '#e5e5e5' }} 
+                      className="mx-3 my-1.5 h-px" 
+                      style={{ backgroundColor: separatorColor }} 
                     />
                     <ActionItem
                       icon={Trash2}
                       label={t('threadActions.deleteThread')}
-                      onPress={() => handleAction(onDelete)}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        onDelete();
+                        handleClose();
+                      }}
                       destructive
                     />
                   </>
@@ -196,7 +234,7 @@ export function ThreadActionsMenu({
               </View>
             </Animated.View>
           </TouchableWithoutFeedback>
-        </View>
+        </Animated.View>
       </TouchableWithoutFeedback>
     </Modal>
   );

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, TextInput, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import { View, TextInput, Keyboard, Platform } from 'react-native';
 import { BottomSheetModal, BottomSheetView, BottomSheetBackdrop, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
@@ -139,22 +139,18 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
         backgroundColor: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)',
       }}
     >
+      {/* BottomSheetModal handles keyboard avoidance natively - no KeyboardAvoidingView needed */}
       <BottomSheetView style={{ flex: 1 }}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={{ flex: 1 }}
-        >
-          <View className="flex-1 px-6 pt-6 pb-20">
+        <View className="flex-1 px-6 pt-6 pb-20">
             {emailSent ? (
               // Success State
               <View className="gap-6">
                 <View className="flex-row items-center justify-end">
-                  <TouchableOpacity
+                  <BottomSheetTouchable
                     onPress={() => bottomSheetRef.current?.dismiss()}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
                     <Icon as={X} size={24} className="text-muted-foreground" />
-                  </TouchableOpacity>
+                  </BottomSheetTouchable>
                 </View>
 
                 <View className="items-center gap-5">
@@ -348,7 +344,6 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
               </View>
             )}
           </View>
-        </KeyboardAvoidingView>
       </BottomSheetView>
     </BottomSheetModal>
   );
