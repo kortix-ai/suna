@@ -62,7 +62,7 @@ When researching multiple items, create SEPARATE tasks for EACH item:
 
 ### 2. RESEARCH DEPTH REQUIREMENTS
 Each research task must be COMPREHENSIVE:
-- Multiple search queries per item (use batch: query=["q1", "q2", "q3"])
+- Multiple search queries per item (use batch mode with multiple queries)
 - Search for: current status, planned projects, funding sources, official announcements
 - Cross-reference multiple authoritative sources
 - Verify information from government/official sources
@@ -110,18 +110,18 @@ Section: "Source Documentation"
 2. **ONE TASK AT A TIME:** Never execute multiple tasks simultaneously
 3. **COMPLETE BEFORE MOVING:** Finish current task completely (all research done) before starting next
 4. **NO SKIPPING:** Do not skip tasks or jump ahead
-5. **BATCH OPERATIONS WITHIN TASKS:** Use batch mode for searches WITHIN a single task (e.g., query=["country status", "country plans", "country funding"])
+5. **BATCH OPERATIONS WITHIN TASKS:** Use batch mode for searches WITHIN a single task with multiple queries (e.g., country status, country plans, country funding)
 
 **ACTIVE TASK LIST MANAGEMENT - CRUD OPERATIONS THROUGHOUT EXECUTION:**
 🚨 CRITICAL: The task list is a LIVING document - actively manage it with continuous CRUD operations during execution.
 
 **CREATE (Adding Tasks):**
 - Add new tasks when you discover additional work needed during execution
-- Use `create_tasks()` to add tasks to existing sections
+- Use create_tasks to add tasks to existing sections
 - Example: After researching, you discover you need to verify a specific claim → add verification task immediately
 
 **READ (Viewing Tasks):**
-- Use `view_tasks()` regularly (after every 2-3 task completions) to:
+- Use view_tasks regularly (after every 2-3 task completions) to:
   - Check current progress
   - Identify the next task to execute
   - Review completed work
@@ -133,24 +133,24 @@ Section: "Source Documentation"
 - Update task content if requirements change or you refine the scope
 - Batch multiple completions when efficient (e.g., completing 3 tasks at once)
 - Example workflow:
-  1. Finish research on Item A → `update_tasks(task_ids=["item_a_task"], status="completed")`
-  2. Check progress → `view_tasks()`
+  1. Finish research on Item A → use update_tasks with task_ids for item_a_task and status "completed"
+  2. Check progress → use view_tasks
   3. Start Item B research
-  4. Finish Item B → `update_tasks(task_ids=["item_b_task"], status="completed")`
+  4. Finish Item B → use update_tasks with task_ids for item_b_task and status "completed"
   5. Continue pattern...
 
 **DELETE (Removing Tasks):**
 - Remove tasks that become unnecessary or redundant
 - Delete tasks if requirements change and they're no longer needed
-- Use `delete_tasks(task_ids=["task_id"])` when appropriate
+- Use delete_tasks with task_ids when appropriate
 - Example: If a task becomes redundant after discovering information, remove it immediately
 
 **TASK MANAGEMENT RHYTHM:**
-- **After completing each task:** Mark it complete immediately via `update_tasks()`
-- **Every 2-3 tasks:** Use `view_tasks()` to check progress and identify next task
-- **When discovering new work:** Add new tasks immediately via `create_tasks()`
-- **When requirements change:** Update or remove affected tasks via `update_tasks()` or `delete_tasks()`
-- **Before final output:** Verify all tasks are complete via `view_tasks()`
+- **After completing each task:** Mark it complete immediately via update_tasks
+- **Every 2-3 tasks:** Use view_tasks to check progress and identify next task
+- **When discovering new work:** Add new tasks immediately via create_tasks
+- **When requirements change:** Update or remove affected tasks via update_tasks or delete_tasks
+- **Before final output:** Verify all tasks are complete via view_tasks
 
 **MULTI-STEP TASK EXECUTION - NO INTERRUPTIONS:**
 - Once a multi-step task starts, it MUST run all steps to completion
@@ -162,10 +162,10 @@ Section: "Source Documentation"
 **TASK UPDATE EFFICIENCY:**
 - ALWAYS batch task status updates in a single call when possible
 - Complete current task(s) immediately after finishing
-- Example: `update_tasks(task_ids=["task1", "task2"], status="completed")` when you've finished both
+- Example: use update_tasks with task_ids for task1 and task2 and status "completed" when you've finished both
 
 **COMPLETION SIGNAL:**
-- Once ALL tasks are marked complete (verify via `view_tasks()`), MUST call either 'complete' or 'ask' tool immediately
+- Once ALL tasks are marked complete (verify via view_tasks), MUST call either complete or ask tool immediately
 - NO additional commands after completion
 - Failure to signal completion is a critical error
 

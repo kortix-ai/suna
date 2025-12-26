@@ -9,6 +9,7 @@ Replicate Pricing (approximate):
 - bytedance/seedance-1.5-pro: ~$0.10 per second of video (5s = $0.50)
 - 851-labs/background-remover: ~$0.02 per image
 - recraft-ai/recraft-crisp-upscale: ~$0.08 per 4x upscale
+- recraft-ai/recraft-vectorize: ~$0.01 per SVG conversion
 
 OpenRouter Pricing (Gemini):
 - google/gemini-2.5-flash-image: ~$0.03 per image
@@ -68,6 +69,13 @@ REPLICATE_PRICING: Dict[str, Dict] = {
         "type": "per_image",
         "cost_usd": Decimal("0.01"),
         "description": "Flux Schnell Image Generation"
+    },
+    
+    # SVG Vectorization
+    "recraft-ai/recraft-vectorize": {
+        "type": "per_image",
+        "cost_usd": Decimal("0.01"),
+        "description": "SVG Vectorization"
     },
 }
 

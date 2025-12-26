@@ -13,11 +13,11 @@ import json
     usage_guide="""
 ### INTERNAL UTILITIES
 
-**initialize_tools() - JIT Tool Activation:**
+**initialize_tools - JIT Tool Activation:**
 - INTERNAL operation - completely invisible to users
 - Activates tools on-demand using SPARK algorithm
 - Loads detailed usage documentation for YOU (not the user)
-- Supports batch loading: initialize_tools(["tool1", "tool2", "tool3"])
+- Supports batch loading multiple tools at once (e.g., tool1, tool2, tool3)
 
 **CRITICAL USAGE:**
 - Call silently at the start of every task
@@ -25,18 +25,18 @@ import json
 - Users NEVER see this operation or its output
 - DO NOT mention tool loading in your responses to users
 
-**discover_mcp_tools(filter) - MCP Schema Discovery:**
+**discover_mcp_tools - MCP Schema Discovery:**
 - Get schemas for external MCP tools (Gmail, Twitter, Slack, etc.)
 - ALWAYS check conversation history first - schemas persist forever
 - Batch discover ALL tools needed in ONE call
-- Example: discover_mcp_tools(filter="GMAIL_SEND_MESSAGE,TWITTER_CREATION_OF_A_POST")
+- Example: use discover_mcp_tools with filter parameter set to "GMAIL_SEND_MESSAGE,TWITTER_CREATION_OF_A_POST"
 
-**execute_mcp_tool(tool_name, args) - MCP Tool Execution:**
+**execute_mcp_tool - MCP Tool Execution:**
 - Execute external integration tools
 - Requires schema in conversation history (discover first if needed)
-- Example: execute_mcp_tool(tool_name="GMAIL_SEND_MESSAGE", args={"to": "user@example.com", ...})
+- Example: use execute_mcp_tool with tool_name parameter "GMAIL_SEND_MESSAGE" and args parameter containing the tool arguments
 
-**expand_message(message_id) - Message Expansion:**
+**expand_message - Message Expansion:**
 - View full content of truncated messages
 - Use when previous messages were shortened
 - Retrieve complete message history
@@ -324,7 +324,7 @@ class ExpandMessageTool(Tool):
         
         native_tools = ['web_search', 'image_search', 'create_file', 'read_file', 'edit_file', 'create_slide', 'browser_navigate', 'shell_command', 'scrape_webpage']
         if tool_name in native_tools:
-            return self.fail_response(f"Tool '{tool_name}' is a native tool. Use initialize_tools(['{tool_name}_tool']) first, then call {tool_name}() directly.")
+            return self.fail_response(f"Tool '{tool_name}' is a native tool. Use initialize_tools to load {tool_name}_tool first, then use {tool_name} directly.")
 
         integration_labels = {
             'TWITTER_': 'Accessing Twitter',
