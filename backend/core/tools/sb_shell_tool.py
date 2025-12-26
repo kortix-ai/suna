@@ -23,7 +23,7 @@ from core.utils.logger import logger
 1. **Synchronous Commands (blocking=true):**
    - Use for quick operations under 60 seconds
    - Commands run directly and wait for completion
-   - Example: `execute_command(command="ls -l", blocking=true)`
+   - Example: use execute_command with command "ls -l" and blocking true
 
 2. **Asynchronous Commands (blocking=false or omit):**
    - Use for ANY command that might take longer than 60 seconds

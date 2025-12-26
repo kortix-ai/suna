@@ -43,7 +43,7 @@ from core.utils.config import config
 
 **UPLOAD WORKFLOW:**
 1. Ask before uploading: "Would you like me to upload this file to secure cloud storage for sharing?"
-2. If user says yes: Use `upload_file(file_path="path/to/file")`
+2. If user says yes: Use upload_file with file_path parameter
 3. Share the secure URL (note: expires in 24 hours)
 
 **INTEGRATED WORKFLOW:**

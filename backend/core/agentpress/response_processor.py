@@ -828,7 +828,7 @@ class ResponseProcessor:
                                 for tc in unified_tool_calls:
                                     if tc.get('is_delta'):
                                         delta_size = len(tc.get('arguments_delta', ''))
-                                        logger.debug(f"[DELTA STREAM] Tool {tc.get('function_name')}: sending {delta_size} byte delta")
+                                        # logger.debug(f"[DELTA STREAM] Tool {tc.get('function_name')}: sending {delta_size} byte delta")
                                 
                                 transformed_unified_tool_calls = []
                                 for tc in unified_tool_calls:

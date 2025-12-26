@@ -101,7 +101,8 @@ class ModelRegistry:
         # Kortix Test - uses MiniMax M2 via Bedrock (only in LOCAL and STAGING, not PRODUCTION)
         if config.ENV_MODE != EnvMode.PRODUCTION:
             # test_litellm_id = build_bedrock_profile_arn(MINIMAX_M2_PROFILE_ID)
-            test_litellm_id ="openrouter/minimax/minimax-m2" #  205K context $0.255/M input tokens $1.02/M output tokens
+            # test_litellm_id ="openrouter/minimax/minimax-m2" #  205K context $0.255/M input tokens $1.02/M output tokens
+            test_litellm_id ="openrouter/minimax/minimax-m2.1" #  204,800 context $0.30/M input tokens $1.20/M output tokens 
             # test_litellm_id = "openrouter/z-ai/glm-4.7" # 203K context $0.44/M input tokens $1.74/M output tokens
             # test_litellm_id = "openrouter/z-ai/glm-4.6v" # 131K context $0.30/M input tokens $0.90/M output tokens 
             # test_litellm_id = "openrouter/google/gemini-3-flash-preview" #  1.05M context $0.50/M input tokens $3/M output tokens $1/M audio tokens

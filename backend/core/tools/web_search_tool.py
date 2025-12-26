@@ -34,24 +34,28 @@ import time
 **RESEARCH BEST PRACTICES:**
 1. **Multi-source approach for thorough research:**
    - Start with web-search using BATCH MODE (multiple queries concurrently) to find direct answers, images, and relevant URLs efficiently
-   - ALWAYS use `web_search(query=["query1", "query2", "query3"])` format when researching multiple aspects of a topic
-   - Only use scrape-webpage when you need detailed content not available in search results
+   - ALWAYS use web_search with multiple queries in batch mode when researching multiple aspects of a topic
+   - **AUTOMATICALLY identify and scrape qualitative sources** (papers, articles, detailed content) from search results
    - Only use browser tools when scrape-webpage fails or interaction is needed
 
-2. **Research Workflow:**
+2. **Research Workflow with Automatic Content Extraction:**
    - **MANDATORY**: Use web-search in BATCH MODE with multiple queries for direct answers and URLs
    - **CRITICAL**: When researching any topic with multiple dimensions, ALWAYS use batch mode
-   - **CORRECT FORMAT**: `web_search(query=["topic overview", "use cases", "pricing"], num_results=5)`
-   - **WRONG FORMAT**: Never use `query='["topic overview", "use cases"]'` (JSON string)
-   - Example: `web_search(query=["topic overview", "use cases", "pricing", "user demographics"], num_results=5)` runs all searches in parallel
-   - Only if you need specific details not found in search results: use scrape-webpage on specific URLs
+   - **CORRECT FORMAT**: use web_search with query parameter containing multiple queries (e.g., topic overview, use cases, pricing) and num_results set to 5
+   - **WRONG FORMAT**: Never pass query as a JSON string - use native array format
+   - Example: use web_search with query parameter containing multiple queries (topic overview, use cases, pricing, user demographics) and num_results 5 - runs all searches in parallel
+   - **AUTOMATIC CONTENT EXTRACTION**: After web_search, automatically identify qualitative sources:
+     * Academic papers (arxiv.org, pubmed, Semantic Scholar, etc.) → Use get_paper_details for papers with paper IDs
+     * Long-form articles, research reports, detailed content → Use scrape-webpage to extract full content
+     * Collect multiple qualitative URLs and scrape them in batch for efficiency
+   - **MANDATORY**: Never rely solely on search snippets - always extract and read full content from qualitative sources
    - Only if scrape-webpage fails or interaction required: use browser automation tools
 
 **WEB SEARCH BEST PRACTICES:**
-- **BATCH SEARCHING FOR EFFICIENCY:** Use batch mode by providing an array of queries to execute multiple searches concurrently
+- **BATCH SEARCHING FOR EFFICIENCY:** Use batch mode by providing multiple queries to execute searches concurrently
 - **CRITICAL FORMAT REQUIREMENTS:**
-  * Single query: `web_search(query="Tesla news", num_results=5)`
-  * Batch queries: `web_search(query=["Tesla news", "Tesla stock", "Tesla products"], num_results=5)`
+  * Single query: use web_search with query parameter "Tesla news" and num_results 5
+  * Batch queries: use web_search with query parameter containing multiple queries (Tesla news, Tesla stock, Tesla products) and num_results 5
   * The query parameter MUST be a native array, NOT a JSON string
   * num_results MUST be an integer, NOT a string
 - **WHEN TO USE BATCH MODE:** Researching multiple related topics, gathering comprehensive information, parallel searches
@@ -64,9 +68,18 @@ import time
 
 **CONTENT EXTRACTION DECISION TREE:**
 1. ALWAYS start with web-search using BATCH MODE to get direct answers and search results
-2. Only use scrape-webpage when you need complete article text beyond search snippets, structured data from specific pages, or lengthy documentation
-3. Never use scrape-webpage when web-search already answers the query or only basic facts are needed
-4. Only use browser tools if scrape-webpage fails or interaction is required
+2. **AUTOMATICALLY identify qualitative sources** from search results:
+   - Academic papers (arxiv.org, pubmed, Semantic Scholar, IEEE, ACM, Nature, Science, etc.)
+   - Long-form articles, research reports, detailed blog posts
+   - Documentation pages, guides, whitepapers
+   - Any source with substantial qualitative content
+3. **AUTOMATICALLY extract content** from identified qualitative sources:
+   - For Semantic Scholar papers: Use get_paper_details with paper_id (extract from URL or search result)
+   - For other papers/articles: Use scrape-webpage to get full content
+   - Batch scrape multiple URLs together for efficiency
+4. **MANDATORY**: Read extracted content thoroughly - don't rely on search snippets alone
+5. Only skip scraping if web-search already provides complete answers AND no qualitative sources are present
+6. Only use browser tools if scrape-webpage fails or interaction is required
 
 **DATA FRESHNESS:**
 - Always check publication dates of search results
@@ -121,7 +134,7 @@ class SandboxWebSearchTool(SandboxToolsBase):
                                 "description": "Multiple search queries to execute concurrently. CRITICAL: Pass as a native array like [\"query1\", \"query2\", \"query3\"], NOT as a JSON string. Use this for batch searching when you need to research multiple related topics simultaneously. Each query will be processed in parallel for faster results. Example: [\"Tesla news\", \"Tesla stock price\", \"Tesla products\"]"
                             }
                         ],
-                        "description": "Either a single search query (string) or multiple queries (NATIVE array of strings, NOT JSON string) to execute concurrently. For batch mode, use: query=[\"query1\", \"query2\"], NOT query='[\"query1\", \"query2\"]'"
+                        "description": "Either a single search query (string) or multiple queries (NATIVE array of strings, NOT JSON string) to execute concurrently. For batch mode, provide multiple queries as an array, NOT as a JSON string"
                     },
                     "num_results": {
                         "type": "integer",
