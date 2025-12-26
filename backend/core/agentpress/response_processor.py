@@ -582,47 +582,6 @@ class ResponseProcessor:
             debug_file_json = None
             raw_chunks_data = []  # Store all chunk data for JSONL export
             
-            # Setup debug file for DB writes (always enabled for streaming)
-            debug_db_file = None
-            debug_terminal_log_file = None
-            debug_dir = Path("debug_streams")
-            debug_dir.mkdir(exist_ok=True)
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            debug_db_file = debug_dir / f"db_writes_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.jsonl"
-            debug_terminal_log_file = debug_dir / f"terminal_logs_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.txt"
-            logger.info(f"📁 Saving DB write logs to: {debug_db_file}")
-            logger.info(f"📁 Saving terminal logs to: {debug_terminal_log_file}")
-            
-            # Setup file handler for terminal logs (captures all logging output)
-            import logging
-            terminal_file_handler = logging.FileHandler(debug_terminal_log_file, encoding='utf-8')
-            terminal_file_handler.setLevel(logging.DEBUG)
-            # Format: timestamp | level | logger_name | message
-            formatter = logging.Formatter('%(asctime)s | %(levelname)-8s | %(name)-30s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-            terminal_file_handler.setFormatter(formatter)
-            # Add handler to root logger to capture all logs
-            root_logger = logging.getLogger()
-            root_logger.addHandler(terminal_file_handler)
-            
-            def log_db_write(operation: str, message_type: str, data: Dict[str, Any], is_update: bool = False):
-                """Log a DB write operation to the debug file."""
-                try:
-                    log_entry = {
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "operation": operation,  # "save" or "update"
-                        "message_type": message_type,  # "assistant", "tool", "status", etc.
-                        "is_update": is_update,
-                        "data": data
-                    }
-                    with open(debug_db_file, 'a', encoding='utf-8') as f:
-                        f.write(json.dumps(log_entry, ensure_ascii=False, default=str) + '\n')
-                except Exception as e:
-                    logger.debug(f"Error writing DB log: {e}")
-            
-            # Store log function and terminal handler in self for cleanup
-            self._log_db_write = log_db_write
-            self._terminal_file_handler = terminal_file_handler
-            
             if global_config.DEBUG_SAVE_LLM_IO:
                 debug_file = debug_dir / f"stream_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.txt"
                 debug_file_json = debug_dir / f"stream_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.jsonl"
@@ -1195,27 +1154,18 @@ class ResponseProcessor:
                     if result.data and len(result.data) > 0:
                         last_assistant_message_object = result.data[0]
                         logger.debug(f"Updated partial assistant message {partial_assistant_message_id} to final complete version")
-                        # Log DB write for assistant message update
-                        if hasattr(self, '_log_db_write') and last_assistant_message_object:
-                            self._log_db_write("update", "assistant", last_assistant_message_object, is_update=True)
                     else:
                         logger.warning(f"Failed to update partial assistant message {partial_assistant_message_id}, creating new message")
                         last_assistant_message_object = await self._add_message_with_agent_info(
                             thread_id=thread_id, type="assistant", content=message_data,
                             is_llm_message=True, metadata=assistant_metadata
                         )
-                        # Log DB write for assistant message creation (fallback)
-                        if hasattr(self, '_log_db_write') and last_assistant_message_object:
-                            self._log_db_write("save", "assistant", last_assistant_message_object, is_update=False)
                 else:
                     # Create new message (no tools executed during streaming)
                     last_assistant_message_object = await self._add_message_with_agent_info(
                         thread_id=thread_id, type="assistant", content=message_data,
                         is_llm_message=True, metadata=assistant_metadata
                     )
-                    # Log DB write for assistant message creation
-                    if hasattr(self, '_log_db_write') and last_assistant_message_object:
-                        self._log_db_write("save", "assistant", last_assistant_message_object, is_update=False)
 
                 if last_assistant_message_object:
                     # Yield the complete saved object, adding stream_status metadata just for yield
@@ -1419,31 +1369,8 @@ class ResponseProcessor:
                             level="DEFAULT",
                             status_message=(f"Successfully batch-updated {updated_count} streaming tool results")
                         )
-                        
-                        # Log batch update in DB write logs
-                        if hasattr(self, '_log_db_write'):
-                            for msg_id in streaming_tool_result_ids:
-                                # Create a log entry for the batch update
-                                update_log_data = {
-                                    'message_id': msg_id,
-                                    'thread_id': thread_id,
-                                    'type': 'tool',
-                                    'is_llm_message': True,  # Updated value
-                                    '_batch_update': True,
-                                    '_note': 'Batch-updated from is_llm_message=False to True after all tools completed'
-                                }
-                                self._log_db_write("update", "tool", update_log_data, is_update=True)
                     else:
                         logger.warning(f"⚠️ Batch update returned no data (may have already been updated or IDs invalid)")
-                        # Log failed batch update attempt
-                        if hasattr(self, '_log_db_write'):
-                            failed_log_data = {
-                                'message_ids': streaming_tool_result_ids,
-                                'thread_id': thread_id,
-                                '_batch_update_failed': True,
-                                '_note': 'Batch update returned no data - tool results may remain hidden from LLM'
-                            }
-                            self._log_db_write("update", "tool", failed_log_data, is_update=True)
                 except Exception as batch_update_error:
                     logger.error(f"❌ Error batch-updating streaming tool results: {str(batch_update_error)}", exc_info=True)
                     self.trace.event(
@@ -1807,24 +1734,6 @@ class ResponseProcessor:
                     logger.error(f"Error in finally block: {str(final_e)}", exc_info=True)
                     self.trace.event(name="error_in_finally_block", level="ERROR", status_message=(f"Error in finally block: {str(final_e)}"))
             
-            # Cleanup: Remove log function and terminal file handler
-            if hasattr(self, '_log_db_write'):
-                delattr(self, '_log_db_write')
-            
-            # Cleanup: Remove terminal file handler from logger
-            if hasattr(self, '_terminal_file_handler'):
-                try:
-                    import logging
-                    root_logger = logging.getLogger()
-                    handler = self._terminal_file_handler
-                    root_logger.removeHandler(handler)
-                    handler_path = getattr(handler, 'baseFilename', 'unknown')
-                    handler.close()
-                    logger.debug(f"Removed terminal log file handler: {handler_path}")
-                except Exception as handler_cleanup_err:
-                    logger.warning(f"Error removing terminal log handler: {handler_cleanup_err}")
-                finally:
-                    delattr(self, '_terminal_file_handler')
 
     async def process_non_streaming_response(
         self,
@@ -2635,9 +2544,6 @@ class ResponseProcessor:
                     if result.data and len(result.data) > 0:
                         logger.debug(f"Updated partial assistant message {partial_assistant_message_id} with {len(unified_tool_calls)} tool calls")
                         updated_message = result.data[0]
-                        # Log DB write for assistant message update
-                        if hasattr(self, '_log_db_write') and updated_message:
-                            self._log_db_write("update", "assistant", updated_message, is_update=True)
                         return updated_message
                     else:
                         logger.warning(f"Failed to update partial assistant message {partial_assistant_message_id}")
@@ -2654,9 +2560,6 @@ class ResponseProcessor:
                     )
                     if message_obj:
                         logger.debug(f"Created partial assistant message {message_obj.get('message_id')} with {len(unified_tool_calls)} tool calls")
-                        # Log DB write for assistant message creation
-                        if hasattr(self, '_log_db_write'):
-                            self._log_db_write("save", "assistant", message_obj, is_update=False)
                     return message_obj
                 
         except Exception as e:
@@ -2857,15 +2760,6 @@ class ResponseProcessor:
                         metadata=metadata
                     )
                 
-                # Log DB write for tool result (outside lock to avoid blocking)
-                if hasattr(self, '_log_db_write') and message_obj:
-                    # Add note in log if saved with is_llm_message=False (streaming mode)
-                    log_data = message_obj.copy()
-                    if not is_llm_message:
-                        log_data['_streaming_hidden'] = True
-                        log_data['_note'] = "Saved with is_llm_message=False - will be batch-updated after all tools complete"
-                    self._log_db_write("save", "tool", log_data, is_update=False)
-                
                 return message_obj # Return the full message object
             
             # For XML tool calls, use role="user" with only content (no name, no tool_call_id)
@@ -2917,15 +2811,6 @@ class ResponseProcessor:
                     metadata=metadata
                 )
             
-            # Log DB write for tool result (outside lock to avoid blocking)
-            if hasattr(self, '_log_db_write') and message_obj:
-                # Add note in log if saved with is_llm_message=False (streaming mode)
-                log_data = message_obj.copy()
-                if not is_llm_message:
-                    log_data['_streaming_hidden'] = True
-                    log_data['_note'] = "Saved with is_llm_message=False - will be batch-updated after all tools complete"
-                self._log_db_write("save", "tool", log_data, is_update=False)
-            
             return message_obj # Return the full message object
         except Exception as e:
             logger.error(f"Error adding tool result: {str(e)}", exc_info=True)
@@ -2948,14 +2833,6 @@ class ResponseProcessor:
                     )
                 
                 # Log DB write for tool result (fallback)
-                if hasattr(self, '_log_db_write') and message_obj:
-                    # Add note in log if saved with is_llm_message=False (streaming mode)
-                    log_data = message_obj.copy()
-                    if not is_llm_message:
-                        log_data['_streaming_hidden'] = True
-                        log_data['_note'] = "Saved with is_llm_message=False - will be batch-updated after all tools complete"
-                    self._log_db_write("save", "tool", log_data, is_update=False)
-                
                 return message_obj # Return the full message object
             except Exception as e2:
                 logger.error(f"Failed even with fallback message: {str(e2)}", exc_info=True)
