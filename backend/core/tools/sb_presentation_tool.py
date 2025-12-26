@@ -21,14 +21,14 @@ from urllib.parse import unquote
     usage_guide="""
 ### PRESENTATION CREATION WORKFLOW
 
-**🚨 CRITICAL: This tool provides the `create_slide()` function for presentations!**
-- **ALWAYS** use `create_slide()` when creating presentation slides
-- **NEVER** use generic `create_file()` to create presentation slides
+**🚨 CRITICAL: This tool provides the create_slide function for presentations!**
+- **ALWAYS** use create_slide when creating presentation slides
+- **NEVER** use generic create_file to create presentation slides
 - This tool is specialized for presentation creation with proper formatting, validation, and navigation
 
 **🚨 ABSOLUTE REQUIREMENT - NO SEARCHES BEFORE INITIALIZATION:**
 - **DO NOT perform ANY web search, image search, or research BEFORE initializing the presentation tool**
-- **MUST initialize the presentation tool FIRST** using `initialize_tools(["sb_presentation_tool"])`
+- **MUST initialize the presentation tool FIRST** using initialize_tools
 - **ONLY AFTER initialization**, follow the guide phases in exact order - Phase 1 → Phase 2 → Phase 3 → Phase 4 → Final Phase
 - **MUST FOLLOW THE GUIDE BLINDLY** - execute each phase exactly as specified, in order, without skipping steps or doing work out of sequence
 - The guide specifies exactly when to do searches (Phase 2 and Phase 3) - do NOT do them earlier
@@ -37,7 +37,7 @@ from urllib.parse import unquote
 Always create truly unique presentations with custom design systems based on the topic's actual brand colors and visual identity.
 
 **EFFICIENCY RULES - CRITICAL:**
-1. **Web/Image Search:** ALWAYS use batch mode - `web_search(query=["q1", "q2", "q3"])` - ALL queries in ONE call
+1. **Web/Image Search:** ALWAYS use batch mode with multiple queries - use web_search with multiple queries - ALL queries in ONE call
 2. **Shell Commands:** Chain ALL folder creation + downloads in ONE command
 3. **Task Updates:** ONLY update tasks when completing a PHASE. Batch updates in SAME call
 
@@ -70,7 +70,7 @@ Follow this workflow for every presentation. **Complete each phase fully before 
 
 1. **Batch Web Search for Brand Identity**: Use `web_search` in BATCH MODE to research the topic's visual identity efficiently:
    ```
-   web_search(query=["[topic] brand colors", "[topic] visual identity", "[topic] official website design", "[topic] brand guidelines"])
+   use web_search with multiple queries ([topic] brand colors, [topic] visual identity, [topic] official website design, [topic] brand guidelines)
    ```
    **ALL queries in ONE call.** Search for specific brand colors, visual identity, and design elements:
    - For companies/products: Search for their official website, brand guidelines, marketing materials
@@ -102,7 +102,7 @@ Follow this workflow for every presentation. **Complete each phase fully before 
 
 1. **Batch Content Research**: Use `web_search` in BATCH MODE to thoroughly research the topic efficiently:
    ```
-   web_search(query=["[topic] history background", "[topic] key features characteristics", "[topic] statistics data facts", "[topic] significance importance impact"])
+   use web_search with multiple queries ([topic] history background, [topic] key features characteristics, [topic] statistics data facts, [topic] significance importance impact)
    ```
    **ALL queries in ONE call.** Then use `web_scrape` to gather detailed information, facts, data, and insights. The more context you gather, the better you can select appropriate images.
 
@@ -122,7 +122,7 @@ Follow this workflow for every presentation. **Complete each phase fully before 
 
 3. **Batch Image Search** (MANDATORY): Use `image_search` in BATCH MODE with ALL topic-specific queries:
    ```
-   image_search(query=["[topic] exterior view", "[topic] interior detail", "[topic] key feature", "[topic] overview context"], num_results=2)
+   use image_search with multiple queries ([topic] exterior view, [topic] interior detail, [topic] key feature, [topic] overview context) and num_results 2
    ```
    **ALL queries in ONE call.** Results format: `{{"batch_results": [{{"query": "...", "images": ["url1", "url2"]}}, ...]}}`
    - **TOPIC-SPECIFIC IMAGES REQUIRED**: Images MUST be specific to the actual topic/subject being researched, NOT generic category images
@@ -672,7 +672,7 @@ class SandboxPresentationTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "create_slide",
-            "description": "Create or update a single slide in a presentation. **WHEN TO USE**: This tool is ONLY for custom theme presentations (when no template is selected). **WHEN TO SKIP**: Do NOT use this tool for template-based presentations - use `full_file_rewrite` instead to rewrite existing template slide files. **PARALLEL EXECUTION**: This function supports parallel execution - create ALL slides simultaneously by calling create_slide multiple times in parallel for much faster completion. Each slide is saved as a standalone HTML file with 1920x1080 dimensions (16:9 aspect ratio). Slides are automatically validated to ensure both width (≤1920px) and height (≤1080px) limits are met. Use `box-sizing: border-box` on containers with padding to prevent dimension overflow. **CRITICAL**: For custom theme presentations, you MUST have completed Phase 3 (research, content outline, image search, and ALL image downloads) before using this tool. All styling MUST be derived from the custom color scheme and design elements defined in Phase 2. **PRESENTATION DESIGN NOT WEBSITE**: Use fixed pixel dimensions, absolute positioning, and fixed layouts - NO responsive design patterns.",
+            "description": "Create or update a single slide in a presentation. **WHEN TO USE**: This tool is ONLY for custom theme presentations (when no template is selected). **WHEN TO SKIP**: Do NOT use this tool for template-based presentations - use full_file_rewrite instead to rewrite existing template slide files. **PARALLEL EXECUTION**: This function supports parallel execution - create ALL slides simultaneously by using create_slide multiple times in parallel for much faster completion. Each slide is saved as a standalone HTML file with 1920x1080 dimensions (16:9 aspect ratio). Slides are automatically validated to ensure both width (≤1920px) and height (≤1080px) limits are met. Use `box-sizing: border-box` on containers with padding to prevent dimension overflow. **CRITICAL**: For custom theme presentations, you MUST have completed Phase 3 (research, content outline, image search, and ALL image downloads) before using this tool. All styling MUST be derived from the custom color scheme and design elements defined in Phase 2. **PRESENTATION DESIGN NOT WEBSITE**: Use fixed pixel dimensions, absolute positioning, and fixed layouts - NO responsive design patterns.",
             "parameters": {
                 "type": "object",
                 "properties": {

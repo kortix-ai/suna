@@ -36,7 +36,7 @@ MAX_VIDEO_SIZE = 250 * 1024 * 1024  # 250MB
 
 **CRITICAL: IMMEDIATE USAGE**
 When a user asks you to check if an image, audio, or video is a deepfake, manipulated, or AI-generated:
-1. **IMMEDIATELY** call `detect_deepfake(file_path="path/to/file")` - NO need to initialize_tools first
+1. **IMMEDIATELY** use detect_deepfake with file_path parameter - NO need to initialize tools first
 2. The tool is ready to use directly - just provide the file path or URL
 3. Analyze the results and explain the findings to the user
 
@@ -52,9 +52,9 @@ When a user asks you to check if an image, audio, or video is a deepfake, manipu
 - **Video:** MP4, MOV (max 250MB)
 
 **USAGE EXAMPLES:**
-- User: "Is this image real?" → IMMEDIATELY call `detect_deepfake(file_path="image.jpg")`
-- User: "Check if this video is fake" → IMMEDIATELY call `detect_deepfake(file_path="video.mp4")`
-- User: "Verify this audio file" → IMMEDIATELY call `detect_deepfake(file_path="audio.mp3")`
+- User: "Is this image real?" → IMMEDIATELY use detect_deepfake with file_path "image.jpg"
+- User: "Check if this video is fake" → IMMEDIATELY use detect_deepfake with file_path "video.mp4"
+- User: "Verify this audio file" → IMMEDIATELY use detect_deepfake with file_path "audio.mp3"
 - File paths: Use relative paths like 'images/suspect.jpg' or URLs like 'https://example.com/video.mp4'
 
 **RESULT INTERPRETATION:**
@@ -64,7 +64,7 @@ When a user asks you to check if an image, audio, or video is a deepfake, manipu
 - **indicators** - List of specific detection signals with descriptions explaining what was detected
 
 **BEST PRACTICES:**
-- **IMMEDIATELY use detect_deepfake()** when users ask about media authenticity - don't hesitate
+- **IMMEDIATELY use detect_deepfake** when users ask about media authenticity - don't hesitate
 - Check confidence scores - higher scores (0.7+) indicate more reliable detection
 - Review indicators to understand what triggered the detection (facial artifacts, metadata anomalies, etc.)
 - Consider file quality - low quality files may produce uncertain results
