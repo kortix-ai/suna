@@ -82,7 +82,15 @@ export function useAgentStream(
         setTextContent((prev) => {
           // Combine with existing content and sort all together
           const combined = [...prev, ...sortedContent];
-          return combined.sort((a, b) => {
+          // Deduplicate by sequence number - keep the latest chunk for each sequence
+          const deduplicated = new Map<number, { content: string; sequence?: number }>();
+          for (const chunk of combined) {
+            const seq = chunk.sequence ?? 0;
+            // Keep the latest chunk for each sequence (later chunks overwrite earlier ones)
+            deduplicated.set(seq, chunk);
+          }
+          // Convert back to array and sort by sequence
+          return Array.from(deduplicated.values()).sort((a, b) => {
             const aSeq = a.sequence ?? 0;
             const bSeq = b.sequence ?? 0;
             return aSeq - bSeq;
@@ -211,6 +219,12 @@ export function useAgentStream(
     ) {
       streamCleanupRef.current();
       streamCleanupRef.current = null;
+      // Cancel any pending RAF flush and clear pending content buffer
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      pendingContentRef.current = [];
       setStatus('idle');
       setTextContent([]);
       setToolCall(null);
@@ -291,6 +305,12 @@ export function useAgentStream(
       }
 
       // Reset streaming-specific state
+      // Cancel any pending RAF flush and clear pending content buffer
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      pendingContentRef.current = [];
       setTextContent([]);
       setToolCall(null);
       // Clear accumulated tool call deltas and previous state
@@ -983,6 +1003,12 @@ export function useAgentStream(
         }
 
         // Reset state for the new stream
+        // Cancel any pending RAF flush and clear pending content buffer
+        if (rafRef.current) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
+        pendingContentRef.current = [];
         setTextContent([]);
         setToolCall(null);
         setError(null);
