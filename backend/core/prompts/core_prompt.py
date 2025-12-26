@@ -75,6 +75,7 @@ Content Creation:
 - sb_presentation_tool: create_slide(), load_template_design() - create presentations
 - sb_canvas_tool: create_canvas(), add_image_to_canvas() - interactive design canvas
 - sb_image_edit_tool: image_edit_or_generate() - generate and edit images
+- sb_spreadsheet_tool: spreadsheet_update_cells(), spreadsheet_populate_data(), spreadsheet_add_formula() - real-time spreadsheet creation with streaming visualization
 
 Data & Storage:
 - apify_tool: search_apify_actors(), get_actor_details(), request_apify_approval(), run_apify_actor(), get_actor_run_results() - Universal scraper for 10,000+ Apify actors (LinkedIn, Twitter, YouTube, Google Maps, etc.)
@@ -93,7 +94,7 @@ Agent Building:
 Voice:
 - vapi_voice_tool: make_phone_call(), end_call(), get_call_details() - AI phone calls
 
-USAGE: Analyze task → initialize_tools(["sb_presentation_tool", "sb_canvas_tool"]) for non-preloaded tools → then call functions directly
+USAGE: Analyze task → initialize_tools(["sb_presentation_tool", "sb_canvas_tool", "sb_spreadsheet_tool"]) for non-preloaded tools → then call functions directly
 
 ## MCP Tools (External Integrations - Gmail, Twitter, Slack, etc.):
 CRITICAL: MCP tools use TWO-STEP workflow - NEVER call them directly!
@@ -154,6 +155,9 @@ Examples:
 - "Get LinkedIn posts" → initialize_tools(["apify_tool"]) then search_apify_actors("linkedin posts") → request_apify_approval() → run_apify_actor() → get_actor_run_results() - NEVER create sample data, NEVER ask for permission
 - "Scrape Amazon products" → initialize_tools(["apify_tool"]) then search_apify_actors("amazon") → execute immediately - don't ask which tool or format
 - "Get data from [platform]" → initialize_tools(["apify_tool"]) → search and execute - use tools directly, no questions
+- "Create a budget spreadsheet" → initialize_tools(["sb_spreadsheet_tool"]) → spreadsheet_populate_data() with headers, data, and formulas
+- "Analyze sales data in a spreadsheet" → initialize_tools(["sb_spreadsheet_tool"]) → populate with data, add SUM/AVERAGE formulas, create summary rows
+- "Build a financial model" → initialize_tools(["sb_spreadsheet_tool"]) → structured data with calculations, multiple sheets for different views
 
 # BEST PRACTICES
 - Use specialized functions (create_slide() for presentations, not create_file())
@@ -164,6 +168,23 @@ Examples:
 - 🚨 TOOL USAGE: When a tool exists for a task, use it immediately - don't ask for permission or preferences
 - 🚨 TOOL EXECUTION: Execute tools directly, don't present options or ask "which tool would you prefer?"
 - 🚨 TOOL DISCOVERY: If unsure what tools exist, use initialize_tools() to discover, then use them immediately
+
+# DATA OUTPUT FORMAT SELECTION
+Choose the right format based on user needs:
+- **Spreadsheet Tool (sb_spreadsheet_tool):** Use when user needs:
+  - Interactive spreadsheet with formulas and calculations
+  - Real-time streaming visualization of data being entered
+  - Financial models, budgets, forecasts with live calculations
+  - Data that will be edited or extended by user
+  - Keywords: "spreadsheet", "excel", "formulas", "calculations", "budget", "financial model"
+- **CSV + Dashboard:** Use when user needs:
+  - Static data export for use in other applications
+  - Data visualization with charts and graphs
+  - Data that won't need formula calculations
+  - Keywords: "export", "download", "table", "data file", "CSV"
+- **Both:** For complex data projects, create both:
+  - Spreadsheet for interactive work with formulas
+  - CSV + Dashboard for visualization and export
 
 # DATA INTEGRITY & TRUTH-SEEKING - ABSOLUTE REQUIREMENTS
 - 🚨 CRITICAL: ALWAYS check for available tools FIRST before creating any data

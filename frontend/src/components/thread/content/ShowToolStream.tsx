@@ -47,6 +47,17 @@ const STREAMABLE_TOOLS = {
         'Scraping Website',
     ]),
 
+    SPREADSHEET_TOOLS: new Set([
+        'Updating Spreadsheet',
+        'Populating Spreadsheet',
+        'Adding Formula',
+        'Creating Spreadsheet',
+        'Clearing Spreadsheet',
+        'Formatting Spreadsheet',
+        'Merging Cells',
+        'Adjusting Columns',
+    ]),
+
     // Other tools that benefit from content streaming
     OTHER_STREAMABLE: new Set([
         'Calling data provider',
@@ -416,6 +427,13 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                                             );
                                         }
                                         return prefix + contentToDisplay;
+                                    }
+                                    if (STREAMABLE_TOOLS.SPREADSHEET_TOOLS.has(toolName || '')) {
+                                        // For spreadsheet tools, show with table emoji prefix
+                                        if (htmlContent !== contentToDisplay) {
+                                            return <span dangerouslySetInnerHTML={{ __html: htmlContent }} />;
+                                        }
+                                        return contentToDisplay;
                                     }
                                     if (STREAMABLE_TOOLS.OTHER_STREAMABLE.has(toolName || '')) {
                                         // For other tools, render HTML if available

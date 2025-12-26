@@ -67,6 +67,7 @@ import { ExpandMessageToolView } from '../expand-message-tool/ExpandMessageToolV
 import { RealityDefenderToolView } from '../reality-defender-tool/RealityDefenderToolView';
 import { ApifyToolView } from '../apify-tool/ToolView';
 import { FileReaderToolView } from '../file-reader-tool/FileReaderToolView';
+import { SpreadsheetToolView } from '../spreadsheet/SpreadsheetToolview';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;
@@ -98,12 +99,31 @@ const defaultRegistry: ToolViewRegistryType = {
 
   'str-replace': FileOperationToolView,
 
-  'web-search': WebSearchToolView,
+  
   'people-search': PeopleSearchToolView,
   'company-search': CompanySearchToolView,
   'crawl-webpage': WebCrawlToolView,
   'scrape-webpage': WebScrapeToolView,
+
   'image-search': WebSearchToolView,
+  'web-search': WebSearchToolView,
+
+  'spreadsheet-update-cells': SpreadsheetToolView,
+  'spreadsheet_update_cells': SpreadsheetToolView,
+  'spreadsheet-populate-data': SpreadsheetToolView,
+  'spreadsheet_populate_data': SpreadsheetToolView,
+  'spreadsheet-add-formula': SpreadsheetToolView,
+  'spreadsheet_add_formula': SpreadsheetToolView,
+  'spreadsheet-create-sheet': SpreadsheetToolView,
+  'spreadsheet_create_sheet': SpreadsheetToolView,
+  'spreadsheet-clear-range': SpreadsheetToolView,
+  'spreadsheet_clear_range': SpreadsheetToolView,
+  'spreadsheet-format-range': SpreadsheetToolView,
+  'spreadsheet_format_range': SpreadsheetToolView,
+  'spreadsheet-merge-cells': SpreadsheetToolView,
+  'spreadsheet_merge_cells': SpreadsheetToolView,
+  'spreadsheet-set-column-width': SpreadsheetToolView,
+  'spreadsheet_set_column_width': SpreadsheetToolView,
 
 
   'search-apify-actors': ApifyToolView,

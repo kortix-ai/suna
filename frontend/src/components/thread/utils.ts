@@ -198,6 +198,41 @@ export const getToolIcon = (toolName: string): ElementType => {
     case 'complete':
       return CheckCircle2;
 
+    // Spreadsheet tools
+    case 'spreadsheet-update-cells':
+      return Table2;
+    case 'spreadsheet-populate-data':
+      return Table2;
+    case 'spreadsheet-add-formula':
+      return Table2;
+    case 'spreadsheet-create-sheet':
+      return Table2;
+    case 'spreadsheet-clear-range':
+      return Table2;
+    case 'spreadsheet_update_cells':
+      return Table2;
+    case 'spreadsheet_populate_data':
+      return Table2;
+    case 'spreadsheet_add_formula':
+      return Table2;
+    case 'spreadsheet_create_sheet':
+      return Table2;
+    case 'spreadsheet_clear_range':
+      return Table2;
+    case 'spreadsheet-format-range':
+      return Table2;
+    case 'spreadsheet_format_range':
+      return Table2;
+    case 'spreadsheet-merge-cells':
+      return Table2;
+    case 'spreadsheet_merge_cells':
+      return Table2;
+    case 'spreadsheet-set-column-width':
+      return Table2;
+    case 'spreadsheet_set_column_width':
+      return Table2;
+
+    
     default:
       if (toolName?.startsWith('mcp_')) {
         const parts = toolName.split('_');
@@ -425,6 +460,23 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['analyze-sheet', 'Analyzing Sheet'],
   ['visualize-sheet', 'Visualizing Sheet'],
   ['format-sheet', 'Formatting Sheet'],
+
+  ['spreadsheet-update-cells', 'Updating Spreadsheet'],
+  ['spreadsheet_update_cells', 'Updating Spreadsheet'],
+  ['spreadsheet-populate-data', 'Populating Spreadsheet'],
+  ['spreadsheet_populate_data', 'Populating Spreadsheet'],
+  ['spreadsheet-add-formula', 'Adding Formula'],
+  ['spreadsheet_add_formula', 'Adding Formula'],
+  ['spreadsheet-create-sheet', 'Creating Spreadsheet'],
+  ['spreadsheet_create_sheet', 'Creating Spreadsheet'],
+  ['spreadsheet-clear-range', 'Clearing Spreadsheet'],
+  ['spreadsheet_clear_range', 'Clearing Spreadsheet'],
+  ['spreadsheet-format-range', 'Formatting Spreadsheet'],
+  ['spreadsheet_format_range', 'Formatting Spreadsheet'],
+  ['spreadsheet-merge-cells', 'Merging Cells'],
+  ['spreadsheet_merge_cells', 'Merging Cells'],
+  ['spreadsheet-set-column-width', 'Adjusting Columns'],
+  ['spreadsheet_set_column_width', 'Adjusting Columns'],
   
 
   ['update-agent', 'Updating Worker'],
