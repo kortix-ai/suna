@@ -80,24 +80,20 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       const threadKey = threadId || 'null';
       const now = Date.now();
 
-      // Rate limiting: prevent updates more frequent than MIN_UPDATE_INTERVAL
       if (!force && now - lastUpdateTimeRef.current < MIN_UPDATE_INTERVAL) {
         console.log('[Presence] Rate limited - skipping update');
         return;
       }
 
-      // Prevent duplicate calls for the same thread unless forced
       if (!force && lastSentThreadRef.current === threadKey && pendingRequestRef.current) {
         console.log('[Presence] Duplicate call prevented for same thread:', threadKey);
         return;
       }
 
-      // Wait for any pending request to complete
       if (pendingRequestRef.current) {
         try {
           await pendingRequestRef.current;
         } catch {
-          // Ignore errors from previous request
         }
       }
 
@@ -118,7 +114,6 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
           console.error('[Presence] Update failed:', err);
           throw err;
         } finally {
-          // Clear pending request after a short delay to allow for rapid changes
           setTimeout(() => {
             if (pendingRequestRef.current === requestPromise) {
               pendingRequestRef.current = null;
@@ -138,7 +133,6 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
     if (!user) {
       return;
     }
-    // Don't send immediately - wait for the interval
     heartbeatRef.current = setInterval(() => {
       sendPresenceUpdate(latestThreadRef.current);
     }, HEARTBEAT_INTERVAL);
@@ -280,12 +274,10 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   const setActiveThreadId = useCallback((threadId: string | null) => {
     const normalized = threadId || null;
     
-    // Skip if threadId hasn't actually changed
     if (latestThreadRef.current === normalized) {
       return;
     }
     
-    // Update state immediately
     latestThreadRef.current = normalized;
     setActiveThreadState(normalized);
     
@@ -293,15 +285,12 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Clear any existing debounce timer
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
 
-    // Debounce the presence update to prevent rapid-fire calls
     debounceTimerRef.current = setTimeout(() => {
       sendPresenceUpdate(normalized, true);
-      // Ensure heartbeat is running (it won't send immediately)
       startHeartbeat();
     }, DEBOUNCE_DELAY);
   }, [sendPresenceUpdate, startHeartbeat, user]);
@@ -323,14 +312,11 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       return;
     }
     
-    // Only send ONE initial presence update when user first becomes available
     if (!hasInitializedRef.current) {
       hasInitializedRef.current = true;
-      // Send initial presence update with current thread (likely null on first load)
       sendPresenceUpdate(latestThreadRef.current, true);
     }
     
-    // Start heartbeat and connect channel (these don't send updates immediately)
     startHeartbeat();
     connectChannel();
     
@@ -349,7 +335,6 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       return;
     }
     
-    // Skip if document is already hidden on mount (prevents initial false trigger)
     let wasHidden = document.hidden;
     
     const handleVisibilityChange = () => {
@@ -357,9 +342,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
         return;
       }
       
-      // Skip if this is the initial state check
       if (wasHidden === document.hidden) {
-        wasHidden = document.hidden;
         return;
       }
       
@@ -367,12 +350,10 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       
       if (document.hidden) {
         stopHeartbeat();
-        sendPresenceUpdate(null, true);
+        sendPresenceUpdate(null, false);
       } else {
-        // When becoming visible, send update and restart heartbeat
-        // Only if we've already initialized (don't send on initial load)
         if (hasInitializedRef.current) {
-          sendPresenceUpdate(latestThreadRef.current, true);
+          sendPresenceUpdate(latestThreadRef.current, false);
         }
         startHeartbeat();
       }
@@ -419,4 +400,3 @@ export function usePresenceContext() {
   }
   return context;
 }
-
