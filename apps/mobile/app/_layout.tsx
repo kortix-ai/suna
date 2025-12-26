@@ -6,7 +6,7 @@ import { initializeI18n } from '@/lib/utils/i18n';
 import { usePresence } from '@/hooks/usePresence';
 import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, AdvancedFeaturesProvider, TrackingProvider, useAuthContext } from '@/contexts';
 import { PresenceProvider } from '@/contexts/PresenceContext';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ThemeProvider } from '@react-navigation/native';
 import { PortalHost } from '@rn-primitives/portal';
@@ -54,6 +54,12 @@ export default function RootLayout() {
       },
     },
   }));
+  
+  // Store queryClient in ref for deep link handler
+  const queryClientRef = React.useRef(queryClient);
+  React.useEffect(() => {
+    queryClientRef.current = queryClient;
+  }, [queryClient]);
 
   const [fontsLoaded, fontError] = useFonts(ROOBERT_FONTS);
 
@@ -230,6 +236,10 @@ export default function RootLayout() {
             }
 
             console.log('✅ Session set! User logged in:', data.user?.email);
+            
+            // Immediately invalidate React Query cache to fetch fresh account state
+            console.log('🔄 Invalidating cache to fetch fresh account state');
+            queryClientRef.current.invalidateQueries({ queryKey: ['account-state'] });
 
             // Save terms acceptance date if terms were accepted and not already saved
             if (termsAccepted && data.user) {

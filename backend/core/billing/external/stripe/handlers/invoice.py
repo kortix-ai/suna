@@ -251,6 +251,29 @@ class InvoiceHandler:
                     logger.info(f"[RENEWAL] Cancelled trial user subscribing - resetting trial status to 'none'")
                     trial_status = 'none'
                 
+                # Check tier config first to see if monthly_refill is enabled
+                tier_config = get_tier_by_name(tier)
+                if not tier_config:
+                    logger.error(f"[RENEWAL] Tier {tier} not found in configuration - cannot process invoice")
+                    raise ValueError(f"Tier not found: {tier}")
+                
+                # For tiers with monthly_refill_enabled=False (e.g., free tier), skip credit grant but still update metadata
+                if not tier_config.monthly_refill_enabled:
+                    logger.info(f"[RENEWAL] Skipping credit grant for tier {tier} - monthly_refill_enabled=False")
+                    # Still update invoice tracking and metadata
+                    await client.from_('credit_accounts').update({
+                        'last_processed_invoice_id': invoice_id,
+                        'stripe_subscription_id': subscription_id,
+                        'tier': tier,
+                        'billing_cycle_anchor': period_start_dt.isoformat(),
+                        'next_credit_grant': BillingPeriodHandler._calculate_next_credit_grant(price_id, period_start, period_end) if price_id else None
+                    }).eq('account_id', account_id).execute()
+                    await Cache.invalidate(f"credit_balance:{account_id}")
+                    await Cache.invalidate(f"credit_summary:{account_id}")
+                    await Cache.invalidate(f"subscription_tier:{account_id}")
+                    await invalidate_account_state_cache(account_id)
+                    return
+                
                 monthly_credits = get_monthly_credits(tier)
                 logger.info(f"[RENEWAL] invoice_id={invoice_id}, billing_reason={billing_reason}, monthly_credits={monthly_credits}, tier={tier}")
                 

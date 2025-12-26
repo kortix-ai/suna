@@ -27,6 +27,17 @@ class PresenceService:
     ) -> Tuple[Any, str]:
         client = await self.db.client
         now = datetime.now(timezone.utc).isoformat()
+        
+        # Validate required fields
+        if not session_id:
+            raise ValueError("session_id is required")
+        if not account_id:
+            raise ValueError("account_id is required")
+        
+        # Ensure platform has a default value
+        if not platform:
+            platform = "web"
+        
         payload = {
             'session_id': session_id,
             'account_id': account_id,
@@ -37,8 +48,15 @@ class PresenceService:
             'client_timestamp': client_timestamp or now,
             'updated_at': now
         }
-        result = await client.table('user_presence_sessions').upsert(payload).execute()
-        return result, now
+        
+        try:
+            result = await client.table('user_presence_sessions').upsert(payload).execute()
+            return result, now
+        except Exception as e:
+            # Log the full error for debugging
+            logger.error(f"Error upserting presence session {session_id} for account {account_id}: {str(e)}")
+            logger.error(f"Payload: {payload}")
+            raise
 
     async def _delete_session(self, session_id: str):
         client = await self.db.client
