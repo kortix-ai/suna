@@ -103,8 +103,8 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
     }, [router, creditsExhausted]);
 
     const handleCreditsPress = React.useCallback(() => {
-      setIsUsageDrawerOpen(true);
-    }, []);
+      router.push('/usage');
+    }, [router]);
 
     const handleCloseUsageDrawer = React.useCallback(() => {
       setIsUsageDrawerOpen(false);
