@@ -218,10 +218,9 @@ class SandboxShellTool(SandboxToolsBase):
                         pty_size=PtySize(cols=120, rows=40)
                     )
                     
-                    # Send cd command first if needed
-                    if cwd != self.workspace_path:
-                        await pty_handle.send_input(f"cd {cwd}\n")
-                        await asyncio.sleep(0.1)
+                    # Always cd to workspace directory since PTY starts in container's WORKDIR (/app)
+                    await pty_handle.send_input(f"cd {cwd}\n")
+                    await asyncio.sleep(0.1)
                     
                     # Add marker to detect completion
                     marker = f"__CMD_DONE_{str(uuid4())[:8]}__"
