@@ -21,6 +21,7 @@ import {
   Layers,
   ArrowLeftRight,
   Wand2,
+  Scissors,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -456,11 +457,185 @@ function CanvasImageElement({
   );
 }
 
+// Crop Overlay Component - shows draggable crop rectangle
+function CropOverlay({
+  element,
+  scale,
+  stagePosition,
+  cropRect,
+  onCropChange,
+}: {
+  element: CanvasElement;
+  scale: number;
+  stagePosition: { x: number; y: number };
+  cropRect: { x: number; y: number; width: number; height: number };
+  onCropChange: (newRect: { x: number; y: number; width: number; height: number }) => void;
+}) {
+  const [dragState, setDragState] = useState<{
+    type: 'move' | 'resize';
+    handle?: string;
+    startX: number;
+    startY: number;
+    startRect: { x: number; y: number; width: number; height: number };
+  } | null>(null);
+
+  // Calculate screen position and size
+  const elemX = element.x * scale + stagePosition.x;
+  const elemY = element.y * scale + stagePosition.y;
+  const elemWidth = element.width * scale;
+  const elemHeight = element.height * scale;
+
+  // Crop rectangle in screen coordinates
+  const cropX = elemX + cropRect.x * elemWidth;
+  const cropY = elemY + cropRect.y * elemHeight;
+  const cropWidth = cropRect.width * elemWidth;
+  const cropHeight = cropRect.height * elemHeight;
+
+  const handleMouseDown = (e: React.MouseEvent, type: 'move' | 'resize', handle?: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setDragState({
+      type,
+      handle,
+      startX: e.clientX,
+      startY: e.clientY,
+      startRect: { ...cropRect },
+    });
+  };
+
+  useEffect(() => {
+    if (!dragState) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const dx = (e.clientX - dragState.startX) / elemWidth;
+      const dy = (e.clientY - dragState.startY) / elemHeight;
+
+      if (dragState.type === 'move') {
+        // Move the crop rectangle
+        let newX = dragState.startRect.x + dx;
+        let newY = dragState.startRect.y + dy;
+
+        // Constrain within bounds
+        newX = Math.max(0, Math.min(1 - dragState.startRect.width, newX));
+        newY = Math.max(0, Math.min(1 - dragState.startRect.height, newY));
+
+        onCropChange({ ...dragState.startRect, x: newX, y: newY });
+      } else if (dragState.type === 'resize' && dragState.handle) {
+        let newX = dragState.startRect.x;
+        let newY = dragState.startRect.y;
+        let newW = dragState.startRect.width;
+        let newH = dragState.startRect.height;
+
+        const minSize = 0.1; // Minimum 10% of image size
+
+        // Handle each resize direction
+        switch (dragState.handle) {
+          case 'nw':
+            newX = Math.max(0, Math.min(dragState.startRect.x + dragState.startRect.width - minSize, dragState.startRect.x + dx));
+            newY = Math.max(0, Math.min(dragState.startRect.y + dragState.startRect.height - minSize, dragState.startRect.y + dy));
+            newW = dragState.startRect.width - (newX - dragState.startRect.x);
+            newH = dragState.startRect.height - (newY - dragState.startRect.y);
+            break;
+          case 'ne':
+            newY = Math.max(0, Math.min(dragState.startRect.y + dragState.startRect.height - minSize, dragState.startRect.y + dy));
+            newW = Math.max(minSize, Math.min(1 - dragState.startRect.x, dragState.startRect.width + dx));
+            newH = dragState.startRect.height - (newY - dragState.startRect.y);
+            break;
+          case 'sw':
+            newX = Math.max(0, Math.min(dragState.startRect.x + dragState.startRect.width - minSize, dragState.startRect.x + dx));
+            newW = dragState.startRect.width - (newX - dragState.startRect.x);
+            newH = Math.max(minSize, Math.min(1 - dragState.startRect.y, dragState.startRect.height + dy));
+            break;
+          case 'se':
+            newW = Math.max(minSize, Math.min(1 - dragState.startRect.x, dragState.startRect.width + dx));
+            newH = Math.max(minSize, Math.min(1 - dragState.startRect.y, dragState.startRect.height + dy));
+            break;
+          case 'n':
+            newY = Math.max(0, Math.min(dragState.startRect.y + dragState.startRect.height - minSize, dragState.startRect.y + dy));
+            newH = dragState.startRect.height - (newY - dragState.startRect.y);
+            break;
+          case 's':
+            newH = Math.max(minSize, Math.min(1 - dragState.startRect.y, dragState.startRect.height + dy));
+            break;
+          case 'w':
+            newX = Math.max(0, Math.min(dragState.startRect.x + dragState.startRect.width - minSize, dragState.startRect.x + dx));
+            newW = dragState.startRect.width - (newX - dragState.startRect.x);
+            break;
+          case 'e':
+            newW = Math.max(minSize, Math.min(1 - dragState.startRect.x, dragState.startRect.width + dx));
+            break;
+        }
+
+        onCropChange({ x: newX, y: newY, width: newW, height: newH });
+      }
+    };
+
+    const handleMouseUp = () => setDragState(null);
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [dragState, elemWidth, elemHeight, onCropChange]);
+
+  return (
+    <>
+      {/* Dimmed overlay outside crop area */}
+      <div
+        className="absolute pointer-events-none z-30"
+        style={{
+          left: elemX,
+          top: elemY,
+          width: elemWidth,
+          height: elemHeight,
+        }}
+      >
+        <div className="absolute bg-black/50" style={{ left: 0, top: 0, width: '100%', height: cropRect.y * 100 + '%' }} />
+        <div className="absolute bg-black/50" style={{ left: 0, bottom: 0, width: '100%', height: (1 - cropRect.y - cropRect.height) * 100 + '%' }} />
+        <div className="absolute bg-black/50" style={{ left: 0, top: cropRect.y * 100 + '%', width: cropRect.x * 100 + '%', height: cropRect.height * 100 + '%' }} />
+        <div className="absolute bg-black/50" style={{ right: 0, top: cropRect.y * 100 + '%', width: (1 - cropRect.x - cropRect.width) * 100 + '%', height: cropRect.height * 100 + '%' }} />
+      </div>
+
+      {/* Crop rectangle */}
+      <div
+        className="absolute border-2 border-blue-500 cursor-move z-40"
+        style={{
+          left: cropX,
+          top: cropY,
+          width: cropWidth,
+          height: cropHeight,
+        }}
+        onMouseDown={(e) => handleMouseDown(e, 'move')}
+      >
+        {/* Corner handles */}
+        <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-nwse-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'nw')} />
+        <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-nesw-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'ne')} />
+        <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-nesw-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'sw')} />
+        <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-nwse-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'se')} />
+        {/* Edge handles */}
+        <div className="absolute top-1/2 -left-1.5 -translate-y-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ew-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'w')} />
+        <div className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ew-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'e')} />
+        <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ns-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'n')} />
+        <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ns-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 's')} />
+
+        {/* Grid lines for rule of thirds */}
+        <div className="absolute top-1/3 left-0 right-0 border-t border-blue-400/30" />
+        <div className="absolute top-2/3 left-0 right-0 border-t border-blue-400/30" />
+        <div className="absolute left-1/3 top-0 bottom-0 border-l border-blue-400/30" />
+        <div className="absolute left-2/3 top-0 bottom-0 border-l border-blue-400/30" />
+      </div>
+    </>
+  );
+}
+
 // Floating AI Toolbar Component
 function FloatingToolbar({
   element,
   scale,
   stagePosition,
+  onChange,
   onDuplicate,
   onDelete,
   onDownloadPng,
@@ -471,12 +646,16 @@ function FloatingToolbar({
   onTextEditStateChange,
   onTextRegionSelect,
   externalSelectedRegion,
+  onCropStateChange,
+  externalCropRect,
+  onCropCreate,
   authToken,
   sandboxId,
 }: {
   element: CanvasElement;
   scale: number;
   stagePosition: { x: number; y: number };
+  onChange: (newAttrs: Partial<CanvasElement>) => void;
   onDuplicate: () => void;
   onDelete: () => void;
   onDownloadPng: () => void;
@@ -487,6 +666,9 @@ function FloatingToolbar({
   onTextEditStateChange: (state: { regions: TextRegion[]; ocrImageSize: { width: number; height: number } } | null) => void;
   onTextRegionSelect?: (region: TextRegion) => void;
   externalSelectedRegion?: TextRegion | null;
+  onCropStateChange: (state: { cropRect: { x: number; y: number; width: number; height: number } } | null) => void;
+  externalCropRect?: { x: number; y: number; width: number; height: number } | null;
+  onCropCreate: (src: string, width: number, height: number) => void;
   authToken?: string;
   sandboxId?: string;
 }) {
@@ -503,6 +685,13 @@ function FloatingToolbar({
   const [ocrImageSize, setOcrImageSize] = useState<{ width: number; height: number } | null>(null);
   const [showTextEditDialog, setShowTextEditDialog] = useState(false);
   const [isLowQualityOcr, setIsLowQualityOcr] = useState(false); // Skip bboxes, just prompt
+
+  // Crop mode state
+  const [cropMode, setCropMode] = useState(false);
+  const [cropRect, setCropRect] = useState<{ x: number; y: number; width: number; height: number }>({
+    x: 0.1, y: 0.1, width: 0.8, height: 0.8 // Normalized 0-1
+  });
+  const [isCropping, setIsCropping] = useState(false);
 
   // Sync with external selected region (from canvas-level clicks)
   useEffect(() => {
@@ -526,6 +715,10 @@ function FloatingToolbar({
     setShowTextEditDialog(false);
     setIsLowQualityOcr(false);
     onTextEditStateChange(null); // Clear canvas-level overlay
+
+    // Also reset crop mode
+    setCropMode(false);
+    setCropRect({ x: 0.1, y: 0.1, width: 0.8, height: 0.8 });
   }, [element.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Run OCR to detect text regions using backend Replicate model
@@ -640,6 +833,70 @@ function FloatingToolbar({
     setShowTextEditDialog(false);
     setIsLowQualityOcr(false);
     onTextEditStateChange(null); // Clear parent state
+  };
+
+  // Start crop mode
+  const startCropMode = () => {
+    setCropMode(true);
+    const initialRect = { x: 0.1, y: 0.1, width: 0.8, height: 0.8 };
+    setCropRect(initialRect);
+    onCropStateChange({ cropRect: initialRect });
+  };
+
+  // Cancel crop mode
+  const cancelCropMode = () => {
+    setCropMode(false);
+    setCropRect({ x: 0.1, y: 0.1, width: 0.8, height: 0.8 });
+    onCropStateChange(null);
+  };
+
+  // Update crop rectangle
+  const handleCropChange = (newRect: { x: number; y: number; width: number; height: number }) => {
+    setCropRect(newRect);
+    onCropStateChange({ cropRect: newRect });
+  };
+
+  // Apply crop - crops the image client-side
+  const applyCrop = async () => {
+    const rect = externalCropRect || cropRect;
+    if (!rect || isCropping) return;
+
+    setIsCropping(true);
+
+    try {
+      const imageBase64 = await getImageAsBase64(element.src);
+
+      const img = new Image();
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = imageBase64;
+      });
+
+      const cropX = Math.round(rect.x * img.width);
+      const cropY = Math.round(rect.y * img.height);
+      const cropW = Math.round(rect.width * img.width);
+      const cropH = Math.round(rect.height * img.height);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = cropW;
+      canvas.height = cropH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Failed to get canvas context');
+
+      ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+      const croppedBase64 = canvas.toDataURL('image/png');
+      onCropCreate(croppedBase64, element.width * rect.width, element.height * rect.height);
+
+      toast.success('Crop created!');
+      cancelCropMode();
+    } catch (err) {
+      console.error('Crop error:', err);
+      toast.error('Failed to crop: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    } finally {
+      setIsCropping(false);
+    }
   };
 
   // Handle text region click
@@ -870,6 +1127,44 @@ function FloatingToolbar({
     );
   }
 
+  // When in crop mode, show crop toolbar
+  if (cropMode) {
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          left: element.x * scale + stagePosition.x + (element.width * scale) / 2,
+          top: element.y * scale + stagePosition.y + element.height * scale + 8,
+          transform: 'translateX(-50%)',
+          zIndex: 100,
+        }}
+      >
+        <div className="flex items-center gap-2 bg-card border border-border rounded-full px-3 py-1.5">
+          <span className="text-xs text-muted-foreground">Select area</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 rounded-full text-xs"
+            onClick={cancelCropMode}
+            disabled={isCropping}
+          >
+            <X className="h-3 w-3 mr-1" />
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            className="h-6 px-3 rounded-full text-xs"
+            onClick={applyCrop}
+            disabled={isCropping}
+          >
+            {isCropping ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+            Create
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -951,6 +1246,23 @@ function FloatingToolbar({
               </Button>
             </TooltipTrigger>
             <TooltipContent>Select and edit text in image</TooltipContent>
+          </Tooltip>
+
+          {/* Crop Copy */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 rounded-full gap-1.5 text-xs"
+                onClick={startCropMode}
+                disabled={isProcessing || cropMode}
+              >
+                <Scissors className="h-3.5 w-3.5" />
+                Cut
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Create cropped copy</TooltipContent>
           </Tooltip>
 
           {/* Mark Edit - with prompt input */}
@@ -1276,7 +1588,7 @@ function MultiSelectToolbar({
                 {orderedElements.map((el, idx) => (
                   <div key={el.id} className="flex items-center gap-1">
                     <div className="relative group">
-                      <div className="w-16 h-16 rounded border border-border overflow-hidden bg-card flex-shrink-0 relative">
+                      <div className="w-16 h-16 rounded border border-border overflow-hidden bg-card shrink-0 relative">
                         {el.src?.startsWith('data:') ? (
                           <img
                             src={el.src}
@@ -1298,7 +1610,7 @@ function MultiSelectToolbar({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6 flex-shrink-0"
+                        className="h-6 w-6 shrink-0"
                         onClick={() => swapImages(idx, idx + 1)}
                         title="Swap with next"
                       >
@@ -1359,6 +1671,12 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     ocrImageSize: { width: number; height: number };
   } | null>(null);
   const [selectedTextRegion, setSelectedTextRegion] = useState<TextRegion | null>(null);
+
+  // Crop mode state - managed at canvas level for overlay rendering
+  const [cropState, setCropState] = useState<{
+    elementId: string;
+    cropRect: { x: number; y: number; width: number; height: number };
+  } | null>(null);
   const [canvasData, setCanvasData] = useState<CanvasData | null>(null);
   const [scale, setScale] = useState(1);
   const [stagePosition, setStagePosition] = useState({ x: 50, y: 50 });
@@ -1619,10 +1937,11 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       setIsPanning(true);
       panStartRef.current = { x: e.clientX, y: e.clientY, stageX: stagePosition.x, stageY: stagePosition.y };
     } else if (toolMode === 'select') {
-      // Start selection rectangle - clear selection and text edit state
+      // Start selection rectangle - clear selection, text edit state, and crop state
       setSelectedIds([]);
       setTextEditState(null);
       setSelectedTextRegion(null);
+      setCropState(null);
       const rect = containerRef.current?.getBoundingClientRect();
       if (rect) {
         const x = e.clientX - rect.left;
@@ -1708,9 +2027,12 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       // Regular click - single select
       setSelectedIds([id]);
     }
-    // Clear text edit state when selection changes
+    // Clear text edit state and crop state when selection changes
     if (textEditState && textEditState.elementId !== id) {
       setTextEditState(null);
+    }
+    if (cropState && cropState.elementId !== id) {
+      setCropState(null);
     }
   };
 
@@ -1824,6 +2146,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           setSelectedIds([]);
           setTextEditState(null);
           setSelectedTextRegion(null);
+          setCropState(null);
           break;
         case 'delete': case 'backspace':
           if (selectedIds.length > 0) {
@@ -1831,6 +2154,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             setSelectedIds([]);
             setTextEditState(null);
             setSelectedTextRegion(null);
+            setCropState(null);
           }
           break;
       }
@@ -2029,7 +2353,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
             <div className="flex items-center border border-border rounded-full px-1 py-0.5">
               <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" onClick={handleZoomOut}><Minus className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Zoom Out</TooltipContent></Tooltip>
-              <span className="text-xs text-muted-foreground px-2 min-w-[3rem] text-center">{Math.round(scale * 100)}%</span>
+              <span className="text-xs text-muted-foreground px-2 min-w-12 text-center">{Math.round(scale * 100)}%</span>
               <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" onClick={handleZoomIn}><Plus className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Zoom In</TooltipContent></Tooltip>
             </div>
 
@@ -2148,6 +2472,24 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           />
         ))}
 
+        {/* Crop Overlay - rendered at canvas level for proper pan/zoom sync */}
+        {cropState && selectedIds.length === 1 && (() => {
+          const selectedElement = elements.find(el => el.id === cropState.elementId);
+          if (!selectedElement) return null;
+
+          return (
+            <CropOverlay
+              element={selectedElement}
+              scale={scale}
+              stagePosition={stagePosition}
+              cropRect={cropState.cropRect}
+              onCropChange={(newRect) => {
+                setCropState({ elementId: cropState.elementId, cropRect: newRect });
+              }}
+            />
+          );
+        })()}
+
         {/* Text Edit Overlay - rendered at canvas level for proper pan/zoom sync */}
         {textEditState && selectedIds.length === 1 && (() => {
           const selectedElement = elements.find(el => el.id === textEditState.elementId);
@@ -2192,7 +2534,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
           return (
             <svg
-              className="absolute pointer-events-none z-[50]"
+              className="absolute pointer-events-none z-50"
               style={{
                 left: imageScreenX,
                 top: imageScreenY,
@@ -2249,6 +2591,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             element={selectedElement}
             scale={scale}
             stagePosition={stagePosition}
+            onChange={(newAttrs) => handleElementChange(selectedElement.id, newAttrs)}
             onDuplicate={() => {
               const newEl = { ...selectedElement, id: `img-${Date.now()}`, x: selectedElement.x + selectedElement.width + 24, y: selectedElement.y };
               setElements(prev => [...prev, newEl]);
@@ -2259,6 +2602,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
               setSelectedIds([]);
               setTextEditState(null);
               setSelectedTextRegion(null);
+              setCropState(null);
             }}
             onDownloadPng={() => {
               if (selectedElement.src.startsWith('data:')) {
@@ -2400,6 +2744,35 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             }}
             onTextRegionSelect={(region) => setSelectedTextRegion(region)}
             externalSelectedRegion={selectedTextRegion}
+            onCropStateChange={(state) => {
+              if (state) {
+                setCropState({ elementId: selectedElement.id, cropRect: state.cropRect });
+              } else {
+                setCropState(null);
+              }
+            }}
+            externalCropRect={cropState?.elementId === selectedElement.id ? cropState.cropRect : null}
+            onCropCreate={(src, width, height) => {
+              const newEl: CanvasElement = {
+                id: `img-${Date.now()}`,
+                type: 'image',
+                src,
+                x: selectedElement.x + selectedElement.width + 24,
+                y: selectedElement.y,
+                width,
+                height,
+                rotation: 0,
+                scaleX: 1,
+                scaleY: 1,
+                opacity: 1,
+                locked: false,
+                visible: true,
+                name: `${selectedElement.name.replace(/\.[^.]+$/, '')}_crop.png`,
+              };
+              setElements(prev => [...prev, newEl]);
+              setSelectedIds([newEl.id]);
+              setCropState(null);
+            }}
             authToken={authToken}
             sandboxId={sandboxId}
           />
