@@ -24,6 +24,14 @@ const DOWNLOAD_LINKS = {
 type MobilePlatform = 'ios' | 'android';
 type DesktopPlatform = 'windows' | 'mac';
 
+type KortixAppBannersProps = {
+  /**
+   * When true, hides ONLY the mobile (App Store / Play Store) banner.
+   * Desktop download banner can still show.
+   */
+  disableMobileAdvertising?: boolean;
+};
+
 // Apple logo SVG
 function AppleLogo({ className }: { className?: string }) {
   return (
@@ -56,7 +64,7 @@ function detectDesktopPlatform(): DesktopPlatform {
 }
 
 
-export function KortixAppBanners() {
+export function KortixAppBanners({ disableMobileAdvertising = false }: KortixAppBannersProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -73,21 +81,24 @@ export function KortixAppBanners() {
     setMounted(true);
     setDesktopPlatform(detectDesktopPlatform());
     
-    const mobileDismissed = localStorage.getItem(MOBILE_STORAGE_KEY);
     const desktopDismissed = localStorage.getItem(DESKTOP_STORAGE_KEY);
     
-    setMobileVisible(!mobileDismissed);
+    const mobileDismissed = disableMobileAdvertising
+      ? 'true'
+      : localStorage.getItem(MOBILE_STORAGE_KEY);
+
+    setMobileVisible(!mobileDismissed && !disableMobileAdvertising);
     // Hide desktop banner if running in Electron
     setDesktopVisible(!desktopDismissed && !isElectron());
     
     // Show banners after a short delay if at least one is not dismissed
-    if (!mobileDismissed || (!desktopDismissed && !isElectron())) {
+    if ((!mobileDismissed && !disableMobileAdvertising) || (!desktopDismissed && !isElectron())) {
       const timer = setTimeout(() => {
         setIsVisible(true);
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, []);
+  }, [disableMobileAdvertising]);
 
   const handleCloseMobile = (e: React.MouseEvent) => {
     e.stopPropagation();
