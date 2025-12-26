@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Code2,
   ImageIcon,
+  Loader2,
 } from 'lucide-react';
 import { ToolViewProps } from './types';
 import {
@@ -25,6 +26,7 @@ import { ImageLoader } from './shared/ImageLoader';
 import { ParsedContent } from '../types';
 import { JsonViewer } from './shared/JsonViewer';
 import { KortixComputerHeader } from '../kortix-computer/KortixComputerHeader';
+import { useExternalImage } from '@/hooks/files';
 
 interface BrowserHeaderProps {
   isConnected: boolean;
@@ -77,9 +79,6 @@ export function BrowserToolView({
 }: ToolViewProps) {
   // All hooks must be called unconditionally at the top
   const [showContext, setShowContext] = React.useState(false);
-  // Add loading states for images
-  const [imageLoading, setImageLoading] = React.useState(true);
-  const [imageError, setImageError] = React.useState(false);
   const isRunning = isStreaming || agentStatus === 'running';
 
   const [progress, setProgress] = React.useState(100);
@@ -102,16 +101,6 @@ export function BrowserToolView({
     }
   }, [isRunning]);
 
-  // Reset loading state when screenshot changes (use optional chaining for safety)
-  const screenshotUrl = toolResult?.output?.image_url || null;
-  const screenshotBase64 = toolResult?.output?.screenshot_base64 || null;
-  React.useEffect(() => {
-    if (screenshotUrl || screenshotBase64) {
-      setImageLoading(true);
-      setImageError(false);
-    }
-  }, [screenshotUrl, screenshotBase64]);
-
   // Defensive check - handle cases where toolCall might be undefined
   if (!toolCall) {
     console.warn('BrowserToolView: toolCall is undefined. Tool views should use structured props.');
@@ -126,35 +115,79 @@ export function BrowserToolView({
   const url = toolCall.arguments?.url || toolCall.arguments?.target_url || null;
   const parameters = toolCall.arguments || null;
 
-  // Extract result data from toolResult
+  // Extract result data from toolResult with proper parsing
   let browserStateMessageId: string | undefined;
-  let screenshotUrlFinal: string | null = screenshotUrl;
-  let screenshotBase64Final: string | null = screenshotBase64;
+  let screenshotUrlFinal: string | null = null;
+  let screenshotBase64Final: string | null = null;
   let result: Record<string, any> | null = null;
 
   if (toolResult?.output) {
-    const output = toolResult.output;
+    let output = toolResult.output;
     
-    if (typeof output === 'object' && output !== null) {
+    // Handle string outputs that need parsing (backward compatibility)
+    if (typeof output === 'string') {
+      try {
+        // Try to parse as JSON
+        const parsed = JSON.parse(output);
+        if (typeof parsed === 'object' && parsed !== null) {
+          output = parsed;
+        } else {
+          // If parsing succeeds but result is not an object, treat as message
+          result = { message: output };
+          output = null;
+        }
+      } catch (e) {
+        // Not valid JSON, treat as plain message
+        result = { message: output };
+        output = null;
+      }
+    }
+    
+    // Process object output
+    if (output && typeof output === 'object' && output !== null) {
       // Extract screenshot URL and message ID from output
       if (output.image_url) {
-        screenshotUrlFinal = output.image_url;
+        // Clean up URL - remove trailing ? and whitespace
+        screenshotUrlFinal = String(output.image_url).trim().replace(/\?+$/, '');
+      }
+      if (output.screenshot_base64) {
+        screenshotBase64Final = String(output.screenshot_base64).trim();
       }
       if (output.message_id) {
-        browserStateMessageId = output.message_id;
+        browserStateMessageId = String(output.message_id).trim();
       }
       
-      // Set result, excluding message_id
+      // Set result, excluding message_id and screenshot fields for cleaner display
       result = Object.fromEntries(
-        Object.entries(output).filter(([k]) => k !== 'message_id')
+        Object.entries(output).filter(([k]) => 
+          k !== 'message_id' && 
+          k !== 'image_url' && 
+          k !== 'screenshot_base64'
+        )
       ) as Record<string, any>;
-    } else if (typeof output === 'string') {
-      result = { message: output };
+      
+      // If result is empty, at least show success/message
+      if (Object.keys(result).length === 0 && output.message) {
+        result = { message: output.message };
+      }
     }
   }
 
-  // Try to find browser state message if we have a message_id
-  if (!screenshotUrlFinal && !screenshotBase64Final && browserStateMessageId && messages.length > 0) {
+  // Log extracted data for debugging
+  React.useEffect(() => {
+    console.log('[BrowserToolView] Extracted data:', {
+      screenshotUrl: screenshotUrlFinal,
+      screenshotBase64: screenshotBase64Final ? 'present' : null,
+      browserStateMessageId,
+      hasResult: !!result,
+      toolResultOutput: toolResult?.output,
+      toolResultOutputType: typeof toolResult?.output,
+    });
+  }, [screenshotUrlFinal, screenshotBase64Final, browserStateMessageId, result, toolResult?.output]);
+
+  // Try to find browser state message if we have a message_id but no screenshot yet
+  // This is a fallback - the screenshot should already be in toolResult.output
+  if (!screenshotUrlFinal && !screenshotBase64Final && browserStateMessageId && messages && messages.length > 0) {
     const browserStateMessage = messages.find(
       (msg) =>
         (msg.type as string) === 'browser_state' &&
@@ -169,80 +202,143 @@ export function BrowserToolView({
         browserStateMessage.content,
         {},
       );
-      screenshotBase64Final = browserStateContent?.screenshot_base64 || null;
-      screenshotUrlFinal = browserStateContent?.image_url || null;
+      
+      if (browserStateContent?.screenshot_base64) {
+        screenshotBase64Final = String(browserStateContent.screenshot_base64).trim();
+      }
+      if (browserStateContent?.image_url) {
+        // Clean up URL - remove trailing ? and whitespace
+        screenshotUrlFinal = String(browserStateContent.image_url).trim().replace(/\?+$/, '');
+      }
+      
+      console.log('[BrowserToolView] Found browser_state message:', {
+        messageId: browserStateMessageId,
+        hasImageUrl: !!screenshotUrlFinal,
+        hasBase64: !!screenshotBase64Final,
+      });
+    } else {
+      console.log('[BrowserToolView] Browser state message not found:', {
+        messageId: browserStateMessageId,
+        availableMessages: messages.map(m => ({ type: m.type, id: m.message_id })),
+      });
     }
   }
 
-  const handleImageLoad = () => {
-    setImageLoading(false);
-    setImageError(false);
-  };
+  // Use the external image hook for URL-based screenshots
+  const {
+    data: loadedImageUrl,
+    isLoading: isImageLoading,
+    error: imageError,
+    failureCount,
+  } = useExternalImage(screenshotUrlFinal, {
+    enabled: !!screenshotUrlFinal && !screenshotBase64Final,
+  });
 
-  const handleImageError = () => {
-    setImageLoading(false);
-    setImageError(true);
-  };
+  // Log for debugging
+  React.useEffect(() => {
+    if (screenshotUrlFinal) {
+      console.log('[BrowserToolView] Screenshot URL:', screenshotUrlFinal);
+      console.log('[BrowserToolView] Image loading state:', {
+        isLoading: isImageLoading,
+        error: imageError,
+        failureCount,
+        loadedUrl: loadedImageUrl,
+      });
+    }
+  }, [screenshotUrlFinal, isImageLoading, imageError, failureCount, loadedImageUrl]);
 
   const renderScreenshot = () => {
-
-    if (screenshotUrlFinal) {
+    // Handle URL-based screenshots with retry logic
+    if (screenshotUrlFinal && !screenshotBase64Final) {
+      // Show loading state while fetching
+      if (isImageLoading) {
+        return (
+          <div className="flex items-center justify-center w-full h-full min-h-[600px] relative p-4" style={{ minHeight: '600px' }}>
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-50 dark:bg-zinc-900">
+              <ImageLoader />
+              {failureCount > 0 && (
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-4">
+                  Retrying... (attempt {failureCount + 1})
+                </p>
+              )}
+            </div>
+          </div>
+        );
+      }
+      
+      // Show error state after retries exhausted
+      if (imageError && failureCount >= 10) {
+        return (
+          <div className="flex items-center justify-center w-full h-full min-h-[600px] relative p-4" style={{ minHeight: '600px' }}>
+            <div className="absolute inset-0 flex items-center justify-center bg-zinc-50 dark:bg-zinc-900">
+              <div className="text-center text-zinc-500 dark:text-zinc-400">
+                <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
+                <p className="font-medium mb-1">Failed to load screenshot</p>
+                <p className="text-xs text-zinc-400 dark:text-zinc-500 max-w-md break-all px-4">
+                  {screenshotUrlFinal}
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      }
+      
+      // Show image when loaded
+      if (loadedImageUrl) {
+        return (
+          <div className="flex items-center justify-center w-full h-full min-h-[600px] relative p-4" style={{ minHeight: '600px' }}>
+            <Card className="p-0 overflow-hidden relative border">
+              <Image
+                src={loadedImageUrl}
+                alt="Browser Screenshot"
+                className="max-w-full max-h-full object-contain"
+                width={1920}
+                height={1080}
+                unoptimized
+                priority
+              />
+            </Card>
+          </div>
+        );
+      }
+      
+      // Fallback: try direct URL if hook hasn't loaded yet (shouldn't happen, but safety net)
       return (
         <div className="flex items-center justify-center w-full h-full min-h-[600px] relative p-4" style={{ minHeight: '600px' }}>
-          {imageLoading && (
-            <ImageLoader />
-          )}
-          <Card className={`p-0 overflow-hidden relative border ${imageLoading ? 'hidden' : 'block'}`}>
+          <Card className="p-0 overflow-hidden relative border">
             <Image
               src={screenshotUrlFinal}
               alt="Browser Screenshot"
               className="max-w-full max-h-full object-contain"
-              onLoad={handleImageLoad}
-              onError={handleImageError}
               width={1920}
               height={1080}
               unoptimized
+              priority
             />
           </Card>
-          {imageError && !imageLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-zinc-50 dark:bg-zinc-900">
-              <div className="text-center text-zinc-500 dark:text-zinc-400">
-                <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
-                <p>Failed to load screenshot</p>
-              </div>
-            </div>
-          )}
         </div>
       );
-    } else if (screenshotBase64Final) {
+    } 
+    
+    // Handle base64 screenshots (no retry needed, already loaded)
+    if (screenshotBase64Final) {
       return (
         <div className="flex items-center justify-center w-full h-full min-h-[600px] relative p-4" style={{ minHeight: '600px' }}>
-          {imageLoading && (
-            <ImageLoader />
-          )}
-          <Card className={`overflow-hidden border ${imageLoading ? 'hidden' : 'block'}`}>
+          <Card className="overflow-hidden border">
             <Image
               src={`data:image/jpeg;base64,${screenshotBase64Final}`}
               alt="Browser Screenshot"
               className="max-w-full max-h-full object-contain"
-              onLoad={handleImageLoad}
-              onError={handleImageError}
               width={1920}
               height={1080}
               unoptimized
+              priority
             />
           </Card>
-          {imageError && !imageLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-zinc-50 dark:bg-zinc-900">
-              <div className="text-center text-zinc-500 dark:text-zinc-400">
-                <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
-                <p>Failed to load screenshot</p>
-              </div>
-            </div>
-          )}
         </div>
       );
     }
+    
     return null;
   };
 
@@ -325,7 +421,7 @@ export function BrowserToolView({
               </h3>
               <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4 text-center">
                 {isRunning 
-                  ? 'Switch to the Browser tab to see the live browser view.'
+                  ? 'Browser action in progress...'
                   : 'Screenshot will appear here when available.'}
               </p>
               {url && (

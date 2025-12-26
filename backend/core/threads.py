@@ -172,11 +172,24 @@ async def get_project(
                     raise HTTPException(status_code=403, detail="Not authorized to access this project")
         
         # Map project data for frontend
+        # Get sandbox info from resource if it exists
+        sandbox_info = {}
+        sandbox_resource_id = project.get('sandbox_resource_id')
+        if sandbox_resource_id:
+            from core.resources import ResourceService
+            resource_service = ResourceService(client)
+            resource = await resource_service.get_resource_by_id(sandbox_resource_id)
+            if resource:
+                sandbox_info = {
+                    'id': resource.get('external_id'),
+                    **resource.get('config', {})
+                }
+        
         project_data = {
             "project_id": project['project_id'],
             "name": project.get('name', ''),
             "description": project.get('description', ''),
-            "sandbox": project.get('sandbox', {}),
+            "sandbox": sandbox_info,
             "is_public": project.get('is_public', False),
             "icon_name": project.get('icon_name'),
             "created_at": project['created_at'],
@@ -219,11 +232,25 @@ async def get_thread(
             
             if project_result.data:
                 project = project_result.data[0]
+                
+                # Get sandbox info from resource if it exists
+                sandbox_info = {}
+                sandbox_resource_id = project.get('sandbox_resource_id')
+                if sandbox_resource_id:
+                    from core.resources import ResourceService
+                    resource_service = ResourceService(client)
+                    resource = await resource_service.get_resource_by_id(sandbox_resource_id)
+                    if resource:
+                        sandbox_info = {
+                            'id': resource.get('external_id'),
+                            **resource.get('config', {})
+                        }
+                
                 project_data = {
                     "project_id": project['project_id'],
                     "name": project.get('name', ''),
                     "description": project.get('description', ''),
-                    "sandbox": project.get('sandbox', {}),
+                    "sandbox": sandbox_info,
                     "is_public": project.get('is_public', False),
                     "icon_name": project.get('icon_name'),
                     "created_at": project['created_at'],
@@ -231,7 +258,6 @@ async def get_thread(
                 }
                 
                 # If thread has an existing sandbox, start it proactively in background
-                sandbox_info = project.get('sandbox', {})
                 if sandbox_info and sandbox_info.get('id'):
                     sandbox_id = sandbox_info.get('id')
                     logger.info(f"Thread {thread_id} has existing sandbox {sandbox_id}, starting it in background...")
@@ -685,11 +711,25 @@ async def update_thread(
             project_result = await client.table('projects').select('*').eq('project_id', project_id).execute()
             if project_result.data:
                 project = project_result.data[0]
+                
+                # Get sandbox info from resource if it exists
+                sandbox_info = {}
+                sandbox_resource_id = project.get('sandbox_resource_id')
+                if sandbox_resource_id:
+                    from core.resources import ResourceService
+                    resource_service = ResourceService(client)
+                    resource = await resource_service.get_resource_by_id(sandbox_resource_id)
+                    if resource:
+                        sandbox_info = {
+                            'id': resource.get('external_id'),
+                            **resource.get('config', {})
+                        }
+                
                 project_data = {
                     "project_id": project['project_id'],
                     "name": project.get('name', ''),
                     "description": project.get('description', ''),
-                    "sandbox": project.get('sandbox', {}),
+                    "sandbox": sandbox_info,
                     "is_public": project.get('is_public', False),
                     "icon_name": project.get('icon_name'),
                     "created_at": project['created_at'],
@@ -732,10 +772,11 @@ async def delete_thread(
         sandbox_id = None
         
         if project_id:
-            project_result = await client.table('projects').select('sandbox').eq('project_id', project_id).execute()
-            if project_result.data and project_result.data[0].get('sandbox'):
-                sandbox_data = project_result.data[0]['sandbox']
-                sandbox_id = sandbox_data.get('id') if isinstance(sandbox_data, dict) else None
+            from core.resources import ResourceService
+            resource_service = ResourceService(client)
+            sandbox_resource = await resource_service.get_project_sandbox_resource(project_id)
+            if sandbox_resource:
+                sandbox_id = sandbox_resource.get('external_id')
         
         if sandbox_id:
             try:

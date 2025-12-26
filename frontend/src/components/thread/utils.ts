@@ -594,6 +594,9 @@ export function getUserFriendlyToolName(toolName: string): string {
   return TOOL_DISPLAY_NAMES.get(toolName) || toolName;
 }
 
+// Feature flag to hide browser tab and use ToolView instead
+export const HIDE_BROWSER_TAB = true;
+
 export const HIDE_STREAMING_XML_TAGS = new Set([
   'create-tasks',
   'execute-command',

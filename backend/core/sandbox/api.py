@@ -150,11 +150,11 @@ def normalize_path(path: str) -> str:
 
 async def get_sandbox_by_id_safely(client, sandbox_id: str) -> AsyncSandbox:
     """
-    Safely retrieve a sandbox object by its ID, using the project that owns it.
+    Safely retrieve a sandbox object by its ID, using the resource that owns it.
     
     Args:
         client: The Supabase client
-        sandbox_id: The sandbox ID to retrieve
+        sandbox_id: The sandbox ID (external_id) to retrieve
     
     Returns:
         AsyncSandbox: The sandbox object
@@ -162,12 +162,15 @@ async def get_sandbox_by_id_safely(client, sandbox_id: str) -> AsyncSandbox:
     Raises:
         HTTPException: If the sandbox doesn't exist or can't be retrieved
     """
-    # Find the project that owns this sandbox
-    project_result = await client.table('projects').select('project_id').filter('sandbox->>id', 'eq', sandbox_id).execute()
+    from core.resources import ResourceService, ResourceType
     
-    if not project_result.data or len(project_result.data) == 0:
-        logger.error(f"No project found for sandbox ID: {sandbox_id}")
-        raise HTTPException(status_code=404, detail="Sandbox not found - no project owns this sandbox ID")
+    # Find the resource that owns this sandbox
+    resource_service = ResourceService(client)
+    resource = await resource_service.get_resource_by_external_id(sandbox_id, ResourceType.SANDBOX)
+    
+    if not resource:
+        logger.error(f"No resource found for sandbox ID: {sandbox_id}")
+        raise HTTPException(status_code=404, detail="Sandbox not found - no resource exists for this sandbox ID")
     
     # project_id = project_result.data[0]['project_id']
     # logger.debug(f"Found project {project_id} for sandbox {sandbox_id}")
@@ -559,14 +562,24 @@ async def ensure_project_sandbox_active(
                 raise HTTPException(status_code=403, detail="Not authorized to access this project")
     
     try:
-        sandbox_info = project_data.get('sandbox', {})
-        if not sandbox_info.get('id'):
+        from core.resources import ResourceService, ResourceType
+        
+        resource_service = ResourceService(client)
+        sandbox_resource = await resource_service.get_project_sandbox_resource(project_id)
+        
+        if not sandbox_resource:
             raise HTTPException(status_code=404, detail="No sandbox found for this project")
             
-        sandbox_id = sandbox_info['id']
+        sandbox_id = sandbox_resource.get('external_id')
         
         logger.debug(f"Ensuring sandbox is active for project {project_id}")
         sandbox = await get_or_start_sandbox(sandbox_id)
+        
+        # Update last_used_at
+        try:
+            await resource_service.update_last_used(sandbox_resource['id'])
+        except Exception:
+            logger.warning(f"Failed to update last_used_at for resource {sandbox_resource['id']}")
         
         logger.debug(f"Successfully ensured sandbox {sandbox_id} is active for project {project_id}")
         
@@ -575,6 +588,8 @@ async def ensure_project_sandbox_active(
             "sandbox_id": sandbox_id,
             "message": "Sandbox is active"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error ensuring sandbox is active for project {project_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -614,11 +629,16 @@ async def get_project_sandbox_details(
                 raise HTTPException(status_code=403, detail="Not authorized to access this project")
     
     try:
-        sandbox_info = project_data.get('sandbox', {})
-        if not sandbox_info.get('id'):
+        from core.resources import ResourceService, ResourceType
+        
+        resource_service = ResourceService(client)
+        sandbox_resource = await resource_service.get_project_sandbox_resource(project_id)
+        
+        if not sandbox_resource:
             raise HTTPException(status_code=404, detail="No sandbox found for this project")
             
-        sandbox_id = sandbox_info['id']
+        sandbox_id = sandbox_resource.get('external_id')
+        config = sandbox_resource.get('config', {})
         
         logger.debug(f"Fetching sandbox details for sandbox {sandbox_id} (project {project_id})")
         sandbox = await daytona.get(sandbox_id)
@@ -627,8 +647,8 @@ async def get_project_sandbox_details(
             "sandbox_id": sandbox.id,
             "state": sandbox.state.value if hasattr(sandbox.state, 'value') else str(sandbox.state),
             "project_id": project_id,
-            "vnc_preview": sandbox_info.get('vnc_preview'),
-            "sandbox_url": sandbox_info.get('sandbox_url'),
+            "vnc_preview": config.get('vnc_preview'),
+            "sandbox_url": config.get('sandbox_url'),
         }
         
         if hasattr(sandbox, 'created_at') and sandbox.created_at:
@@ -697,7 +717,10 @@ async def create_file_in_project(
         from core.agent_runs import _ensure_sandbox_for_thread
         
         # Check if sandbox existed before
-        existing_sandbox_id = project_data.get('sandbox', {}).get('id')
+        from core.resources import ResourceService
+        resource_service = ResourceService(client)
+        sandbox_resource = await resource_service.get_project_sandbox_resource(project_id)
+        existing_sandbox_id = sandbox_resource.get('external_id') if sandbox_resource else None
         
         # Ensure sandbox exists (creates if needed)
         sandbox, sandbox_id = await _ensure_sandbox_for_thread(client, project_id, [file])

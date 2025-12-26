@@ -1,7 +1,7 @@
 'use client';
 
 import { Project } from '@/lib/api/threads';
-import { getUserFriendlyToolName } from '@/components/thread/utils';
+import { getUserFriendlyToolName, HIDE_BROWSER_TAB } from '@/components/thread/utils';
 import React, { memo, useMemo, useCallback, useState, useEffect, useRef } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiMessageType } from '@/components/thread/types';
@@ -176,6 +176,9 @@ export const KortixComputer = memo(function KortixComputer({
   }, []);
 
   useEffect(() => {
+    // Skip browser tab switching if flag is enabled
+    if (HIDE_BROWSER_TAB) return;
+    
     if (!isInitialized && toolCallSnapshots.length > 0) {
       const streamingSnapshot = toolCallSnapshots.find(snapshot =>
         snapshot.toolCall.toolResult === undefined
@@ -202,6 +205,9 @@ export const KortixComputer = memo(function KortixComputer({
   }, [toolCallSnapshots, isInitialized, isBrowserTool, agentStatus, setActiveView]);
 
   useEffect(() => {
+    // Skip browser tab switching if flag is enabled
+    if (HIDE_BROWSER_TAB) return;
+    
     if (activeView !== 'tools') return;
     
     const safeIndex = Math.min(internalIndex, Math.max(0, toolCallSnapshots.length - 1));
@@ -233,11 +239,6 @@ export const KortixComputer = memo(function KortixComputer({
     onClose();
   }, [onClose]);
 
-  const handleMinimize = useCallback(() => {
-    setIsMaximized(false);
-    onClose();
-  }, [onClose]);
-
   const handleMaximize = useCallback(() => {
     setIsMaximized(!isMaximized);
   }, [isMaximized]);
@@ -256,7 +257,8 @@ export const KortixComputer = memo(function KortixComputer({
     const hasNewSnapshots = newSnapshots.length > toolCallSnapshots.length;
     setToolCallSnapshots(newSnapshots);
 
-    if (hasNewSnapshots && agentStatus === 'running' && activeView === 'tools') {
+    // Skip browser tab switching if flag is enabled
+    if (!HIDE_BROWSER_TAB && hasNewSnapshots && agentStatus === 'running' && activeView === 'tools') {
       const newSnapshot = newSnapshots[newSnapshots.length - 1];
       const toolName = newSnapshot?.toolCall.toolCall?.function_name?.replace(/_/g, '-');
       const isNewBrowserTool = isBrowserTool(toolName);
@@ -633,6 +635,11 @@ export const KortixComputer = memo(function KortixComputer({
   };
 
   const renderBrowserView = () => {
+    // If browser tab is hidden, don't render browser view
+    if (HIDE_BROWSER_TAB) {
+      return null;
+    }
+    
     if (persistentVncIframe) {
       return (
         <div className="h-full flex flex-col overflow-hidden">
@@ -673,7 +680,6 @@ export const KortixComputer = memo(function KortixComputer({
           <PanelHeader
             agentName={agentName}
             onClose={handleClose}
-            onMinimize={handleMinimize}
             onMaximize={handleMaximize}
             isStreaming={isStreaming && activeView === 'tools'}
             variant="motion"
@@ -705,7 +711,7 @@ export const KortixComputer = memo(function KortixComputer({
         <div className="flex-1 overflow-hidden max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>
           {activeView === 'tools' && renderToolsView()}
           {activeView === 'files' && renderFilesView()}
-          {activeView === 'browser' && renderBrowserView()}
+          {!HIDE_BROWSER_TAB && activeView === 'browser' && renderBrowserView()}
         </div>
       </div>
     );
@@ -727,7 +733,7 @@ export const KortixComputer = memo(function KortixComputer({
           <div className="flex-1 flex flex-col overflow-hidden max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>
             {activeView === 'tools' && renderToolsView()}
             {activeView === 'files' && renderFilesView()}
-            {activeView === 'browser' && renderBrowserView()}
+            {!HIDE_BROWSER_TAB && activeView === 'browser' && renderBrowserView()}
           </div>
 
           {activeView === 'tools' && (displayTotalCalls > 1 || (isCurrentToolStreaming && totalCompletedCalls > 0)) && (

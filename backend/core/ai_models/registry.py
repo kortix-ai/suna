@@ -128,7 +128,6 @@ class ModelRegistry:
                     output_cost_per_million_tokens=1.20,
                     cached_read_cost_per_million_tokens=0.03,
                     cache_write_5m_cost_per_million_tokens=0.375,
-                    cache_write_1h_cost_per_million_tokens=0.50,
                 ),
                 tier_availability=["free", "paid"],
                 priority=100,
