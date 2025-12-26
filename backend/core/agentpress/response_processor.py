@@ -904,23 +904,28 @@ class ResponseProcessor:
                                 }
                                 __sequence += 1
                             
-                            # Process any completed tool executions in real-time
-                            if pending_tool_executions and config.execute_tools and config.execute_on_stream:
-                                messages_to_yield, remaining_executions, updated_yielded_indices, updated_terminate_flag = await self._process_completed_tool_executions(
-                                    pending_tool_executions,
-                                    thread_id,
-                                    thread_run_id,
-                                    last_assistant_message_object,
-                                    yielded_tool_indices,
-                                    agent_should_terminate
-                                )
-                                # Update state
+                    # Process any completed tool executions in real-time (moved outside tool call update block)
+                    # This ensures completed tools are processed immediately even when LLM is generating text
+                    if pending_tool_executions and config.execute_tools and config.execute_on_stream:
+                        # Process and yield messages immediately as each tool completes
+                        async for item in self._process_completed_tool_executions(
+                            pending_tool_executions,
+                            thread_id,
+                            thread_run_id,
+                            last_assistant_message_object,
+                            yielded_tool_indices,
+                            agent_should_terminate
+                        ):
+                            if isinstance(item, tuple):
+                                # Final state tuple - extract and update state
+                                remaining_executions, updated_yielded_indices, updated_terminate_flag = item
                                 pending_tool_executions = remaining_executions
                                 yielded_tool_indices = updated_yielded_indices
                                 agent_should_terminate = updated_terminate_flag
-                                # Yield all messages from completed tool executions
-                                for msg in messages_to_yield:
-                                    yield msg
+                                break
+                            else:
+                                # Message to yield immediately
+                                yield item
 
             # Log when stream naturally ends
             if finish_reason == "stop":
@@ -996,89 +1001,34 @@ class ResponseProcessor:
                 logger.warning("⚠️ No usage data captured from streaming chunks")
 
 
-            tool_results_buffer = []
             # Process any remaining tool executions that didn't complete during streaming
-            if pending_tool_executions:
+            # Use the same unified processing method to ensure consistent behavior
+            if pending_tool_executions and config.execute_tools and config.execute_on_stream:
                 logger.debug(f"Waiting for {len(pending_tool_executions)} remaining streamed tool executions")
                 self.trace.event(name="waiting_for_remaining_streamed_tool_executions", level="DEFAULT", status_message=(f"Waiting for {len(pending_tool_executions)} remaining streamed tool executions"))
                 pending_tasks = [execution["task"] for execution in pending_tool_executions]
-                done, _ = await asyncio.wait(pending_tasks)
+                await asyncio.wait(pending_tasks, return_when=asyncio.ALL_COMPLETED)
 
-                # Process remaining tools using the same pattern as real-time processing
-                for execution in pending_tool_executions:
-                    tool_idx = execution.get("tool_index", -1)
-                    context = execution["context"]
-                    tool_call = execution["tool_call"]
-                    tool_name = context.function_name
-                    
-                    # Skip if already processed during streaming
-                    if tool_idx in yielded_tool_indices:
-                        try:
-                            if execution["task"].done():
-                                result = execution["task"].result()
-                                context.result = result
-                                tool_results_buffer.append((tool_call, result, tool_idx, context))
-                                
-                                if tool_name in ['ask', 'complete']:
-                                    logger.debug(f"Terminating tool '{tool_name}' completed. Setting termination flag.")
-                                    self.trace.event(name="terminating_tool_completed", level="DEFAULT", status_message=(f"Terminating tool '{tool_name}' completed. Setting termination flag."))
-                                    agent_should_terminate = True
-                        except Exception as e:
-                            logger.error(f"Error getting result for already-processed tool execution {tool_idx}: {str(e)}")
-                            self.trace.event(name="error_getting_result_for_already_processed_tool_execution", level="ERROR", status_message=(f"Error getting result for already-processed tool execution {tool_idx}: {str(e)}"))
-                        continue
-
-                    # Process tools that weren't completed during streaming
-                    try:
-                        if execution["task"].done():
-                            result = execution["task"].result()
-                            context.result = result
-                            tool_results_buffer.append((tool_call, result, tool_idx, context))
-                            
-                            # Get assistant message ID
-                            assistant_message_id = (
-                                last_assistant_message_object['message_id'] 
-                                if last_assistant_message_object 
-                                else context.assistant_message_id
-                            )
-                            
-                            # Add tool result to conversation thread
-                            saved_tool_result_object = await self._add_tool_result(
-                                thread_id, tool_call, result, assistant_message_id
-                            )
-                            
-                            # Get tool_message_id from saved result
-                            tool_message_id = saved_tool_result_object['message_id'] if saved_tool_result_object else None
-                            
-                            if tool_name in ['ask', 'complete']:
-                                logger.debug(f"Terminating tool '{tool_name}' completed. Setting termination flag.")
-                                self.trace.event(name="terminating_tool_completed", level="DEFAULT", status_message=(f"Terminating tool '{tool_name}' completed. Setting termination flag."))
-                                agent_should_terminate = True
-                            
-                            # Yield and save tool completed status
-                            completed_msg_obj = await self._yield_and_save_tool_completed(
-                                context, tool_message_id, thread_id, thread_run_id
-                            )
-                            
-                            # Yield the tool result message object
-                            if saved_tool_result_object:
-                                yield format_for_yield(saved_tool_result_object)
-                            
-                            # Yield the completed status message
-                            if completed_msg_obj:
-                                yield format_for_yield(completed_msg_obj)
-                            
-                            yielded_tool_indices.add(tool_idx)
-                        else:
-                            logger.warning(f"Task for tool index {tool_idx} not done after wait.")
-                            self.trace.event(name="task_for_tool_index_not_done_after_wait", level="WARNING", status_message=(f"Task for tool index {tool_idx} not done after wait."))
-                    except Exception as e:
-                        logger.error(f"Error processing remaining tool execution {tool_idx}: {str(e)}", exc_info=True)
-                        self.trace.event(name="error_processing_remaining_tool_execution", level="ERROR", status_message=(f"Error processing remaining tool execution {tool_idx}: {str(e)}"))
-                        context.error = e
-                        error_msg_obj = await self._yield_and_save_tool_error(context, thread_id, thread_run_id)
-                        if error_msg_obj: yield format_for_yield(error_msg_obj)
-                        yielded_tool_indices.add(tool_idx)
+                # Process remaining tools using the unified method
+                # Process and yield messages immediately as each tool completes
+                async for item in self._process_completed_tool_executions(
+                    pending_tool_executions,
+                    thread_id,
+                    thread_run_id,
+                    last_assistant_message_object,
+                    yielded_tool_indices,
+                    agent_should_terminate
+                ):
+                    if isinstance(item, tuple):
+                        # Final state tuple - extract and update state
+                        remaining_executions, updated_yielded_indices, updated_terminate_flag = item
+                        pending_tool_executions = remaining_executions
+                        yielded_tool_indices = updated_yielded_indices
+                        agent_should_terminate = updated_terminate_flag
+                        break
+                    else:
+                        # Message to yield immediately
+                        yield item
 
 
             # Only auto-continue for 'length' or 'tool_calls' finish reasons (not 'stop' or others)
@@ -1274,15 +1224,9 @@ class ResponseProcessor:
 
                 tool_results_map = {} # tool_index -> (tool_call, result, context)
 
-                # Populate from buffer if executed on stream
-                if config.execute_on_stream and tool_results_buffer:
-                    logger.debug(f"Processing {len(tool_results_buffer)} buffered tool results")
-                    self.trace.event(name="processing_buffered_tool_results", level="DEFAULT", status_message=(f"Processing {len(tool_results_buffer)} buffered tool results"))
-                    for tool_call, result, tool_idx, context in tool_results_buffer:
-                        if last_assistant_message_object: context.assistant_message_id = last_assistant_message_object['message_id']
-                        tool_results_map[tool_idx] = (tool_call, result, context)
-                # Or execute now if not streamed (or if streamed but no buffered results)
-                elif final_tool_calls_to_process:
+                # Execute tools that weren't executed during streaming (when execute_on_stream is False)
+                # Tools executed during streaming are already processed immediately by _process_completed_tool_executions
+                if not config.execute_on_stream and final_tool_calls_to_process:
                     logger.debug(f"🔄 STREAMING: Executing {len(final_tool_calls_to_process)} tools ({config.tool_execution_strategy}) after stream")
                     logger.debug(f"📋 Final tool calls to process: {final_tool_calls_to_process}")
                     logger.debug(f"⚙️ Config: execute_on_stream={config.execute_on_stream}, strategy={config.tool_execution_strategy}")
@@ -1312,24 +1256,25 @@ class ResponseProcessor:
                            self.trace.event(name="could_not_map_result_for_tool_index", level="WARNING", status_message=(f"Could not map result for tool index {current_tool_idx}"))
                        current_tool_idx += 1
 
-                # Save and Yield each result message
-                if tool_results_map:
-                    logger.debug(f"Saving and yielding {len(tool_results_map)} final tool result messages")
-                    self.trace.event(name="saving_and_yielding_final_tool_result_messages", level="DEFAULT", status_message=(f"Saving and yielding {len(tool_results_map)} final tool result messages"))
+                # Save and Yield each result message for tools that weren't executed during streaming
+                # Tools executed during streaming are already processed immediately by _process_completed_tool_executions
+                if tool_results_map and not config.execute_on_stream:
+                    logger.debug(f"Saving and yielding {len(tool_results_map)} final tool result messages (non-streamed execution)")
+                    self.trace.event(name="saving_and_yielding_final_tool_result_messages", level="DEFAULT", status_message=(f"Saving and yielding {len(tool_results_map)} final tool result messages (non-streamed execution)"))
                     for tool_idx in sorted(tool_results_map.keys()):
                         tool_call, result, context = tool_results_map[tool_idx]
                         context.result = result
                         if not context.assistant_message_id and last_assistant_message_object:
                             context.assistant_message_id = last_assistant_message_object['message_id']
 
-                        # Yield start status ONLY IF executing non-streamed (already yielded if streamed)
-                        if not config.execute_on_stream and tool_idx not in yielded_tool_indices:
+                        # Yield start status (not yielded yet since not executed during streaming)
+                        if tool_idx not in yielded_tool_indices:
                             started_msg_obj = await self._yield_and_save_tool_started(context, thread_id, thread_run_id)
                             if started_msg_obj: yield format_for_yield(started_msg_obj)
                             yielded_tool_indices.add(tool_idx) # Mark status yielded
 
-                        # Save the tool result message to DB
-                        saved_tool_result_object = await self._add_tool_result( # Returns full object or None
+                        # Save the tool result message to DB using _add_tool_result
+                        saved_tool_result_object = await self._add_tool_result(
                             thread_id, tool_call, result,
                             context.assistant_message_id
                         )
@@ -1341,7 +1286,6 @@ class ResponseProcessor:
                             thread_id, thread_run_id
                         )
                         if completed_msg_obj: yield format_for_yield(completed_msg_obj)
-                        # Don't add to yielded_tool_indices here, completion status is separate yield
 
                         # Yield the saved tool result object
                         if saved_tool_result_object:
@@ -1350,7 +1294,6 @@ class ResponseProcessor:
                         else:
                              logger.error(f"Failed to save tool result for index {tool_idx}, not yielding result message.")
                              self.trace.event(name="failed_to_save_tool_result_for_index", level="ERROR", status_message=(f"Failed to save tool result for index {tool_idx}, not yielding result message."))
-                             # Optionally yield error status for saving failure?
 
             # --- Re-check auto-continue after tool executions ---
             # The should_auto_continue flag was set earlier, but tool executions may have set agent_should_terminate
@@ -2705,15 +2648,16 @@ class ResponseProcessor:
         last_assistant_message_object: Optional[Dict[str, Any]],
         yielded_tool_indices: set,
         agent_should_terminate: bool
-    ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], set, bool]:
+    ):
         """
         Process any completed tool executions in real-time during streaming.
+        Yields messages immediately as each tool completes.
         
-        Returns:
-            Tuple of (messages_to_yield, remaining_executions, updated_yielded_indices, updated_terminate_flag)
+        Yields:
+            Dict: Tool result messages and status messages (yielded immediately)
+            Tuple: Final state tuple (remaining_executions, updated_yielded_indices, updated_terminate_flag) as last item
         """
         remaining_executions = []
-        messages_to_yield = []
         updated_yielded_indices = yielded_tool_indices.copy()
         updated_terminate_flag = agent_should_terminate
         
@@ -2729,7 +2673,7 @@ class ResponseProcessor:
                 remaining_executions.append(execution)
                 continue
             
-            # Task is done - process it
+            # Task is done - process it immediately and yield
             try:
                 result = task.result()
                 context.result = result
@@ -2764,13 +2708,13 @@ class ResponseProcessor:
                     context, tool_message_id, thread_id, thread_run_id
                 )
                 
-                # Collect the tool result message object to yield
+                # Yield the tool result message object immediately
                 if saved_tool_result_object:
-                    messages_to_yield.append(format_for_yield(saved_tool_result_object))
+                    yield format_for_yield(saved_tool_result_object)
                 
-                # Collect the completed status message to yield
+                # Yield the completed status message immediately
                 if completed_msg_obj:
-                    messages_to_yield.append(format_for_yield(completed_msg_obj))
+                    yield format_for_yield(completed_msg_obj)
                 
                 updated_yielded_indices.add(tool_idx)
                 
@@ -2784,10 +2728,11 @@ class ResponseProcessor:
                 context.error = e
                 error_msg_obj = await self._yield_and_save_tool_error(context, thread_id, thread_run_id)
                 if error_msg_obj:
-                    messages_to_yield.append(format_for_yield(error_msg_obj))
+                    yield format_for_yield(error_msg_obj)
                 updated_yielded_indices.add(tool_idx)
         
-        return messages_to_yield, remaining_executions, updated_yielded_indices, updated_terminate_flag
+        # Yield final state tuple as last item
+        yield (remaining_executions, updated_yielded_indices, updated_terminate_flag)
         
     async def _yield_and_save_tool_started(self, context: ToolExecutionContext, thread_id: str, thread_run_id: str) -> Optional[Dict[str, Any]]:
         """Formats, saves, and returns a tool started status message."""
