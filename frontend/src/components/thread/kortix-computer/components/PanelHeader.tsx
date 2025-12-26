@@ -1,7 +1,7 @@
 'use client';
 
 import { memo, useState, useEffect } from 'react';
-import { CircleDashed, Minimize2, Wifi, Battery, BatteryLow, BatteryMedium, BatteryFull, BatteryCharging } from 'lucide-react';
+import { CircleDashed, Minimize2, Maximize2, Wifi, Battery, BatteryLow, BatteryMedium, BatteryFull, BatteryCharging } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DrawerTitle } from '@/components/ui/drawer';
 import { ViewType } from '@/stores/kortix-computer-store';
@@ -110,6 +110,8 @@ interface PanelHeaderProps {
   onViewChange: (view: ViewType) => void;
   showFilesTab?: boolean;
   isMaximized?: boolean;
+  isSuiteMode?: boolean;
+  onToggleSuiteMode?: () => void;
   hideViewToggle?: boolean;
   sandboxInfoOpen?: boolean;
   setSandboxInfoOpen?: (open: boolean) => void;
@@ -128,6 +130,8 @@ export const PanelHeader = memo(function PanelHeader({
   onViewChange,
   showFilesTab = true,
   isMaximized = false,
+  isSuiteMode = false,
+  onToggleSuiteMode,
   hideViewToggle = false,
   sandboxInfoOpen,
   setSandboxInfoOpen,
@@ -174,7 +178,7 @@ export const PanelHeader = memo(function PanelHeader({
           isMaximized={isMaximized}
         />
       </div>
-      <div onClick={() => setSandboxInfoOpen(!sandboxInfoOpen)} className="flex items-center justify-center gap-2 cursor-default">
+      <div onClick={() => setSandboxInfoOpen?.(!sandboxInfoOpen)} className="flex items-center justify-center gap-2 cursor-default">
         <div className="w-6 h-6 flex items-center justify-center">
           <KortixLogo size={18}/>
         </div>

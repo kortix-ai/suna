@@ -133,6 +133,9 @@ export default function RootLayout({
         <meta name="twitter:image" content="https://kortix.com/banner.png" />
         <meta name="twitter:site" content="@kortix" />
         <link rel="canonical" href="https://kortix.com" />
+        
+        {/* iOS Smart App Banner - shows native install banner in Safari */}
+        <meta name="apple-itunes-app" content="app-id=6754448524, app-argument=kortix://" />
 
         <Script id="facebook-pixel" strategy="lazyOnload">
           {`

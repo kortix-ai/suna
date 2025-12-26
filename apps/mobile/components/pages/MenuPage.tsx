@@ -1,8 +1,8 @@
 import * as React from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Platform, Pressable, ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import { Text } from '@/components/ui/text';
@@ -125,7 +125,7 @@ function EmptyState({
 
   if (type === 'loading') {
     return (
-      <View className="items-center justify-center px-8 py-16">
+      <View className="flex-1 items-center justify-center px-8" style={{ minHeight: 300 }}>
         <KortixLoader size="large" />
         <Text className="mt-4 text-center font-roobert text-sm text-muted-foreground">{title}</Text>
       </View>
@@ -391,6 +391,7 @@ export function MenuPage({
   const router = useRouter();
   const { agents } = useAgent();
   const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
+  const insets = useSafeAreaInsets();
   const scrollY = useSharedValue(0);
   const profileScale = useSharedValue(1);
   const [isSettingsVisible, setIsSettingsVisible] = React.useState(false);
@@ -598,7 +599,7 @@ export function MenuPage({
         shadowRadius: 16,
         elevation: 16,
       }}>
-      <SafeAreaView edges={['top', 'bottom']} className="flex-1">
+      <SafeAreaView edges={['top']} className="flex-1">
         <View className="flex-1 px-6 pt-2">
           <View className="mb-4 flex-row items-center gap-3">
             <View className="flex-1">
@@ -651,7 +652,11 @@ export function MenuPage({
               className="flex-1"
               contentContainerClassName="px-6"
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingTop: 0, paddingBottom: 40 }}
+              contentContainerStyle={{ 
+                paddingTop: 0, 
+                paddingBottom: 40,
+                flexGrow: 1,
+              }}
               onScroll={handleScroll}
               scrollEventThrottle={16}>
               {activeTab === 'chats' && (
@@ -850,7 +855,7 @@ export function MenuPage({
           </View>
         </View>
 
-        <View className="gap-4 px-6 pb-0">
+        <View className="gap-4 px-6" style={{ paddingBottom: Math.max(insets.bottom, 16) + 16}}>
           <AnimatedPressable
             onPress={handleProfilePress}
             onPressIn={handleProfilePressIn}

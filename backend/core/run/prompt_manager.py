@@ -35,7 +35,7 @@ You are currently in fast-start mode with all core tools preloaded and ready NOW
    • Communication: message_tool, task_list_tool, expand_msg_tool
 
 ⏳ Advanced tools available via initialize_tools():
-   • Content: sb_presentation_tool, sb_designer_tool
+   • Content: sb_presentation_tool, sb_canvas_tool
    • Research: people_search_tool, company_search_tool, paper_search_tool
    • Data: apify_tool, sb_kb_tool
 

@@ -1,7 +1,8 @@
 import * as React from 'react';
 import { View, TextInput, Keyboard, Platform } from 'react-native';
-import { BottomSheetModal, BottomSheetView, BottomSheetBackdrop, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView, BottomSheetBackdrop, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -34,6 +35,7 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
   const { colorScheme } = useColorScheme();
   const { signInWithMagicLink, isLoading } = useAuth();
   const toast = useToast();
+  const insets = useSafeAreaInsets();
   
   const [emailSent, setEmailSent] = React.useState(false);
   const [email, setEmail] = React.useState('');
@@ -57,13 +59,10 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
     },
   }));
 
-  // Dynamic snap point based on state
+  // Dynamic snap point based on state - always 85% height
   const snapPoints = React.useMemo(() => {
-    if (emailSent) {
-      return ['70%'];
-    }
-    return [isInputFocused ? '85%' : '55%'];
-  }, [isInputFocused, emailSent]);
+    return ['90%'];
+  }, []);
 
   const renderBackdrop = React.useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -132,6 +131,9 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
       onDismiss={handleDismiss}
       enableDynamicSizing={false}
       animateOnMount={true}
+      keyboardBehavior="interactive"
+      keyboardBlurBehavior="restore"
+      android_keyboardInputMode="adjustResize"
       backgroundStyle={{
         backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
       }}
@@ -139,9 +141,17 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
         backgroundColor: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)',
       }}
     >
-      {/* BottomSheetModal handles keyboard avoidance natively - no KeyboardAvoidingView needed */}
-      <BottomSheetView style={{ flex: 1 }}>
-        <View className="flex-1 px-6 pt-6 pb-20">
+      <BottomSheetScrollView
+        contentContainerStyle={{
+          paddingHorizontal: 24,
+          paddingTop: 24,
+          paddingBottom: Math.max(insets.bottom, 20) + 16,
+        }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
+        <View className="flex-1">
             {emailSent ? (
               // Success State
               <View className="gap-6">
@@ -343,8 +353,8 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                 </Button>
               </View>
             )}
-          </View>
-      </BottomSheetView>
+        </View>
+      </BottomSheetScrollView>
     </BottomSheetModal>
   );
 });

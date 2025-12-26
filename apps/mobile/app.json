@@ -2,7 +2,7 @@
   "expo": {
     "name": "Kortix",
     "slug": "kortix",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "orientation": "portrait",
     "icon": "./assets/images/AppIcon-Light.png",
     "scheme": "kortix",
@@ -29,7 +29,7 @@
     },
     "android": {
       "edgeToEdgeEnabled": true,
-      "softwareKeyboardLayoutMode": "resize",
+      "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#F0F0E9"
@@ -60,25 +60,6 @@
             "BROWSABLE",
             "DEFAULT"
           ]
-        },
-        {
-          "action": "VIEW",
-          "data": [
-            {
-              "scheme": "kortix",
-              "host": "auth",
-              "pathPrefix": "/callback"
-            },
-            {
-              "scheme": "kortix",
-              "host": "auth",
-              "pathPrefix": "/reset-password"
-            }
-          ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
         }
       ],
       "permissions": [
@@ -96,6 +77,15 @@
     "plugins": [
       "expo-router",
       "expo-notifications",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash.png",
+          "backgroundColor": "#ffffff",
+          "resizeMode": "contain",
+          "imageWidth": 80
+        }
+      ],
       [
         "expo-image-picker",
         {
@@ -134,7 +124,7 @@
       }
     },
     "owner": "kortix",
-    "runtimeVersion": "1.1.0",
+    "runtimeVersion": "1.1.1",
     "updates": {
       "url": "https://u.expo.dev/9fca3cff-a291-41c9-88b9-feb8053b990f",
       "checkAutomatically": "ON_LOAD",

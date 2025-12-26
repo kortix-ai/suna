@@ -287,6 +287,11 @@ export function getFileIconByName(fileName: string, isDirectory: boolean = false
     return <DocumentFileIcon />;
   }
   
+  // Canvas files
+  if (['kanvax'].includes(ext)) {
+    return <ImageFileIcon />;
+  }
+  
   return <GenericFileIcon />;
 }
 

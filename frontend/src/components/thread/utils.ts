@@ -416,6 +416,8 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['clear-images-from-context', 'Clearing Images from context'],
   ['load-image', 'Loading Image'],
   ['image-search', 'Searching Image'],
+  ['image_edit_or_generate', 'Generate Media'],
+  ['image-edit-or-generate', 'Generate Media'],
 
   ['create-sheet', 'Creating Sheet'],
   ['update-sheet', 'Updating Sheet'],

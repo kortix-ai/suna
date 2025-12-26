@@ -335,6 +335,9 @@ api_router.include_router(test_harness_router)
 from core.files import staged_files_router
 api_router.include_router(staged_files_router, prefix="/files")
 
+from core.sandbox.canvas_ai_api import router as canvas_ai_router
+api_router.include_router(canvas_ai_router)
+
 @api_router.get("/health", summary="Health Check", operation_id="health_check", tags=["system"])
 async def health_check():
     logger.debug("Health check endpoint called")

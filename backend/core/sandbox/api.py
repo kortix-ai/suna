@@ -276,23 +276,65 @@ async def list_files(
     request: Request = None,
     user_id: Optional[str] = Depends(get_optional_user_id)
 ):
+    """List files in a sandbox directory"""
+    # Validate sandbox_id
+    if not sandbox_id or not sandbox_id.strip():
+        logger.error("Sandbox ID is required")
+        raise HTTPException(status_code=400, detail="Sandbox ID is required")
     path = normalize_path(path)
     
     logger.debug(f"Received list files request for sandbox {sandbox_id}, path: {path}, user_id: {user_id}")
     client = await db.client
     
-    # Verify the user has access to this sandbox
-    await verify_sandbox_access_optional(client, sandbox_id, user_id)
+    try:
+        # Verify the user has access to this sandbox
+        await verify_sandbox_access_optional(client, sandbox_id, user_id)
+    except HTTPException as http_err:
+        # Re-raise HTTP exceptions as-is (they already have proper status codes)
+        raise
+    except Exception as access_err:
+        error_str = str(access_err).lower()
+        logger.error(f"Error verifying sandbox access for {sandbox_id}: {str(access_err)}", exc_info=True)
+        
+        # Distinguish between different error types
+        if 'not found' in error_str or '404' in error_str or 'no project owns' in error_str:
+            raise HTTPException(status_code=404, detail=f"Sandbox not found: {sandbox_id}")
+        elif 'authentication required' in error_str or '401' in error_str:
+            raise HTTPException(status_code=401, detail="Authentication required for this private project")
+        elif 'not authorized' in error_str or 'forbidden' in error_str or '403' in error_str:
+            raise HTTPException(status_code=403, detail=f"Access denied: Not authorized to access this sandbox")
+        else:
+            # For other errors, return 500 but with a clear message
+            raise HTTPException(status_code=500, detail=f"Error verifying sandbox access: {str(access_err)}")
     
     try:
         # Get sandbox using the safer method
-        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        try:
+            sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        except HTTPException:
+            raise
+        except Exception as sandbox_err:
+            logger.error(f"Error retrieving sandbox {sandbox_id}: {str(sandbox_err)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Failed to retrieve sandbox: {str(sandbox_err)}")
         
         # List files with retry logic for transient errors
-        files = await retry_with_backoff(
-            operation=lambda: sandbox.fs.list_files(path),
-            operation_name=f"list_files({path}) in sandbox {sandbox_id}"
-        )
+        try:
+            files = await retry_with_backoff(
+                operation=lambda: sandbox.fs.list_files(path),
+                operation_name=f"list_files({path}) in sandbox {sandbox_id}"
+            )
+        except Exception as list_err:
+            error_msg = str(list_err)
+            logger.error(f"Error listing files {path} in sandbox {sandbox_id}: {error_msg}")
+            # Check if it's a file not found error
+            if 'not found' in error_msg.lower() or '404' in error_msg.lower():
+                raise HTTPException(status_code=404, detail=f"Directory not found: {path}")
+            # Check if it's a permission error
+            if 'permission' in error_msg.lower() or '403' in error_msg.lower():
+                raise HTTPException(status_code=403, detail=f"Permission denied: {path}")
+            # For other errors, return 500
+            raise HTTPException(status_code=500, detail=f"Failed to list files: {error_msg}")
+        
         result = []
         
         for file in files:
@@ -311,9 +353,12 @@ async def list_files(
         
         logger.debug(f"Successfully listed {len(result)} files in sandbox {sandbox_id}")
         return {"files": [file.dict() for file in result]}
+    except HTTPException:
+        # Re-raise HTTP exceptions without wrapping
+        raise
     except Exception as e:
-        logger.error(f"Error listing files in sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error listing files in sandbox {sandbox_id}, path {path}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.get("/sandboxes/{sandbox_id}/files/content")
 async def read_file(
@@ -331,14 +376,51 @@ async def read_file(
     if original_path != path:
         logger.debug(f"Normalized path from '{original_path}' to '{path}'")
     
+    if not sandbox_id:
+        logger.error("Sandbox ID is required")
+        raise HTTPException(status_code=400, detail="Sandbox ID is required")
+    
+    if not path:
+        logger.error("Path is required")
+        raise HTTPException(status_code=400, detail="Path is required")
+    
+    # Validate sandbox_id format (basic validation - should be non-empty string)
+    if not sandbox_id.strip():
+        logger.error("Sandbox ID cannot be empty")
+        raise HTTPException(status_code=400, detail="Sandbox ID cannot be empty")
+    
     client = await db.client
     
-    # Verify the user has access to this sandbox
-    await verify_sandbox_access_optional(client, sandbox_id, user_id)
+    try:
+        # Verify the user has access to this sandbox
+        await verify_sandbox_access_optional(client, sandbox_id, user_id)
+    except HTTPException as http_err:
+        # Re-raise HTTP exceptions as-is (they already have proper status codes)
+        raise
+    except Exception as access_err:
+        error_str = str(access_err).lower()
+        logger.error(f"Error verifying sandbox access for {sandbox_id}: {str(access_err)}", exc_info=True)
+        
+        # Distinguish between different error types
+        if 'not found' in error_str or '404' in error_str or 'no project owns' in error_str:
+            raise HTTPException(status_code=404, detail=f"Sandbox not found: {sandbox_id}")
+        elif 'authentication required' in error_str or '401' in error_str:
+            raise HTTPException(status_code=401, detail="Authentication required for this private project")
+        elif 'not authorized' in error_str or 'forbidden' in error_str or '403' in error_str:
+            raise HTTPException(status_code=403, detail=f"Access denied: Not authorized to access this sandbox")
+        else:
+            # For other errors, return 500 but with a clear message
+            raise HTTPException(status_code=500, detail=f"Error verifying sandbox access: {str(access_err)}")
     
     try:
         # Get sandbox using the safer method
-        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        try:
+            sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        except HTTPException:
+            raise
+        except Exception as sandbox_err:
+            logger.error(f"Error retrieving sandbox {sandbox_id}: {str(sandbox_err)}")
+            raise HTTPException(status_code=500, detail=f"Failed to retrieve sandbox: {str(sandbox_err)}")
         
         # Read file with retry logic for transient errors (502, 503, 504)
         try:
@@ -347,10 +429,24 @@ async def read_file(
                 operation_name=f"download_file({path}) from sandbox {sandbox_id}"
             )
         except Exception as download_err:
-            logger.error(f"Error downloading file {path} from sandbox {sandbox_id}: {str(download_err)}")
+            error_msg = str(download_err)
+            logger.error(f"Error downloading file {path} from sandbox {sandbox_id}: {error_msg}")
+            # Check if it's a file not found error
+            if 'not found' in error_msg.lower() or '404' in error_msg.lower():
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"File not found: {path}"
+                )
+            # Check if it's a permission error
+            if 'permission' in error_msg.lower() or '403' in error_msg.lower():
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Permission denied: {path}"
+                )
+            # For other errors, return 500
             raise HTTPException(
-                status_code=404, 
-                detail=f"Failed to download file: {str(download_err)}"
+                status_code=500, 
+                detail=f"Failed to download file: {error_msg}"
             )
         
         # Return a Response object with the content directly
@@ -372,8 +468,8 @@ async def read_file(
         # Re-raise HTTP exceptions without wrapping
         raise
     except Exception as e:
-        logger.error(f"Error reading file in sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error reading file in sandbox {sandbox_id}, path {path}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.delete("/sandboxes/{sandbox_id}/files")
 async def delete_file(

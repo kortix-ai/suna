@@ -85,13 +85,14 @@ export function BillingProvider({ children }: BillingProviderProps) {
       queryClient.cancelQueries({ queryKey: billingKeys.all });
       queryClient.removeQueries({ queryKey: billingKeys.all });
     } else if (justLoggedIn) {
-      // User just logged in - clear any stale errors and invalidate to trigger fresh fetch
-      console.log('✅ User logged in - clearing stale billing data and fetching fresh');
+      // User just logged in - immediately fetch fresh account state
+      console.log('✅ User logged in - fetching fresh account state immediately');
       queryClient.removeQueries({ queryKey: billingKeys.all });
-      // Small delay to ensure queries re-mount with enabled=true
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: billingKeys.all });
-      }, 100);
+      // Immediately invalidate and refetch - don't wait
+      queryClient.invalidateQueries({ 
+        queryKey: billingKeys.all,
+        refetchType: 'active' // Force active queries to refetch
+      });
     }
   }, [isAuthenticated, authLoading, queryClient]);
 

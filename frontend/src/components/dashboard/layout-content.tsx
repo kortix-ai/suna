@@ -45,6 +45,10 @@ const KortixAppBanners = lazy(() =>
   import('@/components/announcements/kortix-app-banners').then(mod => ({ default: mod.KortixAppBanners }))
 );
 
+const MobileAppInterstitial = lazy(() => 
+  import('@/components/announcements/mobile-app-interstitial').then(mod => ({ default: mod.MobileAppInterstitial }))
+);
+
 // Skeleton shell that renders immediately for FCP
 function DashboardSkeleton() {
   return (
@@ -187,6 +191,10 @@ export default function DashboardLayoutContent({
         {/* Kortix App announcement banners */}
         <Suspense fallback={null}>
           <KortixAppBanners />
+        </Suspense>
+        {/* Mobile app install interstitial - shown on actual mobile devices */}
+        <Suspense fallback={null}>
+          <MobileAppInterstitial />
         </Suspense>
       </div>
     </AppProviders>
