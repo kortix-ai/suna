@@ -1,625 +1,328 @@
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any, List, Optional, Union
 from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
-from core.tool_output_streaming_context import (
-    get_tool_output_streaming_context,
-    get_current_tool_call_id,
-    stream_tool_output,
-)
 import json
-import asyncio
-from uuid import uuid4
-
 
 SPREADSHEET_DIR = "/workspace/spreadsheets"
-DEFAULT_SPREADSHEET_FILE = f"{SPREADSHEET_DIR}/spreadsheet.json"
+
+def safe_str(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    return str(value)
 
 
-def parse_cell_address(cell: str) -> tuple:
-    col_str = ""
-    row_str = ""
-    for char in cell:
-        if char.isalpha():
-            col_str += char.upper()
+def parse_cell_address(cell: str) -> tuple[int, int]:
+    col, row = "", ""
+    for ch in cell:
+        if ch.isalpha():
+            col += ch.upper()
         else:
-            row_str += char
-    
-    col_num = 0
-    for char in col_str:
-        col_num = col_num * 26 + (ord(char) - ord('A') + 1)
-    col_num -= 1
-    
-    row_num = int(row_str) - 1 if row_str else 0
-    return row_num, col_num
+            row += ch
+    col_idx = 0
+    for c in col:
+        col_idx = col_idx * 26 + (ord(c) - 64)
+    return int(row) - 1, col_idx - 1
 
 
-def get_column_letter(col_index: int) -> str:
-    result = ""
-    col_index += 1
-    while col_index > 0:
-        col_index -= 1
-        result = chr(ord('A') + col_index % 26) + result
-        col_index //= 26
-    return result
+def update_used_range(sheet: Dict[str, Any], row: int, col: int):
+    used = sheet.get("usedRange", {"rowIndex": 0, "colIndex": 0})
+    used["rowIndex"] = max(used.get("rowIndex", 0), row)
+    used["colIndex"] = max(used.get("colIndex", 0), col)
+    sheet["usedRange"] = used
 
 
-def create_empty_spreadsheet() -> Dict[str, Any]:
+def create_empty_spreadsheet(name="Sheet1") -> Dict[str, Any]:
     return {
         "version": "1.0",
-        "sheets": [
-            {
-                "name": "Sheet1",
-                "cells": {},
-                "columns": {str(i): {"width": 120} for i in range(26)},
-                "rowCount": 100,
-                "colCount": 26,
-                "frozenRows": 0,
-                "frozenColumns": 0
-            }
-        ],
+        "sheets": [{
+            "name": name,
+            "rows": [],
+            "columns": [{"width": 100} for _ in range(26)],
+            "usedRange": {"rowIndex": 0, "colIndex": 0}
+        }],
         "activeSheet": 0
     }
 
 
 @tool_metadata(
     display_name="Spreadsheet Tool",
-    description="Create and manipulate spreadsheets saved as JSON files",
+    description="Agent-controlled spreadsheet with formulas and formatting",
     icon="Table",
     color="bg-green-100 dark:bg-green-800/50",
-    weight=220,
+    weight=75,
     visible=True,
     usage_guide="""
-### SPREADSHEET TOOL - FILE-BASED SPREADSHEET OPERATIONS
+### SPREADSHEET TOOL
 
-This tool creates and manipulates spreadsheets stored as JSON files.
-All data is persisted to `/workspace/spreadsheets/spreadsheet.json`.
+**FUNCTIONS:**
+- `spreadsheet_create(file_path, headers, rows)` - Create spreadsheet
+- `spreadsheet_batch_update(file_path, requests)` - Batch update/format
 
-## AVAILABLE FUNCTIONS:
+**BATCH UPDATE EXAMPLES:**
+```
+spreadsheet_batch_update(
+    file_path="budget.json",
+    requests=[
+        {
+            "type": "update_cell",
+            "cell": "A1",
+            "value": "Updated Value"
+        },
+        {
+            "type": "format_cells",
+            "range": "A1:B2",
+            "style": {
+                "background_color": "#4CAF50",
+                "bold": true
+            }
+        }
+    ]
+)
+```
+**COLORS:** #4CAF50 (green), #F44336 (red), #2196F3 (blue), #FFC107 (yellow)
 
-### 1. spreadsheet_populate_data() - BULK DATA POPULATION
-Primary tool for creating structured tables with headers and data rows.
-
-### 2. spreadsheet_update_cells() - UPDATE SPECIFIC CELLS
-Update individual cells without clearing existing data.
-
-### 3. spreadsheet_format_range() - FORMAT CELL RANGES
-Apply formatting to a range of cells.
-
-### 4. spreadsheet_clear_range() - CLEAR CELL RANGES
-Clear values from a range of cells.
-
-### 5. spreadsheet_get_data() - READ SPREADSHEET DATA
-Read current spreadsheet data from the file.
+**RULES:**
+- Files auto-save to /workspace/spreadsheets/
+- Formulas start with = (e.g., =SUM(A1:A10))
+- Headers get dark blue styling automatically
 """
 )
 class SandboxSpreadsheetTool(SandboxToolsBase):
-    
+
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
-    
-    async def _ensure_spreadsheet_dir(self) -> bool:
+
+    async def _ensure_dir(self):
+        await self._ensure_sandbox()
         try:
-            await self._ensure_sandbox()
-            try:
-                await self.sandbox.fs.get_file_info(SPREADSHEET_DIR)
-            except Exception:
-                await self.sandbox.fs.create_folder(SPREADSHEET_DIR, "755")
-            return True
-        except Exception as e:
-            logger.warning(f"Failed to create spreadsheet directory: {e}")
-            return False
-    
-    async def _file_exists(self, path: str) -> bool:
-        try:
-            await self.sandbox.fs.get_file_info(path)
-            return True
+            await self.sandbox.fs.get_file_info(SPREADSHEET_DIR)
         except Exception:
-            return False
-    
-    async def _load_spreadsheet(self, file_path: str = DEFAULT_SPREADSHEET_FILE) -> Dict[str, Any]:
+            await self.sandbox.fs.create_folder(SPREADSHEET_DIR, "755")
+
+    async def _load(self, file_path: str) -> Dict[str, Any]:
         try:
             await self._ensure_sandbox()
-            if await self._file_exists(file_path):
-                content = await self.sandbox.fs.download_file(file_path)
-                return json.loads(content.decode())
+            content = await self.sandbox.fs.download_file(file_path)
+            data = json.loads(content.decode())
+            if "sheets" not in data:
+                return create_empty_spreadsheet()
+            return data
+        except Exception:
             return create_empty_spreadsheet()
-        except Exception as e:
-            logger.warning(f"Failed to load spreadsheet: {e}")
-            return create_empty_spreadsheet()
-    
-    async def _save_spreadsheet(self, data: Dict[str, Any], file_path: str = DEFAULT_SPREADSHEET_FILE) -> bool:
+
+    async def _save(self, data: Dict[str, Any], file_path: str) -> bool:
         try:
-            await self._ensure_spreadsheet_dir()
-            content = json.dumps(data, indent=2)
-            await self.sandbox.fs.upload_file(content.encode(), file_path)
+            await self._ensure_dir()
+            await self.sandbox.fs.upload_file(
+                json.dumps(data, indent=2).encode(),
+                file_path
+            )
             return True
         except Exception as e:
-            logger.error(f"Failed to save spreadsheet: {e}")
+            logger.error(f"Spreadsheet save failed: {e}")
             return False
-    
-    async def _stream_file_update(self, tool_call_id: str, file_path: str, action: str, details: Dict[str, Any] = None):
-        try:
-            message = json.dumps({
-                "type": "spreadsheet_file_update",
-                "file_path": file_path,
-                "action": action,
-                "details": details or {},
-                "timestamp": asyncio.get_event_loop().time()
+
+    def _apply_add_rows(self, sheet: Dict[str, Any], rows: List[List[Any]]):
+        sheet_rows = sheet.setdefault("rows", [])
+        start_row = len(sheet_rows)
+
+        for r in rows:
+            sheet_rows.append({
+                "cells": [{"value": safe_str(c)} for c in r]
             })
-            await stream_tool_output(
-                tool_call_id=tool_call_id,
-                output_chunk=message,
-                is_final=False,
-                tool_name="spreadsheet"
-            )
-        except Exception as e:
-            logger.warning(f"Failed to stream file update: {e}")
-    
-    def _update_cell_in_data(self, data: Dict, sheet_index: int, cell: str, 
-                              value: str = None, formula: str = None, style: Dict = None) -> Dict:
-        if sheet_index >= len(data["sheets"]):
-            while len(data["sheets"]) <= sheet_index:
-                data["sheets"].append({
-                    "name": f"Sheet{len(data['sheets']) + 1}",
-                    "cells": {},
-                    "columns": {str(i): {"width": 120} for i in range(26)},
-                    "rowCount": 100,
-                    "colCount": 26
-                })
+
+        if rows:
+            update_used_range(sheet, start_row + len(rows) - 1, len(rows[0]) - 1)
+
+    def _apply_update_cell(self, sheet: Dict[str, Any], cell: str, value: str):
+        rows = sheet.setdefault("rows", [])
+        r, c = parse_cell_address(cell)
+        while len(rows) <= r:
+            rows.append({"cells": []})
+
+        cells = rows[r].setdefault("cells", [])
+        while len(cells) <= c:
+            cells.append({})
+
+        if value.startswith("="):
+            cells[c]["formula"] = value
+        else:
+            cells[c]["value"] = safe_str(value)
+            if "formula" in cells[c]:
+                del cells[c]["formula"]
+
+        update_used_range(sheet, r, c)
+
+    def _apply_format_cells(self, sheet: Dict[str, Any], cell_range: str, style_params: Dict[str, Any]):
+        rows = sheet.setdefault("rows", [])
+        style = {}
+        bg = style_params.get("background_color")
+        if bg: style["backgroundColor"] = bg
         
-        sheet = data["sheets"][sheet_index]
-        if "cells" not in sheet:
-            sheet["cells"] = {}
+        fg = style_params.get("text_color")
+        if fg: style["color"] = fg
         
-        if cell not in sheet["cells"]:
-            sheet["cells"][cell] = {}
+        if style_params.get("bold"): style["fontWeight"] = "bold"
+        if style_params.get("italic"): style["fontStyle"] = "italic"
         
-        if value is not None:
-            sheet["cells"][cell]["value"] = value
-        if formula is not None:
-            sheet["cells"][cell]["formula"] = formula
-        if style is not None:
-            if "style" not in sheet["cells"][cell]:
-                sheet["cells"][cell]["style"] = {}
-            sheet["cells"][cell]["style"].update(style)
+        sz = style_params.get("font_size")
+        if sz: style["fontSize"] = f"{sz}pt"
         
-        return data
+        align = style_params.get("text_align")
+        if align: style["textAlign"] = align
+
+        start, end = cell_range.split(":") if ":" in cell_range else (cell_range, cell_range)
+        sr, sc = parse_cell_address(start)
+        er, ec = parse_cell_address(end)
+
+        for r in range(sr, er + 1):
+            while len(rows) <= r:
+                rows.append({"cells": []})
+            cells = rows[r].setdefault("cells", [])
+            for c in range(sc, ec + 1):
+                while len(cells) <= c:
+                    cells.append({})
+                cells[c].setdefault("style", {}).update(style)
+
+        update_used_range(sheet, er, ec)
 
     @openapi_schema({
         "type": "function",
         "function": {
-            "name": "spreadsheet_populate_data",
-            "description": "Populate spreadsheet with structured data (headers + rows). Creates or updates a spreadsheet JSON file.",
+            "name": "spreadsheet_batch_update",
+            "required": ["file_path", "requests"],
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "headers": {
+                    "file_path": {"type": "string"},
+                    "requests": {
                         "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Column headers"
-                    },
-                    "rows": {
-                        "type": "array",
-                        "items": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        },
-                        "description": "Data rows (2D array)"
-                    },
-                    "file_path": {
-                        "type": "string",
-                        "description": "Path to save the spreadsheet JSON. Default: /workspace/spreadsheets/spreadsheet.json"
-                    },
-                    "start_cell": {
-                        "type": "string",
-                        "description": "Starting cell for data. Default: 'A1'",
-                        "default": "A1"
-                    },
-                    "header_style": {
-                        "type": "object",
-                        "description": "Style for header row",
-                        "default": {
-                            "fontWeight": "bold",
-                            "backgroundColor": "#1F4E79",
-                            "color": "#FFFFFF",
-                            "textAlign": "center"
-                        }
-                    },
-                    "include_totals": {
-                        "type": "boolean",
-                        "description": "Auto-add SUM formulas row. Default: false"
-                    },
-                    "sheet_index": {
-                        "type": "integer",
-                        "description": "Sheet index. Default: 0"
-                    }
-                },
-                "required": ["headers", "rows"]
-            }
-        }
-    })
-    async def spreadsheet_populate_data(
-        self,
-        headers: List[str],
-        rows: List[List[str]],
-        file_path: str = DEFAULT_SPREADSHEET_FILE,
-        start_cell: str = "A1",
-        header_style: Optional[Dict[str, Any]] = None,
-        data_style: Optional[Dict[str, Any]] = None,
-        include_totals: bool = False,
-        sheet_index: int = 0
-    ) -> ToolResult:
-        try:
-            tool_call_id = get_current_tool_call_id() or f"ss_{str(uuid4())[:8]}"
-            
-            if header_style is None:
-                header_style = {
-                    "fontWeight": "bold",
-                    "backgroundColor": "#1F4E79",
-                    "color": "#FFFFFF",
-                    "textAlign": "center"
-                }
-            
-            data = await self._load_spreadsheet(file_path)
-            start_row, start_col = parse_cell_address(start_cell)
-            
-            await self._stream_file_update(tool_call_id, file_path, "start", {
-                "total_rows": len(rows) + 1,
-                "total_cols": len(headers)
-            })
-            
-            for col_idx, header in enumerate(headers):
-                cell = f"{get_column_letter(start_col + col_idx)}{start_row + 1}"
-                data = self._update_cell_in_data(data, sheet_index, cell, 
-                                                  value=header, style=header_style)
-            
-            for row_idx, row in enumerate(rows):
-                for col_idx, cell_value in enumerate(row):
-                    cell = f"{get_column_letter(start_col + col_idx)}{start_row + row_idx + 2}"
-                    cell_style = data_style.copy() if data_style else None
-                    
-                    if str(cell_value).startswith("="):
-                        data = self._update_cell_in_data(data, sheet_index, cell, 
-                                                          formula=cell_value, style=cell_style)
-                    else:
-                        data = self._update_cell_in_data(data, sheet_index, cell, 
-                                                          value=str(cell_value), style=cell_style)
-            
-            if include_totals:
-                totals_row = start_row + len(rows) + 2
-                for col_idx in range(len(headers)):
-                    if col_idx == 0:
-                        cell = f"{get_column_letter(start_col)}{totals_row}"
-                        data = self._update_cell_in_data(data, sheet_index, cell, 
-                                                          value="Total", style={"fontWeight": "bold"})
-                    else:
-                        col_letter = get_column_letter(start_col + col_idx)
-                        start_data_row = start_row + 2
-                        end_data_row = start_row + len(rows) + 1
-                        formula = f"=SUM({col_letter}{start_data_row}:{col_letter}{end_data_row})"
-                        cell = f"{col_letter}{totals_row}"
-                        data = self._update_cell_in_data(data, sheet_index, cell, 
-                                                          formula=formula, style={"fontWeight": "bold"})
-            
-            await self._save_spreadsheet(data, file_path)
-            
-            await self._stream_file_update(tool_call_id, file_path, "complete", {
-                "rows": len(rows) + 1 + (1 if include_totals else 0),
-                "cols": len(headers)
-            })
-            
-            await stream_tool_output(
-                tool_call_id=tool_call_id,
-                output_chunk="",
-                is_final=True,
-                tool_name="spreadsheet"
-            )
-            
-            return self.success_response({
-                "message": f"Successfully populated spreadsheet with {len(rows)} rows",
-                "file_path": file_path,
-                "rows_count": len(rows),
-                "columns_count": len(headers),
-                "sheet_index": sheet_index
-            })
-            
-        except Exception as e:
-            logger.error(f"Failed to populate spreadsheet: {e}")
-            return self.fail_response(f"Failed to populate data: {str(e)}")
-
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "spreadsheet_update_cells",
-            "description": "Update specific cells in the spreadsheet file.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "operations": {
-                        "type": "array",
-                        "description": "Array of cell operations",
                         "items": {
                             "type": "object",
                             "properties": {
-                                "cell": {"type": "string", "description": "Cell address (e.g., 'A1')"},
-                                "value": {"type": "string", "description": "Cell value"},
-                                "formula": {"type": "string", "description": "Excel formula"},
-                                "style": {"type": "object", "description": "Cell style"}
+                                "type": {
+                                    "type": "string",
+                                    "enum": ["update_cell", "format_cells", "add_rows"]
+                                },
+                                "cell": {"type": "string"},
+                                "value": {"type": "string"},
+                                "range": {"type": "string"},
+                                "style": {
+                                    "type": "object",
+                                    "properties": {
+                                        "background_color": {"type": "string"},
+                                        "text_color": {"type": "string"},
+                                        "bold": {"type": "boolean"},
+                                        "italic": {"type": "boolean"},
+                                        "font_size": {"type": "integer"},
+                                        "text_align": {"type": "string"}
+                                    }
+                                },
+                                "rows": {
+                                    "type": "array",
+                                    "items": {"type": "array"}
+                                }
                             },
-                            "required": ["cell"]
+                            "required": ["type"]
                         }
-                    },
-                    "file_path": {
-                        "type": "string",
-                        "description": "Path to the spreadsheet JSON file"
-                    },
-                    "sheet_index": {
-                        "type": "integer",
-                        "description": "Sheet index. Default: 0"
                     }
-                },
-                "required": ["operations"]
-            }
-        }
-    })
-    async def spreadsheet_update_cells(
-        self,
-        operations: List[Dict[str, Any]],
-        file_path: str = DEFAULT_SPREADSHEET_FILE,
-        sheet_index: int = 0
-    ) -> ToolResult:
-        try:
-            tool_call_id = get_current_tool_call_id() or f"ss_{str(uuid4())[:8]}"
-            
-            data = await self._load_spreadsheet(file_path)
-            
-            await self._stream_file_update(tool_call_id, file_path, "start", {
-                "total_operations": len(operations)
-            })
-            
-            updated_cells = []
-            for idx, op in enumerate(operations):
-                cell = op.get("cell")
-                value = op.get("value")
-                formula = op.get("formula")
-                style = op.get("style")
-                
-                data = self._update_cell_in_data(data, sheet_index, cell, value, formula, style)
-                updated_cells.append(cell)
-            
-            await self._save_spreadsheet(data, file_path)
-            await self._stream_file_update(tool_call_id, file_path, "complete", {
-                "cells_updated": len(updated_cells)
-            })
-            
-            await stream_tool_output(
-                tool_call_id=tool_call_id,
-                output_chunk="",
-                is_final=True,
-                tool_name="spreadsheet"
-            )
-            
-            return self.success_response({
-                "message": f"Successfully updated {len(updated_cells)} cells",
-                "file_path": file_path,
-                "cells_updated": updated_cells,
-                "sheet_index": sheet_index
-            })
-            
-        except Exception as e:
-            return self.fail_response(f"Failed to update cells: {str(e)}")
-
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "spreadsheet_format_range",
-            "description": "Apply formatting to a range of cells.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "start_cell": {"type": "string", "description": "Start cell (e.g., 'A1')"},
-                    "end_cell": {"type": "string", "description": "End cell (e.g., 'F10')"},
-                    "style": {
-                        "type": "object",
-                        "description": "Style to apply: fontWeight, fontSize, color, backgroundColor, textAlign, etc."
-                    },
-                    "file_path": {"type": "string", "description": "Path to spreadsheet file"},
-                    "sheet_index": {"type": "integer", "description": "Sheet index. Default: 0"}
-                },
-                "required": ["start_cell", "end_cell", "style"]
-            }
-        }
-    })
-    async def spreadsheet_format_range(
-        self,
-        start_cell: str,
-        end_cell: str,
-        style: Dict[str, Any],
-        file_path: str = DEFAULT_SPREADSHEET_FILE,
-        sheet_index: int = 0
-    ) -> ToolResult:
-        try:
-            tool_call_id = get_current_tool_call_id() or f"ss_{str(uuid4())[:8]}"
-            
-            data = await self._load_spreadsheet(file_path)
-            
-            start_row, start_col = parse_cell_address(start_cell)
-            end_row, end_col = parse_cell_address(end_cell)
-            
-            cells_formatted = 0
-            for row in range(start_row, end_row + 1):
-                for col in range(start_col, end_col + 1):
-                    cell = f"{get_column_letter(col)}{row + 1}"
-                    data = self._update_cell_in_data(data, sheet_index, cell, style=style)
-                    cells_formatted += 1
-            
-            await self._save_spreadsheet(data, file_path)
-            await self._stream_file_update(tool_call_id, file_path, "complete", {
-                "cells_formatted": cells_formatted
-            })
-            
-            await stream_tool_output(
-                tool_call_id=tool_call_id,
-                output_chunk="",
-                is_final=True,
-                tool_name="spreadsheet"
-            )
-            
-            return self.success_response({
-                "message": f"Formatted range {start_cell}:{end_cell}",
-                "file_path": file_path,
-                "cells_formatted": cells_formatted
-            })
-            
-        except Exception as e:
-            return self.fail_response(f"Failed to format range: {str(e)}")
-
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "spreadsheet_clear_range",
-            "description": "Clear values from a range of cells.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "start_cell": {"type": "string", "description": "Start cell"},
-                    "end_cell": {"type": "string", "description": "End cell"},
-                    "file_path": {"type": "string", "description": "Path to spreadsheet file"},
-                    "sheet_index": {"type": "integer", "description": "Sheet index. Default: 0"}
-                },
-                "required": ["start_cell", "end_cell"]
-            }
-        }
-    })
-    async def spreadsheet_clear_range(
-        self,
-        start_cell: str,
-        end_cell: str,
-        file_path: str = DEFAULT_SPREADSHEET_FILE,
-        sheet_index: int = 0
-    ) -> ToolResult:
-        try:
-            tool_call_id = get_current_tool_call_id() or f"ss_{str(uuid4())[:8]}"
-            
-            data = await self._load_spreadsheet(file_path)
-            
-            start_row, start_col = parse_cell_address(start_cell)
-            end_row, end_col = parse_cell_address(end_cell)
-            
-            sheet = data["sheets"][sheet_index]
-            cells_cleared = 0
-            
-            for row in range(start_row, end_row + 1):
-                for col in range(start_col, end_col + 1):
-                    cell = f"{get_column_letter(col)}{row + 1}"
-                    if cell in sheet.get("cells", {}):
-                        del sheet["cells"][cell]
-                        cells_cleared += 1
-            
-            await self._save_spreadsheet(data, file_path)
-            await self._stream_file_update(tool_call_id, file_path, "complete", {
-                "cells_cleared": cells_cleared
-            })
-            
-            await stream_tool_output(
-                tool_call_id=tool_call_id,
-                output_chunk="",
-                is_final=True,
-                tool_name="spreadsheet"
-            )
-            
-            return self.success_response({
-                "message": f"Cleared range {start_cell}:{end_cell}",
-                "file_path": file_path,
-                "cells_cleared": cells_cleared
-            })
-            
-        except Exception as e:
-            return self.fail_response(f"Failed to clear range: {str(e)}")
-
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "spreadsheet_get_data",
-            "description": "Read the current spreadsheet data from the JSON file.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "file_path": {"type": "string", "description": "Path to spreadsheet file"}
                 }
             }
         }
     })
-    async def spreadsheet_get_data(
+    async def spreadsheet_batch_update(
         self,
-        file_path: str = DEFAULT_SPREADSHEET_FILE
+        file_path: str,
+        requests: List[Dict[str, Any]]
     ) -> ToolResult:
-        try:
-            data = await self._load_spreadsheet(file_path)
+        
+        data = await self._load(file_path)
+        sheet = data["sheets"][0]
+
+        for req in requests:
+            req_type = req.get("type")
             
-            return self.success_response({
-                "file_path": file_path,
-                "data": data
-            })
+            if req_type == "update_cell":
+                if "cell" in req and "value" in req:
+                    self._apply_update_cell(sheet, req["cell"], req["value"])
             
-        except Exception as e:
-            return self.fail_response(f"Failed to read spreadsheet: {str(e)}")
+            elif req_type == "format_cells":
+                rng = req.get("range") or req.get("cell_range")
+                style = req.get("style", {})
+                if rng:
+                    self._apply_format_cells(sheet, rng, style)
+
+            elif req_type == "add_rows":
+                if "rows" in req:
+                    self._apply_add_rows(sheet, req["rows"])
+
+        if not await self._save(data, file_path):
+            return self.fail_response("Batch save failed")
+
+        return self.success_response({"processed": len(requests)})
 
     @openapi_schema({
         "type": "function",
         "function": {
-            "name": "spreadsheet_create_sheet",
-            "description": "Create a new worksheet tab in the spreadsheet.",
+            "name": "spreadsheet_create",
+            "required": ["file_path", "headers", "rows"],
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name": {"type": "string", "description": "Name for the new sheet"},
-                    "file_path": {"type": "string", "description": "Path to spreadsheet file"}
-                },
-                "required": ["name"]
+                    "file_path": {"type": "string"},
+                    "sheet_name": {"type": "string"},
+                    "headers": {"type": "array", "items": {"type": "string"}},
+                    "rows": {"type": "array", "items": {"type": "array"}}
+                }
             }
         }
     })
-    async def spreadsheet_create_sheet(
+    async def spreadsheet_create(
         self,
-        name: str,
-        file_path: str = DEFAULT_SPREADSHEET_FILE
+        file_path: str,
+        headers: List[str],
+        rows: List[List[Any]],
+        sheet_name: str = "Sheet1"
     ) -> ToolResult:
-        try:
-            tool_call_id = get_current_tool_call_id() or f"ss_{str(uuid4())[:8]}"
-            
-            data = await self._load_spreadsheet(file_path)
-            
-            new_sheet = {
-                "name": name,
-                "cells": {},
-                "columns": {str(i): {"width": 120} for i in range(26)},
-                "rowCount": 100,
-                "colCount": 26
+
+        file_path = f"/workspace/spreadsheets/{file_path.split('/')[-1].replace('.json','')}.json"
+
+        header_cells = [{
+            "value": safe_str(h),
+            "style": {
+                "fontWeight": "bold",
+                "backgroundColor": "#1F4E79",
+                "color": "#FFFFFF"
             }
-            data["sheets"].append(new_sheet)
-            
-            await self._save_spreadsheet(data, file_path)
-            await self._stream_file_update(tool_call_id, file_path, "complete", {
-                "sheet_created": name,
-                "sheet_index": len(data["sheets"]) - 1
+        } for h in headers]
+
+        sheet_rows = [{"cells": header_cells}]
+        for r in rows:
+            sheet_rows.append({
+                "cells": [{"value": safe_str(c)} for c in r]
             })
-            
-            await stream_tool_output(
-                tool_call_id=tool_call_id,
-                output_chunk="",
-                is_final=True,
-                tool_name="spreadsheet"
-            )
-            
-            return self.success_response({
-                "message": f"Created new sheet '{name}'",
-                "file_path": file_path,
-                "sheet_name": name,
-                "sheet_index": len(data["sheets"]) - 1
-            })
-            
-        except Exception as e:
-            return self.fail_response(f"Failed to create sheet: {str(e)}")
+
+        sheet = {
+            "name": sheet_name,
+            "rows": sheet_rows,
+            "columns": [{"width": 100} for _ in range(max(len(headers), 26))],
+            "usedRange": {
+                "rowIndex": len(sheet_rows) - 1,
+                "colIndex": len(headers) - 1
+            }
+        }
+
+        data = {
+            "version": "1.0",
+            "sheets": [sheet],
+            "activeSheet": 0
+        }
+
+        if not await self._save(data, file_path):
+            return self.fail_response("Failed to save spreadsheet")
+
+        return self.success_response({"file_path": file_path})

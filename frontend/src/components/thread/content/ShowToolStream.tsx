@@ -48,14 +48,16 @@ const STREAMABLE_TOOLS = {
     ]),
 
     SPREADSHEET_TOOLS: new Set([
-        'Updating Spreadsheet',
-        'Populating Spreadsheet',
-        'Adding Formula',
+        'Spreadsheet Create',
+        'Spreadsheet Add Rows',
+        'Spreadsheet Update Cell',
+        'Spreadsheet Format Cells',
+        'Spreadsheet Read',
         'Creating Spreadsheet',
-        'Clearing Spreadsheet',
-        'Formatting Spreadsheet',
-        'Merging Cells',
-        'Adjusting Columns',
+        'Adding Rows',
+        'Updating Cell',
+        'Formatting Cells',
+        'Reading Spreadsheet',
     ]),
 
     // Other tools that benefit from content streaming

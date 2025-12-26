@@ -340,9 +340,7 @@ export const KortixComputer = memo(function KortixComputer({
   const showDuringStreaming = currentToolName && [
     'create-file', 'edit-file', 'full-file-rewrite', 'read-file', 'delete-file',
     'execute-command', 'check-command-output', 'terminate-command',
-    'spreadsheet-update-cells', 'spreadsheet-populate-data', 'spreadsheet-add-formula',
-    'spreadsheet-create-sheet', 'spreadsheet-clear-range', 'spreadsheet-format-range',
-    'spreadsheet-merge-cells', 'spreadsheet-set-column-width'
+    'spreadsheet-create', 'spreadsheet-add-rows', 'spreadsheet-update-cell', 'spreadsheet-format-cells', 'spreadsheet-read'
   ].includes(currentToolName);
 
   if (isCurrentToolStreaming && totalCompletedCalls > 0 && !showDuringStreaming) {

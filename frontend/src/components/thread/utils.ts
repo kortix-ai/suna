@@ -477,6 +477,16 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['spreadsheet_merge_cells', 'Merging Cells'],
   ['spreadsheet-set-column-width', 'Adjusting Columns'],
   ['spreadsheet_set_column_width', 'Adjusting Columns'],
+  ['spreadsheet-create', 'Creating Spreadsheet'],
+  ['spreadsheet_create', 'Creating Spreadsheet'],
+  ['spreadsheet-add-rows', 'Adding Rows'],
+  ['spreadsheet_add_rows', 'Adding Rows'],
+  ['spreadsheet-update-cell', 'Updating Cell'],
+  ['spreadsheet_update_cell', 'Updating Cell'],
+  ['spreadsheet-format-cells', 'Formatting Cells'],
+  ['spreadsheet_format_cells', 'Formatting Cells'],
+  ['spreadsheet-read', 'Reading Spreadsheet'],
+  ['spreadsheet_read', 'Reading Spreadsheet'],
   
 
   ['update-agent', 'Updating Worker'],

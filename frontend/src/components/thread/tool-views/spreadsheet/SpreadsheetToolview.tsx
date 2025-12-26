@@ -27,97 +27,67 @@ interface SpreadsheetJsonData {
   version: string;
   sheets: Array<{
     name: string;
-    cells: Record<string, {
-      value?: string;
-      formula?: string;
-      style?: Record<string, any>;
+    rows?: Array<{
+      cells: Array<{
+        value?: string;
+        formula?: string;
+        style?: Record<string, any>;
+      }>;
     }>;
-    columns?: Record<string, { width: number }>;
+    columns?: Array<{ width: number }>;
     rowCount?: number;
     colCount?: number;
-    frozenRows?: number;
-    frozenColumns?: number;
   }>;
   activeSheet: number;
 }
 
+
 function convertJsonToSyncfusionSheets(data: SpreadsheetJsonData): any[] {
-  return data.sheets.map((sheet) => {
-    const rows: any[] = [];
-    let maxRow = 0;
-    let maxCol = 0;
-
-    Object.keys(sheet.cells || {}).forEach((cellAddr) => {
-      const match = cellAddr.match(/^([A-Z]+)(\d+)$/i);
-      if (match) {
-        const colStr = match[1].toUpperCase();
-        const rowNum = parseInt(match[2], 10) - 1;
-        
-        let colNum = 0;
-        for (let i = 0; i < colStr.length; i++) {
-          colNum = colNum * 26 + (colStr.charCodeAt(i) - 64);
+    if (!data?.sheets?.length) return createEmptySheet();
+  
+    return data.sheets.map(sheet => {
+      const rows = (sheet.rows || []).map(row => ({
+        cells: (row.cells || []).map(cell => {
+          const out: any = {};
+  
+          if (cell.formula) {
+            out.value = cell.formula;
+          } else if (cell.value !== undefined) {
+            out.value = cell.value;
+          }
+  
+          if (cell.style) out.style = cell.style;
+  
+          return out;
+        })
+      }));
+  
+      let maxCol = 0;
+      rows.forEach(r => maxCol = Math.max(maxCol, r.cells.length));
+  
+      return {
+        name: sheet.name || 'Sheet1',
+        rows,
+        columns: sheet.columns || Array.from({ length: maxCol || 8 }, () => ({ width: 100 })),
+        usedRange: {
+          rowIndex: rows.length - 1,
+          colIndex: Math.max(maxCol - 1, 0)
         }
-        colNum -= 1;
-        
-        maxRow = Math.max(maxRow, rowNum);
-        maxCol = Math.max(maxCol, colNum);
-      }
+      };
     });
-
-    for (let r = 0; r <= maxRow; r++) {
-      const cells: any[] = [];
-      for (let c = 0; c <= maxCol; c++) {
-        const colLetter = getColumnLetter(c);
-        const cellAddr = `${colLetter}${r + 1}`;
-        const cellData = sheet.cells?.[cellAddr];
-        
-        if (cellData) {
-          cells.push({
-            value: cellData.formula || cellData.value || '',
-            style: cellData.style || {}
-          });
-        } else {
-          cells.push({});
-        }
-      }
-      rows.push({ cells });
-    }
-
-    const columns = [];
-    for (let c = 0; c <= Math.max(maxCol, 7); c++) {
-      const colWidth = sheet.columns?.[String(c)]?.width || 120;
-      columns.push({ width: colWidth });
-    }
-
-    return {
-      name: sheet.name,
-      rows,
-      columns,
-      frozenRows: sheet.frozenRows || 0,
-      frozenColumns: sheet.frozenColumns || 0
-    };
-  });
-}
-
-function getColumnLetter(colIndex: number): string {
-  let result = "";
-  let col = colIndex + 1;
-  while (col > 0) {
-    col -= 1;
-    result = String.fromCharCode(65 + (col % 26)) + result;
-    col = Math.floor(col / 26);
   }
-  return result;
-}
+  
 
 function createEmptySheet() {
   return [{
     name: 'Sheet1',
     rows: [],
     columns: [
-      { width: 120 }, { width: 120 }, { width: 120 }, { width: 120 },
-      { width: 120 }, { width: 120 }, { width: 120 }, { width: 120 }
+      { width: 100 }, { width: 100 }, { width: 100 }, { width: 100 },
+      { width: 100 }, { width: 100 }, { width: 100 }, { width: 100 }
     ],
+    rowCount: 100,
+    colCount: 26
   }];
 }
 
@@ -126,65 +96,28 @@ function buildSheetsFromArguments(args: Record<string, any>): any[] | null {
   
   const headers = args.headers as string[] | undefined;
   const rows = args.rows as any[][] | undefined;
-  const operations = args.operations as Array<{cell: string; value?: string; formula?: string}> | undefined;
   
   if (headers && rows) {
     const allRows: any[] = [];
     allRows.push({
       cells: headers.map(h => ({ 
-        value: h, 
-        style: { fontWeight: 'bold', backgroundColor: '#f3f4f6' } 
+        value: String(h ?? ''), 
+        style: { fontWeight: 'bold', backgroundColor: '#1F4E79', color: '#FFFFFF' } 
       }))
     });
     for (const row of rows) {
       allRows.push({
-        cells: row.map(cell => ({ value: String(cell ?? '') }))
+        cells: (row || []).map(cell => ({ value: String(cell ?? '') }))
       });
     }
     
-    const columns = headers.map(() => ({ width: 120 }));
+    const columns = headers.map(() => ({ width: 100 }));
     return [{
-      name: 'Sheet1',
+      name: args.sheet_name || 'Sheet1',
       rows: allRows,
-      columns
-    }];
-  }
-  
-  if (operations && operations.length > 0) {
-    const cells: Record<string, any> = {};
-    let maxRow = 0;
-    let maxCol = 0;
-    
-    for (const op of operations) {
-      const match = op.cell?.match(/^([A-Z]+)(\d+)$/i);
-      if (match) {
-        const colStr = match[1].toUpperCase();
-        const rowNum = parseInt(match[2], 10) - 1;
-        let colNum = 0;
-        for (let i = 0; i < colStr.length; i++) {
-          colNum = colNum * 26 + (colStr.charCodeAt(i) - 64);
-        }
-        colNum -= 1;
-        maxRow = Math.max(maxRow, rowNum);
-        maxCol = Math.max(maxCol, colNum);
-        cells[op.cell] = { value: op.formula || op.value || '' };
-      }
-    }
-    
-    const sheetRows: any[] = [];
-    for (let r = 0; r <= maxRow; r++) {
-      const rowCells: any[] = [];
-      for (let c = 0; c <= maxCol; c++) {
-        const cellAddr = `${getColumnLetter(c)}${r + 1}`;
-        rowCells.push(cells[cellAddr] || {});
-      }
-      sheetRows.push({ cells: rowCells });
-    }
-    
-    return [{
-      name: 'Sheet1',
-      rows: sheetRows,
-      columns: Array(maxCol + 1).fill({ width: 120 })
+      columns,
+      rowCount: Math.max(allRows.length + 50, 100),
+      colCount: Math.max(headers.length + 5, 26)
     }];
   }
   
@@ -204,7 +137,7 @@ export function SpreadsheetToolView({
   const [sheets, setSheets] = useState<any[]>(createEmptySheet());
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [lastLoadTime, setLastLoadTime] = useState<number>(0);
+  const [lastUpdate, setLastUpdate] = useState<number>(Date.now());
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [dataSource, setDataSource] = useState<'streaming' | 'file'>('streaming');
   
@@ -224,7 +157,7 @@ export function SpreadsheetToolView({
       return toolCall.arguments.file_path;
     }
     
-    return '/workspace/spreadsheets/spreadsheet.json';
+    return null;
   }, [toolCall, toolResult]);
 
   const streamingSheets = useMemo(() => {
@@ -232,18 +165,8 @@ export function SpreadsheetToolView({
     return buildSheetsFromArguments(toolCall.arguments);
   }, [toolCall?.arguments]);
 
-  useEffect(() => {
-    if (isStreaming && streamingSheets) {
-      setSheets(streamingSheets);
-      setDataSource('streaming');
-    }
-  }, [isStreaming, streamingSheets]);
-
-  const loadSpreadsheetData = useCallback(async () => {
-    if (!sandboxId) {
-      setIsLoading(false);
-      return;
-    }
+  const loadSpreadsheetData = useCallback(async (): Promise<boolean> => {
+    if (!sandboxId || !filePath) return false;
 
     setIsLoading(true);
 
@@ -262,7 +185,25 @@ export function SpreadsheetToolView({
       const syncfusionSheets = convertJsonToSyncfusionSheets(jsonData);
       setSheets(syncfusionSheets);
       setDataSource('file');
-      setLastLoadTime(Date.now());
+      setLastUpdate(Date.now());
+      
+      if (ssRef.current) {
+        try {
+            ssRef.current.openFromJson({
+                file: {
+                    sheets: syncfusionSheets,
+                    activeSheetIndex: 0
+                }
+            });
+        } catch (e) {
+          console.warn('[Spreadsheet] openFromJson failed, using refresh:', e);
+          try {
+            ssRef.current.sheets = syncfusionSheets;
+            ssRef.current.refresh();
+          } catch (e2) {}
+        }
+      }
+      return true;
     } catch (e: any) {
       const errorMsg = e?.message || String(e);
       const isNotFound = errorMsg.includes('not found') || 
@@ -272,33 +213,38 @@ export function SpreadsheetToolView({
       if (!isNotFound) {
         console.warn('Spreadsheet load error:', errorMsg);
       }
+      return false;
     } finally {
       setIsLoading(false);
     }
   }, [sandboxId, filePath]);
 
-  const prevIsStreamingRef = useRef(isStreaming);
+  useEffect(() => {
+    if (sandboxId && filePath) {
+      loadSpreadsheetData();
+    }
+  }, [sandboxId, filePath]);
 
+  useEffect(() => {
+    if (isStreaming && streamingSheets) {
+      setSheets(streamingSheets);
+      setDataSource('streaming');
+      setLastUpdate(Date.now());
+    }
+  }, [streamingSheets]);
+
+  const prevIsStreamingRef = useRef(isStreaming);
   useEffect(() => {
     const wasStreaming = prevIsStreamingRef.current;
     prevIsStreamingRef.current = isStreaming;
     
     if (wasStreaming && !isStreaming && sandboxId) {
-      const timer = setTimeout(() => {
-        loadSpreadsheetData();
-      }, 300);
-      return () => clearTimeout(timer);
+      setTimeout(() => loadSpreadsheetData(), 500);
     }
   }, [isStreaming, sandboxId, loadSpreadsheetData]);
 
-  useEffect(() => {
-    if (!isStreaming && sandboxId && dataSource === 'streaming') {
-      loadSpreadsheetData();
-    }
-  }, []);
-
   const handleSave = useCallback(async () => {
-    if (!sandboxId || !ssRef.current) return;
+    if (!sandboxId || !ssRef.current || !filePath) return;
     
     setIsSaving(true);
     try {
@@ -313,31 +259,47 @@ export function SpreadsheetToolView({
       
       for (let sheetIdx = 0; sheetIdx < sheetCount; sheetIdx++) {
         const sheetModel = spreadsheet.sheets?.[sheetIdx];
-        const cells: Record<string, any> = {};
+        const rows: Array<{ cells: Array<{ value?: string; formula?: string; style?: any }> }> = [];
         
         if (sheetModel?.rows) {
-          sheetModel.rows.forEach((row: any, rowIdx: number) => {
-            if (row?.cells) {
-              row.cells.forEach((cell: any, colIdx: number) => {
-                if (cell && (cell.value !== undefined || cell.formula)) {
-                  const cellAddr = `${getColumnLetter(colIdx)}${rowIdx + 1}`;
-                  cells[cellAddr] = {
-                    value: cell.value,
-                    formula: cell.formula,
-                    style: cell.style
-                  };
-                }
-              });
-            }
+            sheetModel.rows.forEach((row: any) => {
+                const cellsArr: any[] = [];
+              
+                (row.cells || []).forEach((cell: any) => {
+                  if (!cell) {
+                    cellsArr.push({});
+                    return;
+                  }
+                  if (typeof cell.value === 'string' && cell.value.startsWith('=')) {
+                    cellsArr.push({
+                      formula: cell.value,
+                      style: cell.style
+                    });
+                  } else {
+                    cellsArr.push({
+                      value: cell.value ?? '',
+                      style: cell.style
+                    });
+                  }
+                });
+              
+                rows.push({ cells: cellsArr });
+              });              
+        }
+
+        const columns: Array<{ width: number }> = [];
+        if (sheetModel?.columns) {
+          sheetModel.columns.forEach((col: any) => {
+            columns.push({ width: col?.width || 100 });
           });
         }
 
         sheetsData.sheets.push({
           name: sheetModel?.name || `Sheet${sheetIdx + 1}`,
-          cells,
-          columns: {},
-          rowCount: 100,
-          colCount: 26
+          rows,
+          columns: columns.length > 0 ? columns : [{ width: 100 }],
+          rowCount: rows.length + 50,
+          colCount: columns.length || 26
         });
       }
 
@@ -355,12 +317,8 @@ export function SpreadsheetToolView({
   }, []);
 
   const sheetsKey = useMemo(() => {
-    const rowCount = sheets.reduce((acc, sheet) => acc + (sheet.rows?.length || 0), 0);
-    const cellCount = sheets.reduce((acc, sheet) => {
-      return acc + (sheet.rows?.reduce((racc: number, row: any) => racc + (row.cells?.length || 0), 0) || 0);
-    }, 0);
-    return `${sheets.length}-${rowCount}-${cellCount}-${lastLoadTime}`;
-  }, [sheets, lastLoadTime]);
+    return `spreadsheet-${lastUpdate}-${sheets.length}`;
+  }, [sheets, lastUpdate]);
 
   if (!toolCall) {
     console.warn('SpreadsheetToolView: toolCall is undefined.');
@@ -431,7 +389,23 @@ export function SpreadsheetToolView({
           allowEditing={true}
           allowOpen={true}
           allowSave={true}
+          allowScrolling={true}
+          allowResizing={true}
+          allowCellFormatting={true}
+          allowNumberFormatting={true}
+          enableClipboard={true}
           cellEdit={handleCellEdit}
+          created={() => {
+            if (sandboxId && sheets.length > 0 && sheets[0]?.rows?.length > 0) {
+              setTimeout(() => {
+                if (ssRef.current) {
+                  try {
+                    ssRef.current.refresh();
+                  } catch (e) {}
+                }
+              }, 100);
+            }
+          }}
         />
       </CardContent>
     </Card>
