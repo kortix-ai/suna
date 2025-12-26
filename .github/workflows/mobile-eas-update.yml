@@ -3,9 +3,9 @@ name: EAS OTA Update
 on:
   push:
     branches:
-      - main
-      - staging
-      - PRODUCTION
+      - main      # Staging environment → main EAS branch/channel
+      - staging   # Staging environment → main EAS branch/channel
+      - PRODUCTION # Production environment → production EAS branch/channel
     paths:
       - 'apps/mobile/**'
       - '.github/workflows/mobile-eas-update.yml'
@@ -15,6 +15,11 @@ on:
         description: 'Git branch name to publish to'
         required: true
         default: 'main'
+        type: choice
+        options:
+          - main
+          - staging
+          - PRODUCTION
       platform:
         description: 'Platform to publish for'
         required: true
@@ -23,6 +28,7 @@ on:
         options:
           - ios
           - android
+          - all
 
 permissions:
   contents: read
@@ -85,6 +91,57 @@ jobs:
         run: |
           echo "message=$(git log -1 --pretty=format:'%s')" >> $GITHUB_OUTPUT
           echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      
+      - name: Validate runtime version and configuration
+        id: runtime_version
+        working-directory: apps/mobile
+        run: |
+          if [ ! -f "app.json" ]; then
+            echo "❌ app.json not found"
+            exit 1
+          fi
+          
+          if [ ! -f "eas.json" ]; then
+            echo "❌ eas.json not found"
+            exit 1
+          fi
+          
+          RUNTIME_VERSION=$(node -e "const app = require('./app.json'); console.log(app.expo.runtimeVersion || '')")
+          
+          if [ -z "$RUNTIME_VERSION" ]; then
+            echo "❌ runtimeVersion not found in app.json"
+            exit 1
+          fi
+          
+          echo "version=$RUNTIME_VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Runtime Version: $RUNTIME_VERSION"
+          
+          # Also check app version
+          APP_VERSION=$(node -e "const app = require('./app.json'); console.log(app.expo.version || '')")
+          echo "app_version=$APP_VERSION" >> $GITHUB_OUTPUT
+          echo "📱 App Version: $APP_VERSION"
+          
+          # Validate EAS configuration matches expected branch mapping
+          GIT_BRANCH="${{ steps.branch.outputs.branch }}"
+          if [ "$GIT_BRANCH" == "PRODUCTION" ]; then
+            EXPECTED_CHANNEL="production"
+            # Check if production build profile uses production channel
+            PROD_CHANNEL=$(node -e "const eas = require('./eas.json'); console.log(eas.build?.production?.channel || '')")
+            if [ "$PROD_CHANNEL" != "$EXPECTED_CHANNEL" ]; then
+              echo "⚠️ Warning: Production build profile channel is '$PROD_CHANNEL', expected '$EXPECTED_CHANNEL'"
+            else
+              echo "✅ Production build profile correctly uses '$EXPECTED_CHANNEL' channel"
+            fi
+          elif [ "$GIT_BRANCH" == "main" ] || [ "$GIT_BRANCH" == "staging" ]; then
+            EXPECTED_CHANNEL="main"
+            # Check if testflight build profile uses main channel
+            TESTFLIGHT_CHANNEL=$(node -e "const eas = require('./eas.json'); console.log(eas.build?.testflight?.channel || '')")
+            if [ "$TESTFLIGHT_CHANNEL" != "$EXPECTED_CHANNEL" ]; then
+              echo "⚠️ Warning: Testflight build profile channel is '$TESTFLIGHT_CHANNEL', expected '$EXPECTED_CHANNEL'"
+            else
+              echo "✅ Testflight build profile correctly uses '$EXPECTED_CHANNEL' channel"
+            fi
+          fi
 
       - name: Check if native files changed
         id: check_native
@@ -119,24 +176,30 @@ jobs:
         id: eas_branch
         run: |
           GIT_BRANCH="${{ steps.branch.outputs.branch }}"
-          # Map git branches to EAS branches/channels:
-          # - PRODUCTION git branch → production EAS branch/channel
-          # - main git branch → main EAS branch/channel  
-          # - staging git branch → main EAS branch/channel (staging uses main channel)
+          
+          # Branch mapping configuration:
+          # - PRODUCTION git branch → production EAS branch/channel (production environment)
+          # - main git branch → main EAS branch/channel (staging environment)
+          # - staging git branch → main EAS branch/channel (staging environment)
+          
           if [ "$GIT_BRANCH" == "PRODUCTION" ]; then
             EAS_BRANCH="production"
             EAS_CHANNEL="production"
+            echo "✅ Mapped PRODUCTION git branch → production EAS branch/channel"
           elif [ "$GIT_BRANCH" == "main" ] || [ "$GIT_BRANCH" == "staging" ]; then
             EAS_BRANCH="main"
             EAS_CHANNEL="main"
+            echo "✅ Mapped $GIT_BRANCH git branch → main EAS branch/channel (staging)"
           else
-            # Default to main for any other branch
+            echo "⚠️ Unknown branch '$GIT_BRANCH', defaulting to main EAS branch/channel"
             EAS_BRANCH="main"
             EAS_CHANNEL="main"
           fi
+          
           echo "branch=$EAS_BRANCH" >> $GITHUB_OUTPUT
           echo "channel=$EAS_CHANNEL" >> $GITHUB_OUTPUT
-          echo "Mapped git branch '$GIT_BRANCH' to EAS branch '$EAS_BRANCH' (channel '$EAS_CHANNEL')"
+          echo "📦 EAS Branch: $EAS_BRANCH"
+          echo "📡 EAS Channel: $EAS_CHANNEL"
 
       - name: Publish EAS Update
         id: publish_update
@@ -147,11 +210,21 @@ jobs:
           EAS_CHANNEL="${{ steps.eas_branch.outputs.channel }}"
           GIT_BRANCH="${{ steps.branch.outputs.branch }}"
           ENVIRONMENT="${{ steps.env_vars.outputs.environment }}"
+          RUNTIME_VERSION="${{ steps.runtime_version.outputs.version }}"
+          APP_VERSION="${{ steps.runtime_version.outputs.app_version }}"
           MESSAGE="${{ steps.commit.outputs.message }} (${{ steps.commit.outputs.sha }})"
           
-          echo "📦 Publishing to EAS branch: $EAS_BRANCH (channel: $EAS_CHANNEL)"
-          echo "📝 Git branch: $GIT_BRANCH"
-          echo "🌍 Environment: $ENVIRONMENT"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📦 EAS Update Deployment"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📝 Git Branch:        $GIT_BRANCH"
+          echo "📦 EAS Branch:        $EAS_BRANCH"
+          echo "📡 EAS Channel:       $EAS_CHANNEL"
+          echo "🌍 Environment:       $ENVIRONMENT"
+          echo "🔢 Runtime Version:   $RUNTIME_VERSION"
+          echo "📱 App Version:       $APP_VERSION"
+          echo "💬 Message:           $MESSAGE"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           
           IOS_SUCCESS=false
           ANDROID_SUCCESS=false
@@ -256,14 +329,21 @@ jobs:
           PLATFORM="${{ steps.platform.outputs.platform }}"
           COMMIT_SHA="${{ steps.commit.outputs.sha }}"
           COMMIT_MSG="${{ steps.commit.outputs.message }}"
+          RUNTIME_VERSION="${{ steps.runtime_version.outputs.version }}"
+          APP_VERSION="${{ steps.runtime_version.outputs.app_version }}"
           
           echo "## 📦 EAS Update Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Git Branch:** \`$GIT_BRANCH\`" >> $GITHUB_STEP_SUMMARY
-          echo "**EAS Branch:** \`$EAS_BRANCH\`" >> $GITHUB_STEP_SUMMARY
-          echo "**EAS Channel:** \`$EAS_CHANNEL\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment:** \`$ENVIRONMENT\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** \`$COMMIT_SHA\` - $COMMIT_MSG" >> $GITHUB_STEP_SUMMARY
+          echo "### Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Git Branch** | \`$GIT_BRANCH\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **EAS Branch** | \`$EAS_BRANCH\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **EAS Channel** | \`$EAS_CHANNEL\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | \`$ENVIRONMENT\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Runtime Version** | \`$RUNTIME_VERSION\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **App Version** | \`$APP_VERSION\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`$COMMIT_SHA\` - $COMMIT_MSG |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           if [ "$PLATFORM" == "all" ]; then
@@ -319,11 +399,15 @@ jobs:
           fi
           
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment Variables Used:**" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment Variables" >> $GITHUB_STEP_SUMMARY
           echo "- \`EXPO_PUBLIC_SUPABASE_URL\`: \`$EXPO_PUBLIC_SUPABASE_URL\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`EXPO_PUBLIC_BACKEND_URL\`: \`$EXPO_PUBLIC_BACKEND_URL\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Branch Mapping Reference" >> $GITHUB_STEP_SUMMARY
+          echo "- **main/staging** git branches → **main** EAS branch/channel (staging environment)" >> $GITHUB_STEP_SUMMARY
+          echo "- **PRODUCTION** git branch → **production** EAS branch/channel (production environment)" >> $GITHUB_STEP_SUMMARY
 
       - name: Warning if native changes detected
         if: steps.check_native.outputs.native_changed == 'true'
