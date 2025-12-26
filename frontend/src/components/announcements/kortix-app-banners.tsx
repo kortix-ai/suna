@@ -6,6 +6,7 @@ import { X, Smartphone, Monitor } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { isElectron } from '@/lib/utils/is-electron';
+import { featureFlags } from '@/lib/feature-flags';
 
 const MOBILE_STORAGE_KEY = 'kortix-mobile-banner-dismissed';
 const DESKTOP_STORAGE_KEY = 'kortix-desktop-banner-dismissed';
@@ -28,6 +29,8 @@ type KortixAppBannersProps = {
   /**
    * When true, hides ONLY the mobile (App Store / Play Store) banner.
    * Desktop download banner can still show.
+   *
+   * If omitted, defaults to the global `featureFlags.disableMobileAdvertising`.
    */
   disableMobileAdvertising?: boolean;
 };
@@ -64,7 +67,10 @@ function detectDesktopPlatform(): DesktopPlatform {
 }
 
 
-export function KortixAppBanners({ disableMobileAdvertising = false }: KortixAppBannersProps) {
+export function KortixAppBanners(props: KortixAppBannersProps) {
+  const disableMobileAdvertising =
+    props.disableMobileAdvertising ?? featureFlags.disableMobileAdvertising;
+
   const [isVisible, setIsVisible] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -81,6 +87,10 @@ export function KortixAppBanners({ disableMobileAdvertising = false }: KortixApp
     setMounted(true);
     setDesktopPlatform(detectDesktopPlatform());
     
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[KortixAppBanners] flags', { disableMobileAdvertising });
+    }
+
     const desktopDismissed = localStorage.getItem(DESKTOP_STORAGE_KEY);
     
     const mobileDismissed = disableMobileAdvertising
