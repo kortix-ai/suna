@@ -22,6 +22,29 @@ from core.billing.credits.manager import credit_manager
 
 REVENUECAT_API_BASE = "https://api.revenuecat.com/v1"
 
+ANDROID_TO_IOS_PRODUCT_MAP = {
+    'plus': 'kortix_plus_monthly',
+    'plus_yearly': 'kortix_plus_yearly',
+    'pro': 'kortix_pro_monthly',
+    'pro_yearly': 'kortix_pro_yearly',
+    'ultra': 'kortix_ultra_monthly',
+    'ultra_yearly': 'kortix_ultra_yearly',
+}
+
+def normalize_product_id(product_id: str) -> str:
+    if not product_id:
+        return product_id
+    
+    product_id_lower = product_id.lower()
+    
+    if product_id_lower in ANDROID_TO_IOS_PRODUCT_MAP:
+        normalized = ANDROID_TO_IOS_PRODUCT_MAP[product_id_lower]
+        logger.info(f"   Normalized Android product ID: {product_id} → {normalized}")
+        return normalized
+    
+    return product_id
+
+
 def fetch_revenuecat_subscriber(app_user_id: str) -> dict:
     if not config.REVENUECAT_API_KEY:
         raise ValueError("REVENUECAT_API_KEY is not configured")
@@ -141,6 +164,9 @@ async def fix_missing_revenuecat_subscription(user_email: str, dry_run: bool = F
     logger.info(f"   Original Purchase Date: {sub_info.get('original_purchase_date')}")
     logger.info(f"   Store: {sub_info.get('store')}")
     
+    original_product_id = product_id
+    product_id = normalize_product_id(product_id)
+    
     if not ProductMapper.validate_product_id(product_id):
         logger.error(f"❌ Product ID {product_id} is not recognized")
         logger.info(f"   Valid products: {ProductMapper.VALID_PRODUCT_IDS}")
@@ -176,14 +202,14 @@ async def fix_missing_revenuecat_subscription(user_email: str, dry_run: bool = F
         logger.info("No credit account found - will be created")
     
     if dry_run:
-        dry_run_sub_id = sub_info.get('store_transaction_id') or sub_info.get('original_transaction_id') or f"rc_{product_id}_{account_id[:8]}"
+        dry_run_sub_id = sub_info.get('store_transaction_id') or sub_info.get('original_transaction_id') or f"rc_{original_product_id}_{account_id[:8]}"
         logger.info("\n" + "="*80)
         logger.info("DRY RUN - NO CHANGES WILL BE MADE")
         logger.info("="*80)
         logger.info(f"Would update database with:")
         logger.info(f"  tier: {tier_name}")
         logger.info(f"  provider: revenuecat")
-        logger.info(f"  revenuecat_product_id: {product_id}")
+        logger.info(f"  revenuecat_product_id: {original_product_id}")
         logger.info(f"  revenuecat_subscription_id: {dry_run_sub_id}")
         logger.info(f"  credits to grant: ${tier_info.monthly_credits}")
         return
@@ -212,14 +238,14 @@ async def fix_missing_revenuecat_subscription(user_email: str, dry_run: bool = F
     elif period_type == 'yearly_commitment':
         plan_type = 'yearly_commitment'
     
-    subscription_id = sub_info.get('store_transaction_id') or sub_info.get('original_transaction_id') or f"rc_{product_id}_{account_id[:8]}"
+    subscription_id = sub_info.get('store_transaction_id') or sub_info.get('original_transaction_id') or f"rc_{original_product_id}_{account_id[:8]}"
     
     update_data = {
         'tier': tier_name,
         'provider': 'revenuecat',
         'plan_type': plan_type,
         'revenuecat_subscription_id': subscription_id,
-        'revenuecat_product_id': product_id,
+        'revenuecat_product_id': original_product_id,
         'stripe_subscription_id': None,
         'revenuecat_cancelled_at': None,
         'revenuecat_cancel_at_period_end': None,
@@ -354,6 +380,9 @@ async def fix_by_account_id(account_id: str, dry_run: bool = False):
     
     logger.info(f"\n✅ Active subscription found: {product_id}")
     
+    original_product_id = product_id
+    product_id = normalize_product_id(product_id)
+    
     if not ProductMapper.validate_product_id(product_id):
         logger.error(f"❌ Product ID {product_id} is not recognized")
         return
@@ -391,14 +420,14 @@ async def fix_by_account_id(account_id: str, dry_run: bool = False):
     elif period_type == 'yearly_commitment':
         plan_type = 'yearly_commitment'
     
-    subscription_id = sub_info.get('store_transaction_id') or sub_info.get('original_transaction_id') or f"rc_{product_id}_{account_id[:8]}"
+    subscription_id = sub_info.get('store_transaction_id') or sub_info.get('original_transaction_id') or f"rc_{original_product_id}_{account_id[:8]}"
     
     update_data = {
         'tier': tier_name,
         'provider': 'revenuecat',
         'plan_type': plan_type,
         'revenuecat_subscription_id': subscription_id,
-        'revenuecat_product_id': product_id,
+        'revenuecat_product_id': original_product_id,
         'stripe_subscription_id': None,
         'revenuecat_cancelled_at': None,
         'revenuecat_cancel_at_period_end': None,
