@@ -135,6 +135,11 @@ export function useAgentStream(
   }
   const accumulatedToolCallsRef = useRef<Map<string, AccumulatedToolCall>>(new Map());
   
+  // Track previous tool call state to prevent unnecessary re-renders
+  const previousToolCallStateRef = useRef<string | null>(null);
+  const lastToolCallUpdateTimeRef = useRef<number>(0);
+  const THROTTLE_MS = 50; // Minimum time between updates (50ms = ~20 updates/sec max)
+  
   // Store callbacks in ref to prevent handler recreation on every parent render
   const callbacksRef = useRef(callbacks);
   useEffect(() => {
@@ -211,6 +216,10 @@ export function useAgentStream(
       setToolCall(null);
       setAgentRunId(null);
       currentRunIdRef.current = null;
+      // Clear accumulated tool call deltas and previous state
+      accumulatedToolCallsRef.current.clear();
+      previousToolCallStateRef.current = null;
+      lastToolCallUpdateTimeRef.current = 0;
     }
     threadIdRef.current = threadId;
   }, [threadId]);
@@ -284,6 +293,10 @@ export function useAgentStream(
       // Reset streaming-specific state
       setTextContent([]);
       setToolCall(null);
+      // Clear accumulated tool call deltas and previous state
+      accumulatedToolCallsRef.current.clear();
+      previousToolCallStateRef.current = null;
+      lastToolCallUpdateTimeRef.current = 0;
 
       // Update status and clear run ID
       updateStatus(finalStatus);
@@ -619,15 +632,66 @@ export function useAgentStream(
                 }),
               };
               
-              // Debug log to track multiple tool calls accumulation
-              console.log(`[useAgentStream] Accumulated ${allReconstructedToolCalls.length} tool calls:`, 
-                allReconstructedToolCalls.map(tc => ({ id: tc.tool_call_id, fn: tc.function_name, argsLen: tc.arguments.length })));
-              
-              // Set toolCall state with ALL reconstructed tool calls (non-urgent update)
-              React.startTransition(() => {
-                setToolCall(updatedMessage);
+              // Create a stable representation for comparison to prevent unnecessary re-renders
+              // Compare tool call IDs, function names, and argument lengths (not full content)
+              const currentStateKey = JSON.stringify({
+                toolCallIds: allReconstructedToolCalls.map(tc => tc.tool_call_id),
+                functionNames: allReconstructedToolCalls.map(tc => tc.function_name),
+                argLengths: allReconstructedToolCalls.map(tc => 
+                  typeof tc.arguments === 'string' ? tc.arguments.length : JSON.stringify(tc.arguments).length
+                ),
+                count: allReconstructedToolCalls.length,
               });
-              // Call the callback with the reconstructed message
+              
+              // Check if there's a meaningful change
+              const hasChanged = previousToolCallStateRef.current !== currentStateKey;
+              
+              // Throttle updates: allow immediate update if structure changed (new tool call, function name change)
+              // or if enough time has passed since last update
+              const now = performance.now();
+              const timeSinceLastUpdate = now - lastToolCallUpdateTimeRef.current;
+              
+              let structureChanged = false;
+              if (hasChanged) {
+                if (previousToolCallStateRef.current === null) {
+                  structureChanged = true; // First update
+                } else {
+                  try {
+                    const currentState = JSON.parse(currentStateKey);
+                    const previousState = JSON.parse(previousToolCallStateRef.current);
+                    // Check if count changed (new tool call added)
+                    const countChanged = currentState.count !== previousState.count;
+                    // Check if function names changed
+                    const functionNamesChanged = JSON.stringify(currentState.functionNames || []) !== 
+                      JSON.stringify(previousState.functionNames || []);
+                    structureChanged = countChanged || functionNamesChanged;
+                  } catch (e) {
+                    // If parsing fails, treat as structure change to be safe
+                    structureChanged = true;
+                  }
+                }
+              }
+              
+              const shouldUpdate = structureChanged || (hasChanged && timeSinceLastUpdate >= THROTTLE_MS);
+              
+              if (shouldUpdate) {
+                previousToolCallStateRef.current = currentStateKey;
+                lastToolCallUpdateTimeRef.current = now;
+                
+                // Debug log to track multiple tool calls accumulation (only when structure changes)
+                if (structureChanged) {
+                  console.log(`[useAgentStream] Accumulated ${allReconstructedToolCalls.length} tool calls:`, 
+                    allReconstructedToolCalls.map(tc => ({ id: tc.tool_call_id, fn: tc.function_name, argsLen: tc.arguments.length })));
+                }
+                
+                // Set toolCall state with ALL reconstructed tool calls (non-urgent update)
+                React.startTransition(() => {
+                  setToolCall(updatedMessage);
+                });
+              }
+              
+              // Always call the callback to ensure downstream handlers get updates
+              // (they can implement their own deduplication if needed)
               callbacksRef.current.onToolCallChunk?.(updatedMessage);
             }
           } else if (
@@ -648,8 +712,10 @@ export function useAgentStream(
               setTextContent([]);
               setToolCall(null);
             });
-            // Clear accumulated tool call deltas
+            // Clear accumulated tool call deltas and previous state
             accumulatedToolCallsRef.current.clear();
+            previousToolCallStateRef.current = null;
+            lastToolCallUpdateTimeRef.current = 0;
             if (message.message_id) callbacksRef.current.onMessage(message);
           } else if (!parsedMetadata.stream_status) {
             // Handle non-chunked assistant messages if needed
@@ -661,8 +727,10 @@ export function useAgentStream(
           React.startTransition(() => {
             setToolCall(null); // Clear any streaming tool call
           });
-          // Clear accumulated tool call deltas when tool execution completes
+          // Clear accumulated tool call deltas and previous state when tool execution completes
           accumulatedToolCallsRef.current.clear();
+          previousToolCallStateRef.current = null;
+          lastToolCallUpdateTimeRef.current = 0;
           if (message.message_id) callbacksRef.current.onMessage(message);
           break;
         case 'status':
@@ -674,6 +742,10 @@ export function useAgentStream(
               React.startTransition(() => {
                 setToolCall(null);
               });
+              // Clear accumulated tool call deltas and previous state
+              accumulatedToolCallsRef.current.clear();
+              previousToolCallStateRef.current = null;
+              lastToolCallUpdateTimeRef.current = 0;
               break;
             case 'finish':
               // Optional: Handle finish reasons like 'xml_tool_limit_reached'
@@ -917,6 +989,10 @@ export function useAgentStream(
         updateStatus('connecting');
         setAgentRunId(runId);
         currentRunIdRef.current = runId;
+        // Clear accumulated tool call deltas and previous state
+        accumulatedToolCallsRef.current.clear();
+        previousToolCallStateRef.current = null;
+        lastToolCallUpdateTimeRef.current = 0;
 
         // Agent is running, proceed to create the stream
         const cleanup = streamAgent(runId, {

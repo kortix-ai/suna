@@ -46,6 +46,8 @@ from core.agentpress.xml_tool_parser import strip_xml_tool_calls
 
 # Note: Debug stream saving is controlled by global_config.DEBUG_SAVE_LLM_IO
 
+# Constants for terminating tools
+TERMINATING_TOOLS = {'ask', 'complete'}
 
 # Type alias for tool execution strategy
 ToolExecutionStrategy = Literal["sequential", "parallel"]
@@ -132,6 +134,39 @@ class ResponseProcessor:
         self.jit_config = jit_config
         self.thread_manager = thread_manager
         self.project_id = project_id
+
+    def _log_frontend_message(self, message: Dict[str, Any], debug_file: Optional[Path] = None):
+        """Log a message being sent to the frontend to a debug file.
+        
+        Args:
+            message: The message dictionary being yielded to the frontend
+            debug_file: Optional path to the debug file (if None, logging is skipped)
+        """
+        if debug_file is None:
+            return
+        
+        try:
+            timestamp = datetime.now(timezone.utc).isoformat()
+            with open(debug_file, 'a', encoding='utf-8') as f:
+                f.write("=" * 80 + "\n")
+                f.write(f"TIMESTAMP: {timestamp}\n")
+                f.write("=" * 80 + "\n")
+                f.write(json.dumps(message, indent=2, ensure_ascii=False) + "\n\n")
+        except Exception as e:
+            logger.debug(f"Error logging frontend message: {e}")
+    
+    def _yield_and_log(self, message: Dict[str, Any], debug_file: Optional[Path] = None):
+        """Helper to log and yield a message. Returns the message for yielding.
+        
+        Args:
+            message: The message dictionary to log and yield
+            debug_file: Optional path to the debug file
+            
+        Returns:
+            The message (for use with yield)
+        """
+        self._log_frontend_message(message, debug_file)
+        return message
 
     def _serialize_model_response(self, model_response) -> Dict[str, Any]:
         """Convert a LiteLLM ModelResponse object to a JSON-serializable dictionary.
@@ -503,19 +538,29 @@ class ResponseProcessor:
         # Track background DB tasks for cleanup
         background_db_tasks = []
         
+        # Setup frontend message logging (always enabled for debugging) - MUST be before first yield
+        frontend_debug_file = None
+        debug_dir = Path("debug_streams")
+        debug_dir.mkdir(exist_ok=True)
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        frontend_debug_file = debug_dir / f"frontend_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.txt"
+        logger.info(f"📁 Saving frontend messages to: {frontend_debug_file}")
+        
         try:
             # --- Yield Start Events (DB saves in background for zero latency) ---
             if auto_continue_count == 0:
                 start_content = {"status_type": "thread_run_start"}
                 # Yield immediately, save to DB in background (non-blocking)
                 now_start = datetime.now(timezone.utc).isoformat()
-                yield {
+                start_message = {
                     "message_id": None, "thread_id": thread_id, "type": "status",
                     "is_llm_message": False,
                     "content": to_json_string(start_content),
                     "metadata": to_json_string({"thread_run_id": thread_run_id}),
                     "created_at": now_start, "updated_at": now_start
                 }
+                self._log_frontend_message(start_message, frontend_debug_file)
+                yield start_message
                 # Fire-and-forget DB save
                 background_db_tasks.append(asyncio.create_task(
                     self.add_message(thread_id=thread_id, type="status", content=start_content, 
@@ -530,13 +575,15 @@ class ResponseProcessor:
             }
             # Yield immediately, save to DB in background (non-blocking)
             now_llm_start = datetime.now(timezone.utc).isoformat()
-            yield {
+            llm_start_message = {
                 "message_id": None, "thread_id": thread_id, "type": "llm_response_start",
                 "is_llm_message": False,
                 "content": to_json_string(llm_start_content),
                 "metadata": to_json_string({"thread_run_id": thread_run_id, "llm_response_id": llm_response_id}),
                 "created_at": now_llm_start, "updated_at": now_llm_start
             }
+            self._log_frontend_message(llm_start_message, frontend_debug_file)
+            yield llm_start_message
             # Fire-and-forget DB save
             background_db_tasks.append(asyncio.create_task(
                 self.add_message(thread_id=thread_id, type="llm_response_start", content=llm_start_content, 
@@ -553,9 +600,6 @@ class ResponseProcessor:
             raw_chunks_data = []  # Store all chunk data for JSONL export
             
             if global_config.DEBUG_SAVE_LLM_IO:
-                debug_dir = Path("debug_streams")
-                debug_dir.mkdir(exist_ok=True)
-                timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
                 debug_file = debug_dir / f"stream_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.txt"
                 debug_file_json = debug_dir / f"stream_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.jsonl"
                 
@@ -684,7 +728,7 @@ class ResponseProcessor:
 
                         # Yield content chunk IMMEDIATELY - no datetime call, use pre-built metadata
                         # This is the hot path - every microsecond counts!
-                        yield {
+                        content_chunk_message = {
                             "sequence": __sequence,
                             "message_id": None, "thread_id": thread_id, "type": "assistant",
                             "is_llm_message": True,
@@ -693,6 +737,8 @@ class ResponseProcessor:
                             "created_at": _stream_start_time,  # Reuse start time, no datetime.now() per chunk
                             "updated_at": _stream_start_time
                         }
+                        self._log_frontend_message(content_chunk_message, frontend_debug_file)
+                        yield content_chunk_message
                         __sequence += 1
 
                         # --- Process XML Tool Calls (if enabled) ---
@@ -754,7 +800,10 @@ class ResponseProcessor:
                                     if config.execute_tools and config.execute_on_stream:
                                         # Save and Yield tool_started status
                                         started_msg_obj = await self._yield_and_save_tool_started(context, thread_id, thread_run_id)
-                                        if started_msg_obj: yield format_for_yield(started_msg_obj)
+                                        if started_msg_obj: 
+                                            formatted = format_for_yield(started_msg_obj)
+                                            self._log_frontend_message(formatted, frontend_debug_file)
+                                            yield formatted
                                         yielded_tool_indices.add(tool_index) # Mark status as yielded
 
                                         execution_task = asyncio.create_task(self._execute_tool(tool_call))
@@ -838,7 +887,10 @@ class ResponseProcessor:
 
                                 # Save and Yield tool_started status
                                 started_msg_obj = await self._yield_and_save_tool_started(context, thread_id, thread_run_id)
-                                if started_msg_obj: yield format_for_yield(started_msg_obj)
+                                if started_msg_obj: 
+                                    formatted = format_for_yield(started_msg_obj)
+                                    self._log_frontend_message(formatted, frontend_debug_file)
+                                    yield formatted
                                 yielded_tool_indices.add(tool_index) # Mark status as yielded
 
                                 execution_task = asyncio.create_task(self._execute_tool(tool_call_data))
@@ -891,7 +943,7 @@ class ResponseProcessor:
                                     "tool_calls": transformed_unified_tool_calls
                                 }
                                 
-                                yield {
+                                tool_chunk_message = {
                                     "sequence": __sequence,
                                     "message_id": None, 
                                     "thread_id": thread_id, 
@@ -902,10 +954,15 @@ class ResponseProcessor:
                                     "created_at": now_tool_chunk, 
                                     "updated_at": now_tool_chunk
                                 }
+                                self._log_frontend_message(tool_chunk_message, frontend_debug_file)
+                                yield tool_chunk_message
                                 __sequence += 1
                             
                     # Process any completed tool executions in real-time (moved outside tool call update block)
                     # This ensures completed tools are processed immediately even when LLM is generating text
+                    # NOTE: State updates (pending_tool_executions, yielded_tool_indices, agent_should_terminate)
+                    # are atomic within this async context since Python's async is single-threaded. The state
+                    # is updated atomically from the tuple returned by _process_completed_tool_executions.
                     if pending_tool_executions and config.execute_tools and config.execute_on_stream:
                         # Process and yield messages immediately as each tool completes
                         async for item in self._process_completed_tool_executions(
@@ -914,10 +971,11 @@ class ResponseProcessor:
                             thread_run_id,
                             last_assistant_message_object,
                             yielded_tool_indices,
-                            agent_should_terminate
+                            agent_should_terminate,
+                            frontend_debug_file
                         ):
                             if isinstance(item, tuple):
-                                # Final state tuple - extract and update state
+                                # Final state tuple - extract and update state atomically
                                 remaining_executions, updated_yielded_indices, updated_terminate_flag = item
                                 pending_tool_executions = remaining_executions
                                 yielded_tool_indices = updated_yielded_indices
@@ -925,6 +983,7 @@ class ResponseProcessor:
                                 break
                             else:
                                 # Message to yield immediately
+                                self._log_frontend_message(item, frontend_debug_file)
                                 yield item
 
             # Log when stream naturally ends
@@ -1007,10 +1066,23 @@ class ResponseProcessor:
                 logger.debug(f"Waiting for {len(pending_tool_executions)} remaining streamed tool executions")
                 self.trace.event(name="waiting_for_remaining_streamed_tool_executions", level="DEFAULT", status_message=(f"Waiting for {len(pending_tool_executions)} remaining streamed tool executions"))
                 pending_tasks = [execution["task"] for execution in pending_tool_executions]
-                await asyncio.wait(pending_tasks, return_when=asyncio.ALL_COMPLETED)
+                done, pending = await asyncio.wait(pending_tasks, return_when=asyncio.ALL_COMPLETED)
+                
+                # Check for exceptions in completed tasks
+                for task in done:
+                    if task.exception():
+                        exc = task.exception()
+                        tool_idx = next((i for i, exec in enumerate(pending_tool_executions) if exec["task"] == task), -1)
+                        logger.error(f"Task {tool_idx} failed with exception: {exc}", exc_info=exc)
+                        self.trace.event(
+                            name="task_failed_in_wait",
+                            level="ERROR",
+                            status_message=(f"Task {tool_idx} failed with exception: {str(exc)}")
+                        )
 
                 # Process remaining tools using the unified method
                 # Process and yield messages immediately as each tool completes
+                # NOTE: State updates are atomic within this async context (single-threaded event loop)
                 async for item in self._process_completed_tool_executions(
                     pending_tool_executions,
                     thread_id,
@@ -1020,7 +1092,7 @@ class ResponseProcessor:
                     agent_should_terminate
                 ):
                     if isinstance(item, tuple):
-                        # Final state tuple - extract and update state
+                        # Final state tuple - extract and update state atomically
                         remaining_executions, updated_yielded_indices, updated_terminate_flag = item
                         pending_tool_executions = remaining_executions
                         yielded_tool_indices = updated_yielded_indices
@@ -1028,6 +1100,7 @@ class ResponseProcessor:
                         break
                     else:
                         # Message to yield immediately
+                        self._log_frontend_message(item, frontend_debug_file)
                         yield item
 
 
@@ -1111,6 +1184,8 @@ class ResponseProcessor:
 
                 # If we already have a placeholder assistant message, update it instead of creating a new one
                 if last_assistant_message_object and last_assistant_message_object.get('message_id'):
+                    # Store placeholder message_id for cleanup if update fails
+                    placeholder_message_id = last_assistant_message_object['message_id']
                     # Update the existing placeholder message with final content and metadata
                     from core.services.supabase import DBConnection
                     db = DBConnection()
@@ -1120,10 +1195,10 @@ class ResponseProcessor:
                             'content': message_data,
                             'metadata': assistant_metadata,
                             'updated_at': datetime.now(timezone.utc).isoformat()
-                        }).eq('message_id', last_assistant_message_object['message_id']).execute()
+                        }).eq('message_id', placeholder_message_id).execute()
                         
                         # Fetch the updated message
-                        result = await client.table('messages').select('*').eq('message_id', last_assistant_message_object['message_id']).single().execute()
+                        result = await client.table('messages').select('*').eq('message_id', placeholder_message_id).single().execute()
                         if result.data:
                             last_assistant_message_object = result.data
                             logger.debug(f"Updated placeholder assistant message {last_assistant_message_object['message_id']} with final content")
@@ -1134,18 +1209,85 @@ class ResponseProcessor:
                             )
                         else:
                             # Fallback to creating new message if update failed
-                            logger.warning(f"Failed to fetch updated message, creating new one")
+                            logger.warning(f"Failed to fetch updated message, creating new one and cleaning up placeholder {placeholder_message_id}")
+                            # Create new message first
                             last_assistant_message_object = await self._add_message_with_agent_info(
                                 thread_id=thread_id, type="assistant", content=message_data,
                                 is_llm_message=True, metadata=assistant_metadata
                             )
+                            
+                            # If new message was created successfully, migrate tool results and delete placeholder
+                            if last_assistant_message_object and last_assistant_message_object.get('message_id'):
+                                new_message_id = last_assistant_message_object['message_id']
+                                try:
+                                    # Update tool results to point to the new message_id
+                                    tool_results = await client.table('messages').select('message_id, metadata').eq('thread_id', thread_id).eq('type', 'tool').execute()
+                                    if tool_results.data:
+                                        updated_count = 0
+                                        for tool_result in tool_results.data:
+                                            metadata = tool_result.get('metadata', {})
+                                            if metadata.get('assistant_message_id') == placeholder_message_id:
+                                                # Update this tool result to point to the new message
+                                                updated_metadata = metadata.copy()
+                                                updated_metadata['assistant_message_id'] = new_message_id
+                                                await client.table('messages').update({
+                                                    'metadata': updated_metadata
+                                                }).eq('message_id', tool_result['message_id']).execute()
+                                                updated_count += 1
+                                        if updated_count > 0:
+                                            logger.debug(f"Migrated {updated_count} tool result(s) from placeholder {placeholder_message_id} to new message {new_message_id}")
+                                    
+                                    # Delete the orphaned placeholder message
+                                    await client.table('messages').delete().eq('message_id', placeholder_message_id).eq('thread_id', thread_id).execute()
+                                    logger.info(f"Deleted orphaned placeholder message {placeholder_message_id} after failed update")
+                                    self.trace.event(
+                                        name="deleted_orphaned_placeholder_message",
+                                        level="DEFAULT",
+                                        status_message=(f"Deleted orphaned placeholder message {placeholder_message_id} after failed update")
+                                    )
+                                except Exception as cleanup_e:
+                                    logger.error(f"Error cleaning up placeholder message {placeholder_message_id}: {cleanup_e}", exc_info=True)
+                                    # Continue even if cleanup fails - the new message was created successfully
                     except Exception as e:
-                        logger.error(f"Failed to update placeholder assistant message: {e}, creating new one")
+                        logger.error(f"Failed to update placeholder assistant message: {e}, creating new one and cleaning up placeholder {placeholder_message_id}")
                         # Fallback to creating new message if update failed
                         last_assistant_message_object = await self._add_message_with_agent_info(
                             thread_id=thread_id, type="assistant", content=message_data,
                             is_llm_message=True, metadata=assistant_metadata
                         )
+                        
+                        # If new message was created successfully, migrate tool results and delete placeholder
+                        if last_assistant_message_object and last_assistant_message_object.get('message_id'):
+                            new_message_id = last_assistant_message_object['message_id']
+                            try:
+                                # Update tool results to point to the new message_id
+                                tool_results = await client.table('messages').select('message_id, metadata').eq('thread_id', thread_id).eq('type', 'tool').execute()
+                                if tool_results.data:
+                                    updated_count = 0
+                                    for tool_result in tool_results.data:
+                                        metadata = tool_result.get('metadata', {})
+                                        if metadata.get('assistant_message_id') == placeholder_message_id:
+                                            # Update this tool result to point to the new message
+                                            updated_metadata = metadata.copy()
+                                            updated_metadata['assistant_message_id'] = new_message_id
+                                            await client.table('messages').update({
+                                                'metadata': updated_metadata
+                                            }).eq('message_id', tool_result['message_id']).execute()
+                                            updated_count += 1
+                                    if updated_count > 0:
+                                        logger.debug(f"Migrated {updated_count} tool result(s) from placeholder {placeholder_message_id} to new message {new_message_id}")
+                                
+                                # Delete the orphaned placeholder message
+                                await client.table('messages').delete().eq('message_id', placeholder_message_id).eq('thread_id', thread_id).execute()
+                                logger.info(f"Deleted orphaned placeholder message {placeholder_message_id} after failed update")
+                                self.trace.event(
+                                    name="deleted_orphaned_placeholder_message",
+                                    level="DEFAULT",
+                                    status_message=(f"Deleted orphaned placeholder message {placeholder_message_id} after failed update")
+                                )
+                            except Exception as cleanup_e:
+                                logger.error(f"Error cleaning up placeholder message {placeholder_message_id}: {cleanup_e}", exc_info=True)
+                                # Continue even if cleanup fails - the new message was created successfully
                 else:
                     # No placeholder exists, create new message
                     last_assistant_message_object = await self._add_message_with_agent_info(
@@ -1160,7 +1302,9 @@ class ResponseProcessor:
                     # Format the message for yielding
                     yield_message = last_assistant_message_object.copy()
                     yield_message['metadata'] = yield_metadata
-                    yield format_for_yield(yield_message)
+                    formatted_message = format_for_yield(yield_message)
+                    self._log_frontend_message(formatted_message, frontend_debug_file)
+                    yield formatted_message
                 else:
                     logger.error(f"Failed to save final assistant message for thread {thread_id}")
                     self.trace.event(name="failed_to_save_final_assistant_message_for_thread", level="ERROR", status_message=(f"Failed to save final assistant message for thread {thread_id}"))
@@ -1170,7 +1314,10 @@ class ResponseProcessor:
                         thread_id=thread_id, type="status", content=err_content, 
                         is_llm_message=False, metadata={"thread_run_id": thread_run_id}
                     )
-                    if err_msg_obj: yield format_for_yield(err_msg_obj)
+                    if err_msg_obj: 
+                        formatted = format_for_yield(err_msg_obj)
+                        self._log_frontend_message(formatted, frontend_debug_file)
+                        yield formatted
 
             # --- Process All Tool Results Now ---
             if config.execute_tools:
@@ -1270,7 +1417,10 @@ class ResponseProcessor:
                         # Yield start status (not yielded yet since not executed during streaming)
                         if tool_idx not in yielded_tool_indices:
                             started_msg_obj = await self._yield_and_save_tool_started(context, thread_id, thread_run_id)
-                            if started_msg_obj: yield format_for_yield(started_msg_obj)
+                            if started_msg_obj: 
+                                formatted = format_for_yield(started_msg_obj)
+                                self._log_frontend_message(formatted, frontend_debug_file)
+                                yield formatted
                             yielded_tool_indices.add(tool_idx) # Mark status yielded
 
                         # Save the tool result message to DB using _add_tool_result
@@ -1285,12 +1435,17 @@ class ResponseProcessor:
                             saved_tool_result_object['message_id'] if saved_tool_result_object else None,
                             thread_id, thread_run_id
                         )
-                        if completed_msg_obj: yield format_for_yield(completed_msg_obj)
+                        if completed_msg_obj: 
+                            formatted = format_for_yield(completed_msg_obj)
+                            self._log_frontend_message(formatted, frontend_debug_file)
+                            yield formatted
 
                         # Yield the saved tool result object
                         if saved_tool_result_object:
                             tool_result_message_objects[tool_idx] = saved_tool_result_object
-                            yield format_for_yield(saved_tool_result_object)
+                            formatted = format_for_yield(saved_tool_result_object)
+                            self._log_frontend_message(formatted, frontend_debug_file)
+                            yield formatted
                         else:
                              logger.error(f"Failed to save tool result for index {tool_idx}, not yielding result message.")
                              self.trace.event(name="failed_to_save_tool_result_for_index", level="ERROR", status_message=(f"Failed to save tool result for index {tool_idx}, not yielding result message."))
@@ -1313,7 +1468,10 @@ class ResponseProcessor:
                     thread_id=thread_id, type="status", content=finish_content, 
                     is_llm_message=False, metadata={"thread_run_id": thread_run_id}
                 )
-                if finish_msg_obj: yield format_for_yield(finish_msg_obj)
+                if finish_msg_obj: 
+                    formatted = format_for_yield(finish_msg_obj)
+                    self._log_frontend_message(formatted, frontend_debug_file)
+                    yield formatted
 
             # Check if agent should terminate after processing pending tools
             if agent_should_terminate:
@@ -1329,7 +1487,10 @@ class ResponseProcessor:
                     thread_id=thread_id, type="status", content=finish_content, 
                     is_llm_message=False, metadata={"thread_run_id": thread_run_id, "agent_should_terminate": True}
                 )
-                if finish_msg_obj: yield format_for_yield(finish_msg_obj)
+                if finish_msg_obj: 
+                    formatted = format_for_yield(finish_msg_obj)
+                    self._log_frontend_message(formatted, frontend_debug_file)
+                    yield formatted
                 
                 # Save llm_response_end BEFORE terminating
                 if last_assistant_message_object:
@@ -1377,7 +1538,10 @@ class ResponseProcessor:
                             )
                             llm_response_end_saved = True
                             # Yield to stream for real-time context usage updates
-                            if llm_end_msg_obj: yield format_for_yield(llm_end_msg_obj)
+                            if llm_end_msg_obj: 
+                                formatted = format_for_yield(llm_end_msg_obj)
+                                self._log_frontend_message(formatted, frontend_debug_file)
+                                yield formatted
                         logger.debug(f"✅ llm_response_end saved for call #{auto_continue_count + 1} (before termination)")
                     except Exception as e:
                         logger.error(f"Error saving llm_response_end (before termination): {str(e)}")
@@ -1437,7 +1601,10 @@ class ResponseProcessor:
                             )
                             llm_response_end_saved = True
                             # Yield to stream for real-time context usage updates
-                            if llm_end_msg_obj: yield format_for_yield(llm_end_msg_obj)
+                            if llm_end_msg_obj: 
+                                formatted = format_for_yield(llm_end_msg_obj)
+                                self._log_frontend_message(formatted, frontend_debug_file)
+                                yield formatted
                             logger.debug(f"✅ llm_response_end saved for call #{auto_continue_count + 1}")
                         else:
                             logger.warning("⚠️ No complete LiteLLM response available, skipping llm_response_end")
@@ -1457,7 +1624,9 @@ class ResponseProcessor:
                 is_llm_message=False, metadata={"thread_run_id": thread_run_id if 'thread_run_id' in locals() else None}
             )
             if err_msg_obj: 
-                yield format_for_yield(err_msg_obj)
+                formatted = format_for_yield(err_msg_obj)
+                self._log_frontend_message(formatted, frontend_debug_file)
+                yield formatted
             raise
 
         finally:
@@ -1679,6 +1848,14 @@ class ResponseProcessor:
         finish_reason = None
         native_tool_calls_for_message = []
 
+        # Setup frontend message logging (always enabled for debugging)
+        frontend_debug_file = None
+        debug_dir = Path("debug_streams")
+        debug_dir.mkdir(exist_ok=True)
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        frontend_debug_file = debug_dir / f"frontend_nonstream_{thread_id[:8]}_{timestamp}.txt"
+        logger.info(f"📁 Saving frontend messages (non-streaming) to: {frontend_debug_file}")
+
         try:
             # Save and Yield thread_run_start status message
             start_content = {"status_type": "thread_run_start"}
@@ -1686,7 +1863,10 @@ class ResponseProcessor:
                 thread_id=thread_id, type="status", content=start_content,
                 is_llm_message=False, metadata={"thread_run_id": thread_run_id}
             )
-            if start_msg_obj: yield format_for_yield(start_msg_obj)
+            if start_msg_obj: 
+                formatted = format_for_yield(start_msg_obj)
+                self._log_frontend_message(formatted, frontend_debug_file)
+                yield formatted
 
             # Extract finish_reason, content, tool calls
             if hasattr(llm_response, 'choices') and llm_response.choices:
@@ -1781,7 +1961,10 @@ class ResponseProcessor:
                      thread_id=thread_id, type="status", content=err_content, 
                      is_llm_message=False, metadata={"thread_run_id": thread_run_id}
                  )
-                 if err_msg_obj: yield format_for_yield(err_msg_obj)
+                 if err_msg_obj: 
+                     formatted = format_for_yield(err_msg_obj)
+                     self._log_frontend_message(formatted, frontend_debug_file)
+                     yield formatted
 
        # --- Execute Tools and Yield Results ---
             tool_calls_to_execute = [item['tool_call'] for item in all_tool_data]
@@ -1814,7 +1997,10 @@ class ResponseProcessor:
 
                     # Save and Yield start status
                     started_msg_obj = await self._yield_and_save_tool_started(context, thread_id, thread_run_id)
-                    if started_msg_obj: yield format_for_yield(started_msg_obj)
+                    if started_msg_obj: 
+                        formatted = format_for_yield(started_msg_obj)
+                        self._log_frontend_message(formatted, frontend_debug_file)
+                        yield formatted
 
                     # Save tool result
                     saved_tool_result_object = await self._add_tool_result(
@@ -1828,7 +2014,10 @@ class ResponseProcessor:
                         saved_tool_result_object['message_id'] if saved_tool_result_object else None,
                         thread_id, thread_run_id
                     )
-                    if completed_msg_obj: yield format_for_yield(completed_msg_obj)
+                    if completed_msg_obj: 
+                        formatted = format_for_yield(completed_msg_obj)
+                        self._log_frontend_message(formatted, frontend_debug_file)
+                        yield formatted
 
                     # Yield the saved tool result object
                     if saved_tool_result_object:
@@ -1847,7 +2036,10 @@ class ResponseProcessor:
                     thread_id=thread_id, type="status", content=finish_content, 
                     is_llm_message=False, metadata={"thread_run_id": thread_run_id}
                 )
-                if finish_msg_obj: yield format_for_yield(finish_msg_obj)
+                if finish_msg_obj: 
+                    formatted = format_for_yield(finish_msg_obj)
+                    self._log_frontend_message(formatted, frontend_debug_file)
+                    yield formatted
 
             # --- Save and Yield assistant_response_end ---
             if assistant_message_object: # Only save if assistant message was saved
@@ -1880,7 +2072,9 @@ class ResponseProcessor:
                  is_llm_message=False, metadata={"thread_run_id": thread_run_id if 'thread_run_id' in locals() else None}
              )
              if err_msg_obj: 
-                 yield format_for_yield(err_msg_obj)
+                 formatted = format_for_yield(err_msg_obj)
+                 self._log_frontend_message(formatted, frontend_debug_file)
+                 yield formatted
              
              raise
 
@@ -1908,7 +2102,10 @@ class ResponseProcessor:
                 thread_id=thread_id, type="status", content=end_content, 
                 is_llm_message=False, metadata={"thread_run_id": thread_run_id if 'thread_run_id' in locals() else None}
             )
-            if end_msg_obj: yield format_for_yield(end_msg_obj)
+            if end_msg_obj: 
+                formatted = format_for_yield(end_msg_obj)
+                self._log_frontend_message(formatted, frontend_debug_file)
+                yield formatted
 
     # Tool execution methods
     async def _execute_tool(self, tool_call: Dict[str, Any]) -> ToolResult:
@@ -2250,7 +2447,7 @@ class ResponseProcessor:
                     logger.debug(f"✅ Completed tool {tool_name} with success={result.success if hasattr(result, 'success') else False}")
 
                     # Check if this is a terminating tool (ask or complete)
-                    if tool_name in ['ask', 'complete']:
+                    if tool_name in TERMINATING_TOOLS:
                         logger.debug(f"🛑 TERMINATING TOOL '{tool_name}' executed. Stopping further tool execution.")
                         self.trace.event(name="terminating_tool_executed", level="DEFAULT", status_message=(f"Terminating tool '{tool_name}' executed. Stopping further tool execution."))
                         break  # Stop executing remaining tools
@@ -2495,7 +2692,8 @@ class ResponseProcessor:
                         if isinstance(output_dict, dict) and output_dict.get('_internal'):
                             is_internal = True
                             logger.debug(f"🔒 [INTERNAL] Tool result from '{function_name}' marked as internal (hidden from UI)")
-                    except:
+                    except (json.JSONDecodeError, ValueError, TypeError):
+                        # Ignore JSON parsing errors - not all tool outputs are JSON
                         pass
                 
                 # Mark as internal in metadata so frontend can hide it
@@ -2647,7 +2845,8 @@ class ResponseProcessor:
         thread_run_id: str,
         last_assistant_message_object: Optional[Dict[str, Any]],
         yielded_tool_indices: set,
-        agent_should_terminate: bool
+        agent_should_terminate: bool,
+        frontend_debug_file: Optional[Path] = None
     ):
         """
         Process any completed tool executions in real-time during streaming.
@@ -2673,7 +2872,27 @@ class ResponseProcessor:
                 remaining_executions.append(execution)
                 continue
             
-            # Task is done - process it immediately and yield
+            # Task is done - check for exceptions before getting result
+            # This prevents task.result() from raising if the task failed
+            task_exception = task.exception()
+            if task_exception:
+                # Task completed with an exception - handle as error
+                logger.error(f"Tool execution {tool_idx} failed with exception: {str(task_exception)}", exc_info=task_exception)
+                self.trace.event(
+                    name="tool_execution_failed",
+                    level="ERROR",
+                    status_message=(f"Tool execution {tool_idx} failed with exception: {str(task_exception)}")
+                )
+                context.error = task_exception
+                error_msg_obj = await self._yield_and_save_tool_error(context, thread_id, thread_run_id)
+                if error_msg_obj:
+                    formatted = format_for_yield(error_msg_obj)
+                    self._log_frontend_message(formatted, frontend_debug_file)
+                    yield formatted
+                updated_yielded_indices.add(tool_idx)
+                continue
+            
+            # Task completed successfully - get result and process
             try:
                 result = task.result()
                 context.result = result
@@ -2694,7 +2913,7 @@ class ResponseProcessor:
                 tool_message_id = saved_tool_result_object['message_id'] if saved_tool_result_object else None
                 
                 # Check for terminating tools
-                if tool_name in ['ask', 'complete']:
+                if tool_name in TERMINATING_TOOLS:
                     logger.debug(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag.")
                     self.trace.event(
                         name="terminating_tool_completed_during_streaming",
@@ -2728,7 +2947,9 @@ class ResponseProcessor:
                 context.error = e
                 error_msg_obj = await self._yield_and_save_tool_error(context, thread_id, thread_run_id)
                 if error_msg_obj:
-                    yield format_for_yield(error_msg_obj)
+                    formatted = format_for_yield(error_msg_obj)
+                    self._log_frontend_message(formatted, frontend_debug_file)
+                    yield formatted
                 updated_yielded_indices.add(tool_idx)
         
         # Yield final state tuple as last item
@@ -2767,7 +2988,7 @@ class ResponseProcessor:
             metadata["linked_tool_result_message_id"] = tool_message_id
             
         # Signal if this is a terminating tool
-        if context.function_name in ['ask', 'complete']:
+        if context.function_name in TERMINATING_TOOLS:
             metadata["agent_should_terminate"] = True
             logger.debug(f"Marking tool status for '{context.function_name}' with termination signal.")
 
