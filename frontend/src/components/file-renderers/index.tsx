@@ -7,6 +7,7 @@ export { VideoRenderer, InlineVideoPlayer } from './video-renderer';
 export { BinaryRenderer } from './binary-renderer';
 export { CsvRenderer } from './csv-renderer';
 export { XlsxRenderer } from './xlsx-renderer';
+export { SpreadsheetViewer } from '../thread/tool-views/spreadsheet/SpreadsheetViewer';
 export { PptxRenderer } from './pptx-renderer';
 export { HtmlRenderer } from './html-renderer';
 export { JsonRenderer } from './JsonRenderer';

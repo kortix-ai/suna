@@ -14,7 +14,8 @@ import {
   Save,
   X,
   RefreshCw,
-  Home
+  Home,
+  Download
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useDirectoryQuery } from '@/hooks/files/use-file-queries';
@@ -25,6 +26,9 @@ import { useSpreadsheetSync } from '../../tool-views/spreadsheet/useSpreadsheetS
 import { SyncStatusIndicator } from '../../tool-views/spreadsheet/SyncStatusIndicator';
 import { SpreadsheetLoader } from '../../tool-views/spreadsheet/SpreadsheetLoader';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/components/AuthProvider';
+import { toast } from 'sonner';
+import { useDownloadRestriction } from '@/hooks/billing';
 
 import '../../../../../node_modules/@syncfusion/ej2-base/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-inputs/styles/material.css';
@@ -70,9 +74,14 @@ const SpreadsheetEditor = memo(function SpreadsheetEditor({
 }) {
   const ssRef = useRef<SpreadsheetComponent>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isDownloading, setIsDownloading] = useState(false);
   const onUnsavedChangeRef = useRef(onUnsavedChange);
   const prevPendingChangesRef = useRef<boolean | null>(null);
   const prevIsActiveRef = useRef(isActive);
+  const { session } = useAuth();
+  const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
+    featureName: 'files',
+  });
 
   onUnsavedChangeRef.current = onUnsavedChange;
 
@@ -116,6 +125,48 @@ const SpreadsheetEditor = memo(function SpreadsheetEditor({
     actions.forceSave();
   }, [filePath, actions]);
 
+  const handleDownload = useCallback(async () => {
+    if (isDownloadRestricted) {
+      openUpgradeModal();
+      return;
+    }
+    
+    if (!sandboxId || !filePath || !session?.access_token) {
+      toast.error('Unable to download file');
+      return;
+    }
+
+    setIsDownloading(true);
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(filePath)}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Download failed: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast.success('File downloaded successfully');
+    } catch (error) {
+      console.error('Download error:', error);
+      toast.error('Failed to download file');
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [sandboxId, filePath, fileName, session, isDownloadRestricted, openUpgradeModal]);
+
   if (!isActive) return null;
 
   return (
@@ -139,6 +190,20 @@ const SpreadsheetEditor = memo(function SpreadsheetEditor({
             onRefresh={actions.forceRefresh}
             onResolveConflict={actions.resolveConflict}
           />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDownload}
+            disabled={isDownloading}
+            className="h-7 px-2"
+            title="Download file"
+          >
+            {isDownloading ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Download className="w-3 h-3" />
+            )}
+          </Button>
           <Button
             variant="ghost"
             size="sm"
