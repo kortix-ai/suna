@@ -813,6 +813,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                                 {(() => {
                                                                                     // Extract tool call info from streamingToolCall metadata
                                                                                     // Render ALL tool calls as cards, not just the first one
+                                                                                    console.log(`[ThreadContent] Rendering ${toolCalls.length} streaming tool calls:`, 
+                                                                                        toolCalls.map((tc: any) => ({ id: tc.tool_call_id, fn: tc.function_name })));
                                                                                     if (toolCalls.length > 0) {
                                                                                         return toolCalls.map((tc: any, tcIndex: number) => {
                                                                                             const toolName = tc.function_name?.replace(/_/g, '-') || '';

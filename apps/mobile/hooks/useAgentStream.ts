@@ -478,8 +478,7 @@ export function useAgentStream(
           }
           break;
         case 'tool':
-          // Don't clear toolCall state here - other tools may still be streaming
-          // The tool result message will be handled by onMessage callback, which updates useThreadToolCalls
+          setToolCall(null); // Clear any streaming tool call
           // Clear accumulated tool call deltas when tool execution completes
           accumulatedToolCallsRef.current.clear();
           if (message.message_id) callbacks.onMessage(message);
@@ -489,8 +488,8 @@ export function useAgentStream(
             case 'tool_completed':
             case 'tool_failed':
             case 'tool_error':
-              // Don't clear toolCall state here - other tools may still be streaming
-              // Individual tool completion is handled by useThreadToolCalls via the messages array
+              // Clear streaming tool call when tool completes/fails
+              setToolCall(null);
               break;
             case 'finish':
               // Optional: Handle finish reasons like 'xml_tool_limit_reached'
