@@ -1,6 +1,7 @@
 import os
 from enum import Enum
 from re import S
+from tkinter import FALSE
 from typing import Dict, Any, Optional, get_type_hints, Union
 from dotenv import load_dotenv
 import logging
@@ -377,7 +378,7 @@ class Configuration:
     # Debug configuration
     # Set to True to save LLM API call inputs and stream outputs to debug_streams/ directory
     # Always False in production, regardless of environment variable
-    _DEBUG_SAVE_LLM_IO: Optional[bool] = True
+    _DEBUG_SAVE_LLM_IO: Optional[bool] = False
     
     @property
     def DEBUG_SAVE_LLM_IO(self) -> bool:

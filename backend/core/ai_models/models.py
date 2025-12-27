@@ -12,14 +12,12 @@ class ModelProvider(Enum):
     XAI = "xai"
     MOONSHOTAI = "moonshotai"
 
+
 class ModelCapability(Enum):
     CHAT = "chat"
     FUNCTION_CALLING = "function_calling"
     VISION = "vision"
-    CODE_INTERPRETER = "code_interpreter"
-    WEB_SEARCH = "web_search"
     THINKING = "thinking"
-    STRUCTURED_OUTPUT = "structured_output"
     PROMPT_CACHING = "prompt_caching"
 
 
@@ -76,7 +74,6 @@ class ModelConfig:
     
     # === Bedrock-Specific Configuration ===
     performanceConfig: Optional[Dict[str, str]] = None  # e.g., {"latency": "optimized"}
-    
 
 
 @dataclass
@@ -95,15 +92,15 @@ class Model:
     
     aliases: List[str] = field(default_factory=list)
     context_window: int = 128_000
-    max_output_tokens: Optional[int] = None
     capabilities: List[ModelCapability] = field(default_factory=list)
     pricing: Optional[ModelPricing] = None
     enabled: bool = True
-    beta: bool = False
     tier_availability: List[str] = field(default_factory=lambda: ["paid"])
-    metadata: Dict[str, Any] = field(default_factory=dict)
     priority: int = 0
     recommended: bool = False
+    
+    # Fallback model ID - LiteLLM model ID to use when this model fails (e.g., for vision fallback)
+    fallback_model_id: Optional[str] = None
     
     # Centralized model configuration
     config: Optional[ModelConfig] = None
@@ -116,12 +113,6 @@ class Model:
         # Ensure CHAT capability is always present
         if ModelCapability.CHAT not in self.capabilities:
             self.capabilities.insert(0, ModelCapability.CHAT)
-    
-    @property
-    def full_id(self) -> str:
-        if "/" in self.id:
-            return self.id
-        return f"{self.provider.value}/{self.id}"
     
     @property
     def supports_thinking(self) -> bool:
@@ -147,7 +138,6 @@ class Model:
             "num_retries": 5,
         }
         
-    
         # Apply model-specific configuration if available
         if self.config:
             # Provider & API configuration parameters
@@ -169,7 +159,6 @@ class Model:
             if self.config.performanceConfig:
                 params["performanceConfig"] = self.config.performanceConfig.copy()
         
-        
         # Apply any runtime overrides
         for key, value in override_params.items():
             if value is not None:
@@ -188,4 +177,4 @@ class Model:
                     params[key] = value
         
         return params
-    
+

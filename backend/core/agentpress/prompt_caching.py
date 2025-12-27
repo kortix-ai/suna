@@ -111,7 +111,7 @@ def supports_prompt_caching(model_name: str) -> bool:
     """Check if model supports prompt caching via PROMPT_CACHING capability."""
     try:
         from core.ai_models.registry import registry
-        from core.ai_models.ai_models import ModelCapability
+        from core.ai_models.models import ModelCapability
         
         model = registry.get(model_name)
         if model and ModelCapability.PROMPT_CACHING in model.capabilities:
