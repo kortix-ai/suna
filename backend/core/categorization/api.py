@@ -1,6 +1,6 @@
 """API endpoint for project categorization cron."""
 from fastapi import APIRouter, Depends, HTTPException
-from core.utils.auth_utils import verify_admin_api_key
+from core.setup.api import verify_webhook_secret
 from core.utils.logger import logger
 from .background_jobs import process_stale_projects
 
@@ -9,7 +9,7 @@ router = APIRouter(tags=["categorization"])
 
 @router.post("/internal/categorize-stale-projects")
 async def categorize_stale_projects_endpoint(
-    _: bool = Depends(verify_admin_api_key)
+    _: bool = Depends(verify_webhook_secret)
 ):
     """Called by pg_cron every 5 mins. Finds inactive projects, enqueues categorization."""
     try:

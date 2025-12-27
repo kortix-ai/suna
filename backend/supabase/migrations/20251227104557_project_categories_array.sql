@@ -71,7 +71,7 @@ BEGIN
         url := backend_url || '/v1/internal/categorize-stale-projects',
         headers := jsonb_build_object(
             'Content-Type', 'application/json',
-            'X-Admin-Api-Key', admin_key
+            'X-Webhook-Secret', admin_key
         ),
         body := '{}'::jsonb,
         timeout_milliseconds := 30000
