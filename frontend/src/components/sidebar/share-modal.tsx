@@ -1,268 +1,241 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Copy, Link, Link2Off, Check, Globe, Loader2 } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger, PopoverAnchor } from "@/components/ui/popover"
+import { Switch } from "@/components/ui/switch"
+import { Copy, Check, Globe, ExternalLink, Lock } from "lucide-react"
 import { toast } from "sonner"
-import { useThreadQuery, useUpdateThreadMutation } from "@/hooks/threads/use-threads";
-import type { JSX } from "react"
+import { useThreadQuery, useUpdateThreadMutation } from "@/hooks/threads/use-threads"
 import { Skeleton } from "../ui/skeleton"
+import { cn } from "@/lib/utils"
 
-interface SocialShareOption {
-  name: string
-  icon: JSX.Element
-  onClick: () => void
-}
-
-interface ShareModalProps {
-  isOpen: boolean
-  onClose: () => void
+interface SharePopoverProps {
   threadId?: string
   projectId?: string
+  children?: React.ReactNode
+  side?: "top" | "right" | "bottom" | "left"
+  align?: "start" | "center" | "end"
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
-const ShareModalSkeleton = () => {
+const LoadingSkeleton = () => (
+  <div className="flex items-center justify-between gap-3">
+    <div className="flex items-center gap-2.5">
+      <Skeleton className="h-7 w-7 rounded-lg" />
+      <div className="space-y-1">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="h-2.5 w-32" />
+      </div>
+    </div>
+    <Skeleton className="h-5 w-9 rounded-full" />
+  </div>
+)
+
+// Social icons
+const XIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-3 w-3" fill="currentColor">
+    <path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z" />
+  </svg>
+)
+
+const LinkedInIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-3 w-3" fill="currentColor">
+    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+  </svg>
+)
+
+// Shared content component
+function SharePopoverContent({ 
+  threadId, 
+  isOpen 
+}: { 
+  threadId?: string
+  isOpen: boolean 
+}) {
+  const [copied, setCopied] = useState(false)
+
+  const updateThreadMutation = useUpdateThreadMutation()
+  const { data: threadData, isLoading, refetch } = useThreadQuery(threadId || "")
+
+  const isPublic = Boolean(threadData?.is_public)
+  
+  const shareLink = threadId 
+    ? `${process.env.NEXT_PUBLIC_URL || (typeof window !== 'undefined' ? window.location.origin : '')}/share/${threadId}`
+    : ""
+
+  // Reset copied when popover closes
+  useEffect(() => {
+    if (!isOpen) setCopied(false)
+  }, [isOpen])
+
+  const handleToggle = async (checked: boolean) => {
+    if (!threadId) return
+    try {
+      await updateThreadMutation.mutateAsync({
+        threadId,
+        data: { is_public: checked },
+      })
+      await refetch()
+      toast.success(checked ? "Link enabled" : "Link disabled")
+    } catch (error) {
+      console.error("Error:", error)
+      toast.error("Failed to update")
+    }
+  }
+
+  const handleCopy = async () => {
+    if (!shareLink || copied) return
+    try {
+      await navigator.clipboard.writeText(shareLink)
+      setCopied(true)
+      toast.success("Copied")
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      toast.error("Failed to copy")
+    }
+  }
+
+  const handleOpen = () => window.open(shareLink, "_blank", "noopener,noreferrer")
+  
+  const handleShareX = () => {
+    const text = encodeURIComponent("Check out this conversation")
+    const url = encodeURIComponent(shareLink)
+    window.open(`https://twitter.com/intent/tweet?text=${text}&url=${url}`, "_blank")
+  }
+
+  const handleShareLinkedIn = () => {
+    const url = encodeURIComponent(shareLink)
+    window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${url}`, "_blank")
+  }
+
+  if (isLoading) {
+    return (
+      <div className="p-4">
+        <LoadingSkeleton />
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="rounded-lg border p-4">
-        <div className="flex items-start space-x-2">
-          <Skeleton className="h-4 w-4" />
-          <div className="space-y-2 flex-1">
-              <Skeleton className="h-4 w-3/4" />
-              <Skeleton className="h-4 w-full" />
+    <div className="p-3 space-y-2.5">
+      {/* Toggle Row */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className={cn(
+            "flex items-center justify-center h-7 w-7 rounded-lg shrink-0 transition-all duration-200",
+            isPublic 
+              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" 
+              : "bg-muted text-muted-foreground"
+          )}>
+            {isPublic ? <Globe className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+          </div>
+          <div className="text-left min-w-0">
+            <p className="text-[13px] font-medium leading-tight">
+              {isPublic ? "Public link enabled" : "Enable public link"}
+            </p>
+            <p className="text-[11px] text-muted-foreground leading-tight">
+              {isPublic ? "Anyone with the link can view" : "Only you can access this thread"}
+            </p>
+          </div>
+        </div>
+        <Switch
+          checked={isPublic}
+          onCheckedChange={handleToggle}
+          disabled={updateThreadMutation.isPending}
+          className={cn(
+            "shrink-0",
+            updateThreadMutation.isPending && "opacity-50"
+          )}
+        />
+      </div>
+
+      {/* Link Actions - Visible when public */}
+      {isPublic && (
+        <div className="space-y-2 animate-in fade-in-0 slide-in-from-top-1 duration-150 pt-0.5">
+          {/* Copy URL */}
+          <button
+            onClick={handleCopy}
+            className={cn(
+              "w-full flex items-center gap-2 px-2.5 h-8 rounded-lg transition-all",
+              "bg-muted/50 hover:bg-muted active:scale-[0.99]",
+              copied && "bg-emerald-500/10"
+            )}
+          >
+            <span className="flex-1 text-[11px] text-muted-foreground font-mono truncate text-left">
+              {shareLink.replace(/^https?:\/\//, '')}
+            </span>
+            <div className={cn(
+              "transition-colors shrink-0",
+              copied ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"
+            )}>
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             </div>
+          </button>
+
+          {/* Actions Row */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleOpen}
+              className="flex-1 flex items-center justify-center gap-1.5 h-7 rounded-lg text-[11px] font-medium bg-foreground text-background hover:bg-foreground/90 active:scale-[0.98] transition-all"
+            >
+              <ExternalLink className="h-3 w-3" />
+              Open
+            </button>
+            <button
+              onClick={handleShareX}
+              className="flex items-center justify-center h-7 w-7 rounded-lg border border-border/60 hover:bg-muted transition-colors"
+              title="Share on X"
+            >
+              <XIcon />
+            </button>
+            <button
+              onClick={handleShareLinkedIn}
+              className="flex items-center justify-center h-7 w-7 rounded-lg border border-border/60 hover:bg-muted transition-colors"
+              title="Share on LinkedIn"
+            >
+              <LinkedInIcon />
+            </button>
           </div>
         </div>
-        <div className="space-y-2">
-          <Skeleton className="h-4 w-20" />
-          <div className="flex space-x-2">
-            <Skeleton className="h-9 flex-1" />
-            <Skeleton className="h-9 w-9" />
-          </div>
-        </div>
-        <div className="space-y-3">
-          <Skeleton className="h-4 w-24" />
-          <div className="flex space-x-2">
-            <Skeleton className="h-8 w-20" />
-            <Skeleton className="h-8 w-16" />
-          </div>
-        </div>
-        <Skeleton className="h-9 w-full" />
+      )}
     </div>
   )
 }
 
-export function ShareModal({ isOpen, onClose, threadId, projectId }: ShareModalProps) {
-  const [shareLink, setShareLink] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [isCopying, setIsCopying] = useState(false)
-
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.pointerEvents = "auto"
-    }
-  }, [isOpen])
-
-  const updateThreadMutation = useUpdateThreadMutation()
-
-  const { data: threadData, isLoading: isChecking } = useThreadQuery(threadId || "")
-
-  useEffect(() => {
-    if (threadData?.is_public) {
-      const publicUrl = generateShareLink()
-      setShareLink(publicUrl)
-    } else {
-      setShareLink(null)
-    }
-  }, [threadData])
-
-  const generateShareLink = () => {
-    if (!threadId) return ""
-    return `${process.env.NEXT_PUBLIC_URL || window.location.origin}/share/${threadId}`
-  }
-
-  const createShareLink = async () => {
-    if (!threadId) return
-
-    setIsLoading(true)
-
-    try {
-      await updatePublicStatus(true)
-      const generatedLink = generateShareLink()
-      setShareLink(generatedLink)
-      toast.success("Shareable link created successfully")
-    } catch (error) {
-      console.error("Error creating share link:", error)
-      toast.error("Failed to create shareable link")
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const removeShareLink = async () => {
-    if (!threadId) return
-
-    setIsLoading(true)
-
-    try {
-      await updatePublicStatus(false)
-      setShareLink(null)
-      toast.success("Shareable link removed")
-    } catch (error) {
-      console.error("Error removing share link:", error)
-      toast.error("Failed to remove shareable link")
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const updatePublicStatus = async (isPublic: boolean) => {
-    if (!threadId) return
-    await updateThreadMutation.mutateAsync({
-      threadId,
-      data: { is_public: isPublic },
-    })
-  }
-
-  const copyToClipboard = () => {
-    if (shareLink) {
-      setIsCopying(true)
-      navigator.clipboard.writeText(shareLink)
-      toast.success("Link copied to clipboard")
-      setTimeout(() => {
-        setIsCopying(false)
-      }, 500)
-    }
-  }
-
-  const socialOptions: SocialShareOption[] = [
-    {
-      name: "LinkedIn",
-      icon: (
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-4 w-4">
-          <path
-            fill="currentColor"
-            d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"
-          />
-        </svg>
-      ),
-      onClick: () => {
-        if (shareLink) {
-          window.open(
-            `https://www.linkedin.com/shareArticle?url=${encodeURIComponent(shareLink)}&text=Shared conversation`,
-            "_blank",
-          )
-        }
-      },
-    },
-    {
-      name: "X",
-      icon: (
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-4 w-4">
-          <path
-            fill="currentColor"
-            d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"
-          />
-        </svg>
-      ),
-      onClick: () => {
-        if (shareLink) {
-          window.open(
-            `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareLink)}&text=Shared conversation`,
-            "_blank",
-          )
-        }
-      },
-    },
-  ]
+export function SharePopover({ 
+  threadId, 
+  projectId, 
+  children,
+  side = "bottom",
+  align = "end",
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange
+}: SharePopoverProps) {
+  const [internalOpen, setInternalOpen] = useState(false)
+  
+  // Support both controlled and uncontrolled modes
+  const isControlled = controlledOpen !== undefined
+  const isOpen = isControlled ? controlledOpen : internalOpen
+  const setOpen = isControlled ? (controlledOnOpenChange || (() => {})) : setInternalOpen
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            Share Chat
-          </DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-6">
-          {isChecking ? (
-            <ShareModalSkeleton />
-          ) : shareLink ? (
-            <>
-              <Alert>
-                <Globe className="h-4 w-4" />
-                <AlertDescription>
-                  This chat is publicly accessible. Anyone with the link can view this conversation.
-                </AlertDescription>
-              </Alert>
-
-              <div className="space-y-2">
-                <Label htmlFor="share-link">Share link</Label>
-                <div className="flex space-x-2">
-                  <Input id="share-link" value={shareLink} readOnly className="font-mono text-sm" />
-                  <Button variant="outline" size="icon" onClick={copyToClipboard} disabled={isCopying}>
-                    {isCopying ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                    <span className="sr-only">Copy link</span>
-                  </Button>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <Label>Share on social</Label>
-                <div className="flex space-x-2">
-                  {socialOptions.map((option, index) => (
-                    <Button
-                      key={index}
-                      variant="outline"
-                      size="sm"
-                      onClick={option.onClick}
-                      className="flex items-center"
-                    >
-                      {option.icon}
-                      <span>{option.name}</span>
-                    </Button>
-                  ))}
-                </div>
-              </div>
-              <Button
-                variant="outline"
-                className="w-full text-destructive hover:bg-destructive hover:text-muted"
-                onClick={removeShareLink}
-                disabled={isLoading}
-              >
-                <Link2Off className="h-4 w-4" />
-                {isLoading ? "Removing..." : "Remove link"}
-              </Button>
-            </>
-          ) : (
-            <div className="text-center space-y-4">
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  Create a shareable link that allows others to view this conversation publicly.
-                </p>
-              </div>
-              <Button onClick={createShareLink} disabled={isLoading} className="w-full">
-                {isLoading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    <Link className="h-4 w-4" />
-                    Create shareable link
-                  </>
-                )}
-              </Button>
-            </div>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
+    <Popover open={isOpen} onOpenChange={setOpen}>
+      {children ? (
+        <PopoverTrigger asChild>
+          {children}
+        </PopoverTrigger>
+      ) : (
+        <PopoverAnchor className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+      )}
+      <PopoverContent 
+        side={children ? side : "bottom"} 
+        align={children ? align : "center"} 
+        className="w-[280px] p-0 overflow-hidden"
+        sideOffset={8}
+      >
+        <SharePopoverContent threadId={threadId} isOpen={isOpen} />
+      </PopoverContent>
+    </Popover>
   )
 }

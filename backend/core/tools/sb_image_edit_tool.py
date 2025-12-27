@@ -129,7 +129,7 @@ class SandboxImageEditTool(SandboxToolsBase):
             "type": "function",
             "function": {
                 "name": "image_edit_or_generate",
-                "description": "Generate images or videos with AI. If user uploaded an image, include image_path to use it. Add video_options for video generation.",
+                "description": "Generate images or videos with AI. If user uploaded an image, include image_path to use it. Add video_options for video generation. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `prompt` (REQUIRED), `image_path` (optional), `video_options` (optional), `canvas_path` (optional), `canvas_x` (optional), `canvas_y` (optional).",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -138,24 +138,25 @@ class SandboxImageEditTool(SandboxToolsBase):
                                 {"type": "string"},
                                 {"type": "array", "items": {"type": "string"}}
                             ],
-                            "description": "Text prompt describing the desired output."
+                            "description": "**REQUIRED** - Text prompt describing the desired output. Can be a single string or array of strings for batch generation."
                         },
                         "image_path": {
                             "oneOf": [
                                 {"type": "string"},
                                 {"type": "array", "items": {"type": "string"}}
                             ],
-                            "description": "Path to input image. If user uploaded an image, include that path here to use it.",
+                            "description": "**OPTIONAL** - Path to input image. If user uploaded an image, include that path here to use it. Can be a single string or array of strings for batch editing."
                         },
                         "video_options": {
                             "type": "object",
-                            "description": "Include this to generate VIDEO instead of image. Options: {\"duration\": 5, \"aspect_ratio\": \"16:9\", \"fps\": 24, \"generate_audio\": true, \"camera_fixed\": false, \"last_frame_image\": \"path/to/end.png\"}",
+                            "description": "**OPTIONAL** - Include this to generate VIDEO instead of image. Provide an object with optional properties: duration (number, e.g., 5), aspect_ratio (string, e.g., \"16:9\"), fps (number, e.g., 24), generate_audio (boolean), camera_fixed (boolean), last_frame_image (string path)."
                         },
-                        "canvas_path": {"type": "string", "description": "Optional: Canvas file path to auto-add result."},
-                        "canvas_x": {"type": "number", "description": "Optional: X position on canvas"},
-                        "canvas_y": {"type": "number", "description": "Optional: Y position on canvas"},
+                        "canvas_path": {"type": "string", "description": "**OPTIONAL** - Canvas file path to auto-add result. Example: 'canvases/my-design.kanvax'."},
+                        "canvas_x": {"type": "number", "description": "**OPTIONAL** - X position on canvas in pixels."},
+                        "canvas_y": {"type": "number", "description": "**OPTIONAL** - Y position on canvas in pixels."}
                     },
                     "required": ["prompt"],
+                    "additionalProperties": False
                 },
             },
         }

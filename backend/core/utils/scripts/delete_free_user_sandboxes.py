@@ -71,21 +71,29 @@ def get_sandbox_ids_from_json(json_file: str) -> List[str]:
 
 async def find_project_by_sandbox_id(client, sandbox_id: str) -> Optional[Dict]:
     """
-    Find project that contains the given sandbox_id in its JSONB data.
+    Find project that uses the given sandbox_id via resources table.
     
     Args:
         client: Supabase client
-        sandbox_id: The sandbox ID to search for
+        sandbox_id: The sandbox ID (external_id) to search for
         
     Returns:
         Project row dict if found, None otherwise
     """
     try:
-        # Query projects table for JSONB data containing the sandbox ID
-        # The JSONB structure is like: {"id": "sandbox_id", "pass": "...", ...}
+        from core.resources import ResourceService, ResourceType
+        
+        # Find resource by external_id
+        resource_service = ResourceService(client)
+        resource = await resource_service.get_resource_by_external_id(sandbox_id, ResourceType.SANDBOX)
+        
+        if not resource:
+            return None
+        
+        # Find project that uses this resource
         result = await client.table('projects') \
-            .select('project_id, account_id, sandbox') \
-            .eq('sandbox->>id', sandbox_id) \
+            .select('project_id, account_id') \
+            .eq('sandbox_resource_id', resource['id']) \
             .execute()
         
         if result.data and len(result.data) > 0:

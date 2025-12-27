@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { SpreadsheetComponent } from '@syncfusion/ej2-react-spreadsheet';
 import { registerLicense } from '@syncfusion/ej2-base';
-import { Loader2, FileSpreadsheet, Download, RefreshCw } from 'lucide-react';
+import { Loader2, FileSpreadsheet, Download, RefreshCw, Cloud, CloudOff, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSpreadsheetSync } from './useSpreadsheetSync';
 import { SyncStatusIndicator } from './SyncStatusIndicator';
@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/AuthProvider';
 import { toast } from 'sonner';
 import { useDownloadRestriction } from '@/hooks/billing';
+import { SpreadsheetLoader } from './SpreadsheetLoader';
 
 import '../../../../../node_modules/@syncfusion/ej2-base/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-inputs/styles/material.css';
@@ -22,7 +23,7 @@ import '../../../../../node_modules/@syncfusion/ej2-popups/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-dropdowns/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-grids/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-react-spreadsheet/styles/material.css';
-import { SpreadsheetLoader } from './SpreadsheetLoader';
+
 
 const SYNCFUSION_LICENSE = "Ngo9BigBOggjHTQxAR8/V1JGaF5cXGpCf0x0QHxbf1x2ZFFMYFtbRHZPMyBoS35Rc0RhW3ledHRSRmVeVUx+VEFf";
 const SYNCFUSION_BASE_URL = 'https://ej2services.syncfusion.com/production/web-services/api/spreadsheet';
@@ -149,7 +150,7 @@ export function SpreadsheetViewer({
     enabled: !!resolvedSandboxId && !!resolvedFilePath,
     debounceMs: 1500,
     maxRetries: 3,
-    pollIntervalMs: 5000,
+    pollIntervalMs: 3000,
   });
 
   useEffect(() => {
@@ -235,6 +236,24 @@ export function SpreadsheetViewer({
     }
   }, [isDownloading, onDownloadingChange]);
 
+  const getSyncIcon = () => {
+    switch (syncState.status) {
+      case 'syncing':
+        return <Cloud className="w-3 h-3 text-blue-500 animate-pulse" />;
+      case 'synced':
+        return <Cloud className="w-3 h-3 text-emerald-500" />;
+      case 'offline':
+        return <CloudOff className="w-3 h-3 text-amber-500" />;
+      case 'error':
+      case 'conflict':
+        return <AlertCircle className="w-3 h-3 text-red-500" />;
+      default:
+        return syncState.pendingChanges 
+          ? <Cloud className="w-3 h-3 text-zinc-400" />
+          : <Cloud className="w-3 h-3 text-zinc-400" />;
+    }
+  };
+
   if (!resolvedFilePath) {
     return (
       <div className={cn('w-full h-full flex items-center justify-center', className)}>
@@ -251,7 +270,7 @@ export function SpreadsheetViewer({
     );
   }
 
-  if (syncState.status === 'error' && !isLoading) {
+  if (syncState.status === 'error' && isLoading) {
     return (
       <div className={cn('w-full h-full flex items-center justify-center', className)}>
         <div className="text-center space-y-3">
@@ -288,19 +307,24 @@ export function SpreadsheetViewer({
             <span className="text-sm font-medium text-zinc-900 dark:text-white truncate max-w-[200px]">
               {fileName}
             </span>
-            {syncState.pendingChanges && (
-              <span className="w-2 h-2 rounded-full bg-orange-500 shrink-0" title="Unsaved changes" />
-            )}
+            <div className="flex items-center gap-1">
+              {getSyncIcon()}
+              {syncState.pendingChanges && syncState.status !== 'syncing' && (
+                <span className="text-[10px] text-zinc-500">Saving...</span>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
-            <SyncStatusIndicator
-              status={syncState.status}
-              lastSyncedAt={syncState.lastSyncedAt}
-              pendingChanges={syncState.pendingChanges}
-              errorMessage={syncState.errorMessage}
-              onRefresh={actions.forceRefresh}
-              onResolveConflict={actions.resolveConflict}
-            />
+            {syncState.status === 'conflict' && (
+              <SyncStatusIndicator
+                status={syncState.status}
+                lastSyncedAt={syncState.lastSyncedAt}
+                pendingChanges={syncState.pendingChanges}
+                errorMessage={syncState.errorMessage}
+                onRefresh={actions.forceRefresh}
+                onResolveConflict={actions.resolveConflict}
+              />
+            )}
             {showDownloadButton && (
               <Button
                 variant="ghost"
@@ -321,8 +345,9 @@ export function SpreadsheetViewer({
               variant="ghost"
               size="sm"
               onClick={actions.forceRefresh}
-              disabled={isLoading || syncState.status === 'syncing'}
+              disabled={isLoading}
               className="h-7 px-2"
+              title="Refresh from server"
             >
               <RefreshCw className={cn("w-3 h-3", isLoading && "animate-spin")} />
             </Button>
@@ -372,7 +397,7 @@ export function SpreadsheetViewer({
         {isLoading && (
           <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-sm">
             <SpreadsheetLoader mode="max" />
-            </div>
+          </div>
         )}
       </div>
     </div>

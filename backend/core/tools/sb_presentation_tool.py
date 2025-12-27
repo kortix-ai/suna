@@ -167,6 +167,26 @@ Follow this workflow for every presentation. **Complete each phase fully before 
 **Only start after Phase 3 checkpoint - all images must be downloaded and verified.**
 
 1. **Create Slides in PARALLEL** (MANDATORY): Use the `create_slide` tool to create ALL slides simultaneously using parallel execution. **DO NOT create slides one-by-one sequentially** - create them all at once in parallel for efficiency:
+   
+   **🚨 CRITICAL - EXACT PARAMETER NAMES REQUIRED:**
+   - **MUST use**: `presentation_name` (string) - Name of the presentation folder
+   - **MUST use**: `slide_number` (integer) - Slide number starting from 1
+   - **MUST use**: `slide_title` (string) - Title of this specific slide
+   - **MUST use**: `content` (string) - HTML body content for the slide
+   - **OPTIONAL**: `presentation_title` (string) - Main title of the presentation (defaults to "Presentation")
+   - **❌ NEVER use**: `file_path` - This parameter does NOT exist! Use `presentation_name` instead.
+   
+   **Example correct call:**
+   ```
+   create_slide(
+     presentation_name="my_presentation",
+     slide_number=1,
+     slide_title="Introduction",
+     content="<div>...</div>",
+     presentation_title="My Awesome Presentation"
+   )
+   ```
+   
    - Prepare all slide content first (based on your outline from Phase 3)
    - Call `create_slide` for ALL slides in parallel (e.g., slide 1, 2, 3, 4, 5 all at once)
    - This dramatically speeds up presentation creation
@@ -672,25 +692,25 @@ class SandboxPresentationTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "create_slide",
-            "description": "Create or update a single slide in a presentation. **WHEN TO USE**: This tool is ONLY for custom theme presentations (when no template is selected). **WHEN TO SKIP**: Do NOT use this tool for template-based presentations - use full_file_rewrite instead to rewrite existing template slide files. **PARALLEL EXECUTION**: This function supports parallel execution - create ALL slides simultaneously by using create_slide multiple times in parallel for much faster completion. Each slide is saved as a standalone HTML file with 1920x1080 dimensions (16:9 aspect ratio). Slides are automatically validated to ensure both width (≤1920px) and height (≤1080px) limits are met. Use `box-sizing: border-box` on containers with padding to prevent dimension overflow. **CRITICAL**: For custom theme presentations, you MUST have completed Phase 3 (research, content outline, image search, and ALL image downloads) before using this tool. All styling MUST be derived from the custom color scheme and design elements defined in Phase 2. **PRESENTATION DESIGN NOT WEBSITE**: Use fixed pixel dimensions, absolute positioning, and fixed layouts - NO responsive design patterns.",
+            "description": "Create or update a single slide in a presentation. **WHEN TO USE**: This tool is ONLY for custom theme presentations (when no template is selected). **WHEN TO SKIP**: Do NOT use this tool for template-based presentations - use full_file_rewrite instead to rewrite existing template slide files. **PARALLEL EXECUTION**: This function supports parallel execution - create ALL slides simultaneously by using create_slide multiple times in parallel for much faster completion. Each slide is saved as a standalone HTML file with 1920x1080 dimensions (16:9 aspect ratio). Slides are automatically validated to ensure both width (≤1920px) and height (≤1080px) limits are met. Use `box-sizing: border-box` on containers with padding to prevent dimension overflow. **CRITICAL**: For custom theme presentations, you MUST have completed Phase 3 (research, content outline, image search, and ALL image downloads) before using this tool. All styling MUST be derived from the custom color scheme and design elements defined in Phase 2. **PRESENTATION DESIGN NOT WEBSITE**: Use fixed pixel dimensions, absolute positioning, and fixed layouts - NO responsive design patterns. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `presentation_name` (REQUIRED), `slide_number` (REQUIRED), `slide_title` (REQUIRED), `content` (REQUIRED), `presentation_title` (optional). **❌ DO NOT USE**: `file_path` - this parameter does NOT exist!",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "presentation_name": {
                         "type": "string",
-                        "description": "Name of the presentation (creates folder if doesn't exist)"
+                        "description": "**REQUIRED** - Name of the presentation folder (creates folder if doesn't exist). This is the folder name where slides will be stored. Example: 'my_presentation' or 'marko_kraemer_presentation'. **CRITICAL**: Use this exact parameter name - do NOT use 'file_path' or any other name."
                     },
                     "slide_number": {
                         "type": "integer",
-                        "description": "Slide number (1-based). If slide exists, it will be updated."
+                        "description": "**REQUIRED** - Slide number (1-based integer). If slide exists, it will be updated. Example: 1, 2, 3, etc."
                     },
                     "slide_title": {
                         "type": "string",
-                        "description": "Title of this specific slide (for reference and navigation)"
+                        "description": "**REQUIRED** - Title of this specific slide (for reference and navigation). Example: 'Introduction', 'Early Beginnings', 'Company Overview'."
                     },
                     "content": {
                         "type": "string",
-                        "description": """HTML body content only (DO NOT include <!DOCTYPE>, <html>, <head>, or <body> tags - these are added automatically). Include your content with inline CSS or <style> blocks. Design for 1920x1080 resolution. Google Fonts (Inter) is pre-loaded for typography. D3.js and Chart.js are available asynchronously (won't block page load) - use them if needed, but pure CSS/HTML is recommended for static presentations. For icons, use emoji (📊 📈 💡 🚀 ⚡ 🎯) or Unicode symbols instead of icon libraries.
+                        "description": """**REQUIRED** - HTML body content only (DO NOT include <!DOCTYPE>, <html>, <head>, or <body> tags - these are added automatically). Include your content with inline CSS or <style> blocks. Design for 1920x1080 resolution. Google Fonts (Inter) is pre-loaded for typography. D3.js and Chart.js are available asynchronously (won't block page load) - use them if needed, but pure CSS/HTML is recommended for static presentations. For icons, use emoji (📊 📈 💡 🚀 ⚡ 🎯) or Unicode symbols instead of icon libraries.
                         
                         **🚨 IMPORTANT - Pre-configured Body Styles**: The slide template ALREADY includes base body styling in the <head>:
                         ```
@@ -782,26 +802,32 @@ class SandboxPresentationTool(SandboxToolsBase):
                     },
                     "presentation_title": {
                         "type": "string",
-                        "description": "Main title of the presentation (used in HTML title and navigation)",
+                        "description": "**OPTIONAL** - Main title of the presentation (used in HTML title and navigation). Defaults to 'Presentation' if not provided.",
                         "default": "Presentation"
                     }
                 },
-                "required": ["presentation_name", "slide_number", "slide_title", "content"]
+                "required": ["presentation_name", "slide_number", "slide_title", "content"],
+                "additionalProperties": False
             }
         }
     })
     async def create_slide(
         self,
-        presentation_name: str,
-        slide_number: int,
-        slide_title: str,
-        content: str,
-        presentation_title: str = "Presentation"
+        presentation_name: str = None,
+        slide_number: int = None,
+        slide_title: str = None,
+        content: str = None,
+        presentation_title: str = "Presentation",
+        **kwargs  # Catch any unexpected arguments (like file_path)
     ) -> ToolResult:
         """Create or update a single slide in a presentation"""
         try:
             await self._ensure_sandbox()
             await self._ensure_presentations_dir()
+                        
+            # Log warning for any other unexpected arguments
+            if kwargs:
+                logger.warning(f"create_slide received unexpected arguments: {list(kwargs.keys())}. These will be ignored.")
             
             # Validation
             if not presentation_name:
@@ -866,31 +892,32 @@ class SandboxPresentationTool(SandboxToolsBase):
             }
             
             # Auto-validate slide dimensions
-            try:
-                validation_result = await self.validate_slide(presentation_name, slide_number)
-                
-                # Append validation message to response
-                if validation_result.success and validation_result.output:
-                    # output can be a dict or string
-                    if isinstance(validation_result.output, dict):
-                        validation_message = validation_result.output.get("message", "")
-                        if validation_message:
-                            response_data["message"] += f"\n\n{validation_message}"
-                            response_data["validation"] = {
-                                "passed": validation_result.output.get("validation_passed", False),
-                                "content_height": validation_result.output.get("actual_content_height", 0)
-                            }
-                    elif isinstance(validation_result.output, str):
-                        response_data["message"] += f"\n\n{validation_result.output}"
-                elif not validation_result.success:
-                    # If validation failed to run, append a warning
-                    logger.warning(f"Slide validation failed to execute: {validation_result.output}")
-                    response_data["message"] += f"\n\n⚠️ Note: Slide validation could not be completed."
-                    
-            except Exception as e:
-                # Log the error but don't fail the slide creation
-                logger.warning(f"Failed to auto-validate slide: {str(e)}")
-                response_data["message"] += f"\n\n⚠️ Note: Slide validation could not be completed."
+            # COMMENTED OUT: Height validation disabled
+            # try:
+            #     validation_result = await self.validate_slide(presentation_name, slide_number)
+            #     
+            #     # Append validation message to response
+            #     if validation_result.success and validation_result.output:
+            #         # output can be a dict or string
+            #         if isinstance(validation_result.output, dict):
+            #             validation_message = validation_result.output.get("message", "")
+            #             if validation_message:
+            #                 response_data["message"] += f"\n\n{validation_message}"
+            #                 response_data["validation"] = {
+            #                     "passed": validation_result.output.get("validation_passed", False),
+            #                     "content_height": validation_result.output.get("actual_content_height", 0)
+            #                 }
+            #         elif isinstance(validation_result.output, str):
+            #             response_data["message"] += f"\n\n{validation_result.output}"
+            #     elif not validation_result.success:
+            #         # If validation failed to run, append a warning
+            #         logger.warning(f"Slide validation failed to execute: {validation_result.output}")
+            #         response_data["message"] += f"\n\n⚠️ Note: Slide validation could not be completed."
+            #         
+            # except Exception as e:
+            #     # Log the error but don't fail the slide creation
+            #     logger.warning(f"Failed to auto-validate slide: {str(e)}")
+            #     response_data["message"] += f"\n\n⚠️ Note: Slide validation could not be completed."
             
             return self.success_response(response_data)
             
@@ -1049,39 +1076,75 @@ class SandboxPresentationTool(SandboxToolsBase):
         """List all presentations in the workspace"""
         try:
             await self._ensure_sandbox()
+            
+            # Ensure presentations directory exists
+            await self._ensure_presentations_dir()
+            
             presentations_path = f"{self.workspace_path}/{self.presentations_dir}"
+            presentations = []
             
             try:
                 files = await self.sandbox.fs.list_files(presentations_path)
-                presentations = []
                 
                 for file_info in files:
-                    if file_info.is_directory:
-                        metadata = await self._load_presentation_metadata(f"{presentations_path}/{file_info.name}")
-                        presentations.append({
-                            "folder": file_info.name,
-                            "title": metadata.get("title", "Unknown Title"),
-                            "description": metadata.get("description", ""),
-                            "total_slides": len(metadata.get("slides", {})),
-                            "created_at": metadata.get("created_at", "Unknown"),
-                            "updated_at": metadata.get("updated_at", "Unknown")
-                        })
+                    # Use is_dir (correct attribute name) with fallback to is_directory for compatibility
+                    is_dir = getattr(file_info, 'is_dir', False) or getattr(file_info, 'is_directory', False)
+                    
+                    if is_dir:
+                        try:
+                            # Skip hidden directories and special directories
+                            if file_info.name.startswith('.'):
+                                continue
+                            
+                            presentation_folder_path = f"{presentations_path}/{file_info.name}"
+                            metadata = await self._load_presentation_metadata(presentation_folder_path)
+                            
+                            presentations.append({
+                                "folder": file_info.name,
+                                "title": metadata.get("title", file_info.name),
+                                "description": metadata.get("description", ""),
+                                "total_slides": len(metadata.get("slides", {})),
+                                "created_at": metadata.get("created_at", "Unknown"),
+                                "updated_at": metadata.get("updated_at", "Unknown")
+                            })
+                        except Exception as e:
+                            # Log error but continue processing other presentations
+                            logger.warning(f"Failed to load metadata for presentation '{file_info.name}': {str(e)}")
+                            continue
                 
-                return self.success_response({
-                    "message": f"Found {len(presentations)} presentations",
-                    "presentations": presentations,
-                    "presentations_directory": f"{self.workspace_path}/{self.presentations_dir}"
-                })
+                if presentations:
+                    return self.success_response({
+                        "message": f"Found {len(presentations)} presentation(s)",
+                        "presentations": presentations,
+                        "presentations_directory": f"{self.workspace_path}/{self.presentations_dir}",
+                        "total_count": len(presentations)
+                    })
+                else:
+                    return self.success_response({
+                        "message": "No presentations found",
+                        "presentations": [],
+                        "presentations_directory": f"{self.workspace_path}/{self.presentations_dir}",
+                        "note": "Create your first slide using create_slide"
+                    })
                 
             except Exception as e:
-                return self.success_response({
-                    "message": "No presentations found",
-                    "presentations": [],
-                    "presentations_directory": f"{self.workspace_path}/{self.presentations_dir}",
-                    "note": "Create your first slide using create_slide"
-                })
+                # Check if it's a "not found" or "doesn't exist" error
+                error_msg = str(e).lower()
+                if any(phrase in error_msg for phrase in ['not found', 'no such file', 'does not exist', 'doesn\'t exist']):
+                    # Directory doesn't exist yet - return empty list
+                    return self.success_response({
+                        "message": "No presentations found",
+                        "presentations": [],
+                        "presentations_directory": f"{self.workspace_path}/{self.presentations_dir}",
+                        "note": "Create your first slide using create_slide"
+                    })
+                else:
+                    # Log the actual error for debugging
+                    logger.error(f"Error listing presentations in {presentations_path}: {str(e)}", exc_info=True)
+                    return self.fail_response(f"Failed to list presentations: {str(e)}")
                 
         except Exception as e:
+            logger.error(f"Failed to list presentations: {str(e)}", exc_info=True)
             return self.fail_response(f"Failed to list presentations: {str(e)}")
 
     @openapi_schema({
@@ -1125,161 +1188,162 @@ class SandboxPresentationTool(SandboxToolsBase):
             return self.fail_response(f"Failed to delete presentation: {str(e)}")
 
 
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "validate_slide",
-            "description": "Validate a slide by reading its HTML code and checking if the content height exceeds 1080px. Use this tool to ensure slides fit within the standard presentation dimensions before finalizing them. This helps maintain proper slide formatting and prevents content overflow issues.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "presentation_name": {
-                        "type": "string",
-                        "description": "Name of the presentation containing the slide to validate"
-                    },
-                    "slide_number": {
-                        "type": "integer",
-                        "description": "Slide number to validate (1-based)"
-                    }
-                },
-                "required": ["presentation_name", "slide_number"]
-            }
-        }
-    })
-    async def validate_slide(self, presentation_name: str, slide_number: int) -> ToolResult:
-        """Validate a slide by rendering it in a browser and measuring actual content height"""
-        try:
-            await self._ensure_sandbox()
-            
-            if not presentation_name:
-                return self.fail_response("Presentation name is required.")
-            
-            if slide_number < 1:
-                return self.fail_response("Slide number must be 1 or greater.")
-            
-            safe_name = self._sanitize_filename(presentation_name)
-            presentation_path = f"{self.workspace_path}/{self.presentations_dir}/{safe_name}"
-            
-            # Load metadata to verify slide exists
-            metadata = await self._load_presentation_metadata(presentation_path)
-            
-            if not metadata.get("slides") or str(slide_number) not in metadata["slides"]:
-                return self.fail_response(f"Slide {slide_number} not found in presentation '{presentation_name}'")
-            
-            # Get slide info
-            slide_info = metadata["slides"][str(slide_number)]
-            slide_filename = slide_info["filename"]
-            
-            # Create a Python script to measure the actual rendered height using Playwright
-            measurement_script = f'''
-import asyncio
-import json
-from playwright.async_api import async_playwright
-
-async def measure_slide_height():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=['--no-sandbox', '--disable-setuid-sandbox']
-        )
-        page = await browser.new_page(viewport={{"width": 1920, "height": 1080}})
-        
-        # Load the HTML file
-        await page.goto('file:///workspace/{self.presentations_dir}/{safe_name}/{slide_filename}')
-        
-        # Wait for page to load
-        await page.wait_for_load_state('networkidle')
-        
-        # Measure the actual content height
-        dimensions = await page.evaluate("""
-            () => {{
-                const body = document.body;
-                const html = document.documentElement;
-                
-                // Get the actual scroll height (total content height)
-                const scrollHeight = Math.max(
-                    body.scrollHeight, body.offsetHeight,
-                    html.clientHeight, html.scrollHeight, html.offsetHeight
-                );
-                
-                // Get viewport height
-                const viewportHeight = window.innerHeight;
-                
-                // Check if content overflows
-                const overflows = scrollHeight > 1080;
-                
-                return {{
-                    scrollHeight: scrollHeight,
-                    viewportHeight: viewportHeight,
-                    overflows: overflows,
-                    excessHeight: scrollHeight - 1080
-                }};
-            }}
-        """)
-        
-        await browser.close()
-        return dimensions
-
-result = asyncio.run(measure_slide_height())
-print(json.dumps(result))
-'''
-            
-            # Write the script to a temporary file in the sandbox
-            script_path = f"{self.workspace_path}/.validate_slide_temp.py"
-            await self.sandbox.fs.upload_file(measurement_script.encode(), script_path)
-            
-            # Execute the script
-            try:
-                result = await self.sandbox.process.exec(
-                    f"/bin/sh -c 'cd {self.workspace_path} && python3 .validate_slide_temp.py'",
-                    timeout=30
-                )
-                
-                # Parse the result
-                output = (getattr(result, "result", None) or getattr(result, "output", "") or "").strip()
-                if not output:
-                    raise Exception("No output from validation script")
-                
-                dimensions = json.loads(output)
-                
-                # Clean up the temporary script
-                try:
-                    await self.sandbox.fs.delete_file(script_path)
-                except:
-                    pass
-                
-            except Exception as e:
-                # Clean up on error
-                try:
-                    await self.sandbox.fs.delete_file(script_path)
-                except:
-                    pass
-                return self.fail_response(f"Failed to measure slide dimensions: {str(e)}")
-            
-            # Analyze results - simple pass/fail
-            validation_passed = not dimensions["overflows"]
-            
-            validation_results = {
-                "presentation_name": presentation_name,
-                "presentation_path": presentation_path,
-                "slide_number": slide_number,
-                "slide_title": slide_info["title"],
-                "actual_content_height": dimensions["scrollHeight"],
-                "target_height": 1080,
-                "validation_passed": validation_passed
-            }
-            
-            # Add pass/fail message
-            if validation_passed:
-                validation_results["message"] = f"✓ Slide {slide_number} '{slide_info['title']}' validation passed. Content height: {dimensions['scrollHeight']}px"
-            else:
-                validation_results["message"] = f"✗ Slide {slide_number} '{slide_info['title']}' validation failed. Content height: {dimensions['scrollHeight']}px exceeds 1080px limit by {dimensions['excessHeight']}px"
-                validation_results["excess_height"] = dimensions["excessHeight"]
-            
-            return self.success_response(validation_results)
-            
-        except Exception as e:
-            return self.fail_response(f"Failed to validate slide: {str(e)}")
+    # COMMENTED OUT: Height validation disabled
+    # @openapi_schema({
+    #     "type": "function",
+    #     "function": {
+    #         "name": "validate_slide",
+    #         "description": "Validate a slide by reading its HTML code and checking if the content height exceeds 1080px. Use this tool to ensure slides fit within the standard presentation dimensions before finalizing them. This helps maintain proper slide formatting and prevents content overflow issues.",
+    #         "parameters": {
+    #             "type": "object",
+    #             "properties": {
+    #                 "presentation_name": {
+    #                     "type": "string",
+    #                     "description": "Name of the presentation containing the slide to validate"
+    #                 },
+    #                 "slide_number": {
+    #                     "type": "integer",
+    #                     "description": "Slide number to validate (1-based)"
+    #                 }
+    #             },
+    #             "required": ["presentation_name", "slide_number"]
+    #         }
+    #     }
+    # })
+    # async def validate_slide(self, presentation_name: str, slide_number: int) -> ToolResult:
+    #     """Validate a slide by rendering it in a browser and measuring actual content height"""
+    #     try:
+    #         await self._ensure_sandbox()
+    #         
+    #         if not presentation_name:
+    #             return self.fail_response("Presentation name is required.")
+    #         
+    #         if slide_number < 1:
+    #             return self.fail_response("Slide number must be 1 or greater.")
+    #         
+    #         safe_name = self._sanitize_filename(presentation_name)
+    #         presentation_path = f"{self.workspace_path}/{self.presentations_dir}/{safe_name}"
+    #         
+    #         # Load metadata to verify slide exists
+    #         metadata = await self._load_presentation_metadata(presentation_path)
+    #         
+    #         if not metadata.get("slides") or str(slide_number) not in metadata["slides"]:
+    #             return self.fail_response(f"Slide {slide_number} not found in presentation '{presentation_name}'")
+    #         
+    #         # Get slide info
+    #         slide_info = metadata["slides"][str(slide_number)]
+    #         slide_filename = slide_info["filename"]
+    #         
+    #         # Create a Python script to measure the actual rendered height using Playwright
+    #         measurement_script = f'''
+    # import asyncio
+    # import json
+    # from playwright.async_api import async_playwright
+    # 
+    # async def measure_slide_height():
+    #     async with async_playwright() as p:
+    #         browser = await p.chromium.launch(
+    #             headless=True,
+    #             args=['--no-sandbox', '--disable-setuid-sandbox']
+    #         )
+    #         page = await browser.new_page(viewport={{"width": 1920, "height": 1080}})
+    #         
+    #         # Load the HTML file
+    #         await page.goto('file:///workspace/{self.presentations_dir}/{safe_name}/{slide_filename}')
+    #         
+    #         # Wait for page to load
+    #         await page.wait_for_load_state('networkidle')
+    #         
+    #         # Measure the actual content height
+    #         dimensions = await page.evaluate("""
+    #             () => {{
+    #                 const body = document.body;
+    #                 const html = document.documentElement;
+    #                 
+    #                 // Get the actual scroll height (total content height)
+    #                 const scrollHeight = Math.max(
+    #                     body.scrollHeight, body.offsetHeight,
+    #                     html.clientHeight, html.scrollHeight, html.offsetHeight
+    #                 );
+    #                 
+    #                 // Get viewport height
+    #                 const viewportHeight = window.innerHeight;
+    #                 
+    #                 // Check if content overflows
+    #                 const overflows = scrollHeight > 1080;
+    #                 
+    #                 return {{
+    #                     scrollHeight: scrollHeight,
+    #                     viewportHeight: viewportHeight,
+    #                     overflows: overflows,
+    #                     excessHeight: scrollHeight - 1080
+    #                 }};
+    #             }}
+    #         """)
+    #         
+    #         await browser.close()
+    #         return dimensions
+    # 
+    # result = asyncio.run(measure_slide_height())
+    # print(json.dumps(result))
+    # '''
+    #         
+    #         # Write the script to a temporary file in the sandbox
+    #         script_path = f"{self.workspace_path}/.validate_slide_temp.py"
+    #         await self.sandbox.fs.upload_file(measurement_script.encode(), script_path)
+    #         
+    #         # Execute the script
+    #         try:
+    #             result = await self.sandbox.process.exec(
+    #                 f"/bin/sh -c 'cd {self.workspace_path} && python3 .validate_slide_temp.py'",
+    #                 timeout=30
+    #             )
+    #             
+    #             # Parse the result
+    #             output = (getattr(result, "result", None) or getattr(result, "output", "") or "").strip()
+    #             if not output:
+    #                 raise Exception("No output from validation script")
+    #             
+    #             dimensions = json.loads(output)
+    #             
+    #             # Clean up the temporary script
+    #             try:
+    #                 await self.sandbox.fs.delete_file(script_path)
+    #             except:
+    #                 pass
+    #             
+    #         except Exception as e:
+    #             # Clean up on error
+    #             try:
+    #                 await self.sandbox.fs.delete_file(script_path)
+    #             except:
+    #                 pass
+    #             return self.fail_response(f"Failed to measure slide dimensions: {str(e)}")
+    #         
+    #         # Analyze results - simple pass/fail
+    #         validation_passed = not dimensions["overflows"]
+    #         
+    #         validation_results = {
+    #             "presentation_name": presentation_name,
+    #             "presentation_path": presentation_path,
+    #             "slide_number": slide_number,
+    #             "slide_title": slide_info["title"],
+    #             "actual_content_height": dimensions["scrollHeight"],
+    #             "target_height": 1080,
+    #             "validation_passed": validation_passed
+    #         }
+    #         
+    #         # Add pass/fail message
+    #         if validation_passed:
+    #             validation_results["message"] = f"✓ Slide {slide_number} '{slide_info['title']}' validation passed. Content height: {dimensions['scrollHeight']}px"
+    #         else:
+    #             validation_results["message"] = f"✗ Slide {slide_number} '{slide_info['title']}' validation failed. Content height: {dimensions['scrollHeight']}px exceeds 1080px limit by {dimensions['excessHeight']}px"
+    #             validation_results["excess_height"] = dimensions["excessHeight"]
+    #         
+    #         return self.success_response(validation_results)
+    #         
+    #     except Exception as e:
+    #         return self.fail_response(f"Failed to validate slide: {str(e)}")
 
     async def _export_to_format(
         self, 

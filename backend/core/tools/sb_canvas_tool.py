@@ -157,25 +157,26 @@ class SandboxCanvasTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "create_canvas",
-            "description": "Create a new infinite canvas for image composition and design. Canvas is infinite - no fixed dimensions. Just add images at any position.",
+            "description": "Create a new infinite canvas for image composition and design. Canvas is infinite - no fixed dimensions. Just add images at any position. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `name` (REQUIRED), `description` (optional), `background` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "name": {
                         "type": "string",
-                        "description": "Name for the canvas (will be sanitized for filename). Use descriptive names like 'product-mockup' or 'social-media-banner'."
+                        "description": "**REQUIRED** - Name for the canvas (will be sanitized for filename). Use descriptive names like 'product-mockup' or 'social-media-banner'."
                     },
                     "description": {
                         "type": "string",
-                        "description": "Optional description of the canvas purpose or content"
+                        "description": "**OPTIONAL** - Description of the canvas purpose or content."
                     },
                     "background": {
                         "type": "string",
-                        "description": "Background color in hex format (e.g., '#1a1a1a' for dark, '#ffffff' for white)",
+                        "description": "**OPTIONAL** - Background color in hex format. Example: '#1a1a1a' for dark, '#ffffff' for white. Default: '#1a1a1a'.",
                         "default": "#1a1a1a"
                     }
                 },
-                "required": ["name"]
+                "required": ["name"],
+                "additionalProperties": False
             }
         }
     })
@@ -227,17 +228,17 @@ class SandboxCanvasTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "save_canvas",
-            "description": "Save canvas data with all elements. Used to persist user changes from the canvas editor.",
+            "description": "Save canvas data with all elements. Used to persist user changes from the canvas editor. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `canvas_path` (REQUIRED), `elements` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "canvas_path": {
                         "type": "string",
-                        "description": "Path to the canvas file (e.g., 'canvases/project-mockup.kanvax')"
+                        "description": "**REQUIRED** - Path to the canvas file. Example: 'canvases/project-mockup.kanvax'"
                     },
                     "elements": {
                         "type": "array",
-                        "description": "Array of canvas elements with their properties",
+                        "description": "**REQUIRED** - Array of canvas elements with their properties (id, type, src, x, y, width, height, rotation, scaleX, scaleY, opacity, locked, name).",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -258,7 +259,8 @@ class SandboxCanvasTool(SandboxToolsBase):
                         }
                     }
                 },
-                "required": ["canvas_path", "elements"]
+                "required": ["canvas_path", "elements"],
+                "additionalProperties": False
             }
         }
     })
@@ -302,44 +304,45 @@ class SandboxCanvasTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "add_image_to_canvas",
-            "description": "Add an image element to an existing canvas. Image can be from designs folder or any workspace path.",
+            "description": "Add an image element to an existing canvas. Image can be from designs folder or any workspace path. **⚠️ IMPORTANT**: NEVER call this function in parallel - causes race conditions! Call ONE AT A TIME. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `canvas_path` (REQUIRED), `image_path` (REQUIRED), `x` (optional), `y` (optional), `width` (optional), `height` (optional), `name` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "canvas_path": {
                         "type": "string",
-                        "description": "Path to the canvas file (e.g., 'canvases/project-mockup.kanvax')"
+                        "description": "**REQUIRED** - Path to the canvas file. Example: 'canvases/project-mockup.kanvax'"
                     },
                     "image_path": {
                         "type": "string",
-                        "description": "Path to the image file relative to workspace (e.g., 'designs/logo.png')"
+                        "description": "**REQUIRED** - Path to the image file relative to workspace. Example: 'designs/logo.png'"
                     },
                     "x": {
                         "type": "number",
-                        "description": "X position on canvas in pixels",
+                        "description": "**OPTIONAL** - X position on canvas in pixels. Default: 100.",
                         "default": 100
                     },
                     "y": {
                         "type": "number",
-                        "description": "Y position on canvas in pixels",
+                        "description": "**OPTIONAL** - Y position on canvas in pixels. Default: 100.",
                         "default": 100
                     },
                     "width": {
                         "type": "number",
-                        "description": "Width of the image in pixels (optional, uses original size if not specified)",
+                        "description": "**OPTIONAL** - Width of the image in pixels. Uses original size if not specified. Minimum: 1.",
                         "minimum": 1
                     },
                     "height": {
                         "type": "number",
-                        "description": "Height of the image in pixels (optional, uses original size if not specified)",
+                        "description": "**OPTIONAL** - Height of the image in pixels. Uses original size if not specified. Minimum: 1.",
                         "minimum": 1
                     },
                     "name": {
                         "type": "string",
-                        "description": "Optional name for the element (defaults to image filename)"
+                        "description": "**OPTIONAL** - Name for the element. Defaults to image filename if not provided."
                     }
                 },
-                "required": ["canvas_path", "image_path"]
+                "required": ["canvas_path", "image_path"],
+                "additionalProperties": False
             }
         }
     })
@@ -503,16 +506,17 @@ class SandboxCanvasTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "list_canvas_elements",
-            "description": "List all elements in a canvas with their properties",
+            "description": "List all elements in a canvas with their properties. **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `canvas_path` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "canvas_path": {
                         "type": "string",
-                        "description": "Path to the canvas file (e.g., 'canvases/project-mockup.kanvax')"
+                        "description": "**REQUIRED** - Path to the canvas file. Example: 'canvases/project-mockup.kanvax'"
                     }
                 },
-                "required": ["canvas_path"]
+                "required": ["canvas_path"],
+                "additionalProperties": False
             }
         }
     })
@@ -566,28 +570,29 @@ class SandboxCanvasTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "update_canvas_element",
-            "description": "Update properties of a canvas element (position, size, rotation, etc.)",
+            "description": "Update properties of a canvas element (position, size, rotation, etc.). **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `canvas_path` (REQUIRED), `element_id` (REQUIRED), `x` (optional), `y` (optional), `width` (optional), `height` (optional), `rotation` (optional), `opacity` (optional), `locked` (optional), `name` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "canvas_path": {
                         "type": "string",
-                        "description": "Path to the canvas file"
+                        "description": "**REQUIRED** - Path to the canvas file. Example: 'canvases/project-mockup.kanvax'"
                     },
                     "element_id": {
                         "type": "string",
-                        "description": "ID of the element to update"
+                        "description": "**REQUIRED** - ID of the element to update."
                     },
-                    "x": {"type": "number", "description": "New X position"},
-                    "y": {"type": "number", "description": "New Y position"},
-                    "width": {"type": "number", "description": "New width"},
-                    "height": {"type": "number", "description": "New height"},
-                    "rotation": {"type": "number", "description": "Rotation in degrees"},
-                    "opacity": {"type": "number", "description": "Opacity (0-1)", "minimum": 0, "maximum": 1},
-                    "locked": {"type": "boolean", "description": "Lock element to prevent changes"},
-                    "name": {"type": "string", "description": "Element name"}
+                    "x": {"type": "number", "description": "**OPTIONAL** - New X position in pixels."},
+                    "y": {"type": "number", "description": "**OPTIONAL** - New Y position in pixels."},
+                    "width": {"type": "number", "description": "**OPTIONAL** - New width in pixels."},
+                    "height": {"type": "number", "description": "**OPTIONAL** - New height in pixels."},
+                    "rotation": {"type": "number", "description": "**OPTIONAL** - Rotation in degrees."},
+                    "opacity": {"type": "number", "description": "**OPTIONAL** - Opacity value between 0 and 1. Minimum: 0, Maximum: 1.", "minimum": 0, "maximum": 1},
+                    "locked": {"type": "boolean", "description": "**OPTIONAL** - Lock element to prevent changes."},
+                    "name": {"type": "string", "description": "**OPTIONAL** - Element name."}
                 },
-                "required": ["canvas_path", "element_id"]
+                "required": ["canvas_path", "element_id"],
+                "additionalProperties": False
             }
         }
     })
@@ -644,20 +649,21 @@ class SandboxCanvasTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "remove_canvas_element",
-            "description": "Remove an element from the canvas",
+            "description": "Remove an element from the canvas. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `canvas_path` (REQUIRED), `element_id` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "canvas_path": {
                         "type": "string",
-                        "description": "Path to the canvas file"
+                        "description": "**REQUIRED** - Path to the canvas file. Example: 'canvases/project-mockup.kanvax'"
                     },
                     "element_id": {
                         "type": "string",
-                        "description": "ID of the element to remove"
+                        "description": "**REQUIRED** - ID of the element to remove."
                     }
                 },
-                "required": ["canvas_path", "element_id"]
+                "required": ["canvas_path", "element_id"],
+                "additionalProperties": False
             }
         }
     })

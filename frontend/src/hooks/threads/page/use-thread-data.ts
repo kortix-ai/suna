@@ -241,7 +241,8 @@ export function useThreadData(
     projectQuery.data,
     messagesQuery.data,
     agentRunsQuery.data,
-    isShared
+    isShared,
+    messages
   ]);
 
   // Force message reload when new data arrives (but not via polling)

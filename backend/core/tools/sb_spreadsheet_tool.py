@@ -97,9 +97,9 @@ Create interactive Excel (.xlsx) files that users can view, edit, and download. 
        sheet_name="Q1 Sales",
        headers=["Product", "Revenue", "Profit", "Margin %"],
        rows=[
-           ["Product A", 50000, 15000, 30],
-           ["Product B", 75000, 22500, 30],
-           ["Total", "=SUM(B2:B3)", "=SUM(C2:C3)", "=C4/B4*100"]
+           ["Product A", 50000, 15000, "=IFERROR(C2/B2*100,0)"],
+           ["Product B", 75000, 22500, "=IFERROR(C3/B3*100,0)"],
+           ["Total", "=SUM(B2:B3)", "=SUM(C2:C3)", "=IFERROR(C4/B4*100,0)"]
        ]
    )
    ```
@@ -201,12 +201,28 @@ rows=[
 ]
 ```
 
+**⚠️ CRITICAL - PREVENTING #DIV/0! ERRORS:**
+- ALWAYS wrap division formulas with IFERROR to handle divide-by-zero
+- Use: =IFERROR(A1/B1, 0) instead of =A1/B1
+- For percentage: =IFERROR(C4/B4*100, 0) instead of =C4/B4*100
+
+**Example with safe division:**
+```
+headers=["Product", "Revenue", "Cost", "Margin %"],
+rows=[
+    ["Product A", 50000, 35000, "=IFERROR(C2/B2*100,0)"],
+    ["Product B", 75000, 45000, "=IFERROR(C3/B3*100,0)"],
+    ["Total", "=SUM(B2:B3)", "=SUM(C2:C3)", "=IFERROR(C4/B4*100,0)"]
+]
+```
+
 **BEST PRACTICES:**
 - Count your data rows carefully before writing formulas
 - Total/summary formulas should be in the LAST row
 - Formula ranges should end at the row BEFORE the formula row
 - Use explicit values instead of formulas when unsure
 - Test mentally: "Does this formula reference its own cell?" → If yes, FIX IT
+- ALWAYS use IFERROR() around any division to prevent #DIV/0! errors
 """
 )
 class SandboxSpreadsheetTool(SandboxToolsBase):
@@ -220,6 +236,23 @@ class SandboxSpreadsheetTool(SandboxToolsBase):
             await self.sandbox.fs.get_file_info(SPREADSHEET_DIR)
         except Exception:
             await self.sandbox.fs.create_folder(SPREADSHEET_DIR, "755")
+
+    def _wrap_division_with_iferror(self, rows: List[List[Any]]) -> List[List[Any]]:
+        fixed_rows = []
+        for row_data in rows:
+            fixed_row = []
+            for value in row_data:
+                if isinstance(value, str) and value.startswith('='):
+                    formula = value
+                    if '/' in formula and 'IFERROR' not in formula.upper():
+                        inner = formula[1:]
+                        formula = f'=IFERROR({inner},0)'
+                        logger.info(f"Wrapped division formula with IFERROR: {value} -> {formula}")
+                    fixed_row.append(formula)
+                else:
+                    fixed_row.append(value)
+            fixed_rows.append(fixed_row)
+        return fixed_rows
 
     def _fix_circular_references(self, rows: List[List[Any]], headers: List[str]) -> List[List[Any]]:
         fixed_rows = []
@@ -342,15 +375,17 @@ class SandboxSpreadsheetTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "spreadsheet_create",
-            "required": ["file_path", "headers", "rows"],
+            "description": "Create a new Excel spreadsheet file with headers and rows. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `file_path` (REQUIRED), `headers` (REQUIRED), `rows` (REQUIRED), `sheet_name` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "file_path": {"type": "string"},
-                    "sheet_name": {"type": "string"},
-                    "headers": {"type": "array", "items": {"type": "string"}},
-                    "rows": {"type": "array", "items": {"type": "array"}}
-                }
+                    "file_path": {"type": "string", "description": "**REQUIRED** - Path to the Excel file to create, relative to /workspace. Example: 'data/report.xlsx'"},
+                    "sheet_name": {"type": "string", "description": "**OPTIONAL** - Name for the sheet. Default: 'Sheet1'."},
+                    "headers": {"type": "array", "items": {"type": "string"}, "description": "**REQUIRED** - Array of header strings for the first row. Example: ['Name', 'Age', 'City']"},
+                    "rows": {"type": "array", "items": {"type": "array"}, "description": "**REQUIRED** - Array of rows, where each row is an array of cell values. Example: [['John', 25, 'NYC'], ['Jane', 30, 'LA']]"}
+                },
+                "required": ["file_path", "headers", "rows"],
+                "additionalProperties": False
             }
         }
     })
@@ -362,6 +397,8 @@ class SandboxSpreadsheetTool(SandboxToolsBase):
         sheet_name: str = "Sheet1"
     ) -> ToolResult:
         await self._ensure_dir()
+        
+        rows = self._wrap_division_with_iferror(rows)
         
         is_valid, error_msg = validate_formula_references(rows, headers, start_row=2)
         if not is_valid:
@@ -423,16 +460,17 @@ print('SUCCESS')
         "type": "function",
         "function": {
             "name": "spreadsheet_add_sheet",
-            "description": "Add a new sheet to an existing Excel file. Use this instead of spreadsheet_create when adding sheets to existing files.",
-            "required": ["file_path", "sheet_name", "headers", "rows"],
+            "description": "Add a new sheet to an existing Excel file. Use this instead of spreadsheet_create when adding sheets to existing files. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `file_path` (REQUIRED), `sheet_name` (REQUIRED), `headers` (REQUIRED), `rows` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "file_path": {"type": "string", "description": "Full path to existing Excel file"},
-                    "sheet_name": {"type": "string", "description": "Name for the new sheet"},
-                    "headers": {"type": "array", "items": {"type": "string"}},
-                    "rows": {"type": "array", "items": {"type": "array"}}
-                }
+                    "file_path": {"type": "string", "description": "**REQUIRED** - Full path to existing Excel file. Example: 'data/report.xlsx'"},
+                    "sheet_name": {"type": "string", "description": "**REQUIRED** - Name for the new sheet. Example: 'Q2 Data'"},
+                    "headers": {"type": "array", "items": {"type": "string"}, "description": "**REQUIRED** - Array of header strings for the first row. Example: ['Product', 'Sales', 'Revenue']"},
+                    "rows": {"type": "array", "items": {"type": "array"}, "description": "**REQUIRED** - Array of rows, where each row is an array of cell values. Example: [['Widget A', 100, 5000], ['Widget B', 200, 10000]]"}
+                },
+                "required": ["file_path", "sheet_name", "headers", "rows"],
+                "additionalProperties": False
             }
         }
     })
@@ -443,6 +481,8 @@ print('SUCCESS')
         headers: List[str],
         rows: List[List[Any]]
     ) -> ToolResult:
+        rows = self._wrap_division_with_iferror(rows)
+        
         is_valid, error_msg = validate_formula_references(rows, headers, start_row=2)
         if not is_valid:
             logger.error(f"Formula validation failed: {error_msg}")
@@ -502,28 +542,31 @@ except Exception as e:
         "type": "function",
         "function": {
             "name": "spreadsheet_batch_update",
-            "required": ["file_path", "requests"],
+            "description": "Batch update multiple cells, formats, or add rows/sheets to an Excel file in a single operation. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `file_path` (REQUIRED), `requests` (REQUIRED), `sheet_name` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "file_path": {"type": "string"},
-                    "sheet_name": {"type": "string", "description": "Optional: specify which sheet to update (defaults to active sheet)"},
+                    "file_path": {"type": "string", "description": "**REQUIRED** - Path to the Excel file to update. Example: 'data/report.xlsx'"},
+                    "sheet_name": {"type": "string", "description": "**OPTIONAL** - Specify which sheet to update. Defaults to active sheet."},
                     "requests": {
                         "type": "array",
+                        "description": "**REQUIRED** - Array of update requests. Each request must have a 'type' field: 'update_cell', 'format_cells', 'add_rows', or 'add_sheet'.",
                         "items": {
                             "type": "object",
                             "properties": {
                                 "type": {
                                     "type": "string",
-                                    "enum": ["update_cell", "format_cells", "add_rows", "add_sheet"]
+                                    "enum": ["update_cell", "format_cells", "add_rows", "add_sheet"],
+                                    "description": "Type of update operation."
                                 },
-                                "cell": {"type": "string"},
-                                "value": {"type": "string"},
-                                "range": {"type": "string"},
-                                "sheet_name": {"type": "string"},
-                                "headers": {"type": "array", "items": {"type": "string"}},
+                                "cell": {"type": "string", "description": "Cell reference (e.g., 'A1') for update_cell operations."},
+                                "value": {"type": "string", "description": "Value to set in the cell."},
+                                "range": {"type": "string", "description": "Cell range (e.g., 'A1:B10') for format_cells operations."},
+                                "sheet_name": {"type": "string", "description": "Sheet name for add_sheet operations."},
+                                "headers": {"type": "array", "items": {"type": "string"}, "description": "Headers array for add_rows or add_sheet operations."},
                                 "style": {
                                     "type": "object",
+                                    "description": "Style object for format_cells operations.",
                                     "properties": {
                                         "background_color": {"type": "string"},
                                         "text_color": {"type": "string"},
@@ -535,13 +578,16 @@ except Exception as e:
                                 },
                                 "rows": {
                                     "type": "array",
-                                    "items": {"type": "array"}
+                                    "items": {"type": "array"},
+                                    "description": "Rows array for add_rows operations."
                                 }
                             },
                             "required": ["type"]
                         }
                     }
-                }
+                },
+                "required": ["file_path", "requests"],
+                "additionalProperties": False
             }
         }
     })
@@ -551,6 +597,16 @@ except Exception as e:
         requests: List[Dict[str, Any]],
         sheet_name: str = None
     ) -> ToolResult:
+        for req in requests:
+            if req.get('type') == 'add_rows' and 'rows' in req:
+                req['rows'] = self._wrap_division_with_iferror(req['rows'])
+            elif req.get('type') == 'add_sheet' and 'rows' in req:
+                req['rows'] = self._wrap_division_with_iferror(req['rows'])
+            elif req.get('type') == 'update_cell' and 'value' in req:
+                value = req['value']
+                if isinstance(value, str) and value.startswith('=') and '/' in value and 'IFERROR' not in value.upper():
+                    inner = value[1:]
+                    req['value'] = f'=IFERROR({inner},0)'
         
         python_code = f"""
 import openpyxl

@@ -348,20 +348,21 @@ For images (jpg, png, gif, webp, svg), use load_image instead.
 Single file: use read_file with file_path "uploads/document.pdf"
 Batch mode: use read_file with file_paths parameter containing multiple file paths
 
-Batch mode reads up to 20 files concurrently - much faster for multiple files!""",
+Batch mode reads up to 20 files concurrently - much faster for multiple files! **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `file_path` (optional, single file), `file_paths` (optional, batch mode). Use ONE of these, not both.""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "Single file path within /workspace (e.g., 'uploads/document.pdf'). Use this OR file_paths, not both."
+                        "description": "**OPTIONAL** - Single file path within /workspace. Example: 'uploads/document.pdf'. Use this OR file_paths, not both."
                     },
                     "file_paths": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Array of file paths to read concurrently (e.g., ['uploads/doc1.pdf', 'uploads/doc2.csv']). Max 20 files per batch."
+                        "description": "**OPTIONAL** - Array of file paths to read concurrently. Example: ['uploads/doc1.pdf', 'uploads/doc2.csv']. Max 20 files per batch. Use this OR file_path, not both."
                     }
-                }
+                },
+                "additionalProperties": False
             }
         }
     })
@@ -422,8 +423,9 @@ Use this instead of read_file for:
 - Multiple files where you need to find something
 
 Examples:
-- search_file(file_path="uploads/contract.pdf", query="termination clause")
-- search_file(file_paths=["uploads/doc1.pdf", "uploads/doc2.pdf"], query="payment terms")""",
+- Use search_file with file_path "uploads/contract.pdf" and query "termination clause"
+- Use search_file with file_paths containing multiple file paths and query "payment terms"
+""",
             "parameters": {
                 "type": "object",
                 "properties": {

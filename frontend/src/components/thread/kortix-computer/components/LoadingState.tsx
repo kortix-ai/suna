@@ -51,9 +51,7 @@ export const LoadingState = memo(function LoadingState({
               <PanelHeader
                 agentName={agentName}
                 onClose={onClose}
-                onMinimize={onClose}
                 onMaximize={() => {}}
-                showMinimize={true}
                 currentView={activeView}
                 onViewChange={setActiveView}
               />
