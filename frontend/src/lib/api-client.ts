@@ -284,4 +284,17 @@ export const backendApi = {
       headers: uploadHeaders,
     });
   },
+
+  uploadPut: <T = any>(endpoint: string, formData: FormData, options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>) => {
+    const { headers, ...restOptions } = options || {};
+    const uploadHeaders = { ...headers as Record<string, string> };
+    delete uploadHeaders['Content-Type'];
+
+    return makeRequest<T>(`${API_URL}${endpoint}`, {
+      ...restOptions,
+      method: 'PUT',
+      body: formData,
+      headers: uploadHeaders,
+    });
+  },
 }; 

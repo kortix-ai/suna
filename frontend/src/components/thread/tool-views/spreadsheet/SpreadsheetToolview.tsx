@@ -5,8 +5,10 @@ import { getToolTitle } from '../utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, Loader2, RefreshCw, Save } from 'lucide-react';
 import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
-import { getSandboxFileContent, createSandboxFileJson } from '@/lib/api/sandbox';
+import { getSandboxFileContent } from '@/lib/api/sandbox';
 import { Button } from '@/components/ui/button';
+import { backendApi } from '@/lib/api-client';
+import { SpreadsheetLoader } from './SpreadsheetLoader';
 
 import '../../../../../node_modules/@syncfusion/ej2-base/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-inputs/styles/material.css';
@@ -19,110 +21,10 @@ import '../../../../../node_modules/@syncfusion/ej2-dropdowns/styles/material.cs
 import '../../../../../node_modules/@syncfusion/ej2-grids/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-react-spreadsheet/styles/material.css';
 
+
 registerLicense(
     "Ngo9BigBOggjHTQxAR8/V1JGaF5cXGpCf0x0QHxbf1x2ZFFMYFtbRHZPMyBoS35Rc0RhW3ledHRSRmVeVUx+VEFf"
 );
-
-interface SpreadsheetJsonData {
-  version: string;
-  sheets: Array<{
-    name: string;
-    rows?: Array<{
-      cells: Array<{
-        value?: string;
-        formula?: string;
-        style?: Record<string, any>;
-      }>;
-    }>;
-    columns?: Array<{ width: number }>;
-    rowCount?: number;
-    colCount?: number;
-  }>;
-  activeSheet: number;
-}
-
-
-function convertJsonToSyncfusionSheets(data: SpreadsheetJsonData): any[] {
-    if (!data?.sheets?.length) return createEmptySheet();
-  
-    return data.sheets.map(sheet => {
-      const rows = (sheet.rows || []).map(row => ({
-        cells: (row.cells || []).map(cell => {
-          const out: any = {};
-  
-          if (cell.formula) {
-            out.value = cell.formula;
-          } else if (cell.value !== undefined) {
-            out.value = cell.value;
-          }
-  
-          if (cell.style) out.style = cell.style;
-  
-          return out;
-        })
-      }));
-  
-      let maxCol = 0;
-      rows.forEach(r => maxCol = Math.max(maxCol, r.cells.length));
-  
-      return {
-        name: sheet.name || 'Sheet1',
-        rows,
-        columns: sheet.columns || Array.from({ length: maxCol || 8 }, () => ({ width: 100 })),
-        usedRange: {
-          rowIndex: rows.length - 1,
-          colIndex: Math.max(maxCol - 1, 0)
-        }
-      };
-    });
-  }
-  
-
-function createEmptySheet() {
-  return [{
-    name: 'Sheet1',
-    rows: [],
-    columns: [
-      { width: 100 }, { width: 100 }, { width: 100 }, { width: 100 },
-      { width: 100 }, { width: 100 }, { width: 100 }, { width: 100 }
-    ],
-    rowCount: 100,
-    colCount: 26
-  }];
-}
-
-function buildSheetsFromArguments(args: Record<string, any>): any[] | null {
-  if (!args) return null;
-  
-  const headers = args.headers as string[] | undefined;
-  const rows = args.rows as any[][] | undefined;
-  
-  if (headers && rows) {
-    const allRows: any[] = [];
-    allRows.push({
-      cells: headers.map(h => ({ 
-        value: String(h ?? ''), 
-        style: { fontWeight: 'bold', backgroundColor: '#1F4E79', color: '#FFFFFF' } 
-      }))
-    });
-    for (const row of rows) {
-      allRows.push({
-        cells: (row || []).map(cell => ({ value: String(cell ?? '') }))
-      });
-    }
-    
-    const columns = headers.map(() => ({ width: 100 }));
-    return [{
-      name: args.sheet_name || 'Sheet1',
-      rows: allRows,
-      columns,
-      rowCount: Math.max(allRows.length + 50, 100),
-      colCount: Math.max(headers.length + 5, 26)
-    }];
-  }
-  
-  return null;
-}
 
 export function SpreadsheetToolView({
   toolCall,
@@ -134,15 +36,13 @@ export function SpreadsheetToolView({
   project,
 }: ToolViewProps) {
   const ssRef = useRef<SpreadsheetComponent>(null);
-  const [sheets, setSheets] = useState<any[]>(createEmptySheet());
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState<number>(Date.now());
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [dataSource, setDataSource] = useState<'streaming' | 'file'>('streaming');
+  const [isComponentReady, setIsComponentReady] = useState(false);
   
   const sandboxId = project?.sandbox?.id;
-
+ 
   const filePath = useMemo(() => {
     if (toolResult?.output) {
       try {
@@ -160,165 +60,172 @@ export function SpreadsheetToolView({
     return null;
   }, [toolCall, toolResult]);
 
-  const streamingSheets = useMemo(() => {
-    if (!toolCall?.arguments) return null;
-    return buildSheetsFromArguments(toolCall.arguments);
-  }, [toolCall?.arguments]);
-
   const loadSpreadsheetData = useCallback(async (): Promise<boolean> => {
-    if (!sandboxId || !filePath) return false;
+    if (!sandboxId || !filePath) {
+      console.warn('[Spreadsheet] Missing sandboxId or filePath:', { sandboxId, filePath });
+      return false;
+    }
 
     setIsLoading(true);
+    console.log('[Spreadsheet] Starting load...', { sandboxId, filePath });
 
     try {
       const content = await getSandboxFileContent(sandboxId, filePath);
-      let jsonData: SpreadsheetJsonData;
-      if (typeof content === 'string') {
-        jsonData = JSON.parse(content);
-      } else if (content instanceof Blob) {
-        const text = await content.text();
-        jsonData = JSON.parse(text);
+      console.log('[Spreadsheet] Content received:', {
+        type: content?.constructor?.name,
+        isBlob: content instanceof Blob,
+        size: content instanceof Blob ? content.size : (typeof content === 'string' ? content.length : 'unknown')
+      });
+      
+      const fileName = filePath.split('/').pop() || 'spreadsheet.xlsx';
+      const fileExt = fileName.split('.').pop()?.toLowerCase();
+      
+      let mimeType = 'application/octet-stream';
+      if (fileExt === 'xlsx') {
+        mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      } else if (fileExt === 'xls') {
+        mimeType = 'application/vnd.ms-excel';
+      } else if (fileExt === 'csv') {
+        mimeType = 'text/csv';
+      }
+      
+      console.log('[Spreadsheet] File info:', { fileName, fileExt, mimeType });
+      
+      let fileBlob: Blob;
+      if (content instanceof Blob) {
+        console.log('[Spreadsheet] Content is Blob, recreating with correct MIME type');
+        fileBlob = new Blob([content], { type: mimeType });
+      } else if (typeof content === 'string') {
+        console.log('[Spreadsheet] Content is string, creating Blob');
+        fileBlob = new Blob([content], { type: mimeType });
       } else {
-        jsonData = content as SpreadsheetJsonData;
+        console.log('[Spreadsheet] Content is object, stringifying');
+        fileBlob = new Blob([JSON.stringify(content)], { type: mimeType });
+      }
+
+      const file = new File([fileBlob], fileName, { type: mimeType });
+      console.log('[Spreadsheet] File created:', { 
+        name: file.name, 
+        type: file.type, 
+        size: file.size
+      });
+      
+      if (!ssRef.current) {
+        console.error('[Spreadsheet] ssRef.current is null!');
+        return false;
+      }
+
+      console.log('[Spreadsheet] Calling open() on Syncfusion component...');
+      try {
+        ssRef.current.open({ file: file });
+        console.log('[Spreadsheet] ✅ open() call initiated');
+      } catch (openError) {
+        console.error('[Spreadsheet] ❌ Error in open():', openError);
+        throw openError;
       }
       
-      const syncfusionSheets = convertJsonToSyncfusionSheets(jsonData);
-      setSheets(syncfusionSheets);
-      setDataSource('file');
-      setLastUpdate(Date.now());
-      
-      if (ssRef.current) {
-        try {
-            ssRef.current.openFromJson({
-                file: {
-                    sheets: syncfusionSheets,
-                    activeSheetIndex: 0
-                }
-            });
-        } catch (e) {
-          console.warn('[Spreadsheet] openFromJson failed, using refresh:', e);
-          try {
-            ssRef.current.sheets = syncfusionSheets;
-            ssRef.current.refresh();
-          } catch (e2) {}
-        }
-      }
       return true;
     } catch (e: any) {
       const errorMsg = e?.message || String(e);
-      const isNotFound = errorMsg.includes('not found') || 
-                         errorMsg.includes('404') || 
-                         errorMsg.includes('No such file') ||
-                         errorMsg.includes('does not exist');
-      if (!isNotFound) {
-        console.warn('Spreadsheet load error:', errorMsg);
-      }
-      return false;
-    } finally {
+      console.error('[Spreadsheet] Load error:', errorMsg);
       setIsLoading(false);
+      return false;
     }
   }, [sandboxId, filePath]);
 
   useEffect(() => {
-    if (sandboxId && filePath) {
+    if (sandboxId && filePath && !isStreaming && isComponentReady && !isLoading) {
+      console.log('[Spreadsheet] Loading file...');
       loadSpreadsheetData();
     }
-  }, [sandboxId, filePath]);
+  }, [sandboxId, filePath, isStreaming, isComponentReady]);
 
-  useEffect(() => {
-    if (isStreaming && streamingSheets) {
-      setSheets(streamingSheets);
-      setDataSource('streaming');
-      setLastUpdate(Date.now());
+  const handleSave = useCallback(() => {
+    if (!ssRef.current) {
+      console.warn('[Spreadsheet] Cannot save - ref is null');
+      return;
     }
-  }, [streamingSheets]);
-
-  const prevIsStreamingRef = useRef(isStreaming);
-  useEffect(() => {
-    const wasStreaming = prevIsStreamingRef.current;
-    prevIsStreamingRef.current = isStreaming;
     
-    if (wasStreaming && !isStreaming && sandboxId) {
-      setTimeout(() => loadSpreadsheetData(), 500);
+    if (!sandboxId || !filePath) {
+      console.error('[Spreadsheet] Missing sandboxId or filePath');
+      return;
     }
-  }, [isStreaming, sandboxId, loadSpreadsheetData]);
-
-  const handleSave = useCallback(async () => {
-    if (!sandboxId || !ssRef.current || !filePath) return;
+    
+    const fileExt = filePath.split('.').pop()?.toLowerCase();
+    const saveType = fileExt === 'csv' ? 'Csv' : 'Xlsx';
+    const fileName = filePath.split('/').pop() || 'spreadsheet.xlsx';
+    
+    console.log('[Spreadsheet] Ending edit mode and triggering save...', { filePath, saveType });
+    
+    ssRef.current.endEdit();
     
     setIsSaving(true);
+    
+    ssRef.current.save({
+      saveType: saveType,
+      fileName: fileName,
+    });
+  }, [filePath, sandboxId]);
+
+  const handleBeforeSave = useCallback((args: any) => {
+    console.log('[Spreadsheet] beforeSave triggered', args);
+    args.needBlobData = true;
+    args.isFullPost = false;
+  }, []);
+
+  const handleSaveComplete = useCallback(async (args: any) => {
+    console.log('[Spreadsheet] saveComplete triggered', args);
+    
+    if (!sandboxId || !filePath) {
+      console.error('[Spreadsheet] Missing sandboxId or filePath in saveComplete');
+      setIsSaving(false);
+      return;
+    }
+    
     try {
-      const spreadsheet = ssRef.current;
-      const sheetsData: SpreadsheetJsonData = {
-        version: "1.0",
-        sheets: [],
-        activeSheet: 0
-      };
-
-      const sheetCount = spreadsheet.sheets?.length || 1;
+      const blob = args?.blobData;
+      console.log('[Spreadsheet] Blob received:', { 
+        hasBlobData: !!args?.blobData,
+        blobType: blob?.type,
+        blobSize: blob?.size 
+      });
       
-      for (let sheetIdx = 0; sheetIdx < sheetCount; sheetIdx++) {
-        const sheetModel = spreadsheet.sheets?.[sheetIdx];
-        const rows: Array<{ cells: Array<{ value?: string; formula?: string; style?: any }> }> = [];
-        
-        if (sheetModel?.rows) {
-            sheetModel.rows.forEach((row: any) => {
-                const cellsArr: any[] = [];
-              
-                (row.cells || []).forEach((cell: any) => {
-                  if (!cell) {
-                    cellsArr.push({});
-                    return;
-                  }
-                  if (typeof cell.value === 'string' && cell.value.startsWith('=')) {
-                    cellsArr.push({
-                      formula: cell.value,
-                      style: cell.style
-                    });
-                  } else {
-                    cellsArr.push({
-                      value: cell.value ?? '',
-                      style: cell.style
-                    });
-                  }
-                });
-              
-                rows.push({ cells: cellsArr });
-              });              
-        }
-
-        const columns: Array<{ width: number }> = [];
-        if (sheetModel?.columns) {
-          sheetModel.columns.forEach((col: any) => {
-            columns.push({ width: col?.width || 100 });
-          });
-        }
-
-        sheetsData.sheets.push({
-          name: sheetModel?.name || `Sheet${sheetIdx + 1}`,
-          rows,
-          columns: columns.length > 0 ? columns : [{ width: 100 }],
-          rowCount: rows.length + 50,
-          colCount: columns.length || 26
-        });
+      if (!blob) {
+        throw new Error('No blob data received from save');
       }
-
-      await createSandboxFileJson(sandboxId, filePath, JSON.stringify(sheetsData, null, 2));
+      
+      const fileName = filePath.split('/').pop() || 'spreadsheet.xlsx';
+      const uploadFormData = new FormData();
+      uploadFormData.append('path', filePath);
+      uploadFormData.append('file', blob, fileName);
+      console.log('[Spreadsheet] Uploading to backend...', { sandboxId, filePath, fileName });
+      
+      const response = await backendApi.uploadPut(`/sandboxes/${sandboxId}/files/binary`, uploadFormData, {
+        showErrors: true,
+      });
+      
+      if (response.error) {
+        throw new Error(`Upload failed (${response.error.status}): ${response.error.message}`);
+      }
+      
+      console.log('[Spreadsheet] ✅ File saved successfully');
       setHasUnsavedChanges(false);
-    } catch (e) {
-      console.error('Failed to save spreadsheet:', e);
+    } catch (e: any) {
+      console.error('[Spreadsheet] Save error:', e);
+      alert('Failed to save: ' + (e.message || String(e)));
     } finally {
       setIsSaving(false);
     }
-  }, [sandboxId, filePath]);
+  }, [filePath, sandboxId]);
 
   const handleCellEdit = useCallback(() => {
     setHasUnsavedChanges(true);
   }, []);
 
-  const sheetsKey = useMemo(() => {
-    return `spreadsheet-${lastUpdate}-${sheets.length}`;
-  }, [sheets, lastUpdate]);
+  const handleOpenFailure = useCallback((args: any) => {
+    console.error('[Spreadsheet] openFailure', args);
+    setIsLoading(false);
+  }, []);
 
   if (!toolCall) {
     console.warn('SpreadsheetToolView: toolCall is undefined.');
@@ -380,9 +287,9 @@ export function SpreadsheetToolView({
       </CardHeader>
       <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
         <SpreadsheetComponent
-          key={sheetsKey}
           ref={ssRef}
-          sheets={sheets}
+          openUrl="https://ej2services.syncfusion.com/production/web-services/api/spreadsheet/open"
+          saveUrl="https://ej2services.syncfusion.com/production/web-services/api/spreadsheet/save"
           showRibbon={true}
           showFormulaBar={true}
           showSheetTabs={true}
@@ -395,18 +302,23 @@ export function SpreadsheetToolView({
           allowNumberFormatting={true}
           enableClipboard={true}
           cellEdit={handleCellEdit}
+          openFailure={handleOpenFailure}
+          beforeSave={handleBeforeSave}
+          saveComplete={handleSaveComplete}
           created={() => {
-            if (sandboxId && sheets.length > 0 && sheets[0]?.rows?.length > 0) {
-              setTimeout(() => {
-                if (ssRef.current) {
-                  try {
-                    ssRef.current.refresh();
-                  } catch (e) {}
-                }
-              }, 100);
-            }
+            console.log('[Spreadsheet] Component created and ready');
+            setIsComponentReady(true);
+          }}
+          openComplete={() => {
+            console.log('[Spreadsheet] openComplete - file loaded!');
+            setIsLoading(false);
           }}
         />
+        {(isLoading || isStreaming) && (
+          <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-sm">
+            <SpreadsheetLoader mode="max" />
+          </div>
+        )}
       </CardContent>
     </Card>
   );
