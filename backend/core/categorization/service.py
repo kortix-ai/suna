@@ -71,13 +71,13 @@ def _extract_user_content(messages: List[dict]) -> str:
 
 async def _call_llm(content: str) -> List[str]:
     """Call LLM to categorize content."""
-    system_prompt = f"""You categorize conversations. Return ALL applicable categories as a JSON array.
+    system_prompt = f"""You categorize conversations. Return a JSON object with a "categories" key containing ALL applicable categories.
 
 Categories: {', '.join(PROJECT_CATEGORIES)}
 
-Example: ["Research & Information Gathering", "Presentations"]
+Example: {{"categories": ["Research & Information Gathering", "Presentations"]}}
 
-Only return the JSON array."""
+Return ONLY the JSON object."""
 
     response = await make_llm_api_call(
         messages=[
