@@ -538,11 +538,18 @@ const StreamingToolCallIndicator = React.memo(function StreamingToolCallIndicato
   toolName,
   showExpanded = false,
 }: {
-  toolCall: { function_name?: string; arguments?: Record<string, any> | string } | null;
+  toolCall: { function_name?: string; arguments?: Record<string, any> | string; completed?: boolean; tool_result?: any } | null;
   toolName: string;
   showExpanded?: boolean;
 }) {
   const scrollViewRef = React.useRef<any>(null);
+  
+  // Check if tool is completed (has tool_result or completed flag)
+  // tool_result can be an object with success/output/error, or just a truthy value
+  const isCompleted = toolCall?.completed === true || 
+                     (toolCall?.tool_result !== undefined && 
+                      toolCall?.tool_result !== null &&
+                      (typeof toolCall.tool_result === 'object' || Boolean(toolCall.tool_result)));
   
   // Extract display parameter and streaming content
   const { paramDisplay, streamingContent } = useMemo(() => {
@@ -611,7 +618,11 @@ const StreamingToolCallIndicator = React.memo(function StreamingToolCallIndicato
               </Text>
             )}
           </View>
-          <Icon as={CircleDashed} size={16} className="animate-spin text-primary" />
+          {isCompleted ? (
+            <Icon as={CheckCircle2} size={16} className="text-emerald-500" />
+          ) : (
+            <Icon as={CircleDashed} size={16} className="animate-spin text-primary" />
+          )}
         </View>
         
         {/* Streaming content */}
@@ -647,7 +658,11 @@ const StreamingToolCallIndicator = React.memo(function StreamingToolCallIndicato
           </Text>
         )}
       </View>
-      <Icon as={CircleDashed} size={16} className="animate-spin text-primary" />
+      {isCompleted ? (
+        <Icon as={CheckCircle2} size={16} className="text-emerald-500" />
+      ) : (
+        <Icon as={CircleDashed} size={16} className="animate-spin text-primary" />
+      )}
     </View>
   );
 });

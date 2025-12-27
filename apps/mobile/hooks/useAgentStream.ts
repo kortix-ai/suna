@@ -105,6 +105,12 @@ export function useAgentStream(
     chunks: Array<{sequence: number, delta: string}>;
   }
   const accumulatedToolCallsRef = useRef<Map<string, AccumulatedToolCall>>(new Map());
+  
+  // Track completed tool call IDs (tools that have received results)
+  const completedToolCallIdsRef = useRef<Set<string>>(new Set());
+  
+  // Track tool results by tool_call_id for merging with streaming tool calls
+  const toolResultsRef = useRef<Map<string, UnifiedMessage>>(new Map());
 
   const orderedTextContent = useMemo(() => {
     if (textContent.length === 0) return '';
@@ -175,6 +181,10 @@ export function useAgentStream(
       setToolCall(null);
       setAgentRunId(null);
       currentRunIdRef.current = null;
+      // Clear accumulated tool call deltas and previous state
+      accumulatedToolCallsRef.current.clear();
+      completedToolCallIdsRef.current.clear();
+      toolResultsRef.current.clear();
       
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
@@ -412,6 +422,7 @@ export function useAgentStream(
               }
               
               // Now reconstruct ALL accumulated tool calls (not just from this message)
+              // Merge streaming tool calls with completed tool results
               const allReconstructedToolCalls = Array.from(accumulatedToolCallsRef.current.values())
                 .sort((a, b) => (a.metadata.index ?? 0) - (b.metadata.index ?? 0))
                 .map(accumulated => {
@@ -421,14 +432,47 @@ export function useAgentStream(
                     mergedArgs += chunk.delta;
                   }
                   
+                  const toolCallId = accumulated.metadata.tool_call_id;
+                  const isCompleted = completedToolCallIdsRef.current.has(toolCallId);
+                  const toolResult = toolResultsRef.current.get(toolCallId);
+                  
                   return {
-                    tool_call_id: accumulated.metadata.tool_call_id,
+                    tool_call_id: toolCallId,
                     function_name: accumulated.metadata.function_name,
                     index: accumulated.metadata.index,
                     arguments: mergedArgs,
                     is_delta: false, // Mark as assembled
+                    completed: isCompleted,
+                    tool_result: toolResult ? safeJsonParse<ParsedMetadata>(toolResult.metadata, {}).result : undefined,
                   };
                 });
+              
+              // Also include completed tools that may have results but aren't in accumulated ref
+              // (edge case: result arrives before tool call is fully streamed)
+              toolResultsRef.current.forEach((resultMessage, toolCallId) => {
+                if (!accumulatedToolCallsRef.current.has(toolCallId)) {
+                  const toolMetadata = safeJsonParse<ParsedMetadata>(resultMessage.metadata, {});
+                  const functionName = toolMetadata.function_name;
+                  if (functionName) {
+                    // Add to reconstructed calls if not already present
+                    const existing = allReconstructedToolCalls.find(tc => tc.tool_call_id === toolCallId);
+                    if (!existing) {
+                      allReconstructedToolCalls.push({
+                        tool_call_id: toolCallId,
+                        function_name: functionName,
+                        index: toolMetadata.index,
+                        arguments: '{}',
+                        is_delta: false,
+                        completed: true,
+                        tool_result: toolMetadata.result,
+                      });
+                    }
+                  }
+                }
+              });
+              
+              // Re-sort after adding any missing completed tools
+              allReconstructedToolCalls.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
               
               // Create updated message with ALL reconstructed tool calls
               const updatedMessage = {
@@ -438,10 +482,6 @@ export function useAgentStream(
                   tool_calls: allReconstructedToolCalls,
                 }),
               };
-              
-              // Debug log to track multiple tool calls accumulation
-              console.log(`[useAgentStream] Accumulated ${allReconstructedToolCalls.length} tool calls:`, 
-                allReconstructedToolCalls.map(tc => ({ id: tc.tool_call_id, fn: tc.function_name, argsLen: tc.arguments.length })));
               
               // Set toolCall state with ALL reconstructed tool calls
               setToolCall(updatedMessage);
@@ -468,8 +508,10 @@ export function useAgentStream(
             
             setTextContent([]);
             setToolCall(null);
-            // Clear accumulated tool call deltas
+            // Clear accumulated tool call deltas and previous state when assistant message completes
             accumulatedToolCallsRef.current.clear();
+            completedToolCallIdsRef.current.clear();
+            toolResultsRef.current.clear();
             if (message.message_id) callbacks.onMessage(message);
           } else if (!parsedMetadata.stream_status) {
             // Handle non-chunked assistant messages if needed
@@ -478,9 +520,91 @@ export function useAgentStream(
           }
           break;
         case 'tool':
-          setToolCall(null); // Clear any streaming tool call
-          // Clear accumulated tool call deltas when tool execution completes
-          accumulatedToolCallsRef.current.clear();
+          // Don't clear toolCall state here - other tools may still be streaming
+          // Mark this tool as completed and store its result, but keep other tools in accumulated ref
+          
+          // Process tool result
+          try {
+            const toolMetadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
+            const toolCallId = toolMetadata.tool_call_id;
+            const functionName = toolMetadata.function_name;
+            if (toolCallId && functionName) {
+              // Mark this tool call as completed
+              completedToolCallIdsRef.current.add(toolCallId);
+              
+              // Store the tool result for merging with streaming tool calls
+              toolResultsRef.current.set(toolCallId, message);
+              
+              // Trigger an update to streamingToolCall to include this completed tool with its result
+              // Reconstruct all tool calls including this completed one
+              const allReconstructedToolCalls = Array.from(accumulatedToolCallsRef.current.values())
+                .sort((a, b) => (a.metadata.index ?? 0) - (b.metadata.index ?? 0))
+                .map(accumulated => {
+                  let mergedArgs = '';
+                  for (const chunk of accumulated.chunks) {
+                    mergedArgs += chunk.delta;
+                  }
+                  
+                  const tcId = accumulated.metadata.tool_call_id;
+                  const isCompleted = completedToolCallIdsRef.current.has(tcId);
+                  const toolResult = toolResultsRef.current.get(tcId);
+                  
+                  return {
+                    tool_call_id: tcId,
+                    function_name: accumulated.metadata.function_name,
+                    index: accumulated.metadata.index,
+                    arguments: mergedArgs,
+                    is_delta: false,
+                    completed: isCompleted,
+                    tool_result: toolResult ? safeJsonParse<ParsedMetadata>(toolResult.metadata, {}).result : undefined,
+                  };
+                });
+              
+              // Include completed tools that may not be in accumulated ref
+              toolResultsRef.current.forEach((resultMsg, tcId) => {
+                if (!accumulatedToolCallsRef.current.has(tcId)) {
+                  const resultMetadata = safeJsonParse<ParsedMetadata>(resultMsg.metadata, {});
+                  const fnName = resultMetadata.function_name;
+                  if (fnName) {
+                    const existing = allReconstructedToolCalls.find(tc => tc.tool_call_id === tcId);
+                    if (!existing) {
+                      allReconstructedToolCalls.push({
+                        tool_call_id: tcId,
+                        function_name: fnName,
+                        index: resultMetadata.index,
+                        arguments: '{}',
+                        is_delta: false,
+                        completed: true,
+                        tool_result: resultMetadata.result,
+                      });
+                    }
+                  }
+                }
+              });
+              
+              allReconstructedToolCalls.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+              
+              // Update streamingToolCall to include this completed tool with its result
+              const updatedMessageWithResults = {
+                ...message,
+                metadata: JSON.stringify({
+                  ...toolMetadata,
+                  tool_calls: allReconstructedToolCalls,
+                }),
+              };
+              
+              // Force update to streamingToolCall state
+              setToolCall(updatedMessageWithResults);
+              
+              // Also call the callback to notify downstream handlers
+              callbacks.onToolCallChunk?.(updatedMessageWithResults);
+            }
+          } catch (e) {
+            // Ignore parsing errors
+          }
+          
+          // DO NOT clear accumulatedToolCallsRef - other tools may still be streaming
+          // Only clear when assistant message completes (handled in case 'assistant' with stream_status === 'complete')
           if (message.message_id) callbacks.onMessage(message);
           break;
         case 'status':
