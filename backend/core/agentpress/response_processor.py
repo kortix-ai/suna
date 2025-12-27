@@ -2851,7 +2851,7 @@ class ResponseProcessor:
     ):
         """
         Process any completed tool executions in real-time during streaming.
-        Yields messages immediately as each tool completes.
+        Uses asyncio.wait() with FIRST_COMPLETED to yield results immediately as each tool completes.
         
         Yields:
             Dict: Tool result messages and status messages (yielded immediately)
@@ -2861,97 +2861,125 @@ class ResponseProcessor:
         updated_yielded_indices = yielded_tool_indices.copy()
         updated_terminate_flag = agent_should_terminate
         
-        for execution in pending_tool_executions:
-            tool_idx = execution.get("tool_index", -1)
-            context = execution["context"]
-            tool_call = execution["tool_call"]
-            task = execution["task"]
-            tool_name = context.function_name
-            
-            # Check if task is done
-            if not task.done():
-                remaining_executions.append(execution)
-                continue
-            
-            # Task is done - check for exceptions before getting result
-            # This prevents task.result() from raising if the task failed
-            task_exception = task.exception()
-            if task_exception:
-                # Task completed with an exception - handle as error
-                logger.error(f"Tool execution {tool_idx} failed with exception: {str(task_exception)}", exc_info=task_exception)
-                self.trace.event(
-                    name="tool_execution_failed",
-                    level="ERROR",
-                    status_message=(f"Tool execution {tool_idx} failed with exception: {str(task_exception)}")
-                )
-                context.error = task_exception
-                error_msg_obj = await self._yield_and_save_tool_error(context, thread_id, thread_run_id)
-                if error_msg_obj:
-                    formatted = format_for_yield(error_msg_obj)
-                    self._log_frontend_message(formatted, frontend_debug_file)
-                    yield formatted
-                updated_yielded_indices.add(tool_idx)
-                continue
-            
-            # Task completed successfully - get result and process
+        if not pending_tool_executions:
+            yield (remaining_executions, updated_yielded_indices, updated_terminate_flag)
+            return
+        
+        # Extract tasks for asyncio.wait()
+        task_to_execution = {execution["task"]: execution for execution in pending_tool_executions}
+        tasks = list(task_to_execution.keys())
+        
+        # Process completed tasks using asyncio.wait() with FIRST_COMPLETED
+        # This allows us to yield results immediately as each tool completes
+        while tasks:
             try:
-                result = task.result()
-                context.result = result
-                
-                # Get assistant message ID
-                assistant_message_id = (
-                    last_assistant_message_object['message_id'] 
-                    if last_assistant_message_object 
-                    else context.assistant_message_id
+                # Wait for at least one task to complete (with a small timeout to avoid blocking)
+                done, pending = await asyncio.wait(
+                    tasks, 
+                    return_when=asyncio.FIRST_COMPLETED,
+                    timeout=0.001  # Very short timeout to avoid blocking the stream
                 )
                 
-                # Add tool result to conversation thread
-                saved_tool_result_object = await self._add_tool_result(
-                    thread_id, tool_call, result, assistant_message_id
-                )
+                # Process all completed tasks
+                for task in done:
+                    execution = task_to_execution[task]
+                    tool_idx = execution.get("tool_index", -1)
+                    context = execution["context"]
+                    tool_call = execution["tool_call"]
+                    tool_name = context.function_name
+                    
+                    # Check for exceptions before getting result
+                    task_exception = task.exception()
+                    if task_exception:
+                        # Task completed with an exception - handle as error
+                        logger.error(f"Tool execution {tool_idx} failed with exception: {str(task_exception)}", exc_info=task_exception)
+                        self.trace.event(
+                            name="tool_execution_failed",
+                            level="ERROR",
+                            status_message=(f"Tool execution {tool_idx} failed with exception: {str(task_exception)}")
+                        )
+                        context.error = task_exception
+                        error_msg_obj = await self._yield_and_save_tool_error(context, thread_id, thread_run_id)
+                        if error_msg_obj:
+                            formatted = format_for_yield(error_msg_obj)
+                            self._log_frontend_message(formatted, frontend_debug_file)
+                            yield formatted
+                        updated_yielded_indices.add(tool_idx)
+                        tasks.remove(task)
+                        continue
+                    
+                    # Task completed successfully - get result and process
+                    try:
+                        result = task.result()
+                        context.result = result
+                        
+                        # Get assistant message ID
+                        assistant_message_id = (
+                            last_assistant_message_object['message_id'] 
+                            if last_assistant_message_object 
+                            else context.assistant_message_id
+                        )
+                        
+                        # Add tool result to conversation thread
+                        saved_tool_result_object = await self._add_tool_result(
+                            thread_id, tool_call, result, assistant_message_id
+                        )
+                        
+                        # Get tool_message_id from saved result
+                        tool_message_id = saved_tool_result_object['message_id'] if saved_tool_result_object else None
+                        
+                        # Check for terminating tools
+                        if tool_name in TERMINATING_TOOLS:
+                            logger.debug(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag.")
+                            self.trace.event(
+                                name="terminating_tool_completed_during_streaming",
+                                level="DEFAULT",
+                                status_message=(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag.")
+                            )
+                            updated_terminate_flag = True
+                        
+                        # Yield and save tool completed status
+                        completed_msg_obj = await self._yield_and_save_tool_completed(
+                            context, tool_message_id, thread_id, thread_run_id
+                        )
+                        
+                        # Yield the tool result message object immediately
+                        if saved_tool_result_object:
+                            yield format_for_yield(saved_tool_result_object)
+                        
+                        # Yield the completed status message immediately
+                        if completed_msg_obj:
+                            yield format_for_yield(completed_msg_obj)
+                        
+                        updated_yielded_indices.add(tool_idx)
+                        tasks.remove(task)
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing completed tool execution {tool_idx}: {str(e)}", exc_info=True)
+                        self.trace.event(
+                            name="error_processing_completed_tool_execution",
+                            level="ERROR",
+                            status_message=(f"Error processing completed tool execution {tool_idx}: {str(e)}")
+                        )
+                        context.error = e
+                        error_msg_obj = await self._yield_and_save_tool_error(context, thread_id, thread_run_id)
+                        if error_msg_obj:
+                            formatted = format_for_yield(error_msg_obj)
+                            self._log_frontend_message(formatted, frontend_debug_file)
+                            yield formatted
+                        updated_yielded_indices.add(tool_idx)
+                        tasks.remove(task)
                 
-                # Get tool_message_id from saved result
-                tool_message_id = saved_tool_result_object['message_id'] if saved_tool_result_object else None
+                # Update tasks list to only pending ones
+                tasks = list(pending)
                 
-                # Check for terminating tools
-                if tool_name in TERMINATING_TOOLS:
-                    logger.debug(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag.")
-                    self.trace.event(
-                        name="terminating_tool_completed_during_streaming",
-                        level="DEFAULT",
-                        status_message=(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag.")
-                    )
-                    updated_terminate_flag = True
-                
-                # Yield and save tool completed status
-                completed_msg_obj = await self._yield_and_save_tool_completed(
-                    context, tool_message_id, thread_id, thread_run_id
-                )
-                
-                # Yield the tool result message object immediately
-                if saved_tool_result_object:
-                    yield format_for_yield(saved_tool_result_object)
-                
-                # Yield the completed status message immediately
-                if completed_msg_obj:
-                    yield format_for_yield(completed_msg_obj)
-                
-                updated_yielded_indices.add(tool_idx)
-                
-            except Exception as e:
-                logger.error(f"Error processing completed tool execution {tool_idx}: {str(e)}", exc_info=True)
-                self.trace.event(
-                    name="error_processing_completed_tool_execution",
-                    level="ERROR",
-                    status_message=(f"Error processing completed tool execution {tool_idx}: {str(e)}")
-                )
-                context.error = e
-                error_msg_obj = await self._yield_and_save_tool_error(context, thread_id, thread_run_id)
-                if error_msg_obj:
-                    formatted = format_for_yield(error_msg_obj)
-                    self._log_frontend_message(formatted, frontend_debug_file)
-                    yield formatted
-                updated_yielded_indices.add(tool_idx)
+            except asyncio.TimeoutError:
+                # No tasks completed within timeout - break and return remaining
+                break
+        
+        # Add remaining tasks back to remaining_executions
+        for task in tasks:
+            remaining_executions.append(task_to_execution[task])
         
         # Yield final state tuple as last item
         yield (remaining_executions, updated_yielded_indices, updated_terminate_flag)
