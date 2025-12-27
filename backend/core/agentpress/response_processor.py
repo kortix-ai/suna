@@ -539,9 +539,6 @@ class ResponseProcessor:
         xml_tool_calls_with_ids = [] # Track XML tool calls with their IDs for metadata storage
         content_chunk_buffer = {} # Buffer to reorder content chunks: sequence -> chunk_data
         next_expected_sequence = 0 # Track the next expected sequence number for ordering
-        streaming_tool_result_ids = [] # Track tool result message IDs saved during streaming (with is_llm_message=False)
-        partial_assistant_message_id = None # Track partial assistant message ID for parallel tool db saving
-        tool_results_buffer = [] # Buffer for tool results during streaming
         
         # DELTA STREAMING: Track how much has been sent for each tool call to avoid duplication
         tool_call_sent_lengths = {}  # Maps tool_call_index -> length of arguments already sent
