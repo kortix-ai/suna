@@ -203,6 +203,8 @@ const defaultRegistry: ToolViewRegistryType = {
   'format-sheet': SheetsToolView,
   'spreadsheet-batch-update': SpreadsheetToolView,
   'spreadsheet_batch_update': SpreadsheetToolView,
+  'spreadsheet-add-sheet': SpreadsheetToolView,
+  'spreadsheet_add_sheet': SpreadsheetToolView,
 
   'get-project-structure': GetProjectStructureView,
   'list-web-projects': GenericToolView,

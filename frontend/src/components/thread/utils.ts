@@ -199,37 +199,17 @@ export const getToolIcon = (toolName: string): ElementType => {
       return CheckCircle2;
 
     // Spreadsheet tools
-    case 'spreadsheet-update-cells':
+    case "spreadsheet-add-sheet":
       return Table2;
-    case 'spreadsheet-populate-data':
+    case "spreadsheet_add_sheet":
       return Table2;
-    case 'spreadsheet-add-formula':
+    case "spreadsheet-batch-update":
       return Table2;
-    case 'spreadsheet-create-sheet':
+    case "spreadsheet_batch_update":
       return Table2;
-    case 'spreadsheet-clear-range':
+    case "spreadsheet-create":
       return Table2;
-    case 'spreadsheet_update_cells':
-      return Table2;
-    case 'spreadsheet_populate_data':
-      return Table2;
-    case 'spreadsheet_add_formula':
-      return Table2;
-    case 'spreadsheet_create_sheet':
-      return Table2;
-    case 'spreadsheet_clear_range':
-      return Table2;
-    case 'spreadsheet-format-range':
-      return Table2;
-    case 'spreadsheet_format_range':
-      return Table2;
-    case 'spreadsheet-merge-cells':
-      return Table2;
-    case 'spreadsheet_merge_cells':
-      return Table2;
-    case 'spreadsheet-set-column-width':
-      return Table2;
-    case 'spreadsheet_set_column_width':
+    case "spreadsheet_create":
       return Table2;
 
     
@@ -461,32 +441,12 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['visualize-sheet', 'Visualizing Sheet'],
   ['format-sheet', 'Formatting Sheet'],
 
-  ['spreadsheet-update-cells', 'Updating Spreadsheet'],
-  ['spreadsheet_update_cells', 'Updating Spreadsheet'],
-  ['spreadsheet-populate-data', 'Populating Spreadsheet'],
-  ['spreadsheet_populate_data', 'Populating Spreadsheet'],
-  ['spreadsheet-add-formula', 'Adding Formula'],
-  ['spreadsheet_add_formula', 'Adding Formula'],
   ['spreadsheet-create-sheet', 'Creating Spreadsheet'],
   ['spreadsheet_create_sheet', 'Creating Spreadsheet'],
-  ['spreadsheet-clear-range', 'Clearing Spreadsheet'],
-  ['spreadsheet_clear_range', 'Clearing Spreadsheet'],
-  ['spreadsheet-format-range', 'Formatting Spreadsheet'],
-  ['spreadsheet_format_range', 'Formatting Spreadsheet'],
-  ['spreadsheet-merge-cells', 'Merging Cells'],
-  ['spreadsheet_merge_cells', 'Merging Cells'],
-  ['spreadsheet-set-column-width', 'Adjusting Columns'],
-  ['spreadsheet_set_column_width', 'Adjusting Columns'],
-  ['spreadsheet-create', 'Creating Spreadsheet'],
-  ['spreadsheet_create', 'Creating Spreadsheet'],
-  ['spreadsheet-add-rows', 'Adding Rows'],
-  ['spreadsheet_add_rows', 'Adding Rows'],
-  ['spreadsheet-update-cell', 'Updating Cell'],
-  ['spreadsheet_update_cell', 'Updating Cell'],
-  ['spreadsheet-format-cells', 'Formatting Cells'],
-  ['spreadsheet_format_cells', 'Formatting Cells'],
-  ['spreadsheet-read', 'Reading Spreadsheet'],
-  ['spreadsheet_read', 'Reading Spreadsheet'],
+  ['spreadsheet-add-sheet', 'Adding Sheet'],
+  ['spreadsheet_add_sheet', 'Adding Sheet'],
+  ['spreadsheet-batch-update', 'Updating Spreadsheet'],
+  ['spreadsheet_batch_update', 'Updating Spreadsheet'],
   
 
   ['update-agent', 'Updating Worker'],
