@@ -50,6 +50,7 @@ else:
 dramatiq.set_broker(redis_broker)
 
 from core.memory import background_jobs as memory_jobs
+from core.categorization import background_jobs as categorization_jobs
 
 warm_up_tools_cache()
 logger.info("✅ Worker process ready, tool cache warmed")
