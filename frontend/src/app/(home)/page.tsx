@@ -3,6 +3,7 @@
 import { Suspense, lazy } from 'react';
 import { BackgroundAALChecker } from '@/components/auth/background-aal-checker';
 import { HeroSection as NewHeroSection } from '@/components/home/hero-section';
+import { CookieConsent } from '@/components/cookie-consent';
 
 // Lazy load below-the-fold components for faster FCP/LCP
 const ShowCaseSection = lazy(() => 
@@ -34,6 +35,7 @@ function ShowCaseSkeleton() {
 export default function Home() {
   return (
     <BackgroundAALChecker>
+      <CookieConsent />
       <NewHeroSection />
       <Suspense fallback={<ShowCaseSkeleton />}>
         <ShowCaseSection />

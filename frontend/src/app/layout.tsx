@@ -103,13 +103,6 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={`${roobert.variable} ${roobertMono.variable}`}>
       <head>
-        {/* CookieYes - Cookie Consent (MUST be first to block tracking scripts) */}
-        <Script
-          id="cookieyes"
-          strategy="beforeInteractive"
-          src={`https://cdn-cookieyes.com/client_data/${process.env.NEXT_PUBLIC_COOKIEYES_ID || 'fa1588049104cfeadaa81aa4149644f2'}/script.js`}
-        />
-
         {/* Preload critical fonts for faster FCP - local fonts need crossOrigin for CORS */}
         <link
           rel="preload"
