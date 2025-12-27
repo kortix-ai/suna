@@ -29,14 +29,15 @@ class ModelRegistry:
         self._initialize_models()
     
     def _initialize_models(self):
-        # Kortix Basic - uses Haiku 4.5 under the hood
-        basic_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
+        # Kortix Basic - TEMPORARILY using MiniMax M2 instead of Haiku 4.5
+        # basic_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
+        basic_litellm_id = "openrouter/minimax/minimax-m2"  # 205K context $0.255/M input tokens $1.02/M output tokens
         
         self.register(Model(
             id="kortix/basic",
             name="Kortix Basic",
             litellm_model_id=basic_litellm_id,
-            provider=ModelProvider.ANTHROPIC,
+            provider=ModelProvider.OPENROUTER,
             aliases=["kortix-basic", "Kortix Basic"],
             context_window=200_000,
             capabilities=[
@@ -46,31 +47,38 @@ class ModelRegistry:
                 ModelCapability.PROMPT_CACHING,
             ],
             pricing=ModelPricing(
-                input_cost_per_million_tokens=1.00,
-                output_cost_per_million_tokens=5.00,
-                cached_read_cost_per_million_tokens=0.10,
-                cache_write_5m_cost_per_million_tokens=1.25,
-                cache_write_1h_cost_per_million_tokens=2.00
+                input_cost_per_million_tokens=0.255,
+                output_cost_per_million_tokens=1.02,
+                cached_read_cost_per_million_tokens=0.0255,
+                cache_write_5m_cost_per_million_tokens=0.32,
+                # OLD Haiku 4.5 pricing:
+                # input_cost_per_million_tokens=1.00,
+                # output_cost_per_million_tokens=5.00,
+                # cached_read_cost_per_million_tokens=0.10,
+                # cache_write_5m_cost_per_million_tokens=1.25,
+                # cache_write_1h_cost_per_million_tokens=2.00
             ),
             tier_availability=["free", "paid"],
             priority=102,
             recommended=True,
             enabled=True,
             config=ModelConfig(
-                extra_headers={
-                    "anthropic-beta": "fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
-                },
+                # OLD Anthropic config:
+                # extra_headers={
+                #     "anthropic-beta": "fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
+                # },
             )
         ))
         
-        # TEMPORARY: Using Haiku 4.5 instead of Sonnet 4.5 for kortix/power
-        power_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
+        # Kortix Power - TEMPORARILY using MiniMax M2.1 instead of Sonnet 4.5/Haiku 4.5
+        # power_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
+        power_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input tokens $1.20/M output tokens
         
         self.register(Model(
             id="kortix/power",
             name="Kortix Advanced Mode",
             litellm_model_id=power_litellm_id,
-            provider=ModelProvider.ANTHROPIC,
+            provider=ModelProvider.OPENROUTER,
             aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
             context_window=200_000,
             capabilities=[
@@ -81,20 +89,26 @@ class ModelRegistry:
                 ModelCapability.PROMPT_CACHING,
             ],
             pricing=ModelPricing(
-                input_cost_per_million_tokens=1.00,
-                output_cost_per_million_tokens=5.00,
-                cached_read_cost_per_million_tokens=0.10,
-                cache_write_5m_cost_per_million_tokens=1.25,
-                cache_write_1h_cost_per_million_tokens=2.00
+                input_cost_per_million_tokens=0.30,
+                output_cost_per_million_tokens=1.20,
+                cached_read_cost_per_million_tokens=0.03,
+                cache_write_5m_cost_per_million_tokens=0.375,
+                # OLD Haiku 4.5 pricing:
+                # input_cost_per_million_tokens=1.00,
+                # output_cost_per_million_tokens=5.00,
+                # cached_read_cost_per_million_tokens=0.10,
+                # cache_write_5m_cost_per_million_tokens=1.25,
+                # cache_write_1h_cost_per_million_tokens=2.00
             ),
             tier_availability=["paid"],
             priority=101,
             recommended=True,
             enabled=True,
             config=ModelConfig(
-                extra_headers={
-                    "anthropic-beta": "context-1m-2025-08-07,fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
-                },
+                # OLD Anthropic config:
+                # extra_headers={
+                #     "anthropic-beta": "context-1m-2025-08-07,fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
+                # },
             )
         ))
         

@@ -1050,39 +1050,75 @@ class SandboxPresentationTool(SandboxToolsBase):
         """List all presentations in the workspace"""
         try:
             await self._ensure_sandbox()
+            
+            # Ensure presentations directory exists
+            await self._ensure_presentations_dir()
+            
             presentations_path = f"{self.workspace_path}/{self.presentations_dir}"
+            presentations = []
             
             try:
                 files = await self.sandbox.fs.list_files(presentations_path)
-                presentations = []
                 
                 for file_info in files:
-                    if file_info.is_directory:
-                        metadata = await self._load_presentation_metadata(f"{presentations_path}/{file_info.name}")
-                        presentations.append({
-                            "folder": file_info.name,
-                            "title": metadata.get("title", "Unknown Title"),
-                            "description": metadata.get("description", ""),
-                            "total_slides": len(metadata.get("slides", {})),
-                            "created_at": metadata.get("created_at", "Unknown"),
-                            "updated_at": metadata.get("updated_at", "Unknown")
-                        })
+                    # Use is_dir (correct attribute name) with fallback to is_directory for compatibility
+                    is_dir = getattr(file_info, 'is_dir', False) or getattr(file_info, 'is_directory', False)
+                    
+                    if is_dir:
+                        try:
+                            # Skip hidden directories and special directories
+                            if file_info.name.startswith('.'):
+                                continue
+                            
+                            presentation_folder_path = f"{presentations_path}/{file_info.name}"
+                            metadata = await self._load_presentation_metadata(presentation_folder_path)
+                            
+                            presentations.append({
+                                "folder": file_info.name,
+                                "title": metadata.get("title", file_info.name),
+                                "description": metadata.get("description", ""),
+                                "total_slides": len(metadata.get("slides", {})),
+                                "created_at": metadata.get("created_at", "Unknown"),
+                                "updated_at": metadata.get("updated_at", "Unknown")
+                            })
+                        except Exception as e:
+                            # Log error but continue processing other presentations
+                            logger.warning(f"Failed to load metadata for presentation '{file_info.name}': {str(e)}")
+                            continue
                 
-                return self.success_response({
-                    "message": f"Found {len(presentations)} presentations",
-                    "presentations": presentations,
-                    "presentations_directory": f"{self.workspace_path}/{self.presentations_dir}"
-                })
+                if presentations:
+                    return self.success_response({
+                        "message": f"Found {len(presentations)} presentation(s)",
+                        "presentations": presentations,
+                        "presentations_directory": f"{self.workspace_path}/{self.presentations_dir}",
+                        "total_count": len(presentations)
+                    })
+                else:
+                    return self.success_response({
+                        "message": "No presentations found",
+                        "presentations": [],
+                        "presentations_directory": f"{self.workspace_path}/{self.presentations_dir}",
+                        "note": "Create your first slide using create_slide"
+                    })
                 
             except Exception as e:
-                return self.success_response({
-                    "message": "No presentations found",
-                    "presentations": [],
-                    "presentations_directory": f"{self.workspace_path}/{self.presentations_dir}",
-                    "note": "Create your first slide using create_slide"
-                })
+                # Check if it's a "not found" or "doesn't exist" error
+                error_msg = str(e).lower()
+                if any(phrase in error_msg for phrase in ['not found', 'no such file', 'does not exist', 'doesn\'t exist']):
+                    # Directory doesn't exist yet - return empty list
+                    return self.success_response({
+                        "message": "No presentations found",
+                        "presentations": [],
+                        "presentations_directory": f"{self.workspace_path}/{self.presentations_dir}",
+                        "note": "Create your first slide using create_slide"
+                    })
+                else:
+                    # Log the actual error for debugging
+                    logger.error(f"Error listing presentations in {presentations_path}: {str(e)}", exc_info=True)
+                    return self.fail_response(f"Failed to list presentations: {str(e)}")
                 
         except Exception as e:
+            logger.error(f"Failed to list presentations: {str(e)}", exc_info=True)
             return self.fail_response(f"Failed to list presentations: {str(e)}")
 
     @openapi_schema({
