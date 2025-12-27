@@ -1878,6 +1878,10 @@ class SetupWizard:
             f"Delete the {Colors.RED}.setup_progress{Colors.ENDC} file to reset the setup."
         )
 
+        # Get compose command for display
+        compose_cmd = self.get_compose_command()
+        compose_cmd_str = format_compose_cmd(compose_cmd)
+
         if self.env_vars["setup_method"] == "docker":
             print_info("Your Kortix Super Worker instance is ready to use!")
             
