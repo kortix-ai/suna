@@ -538,13 +538,14 @@ class ResponseProcessor:
         # Track background DB tasks for cleanup
         background_db_tasks = []
         
-        # Setup frontend message logging (always enabled for debugging) - MUST be before first yield
+        # Setup frontend message logging (only if debug enabled) - MUST be before first yield
         frontend_debug_file = None
-        debug_dir = Path("debug_streams")
-        debug_dir.mkdir(exist_ok=True)
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        frontend_debug_file = debug_dir / f"frontend_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.txt"
-        logger.info(f"📁 Saving frontend messages to: {frontend_debug_file}")
+        if global_config.DEBUG_SAVE_LLM_IO:
+            debug_dir = Path("debug_streams")
+            debug_dir.mkdir(exist_ok=True)
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            frontend_debug_file = debug_dir / f"frontend_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.txt"
+            logger.info(f"📁 Saving frontend messages to: {frontend_debug_file}")
         
         try:
             # --- Yield Start Events (DB saves in background for zero latency) ---
