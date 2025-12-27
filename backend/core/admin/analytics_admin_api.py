@@ -56,7 +56,7 @@ class ThreadAnalytics(BaseModel):
     thread_id: str
     project_id: Optional[str] = None
     project_name: Optional[str] = None
-    project_category: Optional[str] = None
+    project_categories: Optional[List[str]] = None  # Changed to array
     account_id: Optional[str] = None
     user_email: Optional[str] = None
     message_count: int
@@ -750,7 +750,7 @@ async def _enrich_threads(client, threads: List[Dict]) -> List[ThreadAnalytics]:
         if not project_ids:
             return []
         result = await client.from_('projects').select(
-            'project_id, name, category'
+            'project_id, name, categories'
         ).in_('project_id', project_ids).execute()
         return result.data or []
     
@@ -779,7 +779,9 @@ async def _enrich_threads(client, threads: List[Dict]) -> List[ThreadAnalytics]:
     project_categories = {}
     for p in projects_data:
         project_names[p['project_id']] = p['name']
-        project_categories[p['project_id']] = p.get('category', 'Other')
+        # Use categories array, default to ['Uncategorized'] if empty
+        cats = p.get('categories') or []
+        project_categories[p['project_id']] = cats if cats else ['Uncategorized']
     
     # Build result
     result = []
@@ -790,7 +792,7 @@ async def _enrich_threads(client, threads: List[Dict]) -> List[ThreadAnalytics]:
             thread_id=tid,
             project_id=thread.get('project_id'),
             project_name=project_names.get(thread.get('project_id')),
-            project_category=project_categories.get(thread.get('project_id')),
+            project_categories=project_categories.get(thread.get('project_id')),
             account_id=thread.get('account_id'),
             user_email=account_emails.get(thread.get('account_id')),
             message_count=thread_total_counts.get(tid, 0),
@@ -1035,10 +1037,17 @@ async def get_category_distribution(
         end_of_day = selected_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
         
         # Use database function for efficient GROUP BY aggregation (bypasses row limits)
-        result = await client.rpc('get_project_category_distribution', {
-            'start_date': start_of_day,
-            'end_date': end_of_day
-        }).execute()
+        # Run both queries in parallel
+        result, count_result = await asyncio.gather(
+            client.rpc('get_project_category_distribution', {
+                'start_date': start_of_day,
+                'end_date': end_of_day
+            }).execute(),
+            # Get actual project count (not sum of categories which overcounts multi-category projects)
+            client.from_('projects').select('project_id', count='exact').gte(
+                'created_at', start_of_day
+            ).lte('created_at', end_of_day).limit(1).execute()
+        )
         
         if not result.data:
             return {
@@ -1049,12 +1058,13 @@ async def get_category_distribution(
         
         # Build distribution from aggregated results
         distribution = {}
-        total_projects = 0
         for row in result.data:
             category = row.get('category', 'Uncategorized')
             count = row.get('count', 0)
             distribution[category] = count
-            total_projects += count
+        
+        # Use actual distinct project count
+        total_projects = count_result.count or 0
         
         return {
             "distribution": distribution,
