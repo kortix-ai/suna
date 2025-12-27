@@ -543,6 +543,11 @@ class ResponseProcessor:
         # DELTA STREAMING: Track how much has been sent for each tool call to avoid duplication
         tool_call_sent_lengths = {}  # Maps tool_call_index -> length of arguments already sent
         xml_tool_calls_sent_count = 0  # Track how many XML tool calls have been sent
+        
+        # Track streaming tool results and partial assistant messages
+        streaming_tool_result_ids = []  # Track tool result message IDs for batch update after streaming
+        partial_assistant_message_id = None  # Track partial assistant message ID for updates
+        tool_results_buffer = []  # Buffer for tool results that need final processing
 
         # Store the complete LiteLLM response object as received
         final_llm_response = None
@@ -626,30 +631,35 @@ class ResponseProcessor:
             debug_file_json = None
             raw_chunks_data = []  # Store all chunk data for JSONL export
             
-            # Setup debug file for DB writes (always enabled for streaming)
+            # Setup debug file for DB writes and terminal logs (only if DEBUG_SAVE_LLM_IO is enabled)
             debug_db_file = None
             debug_terminal_log_file = None
-            debug_dir = Path("debug_streams")
-            debug_dir.mkdir(exist_ok=True)
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            debug_db_file = debug_dir / f"db_writes_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.jsonl"
-            debug_terminal_log_file = debug_dir / f"terminal_logs_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.txt"
-            logger.info(f"📁 Saving DB write logs to: {debug_db_file}")
-            logger.info(f"📁 Saving terminal logs to: {debug_terminal_log_file}")
+            terminal_file_handler = None
             
-            # Setup file handler for terminal logs (captures all logging output)
-            import logging
-            terminal_file_handler = logging.FileHandler(debug_terminal_log_file, encoding='utf-8')
-            terminal_file_handler.setLevel(logging.DEBUG)
-            # Format: timestamp | level | logger_name | message
-            formatter = logging.Formatter('%(asctime)s | %(levelname)-8s | %(name)-30s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-            terminal_file_handler.setFormatter(formatter)
-            # Add handler to root logger to capture all logs
-            root_logger = logging.getLogger()
-            root_logger.addHandler(terminal_file_handler)
+            if global_config.DEBUG_SAVE_LLM_IO:
+                debug_dir = Path("debug_streams")
+                debug_dir.mkdir(exist_ok=True)
+                timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                debug_db_file = debug_dir / f"db_writes_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.jsonl"
+                debug_terminal_log_file = debug_dir / f"terminal_logs_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.txt"
+                logger.info(f"📁 Saving DB write logs to: {debug_db_file}")
+                logger.info(f"📁 Saving terminal logs to: {debug_terminal_log_file}")
+                
+                # Setup file handler for terminal logs (captures all logging output)
+                import logging
+                terminal_file_handler = logging.FileHandler(debug_terminal_log_file, encoding='utf-8')
+                terminal_file_handler.setLevel(logging.DEBUG)
+                # Format: timestamp | level | logger_name | message
+                formatter = logging.Formatter('%(asctime)s | %(levelname)-8s | %(name)-30s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+                terminal_file_handler.setFormatter(formatter)
+                # Add handler to root logger to capture all logs
+                root_logger = logging.getLogger()
+                root_logger.addHandler(terminal_file_handler)
             
             def log_db_write(operation: str, message_type: str, data: Dict[str, Any], is_update: bool = False):
                 """Log a DB write operation to the debug file."""
+                if debug_db_file is None:
+                    return  # Skip logging if debug is disabled
                 try:
                     log_entry = {
                         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -663,9 +673,10 @@ class ResponseProcessor:
                 except Exception as e:
                     logger.debug(f"Error writing DB log: {e}")
             
-            # Store log function and terminal handler in self for cleanup
-            self._log_db_write = log_db_write
-            self._terminal_file_handler = terminal_file_handler
+            # Store log function and terminal handler in self for cleanup (only if debug is enabled)
+            if global_config.DEBUG_SAVE_LLM_IO:
+                self._log_db_write = log_db_write
+                self._terminal_file_handler = terminal_file_handler
             
             if global_config.DEBUG_SAVE_LLM_IO:
                 debug_file = debug_dir / f"stream_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.txt"
@@ -2082,13 +2093,14 @@ class ResponseProcessor:
         finish_reason = None
         native_tool_calls_for_message = []
 
-        # Setup frontend message logging (always enabled for debugging)
+        # Setup frontend message logging (only if DEBUG_SAVE_LLM_IO is enabled)
         frontend_debug_file = None
-        debug_dir = Path("debug_streams")
-        debug_dir.mkdir(exist_ok=True)
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        frontend_debug_file = debug_dir / f"frontend_nonstream_{thread_id[:8]}_{timestamp}.txt"
-        logger.info(f"📁 Saving frontend messages (non-streaming) to: {frontend_debug_file}")
+        if global_config.DEBUG_SAVE_LLM_IO:
+            debug_dir = Path("debug_streams")
+            debug_dir.mkdir(exist_ok=True)
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            frontend_debug_file = debug_dir / f"frontend_nonstream_{thread_id[:8]}_{timestamp}.txt"
+            logger.info(f"📁 Saving frontend messages (non-streaming) to: {frontend_debug_file}")
 
         try:
             # Save and Yield thread_run_start status message
