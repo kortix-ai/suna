@@ -3,6 +3,7 @@
 import { Project } from '@/lib/api/threads';
 import { getUserFriendlyToolName } from '@/components/thread/utils';
 import React, { memo, useMemo, useCallback, useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiMessageType } from '@/components/thread/types';
 import { CircleDashed, Globe } from 'lucide-react';
@@ -13,8 +14,6 @@ import { HealthCheckedVncIframe } from '../HealthCheckedVncIframe';
 import { BrowserHeader } from '../tool-views/BrowserToolView';
 import { useTranslations } from 'next-intl';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useDocumentModalStore } from '@/stores/use-document-modal-store';
 import { 
   useKortixComputerStore,
@@ -355,7 +354,8 @@ export const KortixComputer = memo(function KortixComputer({
 
   const showDuringStreaming = currentToolName && [
     'create-file', 'edit-file', 'full-file-rewrite', 'read-file', 'delete-file',
-    'execute-command', 'check-command-output', 'terminate-command'
+    'execute-command', 'check-command-output', 'terminate-command',
+    'spreadsheet-create', 'spreadsheet-add-rows', 'spreadsheet-update-cell', 'spreadsheet-format-cells', 'spreadsheet-read'
   ].includes(currentToolName);
 
   if (isCurrentToolStreaming && totalCompletedCalls > 0 && !showDuringStreaming) {
@@ -801,39 +801,35 @@ export const KortixComputer = memo(function KortixComputer({
     ) : null;
 
     if (isMaximized) {
-      return (
-        <Dialog open={isMaximized} onOpenChange={(open) => !open && setIsMaximized(false)}>
-          <DialogContent 
-            hideCloseButton={true}
-            className="max-w-[100vw] max-h-[100vh] w-[100vw] h-[100vh] p-0 border-0 rounded-none bg-transparent"
-            style={{ contain: 'strict' }}
-          >
-            <VisuallyHidden><DialogTitle>Kortix Computer</DialogTitle></VisuallyHidden>
-            <SandboxDesktop
-              toolCalls={toolCallSnapshots.map(s => s.toolCall)}
-              currentIndex={safeInternalIndex}
-              onNavigate={handleDockNavigate}
-              onPrevious={navigateToPrevious}
-              onNext={navigateToNext}
-              latestIndex={latestIndex}
-              agentStatus={agentStatus}
-              isLiveMode={isLiveMode}
-              onJumpToLive={jumpToLive}
-              onJumpToLatest={jumpToLatest}
-              project={project}
-              messages={messages}
-              onFileClick={onFileClick}
-              streamingText={streamingText}
-              onClose={() => setIsMaximized(false)}
-              currentView={activeView}
-              onViewChange={setActiveView}
-              renderFilesView={renderFilesViewMaximized}
-              renderBrowserView={renderBrowserView}
-              isStreaming={isStreaming}
-              project_id={projectId}
-            />
-          </DialogContent>
-        </Dialog>
+      if (typeof document === 'undefined') return null;
+      
+      return createPortal(
+        <div className="fixed inset-0 z-[9999] bg-background">
+          <SandboxDesktop
+            toolCalls={toolCallSnapshots.map(s => s.toolCall)}
+            currentIndex={safeInternalIndex}
+            onNavigate={handleDockNavigate}
+            onPrevious={navigateToPrevious}
+            onNext={navigateToNext}
+            latestIndex={latestIndex}
+            agentStatus={agentStatus}
+            isLiveMode={isLiveMode}
+            onJumpToLive={jumpToLive}
+            onJumpToLatest={jumpToLatest}
+            project={project}
+            messages={messages}
+            onFileClick={onFileClick}
+            streamingText={streamingText}
+            onClose={() => setIsMaximized(false)}
+            currentView={activeView}
+            onViewChange={setActiveView}
+            renderFilesView={renderFilesViewMaximized}
+            renderBrowserView={renderBrowserView}
+            isStreaming={isStreaming}
+            project_id={projectId}
+          />
+        </div>,
+        document.body
       );
     }
 
@@ -906,39 +902,35 @@ export const KortixComputer = memo(function KortixComputer({
   ) : null;
 
   if (isMaximized) {
-    return (
-      <Dialog open={isMaximized} onOpenChange={(open) => !open && setIsMaximized(false)}>
-        <DialogContent 
-          hideCloseButton={true}
-          className="max-w-[100vw] max-h-[100vh] w-[100vw] h-[100vh] p-0 border-0 rounded-none bg-transparent"
-          style={{ contain: 'strict' }}
-        >
-          <VisuallyHidden><DialogTitle>Kortix Computer</DialogTitle></VisuallyHidden>
-          <SandboxDesktop
-            toolCalls={toolCallSnapshots.map(s => s.toolCall)}
-            currentIndex={safeInternalIndex}
-            onNavigate={handleDockNavigate}
-            onPrevious={navigateToPrevious}
-            onNext={navigateToNext}
-            latestIndex={latestIndex}
-            agentStatus={agentStatus}
-            isLiveMode={isLiveMode}
-            onJumpToLive={jumpToLive}
-            onJumpToLatest={jumpToLatest}
-            project={project}
-            messages={messages}
-            onFileClick={onFileClick}
-            streamingText={streamingText}
-            onClose={() => setIsMaximized(false)}
-            currentView={activeView}
-            onViewChange={setActiveView}
-            renderFilesView={renderFilesViewMaximized}
-            renderBrowserView={renderBrowserView}
-            isStreaming={isStreaming}
-            project_id={projectId}
-          />
-        </DialogContent>
-      </Dialog>
+    if (typeof document === 'undefined') return null;
+    
+    return createPortal(
+      <div className="fixed inset-0 z-[9999] bg-background">
+        <SandboxDesktop
+          toolCalls={toolCallSnapshots.map(s => s.toolCall)}
+          currentIndex={safeInternalIndex}
+          onNavigate={handleDockNavigate}
+          onPrevious={navigateToPrevious}
+          onNext={navigateToNext}
+          latestIndex={latestIndex}
+          agentStatus={agentStatus}
+          isLiveMode={isLiveMode}
+          onJumpToLive={jumpToLive}
+          onJumpToLatest={jumpToLatest}
+          project={project}
+          messages={messages}
+          onFileClick={onFileClick}
+          streamingText={streamingText}
+          onClose={() => setIsMaximized(false)}
+          currentView={activeView}
+          onViewChange={setActiveView}
+          renderFilesView={renderFilesViewMaximized}
+          renderBrowserView={renderBrowserView}
+          isStreaming={isStreaming}
+          project_id={projectId}
+        />
+      </div>,
+      document.body
     );
   }
 

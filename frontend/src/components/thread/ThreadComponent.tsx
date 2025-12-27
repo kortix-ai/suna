@@ -65,6 +65,7 @@ import { backendApi } from '@/lib/api-client';
 import { useKortixComputerStore, useSetIsSidePanelOpen } from '@/stores/kortix-computer-store';
 import { useToolStreamStore } from '@/stores/tool-stream-store';
 import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
+import { useProcessStreamOperation } from '@/stores/spreadsheet-store';
 import { uploadPendingFilesToProject } from '@/components/thread/chat-input/file-upload-handler';
 
 interface ThreadComponentProps {
@@ -651,6 +652,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const handleStreamClose = useCallback(() => { }, []);
 
   const { appendOutput, markComplete } = useToolStreamStore();
+  const processSpreadsheetOperation = useProcessStreamOperation();
   
   const handleToolOutputStream = useCallback((data: { 
     tool_call_id: string; 
@@ -658,13 +660,23 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     output: string; 
     is_final: boolean; 
   }) => {
+    if (data.tool_name === 'spreadsheet' && data.output) {
+      try {
+        const operation = JSON.parse(data.output);
+        if (operation.type === 'spreadsheet_operation') {
+          processSpreadsheetOperation(operation);
+        }
+      } catch (e) {
+      }
+    }
+    
     if (data.output) {
       appendOutput(data.tool_call_id, data.output);
     }
     if (data.is_final) {
       markComplete(data.tool_call_id);
     }
-  }, [appendOutput, markComplete]);
+  }, [appendOutput, markComplete, processSpreadsheetOperation]);
 
   const streamCallbacks = useMemo(() => ({
     onMessage: handleNewMessageFromStream,

@@ -9,7 +9,6 @@ from core.utils.logger import logger
 
 @dataclass
 class ToolOutputStreamingContext:
-    """Context for streaming tool output during agent run execution."""
     agent_run_id: str
     stream_key: str
     tool_call_id: Optional[str] = None
@@ -26,7 +25,6 @@ def set_tool_output_streaming_context(
     stream_key: str,
     tool_call_id: Optional[str] = None
 ) -> None:
-    """Set the tool output streaming context for the current execution."""
     ctx = ToolOutputStreamingContext(
         agent_run_id=agent_run_id,
         stream_key=stream_key,
@@ -36,24 +34,20 @@ def set_tool_output_streaming_context(
 
 
 def get_tool_output_streaming_context() -> Optional[ToolOutputStreamingContext]:
-    """Get the current tool output streaming context."""
     return _tool_output_streaming_context.get()
 
 
 def clear_tool_output_streaming_context() -> None:
-    """Clear the tool output streaming context."""
     _tool_output_streaming_context.set(None)
 
 
 def set_current_tool_call_id(tool_call_id: str) -> None:
-    """Set the current tool call ID in the tool output streaming context."""
     ctx = get_tool_output_streaming_context()
     if ctx:
         ctx.tool_call_id = tool_call_id
 
 
 def get_current_tool_call_id() -> Optional[str]:
-    """Get the current tool call ID from the tool output streaming context."""
     ctx = get_tool_output_streaming_context()
     return ctx.tool_call_id if ctx else None
 
@@ -64,7 +58,6 @@ async def stream_tool_output(
     is_final: bool = False,
     tool_name: str = "execute_command"
 ) -> None:
-    """Stream tool output to the agent run's stream."""
     ctx = get_tool_output_streaming_context()
     if not ctx:
         logger.debug(f"[STREAM] No tool output streaming context available, skipping output stream")

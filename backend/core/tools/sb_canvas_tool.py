@@ -5,7 +5,6 @@ from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
 import json
 import uuid
-import base64
 import asyncio
 import io
 from datetime import datetime
@@ -384,8 +383,7 @@ class SandboxCanvasTool(SandboxToolsBase):
                 except:
                     return self.fail_response(f"Image not found at {image_path}")
                 
-                # Convert image to base64 data URL for embedding in canvas
-                # This makes the canvas self-contained
+                # Get image bytes to read dimensions (not for embedding)
                 if isinstance(image_data, bytes):
                     image_bytes = image_data
                 else:
@@ -400,15 +398,8 @@ class SandboxCanvasTool(SandboxToolsBase):
                     logger.warning(f"Could not read image dimensions: {e}")
                     actual_img_width, actual_img_height = 400, 400
                 
-                # Determine MIME type from extension
-                ext = image_path.lower().split('.')[-1] if '.' in image_path else 'png'
-                mime_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif', 'webp': 'image/webp'}
-                mime_type = mime_map.get(ext, 'image/png')
-                
-                image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-                image_data_url = f"data:{mime_type};base64,{image_base64}"
-
-                # Create element
+                # Create element - store PATH reference, NOT base64 (avoids LLM context bloat)
+                # Frontend canvas-renderer.tsx handles path-based src via getSandboxFileUrl()
                 element_id = str(uuid.uuid4())
                 element_name = name or image_path.split('/')[-1]
                 
@@ -472,7 +463,7 @@ class SandboxCanvasTool(SandboxToolsBase):
                 element = {
                     "id": element_id,
                     "type": "image",
-                    "src": image_data_url,  # Embedded base64 data URL - canvas is self-contained
+                    "src": image_path,  # Store path reference - frontend fetches via sandbox API
                     "x": actual_x,
                     "y": actual_y,
                     "width": elem_width,
@@ -536,16 +527,25 @@ class SandboxCanvasTool(SandboxToolsBase):
 
             elements_info = []
             for element in canvas_data.get("elements", []):
+                # Get src info but NEVER include base64 data in tool results (LLM context bloat)
+                src = element.get("src", "")
+                if src.startswith("data:"):
+                    # Base64 embedded - just indicate it exists
+                    src_info = "(embedded image)"
+                else:
+                    # File path reference - safe to include
+                    src_info = src
+                
                 elements_info.append({
                     "id": element["id"],
                     "name": element["name"],
                     "type": element["type"],
-                    "src": element["src"],
+                    "src": src_info,  # Path or indicator, NEVER base64 data
                     "position": {"x": element["x"], "y": element["y"]},
                     "size": {"width": element["width"], "height": element["height"]},
-                    "rotation": element["rotation"],
-                    "opacity": element["opacity"],
-                    "locked": element["locked"]
+                    "rotation": element.get("rotation", 0),
+                    "opacity": element.get("opacity", 1),
+                    "locked": element.get("locked", False)
                 })
 
             result = {
