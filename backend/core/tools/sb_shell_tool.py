@@ -23,7 +23,7 @@ from core.utils.logger import logger
 1. **Synchronous Commands (blocking=true):**
    - Use for quick operations under 60 seconds
    - Commands run directly and wait for completion
-   - Example: `execute_command(command="ls -l", blocking=true)`
+   - Example: use execute_command with command "ls -l" and blocking true
 
 2. **Asynchronous Commands (blocking=false or omit):**
    - Use for ANY command that might take longer than 60 seconds
@@ -218,10 +218,9 @@ class SandboxShellTool(SandboxToolsBase):
                         pty_size=PtySize(cols=120, rows=40)
                     )
                     
-                    # Send cd command first if needed
-                    if cwd != self.workspace_path:
-                        await pty_handle.send_input(f"cd {cwd}\n")
-                        await asyncio.sleep(0.1)
+                    # Always cd to workspace directory since PTY starts in container's WORKDIR (/app)
+                    await pty_handle.send_input(f"cd {cwd}\n")
+                    await asyncio.sleep(0.1)
                     
                     # Add marker to detect completion
                     marker = f"__CMD_DONE_{str(uuid4())[:8]}__"

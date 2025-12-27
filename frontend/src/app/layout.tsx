@@ -12,6 +12,7 @@ import { roobert } from './fonts/roobert';
 import { roobertMono } from './fonts/roobert-mono';
 import { Suspense, lazy } from 'react';
 import { I18nProvider } from '@/components/i18n-provider';
+import { featureFlags } from '@/lib/feature-flags';
 
 // Lazy load non-critical analytics and global components
 const Analytics = lazy(() => import('@vercel/analytics/react').then(mod => ({ default: mod.Analytics })));
@@ -135,7 +136,9 @@ export default function RootLayout({
         <link rel="canonical" href="https://kortix.com" />
         
         {/* iOS Smart App Banner - shows native install banner in Safari */}
-        <meta name="apple-itunes-app" content="app-id=6754448524, app-argument=kortix://" />
+        {!featureFlags.disableMobileAdvertising ? (
+          <meta name="apple-itunes-app" content="app-id=6754448524, app-argument=kortix://" />
+        ) : null}
 
         <Script id="facebook-pixel" strategy="lazyOnload">
           {`

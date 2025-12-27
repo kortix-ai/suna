@@ -124,7 +124,7 @@
       }
     },
     "owner": "kortix",
-    "runtimeVersion": "1.1.0",
+    "runtimeVersion": "1.1.1",
     "updates": {
       "url": "https://u.expo.dev/9fca3cff-a291-41c9-88b9-feb8053b990f",
       "checkAutomatically": "ON_LOAD",

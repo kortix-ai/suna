@@ -21,16 +21,23 @@ from urllib.parse import unquote
     usage_guide="""
 ### PRESENTATION CREATION WORKFLOW
 
-**🚨 CRITICAL: This tool provides the `create_slide()` function for presentations!**
-- **ALWAYS** use `create_slide()` when creating presentation slides
-- **NEVER** use generic `create_file()` to create presentation slides
+**🚨 CRITICAL: This tool provides the create_slide function for presentations!**
+- **ALWAYS** use create_slide when creating presentation slides
+- **NEVER** use generic create_file to create presentation slides
 - This tool is specialized for presentation creation with proper formatting, validation, and navigation
+
+**🚨 ABSOLUTE REQUIREMENT - NO SEARCHES BEFORE INITIALIZATION:**
+- **DO NOT perform ANY web search, image search, or research BEFORE initializing the presentation tool**
+- **MUST initialize the presentation tool FIRST** using initialize_tools
+- **ONLY AFTER initialization**, follow the guide phases in exact order - Phase 1 → Phase 2 → Phase 3 → Phase 4 → Final Phase
+- **MUST FOLLOW THE GUIDE BLINDLY** - execute each phase exactly as specified, in order, without skipping steps or doing work out of sequence
+- The guide specifies exactly when to do searches (Phase 2 and Phase 3) - do NOT do them earlier
 
 **DEFAULT: CUSTOM THEME (ALWAYS USE UNLESS USER EXPLICITLY REQUESTS TEMPLATE)**
 Always create truly unique presentations with custom design systems based on the topic's actual brand colors and visual identity.
 
 **EFFICIENCY RULES - CRITICAL:**
-1. **Web/Image Search:** ALWAYS use batch mode - `web_search(query=["q1", "q2", "q3"])` - ALL queries in ONE call
+1. **Web/Image Search:** ALWAYS use batch mode with multiple queries - use web_search with multiple queries - ALL queries in ONE call
 2. **Shell Commands:** Chain ALL folder creation + downloads in ONE command
 3. **Task Updates:** ONLY update tasks when completing a PHASE. Batch updates in SAME call
 
@@ -47,31 +54,141 @@ presentations/
 
 **CUSTOM THEME WORKFLOW (DEFAULT):**
 
-**Phase 1: Topic Confirmation**
-- Ask user about: topic/subject, target audience, goals, requirements
-- WAIT FOR USER CONFIRMATION before proceeding
+Follow this workflow for every presentation. **Complete each phase fully before moving to the next.**
 
-**Phase 2: Theme and Content Planning**
-- Batch web search for brand identity: `web_search(query=["[topic] brand colors", "[topic] visual identity"])`
-- Define context-based custom color scheme from ACTUAL topic's brand colors
-- **CRITICAL:** Use actual topic-specific colors, NOT generic industry associations
-- Document where you found color information
+**Phase 1: Topic Confirmation** 📋
 
-**Phase 3: Research and Content Planning (Complete ALL steps before Phase 4)**
-- Batch content research with web_search
-- Create content outline with specific image queries for each slide
-- Batch image search: `image_search(query=["[topic] query1", "[topic] query2"])` - ALL in ONE call
-- Single command for folder + ALL downloads + verify
-- Document image mapping (slide number → image filename)
+1. **Topic and Context Confirmation**: Ask the user about:
+   - **Presentation topic/subject**
+   - **Target audience**
+   - **Presentation goals**
+   - **Any specific requirements or preferences**
 
-**Phase 4: Slide Creation (USE AS MANY IMAGES AS POSSIBLE)**
-- Only start after Phase 3 complete - all images downloaded and verified
-- Use images from `../images/[filename]` path
-- DO NOT skip images - if outline specified images, include them in slide HTML
+2. **WAIT FOR USER CONFIRMATION**: Use the `ask` tool with `follow_up_answers` providing common options (e.g., ["Business audience", "Technical audience", "General public", "Students"]) to reduce typing friction. Wait for the user's response before proceeding.
 
-**Final Phase: Deliver**
-- Review for visual consistency
-- Deliver with first slide attached using 'complete' tool
+**Phase 2: Theme and Content Planning** 📝
+
+1. **Batch Web Search for Brand Identity**: Use `web_search` in BATCH MODE to research the topic's visual identity efficiently:
+   ```
+   use web_search with multiple queries ([topic] brand colors, [topic] visual identity, [topic] official website design, [topic] brand guidelines)
+   ```
+   **ALL queries in ONE call.** Search for specific brand colors, visual identity, and design elements:
+   - For companies/products: Search for their official website, brand guidelines, marketing materials
+   - For people: Search for their personal website, portfolio, professional profiles
+   - For topics: Search for visual identity, brand colors, or design style associated with the topic
+
+2. **Define Context-Based Custom Color Scheme and Design Elements**: Based on the research findings, define the custom color palette, font families, typography, and layout patterns. **🚨 CRITICAL REQUIREMENTS - NO GENERIC COLORS ALLOWED**:
+   - **USE ACTUAL TOPIC-SPECIFIC COLORS**: The color scheme MUST be based on the actual topic's brand colors, visual identity, or associated colors discovered in research, NOT generic color associations:
+     - **CORRECT APPROACH**: Research the actual topic's brand colors, visual identity, or design elements from official sources (website, brand guidelines, marketing materials, etc.) and use those specific colors discovered in research
+     - **WRONG APPROACH**: Using generic color associations like "blue for tech", "red for speed", "green for innovation", "purple-to-blue gradient for tech" without first checking what the actual topic's brand uses
+     - **For companies/products**: Use their actual brand colors from their official website, brand guidelines, or marketing materials discovered in research
+     - **For people**: Use your research to find their actual visual identity from relevant sources (website, portfolio, professional profiles, etc.)
+     - **For topics**: Use visual identity, brand colors, or design style associated with the topic discovered through research
+     - **Always verify first**: Never use generic industry color stereotypes without checking the actual topic's brand/visual identity
+   - **🚨 ABSOLUTELY FORBIDDEN**: Do NOT use generic tech color schemes like "purple-to-blue gradient", "blue for tech", "green for innovation" unless your research specifically shows these are the topic's actual brand colors. Always verify first!
+   - **Research-Driven**: If the topic has specific brand colors discovered in research, you MUST use those. If research shows no specific brand colors exist, only then use colors that are contextually associated with the topic based on your research findings, but EXPLAIN why those colors are contextually appropriate based on your research.
+   - **No Generic Associations**: Avoid generic color meanings like "blue = tech", "red = speed", "green = growth", "purple-to-blue gradient = tech" unless your research specifically shows these colors are associated with the topic. These generic associations are FORBIDDEN.
+   - **For People Specifically**: If researching a person, you MUST use your research to find their actual color scheme and visual identity from relevant sources. Determine what sources are appropriate based on the person's profession, field, and what you discover in research (could be website, portfolio, professional profiles, social media, etc. - decide based on context). Only if you cannot find any visual identity, then use colors contextually appropriate based on their field/work, but EXPLAIN the reasoning and what research you did.
+   - **Match Visual Identity**: Font families, typography, and layout patterns should also align with the topic's actual visual identity if discoverable, or be contextually appropriate based on research
+   - **Document Your Theme**: When defining the theme, you MUST document:
+     - Where you found the color information (specific URLs, portfolio link, brand website, etc.)
+     - If no specific colors were found, explain what research you did and why you chose the colors based on context
+     - Never use generic tech/industry color schemes without explicit research justification
+
+**✅ Update tasks: Mark Phase 2 complete + Start Phase 3 in ONE call**
+
+**Phase 3: Research and Content Planning** 📝
+**Complete ALL steps in this phase, including ALL image downloads, before proceeding to Phase 4.**
+
+1. **Batch Content Research**: Use `web_search` in BATCH MODE to thoroughly research the topic efficiently:
+   ```
+   use web_search with multiple queries ([topic] history background, [topic] key features characteristics, [topic] statistics data facts, [topic] significance importance impact)
+   ```
+   **ALL queries in ONE call.** Then use `web_scrape` to gather detailed information, facts, data, and insights. The more context you gather, the better you can select appropriate images.
+
+2. **Create Content Outline** (MANDATORY): Develop a structured outline that maps out content for each slide. Focus on one main idea per slide. For each image needed, note the specific query. **CRITICAL**: Use your research context to create intelligent, context-aware image queries that are **TOPIC-SPECIFIC**, not generic:
+   - **CORRECT APPROACH**: Always include the actual topic name, brand, product, person's name, or entity in your queries:
+     - `"[actual topic name] [specific attribute]"`
+     - `"[actual brand] [specific element]"`
+     - `"[actual person name] [relevant context]"`
+     - `"[actual location] [specific feature]"`
+   - **WRONG APPROACH**: Generic category queries without the specific topic name (e.g., using "technology interface" instead of including the actual topic name, or "tropical destination" instead of including the actual location name)
+   - **For companies/products**: Include the actual company/product name in queries (e.g., "[company name] headquarters", "[product name] interface")
+   - **For people**: ALWAYS include the person's full name in the query along with relevant context
+   - **For topics/locations**: ALWAYS include the topic/location name in the query along with specific attributes
+   - Match image queries to the EXACT topic being researched, not just the category
+   - Use specific names, brands, products, people, locations you discovered in research
+   - **Document which slide needs which image** - you'll need this mapping in Phase 4
+
+3. **Batch Image Search** (MANDATORY): Use `image_search` in BATCH MODE with ALL topic-specific queries:
+   ```
+   use image_search with multiple queries ([topic] exterior view, [topic] interior detail, [topic] key feature, [topic] overview context) and num_results 2
+   ```
+   **ALL queries in ONE call.** Results format: `{{"batch_results": [{{"query": "...", "images": ["url1", "url2"]}}, ...]}}`
+   - **TOPIC-SPECIFIC IMAGES REQUIRED**: Images MUST be specific to the actual topic/subject being researched, NOT generic category images
+   - **For companies/products**: ALWAYS include the actual company/product name in every image query
+   - **For people**: ALWAYS include the person's full name in every image query along with relevant context
+   - **For topics/locations**: ALWAYS include the topic/location name in every image query along with specific attributes
+   - Use context-aware queries based on your research that include the specific topic name/brand/product/person/location
+   - Set `num_results=2` to get 2-3 relevant results per query for selection flexibility
+
+4. **Extract and Select Topic-Specific Image URLs** (MANDATORY): From the batch results, extract image URLs and **select the most contextually appropriate image** for each slide based on:
+   - **TOPIC SPECIFICITY FIRST**: Does it show the actual topic/subject being researched or just a generic category? Always prefer images that directly show the specific topic, brand, product, person, or entity over generic category images
+   - How well it matches the slide content and your research findings
+   - How well it aligns with your research findings (specific names, brands, products discovered)
+   - How well it fits the presentation theme and color scheme
+   - Visual quality and relevance
+
+5. **Single Command - Folder + All Downloads + Verify** (MANDATORY): Download ALL images in ONE chained command:
+   ```bash
+   mkdir -p presentations/images && wget "URL1" -O presentations/images/slide1_exterior.jpg && wget "URL2" -O presentations/images/slide2_interior.jpg && wget "URL3" -O presentations/images/slide3_detail.jpg && wget "URL4" -O presentations/images/slide4_overview.jpg && ls -lh presentations/images/
+   ```
+   **ONE COMMAND** creates folder, downloads ALL images, and verifies. NEVER use multiple separate commands!
+   - **CRITICAL**: Do NOT use `2>/dev/null` to suppress errors - you need to see if downloads fail
+   - **CRITICAL**: After the `ls -lh` command, VERIFY that ALL expected image files are present
+   - **CRITICAL**: If any image download fails, you MUST retry or find alternative image URLs
+   - **CRITICAL**: Count the files in `ls` output and ensure it matches the number of images you attempted to download
+   - Use descriptive filenames that clearly identify the image's purpose (e.g., `slide1_intro_image.jpg`, `slide2_team_photo.jpg`)
+   - Preserve or add appropriate file extensions (.jpg, .png, etc.) based on the image URL
+   - If using `curl` instead of `wget`, use: `curl -L "URL" -o filename` (without suppressing errors)
+
+6. **Document Image Mapping** (MANDATORY): Create a clear mapping of slide number → image filename for reference in Phase 4:
+   - Slide 1 → `slide1_exterior.jpg`
+   - Slide 2 → `slide2_interior.jpg`
+   - etc.
+   - **CRITICAL VERIFICATION**: After `ls -lh`, count the files and ensure the number matches the number of images you attempted to download
+   - **CRITICAL VERIFICATION**: Check that ALL expected filenames appear in the `ls` output
+   - **CRITICAL**: If any image is missing, you MUST retry the download or find alternative image URLs - do NOT proceed to Phase 4 with missing images
+   - Confirm every expected image file exists and is accessible from the `ls` output
+
+**✅ Update tasks: Mark Phase 3 complete + Start Phase 4 in ONE call**
+
+**Phase 4: Slide Creation** (USE AS MANY IMAGES AS POSSIBLE)
+**Only start after Phase 3 checkpoint - all images must be downloaded and verified.**
+
+1. **Create Slides in PARALLEL** (MANDATORY): Use the `create_slide` tool to create ALL slides simultaneously using parallel execution. **DO NOT create slides one-by-one sequentially** - create them all at once in parallel for efficiency:
+   - Prepare all slide content first (based on your outline from Phase 3)
+   - Call `create_slide` for ALL slides in parallel (e.g., slide 1, 2, 3, 4, 5 all at once)
+   - This dramatically speeds up presentation creation
+   - All styling MUST be derived from the **custom color scheme and design elements** defined in Phase 2. Use the custom color palette, fonts, and layout patterns consistently across all slides.
+   - **CRITICAL - PRESENTATION DESIGN NOT WEBSITE**: Design for fixed 1920x1080 dimensions. DO NOT use responsive design patterns (no `width: 100%`, `max-width`, `vw/vh` units, or responsive breakpoints). This is a PRESENTATION SLIDE, not a website - use fixed pixel dimensions, absolute positioning, and fixed layouts. **FORBIDDEN**: Multi-column grid layouts with cards (like 2x3 grids of feature cards) - these look like websites. Use centered, focused layouts with large content instead.
+
+2. **Use Downloaded Images**: For each slide that requires images, **MANDATORY**: Use the images that were downloaded in Phase 3. **CRITICAL PATH REQUIREMENTS**:
+   - **Image Path Structure**: Images are in `presentations/images/` (shared folder), and slides are in `presentations/[title]/` (presentation folder)
+   - **Reference Path**: Use `../images/[filename]` to reference images (go up one level from presentation folder to shared images folder)
+   - Example: If image is `presentations/images/slide1_intro_image.jpg` and slide is `presentations/[presentation-title]/slide_01.html`, use path: `../images/slide1_intro_image.jpg`
+   - **CRITICAL REQUIREMENTS**:
+     - **DO NOT skip images** - if a slide outline specified images, they must be included in the slide HTML
+     - Use the exact filenames you verified in Phase 3 (e.g., `../images/slide1_intro_image.jpg`)
+     - Include images in `<img>` tags within your slide HTML content
+     - Ensure images are properly sized and positioned within the slide layout
+     - If an image doesn't appear, verify the filename matches exactly (including extension) and the path is correct (`../images/` not `images/`)
+
+**Final Phase: Deliver** 🎯
+
+1. **Review and Verify**: Before presenting, review all slides to ensure they are visually consistent and that all content is displayed correctly.
+
+2. **Deliver the Presentation**: Use the `complete` tool with the **first slide** (e.g., `presentations/[name]/slide_01.html`) attached to deliver the final, polished presentation to the user. **IMPORTANT**: Only attach the opening/first slide to keep the UI tidy - the presentation card will automatically appear and show the full presentation when any presentation slide file is attached.
 
 ### TYPOGRAPHY & ICONS
 
@@ -110,7 +227,9 @@ presentations/
 - Use `overflow: hidden` on containers
 - Always use `box-sizing: border-box` on containers with padding
 - Embrace whitespace - don't fill every pixel
-- Grid columns: Use `gap: 50-60px` for spacing
+- **CRITICAL**: Use centered, focused layouts - NOT multi-column card grids (which look like websites)
+- For multiple items: Use simple vertical lists or 2-3 large items side-by-side (NOT 6+ cards in grid)
+- Think PowerPoint slide: Large title, centered content, minimal elements - NOT website feature sections
 
 **Dimension Requirements:**
 - Slide size: 1920x1080 pixels (16:9 aspect ratio)
@@ -162,7 +281,7 @@ class SandboxPresentationTool(SandboxToolsBase):
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=1920, initial-scale=1.0">
     <title>{presentation_title} - Slide {slide_number}</title>
     <!-- Google Fonts - Inter for modern, clean typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -553,7 +672,7 @@ class SandboxPresentationTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "create_slide",
-            "description": "Create or update a single slide in a presentation. **WHEN TO USE**: This tool is ONLY for custom theme presentations (when no template is selected). **WHEN TO SKIP**: Do NOT use this tool for template-based presentations - use `full_file_rewrite` instead to rewrite existing template slide files. Each slide is saved as a standalone HTML file with 1920x1080 dimensions (16:9 aspect ratio). Slides are automatically validated to ensure both width (≤1920px) and height (≤1080px) limits are met. Use `box-sizing: border-box` on containers with padding to prevent dimension overflow. **CRITICAL**: For custom theme presentations, you MUST have completed Phase 3 (research, content outline, image search, and ALL image downloads) before using this tool. All styling MUST be derived from the custom color scheme and design elements defined in Phase 2.",
+            "description": "Create or update a single slide in a presentation. **WHEN TO USE**: This tool is ONLY for custom theme presentations (when no template is selected). **WHEN TO SKIP**: Do NOT use this tool for template-based presentations - use full_file_rewrite instead to rewrite existing template slide files. **PARALLEL EXECUTION**: This function supports parallel execution - create ALL slides simultaneously by using create_slide multiple times in parallel for much faster completion. Each slide is saved as a standalone HTML file with 1920x1080 dimensions (16:9 aspect ratio). Slides are automatically validated to ensure both width (≤1920px) and height (≤1080px) limits are met. Use `box-sizing: border-box` on containers with padding to prevent dimension overflow. **CRITICAL**: For custom theme presentations, you MUST have completed Phase 3 (research, content outline, image search, and ALL image downloads) before using this tool. All styling MUST be derived from the custom color scheme and design elements defined in Phase 2. **PRESENTATION DESIGN NOT WEBSITE**: Use fixed pixel dimensions, absolute positioning, and fixed layouts - NO responsive design patterns.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -628,6 +747,37 @@ class SandboxPresentationTool(SandboxToolsBase):
                         *   Grid columns: Use `gap: 50-60px`
                         *   Embrace whitespace - don't fill every pixel
                         *   **CRITICAL**: Always use `box-sizing: border-box` on main containers to prevent dimension overflow
+                        
+                        ### **🚨 PRESENTATION DESIGN vs WEBSITE DESIGN - CRITICAL**
+                        **THIS IS A PRESENTATION SLIDE, NOT A WEBSITE:**
+                        
+                        **❌ FORBIDDEN - Website-like Patterns:**
+                        *   **FORBIDDEN**: Multi-column grid layouts with cards/boxes (like 2x3, 3x2 grids of feature cards)
+                        *   **FORBIDDEN**: Card-based layouts that look like website feature sections
+                        *   **FORBIDDEN**: Responsive design patterns (`width: 100%`, `max-width`, `vw/vh` units, media queries, responsive breakpoints)
+                        *   **FORBIDDEN**: Website navigation patterns (menus, headers, footers, sidebars)
+                        *   **FORBIDDEN**: Scrolling content - everything must fit in 1920x1080 viewport
+                        *   **FORBIDDEN**: CSS Grid with multiple columns/rows creating card grids
+                        *   **FORBIDDEN**: Flexbox layouts that create website-like card sections
+                        
+                        **✅ REQUIRED - Presentation-style Layouts:**
+                        *   **REQUIRED**: Centered, focused content - one main idea per slide
+                        *   **REQUIRED**: Large, prominent titles (48-72px) centered or left-aligned at top
+                        *   **REQUIRED**: Fixed pixel dimensions (e.g., `width: 800px`, `height: 400px`)
+                        *   **REQUIRED**: Absolute or fixed positioning for precise layout control
+                        *   **REQUIRED**: Fixed layouts that don't adapt to screen size
+                        *   **REQUIRED**: Simple, clean layouts - think PowerPoint slide, not website
+                        *   **REQUIRED**: If showing multiple items, use simple vertical lists or 2-3 large items side-by-side (NOT grid of 6+ cards)
+                        
+                        **Presentation Layout Examples:**
+                        *   ✅ **GOOD**: Large centered title, single large image below, 3-5 bullet points
+                        *   ✅ **GOOD**: Title at top, 2-3 large content sections side-by-side (each 500-600px wide)
+                        *   ✅ **GOOD**: Title, large quote/testimonial, author name
+                        *   ❌ **BAD**: Grid of 6 feature cards in 2x3 layout (looks like website)
+                        *   ❌ **BAD**: Multiple small cards with icons and descriptions in grid
+                        *   ❌ **BAD**: Website-style sections with headers and multiple columns
+                        
+                        **Think**: PowerPoint slide with centered/large content, NOT a responsive website with card grids
                         """
                     },
                     "presentation_title": {

@@ -22,15 +22,15 @@ from core.utils.config import config
 ### BROWSER AUTOMATION CAPABILITIES
 
 **CORE BROWSER FUNCTIONS:**
-- `browser_navigate_to(url)` - Navigate to any URL
-- `browser_act(action, variables, iframes, filePath)` - Perform ANY browser action using natural language
+- browser_navigate_to with url parameter - Navigate to any URL
+- browser_act with action, variables, iframes, filePath parameters - Perform ANY browser action using natural language
   * Examples: "click the login button", "fill in email with user@example.com", "scroll down", "select option from dropdown"
   * Supports variables for secure data entry (not shared with LLM providers)
   * Handles iframes when needed
   * CRITICAL: Include filePath parameter for ANY action involving file uploads to prevent accidental file dialog triggers
-- `browser_extract_content(instruction, iframes)` - Extract structured content from pages
+- browser_extract_content with instruction and iframes parameters - Extract structured content from pages
   * Example: "extract all product prices", "get apartment listings with address and price"
-- `browser_screenshot(name)` - Take screenshots of the current page
+- browser_screenshot with name parameter - Take screenshots of the current page
 
 **WHAT YOU CAN DO:**
 - Navigate to any URL and browse websites

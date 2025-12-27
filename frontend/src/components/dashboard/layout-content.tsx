@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import { useApiHealth } from '@/hooks/usage/use-health';
 import { useAdminRole } from '@/hooks/admin';
 import { usePresence } from '@/hooks/use-presence';
+import { featureFlags } from '@/lib/feature-flags';
 
 import { useProjects } from '@/hooks/sidebar/use-sidebar';
 import { useIsMobile } from '@/hooks/utils';
@@ -190,12 +191,14 @@ export default function DashboardLayoutContent({
         </Suspense>
         {/* Kortix App announcement banners */}
         <Suspense fallback={null}>
-          <KortixAppBanners />
+          <KortixAppBanners disableMobileAdvertising={featureFlags.disableMobileAdvertising} />
         </Suspense>
         {/* Mobile app install interstitial - shown on actual mobile devices */}
-        <Suspense fallback={null}>
-          <MobileAppInterstitial />
-        </Suspense>
+        {!featureFlags.disableMobileAdvertising ? (
+          <Suspense fallback={null}>
+            <MobileAppInterstitial />
+          </Suspense>
+        ) : null}
       </div>
     </AppProviders>
   );

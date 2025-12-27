@@ -25,7 +25,7 @@ from typing import Union, List
 - Get comprehensive image results with titles, URLs, and metadata
 
 **BATCH MODE FOR EFFICIENCY:**
-- Use `image_search(query=["query1", "query2", "query3"])` for multiple searches
+- Use image_search with multiple queries for multiple searches
 - All queries execute in parallel for faster results
 - Returns: `{"batch_results": [{"query": "...", "images": ["url1", "url2"]}, ...]}`
 
@@ -99,8 +99,8 @@ class SandboxImageSearchTool(SandboxToolsBase):
         Search for images using SERPER API and return image URLs.
         
         Supports both single and batch searches:
-        - Single: query="cats" returns {"images": [...]}  
-        - Batch: query=["cats", "dogs"] returns {"batch_results": [...]}
+        - Single: provide query parameter with a single search term like "cats" returns {"images": [...]}  
+        - Batch: provide query parameter with multiple search terms as an array returns {"batch_results": [...]}
         """
         # Initialize variables for error handling
         is_batch = False

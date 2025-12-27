@@ -688,25 +688,59 @@ async def generate_images(
 class ConvertToSvgRequest(BaseModel):
     """Request model for PNG to SVG conversion"""
     image_base64: str  # Base64 encoded PNG image
-    # VTracer options - optimized for logos: small size, clean edges
-    colormode: Optional[str] = "color"  # 'color' or 'bw'
-    hierarchical: Optional[str] = "cutout"  # Clean non-overlapping
-    filter_speckle: Optional[int] = 10  # Filter small noise aggressively
-    color_precision: Optional[int] = 4  # Quantize colors = fewer paths
-    corner_threshold: Optional[int] = 90  # Sharp geometric corners
-    length_threshold: Optional[float] = 4.0  # Simplify paths = smaller file
-    splice_threshold: Optional[int] = 45
-    mode: Optional[str] = "polygon"  # Clean polygon edges, not curves
-    layer_difference: Optional[int] = 48  # Fewer color layers = simpler
-    max_iterations: Optional[int] = 4
-    path_precision: Optional[int] = 2  # Less decimal precision = smaller
+    # VTracer fallback options
+    colormode: Optional[str] = "color"
+    mode: Optional[str] = "spline"
 
 
 class ConvertToSvgResponse(BaseModel):
     """Response model for SVG conversion"""
     success: bool
-    svg: Optional[str] = None  # SVG string content
+    svg: Optional[str] = None
     error: Optional[str] = None
+
+
+async def _convert_with_recraft(image_data_url: str) -> Optional[str]:
+    """Try recraft-ai/recraft-vectorize, returns SVG string or None on failure."""
+    try:
+        output = replicate.run(
+            "recraft-ai/recraft-vectorize",
+            input={"image": image_data_url}
+        )
+        # Output is a FileOutput URL to the SVG
+        if output:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.get(str(output))
+                if resp.status_code == 200:
+                    return resp.text
+        return None
+    except Exception as e:
+        logger.warning(f"Recraft vectorize failed: {e}")
+        return None
+
+
+def _convert_with_vtracer(png_bytes: bytes, colormode: str, mode: str) -> Optional[str]:
+    """Fallback: convert using vtracer."""
+    try:
+        import vtracer
+        return vtracer.convert_raw_image_to_svg(
+            png_bytes,
+            img_format='png',
+            colormode=colormode,
+            hierarchical='cutout',
+            filter_speckle=10,
+            color_precision=4,
+            corner_threshold=90,
+            length_threshold=4.0,
+            splice_threshold=45,
+            mode=mode,
+            layer_difference=48,
+            max_iterations=4,
+            path_precision=2,
+        )
+    except Exception as e:
+        logger.warning(f"VTracer fallback failed: {e}")
+        return None
 
 
 @router.post("/convert-svg", response_model=ConvertToSvgResponse)
@@ -714,89 +748,58 @@ async def convert_to_svg(
     request: ConvertToSvgRequest,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> ConvertToSvgResponse:
-    """
-    Convert a PNG/JPG image to SVG using VTracer.
-    VTracer is a high-quality raster to vector converter.
-    """
+    """Convert image to SVG. Primary: recraft-ai/recraft-vectorize ($0.01). Fallback: vtracer (free)."""
+    from PIL import Image
+    import io
+    
+    # BILLING: Check credits (recraft costs $0.01)
+    has_credits, credit_msg, balance = await media_billing.check_credits(user_id)
+    if not has_credits:
+        return ConvertToSvgResponse(success=False, error=f"Insufficient credits: {credit_msg}")
+    
+    # Parse base64
+    image_data = request.image_base64
+    if "," in image_data:
+        image_data = image_data.split(",", 1)[1]
+    
     try:
-        import vtracer
-        from PIL import Image
-        import io
-        
-        # Extract base64 data
-        image_data = request.image_base64
-        if "," in image_data:
-            image_data = image_data.split(",", 1)[1]
-        
-        # Decode base64 to bytes
-        try:
-            image_bytes = base64.b64decode(image_data)
-        except Exception as e:
-            return ConvertToSvgResponse(
-                success=False,
-                error=f"Invalid base64 image data: {str(e)}"
-            )
-        
-        # Load image and ensure it's in a format vtracer can handle
-        try:
-            img = Image.open(io.BytesIO(image_bytes))
-            # Convert to RGBA if needed
-            if img.mode != 'RGBA':
-                img = img.convert('RGBA')
-            
-            # Save as PNG bytes for vtracer
-            png_buffer = io.BytesIO()
-            img.save(png_buffer, format='PNG')
-            png_bytes = png_buffer.getvalue()
-        except Exception as e:
-            return ConvertToSvgResponse(
-                success=False,
-                error=f"Failed to process image: {str(e)}"
-            )
-        
-        # Convert to SVG - logo optimized: small size, clean edges
-        try:
-            svg_str = vtracer.convert_raw_image_to_svg(
-                png_bytes,
-                img_format='png',
-                colormode=request.colormode or 'color',
-                hierarchical=request.hierarchical or 'cutout',
-                filter_speckle=request.filter_speckle if request.filter_speckle is not None else 10,
-                color_precision=request.color_precision if request.color_precision is not None else 4,
-                corner_threshold=request.corner_threshold if request.corner_threshold is not None else 90,
-                length_threshold=request.length_threshold if request.length_threshold is not None else 4.0,
-                splice_threshold=request.splice_threshold if request.splice_threshold is not None else 45,
-                mode=request.mode or 'polygon',
-                layer_difference=request.layer_difference if request.layer_difference is not None else 48,
-                max_iterations=request.max_iterations if request.max_iterations is not None else 4,
-                path_precision=request.path_precision if request.path_precision is not None else 2,
-            )
-            
-            logger.info(f"Successfully converted image to SVG ({len(svg_str)} chars)")
-            
-            return ConvertToSvgResponse(
-                success=True,
-                svg=svg_str
-            )
-            
-        except Exception as e:
-            logger.error(f"VTracer conversion failed: {e}")
-            return ConvertToSvgResponse(
-                success=False,
-                error=f"SVG conversion failed: {str(e)}"
-            )
-        
-    except ImportError:
-        return ConvertToSvgResponse(
-            success=False,
-            error="vtracer library not installed. Run: pip install vtracer"
-        )
+        image_bytes = base64.b64decode(image_data)
     except Exception as e:
-        logger.error(f"SVG conversion error: {e}")
-        return ConvertToSvgResponse(
-            success=False,
-            error=str(e)
+        return ConvertToSvgResponse(success=False, error=f"Invalid base64: {e}")
+    
+    # Prepare image
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        if img.mode != 'RGBA':
+            img = img.convert('RGBA')
+        png_buffer = io.BytesIO()
+        img.save(png_buffer, format='PNG')
+        png_bytes = png_buffer.getvalue()
+        png_b64 = base64.b64encode(png_bytes).decode('utf-8')
+        image_data_url = f"data:image/png;base64,{png_b64}"
+    except Exception as e:
+        return ConvertToSvgResponse(success=False, error=f"Image processing failed: {e}")
+    
+    # Try recraft first
+    svg_str = await _convert_with_recraft(image_data_url)
+    if svg_str:
+        # BILLING: Deduct $0.01 for recraft vectorize
+        await media_billing.deduct_replicate_image(
+            account_id=user_id,
+            model="recraft-ai/recraft-vectorize",
+            count=1,
+            description="Canvas SVG vectorization",
         )
+        logger.info(f"Recraft vectorize success ({len(svg_str)} chars)")
+        return ConvertToSvgResponse(success=True, svg=svg_str)
+    
+    # Fallback to vtracer (free, no billing)
+    svg_str = _convert_with_vtracer(png_bytes, request.colormode or 'color', request.mode or 'spline')
+    if svg_str:
+        logger.info(f"VTracer fallback success ({len(svg_str)} chars)")
+        return ConvertToSvgResponse(success=True, svg=svg_str)
+    
+    return ConvertToSvgResponse(success=False, error="Both recraft and vtracer failed")
 
 
 @router.post("/ocr", response_model=OCRResponse)
