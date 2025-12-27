@@ -1,6 +1,7 @@
 'use client';
 
 import { Navbar } from '@/components/home/navbar';
+import { CookieBanner } from '@/components/home/cookie-banner';
 import { isLocalMode } from '@/lib/config';
 import { usePathname } from 'next/navigation';
 
@@ -23,6 +24,7 @@ export function HomeLayoutClient({
     <div className="w-full relative">
       <Navbar tabs={tabs} />
       {children}
+      <CookieBanner />
     </div>
   );
 }
