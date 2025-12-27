@@ -773,18 +773,12 @@ class SandboxImageEditTool(SandboxToolsBase):
                         elem_width = actual_width
                         elem_height = actual_height
                     
-                    # Convert to base64 for embedding
-                    ext = image_file.lower().split('.')[-1] if '.' in image_file else 'png'
-                    mime_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif', 'webp': 'image/webp'}
-                    mime_type = mime_map.get(ext, 'image/png')
-                    image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-                    image_data_url = f"data:{mime_type};base64,{image_base64}"
-                    
-                    # Create element
+                    # Create element with PATH reference (NOT base64 - avoids LLM context bloat)
+                    # Frontend canvas-renderer.tsx fetches images via sandbox API
                     element = {
                         "id": str(uuid.uuid4()),
                         "type": "image",
-                        "src": image_data_url,
+                        "src": image_file,  # Store path, not base64
                         "x": current_x,
                         "y": current_y,
                         "width": elem_width,
