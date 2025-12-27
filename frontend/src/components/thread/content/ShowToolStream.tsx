@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { CircleDashed } from 'lucide-react';
+import { CircleDashed, CheckCircle } from 'lucide-react';
 import { getToolIcon, getUserFriendlyToolName, extractPrimaryParam } from '@/components/thread/utils';
 import { AppIcon } from '../tool-views/shared/AppIcon';
 
@@ -130,6 +130,13 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     const isFullFileRewrite = toolName === 'Rewriting File';
     
     const effectiveToolCall = toolCall || parsedToolCall;
+    
+    // Check if tool is completed (has tool_result or completed flag)
+    // tool_result can be an object with success/output/error, or just a truthy value
+    const isCompleted = effectiveToolCall?.completed === true || 
+                       (effectiveToolCall?.tool_result !== undefined && 
+                        effectiveToolCall?.tool_result !== null &&
+                        (typeof effectiveToolCall.tool_result === 'object' || Boolean(effectiveToolCall.tool_result)));
 
     // Extract content from JSON or plain text
     const extractContent = (rawContent: string): { html: string; plainText: string } => {
@@ -306,7 +313,11 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 >
                     <AppIcon toolCall={effectiveToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground shrink-0" fallbackIcon={IconComponent} />
                     <span className="font-mono text-xs text-foreground">Generate Media</span>
-                    <CircleDashed className="h-3.5 w-3.5 text-muted-foreground shrink-0 animate-spin ml-1" />
+                    {isCompleted ? (
+                        <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0 ml-1" />
+                    ) : (
+                        <CircleDashed className="h-3.5 w-3.5 text-muted-foreground shrink-0 animate-spin ml-1" />
+                    )}
                 </button>
 
                 {/* Shimmer below - aspect-video for video, aspect-square for image */}
@@ -362,7 +373,11 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                         </div>
                         <span className="font-mono text-xs text-foreground flex-1">{displayName}</span>
                         {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
-                        <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-auto" />
+                        {isCompleted ? (
+                            <CheckCircle className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0 ml-auto" />
+                        ) : (
+                            <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-auto" />
+                        )}
                     </button>
 
                     {/* Streaming content below - smooth height transition */}
@@ -456,7 +471,11 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 </div>
                 <span className="font-mono text-xs text-foreground">{displayName}</span>
                 {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
-                <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-1" />
+                {isCompleted ? (
+                    <CheckCircle className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0 ml-1" />
+                ) : (
+                    <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-1" />
+                )}
             </button>
         </div>
     );

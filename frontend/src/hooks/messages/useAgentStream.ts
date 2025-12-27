@@ -18,6 +18,7 @@ import { knowledgeBaseKeys } from '@/hooks/knowledge-base/keys';
 import { fileQueryKeys } from '@/hooks/files/use-file-queries';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { accountStateKeys } from '@/hooks/billing';
+import { clearToolTracking } from './tool-tracking';
 
 // Define the structure returned by the hook
 export interface UseAgentStreamResult {
@@ -143,6 +144,12 @@ export function useAgentStream(
   }
   const accumulatedToolCallsRef = useRef<Map<string, AccumulatedToolCall>>(new Map());
   
+  // Track completed tool call IDs (tools that have received results)
+  const completedToolCallIdsRef = useRef<Set<string>>(new Set());
+  
+  // Track tool results by tool_call_id for merging with streaming tool calls
+  const toolResultsRef = useRef<Map<string, UnifiedMessage>>(new Map());
+  
   // Track previous tool call state to prevent unnecessary re-renders
   const previousToolCallStateRef = useRef<string | null>(null);
   const lastToolCallUpdateTimeRef = useRef<number>(0);
@@ -232,8 +239,12 @@ export function useAgentStream(
       currentRunIdRef.current = null;
       // Clear accumulated tool call deltas and previous state
       accumulatedToolCallsRef.current.clear();
+      completedToolCallIdsRef.current.clear();
+      toolResultsRef.current.clear();
       previousToolCallStateRef.current = null;
       lastToolCallUpdateTimeRef.current = 0;
+      // Clear tool tracking when thread changes
+      clearToolTracking();
     }
     threadIdRef.current = threadId;
   }, [threadId]);
@@ -315,8 +326,12 @@ export function useAgentStream(
       setToolCall(null);
       // Clear accumulated tool call deltas and previous state
       accumulatedToolCallsRef.current.clear();
+      completedToolCallIdsRef.current.clear();
+      toolResultsRef.current.clear();
       previousToolCallStateRef.current = null;
       lastToolCallUpdateTimeRef.current = 0;
+      // Clear tool tracking for new stream
+      clearToolTracking();
 
       // Update status and clear run ID
       updateStatus(finalStatus);
@@ -625,6 +640,7 @@ export function useAgentStream(
               }
               
               // Now reconstruct ALL accumulated tool calls (not just from this message)
+              // Merge streaming tool calls with completed tool results
               const allReconstructedToolCalls = Array.from(accumulatedToolCallsRef.current.values())
                 .sort((a, b) => (a.metadata.index ?? 0) - (b.metadata.index ?? 0))
                 .map(accumulated => {
@@ -634,14 +650,47 @@ export function useAgentStream(
                     mergedArgs += chunk.delta;
                   }
                   
+                  const toolCallId = accumulated.metadata.tool_call_id;
+                  const isCompleted = completedToolCallIdsRef.current.has(toolCallId);
+                  const toolResult = toolResultsRef.current.get(toolCallId);
+                  
                   return {
-                    tool_call_id: accumulated.metadata.tool_call_id,
+                    tool_call_id: toolCallId,
                     function_name: accumulated.metadata.function_name,
                     index: accumulated.metadata.index,
                     arguments: mergedArgs,
                     is_delta: false, // Mark as assembled
+                    completed: isCompleted,
+                    tool_result: toolResult ? safeJsonParse<ParsedMetadata>(toolResult.metadata, {}).result : undefined,
                   };
                 });
+              
+              // Also include completed tools that may have results but aren't in accumulated ref
+              // (edge case: result arrives before tool call is fully streamed)
+              toolResultsRef.current.forEach((resultMessage, toolCallId) => {
+                if (!accumulatedToolCallsRef.current.has(toolCallId)) {
+                  const toolMetadata = safeJsonParse<ParsedMetadata>(resultMessage.metadata, {});
+                  const functionName = toolMetadata.function_name;
+                  if (functionName) {
+                    // Add to reconstructed calls if not already present
+                    const existing = allReconstructedToolCalls.find(tc => tc.tool_call_id === toolCallId);
+                    if (!existing) {
+                      allReconstructedToolCalls.push({
+                        tool_call_id: toolCallId,
+                        function_name: functionName,
+                        index: toolMetadata.index,
+                        arguments: '{}',
+                        is_delta: false,
+                        completed: true,
+                        tool_result: toolMetadata.result,
+                      });
+                    }
+                  }
+                }
+              });
+              
+              // Re-sort after adding any missing completed tools
+              allReconstructedToolCalls.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
               
               // Create updated message with ALL reconstructed tool calls
               const updatedMessage = {
@@ -698,12 +747,6 @@ export function useAgentStream(
                 previousToolCallStateRef.current = currentStateKey;
                 lastToolCallUpdateTimeRef.current = now;
                 
-                // Debug log to track multiple tool calls accumulation (only when structure changes)
-                if (structureChanged) {
-                  console.log(`[useAgentStream] Accumulated ${allReconstructedToolCalls.length} tool calls:`, 
-                    allReconstructedToolCalls.map(tc => ({ id: tc.tool_call_id, fn: tc.function_name, argsLen: tc.arguments.length })));
-                }
-                
                 // Set toolCall state with ALL reconstructed tool calls (non-urgent update)
                 React.startTransition(() => {
                   setToolCall(updatedMessage);
@@ -732,8 +775,10 @@ export function useAgentStream(
               setTextContent([]);
               setToolCall(null);
             });
-            // Clear accumulated tool call deltas and previous state
+            // Clear accumulated tool call deltas and previous state when assistant message completes
             accumulatedToolCallsRef.current.clear();
+            completedToolCallIdsRef.current.clear();
+            toolResultsRef.current.clear();
             previousToolCallStateRef.current = null;
             lastToolCallUpdateTimeRef.current = 0;
             if (message.message_id) callbacksRef.current.onMessage(message);
@@ -744,13 +789,94 @@ export function useAgentStream(
           }
           break;
         case 'tool':
-          React.startTransition(() => {
-            setToolCall(null); // Clear any streaming tool call
-          });
-          // Clear accumulated tool call deltas and previous state when tool execution completes
-          accumulatedToolCallsRef.current.clear();
-          previousToolCallStateRef.current = null;
-          lastToolCallUpdateTimeRef.current = 0;
+          // Don't clear toolCall state here - other tools may still be streaming
+          // The tool result message will be handled by onMessage callback, which updates useThreadToolCalls
+          // Mark this tool as completed and store its result, but keep other tools in accumulated ref
+          
+          // Log tool result received
+          try {
+            const toolMetadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
+            const toolCallId = toolMetadata.tool_call_id;
+            const functionName = toolMetadata.function_name;
+            if (toolCallId && functionName) {
+              // Mark this tool call as completed
+              completedToolCallIdsRef.current.add(toolCallId);
+              
+              // Store the tool result for merging with streaming tool calls
+              toolResultsRef.current.set(toolCallId, message);
+              
+              // Trigger an update to streamingToolCall to include this completed tool with its result
+              // Reconstruct all tool calls including this completed one
+              const allReconstructedToolCalls = Array.from(accumulatedToolCallsRef.current.values())
+                .sort((a, b) => (a.metadata.index ?? 0) - (b.metadata.index ?? 0))
+                .map(accumulated => {
+                  let mergedArgs = '';
+                  for (const chunk of accumulated.chunks) {
+                    mergedArgs += chunk.delta;
+                  }
+                  
+                  const tcId = accumulated.metadata.tool_call_id;
+                  const isCompleted = completedToolCallIdsRef.current.has(tcId);
+                  const toolResult = toolResultsRef.current.get(tcId);
+                  
+                  return {
+                    tool_call_id: tcId,
+                    function_name: accumulated.metadata.function_name,
+                    index: accumulated.metadata.index,
+                    arguments: mergedArgs,
+                    is_delta: false,
+                    completed: isCompleted,
+                    tool_result: toolResult ? safeJsonParse<ParsedMetadata>(toolResult.metadata, {}).result : undefined,
+                  };
+                });
+              
+              // Include completed tools that may not be in accumulated ref
+              toolResultsRef.current.forEach((resultMsg, tcId) => {
+                if (!accumulatedToolCallsRef.current.has(tcId)) {
+                  const resultMetadata = safeJsonParse<ParsedMetadata>(resultMsg.metadata, {});
+                  const fnName = resultMetadata.function_name;
+                  if (fnName) {
+                    const existing = allReconstructedToolCalls.find(tc => tc.tool_call_id === tcId);
+                    if (!existing) {
+                      allReconstructedToolCalls.push({
+                        tool_call_id: tcId,
+                        function_name: fnName,
+                        index: resultMetadata.index,
+                        arguments: '{}',
+                        is_delta: false,
+                        completed: true,
+                        tool_result: resultMetadata.result,
+                      });
+                    }
+                  }
+                }
+              });
+              
+              allReconstructedToolCalls.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+              
+              // Update streamingToolCall to include this completed tool with its result
+              const updatedMessageWithResults = {
+                ...message,
+                metadata: JSON.stringify({
+                  ...toolMetadata,
+                  tool_calls: allReconstructedToolCalls,
+                }),
+              };
+              
+              // Force update to streamingToolCall state
+              React.startTransition(() => {
+                setToolCall(updatedMessageWithResults);
+              });
+              
+              // Also call the callback to notify downstream handlers
+              callbacksRef.current.onToolCallChunk?.(updatedMessageWithResults);
+            }
+          } catch (e) {
+            // Ignore parsing errors
+          }
+          
+          // DO NOT clear accumulatedToolCallsRef - other tools may still be streaming
+          // Only clear when assistant message completes (handled in case 'assistant' with stream_status === 'complete')
           if (message.message_id) callbacksRef.current.onMessage(message);
           break;
         case 'status':
@@ -758,14 +884,10 @@ export function useAgentStream(
             case 'tool_completed':
             case 'tool_failed':
             case 'tool_error':
-              // Clear streaming tool call when tool completes/fails
-              React.startTransition(() => {
-                setToolCall(null);
-              });
-              // Clear accumulated tool call deltas and previous state
-              accumulatedToolCallsRef.current.clear();
-              previousToolCallStateRef.current = null;
-              lastToolCallUpdateTimeRef.current = 0;
+              // Don't clear toolCall state here - other tools may still be streaming
+              // Individual tool completion is handled by useThreadToolCalls via the messages array
+              // DO NOT clear accumulated tool calls - status messages don't indicate all tools are done
+              // Only clear when assistant message completes
               break;
             case 'finish':
               // Optional: Handle finish reasons like 'xml_tool_limit_reached'
@@ -1017,8 +1139,12 @@ export function useAgentStream(
         currentRunIdRef.current = runId;
         // Clear accumulated tool call deltas and previous state
         accumulatedToolCallsRef.current.clear();
+        completedToolCallIdsRef.current.clear();
+        toolResultsRef.current.clear();
         previousToolCallStateRef.current = null;
         lastToolCallUpdateTimeRef.current = 0;
+        // Clear tool tracking for new stream
+        clearToolTracking();
 
         // Agent is running, proceed to create the stream
         const cleanup = streamAgent(runId, {
