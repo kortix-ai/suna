@@ -237,6 +237,38 @@ async def create_file(
         logger.error(f"Error creating file in sandbox {sandbox_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.put("/sandboxes/{sandbox_id}/files/binary")
+async def update_file_binary(
+    sandbox_id: str, 
+    path: str = Form(...),
+    file: UploadFile = File(...),
+    request: Request = None,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    path = normalize_path(path)
+    
+    logger.debug(f"Received binary file update request for sandbox {sandbox_id}, path: {path}, user_id: {user_id}")
+    client = await db.client
+    
+    await verify_sandbox_access(client, sandbox_id, user_id)
+    
+    try:
+        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        
+        content = await file.read()
+        
+        await sandbox.fs.upload_file(content, path)
+        logger.info(f"Binary file updated successfully: {path} in sandbox {sandbox_id}")
+        
+        return {
+            "status": "success", 
+            "updated": True, 
+            "path": path
+        }
+    except Exception as e:
+        logger.error(f"Error updating binary file in sandbox {sandbox_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.put("/sandboxes/{sandbox_id}/files")
 async def update_file(
     sandbox_id: str,

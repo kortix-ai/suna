@@ -86,11 +86,11 @@ function StatusBar() {
   const currentTime = useCurrentTime();
 
   return (
-    <div className="flex items-center gap-3 text-xs">
-      <div className="flex items-center gap-1 mr-2">
-        <Wifi className="h-4.5 w-4.5 font-bold" />
+    <div className="flex items-center gap-2 text-[11px]">
+      <div className="flex items-center gap-1">
+        <Wifi className="h-3.5 w-3.5" />
       </div>
-      <div className="font-medium text-md">
+      <div className="font-medium">
         {currentTime}
       </div>
     </div>
@@ -167,8 +167,8 @@ export const PanelHeader = memo(function PanelHeader({
 
   return (
     <div className={cn(
-      "h-14 flex-shrink-0 px-4 grid grid-cols-3 items-center",
-      !isMaximized && "border-b border-border"
+      "h-9 flex-shrink-0 px-3 grid grid-cols-3 items-center",
+      !isMaximized && "h-12 border-b border-border"
     )}>
       <div className="flex items-center justify-start">
         <ToolbarButtons 
@@ -178,19 +178,19 @@ export const PanelHeader = memo(function PanelHeader({
           isMaximized={isMaximized}
         />
       </div>
-      <div onClick={() => setSandboxInfoOpen?.(!sandboxInfoOpen)} className="flex items-center justify-center gap-2 cursor-default">
-        <div className="w-6 h-6 flex items-center justify-center">
-          <KortixLogo size={18}/>
+      <div onClick={() => setSandboxInfoOpen?.(!sandboxInfoOpen)} className="flex items-center justify-center gap-1.5 cursor-default">
+        <div className="w-5 h-5 flex items-center justify-center">
+          <KortixLogo size={14}/>
         </div>
-        <h2 className="text-md font-semibold text-foreground">
+        <h2 className="text-sm font-semibold text-foreground">
           {title}
         </h2>
       </div>
       
-      <div className="flex items-center justify-end gap-3">
+      <div className="flex items-center justify-end gap-2">
         {isStreaming && (
-          <div className="px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary flex items-center gap-1.5">
-            <CircleDashed className="h-3 w-3 animate-spin" />
+          <div className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-primary/10 text-primary flex items-center gap-1">
+            <CircleDashed className="h-2.5 w-2.5 animate-spin" />
             <span>Running</span>
           </div>
         )}

@@ -101,7 +101,7 @@ export const DesktopIcons = memo(function DesktopIcons({
 
 
   return (
-    <div className="absolute right-2 -top-12 bottom-20 pointer-events-none overflow-visible px-2">
+    <div className="absolute right-2 top-0 bottom-20 pointer-events-none overflow-visible px-2">
       <div 
         className="flex flex-col flex-wrap-reverse gap-0.5 h-full content-start items-start justify-start"
       >

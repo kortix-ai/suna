@@ -2,7 +2,7 @@
 
 import { memo, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { Folder, Globe, TerminalSquare, Info } from 'lucide-react';
+import { Folder, Globe, TerminalSquare, Info, Table } from 'lucide-react';
 import { AppWindow } from './AppWindow';
 import { AppDock } from './Dock';
 import { PanelHeader } from './PanelHeader';
@@ -26,6 +26,7 @@ import { EnhancedFileBrowser } from './EnhancedFileBrowser';
 import { getFileIconByName } from './Icons';
 import { SystemInfoContent } from './SystemInfoContent';
 import { FileInfoContent, FileInfo } from './FileInfoContent';
+import { SpreadsheetApp } from './SpreadsheetApp';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
@@ -97,7 +98,7 @@ const getToolColorScheme = (toolName: string): { bg: string; iconColor: string }
 
 interface OpenWindow {
   id: string;
-  type: 'tool' | 'files' | 'browser' | 'terminal' | 'file-viewer' | 'folder-browser' | 'info' | 'file-info';
+  type: 'tool' | 'files' | 'browser' | 'terminal' | 'file-viewer' | 'folder-browser' | 'info' | 'file-info' | 'spreadsheet';
   toolIndex?: number;
   filePath?: string;
   fileName?: string;
@@ -279,8 +280,8 @@ export const SandboxDesktop = memo(function SandboxDesktop({
   }, []);
 
   const getInitialPosition = useCallback((index: number) => {
-    const baseX = 60 + (index % 5) * 40;
-    const baseY = 40 + (index % 5) * 40;
+    const baseX = 20 + (index % 5) * 30;
+    const baseY = 12 + (index % 5) * 30;
     return { x: baseX, y: baseY };
   }, []);
 
@@ -549,18 +550,48 @@ export const SandboxDesktop = memo(function SandboxDesktop({
     setActiveWindowId(windowId);
   }, [maxZIndex, getInitialPosition]);
 
-  const handleSystemAppClick = useCallback((type: 'files' | 'browser' | 'terminal' | 'info') => {
+  const handleOpenSpreadsheetWindow = useCallback(() => {
+    const windowId = 'system-spreadsheet';
+    
+    setOpenWindows(prev => {
+      const existing = prev.find(w => w.id === windowId);
+      if (existing) {
+        return prev.map(w => 
+          w.id === windowId 
+            ? { ...w, isMinimized: false, zIndex: maxZIndex + 1 } 
+            : w
+        );
+      }
+      
+      return [...prev, {
+        id: windowId,
+        type: 'spreadsheet' as const,
+        zIndex: maxZIndex + 1,
+        position: getInitialPosition(prev.length),
+        size: { width: 900, height: 650 },
+        isMinimized: false,
+      }];
+    });
+    
+    setMaxZIndex(prev => prev + 1);
+    setActiveWindowId(windowId);
+  }, [maxZIndex, getInitialPosition]);
+
+  const handleSystemAppClick = useCallback((type: 'files' | 'browser' | 'terminal' | 'info' | 'spreadsheet') => {
     if (type === 'info') {
       handleOpenInfoWindow();
+    } else if (type === 'spreadsheet') {
+      handleOpenSpreadsheetWindow();
     } else {
       openSystemWindow(type);
     }
-  }, [openSystemWindow, handleOpenInfoWindow]);
+  }, [openSystemWindow, handleOpenInfoWindow, handleOpenSpreadsheetWindow]);
 
   const isFilesWindowOpen = openWindows.some(w => w.id === 'system-files' && !w.isMinimized);
   const isBrowserWindowOpen = openWindows.some(w => w.id === 'system-browser' && !w.isMinimized);
   const isTerminalWindowOpen = openWindows.some(w => w.id === 'system-terminal' && !w.isMinimized);
   const isInfoWindowOpen = openWindows.some(w => w.id === 'system-info' && !w.isMinimized);
+  const isSpreadsheetWindowOpen = openWindows.some(w => w.id === 'system-spreadsheet' && !w.isMinimized);
 
   const getActualSuccess = (toolCall: ToolCallInput): boolean => {
     if (toolCall?.toolResult?.success !== undefined) {
@@ -713,7 +744,7 @@ export const SandboxDesktop = memo(function SandboxDesktop({
 
   const renderDesktop = () => (
     <>
-      <div className="absolute inset-0 top-14">
+      <div className="absolute inset-0">
         {!sandboxInfoOpen && (desktopFiles.length > 0 || isCreatingNewFolder) && (
           <DesktopIcons 
             files={desktopFiles}
@@ -958,6 +989,33 @@ export const SandboxDesktop = memo(function SandboxDesktop({
                 );
               }
 
+              if (window.type === 'spreadsheet') {
+                return (
+                  <AppWindow
+                    key={window.id}
+                    id={window.id}
+                    title="Spreadsheets"
+                    icon={
+                      <div className="w-4 h-4 rounded flex items-center justify-center bg-gradient-to-br from-[#10b981] to-[#059669]">
+                        <Table className="w-2.5 h-2.5 text-white" />
+                      </div>
+                    }
+                    isActive={activeWindowId === window.id}
+                    initialPosition={window.position}
+                    initialSize={window.size}
+                    onFocus={() => focusWindow(window.id)}
+                    onClose={() => closeWindow(window.id)}
+                    onMinimize={() => minimizeWindow(window.id)}
+                    zIndex={window.zIndex}
+                  >
+                    <SpreadsheetApp
+                      sandboxId={sandboxId}
+                      initialFilePath={window.filePath}
+                    />
+                  </AppWindow>
+                );
+              }
+
               return null;
             })}
         </AnimatePresence>
@@ -982,6 +1040,7 @@ export const SandboxDesktop = memo(function SandboxDesktop({
         isBrowserWindowOpen={isBrowserWindowOpen}
         isTerminalWindowOpen={isTerminalWindowOpen}
         isInfoWindowOpen={isInfoWindowOpen}
+        isSpreadsheetWindowOpen={isSpreadsheetWindowOpen}
       />
     </>
   );
@@ -1055,6 +1114,7 @@ export const SandboxDesktop = memo(function SandboxDesktop({
           onOpenBrowser={() => handleSystemAppClick('browser')}
           onOpenTerminal={() => handleSystemAppClick('terminal')}
           onOpenSystemInfo={() => handleSystemAppClick('info')}
+          onOpenSpreadsheets={() => handleSystemAppClick('spreadsheet')}
           onFileSelect={(path) => {
             const isDir = spotlightFiles.find(f => f.path === path)?.type === 'directory';
             openFileWindow(path, isDir);

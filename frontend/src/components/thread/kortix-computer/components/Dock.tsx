@@ -2,7 +2,7 @@
 
 import { memo, ReactNode, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Folder, Globe, TerminalSquare, Info } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Folder, Globe, TerminalSquare, Info, Table } from 'lucide-react';
 import { getUserFriendlyToolName, getToolIcon } from '@/components/thread/utils';
 import { cn } from '@/lib/utils';
 import { ToolCallInput } from '../KortixComputer';
@@ -96,18 +96,18 @@ interface DockCardProps {
   onClick?: () => void;
 }
 
-const ICON_SIZE = 48;
+const ICON_SIZE = 40;
 
 export function Dock({ children, className }: DockProps) {
   return (
     <div className="relative isolate">
-      <div className="absolute inset-x-0 bottom-0 h-[68px] pointer-events-none" style={{ zIndex: -1 }}>
+      <div className="absolute inset-x-0 bottom-0 h-[56px] pointer-events-none" style={{ zIndex: -1 }}>
         <div
-          className={cn("h-full w-full border bg-background/30 backdrop-blur-xl rounded-2xl", className)}
+          className={cn("h-full w-full border bg-background/40 backdrop-blur-2xl rounded-xl", className)}
         >
         </div>
       </div>
-      <div className="relative flex h-[68px] items-end gap-2 px-3 pb-2" style={{ zIndex: 1 }}>
+      <div className="relative flex h-[56px] items-end gap-1.5 px-2.5 pb-1.5" style={{ zIndex: 1 }}>
         {children}
       </div>
     </div>
@@ -168,14 +168,14 @@ export const DockCard = memo(function DockCard({
 
       <div 
         className={cn(
-          "absolute -top-12 left-1/2 -translate-x-1/2 px-3 py-1.5 text-white text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none z-50",
-          "bg-black/70 backdrop-blur-xl border border-white/10",
+          "absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 text-white text-[10px] font-medium rounded-md whitespace-nowrap pointer-events-none z-50",
+          "bg-black/80 backdrop-blur-xl border border-white/10",
           "opacity-0 group-hover:opacity-100 transition-opacity duration-150"
         )}
         style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}
       >
         {label}
-        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-black/70" />
+        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-black/80" />
       </div>
 
     </div>
@@ -220,14 +220,14 @@ export const SystemDockCard = memo(function SystemDockCard({
 
       <div 
         className={cn(
-          "absolute -top-12 left-1/2 -translate-x-1/2 px-3 py-1.5 text-white text-xs font-medium rounded-lg whitespace-nowrap pointer-events-none z-50",
-          "bg-black/70 backdrop-blur-xl border border-white/10",
+          "absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 text-white text-[10px] font-medium rounded-md whitespace-nowrap pointer-events-none z-50",
+          "bg-black/80 backdrop-blur-xl border border-white/10",
           "opacity-0 group-hover:opacity-100 transition-opacity duration-150"
         )}
         style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}
       >
         {label}
-        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-black/70" />
+        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-black/80" />
       </div>
 
     </div>
@@ -249,12 +249,13 @@ interface AppDockProps {
   onJumpToLatest: () => void;
   isMaximized?: boolean;
   currentView?: ViewType;
-  onViewChange?: (view: 'files' | 'browser' | 'terminal' | 'info') => void;
+  onViewChange?: (view: 'files' | 'browser' | 'terminal' | 'info' | 'spreadsheet') => void;
   showFilesTab?: boolean;
   isFilesWindowOpen?: boolean;
   isBrowserWindowOpen?: boolean;
   isTerminalWindowOpen?: boolean;
   isInfoWindowOpen?: boolean;
+  isSpreadsheetWindowOpen?: boolean;
 }
 
 export const AppDock = memo(function AppDock({
@@ -276,6 +277,7 @@ export const AppDock = memo(function AppDock({
   isBrowserWindowOpen = false,
   isTerminalWindowOpen = false,
   isInfoWindowOpen = false,
+  isSpreadsheetWindowOpen = false,
 }: AppDockProps) {
   const [scrollOffset, setScrollOffset] = useState(0);
   const maxVisibleIcons = 12;
@@ -334,11 +336,11 @@ export const AppDock = memo(function AppDock({
               onClick={onPrevious}
               disabled={!canNavigateLeft}
               className={cn(
-                "flex items-center justify-center w-9 h-9",
+                "flex items-center justify-center w-7 h-7",
                 canNavigateLeft ? "cursor-pointer text-white" : "cursor-not-allowed text-white/50"
               )}
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="w-3.5 h-3.5" />
             </button>
           </div>
         </motion.div>
@@ -379,10 +381,17 @@ export const AppDock = memo(function AppDock({
                 isActive={isInfoWindowOpen}
                 onClick={() => onViewChange?.('info')}
               />
-              <div className="w-px h-10 bg-white/20 mx-1 self-center" />
+              <SystemDockCard
+                icon={Table}
+                label="Spreadsheets"
+                bgClass="bg-gradient-to-br from-[#10b981] to-[#059669]"
+                iconColor="text-white"
+                isActive={isSpreadsheetWindowOpen}
+                onClick={() => onViewChange?.('spreadsheet')}
+              />
             </>
           )}
-          {visibleTools.map((toolCallInput, i) => {
+          {/* {visibleTools.map((toolCallInput, i) => {
             const actualIndex = startIndex + i;
             const toolName = toolCallInput.toolCall?.function_name || 'tool';
             return (
@@ -397,7 +406,7 @@ export const AppDock = memo(function AppDock({
                 onClick={() => onNavigate(actualIndex)}
               />
             );
-          })}
+          })} */}
         </Dock>
         <div className="absolute right-4 flex items-center gap-2">
           <motion.div
@@ -413,11 +422,11 @@ export const AppDock = memo(function AppDock({
                 onClick={onNext}
                 disabled={!canNavigateRight}
                 className={cn(
-                  "flex items-center justify-center w-9 h-9",
+                  "flex items-center justify-center w-7 h-7",
                   canNavigateRight ? "cursor-pointer text-white" : "cursor-not-allowed text-white/50"
                 )}
               >
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
           </motion.div>
@@ -433,7 +442,7 @@ export const AppDock = memo(function AppDock({
                 <button
                   type="button"
                   onClick={agentStatus === 'running' ? onJumpToLive : onJumpToLatest}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium whitespace-nowrap text-white"
+                  className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium whitespace-nowrap text-white"
                 >
                   <div className={cn(
                     "w-1.5 h-1.5 rounded-full",

@@ -25,7 +25,7 @@ import {
   getFileTypeFromExtension,
 } from '@/components/file-editors';
 import { UnifiedMarkdown } from '@/components/markdown';
-import { CsvRenderer, XlsxRenderer, HtmlRenderer, JsonRenderer } from '@/components/file-renderers';
+import { SpreadsheetViewer, HtmlRenderer, JsonRenderer } from '@/components/file-renderers';
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
@@ -714,26 +714,15 @@ export function FileOperationToolView({
       );
     }
 
-    // For CSV files
-    if (isCsv) {
+    // For CSV and XLSX files
+    if (isCsv || isXlsx) {
       return (
         <div className="p-6 flex flex-col">
           <div className="flex-1 min-h-[400px] w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden">
-            <CsvRenderer content={processUnicodeContent(fileContent)} />
-          </div>
-        </div>
-      );
-    }
-
-    // For XLSX files
-    if (isXlsx) {
-      return (
-        <div className="p-6 flex flex-col">
-          <div className="flex-1 min-h-[400px] w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden">
-            <XlsxRenderer
-              content={fileContent}
-              filePath={processedFilePath}
+            <SpreadsheetViewer
+              filePath={filePath}
               fileName={fileName}
+              sandboxId={project?.sandbox?.id}
               project={project}
             />
           </div>
