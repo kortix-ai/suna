@@ -80,8 +80,12 @@ Only return the JSON array."""
         if isinstance(parsed, list):
             categories = parsed
         elif isinstance(parsed, dict):
-            categories = parsed.get('categories', parsed.get('result', []))
+            categories = parsed.get('categories') or parsed.get('result') or []
         else:
+            categories = []
+        
+        # Ensure categories is a list
+        if not isinstance(categories, list):
             categories = []
         
         valid = [c for c in categories if c in PROJECT_CATEGORIES]
