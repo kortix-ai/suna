@@ -2,6 +2,7 @@
 
 import { Project } from "@/lib/api/threads";
 import { Thread } from "@/lib/api/threads";
+import { formatDateForList } from '@/lib/utils/date-formatting';
 
 // Re-export hooks from their proper locations for backward compatibility
 export { useProjects, usePublicProjectsQuery, useUpdateProject, useDeleteProject } from '../threads/use-project';
@@ -13,6 +14,7 @@ export type ThreadWithProject = {
   threadId: string;
   projectId: string;
   projectName: string;
+  threadName: string;
   url: string;
   updatedAt: string;
   // Icon system field for thread categorization
@@ -42,13 +44,17 @@ export const processThreadsWithProjects = (
     let displayName = project.name || 'Unnamed Project';
     const iconName = project.icon_name; // Get icon from dedicated database field
 
+    // Format date for fallback if thread has no name
+    const updatedAt = thread.updated_at || project.updated_at || new Date().toISOString();
+    const formattedDate = formatDateForList(updatedAt);
+    
     threadsWithProjects.push({
       threadId: thread.thread_id,
       projectId: projectId,
       projectName: displayName,
+      threadName: thread.name && thread.name.trim() ? thread.name : formattedDate,
       url: `/projects/${projectId}/thread/${thread.thread_id}`,
-      updatedAt:
-        thread.updated_at || project.updated_at || new Date().toISOString(),
+      updatedAt: updatedAt,
       // Use dedicated field or parsed embedded data
       iconName: iconName,
     });

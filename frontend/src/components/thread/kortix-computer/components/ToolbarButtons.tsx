@@ -28,8 +28,8 @@ export const ToolbarButtons = memo(function ToolbarButtons({
           <motion.button
             onClick={onClose}
             className={cn(
-              "w-7 h-7 rounded-full flex items-center justify-center",
-              "text-muted-foreground hover:text-destructive hover:bg-destructive/30 hover:shadow-sm",
+              "w-7 h-7 rounded-full flex items-center justify-center cursor-pointer",
+              "text-muted-foreground hover:text-foreground hover:bg-background hover:shadow-sm",
               "transition-colors duration-150"
             )}
             whileHover={{ scale: 1.05 }}
@@ -48,7 +48,7 @@ export const ToolbarButtons = memo(function ToolbarButtons({
           <motion.button
             onClick={onMaximize}
             className={cn(
-              "w-7 h-7 rounded-full flex items-center justify-center",
+              "w-7 h-7 rounded-full flex items-center justify-center cursor-pointer",
               "text-muted-foreground hover:text-foreground hover:bg-background hover:shadow-sm",
               "transition-colors duration-150"
             )}

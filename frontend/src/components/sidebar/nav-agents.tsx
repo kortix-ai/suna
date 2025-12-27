@@ -3,7 +3,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  Link as LinkIcon,
   MoreHorizontal,
   Trash2,
   Loader2,
@@ -38,7 +37,6 @@ import {
 } from '@/components/ui/tooltip';
 import { useSidebar } from '@/components/ui/sidebar';
 import Link from "next/link"
-import { SharePopover } from "./share-modal"
 import { DeleteConfirmationDialog } from "@/components/thread/DeleteConfirmationDialog"
 import { useDeleteOperation } from '@/stores/delete-operation-store'
 import { Button } from "@/components/ui/button"
@@ -72,8 +70,6 @@ const SingleChatCard: React.FC<{
   isAgentRunning: boolean;
   handleThreadClick: (e: React.MouseEvent<HTMLAnchorElement>, threadId: string, url: string) => void;
   handleDeleteThread: (threadId: string, threadName: string) => void;
-  setSelectedItem: (item: { threadId: string; projectId: string } | null) => void;
-  setShowShareModal: (show: boolean) => void;
   handleCreateNewChat: (projectId: string) => Promise<void>;
   isCreatingChat: boolean;
 }> = ({
@@ -84,8 +80,6 @@ const SingleChatCard: React.FC<{
   isAgentRunning,
   handleThreadClick,
   handleDeleteThread,
-  setSelectedItem,
-  setShowShareModal,
   handleCreateNewChat,
   isCreatingChat,
 }) => {
@@ -173,18 +167,6 @@ const SingleChatCard: React.FC<{
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    setSelectedItem({ threadId: thread.threadId, projectId: thread.projectId });
-                    setShowShareModal(true);
-                  }}
-                >
-                  <LinkIcon className="mr-2 h-4 w-4" />
-                  Share
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
                     handleDeleteThread(thread.threadId, thread.projectName);
                   }}
                 >
@@ -204,8 +186,6 @@ export function NavAgents() {
   const t = useTranslations('sidebar');
   const { isMobile, state, setOpenMobile } = useSidebar()
   const [loadingThreadId, setLoadingThreadId] = useState<string | null>(null)
-  const [showShareModal, setShowShareModal] = useState(false)
-  const [selectedItem, setSelectedItem] = useState<{ threadId: string, projectId: string } | null>(null)
   const pathname = usePathname()
   const router = useRouter()
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
@@ -294,13 +274,16 @@ export function NavAgents() {
       // Use fallback values if project data is missing (e.g., deleted project)
       const displayName = project?.name || 'Unnamed Project';
       const iconName = project?.icon_name;
+      const updatedAt = thread.updated_at || project?.updated_at || new Date().toISOString();
+      const formattedDate = formatDateForList(updatedAt);
       
       processed.push({
         threadId: thread.thread_id,
         projectId: projectId,
         projectName: displayName,
+        threadName: thread.name && thread.name.trim() ? thread.name : formattedDate,
         url: `/projects/${projectId}/thread/${thread.thread_id}`,
-        updatedAt: thread.updated_at || project?.updated_at || new Date().toISOString(),
+        updatedAt: updatedAt,
         iconName: iconName,
       });
     }
@@ -752,8 +735,6 @@ export function NavAgents() {
                         isAgentRunning={isAgentRunning}
                         handleThreadClick={handleThreadClick}
                         handleDeleteThread={handleDeleteThread}
-                        setSelectedItem={setSelectedItem}
-                        setShowShareModal={setShowShareModal}
                         handleCreateNewChat={handleCreateNewChat}
                         isCreatingChat={isCreatingChat}
                       />
@@ -858,7 +839,7 @@ export function NavAgents() {
                                       "flex-1 truncate",
                                       isThreadActive && "font-medium"
                                     )}>
-                                      {formatDateForList(thread.updatedAt)}
+                                      {thread.threadName}
                                     </span>
                                     
                                     {/* Menu */}
@@ -875,18 +856,6 @@ export function NavAgents() {
                                         </button>
                                       </DropdownMenuTrigger>
                                       <DropdownMenuContent align="end" className="w-40">
-                                        <DropdownMenuItem
-                                          onClick={(e) => {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            setSelectedItem({ threadId: thread.threadId, projectId: thread.projectId });
-                                            setShowShareModal(true);
-                                          }}
-                                        >
-                                          <LinkIcon className="mr-2 h-3.5 w-3.5" />
-                                          Share
-                                        </DropdownMenuItem>
-                                        <DropdownMenuSeparator />
                                         <DropdownMenuItem
                                           onClick={(e) => {
                                             e.preventDefault();
@@ -988,13 +957,6 @@ export function NavAgents() {
           </div>
         </div>
       )}
-
-      <SharePopover
-        open={showShareModal}
-        onOpenChange={setShowShareModal}
-        threadId={selectedItem?.threadId}
-        projectId={selectedItem?.projectId}
-      />
 
       {threadToDelete && (
         <DeleteConfirmationDialog

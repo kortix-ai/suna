@@ -789,13 +789,20 @@ async def start_agent_run(
         t_thread = time.time()
         thread_id = str(uuid.uuid4())
         try:
+            # Create thread with default name, will be updated by LLM in background
             await client.table('threads').insert({
                 "thread_id": thread_id,
                 "project_id": project_id,
                 "account_id": account_id,
+                "name": "New Chat",
                 "created_at": datetime.now(timezone.utc).isoformat()
             }).execute()
             logger.debug(f"⏱️ [TIMING] Thread created: {(time.time() - t_thread) * 1000:.1f}ms")
+            
+            # Generate proper thread name in background using LLM (fire-and-forget)
+            if prompt:
+                from core.utils.thread_name_generator import generate_and_update_thread_name
+                asyncio.create_task(generate_and_update_thread_name(thread_id=thread_id, prompt=prompt))
             
             if project_id and project_id != thread_id:
                 try:

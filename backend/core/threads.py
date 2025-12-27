@@ -45,7 +45,7 @@ async def get_user_threads(
         
         # Optimized: Select only needed columns from threads table
         threads_result = await client.table('threads')\
-            .select('thread_id,project_id,metadata,is_public,created_at,updated_at')\
+            .select('thread_id,project_id,name,metadata,is_public,created_at,updated_at')\
             .eq('account_id', user_id)\
             .order('created_at', desc=True)\
             .range(offset, offset + limit - 1)\
@@ -96,6 +96,7 @@ async def get_user_threads(
             mapped_thread = {
                 "thread_id": thread['thread_id'],
                 "project_id": thread.get('project_id'),
+                "name": thread.get('name', 'New Chat'),
                 "metadata": thread.get('metadata', {}),
                 "is_public": thread.get('is_public', False),
                 "created_at": thread['created_at'],
@@ -255,7 +256,7 @@ async def get_project_threads(
         
         # Get threads for this project
         threads_result = await client.table('threads')\
-            .select('thread_id,project_id,metadata,is_public,created_at,updated_at')\
+            .select('thread_id,project_id,name,metadata,is_public,created_at,updated_at')\
             .eq('project_id', project_id)\
             .order('created_at', desc=True)\
             .range(offset, offset + limit - 1)\
@@ -274,6 +275,7 @@ async def get_project_threads(
             mapped_thread = {
                 "thread_id": thread['thread_id'],
                 "project_id": thread.get('project_id'),
+                "name": thread.get('name', 'New Chat'),
                 "metadata": thread.get('metadata', {}),
                 "is_public": thread.get('is_public', False),
                 "created_at": thread['created_at'],
@@ -345,6 +347,7 @@ async def create_thread_in_project(
             "thread_id": str(uuid.uuid4()),
             "project_id": project_id,
             "account_id": account_id,
+            "name": "New Chat",  # Default name for empty threads
             "created_at": datetime.now(timezone.utc).isoformat()
         }
         
@@ -546,6 +549,7 @@ async def get_thread(
         mapped_thread = {
             "thread_id": thread['thread_id'],
             "project_id": thread.get('project_id'),
+            "name": thread.get('name', 'New Chat'),
             "metadata": thread.get('metadata', {}),
             "is_public": thread.get('is_public', False),
             "created_at": thread['created_at'],
@@ -676,6 +680,7 @@ async def create_thread(
             "thread_id": str(uuid.uuid4()), 
             "project_id": project_id, 
             "account_id": account_id,
+            "name": "New Chat",  # Default name for empty threads
             "created_at": datetime.now(timezone.utc).isoformat()
         }
 
@@ -822,6 +827,13 @@ async def add_message_to_thread(
         await verify_and_authorize_thread_access(client, thread_id, user_id)
     
     try:
+        # Check if thread still has default name and update it
+        thread_name_result = await client.table('threads').select('name').eq('thread_id', thread_id).execute()
+        if thread_name_result.data and thread_name_result.data[0].get('name') in ('New Chat', None):
+            # Update thread name in background
+            from core.utils.thread_name_generator import generate_and_update_thread_name
+            asyncio.create_task(generate_and_update_thread_name(thread_id=thread_id, prompt=message))
+        
         message_result = await client.table('messages').insert({
             'thread_id': thread_id,
             'type': 'user',
