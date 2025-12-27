@@ -18,6 +18,7 @@ from PIL import Image
 from core.utils.logger import logger
 from core.utils.config import get_config
 from core.billing.credits.media_integration import media_billing
+from core.billing.credits.media_calculator import select_image_quality, cap_quality_for_tier, FREE_TIERS
 
 
 def parse_image_paths(image_path: Optional[str | list[str]]) -> list[str]:
@@ -91,6 +92,37 @@ class SandboxImageEditTool(SandboxToolsBase):
         super().__init__(project_id, thread_manager)
         self.thread_id = thread_id
         self.thread_manager = thread_manager
+        self._tier_cache: dict = {}  # Cache tier info to avoid repeated lookups
+    
+    async def _get_user_tier(self, account_id: str) -> str:
+        """
+        Get user's subscription tier name.
+        Uses cache to avoid repeated DB lookups within the same request.
+        """
+        if account_id in self._tier_cache:
+            return self._tier_cache[account_id]
+        
+        try:
+            from core.billing.subscriptions.handlers.tier import TierHandler
+            tier_info = await TierHandler.get_user_subscription_tier(account_id)
+            tier_name = tier_info.get('name', 'none')
+            self._tier_cache[account_id] = tier_name
+            return tier_name
+        except Exception as e:
+            logger.warning(f"[IMAGE_TOOL] Failed to get tier for {account_id}: {e}, defaulting to 'none'")
+            return 'none'
+    
+    async def _get_quality_for_user(self, account_id: str) -> str:
+        """
+        Get the appropriate image quality variant based on user's tier.
+        
+        Free users: 'low' quality (cost-effective)
+        Paid users: 'medium' quality (balanced)
+        """
+        tier_name = await self._get_user_tier(account_id)
+        quality = select_image_quality(tier_name)
+        logger.info(f"[IMAGE_TOOL] Selected quality '{quality}' for tier '{tier_name}'")
+        return quality
 
     @openapi_schema(
         {
@@ -160,7 +192,16 @@ class SandboxImageEditTool(SandboxToolsBase):
             # BILLING: Check if user has sufficient credits before proceeding
             # Skip billing check in development/local mode
             account_id = getattr(self, '_account_id', None) or getattr(self, 'account_id', None)
+            if not account_id:
+                # Try to get from thread_manager
+                account_id = getattr(self.thread_manager, 'account_id', None)
             thread_id = getattr(self, 'thread_id', None)
+            
+            # Determine quality based on user tier
+            # Free users: 'low', Paid users: 'medium'
+            quality_variant = "medium"  # Default
+            if account_id and not use_mock:
+                quality_variant = await self._get_quality_for_user(account_id)
             
             if account_id and not use_mock:
                 has_credits, credit_msg, balance = await media_billing.check_credits(account_id)
@@ -205,9 +246,9 @@ class SandboxImageEditTool(SandboxToolsBase):
                     if mode == "edit":
                         # Use corresponding image or fall back to first one
                         img_path = image_paths[i] if i < len(image_paths) else image_paths[0]
-                        tasks.append(self._execute_single_image_operation(mode, p, img_path, use_mock))
+                        tasks.append(self._execute_single_image_operation(mode, p, img_path, use_mock, quality_variant))
                     else:
-                        tasks.append(self._execute_single_image_operation(mode, p, None, use_mock))
+                        tasks.append(self._execute_single_image_operation(mode, p, None, use_mock, quality_variant))
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 elapsed_time = time.time() - start_time
                 logger.info(f"Batch image operation completed in {elapsed_time:.2f}s (concurrent execution)")
@@ -236,8 +277,9 @@ class SandboxImageEditTool(SandboxToolsBase):
                         account_id=account_id,
                         model="openai/gpt-image-1.5",
                         count=len(image_files),
-                        description=f"Batch image {mode} ({len(image_files)} images)",
+                        description=f"Batch image {mode} ({len(image_files)} images, quality={quality_variant})",
                         thread_id=thread_id,
+                        variant=quality_variant,
                     )
                 
                 # If canvas_path provided, add all successful images to canvas
@@ -293,9 +335,9 @@ class SandboxImageEditTool(SandboxToolsBase):
                     return ToolResult(success=True, output=f"Video saved as: /workspace/{result}")
                 
                 # Image mode (generate/edit)
-                logger.info(f"Executing single image operation with mode '{mode}' for prompt: '{prompt[:50]}...'")
+                logger.info(f"Executing single image operation with mode '{mode}' for prompt: '{prompt[:50]}...' (quality={quality_variant})")
                 
-                result = await self._execute_single_image_operation(mode, prompt, image_path, use_mock)
+                result = await self._execute_single_image_operation(mode, prompt, image_path, use_mock, quality_variant)
                 
                 if isinstance(result, ToolResult):
                     # Error - return gracefully with friendly message
@@ -307,8 +349,9 @@ class SandboxImageEditTool(SandboxToolsBase):
                         account_id=account_id,
                         model="openai/gpt-image-1.5",
                         count=1,
-                        description=f"Image {mode}",
+                        description=f"Image {mode} (quality={quality_variant})",
                         thread_id=thread_id,
+                        variant=quality_variant,
                     )
                 
                 # Success - result is filename (include full path so AI knows exact location)
@@ -343,7 +386,8 @@ class SandboxImageEditTool(SandboxToolsBase):
         mode: str,
         prompt: str,
         image_path: Optional[str],
-        use_mock: bool
+        use_mock: bool,
+        quality: str = "medium"
     ) -> str | ToolResult:
         """
         Helper function to execute a single image generation or edit operation.
@@ -354,6 +398,7 @@ class SandboxImageEditTool(SandboxToolsBase):
         - prompt: The text prompt for generation/editing
         - image_path: Path to image (required for edit mode)
         - use_mock: Whether to use mock mode
+        - quality: Quality variant ('low', 'medium', 'high') - affects output quality and cost
         
         Returns:
         - str: Filename of the generated/edited image on success
@@ -372,14 +417,14 @@ class SandboxImageEditTool(SandboxToolsBase):
             self._get_replicate_token()
 
             if mode == "generate":
-                logger.info(f"Calling Replicate openai/gpt-image-1.5 for generation")
+                logger.info(f"Calling Replicate openai/gpt-image-1.5 for generation (quality={quality})")
                 output = replicate.run(
                     "openai/gpt-image-1.5",
                     input={
                         "prompt": prompt,
                         "aspect_ratio": "1:1",
                         "number_of_images": 1,
-                        "quality": "high",
+                        "quality": quality,
                     }
                 )
             elif mode == "edit":
@@ -394,7 +439,7 @@ class SandboxImageEditTool(SandboxToolsBase):
                 image_b64 = base64.b64encode(image_bytes).decode('utf-8')
                 image_data_url = f"data:image/png;base64,{image_b64}"
 
-                logger.info(f"Calling Replicate openai/gpt-image-1.5 for editing with image_path='{image_path}' (image size: {len(image_bytes)} bytes, base64 length: {len(image_b64)} chars)")
+                logger.info(f"Calling Replicate openai/gpt-image-1.5 for editing (quality={quality}) with image_path='{image_path}' (image size: {len(image_bytes)} bytes)")
                 output = replicate.run(
                     "openai/gpt-image-1.5",
                     input={
@@ -402,7 +447,7 @@ class SandboxImageEditTool(SandboxToolsBase):
                         "input_images": [image_data_url],  # Note: input_images is an ARRAY
                         "aspect_ratio": "1:1",
                         "number_of_images": 1,
-                        "quality": "high",
+                        "quality": quality,
                     }
                 )
             else:
