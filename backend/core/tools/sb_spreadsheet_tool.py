@@ -77,152 +77,136 @@ def validate_formula_references(rows: List[List[Any]], headers: List[str], start
     weight=75,
     visible=True,
     usage_guide="""
-### SPREADSHEET TOOL - Excel File Creation & Editing
+### 🚨 SPREADSHEET TOOL - MANDATORY FOR ALL SPREADSHEET CREATION
 
-**PURPOSE:**
-Create interactive Excel (.xlsx) files that users can view, edit, and download. Uses native Excel format with full formula support, formatting, and multi-sheet capabilities.
+**⚠️ CRITICAL - THIS TOOL IS REQUIRED FOR:**
+- ANY spreadsheet, sheet, or Excel file creation
+- Budget planners, expense trackers, financial models
+- Project trackers, schedules, timelines
+- Invoices, ledgers, inventories
+- ANY tabular data with calculations or formulas
+- ANY request mentioning: spreadsheet, sheet, excel, budget, planner, tracker, forecast
 
-**WHEN TO USE:**
-- User asks to create/organize data in spreadsheet format
-- Data needs calculations, formulas, or structured presentation
-- User wants downloadable Excel files
-- Data visualization with formatting and colors
+**🚫 FORBIDDEN ALTERNATIVES:**
+- ❌ NEVER use create_file for spreadsheet content
+- ❌ NEVER use terminal/shell commands to create CSV or spreadsheet data
+- ❌ NEVER create .csv files when user wants a spreadsheet
+- ❌ NEVER manually write data to files instead of using this tool
 
-**FUNCTIONS:**
+**✅ ALWAYS USE THIS TOOL - NO EXCEPTIONS**
 
-1. **spreadsheet_create** - Create NEW Excel spreadsheet (overwrites if exists)
-   ```
-   spreadsheet_create(
-       file_path="sales_report.xlsx",
-       sheet_name="Q1 Sales",
-       headers=["Product", "Revenue", "Profit", "Margin %"],
-       rows=[
-           ["Product A", 50000, 15000, "=IFERROR(C2/B2*100,0)"],
-           ["Product B", 75000, 22500, "=IFERROR(C3/B3*100,0)"],
-           ["Total", "=SUM(B2:B3)", "=SUM(C2:C3)", "=IFERROR(C4/B4*100,0)"]
-       ]
-   )
-   ```
+---
 
-2. **spreadsheet_add_sheet** - Add a NEW SHEET to EXISTING file (preserves other sheets)
-   ```
-   spreadsheet_add_sheet(
-       file_path="/workspace/spreadsheets/sales_report.xlsx",
-       sheet_name="Q2 Sales",
-       headers=["Product", "Revenue", "Profit"],
-       rows=[
-           ["Product A", 60000, 18000],
-           ["Product B", 80000, 24000]
-       ]
-   )
-   ```
+## FUNCTIONS
 
-3. **spreadsheet_batch_update** - Update existing spreadsheet
-   ```
-   spreadsheet_batch_update(
-       file_path="/workspace/spreadsheets/sales_report.xlsx",
-       sheet_name="Q1 Sales",  # Optional: target specific sheet
-       requests=[
-           {
-               "type": "update_cell",
-               "cell": "A1",
-               "value": "Product Name"
-           },
-           {
-               "type": "format_cells",
-               "range": "A1:D1",
-               "style": {
-                   "background_color": "#1F4E79",
-                   "bold": true
-               }
-           },
-           {
-               "type": "add_rows",
-               "rows": [["Product C", 60000, 18000, 30]]
-           },
-           {
-               "type": "add_sheet",
-               "sheet_name": "Summary",
-               "headers": ["Metric", "Value"],
-               "rows": [["Total Revenue", "=SUM('Q1 Sales'!B2:B10)"]]
-           }
-       ]
-   )
-   ```
+**1. spreadsheet_create** - Create NEW Excel spreadsheet
+```
+spreadsheet_create(
+    file_path="budget_planner.xlsx",
+    sheet_name="Monthly Budget",
+    headers=["Category", "Budgeted", "Actual", "Difference", "% Used"],
+    rows=[
+        ["Housing", 1500, 1450, "=B2-C2", "=IFERROR(C2/B2*100,0)"],
+        ["Food", 600, 580, "=B3-C3", "=IFERROR(C3/B3*100,0)"],
+        ["Transport", 300, 320, "=B4-C4", "=IFERROR(C4/B4*100,0)"],
+        ["Utilities", 200, 195, "=B5-C5", "=IFERROR(C5/B5*100,0)"],
+        ["Total", "=SUM(B2:B5)", "=SUM(C2:C5)", "=SUM(D2:D5)", "=IFERROR(C6/B6*100,0)"]
+    ]
+)
+```
 
-**⚠️ IMPORTANT - ADDING SHEETS TO EXISTING FILES:**
-- Use `spreadsheet_add_sheet` or `batch_update` with `type: "add_sheet"` 
-- NEVER use `spreadsheet_create` on an existing file - it will OVERWRITE everything!
-- `spreadsheet_add_sheet` preserves all existing sheets and data
+**2. spreadsheet_add_sheet** - Add sheet to EXISTING file
+```
+spreadsheet_add_sheet(
+    file_path="/workspace/spreadsheets/budget_planner.xlsx",
+    sheet_name="Q2 Budget",
+    headers=["Category", "Amount"],
+    rows=[...]
+)
+```
 
-**FEATURES:**
-- ✅ Native Excel (.xlsx) format - fully compatible
-- ✅ Formulas (=SUM, =AVERAGE, =IF, etc.)
-- ✅ Cell formatting (colors, fonts, alignment)
-- ✅ Auto-styled headers (dark blue with white text)
-- ✅ Interactive viewing in chat interface
-- ✅ Downloadable Excel files
+**3. spreadsheet_batch_update** - Update existing spreadsheet
+```
+spreadsheet_batch_update(
+    file_path="/workspace/spreadsheets/budget_planner.xlsx",
+    requests=[
+        {"type": "update_cell", "cell": "A1", "value": "Updated Category"},
+        {"type": "format_cells", "range": "A1:E1", "style": {"bold": true, "background_color": "#1F4E79"}},
+        {"type": "add_rows", "rows": [["Entertainment", 150, 175, "=B7-C7", "=IFERROR(C7/B7*100,0)"]]},
+        {"type": "add_sheet", "sheet_name": "Summary", "headers": ["Metric", "Value"], "rows": [...]}
+    ]
+)
+```
 
-**FORMATTING OPTIONS:**
-- Colors: #4CAF50 (green), #F44336 (red), #2196F3 (blue), #FFC107 (yellow), #1F4E79 (dark blue)
-- Styles: bold, italic, font_size, text_align
-- Ranges: "A1:B5" or single cells "A1"
+---
 
-**FILE PATHS:**
-- Creation: Just filename → Auto-saved to /workspace/spreadsheets/
+## 🎯 DATA ACCURACY REQUIREMENTS - CRITICAL
+
+**USE REALISTIC, MEANINGFUL DATA:**
+- Budget items should have realistic amounts (rent ~$1000-2000, groceries ~$400-800)
+- Financial projections should use reasonable growth rates (5-15% typical)
+- Dates should be current/relevant to the use case
+- Categories should be comprehensive and appropriate for the context
+
+**COMMON SPREADSHEET TEMPLATES:**
+
+**Budget Planner Headers:**
+["Category", "Budgeted", "Actual", "Difference", "% of Budget"]
+
+**Expense Tracker Headers:**
+["Date", "Description", "Category", "Amount", "Payment Method", "Running Total"]
+
+**Invoice Headers:**
+["Item", "Description", "Quantity", "Unit Price", "Total"]
+
+**Project Tracker Headers:**
+["Task", "Assigned To", "Start Date", "Due Date", "Status", "Priority", "% Complete"]
+
+**Sales Report Headers:**
+["Product", "Units Sold", "Unit Price", "Revenue", "Cost", "Profit", "Margin %"]
+
+---
+
+## 📐 FORMULA RULES - MUST FOLLOW
+
+**Row Numbering:**
+- Headers = Row 1
+- First data row = Row 2
+- rows[0] in code = Excel Row 2
+- rows[1] in code = Excel Row 3
+
+**Circular Reference Prevention:**
+- Total row formulas must reference ONLY rows ABOVE
+- If total is in row 6, use =SUM(B2:B5), NOT =SUM(B2:B6)
+- NEVER reference the cell containing the formula
+
+**Division Safety - MANDATORY:**
+- ALWAYS wrap division with IFERROR
+- ✅ =IFERROR(C2/B2*100,0)
+- ❌ =C2/B2*100
+
+**Common Formulas:**
+- Sum: =SUM(B2:B10)
+- Average: =AVERAGE(B2:B10)
+- Percentage: =IFERROR(C2/B2*100,0)
+- Difference: =B2-C2
+- Running Total: =SUM($D$2:D2)
+- Conditional: =IF(D2>0,"Over Budget","Under Budget")
+- Count: =COUNTIF(E2:E10,"Complete")
+
+---
+
+## FILE PATHS
+- Creation: Just filename → saves to /workspace/spreadsheets/
 - Updates: Use full path → /workspace/spreadsheets/filename.xlsx
 
-**⚠️ CRITICAL - AVOIDING CIRCULAR REFERENCES:**
-Headers are in ROW 1. Data rows start at ROW 2.
-- Row 0 in your rows array = Excel Row 2
-- Row 1 in your rows array = Excel Row 3
-- etc.
+## FORMATTING OPTIONS
+- Colors: #4CAF50 (green), #F44336 (red), #2196F3 (blue), #FFC107 (yellow), #1F4E79 (dark blue header)
+- Styles: bold, italic, font_size, text_align
 
-**CORRECT Formula Examples (headers in row 1, data starts row 2):**
-- If you have 5 data rows (rows 2-6), a SUM formula in row 7 should be: "=SUM(B2:B6)"
-- NEVER reference the cell you're placing the formula in
-- Total row formulas should reference ONLY the data rows ABOVE them
-
-**Example with 3 products + 1 total row:**
-```
-headers=["Product", "Revenue", "Profit"],
-rows=[
-    ["Product A", 50000, 15000],      # Row 2
-    ["Product B", 75000, 22500],      # Row 3  
-    ["Product C", 60000, 18000],      # Row 4
-    ["Total", "=SUM(B2:B4)", "=SUM(C2:C4)"]  # Row 5 - formulas sum rows 2-4
-]
-```
-
-**WRONG (causes circular reference):**
-```
-rows=[
-    ["Total", "=SUM(B2:B5)", ...]  # BAD: B5 is THIS cell!
-]
-```
-
-**⚠️ CRITICAL - PREVENTING #DIV/0! ERRORS:**
-- ALWAYS wrap division formulas with IFERROR to handle divide-by-zero
-- Use: =IFERROR(A1/B1, 0) instead of =A1/B1
-- For percentage: =IFERROR(C4/B4*100, 0) instead of =C4/B4*100
-
-**Example with safe division:**
-```
-headers=["Product", "Revenue", "Cost", "Margin %"],
-rows=[
-    ["Product A", 50000, 35000, "=IFERROR(C2/B2*100,0)"],
-    ["Product B", 75000, 45000, "=IFERROR(C3/B3*100,0)"],
-    ["Total", "=SUM(B2:B3)", "=SUM(C2:C3)", "=IFERROR(C4/B4*100,0)"]
-]
-```
-
-**BEST PRACTICES:**
-- Count your data rows carefully before writing formulas
-- Total/summary formulas should be in the LAST row
-- Formula ranges should end at the row BEFORE the formula row
-- Use explicit values instead of formulas when unsure
-- Test mentally: "Does this formula reference its own cell?" → If yes, FIX IT
-- ALWAYS use IFERROR() around any division to prevent #DIV/0! errors
+## ⚠️ EXISTING FILES
+- Use spreadsheet_add_sheet to add sheets (preserves existing data)
+- NEVER use spreadsheet_create on existing file (overwrites everything!)
 """
 )
 class SandboxSpreadsheetTool(SandboxToolsBase):
