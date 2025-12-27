@@ -1037,10 +1037,17 @@ async def get_category_distribution(
         end_of_day = selected_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
         
         # Use database function for efficient GROUP BY aggregation (bypasses row limits)
-        result = await client.rpc('get_project_category_distribution', {
-            'start_date': start_of_day,
-            'end_date': end_of_day
-        }).execute()
+        # Run both queries in parallel
+        result, count_result = await asyncio.gather(
+            client.rpc('get_project_category_distribution', {
+                'start_date': start_of_day,
+                'end_date': end_of_day
+            }).execute(),
+            # Get actual project count (not sum of categories which overcounts multi-category projects)
+            client.from_('projects').select('project_id', count='exact').gte(
+                'created_at', start_of_day
+            ).lte('created_at', end_of_day).limit(1).execute()
+        )
         
         if not result.data:
             return {
@@ -1051,12 +1058,13 @@ async def get_category_distribution(
         
         # Build distribution from aggregated results
         distribution = {}
-        total_projects = 0
         for row in result.data:
             category = row.get('category', 'Uncategorized')
             count = row.get('count', 0)
             distribution[category] = count
-            total_projects += count
+        
+        # Use actual distinct project count
+        total_projects = count_result.count or 0
         
         return {
             "distribution": distribution,
