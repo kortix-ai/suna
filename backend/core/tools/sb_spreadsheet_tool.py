@@ -97,9 +97,9 @@ Create interactive Excel (.xlsx) files that users can view, edit, and download. 
        sheet_name="Q1 Sales",
        headers=["Product", "Revenue", "Profit", "Margin %"],
        rows=[
-           ["Product A", 50000, 15000, 30],
-           ["Product B", 75000, 22500, 30],
-           ["Total", "=SUM(B2:B3)", "=SUM(C2:C3)", "=C4/B4*100"]
+           ["Product A", 50000, 15000, "=IFERROR(C2/B2*100,0)"],
+           ["Product B", 75000, 22500, "=IFERROR(C3/B3*100,0)"],
+           ["Total", "=SUM(B2:B3)", "=SUM(C2:C3)", "=IFERROR(C4/B4*100,0)"]
        ]
    )
    ```
@@ -201,12 +201,28 @@ rows=[
 ]
 ```
 
+**⚠️ CRITICAL - PREVENTING #DIV/0! ERRORS:**
+- ALWAYS wrap division formulas with IFERROR to handle divide-by-zero
+- Use: =IFERROR(A1/B1, 0) instead of =A1/B1
+- For percentage: =IFERROR(C4/B4*100, 0) instead of =C4/B4*100
+
+**Example with safe division:**
+```
+headers=["Product", "Revenue", "Cost", "Margin %"],
+rows=[
+    ["Product A", 50000, 35000, "=IFERROR(C2/B2*100,0)"],
+    ["Product B", 75000, 45000, "=IFERROR(C3/B3*100,0)"],
+    ["Total", "=SUM(B2:B3)", "=SUM(C2:C3)", "=IFERROR(C4/B4*100,0)"]
+]
+```
+
 **BEST PRACTICES:**
 - Count your data rows carefully before writing formulas
 - Total/summary formulas should be in the LAST row
 - Formula ranges should end at the row BEFORE the formula row
 - Use explicit values instead of formulas when unsure
 - Test mentally: "Does this formula reference its own cell?" → If yes, FIX IT
+- ALWAYS use IFERROR() around any division to prevent #DIV/0! errors
 """
 )
 class SandboxSpreadsheetTool(SandboxToolsBase):
@@ -220,6 +236,23 @@ class SandboxSpreadsheetTool(SandboxToolsBase):
             await self.sandbox.fs.get_file_info(SPREADSHEET_DIR)
         except Exception:
             await self.sandbox.fs.create_folder(SPREADSHEET_DIR, "755")
+
+    def _wrap_division_with_iferror(self, rows: List[List[Any]]) -> List[List[Any]]:
+        fixed_rows = []
+        for row_data in rows:
+            fixed_row = []
+            for value in row_data:
+                if isinstance(value, str) and value.startswith('='):
+                    formula = value
+                    if '/' in formula and 'IFERROR' not in formula.upper():
+                        inner = formula[1:]
+                        formula = f'=IFERROR({inner},0)'
+                        logger.info(f"Wrapped division formula with IFERROR: {value} -> {formula}")
+                    fixed_row.append(formula)
+                else:
+                    fixed_row.append(value)
+            fixed_rows.append(fixed_row)
+        return fixed_rows
 
     def _fix_circular_references(self, rows: List[List[Any]], headers: List[str]) -> List[List[Any]]:
         fixed_rows = []
@@ -363,6 +396,8 @@ class SandboxSpreadsheetTool(SandboxToolsBase):
     ) -> ToolResult:
         await self._ensure_dir()
         
+        rows = self._wrap_division_with_iferror(rows)
+        
         is_valid, error_msg = validate_formula_references(rows, headers, start_row=2)
         if not is_valid:
             logger.error(f"Formula validation failed: {error_msg}")
@@ -443,6 +478,8 @@ print('SUCCESS')
         headers: List[str],
         rows: List[List[Any]]
     ) -> ToolResult:
+        rows = self._wrap_division_with_iferror(rows)
+        
         is_valid, error_msg = validate_formula_references(rows, headers, start_row=2)
         if not is_valid:
             logger.error(f"Formula validation failed: {error_msg}")
@@ -551,6 +588,16 @@ except Exception as e:
         requests: List[Dict[str, Any]],
         sheet_name: str = None
     ) -> ToolResult:
+        for req in requests:
+            if req.get('type') == 'add_rows' and 'rows' in req:
+                req['rows'] = self._wrap_division_with_iferror(req['rows'])
+            elif req.get('type') == 'add_sheet' and 'rows' in req:
+                req['rows'] = self._wrap_division_with_iferror(req['rows'])
+            elif req.get('type') == 'update_cell' and 'value' in req:
+                value = req['value']
+                if isinstance(value, str) and value.startswith('=') and '/' in value and 'IFERROR' not in value.upper():
+                    inner = value[1:]
+                    req['value'] = f'=IFERROR({inner},0)'
         
         python_code = f"""
 import openpyxl
