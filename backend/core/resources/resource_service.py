@@ -174,6 +174,7 @@ class ResourceService:
     async def get_project_sandbox_resource(self, project_id: str) -> Optional[Dict[str, Any]]:
         """
         Get the sandbox resource for a project.
+        Automatically migrates sandbox data from JSONB if needed.
         
         Args:
             project_id: Project ID
@@ -181,6 +182,9 @@ class ResourceService:
         Returns:
             Resource record if found, None otherwise
         """
+        # Lazy migration: Migrate sandbox JSONB to resources table if needed
+        await self.migrate_project_sandbox_if_needed(project_id)
+        
         # Get project with sandbox_resource_id
         project_result = await self.client.table('projects').select('sandbox_resource_id').eq('project_id', project_id).execute()
         
@@ -219,6 +223,90 @@ class ResourceService:
         
         logger.debug(f"Linked resource {resource_id} to project {project_id}")
         return True
+    
+    async def migrate_project_sandbox_if_needed(self, project_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Lazy migration: Migrate sandbox data from projects.sandbox JSONB to resources table.
+        This is called automatically when accessing a project to migrate on-demand.
+        
+        Args:
+            project_id: Project ID to check and migrate if needed
+            
+        Returns:
+            Resource record if migration happened, None otherwise
+        """
+        try:
+            # Get project with both sandbox JSONB and sandbox_resource_id
+            project_result = await self.client.table('projects').select(
+                'project_id, account_id, sandbox_resource_id, sandbox'
+            ).eq('project_id', project_id).execute()
+            
+            if not project_result.data or len(project_result.data) == 0:
+                return None
+            
+            project_data = project_result.data[0]
+            sandbox_resource_id = project_data.get('sandbox_resource_id')
+            sandbox_jsonb = project_data.get('sandbox')
+            account_id = project_data.get('account_id')
+            
+            # If already migrated, nothing to do
+            if sandbox_resource_id:
+                return None
+            
+            # If no sandbox data in JSONB, nothing to migrate
+            if not sandbox_jsonb or not isinstance(sandbox_jsonb, dict):
+                return None
+            
+            sandbox_id = sandbox_jsonb.get('id')
+            if not sandbox_id:
+                return None
+            
+            # Check if resource already exists for this external_id + account_id
+            existing_resource = await self.get_resource_by_external_id(
+                sandbox_id,
+                ResourceType.SANDBOX
+            )
+            
+            if existing_resource:
+                # Resource exists, just link it to the project
+                resource_id = existing_resource['id']
+                if await self.link_resource_to_project(project_id, resource_id):
+                    logger.info(f"Lazy migration: Linked existing resource {resource_id} to project {project_id}")
+                    return existing_resource
+                return None
+            
+            # Create new resource from sandbox JSONB data
+            sandbox_config = {
+                'pass': sandbox_jsonb.get('pass'),
+                'vnc_preview': sandbox_jsonb.get('vnc_preview'),
+                'sandbox_url': sandbox_jsonb.get('sandbox_url'),
+                'token': sandbox_jsonb.get('token')
+            }
+            
+            # Remove None values
+            sandbox_config = {k: v for k, v in sandbox_config.items() if v is not None}
+            
+            resource = await self.create_resource(
+                account_id=account_id,
+                resource_type=ResourceType.SANDBOX,
+                external_id=sandbox_id,
+                config=sandbox_config,
+                status=ResourceStatus.ACTIVE
+            )
+            
+            # Link resource to project
+            if await self.link_resource_to_project(project_id, resource['id']):
+                logger.info(f"Lazy migration: Migrated sandbox data for project {project_id} to resource {resource['id']}")
+                return resource
+            else:
+                # Cleanup if linking failed
+                await self.delete_resource(resource['id'])
+                logger.error(f"Lazy migration: Failed to link resource to project {project_id}, cleaned up resource")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Lazy migration failed for project {project_id}: {str(e)}", exc_info=True)
+            return None
 
 
 def get_resource_service(client) -> ResourceService:

@@ -47,6 +47,17 @@ class SandboxToolsBase(Tool):
                 project_data = project.data[0]
                 account_id = project_data.get('account_id')
                 sandbox_resource_id = project_data.get('sandbox_resource_id')
+                
+                # Lazy migration: Migrate sandbox JSONB to resources table if needed
+                if not sandbox_resource_id:
+                    migrated_resource = await resource_service.migrate_project_sandbox_if_needed(self.project_id)
+                    if migrated_resource:
+                        sandbox_resource_id = migrated_resource['id']
+                        # Re-fetch project data to get updated sandbox_resource_id
+                        project = await client.table('projects').select('project_id, account_id, sandbox_resource_id').eq('project_id', self.project_id).execute()
+                        if project.data:
+                            project_data = project.data[0]
+                            sandbox_resource_id = project_data.get('sandbox_resource_id')
 
                 # Try to get existing sandbox resource
                 sandbox_resource = None
