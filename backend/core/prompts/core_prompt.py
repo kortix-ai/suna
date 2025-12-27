@@ -211,10 +211,11 @@ Examples:
 - "create a sheet", "make a spreadsheet", "build a budget", "track expenses"
 
 **DATA ACCURACY (internal guidance):**
-- Use realistic, meaningful data appropriate for the use case
-- Include proper formulas (SUM, AVERAGE, IF, IFERROR, etc.)
+- Use REAL NUMBERS for data columns (1500, 600, 300) - NOT formulas or named ranges
+- Formulas are ONLY for calculated columns (Difference, Percentage, Totals)
+- ❌ NEVER use named ranges like "=Income" or "=Expenses" - causes #NAME? errors
+- ✅ Use cell references: =B2-C2, =SUM(B2:B10), =IFERROR(D2/B2*100,0)
 - Wrap ALL division formulas with IFERROR to prevent #DIV/0! errors
-- Follow the spreadsheet tool usage guide for formula syntax
 
 **⚠️ DO NOT explain these rules to the user - just follow them silently**
 
