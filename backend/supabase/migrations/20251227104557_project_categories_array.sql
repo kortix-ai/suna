@@ -13,18 +13,16 @@ WHERE category IS NOT NULL
   AND (categories IS NULL OR categories = '{}');
 
 -- 3. Add last_categorized_at to track when project was last categorized
-ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_categorized_at TIMESTAMP WITH TIME ZONE;
+-- DEFAULT NOW() sets it for existing rows without triggering updated_at
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_categorized_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 
--- 4. Mark all existing projects as already categorized (skip old projects)
--- Set to updated_at so they won't be picked up until new activity
-UPDATE projects SET last_categorized_at = updated_at WHERE last_categorized_at IS NULL;
-
--- 5. Index for finding stale projects (inactive but not recently categorized)
-CREATE INDEX IF NOT EXISTS idx_projects_categorization_stale 
-ON projects (updated_at, last_categorized_at) 
-WHERE last_categorized_at IS NULL OR last_categorized_at < updated_at;
+-- 5. Index for threads.updated_at since we join on it
+CREATE INDEX IF NOT EXISTS idx_threads_updated_at ON threads (updated_at);
+-- Index for projects.last_categorized_at
+CREATE INDEX IF NOT EXISTS idx_projects_last_categorized_at ON projects (last_categorized_at);
 
 -- 6. RPC function to find stale projects needing categorization
+-- Uses MAX(threads.updated_at) since that's what gets updated when user sends messages
 CREATE OR REPLACE FUNCTION get_stale_projects_for_categorization(
     stale_threshold TIMESTAMP WITH TIME ZONE,
     max_count INT DEFAULT 50
@@ -36,8 +34,13 @@ SECURITY DEFINER
 AS $$
     SELECT p.project_id
     FROM projects p
-    WHERE p.updated_at < stale_threshold
-      AND (p.last_categorized_at IS NULL OR p.last_categorized_at < p.updated_at)
+    INNER JOIN (
+        SELECT t.project_id, MAX(t.updated_at) as last_thread_activity
+        FROM threads t
+        GROUP BY t.project_id
+    ) thread_activity ON thread_activity.project_id = p.project_id
+    WHERE thread_activity.last_thread_activity < stale_threshold
+      AND (p.last_categorized_at IS NULL OR p.last_categorized_at < thread_activity.last_thread_activity)
     LIMIT max_count;
 $$;
 

@@ -13,7 +13,7 @@ async def categorize_from_messages(messages: List[dict]) -> List[str]:
     Analyze messages and return applicable categories.
     
     Args:
-        messages: List of message dicts with 'role' and 'content'
+        messages: List of message dicts with 'type' and 'content' (from DB)
         
     Returns:
         List of category strings
@@ -31,20 +31,41 @@ async def categorize_from_messages(messages: List[dict]) -> List[str]:
 
 
 def _extract_user_content(messages: List[dict]) -> str:
-    """Extract and combine user message content."""
+    """Extract user text messages only.
+    
+    Message structure:
+    - type: 'user' (column) with content: {"role": "user", "content": "text"} -> TEXT
+    - type: 'image_context' with content.content as array -> SKIP
+    - If content.content is not a string -> SKIP (images, arrays, etc.)
+    - Skip messages > 5000 chars (likely pasted conversation history)
+    """
+    MAX_MSG_LENGTH = 5000  # Normal user messages are <1000 chars
+    
     parts = []
+    
     for msg in messages:
-        if msg.get('role') != 'user':
+        # Only 'user' type messages (not image_context, assistant, tool, etc.)
+        if msg.get('type') != 'user':
             continue
-        content = msg.get('content', {})
-        if isinstance(content, dict):
-            text = content.get('content', '')
-        elif isinstance(content, str):
-            text = content
-        else:
+        
+        content = msg.get('content')
+        if not content or not isinstance(content, dict):
             continue
+        
+        # Get the inner content - must be a string (not array for images)
+        inner = content.get('content')
+        if not isinstance(inner, str):
+            continue  # Skip arrays (images) or other non-string content
+        
+        text = inner.strip()
+        
+        # Skip abnormally long messages (likely pasted conversation history)
+        if len(text) > MAX_MSG_LENGTH:
+            continue
+        
         if text:
             parts.append(text)
+    
     return "\n".join(parts)
 
 

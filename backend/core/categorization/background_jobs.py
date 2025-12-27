@@ -14,8 +14,9 @@ def get_queue_name(base_name: str) -> str:
 db = DBConnection()
 
 STALE_THRESHOLD_MINUTES = 30
-MIN_USER_MESSAGES = 2
+MIN_USER_MESSAGES = 1
 MAX_PROJECTS_PER_RUN = 50
+DELAY_BETWEEN_PROJECTS_MS = 2000  # 2 second delay between tasks
 
 
 @dramatiq.actor(queue_name=get_queue_name("default"))
@@ -42,15 +43,15 @@ async def categorize_project(project_id: str):
         
         thread_id = thread_result.data[0]['thread_id']
         
-        # Get messages
+        # Get messages (type = role, content is JSONB)
         messages_result = await client.table('messages').select(
-            'role', 'content'
+            'type', 'content'
         ).eq('thread_id', thread_id).order('created_at').execute()
         
         messages = messages_result.data or []
         
-        # Check minimum user messages
-        user_count = sum(1 for m in messages if m.get('role') == 'user')
+        # Check minimum user messages (type='user' not role='user')
+        user_count = sum(1 for m in messages if m.get('type') == 'user')
         if user_count < MIN_USER_MESSAGES:
             logger.debug(f"Project {project_id} has only {user_count} user messages")
             await client.table('projects').update({
@@ -103,8 +104,13 @@ async def process_stale_projects():
         
         logger.info(f"Found {len(projects)} stale projects")
         
-        for project in projects:
-            categorize_project.send(project['project_id'])
+        for i, project in enumerate(projects):
+            # Stagger task dispatch to avoid rate limits
+            delay_ms = i * DELAY_BETWEEN_PROJECTS_MS
+            categorize_project.send_with_options(
+                args=(project['project_id'],),
+                delay=delay_ms
+            )
         
     except Exception as e:
         logger.error(f"Stale project processing failed: {e}")

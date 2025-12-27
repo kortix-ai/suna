@@ -56,7 +56,7 @@ class ThreadAnalytics(BaseModel):
     thread_id: str
     project_id: Optional[str] = None
     project_name: Optional[str] = None
-    project_category: Optional[str] = None
+    project_categories: Optional[List[str]] = None  # Changed to array
     account_id: Optional[str] = None
     user_email: Optional[str] = None
     message_count: int
@@ -750,7 +750,7 @@ async def _enrich_threads(client, threads: List[Dict]) -> List[ThreadAnalytics]:
         if not project_ids:
             return []
         result = await client.from_('projects').select(
-            'project_id, name, category'
+            'project_id, name, categories'
         ).in_('project_id', project_ids).execute()
         return result.data or []
     
@@ -779,7 +779,9 @@ async def _enrich_threads(client, threads: List[Dict]) -> List[ThreadAnalytics]:
     project_categories = {}
     for p in projects_data:
         project_names[p['project_id']] = p['name']
-        project_categories[p['project_id']] = p.get('category', 'Other')
+        # Use categories array, default to ['Uncategorized'] if empty
+        cats = p.get('categories') or []
+        project_categories[p['project_id']] = cats if cats else ['Uncategorized']
     
     # Build result
     result = []
@@ -790,7 +792,7 @@ async def _enrich_threads(client, threads: List[Dict]) -> List[ThreadAnalytics]:
             thread_id=tid,
             project_id=thread.get('project_id'),
             project_name=project_names.get(thread.get('project_id')),
-            project_category=project_categories.get(thread.get('project_id')),
+            project_categories=project_categories.get(thread.get('project_id')),
             account_id=thread.get('account_id'),
             user_email=account_emails.get(thread.get('account_id')),
             message_count=thread_total_counts.get(tid, 0),
