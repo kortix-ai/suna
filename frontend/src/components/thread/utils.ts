@@ -434,7 +434,8 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['image_edit_or_generate', 'Generate Media'],
   ['image-edit-or-generate', 'Generate Media'],
 
-  ['create-sheet', 'Creating Sheet'],
+  ['spreadsheet-create', 'Creating Spreadsheet'],
+  ['spreadsheet_create', 'Creating Spreadsheet'],
   ['update-sheet', 'Updating Sheet'],
   ['view-sheet', 'Viewing Sheet'],
   ['analyze-sheet', 'Analyzing Sheet'],

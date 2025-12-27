@@ -279,44 +279,6 @@ export function SpreadsheetSimulation({ mode = 'max' }: SpreadsheetSimulationPro
               </motion.div>
             </div>
           </motion.div>
-
-          <motion.div 
-            className="flex items-center justify-center gap-2 pt-4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-          >
-            <motion.div
-              className="flex gap-1"
-            >
-              {[0, 1, 2].map((i) => (
-                <motion.div
-                  key={i}
-                  className="w-2 h-2 rounded-full bg-emerald-500"
-                  animate={{
-                    scale: [1, 1.3, 1],
-                    opacity: [0.5, 1, 0.5],
-                  }}
-                  transition={{
-                    duration: 1,
-                    repeat: Infinity,
-                    delay: i * 0.2,
-                  }}
-                />
-              ))}
-            </motion.div>
-            <motion.span 
-              className="text-sm text-zinc-500 dark:text-zinc-400 font-medium"
-              animate={{ opacity: [0.7, 1, 0.7] }}
-              transition={{ duration: 2, repeat: Infinity }}
-            >
-              {phase === 0 && "Initializing..."}
-              {phase === 1 && "Creating headers..."}
-              {phase === 2 && "Populating data..."}
-              {phase === 3 && "Adding formulas..."}
-              {phase === 4 && "Finalizing..."}
-            </motion.span>
-          </motion.div>
         </motion.div>
       </div>
     </div>
