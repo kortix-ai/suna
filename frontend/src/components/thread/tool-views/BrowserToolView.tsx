@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useState } from 'react';
 import Image from 'next/image';
 import {
   Globe,
@@ -6,11 +6,9 @@ import {
   ExternalLink,
   CheckCircle,
   AlertTriangle,
-  CircleDashed,
   RefreshCw,
   Code2,
   ImageIcon,
-  Loader2,
 } from 'lucide-react';
 import { ToolViewProps } from './types';
 import {
@@ -23,10 +21,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ImageLoader } from './shared/ImageLoader';
-import { ParsedContent } from '../types';
 import { JsonViewer } from './shared/JsonViewer';
 import { KortixComputerHeader } from '../kortix-computer/KortixComputerHeader';
-import { useExternalImage } from '@/hooks/files';
 
 interface BrowserHeaderProps {
   isConnected: boolean;
@@ -224,52 +220,30 @@ export function BrowserToolView({
     }
   }
 
-  // Use the external image hook for URL-based screenshots
-  const {
-    data: loadedImageUrl,
-    isLoading: isImageLoading,
-    error: imageError,
-    failureCount,
-  } = useExternalImage(screenshotUrlFinal, {
-    enabled: !!screenshotUrlFinal && !screenshotBase64Final,
-  });
+  // State for image loading
+  const [isImageLoading, setIsImageLoading] = useState(true);
+  const [imageError, setImageError] = useState(false);
 
-  // Log for debugging
+  // Reset loading state when screenshot URL changes
   React.useEffect(() => {
     if (screenshotUrlFinal) {
       console.log('[BrowserToolView] Screenshot URL:', screenshotUrlFinal);
-      console.log('[BrowserToolView] Image loading state:', {
-        isLoading: isImageLoading,
-        error: imageError,
-        failureCount,
-        loadedUrl: loadedImageUrl,
-      });
+      setIsImageLoading(true);
+      setImageError(false);
     }
-  }, [screenshotUrlFinal, isImageLoading, imageError, failureCount, loadedImageUrl]);
+  }, [screenshotUrlFinal]);
 
   const renderScreenshot = () => {
-    // Handle URL-based screenshots with retry logic
+    // Handle URL-based screenshots - use the actual URL directly
     if (screenshotUrlFinal && !screenshotBase64Final) {
-      // Show loading state while fetching
-      if (isImageLoading) {
-        return (
-          <div className="flex items-center justify-center w-full h-full min-h-[600px] relative p-4" style={{ minHeight: '600px' }}>
+      return (
+        <div className="flex items-center justify-center w-full h-full min-h-[600px] relative p-4" style={{ minHeight: '600px' }}>
+          {isImageLoading && !imageError && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-50 dark:bg-zinc-900">
               <ImageLoader />
-              {failureCount > 0 && (
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-4">
-                  Retrying... (attempt {failureCount + 1})
-                </p>
-              )}
             </div>
-          </div>
-        );
-      }
-      
-      // Show error state after retries exhausted
-      if (imageError && failureCount >= 10) {
-        return (
-          <div className="flex items-center justify-center w-full h-full min-h-[600px] relative p-4" style={{ minHeight: '600px' }}>
+          )}
+          {imageError ? (
             <div className="absolute inset-0 flex items-center justify-center bg-zinc-50 dark:bg-zinc-900">
               <div className="text-center text-zinc-500 dark:text-zinc-400">
                 <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
@@ -279,43 +253,24 @@ export function BrowserToolView({
                 </p>
               </div>
             </div>
-          </div>
-        );
-      }
-      
-      // Show image when loaded
-      if (loadedImageUrl) {
-        return (
-          <div className="flex items-center justify-center w-full h-full min-h-[600px] relative p-4" style={{ minHeight: '600px' }}>
+          ) : (
             <Card className="p-0 overflow-hidden relative border">
               <Image
-                src={loadedImageUrl}
+                src={screenshotUrlFinal}
                 alt="Browser Screenshot"
                 className="max-w-full max-h-full object-contain"
                 width={1920}
                 height={1080}
                 unoptimized
                 priority
+                onLoadingComplete={() => setIsImageLoading(false)}
+                onError={() => {
+                  setIsImageLoading(false);
+                  setImageError(true);
+                }}
               />
             </Card>
-          </div>
-        );
-      }
-      
-      // Fallback: try direct URL if hook hasn't loaded yet (shouldn't happen, but safety net)
-      return (
-        <div className="flex items-center justify-center w-full h-full min-h-[600px] relative p-4" style={{ minHeight: '600px' }}>
-          <Card className="p-0 overflow-hidden relative border">
-            <Image
-              src={screenshotUrlFinal}
-              alt="Browser Screenshot"
-              className="max-w-full max-h-full object-contain"
-              width={1920}
-              height={1080}
-              unoptimized
-              priority
-            />
-          </Card>
+          )}
         </div>
       );
     } 

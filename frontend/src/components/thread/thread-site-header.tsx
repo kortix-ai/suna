@@ -16,7 +16,7 @@ import { useUpdateProject } from "@/hooks/threads/use-project";
 import { Skeleton } from "@/components/ui/skeleton"
 import { useIsMobile } from "@/hooks/utils"
 import { cn } from "@/lib/utils"
-import { ShareModal } from "@/components/sidebar/share-modal"
+import { SharePopover } from "@/components/sidebar/share-modal"
 import { useQueryClient } from "@tanstack/react-query";
 import { projectKeys } from "@/hooks/threads/keys";
 import { threadKeys } from "@/hooks/threads/keys";
@@ -49,17 +49,12 @@ export function SiteHeader({
   const [editName, setEditName] = useState(projectName)
   const inputRef = useRef<HTMLInputElement>(null)
   const isSharedVariant = variant === 'shared'
-  const [showShareModal, setShowShareModal] = useState(false);
   const [showKnowledgeBase, setShowKnowledgeBase] = useState(false);
   const [copied, setCopied] = useState(false);
   const queryClient = useQueryClient();
 
   const isMobile = useIsMobile() || isMobileView
   const updateProjectMutation = useUpdateProject()
-
-  const openShareModal = () => {
-    setShowShareModal(true)
-  }
 
   const openKnowledgeBase = () => {
     setShowKnowledgeBase(true)
@@ -137,123 +132,109 @@ export function SiteHeader({
   };
 
   return (
-    <>
-      <header className={cn(
-        "bg-background sticky top-0 flex h-14 shrink-0 items-center gap-2 z-20 w-full",
-        isMobile && "px-2"
-      )}>
+    <header className={cn(
+      "bg-background sticky top-0 flex h-14 shrink-0 items-center gap-2 z-20 w-full",
+      isMobile && "px-2"
+    )}>
+      <div className="flex flex-1 items-center gap-2 px-3">
+        {variant === 'shared' ? (
+          <div className="text-base font-medium text-muted-foreground flex items-center gap-2">
+            {projectName}
+            <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
+              Shared
+            </span>
+          </div>
+        ) : isEditing ? (
+          <Input
+            ref={inputRef}
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={saveNewName}
+            className="h-8 w-auto min-w-[180px] text-base font-medium"
+            maxLength={50}
+          />
+        ) : !projectName || projectName === 'Project' ? (
+          <Skeleton className="h-5 w-32" />
+        ) : (
+          <div
+            className={`text-base font-medium text-muted-foreground flex items-center ${isSharedVariant ? '' : 'hover:text-foreground cursor-pointer'
+              }`}
+            onClick={isSharedVariant ? undefined : startEditing}
+            title={isSharedVariant ? undefined : 'Click to rename project'}
+          >
+            {projectName}
+          </div>
+        )}
+      </div>
 
-
-        <div className="flex flex-1 items-center gap-2 px-3">
+      <div className="flex items-center gap-1 pr-4">
+        <TooltipProvider>
           {variant === 'shared' ? (
-            <div className="text-base font-medium text-muted-foreground flex items-center gap-2">
-              {projectName}
-              <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
-                Shared
-              </span>
-            </div>
-          ) : isEditing ? (
-            <Input
-              ref={inputRef}
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onBlur={saveNewName}
-              className="h-8 w-auto min-w-[180px] text-base font-medium"
-              maxLength={50}
-            />
-          ) : !projectName || projectName === 'Project' ? (
-            <Skeleton className="h-5 w-32" />
-          ) : (
-            <div
-              className={`text-base font-medium text-muted-foreground flex items-center ${isSharedVariant ? '' : 'hover:text-foreground cursor-pointer'
-                }`}
-              onClick={isSharedVariant ? undefined : startEditing}
-              title={isSharedVariant ? undefined : 'Click to rename project'}
-            >
-              {projectName}
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1 pr-4">
-          {/* Show all buttons on both mobile and desktop - responsive tooltips */}
-          <TooltipProvider>
-            {variant === 'shared' ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    onClick={copyShareLink}
-                    className="h-9 px-3 cursor-pointer gap-2"
-                  >
-                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                    <span>{copied ? 'Copied!' : 'Copy Link'}</span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side={isMobile ? "bottom" : "bottom"}>
-                  <p>Copy share link</p>
-                </TooltipContent>
-              </Tooltip>
-            ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  onClick={copyShareLink}
+                  className="h-9 px-3 cursor-pointer gap-2"
+                >
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  <span>{copied ? 'Copied!' : 'Copy Link'}</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p>Copy share link</p>
+              </TooltipContent>
+            </Tooltip>
+          ) : threadId && projectId ? (
+            <SharePopover threadId={threadId} projectId={projectId}>
               <Button
                 variant="ghost"
-                onClick={openShareModal}
                 className="h-9 px-3 cursor-pointer gap-2"
               >
                 <Upload className="h-4 w-4" />
                 <span>Share</span>
               </Button>
-            )}
+            </SharePopover>
+          ) : null}
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => onViewFiles()}
-                  className="h-9 w-9 cursor-pointer"
-                >
-                  <FolderOpen className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side={isMobile ? "bottom" : "bottom"}>
-                <p>View Files in Task</p>
-              </TooltipContent>
-            </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onViewFiles()}
+                className="h-9 w-9 cursor-pointer"
+              >
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <p>View Files in Task</p>
+            </TooltipContent>
+          </Tooltip>
 
-
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onToggleSidePanel}
-                  className="h-9 w-9 cursor-pointer"
-                >
-                  {isSidePanelOpen ? (
-                    <PanelRightClose className="h-4 w-4" />
-                  ) : (
-                    <PanelRightOpen className="h-4 w-4" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side={isMobile ? "bottom" : "bottom"}>
-                <p>{isSidePanelOpen ? 'Close' : 'Open'} Kortix Computer (CMD+I)</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-      </header>
-      {variant === 'default' && threadId && projectId && (
-        <ShareModal
-          isOpen={showShareModal}
-          onClose={() => setShowShareModal(false)}
-          threadId={threadId}
-          projectId={projectId}
-        />
-      )}
-    </>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onToggleSidePanel}
+                className="h-9 w-9 cursor-pointer"
+              >
+                {isSidePanelOpen ? (
+                  <PanelRightClose className="h-4 w-4" />
+                ) : (
+                  <PanelRightOpen className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <p>{isSidePanelOpen ? 'Close' : 'Open'} Kortix Computer (CMD+I)</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+    </header>
   )
-} 
+}

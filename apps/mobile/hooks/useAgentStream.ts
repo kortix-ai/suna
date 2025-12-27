@@ -270,6 +270,11 @@ export function useAgentStream(
         queryKey: ['active-agent-runs'],
       });
 
+      // Refetch thread messages to ensure all messages are synced with the database
+      queryClient.invalidateQueries({
+        queryKey: chatKeys.messages(currentThreadId),
+      });
+
       if (agentId) {
         queryClient.invalidateQueries({ queryKey: ['agents'] });
         queryClient.invalidateQueries({ queryKey: ['agent', agentId] });
