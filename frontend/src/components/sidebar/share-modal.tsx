@@ -20,17 +20,15 @@ interface SharePopoverProps {
 }
 
 const LoadingSkeleton = () => (
-  <div className="space-y-3">
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-2.5">
-        <Skeleton className="h-8 w-8 rounded-full" />
-        <div className="space-y-1">
-          <Skeleton className="h-3.5 w-16" />
-          <Skeleton className="h-2.5 w-24" />
-        </div>
+  <div className="flex items-center justify-between gap-3">
+    <div className="flex items-center gap-2.5">
+      <Skeleton className="h-7 w-7 rounded-lg" />
+      <div className="space-y-1">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="h-2.5 w-32" />
       </div>
-      <Skeleton className="h-4 w-8 rounded-full" />
     </div>
+    <Skeleton className="h-5 w-9 rounded-full" />
   </div>
 )
 
@@ -120,32 +118,24 @@ function SharePopoverContent({
   }
 
   return (
-    <div className="p-3 space-y-3">
+    <div className="p-3 space-y-2.5">
       {/* Toggle Row */}
-      <button
-        onClick={() => handleToggle(!isPublic)}
-        disabled={updateThreadMutation.isPending}
-        className={cn(
-          "w-full flex items-center justify-between p-2.5 rounded-xl transition-all",
-          "hover:bg-muted/50 active:scale-[0.98]",
-          updateThreadMutation.isPending && "opacity-60 pointer-events-none"
-        )}
-      >
-        <div className="flex items-center gap-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
           <div className={cn(
-            "flex items-center justify-center h-8 w-8 rounded-full transition-all duration-200",
+            "flex items-center justify-center h-7 w-7 rounded-lg shrink-0 transition-all duration-200",
             isPublic 
-              ? "bg-foreground text-background" 
+              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" 
               : "bg-muted text-muted-foreground"
           )}>
             {isPublic ? <Globe className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
           </div>
-          <div className="text-left">
-            <p className="text-sm font-medium leading-none">
-              {isPublic ? "Public" : "Private"}
+          <div className="text-left min-w-0">
+            <p className="text-[13px] font-medium leading-tight">
+              {isPublic ? "Public link enabled" : "Enable public link"}
             </p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
-              {isPublic ? "Anyone with link" : "Only you"}
+            <p className="text-[11px] text-muted-foreground leading-tight">
+              {isPublic ? "Anyone with the link can view" : "Only you can access this thread"}
             </p>
           </div>
         </div>
@@ -153,28 +143,31 @@ function SharePopoverContent({
           checked={isPublic}
           onCheckedChange={handleToggle}
           disabled={updateThreadMutation.isPending}
-          className="pointer-events-none"
+          className={cn(
+            "shrink-0",
+            updateThreadMutation.isPending && "opacity-50"
+          )}
         />
-      </button>
+      </div>
 
       {/* Link Actions - Visible when public */}
       {isPublic && (
-        <div className="space-y-2 animate-in fade-in-0 slide-in-from-top-1 duration-150">
+        <div className="space-y-2 animate-in fade-in-0 slide-in-from-top-1 duration-150 pt-0.5">
           {/* Copy URL */}
           <button
             onClick={handleCopy}
             className={cn(
-              "w-full flex items-center gap-2 px-3 h-9 rounded-lg transition-all",
-              "bg-muted/40 hover:bg-muted/70 active:scale-[0.98]",
-              copied && "bg-foreground/5"
+              "w-full flex items-center gap-2 px-2.5 h-8 rounded-lg transition-all",
+              "bg-muted/50 hover:bg-muted active:scale-[0.99]",
+              copied && "bg-emerald-500/10"
             )}
           >
             <span className="flex-1 text-[11px] text-muted-foreground font-mono truncate text-left">
               {shareLink.replace(/^https?:\/\//, '')}
             </span>
             <div className={cn(
-              "transition-colors",
-              copied ? "text-foreground" : "text-muted-foreground"
+              "transition-colors shrink-0",
+              copied ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"
             )}>
               {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             </div>
@@ -184,20 +177,22 @@ function SharePopoverContent({
           <div className="flex items-center gap-1.5">
             <button
               onClick={handleOpen}
-              className="flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg text-xs font-medium bg-foreground text-background hover:bg-foreground/90 active:scale-[0.98] transition-all"
+              className="flex-1 flex items-center justify-center gap-1.5 h-7 rounded-lg text-[11px] font-medium bg-foreground text-background hover:bg-foreground/90 active:scale-[0.98] transition-all"
             >
               <ExternalLink className="h-3 w-3" />
               Open
             </button>
             <button
               onClick={handleShareX}
-              className="flex items-center justify-center h-8 w-8 rounded-lg border border-border hover:bg-muted transition-colors"
+              className="flex items-center justify-center h-7 w-7 rounded-lg border border-border/60 hover:bg-muted transition-colors"
+              title="Share on X"
             >
               <XIcon />
             </button>
             <button
               onClick={handleShareLinkedIn}
-              className="flex items-center justify-center h-8 w-8 rounded-lg border border-border hover:bg-muted transition-colors"
+              className="flex items-center justify-center h-7 w-7 rounded-lg border border-border/60 hover:bg-muted transition-colors"
+              title="Share on LinkedIn"
             >
               <LinkedInIcon />
             </button>
@@ -236,14 +231,9 @@ export function SharePopover({
       <PopoverContent 
         side={children ? side : "bottom"} 
         align={children ? align : "center"} 
-        className="w-72 p-0 overflow-hidden"
+        className="w-[280px] p-0 overflow-hidden"
         sideOffset={8}
       >
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-border/50">
-          <p className="text-sm font-medium">Share</p>
-        </div>
-
         <SharePopoverContent threadId={threadId} isOpen={isOpen} />
       </PopoverContent>
     </Popover>
