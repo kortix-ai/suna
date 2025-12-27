@@ -41,7 +41,7 @@ export const processThreadsWithProjects = (
       continue;
     }
     // Use dedicated icon_name field from backend
-    let displayName = project.name || 'Unnamed Project';
+    const displayName = project.name || 'Unnamed Project';
     const iconName = project.icon_name; // Get icon from dedicated database field
 
     // Format date for fallback if thread has no name

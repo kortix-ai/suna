@@ -117,7 +117,7 @@ export function extractTextFromStreamingAskComplete(content: string, toolName: '
   if (!content) return '';
   
   // Remove function_calls wrapper if present
-  let cleaned = content.replace(/<function_calls[^>]*>/gi, '').replace(/<\/function_calls>/gi, '');
+  const cleaned = content.replace(/<function_calls[^>]*>/gi, '').replace(/<\/function_calls>/gi, '');
   
   // Try to extract from new format: <invoke name="complete"> <parameter name="text">content</parameter> </invoke>
   const invokeMatch = cleaned.match(new RegExp(`<invoke[^>]*name=["']${toolName}["'][^>]*>([\\s\\S]*?)<\\/invoke>`, 'i'));
