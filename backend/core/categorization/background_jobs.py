@@ -34,6 +34,10 @@ async def categorize_project(project_id: str):
         
         if not thread_result.data:
             logger.debug(f"No thread for project {project_id}")
+            # Mark as categorized to avoid re-processing
+            await client.table('projects').update({
+                'last_categorized_at': datetime.now(timezone.utc).isoformat()
+            }).eq('project_id', project_id).execute()
             return
         
         thread_id = thread_result.data[0]['thread_id']
