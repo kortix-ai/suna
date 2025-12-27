@@ -16,6 +16,8 @@ from core.billing.credits.media_calculator import (
     calculate_replicate_video_cost,
     calculate_openrouter_image_cost,
     get_model_pricing_info,
+    select_image_quality,
+    cap_quality_for_tier,
 )
 from ..shared.cache_utils import invalidate_account_state_cache
 
@@ -80,6 +82,7 @@ class MediaBillingIntegration:
         description: Optional[str] = None,
         thread_id: Optional[str] = None,
         message_id: Optional[str] = None,
+        variant: Optional[str] = None,
     ) -> Dict:
         """
         Deduct credits for media generation.
@@ -94,6 +97,7 @@ class MediaBillingIntegration:
             description: Custom description for the transaction
             thread_id: Optional thread ID for tracking
             message_id: Optional message ID for tracking
+            variant: Quality variant for image models ('low', 'medium', 'high')
             
         Returns:
             Dict with success status and details
@@ -117,7 +121,8 @@ class MediaBillingIntegration:
                 media_type=media_type,
                 count=count,
                 duration_seconds=duration_seconds,
-                with_audio=with_audio
+                with_audio=with_audio,
+                variant=variant
             )
             
             if cost <= 0:
@@ -175,6 +180,7 @@ class MediaBillingIntegration:
         count: int = 1,
         description: Optional[str] = None,
         thread_id: Optional[str] = None,
+        variant: Optional[str] = None,
     ) -> Dict:
         """Convenience method for Replicate image billing."""
         return await MediaBillingIntegration.deduct_media_credits(
@@ -185,6 +191,7 @@ class MediaBillingIntegration:
             count=count,
             description=description,
             thread_id=thread_id,
+            variant=variant,
         )
     
     @staticmethod
@@ -234,7 +241,8 @@ class MediaBillingIntegration:
         media_type: Literal["image", "video"] = "image",
         count: int = 1,
         duration_seconds: Optional[int] = None,
-        with_audio: bool = False
+        with_audio: bool = False,
+        variant: Optional[str] = None
     ) -> Decimal:
         """
         Estimate cost without deducting (for UI display).
@@ -247,8 +255,52 @@ class MediaBillingIntegration:
             media_type=media_type,
             count=count,
             duration_seconds=duration_seconds,
-            with_audio=with_audio
+            with_audio=with_audio,
+            variant=variant
         )
+    
+    @staticmethod
+    async def get_quality_for_account(account_id: str) -> str:
+        """
+        Get the appropriate image quality variant for an account based on tier.
+        
+        Args:
+            account_id: User's account ID
+            
+        Returns:
+            Quality variant: 'low', 'medium', or 'high'
+        """
+        try:
+            from core.billing.subscriptions.handlers.tier import TierHandler
+            tier_info = await TierHandler.get_user_subscription_tier(account_id)
+            tier_name = tier_info.get('name', 'none')
+            return select_image_quality(tier_name)
+        except Exception as e:
+            logger.warning(f"[MEDIA_BILLING] Error getting tier for {account_id}: {e}, defaulting to 'low'")
+            return "low"
+    
+    @staticmethod
+    async def get_capped_quality(account_id: str, requested_quality: str) -> str:
+        """
+        Get the quality capped to the maximum allowed for the account's tier.
+        
+        Args:
+            account_id: User's account ID
+            requested_quality: The quality variant requested
+            
+        Returns:
+            The allowed quality (may be lower than requested for free users)
+        """
+        try:
+            from core.billing.subscriptions.handlers.tier import TierHandler
+            tier_info = await TierHandler.get_user_subscription_tier(account_id)
+            tier_name = tier_info.get('name', 'none')
+            return cap_quality_for_tier(tier_name, requested_quality)
+        except Exception as e:
+            logger.warning(f"[MEDIA_BILLING] Error getting tier for {account_id}: {e}, capping to 'medium'")
+            if requested_quality in ("high", "auto"):
+                return "medium"
+            return requested_quality
 
 
 # Singleton instance

@@ -9,8 +9,7 @@ import { PdfRenderer } from '@/components/file-renderers/pdf-renderer';
 import { ImageRenderer } from '@/components/file-renderers/image-renderer';
 import { VideoRenderer } from '@/components/file-renderers/video-renderer';
 import { BinaryRenderer } from '@/components/file-renderers/binary-renderer';
-import { CsvRenderer } from '@/components/file-renderers/csv-renderer';
-import { XlsxRenderer } from '@/components/file-renderers/xlsx-renderer';
+import { SpreadsheetViewer } from '../thread/tool-views/spreadsheet/SpreadsheetViewer';
 import { PptxRenderer } from '@/components/file-renderers/pptx-renderer';
 import { HtmlRenderer } from '@/components/file-renderers/html-renderer';
 import { CanvasRenderer } from '@/components/file-renderers/canvas-renderer';
@@ -203,16 +202,13 @@ export function EditableFileRenderer({
         <VideoRenderer url={binaryUrl} />
       ) : fileType === 'pdf' && binaryUrl ? (
         <PdfRenderer url={binaryUrl} />
-      ) : fileType === 'csv' ? (
-        <CsvRenderer content={content || ''} />
-      ) : fileType === 'xlsx' ? (
-        <XlsxRenderer
-          content={content}
+      ) : fileType === 'csv' || fileType === 'xlsx' ? (
+        <SpreadsheetViewer
           filePath={filePath}
           fileName={fileName}
+          sandboxId={project?.sandbox?.id}
           project={project}
-          onDownload={onDownload}
-          isDownloading={isDownloading}
+          allowEditing={!readOnly}
         />
       ) : fileType === 'pptx' ? (
         <PptxRenderer

@@ -198,6 +198,21 @@ export const getToolIcon = (toolName: string): ElementType => {
     case 'complete':
       return CheckCircle2;
 
+    // Spreadsheet tools
+    case "spreadsheet-add-sheet":
+      return Table2;
+    case "spreadsheet_add_sheet":
+      return Table2;
+    case "spreadsheet-batch-update":
+      return Table2;
+    case "spreadsheet_batch_update":
+      return Table2;
+    case "spreadsheet-create":
+      return Table2;
+    case "spreadsheet_create":
+      return Table2;
+
+    
     default:
       if (toolName?.startsWith('mcp_')) {
         const parts = toolName.split('_');
@@ -419,12 +434,20 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['image_edit_or_generate', 'Generate Media'],
   ['image-edit-or-generate', 'Generate Media'],
 
-  ['create-sheet', 'Creating Sheet'],
+  ['spreadsheet-create', 'Creating Spreadsheet'],
+  ['spreadsheet_create', 'Creating Spreadsheet'],
   ['update-sheet', 'Updating Sheet'],
   ['view-sheet', 'Viewing Sheet'],
   ['analyze-sheet', 'Analyzing Sheet'],
   ['visualize-sheet', 'Visualizing Sheet'],
   ['format-sheet', 'Formatting Sheet'],
+
+  ['spreadsheet-create-sheet', 'Creating Spreadsheet'],
+  ['spreadsheet_create_sheet', 'Creating Spreadsheet'],
+  ['spreadsheet-add-sheet', 'Adding Sheet'],
+  ['spreadsheet_add_sheet', 'Adding Sheet'],
+  ['spreadsheet-batch-update', 'Updating Spreadsheet'],
+  ['spreadsheet_batch_update', 'Updating Spreadsheet'],
   
 
   ['update-agent', 'Updating Worker'],

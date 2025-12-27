@@ -16,7 +16,7 @@ import {
     isPdfExtension,
 } from '@/lib/utils/file-types';
 import { AttachmentGroup } from './attachment-group';
-import { HtmlRenderer, CsvRenderer, XlsxRenderer, PdfRenderer, JsonRenderer } from '@/components/file-renderers';
+import { HtmlRenderer, SpreadsheetViewer, PdfRenderer, JsonRenderer } from '@/components/file-renderers';
 import { UnifiedMarkdown } from '@/components/markdown';
 import {
     DropdownMenu,
@@ -719,30 +719,18 @@ export function FileAttachment({
                                 ) : null;
                             })()}
                             
-                            {/* XLSX Preview */}
-                            {isXlsx && (() => {
-                                const xlsxUrlForRender = localPreviewUrl || (sandboxId ? (xlsxBlobUrl ?? null) : fileUrl);
-                                return xlsxUrlForRender ? (
-                                    <XlsxRenderer
-                                        filePath={xlsxUrlForRender}
-                                        fileName={filename}
-                                        className="h-full w-full"
-                                        project={project}
-                                    />
-                                ) : null;
-                            })()}
-                            
-                            {/* CSV Preview - compact mode */}
-                            {isCsv && fileContent && (
-                                <CsvRenderer
-                                    content={fileContent}
+                            {(isCsv || isXlsx) && (
+                                <SpreadsheetViewer
+                                    filePath={filepath}
+                                    fileName={filename}
+                                    sandboxId={sandboxId}
+                                    project={project}
                                     className="h-full w-full"
                                     compact={true}
-                                    containerHeight={300}
+                                    showToolbar={false}
+                                    allowEditing={false}
                                 />
                             )}
-                            
-                            {/* Markdown Preview */}
                             {(extension === 'md' || extension === 'markdown') && fileContent && (
                                 <div className="h-full w-full overflow-auto p-4">
                                     <UnifiedMarkdown content={fileContent} />

@@ -5,14 +5,15 @@ Handles pricing for image and video generation via Replicate and OpenRouter.
 Pricing is based on actual API costs with our standard markup.
 
 Replicate Pricing (approximate):
-- openai/gpt-image-1.5: ~$0.06 per image
-- bytedance/seedance-1.5-pro: ~$0.10 per second of video (5s = $0.50)
-- 851-labs/background-remover: ~$0.02 per image
-- recraft-ai/recraft-crisp-upscale: ~$0.08 per 4x upscale
+- openai/gpt-image-1.5: $0.02 (low), $0.05 (medium), $0.136 (high/auto) per image
+- bytedance/seedance-1.5-pro: ~$0.026-0.052 per second of video
+- 851-labs/background-remover: ~$0.01 per image
+- recraft-ai/recraft-crisp-upscale: ~$0.01 per 4x upscale
+- recraft-ai/recraft-vectorize: ~$0.01 per SVG conversion
 
 OpenRouter Pricing (Gemini):
-- google/gemini-2.5-flash-image: ~$0.03 per image
-- google/gemini-3-pro-image-preview: ~$0.05 per image
+- google/gemini-2.5-flash-image: ~$0.04 per image
+- google/gemini-3-pro-image-preview: ~$0.30 per image
 """
 
 from decimal import Decimal
@@ -20,14 +21,31 @@ from typing import Optional, Dict, Literal
 from core.utils.logger import logger
 from ..shared.config import TOKEN_PRICE_MULTIPLIER
 
+# GPT Image 1.5 variant pricing (USD per image)
+# Source: https://replicate.com/openai/gpt-image-1.5
+GPT_IMAGE_VARIANTS: Dict[str, Decimal] = {
+    "low": Decimal("0.02"),
+    "medium": Decimal("0.05"),
+    "high": Decimal("0.136"),
+    "auto": Decimal("0.136"),  # Auto resolves to high pricing
+}
+
+# Quality tier distribution for image generation
+# Maps user tier to preferred quality variant
+# - Free tier: prefer low, cap at medium (never high)
+# - Paid tier: prefer medium, sometimes high
+FREE_TIERS = {"none", "free"}
+
 # Replicate model pricing (USD per unit)
 # Source: https://replicate.com/pricing (as of Dec 2024)
 REPLICATE_PRICING: Dict[str, Dict] = {
-    # GPT Image 1.5 - using "auto/high" variant pricing
-    # Variants: low=$0.013, medium=$0.05, high/auto=$0.136
+    # GPT Image 1.5 - variant-based pricing (see GPT_IMAGE_VARIANTS)
+    # Default cost here is for fallback only
     "openai/gpt-image-1.5": {
         "type": "per_image",
-        "cost_usd": Decimal("0.136"),  # Auto/high quality variant
+        "cost_usd": Decimal("0.05"),  # Default to medium
+        "has_variants": True,
+        "variants": GPT_IMAGE_VARIANTS,
         "description": "GPT Image Generation"
     },
     
@@ -69,6 +87,13 @@ REPLICATE_PRICING: Dict[str, Dict] = {
         "cost_usd": Decimal("0.01"),
         "description": "Flux Schnell Image Generation"
     },
+    
+    # SVG Vectorization
+    "recraft-ai/recraft-vectorize": {
+        "type": "per_image",
+        "cost_usd": Decimal("0.01"),
+        "description": "SVG Vectorization"
+    },
 }
 
 # OpenRouter model pricing (USD per image) - FALLBACK only
@@ -92,13 +117,84 @@ DEFAULT_IMAGE_COST_USD = Decimal("0.05")
 DEFAULT_VIDEO_COST_PER_SECOND_USD = Decimal("0.10")
 
 
-def calculate_replicate_image_cost(model: str, count: int = 1) -> Decimal:
+def select_image_quality(tier_name: str) -> str:
+    """
+    Select image quality variant based on user's subscription tier.
+    
+    Distribution logic:
+    - Free users: always 'low' (capped at 'medium', never 'high')
+    - Paid users: 'medium' (default)
+    
+    Args:
+        tier_name: User's subscription tier name (e.g., 'free', 'tier_2_20')
+        
+    Returns:
+        Quality variant: 'low', 'medium', or 'high'
+    """
+    if tier_name in FREE_TIERS:
+        # Free users get 'low' quality (cost-effective)
+        return "low"
+    else:
+        # Paid users get 'medium' quality by default
+        return "medium"
+
+
+def cap_quality_for_tier(tier_name: str, requested_quality: str) -> str:
+    """
+    Cap the quality to the maximum allowed for the user's tier.
+    
+    Free users: capped at 'medium' (never 'high')
+    Paid users: no cap (can use any quality)
+    
+    Args:
+        tier_name: User's subscription tier name
+        requested_quality: The quality variant requested
+        
+    Returns:
+        The allowed quality (may be lower than requested for free users)
+    """
+    if tier_name in FREE_TIERS:
+        # Free users cannot use 'high' or 'auto' quality
+        if requested_quality in ("high", "auto"):
+            logger.info(f"[MEDIA_BILLING] Capping quality from '{requested_quality}' to 'medium' for tier '{tier_name}'")
+            return "medium"
+    return requested_quality
+
+
+def get_variant_cost(model: str, variant: str) -> Decimal:
+    """
+    Get the cost for a specific model variant.
+    
+    Args:
+        model: Model identifier (e.g., 'openai/gpt-image-1.5')
+        variant: Quality variant (e.g., 'low', 'medium', 'high')
+        
+    Returns:
+        Cost per unit in USD
+    """
+    pricing = REPLICATE_PRICING.get(model)
+    
+    if pricing and pricing.get("has_variants"):
+        variants = pricing.get("variants", {})
+        if variant in variants:
+            return variants[variant]
+        # Fallback to default cost if variant not found
+        logger.warning(f"[MEDIA_BILLING] Unknown variant '{variant}' for {model}, using default")
+    
+    if pricing:
+        return pricing.get("cost_usd", DEFAULT_IMAGE_COST_USD)
+    
+    return DEFAULT_IMAGE_COST_USD
+
+
+def calculate_replicate_image_cost(model: str, count: int = 1, variant: Optional[str] = None) -> Decimal:
     """
     Calculate cost for Replicate image operations.
     
     Args:
         model: Replicate model identifier (e.g., "openai/gpt-image-1.5")
         count: Number of images generated
+        variant: Quality variant ('low', 'medium', 'high') - only for models with variants
         
     Returns:
         Total cost in USD with markup applied
@@ -107,13 +203,20 @@ def calculate_replicate_image_cost(model: str, count: int = 1) -> Decimal:
         pricing = REPLICATE_PRICING.get(model)
         
         if pricing and pricing.get("type") == "per_image":
-            base_cost = pricing["cost_usd"] * Decimal(count)
+            # Check if model has variants and variant is specified
+            if pricing.get("has_variants") and variant:
+                cost_per_image = get_variant_cost(model, variant)
+            else:
+                cost_per_image = pricing["cost_usd"]
+            
+            base_cost = cost_per_image * Decimal(count)
         else:
             logger.warning(f"[MEDIA_BILLING] No pricing found for Replicate model '{model}', using default")
             base_cost = DEFAULT_IMAGE_COST_USD * Decimal(count)
         
         total_cost = base_cost * TOKEN_PRICE_MULTIPLIER
-        logger.debug(f"[MEDIA_BILLING] Replicate image cost: model={model}, count={count}, base=${base_cost:.4f}, total=${total_cost:.4f}")
+        variant_str = f", variant={variant}" if variant else ""
+        logger.debug(f"[MEDIA_BILLING] Replicate image cost: model={model}, count={count}{variant_str}, base=${base_cost:.4f}, total=${total_cost:.4f}")
         return total_cost
         
     except Exception as e:
@@ -204,7 +307,8 @@ def calculate_media_cost(
     media_type: Literal["image", "video"] = "image",
     count: int = 1,
     duration_seconds: Optional[int] = None,
-    with_audio: bool = False
+    with_audio: bool = False,
+    variant: Optional[str] = None
 ) -> Decimal:
     """
     Unified function to calculate media generation cost.
@@ -216,6 +320,7 @@ def calculate_media_cost(
         count: Number of items (for images)
         duration_seconds: Duration in seconds (for videos)
         with_audio: Whether audio is enabled (for videos, affects pricing)
+        variant: Quality variant for image models (e.g., 'low', 'medium', 'high')
         
     Returns:
         Total cost in USD with markup applied
@@ -224,7 +329,7 @@ def calculate_media_cost(
         if media_type == "video":
             return calculate_replicate_video_cost(model, duration_seconds or 5, with_audio)
         else:
-            return calculate_replicate_image_cost(model, count)
+            return calculate_replicate_image_cost(model, count, variant=variant)
     elif provider == "openrouter":
         return calculate_openrouter_image_cost(model, count)
     else:

@@ -67,6 +67,7 @@ import { ExpandMessageToolView } from '../expand-message-tool/ExpandMessageToolV
 import { RealityDefenderToolView } from '../reality-defender-tool/RealityDefenderToolView';
 import { ApifyToolView } from '../apify-tool/ToolView';
 import { FileReaderToolView } from '../file-reader-tool/FileReaderToolView';
+import { SpreadsheetToolView } from '../spreadsheet/SpreadsheetToolview';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;
@@ -98,12 +99,25 @@ const defaultRegistry: ToolViewRegistryType = {
 
   'str-replace': FileOperationToolView,
 
-  'web-search': WebSearchToolView,
+  
   'people-search': PeopleSearchToolView,
   'company-search': CompanySearchToolView,
   'crawl-webpage': WebCrawlToolView,
   'scrape-webpage': WebScrapeToolView,
+
   'image-search': WebSearchToolView,
+  'web-search': WebSearchToolView,
+
+  'spreadsheet-create': SpreadsheetToolView,
+  'spreadsheet_create': SpreadsheetToolView,
+  'spreadsheet-add-rows': SpreadsheetToolView,
+  'spreadsheet_add_rows': SpreadsheetToolView,
+  'spreadsheet-update-cell': SpreadsheetToolView,
+  'spreadsheet_update_cell': SpreadsheetToolView,
+  'spreadsheet-format-cells': SpreadsheetToolView,
+  'spreadsheet_format_cells': SpreadsheetToolView,
+  'spreadsheet-read': SpreadsheetToolView,
+  'spreadsheet_read': SpreadsheetToolView,
 
 
   'search-apify-actors': ApifyToolView,
@@ -187,6 +201,10 @@ const defaultRegistry: ToolViewRegistryType = {
   'analyze-sheet': SheetsToolView,
   'visualize-sheet': SheetsToolView,
   'format-sheet': SheetsToolView,
+  'spreadsheet-batch-update': SpreadsheetToolView,
+  'spreadsheet_batch_update': SpreadsheetToolView,
+  'spreadsheet-add-sheet': SpreadsheetToolView,
+  'spreadsheet_add_sheet': SpreadsheetToolView,
 
   'get-project-structure': GetProjectStructureView,
   'list-web-projects': GenericToolView,
