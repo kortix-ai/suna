@@ -24,39 +24,52 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS sandbox_resource_id UUID REFERENCE
 CREATE INDEX IF NOT EXISTS idx_projects_sandbox_resource_id ON projects(sandbox_resource_id);
 
 -- Migrate existing sandbox data from projects.sandbox JSONB to resources table
--- Only insert if resource doesn't already exist (by external_id + account_id)
-INSERT INTO resources (account_id, type, external_id, config, created_at, updated_at)
-SELECT 
-    account_id,
-    'sandbox',
-    sandbox->>'id',
-    jsonb_build_object(
-        'pass', sandbox->>'pass',
-        'vnc_preview', sandbox->>'vnc_preview',
-        'sandbox_url', sandbox->>'sandbox_url',
-        'token', sandbox->>'token'
-    ),
-    created_at,
-    updated_at
-FROM projects 
-WHERE sandbox IS NOT NULL 
-  AND sandbox->>'id' IS NOT NULL
-  AND sandbox != '{}'::jsonb
-  AND NOT EXISTS (
-      SELECT 1 FROM resources r 
-      WHERE r.external_id = sandbox->>'id' 
-      AND r.account_id = projects.account_id
-      AND r.type = 'sandbox'
-  );
+-- Only migrate if sandbox column exists
+DO $$
+BEGIN
+    -- Check if sandbox column exists before migrating
+    IF EXISTS (
+        SELECT 1 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'projects' 
+        AND column_name = 'sandbox'
+    ) THEN
+        -- Only insert if resource doesn't already exist (by external_id + account_id)
+        INSERT INTO resources (account_id, type, external_id, config, created_at, updated_at)
+        SELECT 
+            account_id,
+            'sandbox',
+            sandbox->>'id',
+            jsonb_build_object(
+                'pass', sandbox->>'pass',
+                'vnc_preview', sandbox->>'vnc_preview',
+                'sandbox_url', sandbox->>'sandbox_url',
+                'token', sandbox->>'token'
+            ),
+            created_at,
+            updated_at
+        FROM projects 
+        WHERE sandbox IS NOT NULL 
+          AND sandbox->>'id' IS NOT NULL
+          AND sandbox != '{}'::jsonb
+          AND NOT EXISTS (
+              SELECT 1 FROM resources r 
+              WHERE r.external_id = sandbox->>'id' 
+              AND r.account_id = projects.account_id
+              AND r.type = 'sandbox'
+          );
 
--- Link projects to migrated resources
-UPDATE projects p
-SET sandbox_resource_id = r.id
-FROM resources r
-WHERE r.external_id = p.sandbox->>'id'
-  AND r.account_id = p.account_id
-  AND p.sandbox_resource_id IS NULL
-  AND p.sandbox->>'id' IS NOT NULL;
+        -- Link projects to migrated resources
+        UPDATE projects p
+        SET sandbox_resource_id = r.id
+        FROM resources r
+        WHERE r.external_id = p.sandbox->>'id'
+          AND r.account_id = p.account_id
+          AND p.sandbox_resource_id IS NULL
+          AND p.sandbox->>'id' IS NOT NULL;
+    END IF;
+END $$;
 
 -- Enable RLS on resources table
 ALTER TABLE resources ENABLE ROW LEVEL SECURITY;

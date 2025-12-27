@@ -112,34 +112,35 @@ class SandboxShellTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "execute_command",
-            "description": "Execute a shell command in the workspace directory. Commands can run in two modes: (1) BLOCKING (blocking=true): Command runs synchronously, waits for completion, returns full output, and automatically cleans up the session - NO need to call check_command_output afterwards. (2) NON-BLOCKING (blocking=false, default): Command runs in background tmux session - use check_command_output to monitor progress. Use blocking=true for quick commands (installs, file operations, builds). Use non-blocking for long-running processes (servers, watches).",
+            "description": "Execute a shell command in the workspace directory. Commands can run in two modes: (1) BLOCKING (blocking=true): Command runs synchronously, waits for completion, returns full output, and automatically cleans up the session - NO need to call check_command_output afterwards. (2) NON-BLOCKING (blocking=false, default): Command runs in background tmux session - use check_command_output to monitor progress. Use blocking=true for quick commands (installs, file operations, builds). Use non-blocking for long-running processes (servers, watches). **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `command` (REQUIRED), `folder` (optional), `session_name` (optional), `blocking` (optional), `timeout` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "The shell command to execute. Use this for running CLI tools, installing packages, or system operations. Commands can be chained using &&, ||, and | operators."
+                        "description": "**REQUIRED** - The shell command to execute. Use this for running CLI tools, installing packages, or system operations. Commands can be chained using &&, ||, and | operators. Example: 'npm install && npm run build'"
                     },
                     "folder": {
                         "type": "string",
-                        "description": "Optional relative path to a subdirectory of /workspace where the command should be executed. Example: 'data/pdfs'"
+                        "description": "**OPTIONAL** - Relative path to a subdirectory of /workspace where the command should be executed. Example: 'data/pdfs'"
                     },
                     "session_name": {
                         "type": "string",
-                        "description": "Optional name of the tmux session to use. Only relevant for NON-BLOCKING commands where you need to check output later. Ignored for blocking commands.",
+                        "description": "**OPTIONAL** - Name of the tmux session to use. Only relevant for NON-BLOCKING commands where you need to check output later. Ignored for blocking commands."
                     },
                     "blocking": {
                         "type": "boolean",
-                        "description": "If true, waits for command completion and returns output directly (session auto-cleaned, do NOT call check_command_output). If false (default), runs in background tmux session (use check_command_output to monitor).",
+                        "description": "**OPTIONAL** - If true, waits for command completion and returns output directly (session auto-cleaned, do NOT call check_command_output). If false (default), runs in background tmux session (use check_command_output to monitor). Default: false.",
                         "default": False
                     },
                     "timeout": {
                         "type": "integer",
-                        "description": "Optional timeout in seconds for blocking commands. Defaults to 60. Ignored for non-blocking commands.",
+                        "description": "**OPTIONAL** - Timeout in seconds for blocking commands. Default: 60. Ignored for non-blocking commands.",
                         "default": 60
                     }
                 },
-                "required": ["command"]
+                "required": ["command"],
+                "additionalProperties": False
             }
         }
     })
