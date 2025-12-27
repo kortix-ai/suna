@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, Pressable, TextInput, Alert, ScrollView } from 'react-native';
+import { View, TextInput, Alert, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
@@ -20,15 +20,12 @@ import {
   ArrowLeft,
   Sparkles,
 } from 'lucide-react-native';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useCreateAgent, useCreateNewAgent } from '@/lib/agents/hooks';
 import { API_URL, getAuthHeaders } from '@/api/config';
 import { Loading } from '../loading/loading';
 import type { AgentCreateRequest } from '@/api/types';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface WorkerCreationDrawerProps {
   visible: boolean;
@@ -68,34 +65,26 @@ interface OptionCardProps {
 
 function OptionCard({ option, isSelected, isLoading, onPress }: OptionCardProps) {
   const { colorScheme } = useColorScheme();
-  const scale = useSharedValue(1);
   const IconComponent = option.icon;
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1);
-  };
-
   return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={animatedStyle}
+    <BottomSheetTouchable
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress();
+      }}
       disabled={isLoading}
-      className={`mb-3 rounded-2xl border p-4 ${
-        isSelected
-          ? 'border-primary bg-primary/5'
-          : 'border-border bg-card active:opacity-80'
-      } ${isLoading ? 'opacity-50' : ''}`}>
+      style={{
+        marginBottom: 12,
+        borderRadius: 16,
+        borderWidth: 1,
+        padding: 16,
+        borderColor: isSelected ? '#10b981' : (colorScheme === 'dark' ? '#3f3f46' : '#e4e4e7'),
+        backgroundColor: isSelected 
+          ? (colorScheme === 'dark' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.05)')
+          : (colorScheme === 'dark' ? '#27272a' : '#ffffff'),
+        opacity: isLoading ? 0.5 : 1,
+      }}>
       <View className="flex-row items-center gap-3">
         <View
           className={`h-12 w-12 items-center justify-center rounded-xl ${
@@ -122,7 +111,7 @@ function OptionCard({ option, isSelected, isLoading, onPress }: OptionCardProps)
         </View>
         {!isLoading && <Icon as={ChevronRight} size={20} className="text-muted-foreground" />}
       </View>
-    </AnimatedPressable>
+    </BottomSheetTouchable>
   );
 }
 
@@ -302,23 +291,23 @@ export function WorkerCreationDrawer({
             </View>
 
             {/* Cancel button */}
-            <Pressable
+            <BottomSheetTouchable
               onPress={onClose}
-              className="rounded-xl border border-border bg-card p-3 active:opacity-80">
+              style={{ borderRadius: 12, borderWidth: 1, borderColor: '#3f3f46', padding: 12 }}>
               <Text className="text-center font-roobert-medium text-sm text-muted-foreground">
                 Cancel
               </Text>
-            </Pressable>
+            </BottomSheetTouchable>
           </>
         ) : (
           <>
             {/* Chat Step Header */}
             <View className="items-center mb-5">
-              <Pressable
+              <BottomSheetTouchable
                 onPress={handleBack}
-                className="absolute left-0 top-0 h-10 w-10 items-center justify-center rounded-xl active:opacity-80">
+                style={{ position: 'absolute', left: 0, top: 0, width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 12 }}>
                 <Icon as={ArrowLeft} size={20} className="text-foreground" />
-              </Pressable>
+              </BottomSheetTouchable>
               <View className="mb-3 p-3 rounded-2xl bg-muted/50">
                 <Icon as={Sparkles} size={28} className="text-primary" />
               </View>
@@ -366,27 +355,28 @@ export function WorkerCreationDrawer({
 
             {/* Actions */}
             <View className="space-y-3">
-              <Pressable
+              <BottomSheetTouchable
                 onPress={handleChatContinue}
                 disabled={!chatDescription.trim() || isLoading}
-                className={`rounded-xl p-4 ${
-                  !chatDescription.trim() || isLoading
-                    ? 'bg-muted opacity-50'
-                    : 'bg-primary active:opacity-80'
-                }`}>
+                style={{
+                  borderRadius: 12,
+                  padding: 16,
+                  backgroundColor: !chatDescription.trim() || isLoading ? '#3f3f46' : '#10b981',
+                  opacity: !chatDescription.trim() || isLoading ? 0.5 : 1,
+                }}>
                 <Text className="text-center font-roobert-semibold text-base text-primary-foreground">
                   {isLoading ? 'Creating...' : 'Create Worker'}
                 </Text>
-              </Pressable>
-              <Pressable
+              </BottomSheetTouchable>
+              <BottomSheetTouchable
                 onPress={handleBack}
                 disabled={isLoading}
-                className="rounded-xl border border-border bg-card p-3 active:opacity-80">
+                style={{ borderRadius: 12, borderWidth: 1, borderColor: '#3f3f46', padding: 12 }}>
                 <View className="flex-row items-center justify-center gap-2">
                   <Icon as={ArrowLeft} size={16} className="text-muted-foreground" />
                   <Text className="font-roobert-medium text-sm text-muted-foreground">Back</Text>
                 </View>
-              </Pressable>
+              </BottomSheetTouchable>
             </View>
           </>
         )}

@@ -32,9 +32,8 @@ class ComposioTriggerService:
         # Try Redis cache first
         try:
             from core.services import redis as redis_service
-            redis_client = await redis_service.get_client()
             cache_key = "composio:apps-with-triggers:v1"
-            cached_json = await redis_client.get(cache_key)
+            cached_json = await redis_service.get(cache_key)
             if cached_json:
                 parsed = json.loads(cached_json)
                 self._apps_cache["data"] = parsed
@@ -118,10 +117,8 @@ class ComposioTriggerService:
         # Store in Redis cache as well
         try:
             from core.services import redis as redis_service
-            redis_client = await redis_service.get_client()
-            if redis_client:
-                cache_key = "composio:apps-with-triggers:v1"
-                await redis_client.set(cache_key, json.dumps(response), ex=self._apps_ttl)
+            cache_key = "composio:apps-with-triggers:v1"
+            await redis_service.set(cache_key, json.dumps(response), ex=self._apps_ttl)
         except Exception:
             pass
 

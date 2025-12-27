@@ -22,15 +22,15 @@ from core.utils.config import config
 ### BROWSER AUTOMATION CAPABILITIES
 
 **CORE BROWSER FUNCTIONS:**
-- `browser_navigate_to(url)` - Navigate to any URL
-- `browser_act(action, variables, iframes, filePath)` - Perform ANY browser action using natural language
+- browser_navigate_to with url parameter - Navigate to any URL
+- browser_act with action, variables, iframes, filePath parameters - Perform ANY browser action using natural language
   * Examples: "click the login button", "fill in email with user@example.com", "scroll down", "select option from dropdown"
   * Supports variables for secure data entry (not shared with LLM providers)
   * Handles iframes when needed
   * CRITICAL: Include filePath parameter for ANY action involving file uploads to prevent accidental file dialog triggers
-- `browser_extract_content(instruction, iframes)` - Extract structured content from pages
+- browser_extract_content with instruction and iframes parameters - Extract structured content from pages
   * Example: "extract all product prices", "get apartment listings with address and price"
-- `browser_screenshot(name)` - Take screenshots of the current page
+- browser_screenshot with name parameter - Take screenshots of the current page
 
 **WHAT YOU CAN DO:**
 - Navigate to any URL and browse websites
@@ -381,16 +381,17 @@ class BrowserTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "browser_navigate_to",
-            "description": "Navigate to a specific url",
+            "description": "Navigate to a specific url. **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `url` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "url": {
                         "type": "string",
-                        "description": "The url to navigate to"
+                        "description": "**REQUIRED** - The URL to navigate to. Example: 'https://example.com'"
                     }
                 },
-                "required": ["url"]
+                "required": ["url"],
+                "additionalProperties": False
             }
         }
     })
@@ -403,31 +404,32 @@ class BrowserTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "browser_act",
-            "description": "Perform any browser action using natural language description. CRITICAL: This tool automatically provides a screenshot with every action. For data entry actions (filling forms, entering text, selecting options), you MUST review the provided screenshot to verify that displayed values exactly match what was intended. Report mismatches immediately. CRITICAL FILE UPLOAD RULE: ANY action that involves clicking, interacting with, or locating upload buttons, file inputs, resume upload sections, or any element that might trigger a choose file dialog MUST include the filePath parameter with filePath. This includes actions like 'click upload button', 'locate resume section', 'find file input' etc. Always err on the side of caution - if there's any possibility the action might lead to a file dialog, include filePath. This prevents accidental file dialog triggers without proper file handling.",
+            "description": "Perform any browser action using natural language description. CRITICAL: This tool automatically provides a screenshot with every action. For data entry actions (filling forms, entering text, selecting options), you MUST review the provided screenshot to verify that displayed values exactly match what was intended. Report mismatches immediately. CRITICAL FILE UPLOAD RULE: ANY action that involves clicking, interacting with, or locating upload buttons, file inputs, resume upload sections, or any element that might trigger a choose file dialog MUST include the filePath parameter with filePath. This includes actions like 'click upload button', 'locate resume section', 'find file input' etc. Always err on the side of caution - if there's any possibility the action might lead to a file dialog, include filePath. This prevents accidental file dialog triggers without proper file handling. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `action` (REQUIRED), `variables` (optional), `iframes` (optional), `filePath` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "The action to perform. Examples: 'click the login button', 'fill in the email field with %email%', 'scroll down to see more content', 'select option 2 from the dropdown', 'press Enter', 'go back', 'wait 5 seconds', 'click at coordinates 100,200', 'select United States from the country dropdown'"
+                        "description": "**REQUIRED** - The action to perform. Examples: 'click the login button', 'fill in the email field with %email%', 'scroll down to see more content', 'select option 2 from the dropdown', 'press Enter', 'go back', 'wait 5 seconds', 'click at coordinates 100,200', 'select United States from the country dropdown'"
                     },
                     "variables": {
                         "type": "object",
-                        "description": "Variables to use in the action. Variables in the action string are referenced using %variable_name%. These variables are NOT shared with LLM providers for security.",
+                        "description": "**OPTIONAL** - Variables to use in the action. Variables in the action string are referenced using %variable_name%. These variables are NOT shared with LLM providers for security. Default: {}.",
                         "additionalProperties": {"type": "string"},
                         "default": {}
                     },
                     "iframes": {
                         "type": "boolean",
-                        "description": "Whether to include iframe content in the action. Set to true if the target element is inside an iframe.",
+                        "description": "**OPTIONAL** - Whether to include iframe content in the action. Set to true if the target element is inside an iframe. Default: true.",
                         "default": True
                     },
                     "filePath": {
                         "type": "string",
-                        "description": "CRITICAL: REQUIRED for ANY action that might involve file uploads. This includes: clicking upload buttons, locating resume sections, finding file inputs, scrolling to upload areas, or any action that could potentially trigger a file dialog. Always include this parameter when dealing with upload-related elements to prevent accidental file dialog triggers. The tool will automatically handle the file upload after the action is performed.",
+                        "description": "**OPTIONAL** - CRITICAL: REQUIRED for ANY action that might involve file uploads. This includes: clicking upload buttons, locating resume sections, finding file inputs, scrolling to upload areas, or any action that could potentially trigger a file dialog. Always include this parameter when dealing with upload-related elements to prevent accidental file dialog triggers. The tool will automatically handle the file upload after the action is performed."
                     }
                 },
-                "required": ["action"]
+                "required": ["action"],
+                "additionalProperties": False
             }
         }
     })
@@ -443,21 +445,22 @@ class BrowserTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "browser_extract_content",
-            "description": "Extract structured content from the current page using Stagehand",
+            "description": "Extract structured content from the current page using Stagehand. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `instruction` (REQUIRED), `iframes` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "instruction": {
                         "type": "string",
-                        "description": "What content to extract (e.g., 'extract all product prices', 'get the main heading', 'extract apartment listings with address and price')"
+                        "description": "**REQUIRED** - What content to extract. Example: 'extract all product prices', 'get the main heading', 'extract apartment listings with address and price'"
                     },
                     "iframes": {
                         "type": "boolean",
-                        "description": "Whether to include iframe content in the extraction. Set to true if the target content is inside an iframe.",
+                        "description": "**OPTIONAL** - Whether to include iframe content in the extraction. Set to true if the target content is inside an iframe. Default: true.",
                         "default": True
                     }
                 },
-                "required": ["instruction"]
+                "required": ["instruction"],
+                "additionalProperties": False
             }
         }
     })
@@ -471,16 +474,18 @@ class BrowserTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "browser_screenshot",
-            "description": "Take a screenshot of the current page",
+            "description": "Take a screenshot of the current page. **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `name` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "name": {
                         "type": "string",
-                        "description": "Name for the screenshot",
+                        "description": "**OPTIONAL** - Name for the screenshot. Default: 'screenshot'.",
                         "default": "screenshot"
                     }
-                }
+                },
+                "required": [],
+                "additionalProperties": False
             }
         }
     })

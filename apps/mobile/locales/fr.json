@@ -123,9 +123,50 @@
     }
   },
   "onboarding": {
+    "welcome": "Découvrez ce que Kortix peut faire",
+    "welcomeSubtitle": "Votre assistant IA qui passe à l'action",
     "skip": "Passer",
     "next": "Suivant",
     "getStarted": "Commencer",
+    "kortixComputer": "Kortix Computer",
+    "ready": "Prêt",
+    "examples": {
+      "presentations": {
+        "title": "Présentations",
+        "description": "Découvrez comment il crée des présentations incroyables",
+        "userMessage": "Recherche et crée une présentation sur les réseaux de neurones",
+        "aiMessage": "Je vais rechercher les réseaux de neurones et créer une présentation pour vous...",
+        "researching": "Recherche en cours",
+        "creatingFile": "Création du fichier",
+        "creatingSlides": "Création des diapositives"
+      },
+      "dataAnalysis": {
+        "title": "Analyse de données",
+        "description": "Regardez-le analyser les données et créer des rapports visuels",
+        "userMessage": "Analyse les performances des ventes Q4 depuis Google Drive",
+        "aiMessage": "Je vais charger vos données de ventes et créer une analyse complète...",
+        "loadingFromDrive": "Chargement depuis Google Drive",
+        "creatingVisualization": "Création de la visualisation",
+        "researchingMarket": "Recherche du marché",
+        "creatingReport": "Création du rapport"
+      },
+      "image": {
+        "title": "Image",
+        "description": "Découvrez la conception de logos et de marques par IA",
+        "userMessage": "Crée un logo pour notre entreprise",
+        "aiMessage": "Je vois que vous avez mentionné LUXY. Je vais créer un logo professionnel pour votre marque...",
+        "researchingBrand": "Recherche de la marque",
+        "creatingLogo": "Création du logo",
+        "creatingBrandBoard": "Création du tableau de marque"
+      },
+      "imageEasterEgg": {
+        "title": "Image",
+        "description": "Transformez vos photos avec des styles IA",
+        "userMessage": "Convertis mon image en style pixel art blocky",
+        "aiMessage": "Bien sûr ! Je vais transformer votre image en un look stylisé blocky...",
+        "creatingImage": "Création de l'image stylisée"
+      }
+    },
     "slide1": {
       "title": "Chat avec IA",
       "description": "Aie des conversations naturelles avec des assistants IA puissants qui comprennent le contexte et fournissent des réponses utiles"
@@ -175,7 +216,7 @@
     "superworker": {
       "title": "Ton Super Worker IA",
       "description": "Combine toutes les fonctionnalités pour construire des workers IA personnalisés pour n'importe quelle tâche dont tu as besoin.",
-      "example": "Créer un agent de support client"
+      "example": "Créer un worker de support client"
     }
   },
   "settings": {
@@ -552,7 +593,7 @@
     "actionCannotBeUndone": "Cette action ne peut pas être annulée",
     "accountWillBeDeleted": "Ton compte sera définitivement supprimé",
     "whatWillBeDeleted": "Ce qui sera Supprimé",
-    "allAgents": "Tous tes agents et versions d'agents",
+    "allAgents": "Tous tes workers et versions de workers",
     "allThreads": "Tous tes fils et conversations",
     "allCredentials": "Toutes tes identifiants et intégrations",
     "subscriptionData": "Ton abonnement et données de facturation",
@@ -575,7 +616,7 @@
   },
   "models": {
     "selectModel": "Choisir un Modèle",
-    "chooseModelFor": "Choisis un modèle pour {{agent}}"
+    "chooseModelFor": "Choisis un modèle pour le worker {{agent}}"
   },
   "placeholders": {
     "default": "Donne une tâche à Kortix...",
@@ -647,7 +688,7 @@
   },
   "integrations": {
     "title": "Intégrations",
-    "description": "Connecte tes applications et services préférés pour automatiser les flux de travail et étendre les capacités de ton agent.",
+    "description": "Connecte tes applications et services préférés pour automatiser les flux de travail et étendre les capacités de ton worker.",
     "connectApps": "Connecte tes Apps",
     "externalApps": "Applications Externes",
     "externalAppsDescription": "Connecter des applications et services populaires",
@@ -656,7 +697,7 @@
     "composioApps": "Applications Composio",
     "composioAppsDescription": "Se connecter à des centaines d'applications commerciales",
     "connected": "Connecté",
-    "connectedToAgent": "Connecté à cet agent",
+    "connectedToAgent": "Connecté à ce worker",
     "available": "Applications Disponibles",
     "connect": "Connecter",
     "setup": "Configurer",
@@ -713,7 +754,7 @@
     },
     "toolsSelector": {
       "configureTools": "Configurer les Outils {{app}}",
-      "selectTools": "Sélectionne les outils pour ton agent",
+      "selectTools": "Sélectionne les outils pour ton worker",
       "readyToConfigureTools": "Prêt à configurer",
       "selected": "{{count}} sur {{total}} sélectionné{{plural}}",
       "selectAll": "Tout Sélectionner",
@@ -760,6 +801,9 @@
     "upgradeRequired": "Mise à Niveau Requise",
     "upgradeRequiredMessage": "Le partage de fils est disponible avec les plans payants. Mettez à niveau pour débloquer cette fonctionnalité.",
     "upgrade": "Mettre à niveau",
+    "share": "Partager",
+    "files": "Fichiers",
+    "delete": "Supprimer",
     "shareThread": "Partager le Fil",
     "shareThreadUpgrade": "Partager le Fil (Upgrade)",
     "availableOnPaidPlans": "Disponible avec les plans payants",
@@ -767,6 +811,7 @@
     "manageFiles": "Gérer les Fichiers",
     "viewManageAttachments": "Voir et gérer les pièces jointes",
     "deleteThread": "Supprimer le Fil",
+    "deleteConfirm": "Voulez-vous vraiment supprimer ce fil ? Cette action est irréversible.",
     "permanentlyDelete": "Supprimer définitivement cette conversation"
   },
   "triggers": {
@@ -825,7 +870,7 @@
     "core": "Principal",
     "capabilitiesEnabled": "{{enabled}} / {{total}} capacités activées",
     "toolConfiguration": "Configuration des outils",
-    "configureToolsDescription": "Configurez les outils et leurs capacités individuelles pour votre agent",
+    "configureToolsDescription": "Configurez les outils et leurs capacités individuelles pour votre worker",
     "toolsEnabled": "{{enabled}} / {{total}} activés",
     "loadingTools": "Chargement des outils...",
     "noToolsAvailable": "Aucun outil disponible",

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Terminal,
   CheckCircle,
@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { LoadingState } from '../shared/LoadingState';
 import { extractCommandData } from './_utils';
+import { useToolStreamStore } from '@/stores/tool-stream-store';
 
 export function CommandToolView({
   toolCall,
@@ -31,6 +32,11 @@ export function CommandToolView({
   const { resolvedTheme } = useTheme();
   const isDarkTheme = resolvedTheme === 'dark';
   const [showFullOutput, setShowFullOutput] = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  
+  const toolCallId = toolCall?.tool_call_id || '';
+  const streamingOutput = useToolStreamStore((state) => state.streamingOutputs.get(toolCallId) || '');
+  const isOutputStreaming = useToolStreamStore((state) => state.streamingStatus.get(toolCallId) === 'streaming');
 
   const {
     command,
@@ -49,6 +55,16 @@ export function CommandToolView({
     assistantTimestamp
   );
   
+  // Use streaming output if available during streaming, otherwise use result output
+  const displayOutput = isStreaming && streamingOutput ? streamingOutput : output;
+  
+  // Auto-scroll to bottom when streaming output updates
+  useEffect(() => {
+    if (isOutputStreaming && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [streamingOutput, isOutputStreaming]);
+  
   const actualAssistantTimestamp = assistantTimestamp;
   const name = toolCall.function_name.replace(/_/g, '-');
 
@@ -60,7 +76,7 @@ export function CommandToolView({
 
   // Check if this is a non-blocking command with just a status message
   const isNonBlockingCommand = React.useMemo(() => {
-    if (!output) return false;
+    if (!displayOutput) return false;
 
     // Check if output contains typical non-blocking command messages
     const nonBlockingPatterns = [
@@ -71,13 +87,13 @@ export function CommandToolView({
     ];
 
     return nonBlockingPatterns.some(pattern =>
-      output.toLowerCase().includes(pattern.toLowerCase())
+      displayOutput.toLowerCase().includes(pattern.toLowerCase())
     );
-  }, [output]);
+  }, [displayOutput]);
 
   // Check if there's actual command output to display
   const hasActualOutput = React.useMemo(() => {
-    if (!output) return false;
+    if (!displayOutput) return false;
 
     // If it's a non-blocking command, don't show output section
     if (isNonBlockingCommand) return false;
@@ -93,26 +109,31 @@ export function CommandToolView({
     ];
 
     return actualOutputPatterns.some(pattern =>
-      output.includes(pattern)
-    ) || output.trim().length > 50; // Arbitrary threshold for "substantial" output
-  }, [output, isNonBlockingCommand]);
+      displayOutput.includes(pattern)
+    ) || displayOutput.trim().length > 50; // Arbitrary threshold for "substantial" output
+  }, [displayOutput, isNonBlockingCommand]);
 
   const formattedOutput = React.useMemo(() => {
-    if (!output || !hasActualOutput) return [];
-    let processedOutput = output;
+    // For streaming output, show it directly without filtering
+    if (isOutputStreaming && streamingOutput) {
+      return streamingOutput.split('\n');
+    }
+    
+    if (!displayOutput || !hasActualOutput) return [];
+    let processedOutput = displayOutput;
 
     // Handle case where output is already an object
-    if (typeof output === 'object' && output !== null) {
+    if (typeof displayOutput === 'object' && displayOutput !== null) {
       try {
-        processedOutput = JSON.stringify(output, null, 2);
+        processedOutput = JSON.stringify(displayOutput, null, 2);
       } catch (e) {
-        processedOutput = String(output);
+        processedOutput = String(displayOutput);
       }
-    } else if (typeof output === 'string') {
+    } else if (typeof displayOutput === 'string') {
       // Try to parse as JSON first
       try {
-        if (output.trim().startsWith('{') || output.trim().startsWith('[')) {
-          const parsed = JSON.parse(output);
+        if (displayOutput.trim().startsWith('{') || displayOutput.trim().startsWith('[')) {
+          const parsed = JSON.parse(displayOutput);
           if (parsed && typeof parsed === 'object') {
             // If it's a complex object, stringify it nicely
             processedOutput = JSON.stringify(parsed, null, 2);
@@ -120,14 +141,14 @@ export function CommandToolView({
             processedOutput = String(parsed);
           }
         } else {
-          processedOutput = output;
+          processedOutput = displayOutput;
         }
       } catch (e) {
         // If parsing fails, use as plain text
-        processedOutput = output;
+        processedOutput = displayOutput;
       }
     } else {
-      processedOutput = String(output);
+      processedOutput = String(displayOutput);
     }
 
     processedOutput = processedOutput.replace(/\\\\/g, '\\');
@@ -141,7 +162,7 @@ export function CommandToolView({
       return String.fromCharCode(parseInt(group, 16));
     });
     return processedOutput.split('\n');
-  }, [output, hasActualOutput]);
+  }, [displayOutput, hasActualOutput, isOutputStreaming, streamingOutput]);
 
   const hasMoreLines = formattedOutput.length > 10;
   const previewLines = formattedOutput.slice(0, 10);
@@ -199,7 +220,6 @@ export function CommandToolView({
         {isStreaming ? (
           <div className="h-full flex flex-col overflow-hidden">
             <div className="flex-shrink-0 p-4 pb-2">
-              {/* Show partial command data if available during streaming */}
               {command && (
                 <div className="mb-4 bg-card border border-border rounded-lg p-3.5">
                   <div className="flex items-center gap-2 mb-2">
@@ -207,10 +227,20 @@ export function CommandToolView({
                       <TerminalIcon className="h-2.5 w-2.5 mr-1 opacity-70" />
                       Command
                     </Badge>
-                    <Badge className="bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                      Streaming
-                    </Badge>
+                    {isOutputStreaming ? (
+                      <Badge className="bg-gradient-to-b from-green-200 to-green-100 text-green-700 dark:from-green-800/50 dark:to-green-900/60 dark:text-green-300">
+                        <span className="relative flex h-2 w-2 mr-1">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                        </span>
+                        Live
+                      </Badge>
+                    ): (
+                      <Badge className="bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Executing
+                      </Badge>
+                    )}
                   </div>
                   <div className="font-mono text-xs text-foreground">
                     <span className="text-green-500 dark:text-green-400 font-semibold">{displayPrefix} </span>
@@ -219,16 +249,41 @@ export function CommandToolView({
                 </div>
               )}
             </div>
-            {!command && (
-          <LoadingState
-            icon={Terminal}
-            iconColor="text-blue-500 dark:text-blue-400"
-            bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
-            title={name === 'check-command-output' ? 'Checking command output' : 'Executing command'}
-            filePath={displayText || 'Processing command...'}
-            showProgress={true}
-          />
-            )}
+            {streamingOutput ? (
+              <div className="flex-1 min-h-0 px-4 pb-4">
+                <div className="h-full bg-zinc-900 dark:bg-zinc-950 border border-border rounded-lg flex flex-col overflow-hidden">
+                  <div className="flex-shrink-0 p-3.5 pb-2 border-b border-border">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal border-green-700/30 text-green-400">
+                        <TerminalIcon className="h-2.5 w-2.5 mr-1 opacity-70" />
+                        Live
+                      </Badge>
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                      </span>
+                    </div>
+                  </div>
+                  <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto">
+                    <div className="p-3.5 pt-2">
+                      <pre className="text-xs text-green-400 font-mono whitespace-pre-wrap break-words">
+                        {streamingOutput}
+                        <span className="animate-pulse">▌</span>
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : !command ? (
+              <LoadingState
+                icon={Terminal}
+                iconColor="text-blue-500 dark:text-blue-400"
+                bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
+                title={name === 'check-command-output' ? 'Checking command output' : 'Executing command'}
+                filePath={displayText || 'Processing command...'}
+                showProgress={true}
+              />
+            ) : null}
           </div>
         ) : displayText ? (
           <div className="h-full flex flex-col overflow-hidden">
@@ -250,7 +305,7 @@ export function CommandToolView({
               )}
 
               {/* Show status message for non-blocking commands */}
-              {isNonBlockingCommand && output && (
+              {isNonBlockingCommand && displayOutput && (
                 <div className="mb-4 bg-card border border-border rounded-lg p-3.5">
                   <div className="flex items-center gap-2 mb-2">
                     <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal">
@@ -258,7 +313,7 @@ export function CommandToolView({
                       Status
                     </Badge>
                   </div>
-                  <p className="text-xs text-foreground font-mono">{output}</p>
+                  <p className="text-xs text-foreground font-mono">{displayOutput}</p>
                 </div>
               )}
             </div>

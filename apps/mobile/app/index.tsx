@@ -91,18 +91,21 @@ export default function SplashScreen() {
       }
 
       // User is authenticated
-      // Account initialization happens automatically via webhook on signup.
-      // Most users will have a subscription by now. Only show setting-up
-      // as a fallback if webhook failed or user signed up before this change.
-      if (!hasActiveSubscription) {
+      // PRIORITY: If user has completed onboarding, they've already been through 
+      // the full setup flow - go straight to home, regardless of subscription status.
+      // This prevents showing "Initializing Account" to users who already completed setup.
+      if (hasCompletedOnboarding) {
+        console.log('🚀 → /home (onboarding completed)');
+        router.replace('/home');
+      } else if (!hasActiveSubscription) {
+        // New user: Account initialization happens automatically via webhook on signup.
+        // Only show setting-up as a fallback if webhook failed or user signed up before this change.
         console.log('🚀 → /setting-up (fallback: no subscription detected)');
         router.replace('/setting-up');
-      } else if (!hasCompletedOnboarding) {
+      } else {
+        // Has subscription but hasn't completed onboarding
         console.log('🚀 → /onboarding');
         router.replace('/onboarding');
-      } else {
-        console.log('🚀 → /home');
-        router.replace('/home');
       }
     }, 100);
 
@@ -113,7 +116,7 @@ export default function SplashScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View className="flex-1 bg-background items-center justify-center">
-        <KortixLoader size="xlarge" />
+        <KortixLoader size="large" />
       </View>
     </>
   );

@@ -1,8 +1,9 @@
 'use client';
 
 import { Project } from '@/lib/api/threads';
-import { getUserFriendlyToolName } from '@/components/thread/utils';
+import { getUserFriendlyToolName, HIDE_BROWSER_TAB } from '@/components/thread/utils';
 import React, { memo, useMemo, useCallback, useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiMessageType } from '@/components/thread/types';
 import { CircleDashed, Globe } from 'lucide-react';
@@ -13,7 +14,6 @@ import { HealthCheckedVncIframe } from '../HealthCheckedVncIframe';
 import { BrowserHeader } from '../tool-views/BrowserToolView';
 import { useTranslations } from 'next-intl';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { useDocumentModalStore } from '@/stores/use-document-modal-store';
 import { 
   useKortixComputerStore,
@@ -29,6 +29,8 @@ import { EmptyState } from './components/EmptyState';
 import { LoadingState } from './components/LoadingState';
 import { AppDock } from './components/Dock';
 import { SandboxDesktop } from './components/Desktop';
+import { EnhancedFileBrowser } from './components/EnhancedFileBrowser';
+import { useDirectoryQuery } from '@/hooks/files';
 
 export interface ToolCallInput {
   toolCall: ToolCallData;
@@ -65,6 +67,7 @@ interface KortixComputerProps {
   streamingText?: string;
   sandboxId?: string;
   projectId?: string;
+  sidePanelRef?: React.RefObject<any>;
 }
 
 interface ToolCallSnapshot {
@@ -96,6 +99,7 @@ export const KortixComputer = memo(function KortixComputer({
   streamingText,
   sandboxId,
   projectId,
+  sidePanelRef,
 }: KortixComputerProps) {
   const t = useTranslations('thread');
   const [dots, setDots] = useState('');
@@ -105,6 +109,8 @@ export const KortixComputer = memo(function KortixComputer({
   const [isInitialized, setIsInitialized] = useState(false);
   const [vncRefreshKey, setVncRefreshKey] = useState(0);
   const [isMaximized, setIsMaximized] = useState(false);
+  const [isSuiteMode, setIsSuiteMode] = useState(false);
+  const [preSuiteSize, setPreSuiteSize] = useState<number | null>(null);
 
   const isMobile = useIsMobile();
   const { isOpen: isDocumentModalOpen } = useDocumentModalStore();
@@ -115,10 +121,20 @@ export const KortixComputer = memo(function KortixComputer({
     filesSubView, 
     selectedFilePath,
     setActiveView,
+    currentPath,
+    navigateToPath,
+    openFile,
   } = useKortixComputerStore();
   
   const pendingToolNavIndex = useKortixComputerPendingToolNavIndex();
   const clearPendingToolNav = useKortixComputerClearPendingToolNav();
+
+  const effectiveSandboxIdForQuery = sandboxId || project?.sandbox?.id || '';
+  const { data: enhancedBrowserFiles = [] } = useDirectoryQuery(
+    effectiveSandboxIdForQuery, 
+    currentPath, 
+    { enabled: !!effectiveSandboxIdForQuery && isMaximized }
+  );
 
   const currentViewRef = useRef(activeView);
 
@@ -159,6 +175,9 @@ export const KortixComputer = memo(function KortixComputer({
   }, []);
 
   useEffect(() => {
+    // Skip browser tab switching if flag is enabled
+    if (HIDE_BROWSER_TAB) return;
+    
     if (!isInitialized && toolCallSnapshots.length > 0) {
       const streamingSnapshot = toolCallSnapshots.find(snapshot =>
         snapshot.toolCall.toolResult === undefined
@@ -185,6 +204,9 @@ export const KortixComputer = memo(function KortixComputer({
   }, [toolCallSnapshots, isInitialized, isBrowserTool, agentStatus, setActiveView]);
 
   useEffect(() => {
+    // Skip browser tab switching if flag is enabled
+    if (HIDE_BROWSER_TAB) return;
+    
     if (activeView !== 'tools') return;
     
     const safeIndex = Math.min(internalIndex, Math.max(0, toolCallSnapshots.length - 1));
@@ -216,11 +238,6 @@ export const KortixComputer = memo(function KortixComputer({
     onClose();
   }, [onClose]);
 
-  const handleMinimize = useCallback(() => {
-    setIsMaximized(false);
-    onClose();
-  }, [onClose]);
-
   const handleMaximize = useCallback(() => {
     setIsMaximized(!isMaximized);
   }, [isMaximized]);
@@ -239,7 +256,8 @@ export const KortixComputer = memo(function KortixComputer({
     const hasNewSnapshots = newSnapshots.length > toolCallSnapshots.length;
     setToolCallSnapshots(newSnapshots);
 
-    if (hasNewSnapshots && agentStatus === 'running' && activeView === 'tools') {
+    // Skip browser tab switching if flag is enabled
+    if (!HIDE_BROWSER_TAB && hasNewSnapshots && agentStatus === 'running' && activeView === 'tools') {
       const newSnapshot = newSnapshots[newSnapshots.length - 1];
       const toolName = newSnapshot?.toolCall.toolCall?.function_name?.replace(/_/g, '-');
       const isNewBrowserTool = isBrowserTool(toolName);
@@ -319,9 +337,14 @@ export const KortixComputer = memo(function KortixComputer({
   const isCurrentToolStreaming = currentToolCall != null && currentToolCall.toolResult === undefined;
 
   const currentToolName = currentToolCall?.toolCall?.function_name?.replace(/_/g, '-').toLowerCase();
-  const isFileOperation = currentToolName && ['create-file', 'edit-file', 'full-file-rewrite', 'read-file', 'delete-file'].includes(currentToolName);
 
-  if (isCurrentToolStreaming && totalCompletedCalls > 0 && !isFileOperation) {
+  const showDuringStreaming = currentToolName && [
+    'create-file', 'edit-file', 'full-file-rewrite', 'read-file', 'delete-file',
+    'execute-command', 'check-command-output', 'terminate-command',
+    'spreadsheet-create', 'spreadsheet-add-rows', 'spreadsheet-update-cell', 'spreadsheet-format-cells', 'spreadsheet-read'
+  ].includes(currentToolName);
+
+  if (isCurrentToolStreaming && totalCompletedCalls > 0 && !showDuringStreaming) {
     const lastCompletedSnapshot = completedToolCalls[completedToolCalls.length - 1];
     if (lastCompletedSnapshot?.toolCall?.toolCall) {
       displayToolCall = lastCompletedSnapshot.toolCall;
@@ -575,7 +598,48 @@ export const KortixComputer = memo(function KortixComputer({
     );
   };
 
+  const renderFilesViewMaximized = () => {
+    if (filesSubView === 'viewer' && selectedFilePath) {
+      return (
+        <FileViewerView
+          sandboxId={effectiveSandboxId}
+          filePath={selectedFilePath}
+          project={project}
+          projectId={projectId}
+        />
+      );
+    }
+
+    const pathSegments = currentPath.split('/').filter(Boolean);
+    const parentPath = pathSegments.length > 1 
+      ? '/' + pathSegments.slice(0, -1).join('/') 
+      : '/workspace';
+
+    return (
+      <EnhancedFileBrowser
+        files={enhancedBrowserFiles.map(f => ({
+          name: f.name,
+          path: f.path || `${currentPath}/${f.name}`,
+          is_dir: f.is_dir,
+          size: f.size || 0,
+          mod_time: f.mod_time || '',
+        }))}
+        currentPath={currentPath}
+        onNavigate={navigateToPath}
+        onFileOpen={(path) => openFile(path)}
+        onFileEdit={(path) => openFile(path)}
+        onBack={() => navigateToPath(parentPath)}
+        sandboxId={effectiveSandboxId}
+      />
+    );
+  };
+
   const renderBrowserView = () => {
+    // If browser tab is hidden, don't render browser view
+    if (HIDE_BROWSER_TAB) {
+      return null;
+    }
+    
     if (persistentVncIframe) {
       return (
         <div className="h-full flex flex-col overflow-hidden">
@@ -616,7 +680,6 @@ export const KortixComputer = memo(function KortixComputer({
           <PanelHeader
             agentName={agentName}
             onClose={handleClose}
-            onMinimize={handleMinimize}
             onMaximize={handleMaximize}
             isStreaming={isStreaming && activeView === 'tools'}
             variant="motion"
@@ -624,12 +687,31 @@ export const KortixComputer = memo(function KortixComputer({
             onViewChange={setActiveView}
             showFilesTab={true}
             isMaximized={isMaximized}
+            isSuiteMode={isSuiteMode}
+            onToggleSuiteMode={() => {
+              if (isSuiteMode) {
+                // Exit suite mode - restore previous size
+                if (preSuiteSize !== null && sidePanelRef?.current) {
+                  sidePanelRef.current.resize(preSuiteSize);
+                }
+                setPreSuiteSize(null);
+                setIsSuiteMode(false);
+              } else {
+                // Enter suite mode - save current size and maximize
+                if (sidePanelRef?.current) {
+                  const currentSize = sidePanelRef.current.getSize();
+                  setPreSuiteSize(currentSize);
+                  sidePanelRef.current.resize(70); // Max size from ResizablePanel config
+                }
+                setIsSuiteMode(true);
+              }
+            }}
           />
         )}
         <div className="flex-1 overflow-hidden max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>
           {activeView === 'tools' && renderToolsView()}
           {activeView === 'files' && renderFilesView()}
-          {activeView === 'browser' && renderBrowserView()}
+          {!HIDE_BROWSER_TAB && activeView === 'browser' && renderBrowserView()}
         </div>
       </div>
     );
@@ -651,7 +733,7 @@ export const KortixComputer = memo(function KortixComputer({
           <div className="flex-1 flex flex-col overflow-hidden max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>
             {activeView === 'tools' && renderToolsView()}
             {activeView === 'files' && renderFilesView()}
-            {activeView === 'browser' && renderBrowserView()}
+            {!HIDE_BROWSER_TAB && activeView === 'browser' && renderBrowserView()}
           </div>
 
           {activeView === 'tools' && (displayTotalCalls > 1 || (isCurrentToolStreaming && totalCompletedCalls > 0)) && (
@@ -709,38 +791,35 @@ export const KortixComputer = memo(function KortixComputer({
     ) : null;
 
     if (isMaximized) {
-      return (
-        <Dialog open={isMaximized} onOpenChange={(open) => !open && setIsMaximized(false)}>
-          <DialogContent 
-            hideCloseButton={true}
-            className="max-w-[100vw] max-h-[100vh] w-[100vw] h-[100vh] p-0 border-0 rounded-none bg-transparent"
-            style={{ contain: 'strict' }}
-          >
-            <SandboxDesktop
-              toolCalls={toolCallSnapshots.map(s => s.toolCall)}
-              currentIndex={safeInternalIndex}
-              onNavigate={handleDockNavigate}
-              onPrevious={navigateToPrevious}
-              onNext={navigateToNext}
-              latestIndex={latestIndex}
-              agentStatus={agentStatus}
-              isLiveMode={isLiveMode}
-              onJumpToLive={jumpToLive}
-              onJumpToLatest={jumpToLatest}
-              project={project}
-              messages={messages}
-              onFileClick={onFileClick}
-              streamingText={streamingText}
-              onClose={() => setIsMaximized(false)}
-              currentView={activeView}
-              onViewChange={setActiveView}
-              renderFilesView={renderFilesView}
-              renderBrowserView={renderBrowserView}
-              isStreaming={isStreaming}
-              project_id={projectId}
-            />
-          </DialogContent>
-        </Dialog>
+      if (typeof document === 'undefined') return null;
+      
+      return createPortal(
+        <div className="fixed inset-0 z-[9999] bg-background">
+          <SandboxDesktop
+            toolCalls={toolCallSnapshots.map(s => s.toolCall)}
+            currentIndex={safeInternalIndex}
+            onNavigate={handleDockNavigate}
+            onPrevious={navigateToPrevious}
+            onNext={navigateToNext}
+            latestIndex={latestIndex}
+            agentStatus={agentStatus}
+            isLiveMode={isLiveMode}
+            onJumpToLive={jumpToLive}
+            onJumpToLatest={jumpToLatest}
+            project={project}
+            messages={messages}
+            onFileClick={onFileClick}
+            streamingText={streamingText}
+            onClose={() => setIsMaximized(false)}
+            currentView={activeView}
+            onViewChange={setActiveView}
+            renderFilesView={renderFilesViewMaximized}
+            renderBrowserView={renderBrowserView}
+            isStreaming={isStreaming}
+            project_id={projectId}
+          />
+        </div>,
+        document.body
       );
     }
 
@@ -813,38 +892,35 @@ export const KortixComputer = memo(function KortixComputer({
   ) : null;
 
   if (isMaximized) {
-    return (
-      <Dialog open={isMaximized} onOpenChange={(open) => !open && setIsMaximized(false)}>
-        <DialogContent 
-          hideCloseButton={true}
-          className="max-w-[100vw] max-h-[100vh] w-[100vw] h-[100vh] p-0 border-0 rounded-none bg-transparent"
-          style={{ contain: 'strict' }}
-        >
-          <SandboxDesktop
-            toolCalls={toolCallSnapshots.map(s => s.toolCall)}
-            currentIndex={safeInternalIndex}
-            onNavigate={handleDockNavigate}
-            onPrevious={navigateToPrevious}
-            onNext={navigateToNext}
-            latestIndex={latestIndex}
-            agentStatus={agentStatus}
-            isLiveMode={isLiveMode}
-            onJumpToLive={jumpToLive}
-            onJumpToLatest={jumpToLatest}
-            project={project}
-            messages={messages}
-            onFileClick={onFileClick}
-            streamingText={streamingText}
-            onClose={() => setIsMaximized(false)}
-            currentView={activeView}
-            onViewChange={setActiveView}
-            renderFilesView={renderFilesView}
-            renderBrowserView={renderBrowserView}
-            isStreaming={isStreaming}
-            project_id={projectId}
-          />
-        </DialogContent>
-      </Dialog>
+    if (typeof document === 'undefined') return null;
+    
+    return createPortal(
+      <div className="fixed inset-0 z-[9999] bg-background">
+        <SandboxDesktop
+          toolCalls={toolCallSnapshots.map(s => s.toolCall)}
+          currentIndex={safeInternalIndex}
+          onNavigate={handleDockNavigate}
+          onPrevious={navigateToPrevious}
+          onNext={navigateToNext}
+          latestIndex={latestIndex}
+          agentStatus={agentStatus}
+          isLiveMode={isLiveMode}
+          onJumpToLive={jumpToLive}
+          onJumpToLatest={jumpToLatest}
+          project={project}
+          messages={messages}
+          onFileClick={onFileClick}
+          streamingText={streamingText}
+          onClose={() => setIsMaximized(false)}
+          currentView={activeView}
+          onViewChange={setActiveView}
+          renderFilesView={renderFilesViewMaximized}
+          renderBrowserView={renderBrowserView}
+          isStreaming={isStreaming}
+          project_id={projectId}
+        />
+      </div>,
+      document.body
     );
   }
 

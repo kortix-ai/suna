@@ -76,9 +76,48 @@ def is_tool_call_complete(tool_call_buffer_entry: Dict[str, Any]) -> bool:
         return False
 
 
+def _normalize_json_string_values(value: Any) -> Any:
+    """
+    Recursively normalize JSON string values within a data structure.
+    
+    LLMs often pass arrays/objects as JSON strings instead of native types.
+    For example: {"query": "[\"a\", \"b\"]"} instead of {"query": ["a", "b"]}
+    
+    This function recursively traverses dicts/lists and parses any string
+    that looks like a JSON array or object.
+    
+    Args:
+        value: Any value to normalize
+        
+    Returns:
+        Normalized value with JSON strings parsed into native types
+    """
+    if isinstance(value, dict):
+        return {k: _normalize_json_string_values(v) for k, v in value.items()}
+    
+    if isinstance(value, list):
+        return [_normalize_json_string_values(item) for item in value]
+    
+    if isinstance(value, str):
+        stripped = value.strip()
+        # Only try to parse if it looks like JSON array or object
+        if (stripped.startswith('[') and stripped.endswith(']')) or \
+           (stripped.startswith('{') and stripped.endswith('}')):
+            try:
+                parsed = json.loads(stripped)
+                # Recursively normalize the parsed result too
+                return _normalize_json_string_values(parsed)
+            except (json.JSONDecodeError, ValueError):
+                # Not valid JSON, return original string
+                pass
+    
+    return value
+
+
 def parse_native_tool_call_arguments(arguments: Any) -> Dict[str, Any]:
     """
     Parse native tool call arguments, handling both string and dict formats.
+    Also normalizes nested JSON strings (e.g. arrays passed as strings).
     
     Args:
         arguments: Arguments as string (JSON) or dict
@@ -89,15 +128,20 @@ def parse_native_tool_call_arguments(arguments: Any) -> Dict[str, Any]:
     from core.utils.json_helpers import safe_json_parse
     
     if isinstance(arguments, dict):
-        return arguments
+        # Normalize any JSON string values within the dict
+        return _normalize_json_string_values(arguments)
     
     if isinstance(arguments, str):
         parsed = safe_json_parse(arguments)
         if isinstance(parsed, dict):
-            return parsed
+            # Normalize any JSON string values within the parsed dict
+            return _normalize_json_string_values(parsed)
         # Try direct JSON parse as fallback
         try:
-            return json.loads(arguments)
+            result = json.loads(arguments)
+            if isinstance(result, dict):
+                return _normalize_json_string_values(result)
+            return result
         except (json.JSONDecodeError, ValueError):
             return arguments
     
@@ -196,7 +240,9 @@ def convert_to_unified_tool_call_format(
 
 def convert_buffer_to_metadata_tool_calls(
     tool_calls_buffer: Dict[int, Dict[str, Any]], 
-    include_partial: bool = False
+    include_partial: bool = False,
+    delta_mode: bool = False,
+    sent_lengths: Optional[Dict[int, int]] = None
 ) -> List[Dict[str, Any]]:
     """
     Convert buffered tool calls to unified metadata format for streaming chunks.
@@ -204,6 +250,8 @@ def convert_buffer_to_metadata_tool_calls(
     Args:
         tool_calls_buffer: Dictionary mapping index -> buffered tool call data
         include_partial: Whether to include partial/incomplete tool calls (for streaming)
+        delta_mode: If True, only send new data (delta) not full accumulated content
+        sent_lengths: Dictionary tracking how much has been sent for each index (for delta mode)
         
     Returns:
         List of tool calls in unified metadata format (tool_call_id, function_name, arguments, source)
@@ -216,23 +264,48 @@ def convert_buffer_to_metadata_tool_calls(
             # Arguments might be incomplete JSON string from LLM
             arguments_str = tc_buf['function'].get('arguments', '')
             
-            # Try to parse arguments as JSON - if successful, use parsed object
-            # If it fails (partial/incomplete JSON), keep as string
-            arguments: Any = arguments_str
-            if arguments_str:
-                try:
-                    parsed = json.loads(arguments_str)
-                    # Successfully parsed - use the object (avoids double-escaping)
-                    arguments = parsed
-                except json.JSONDecodeError:
-                    # Partial/incomplete JSON - keep as string for frontend to handle
-                    arguments = arguments_str
-            
-            unified_tool_calls.append({
-                "tool_call_id": tc_buf.get('id', f"streaming_tool_{idx}_{str(uuid.uuid4())}"),
-                "function_name": tc_buf['function']['name'],
-                "arguments": arguments,  # Object if valid JSON, string if partial
-                "source": "native"  # Always native for native tool calls
-            })
+            # DELTA MODE: Only send the new chunk, not full accumulated content
+            if delta_mode and sent_lengths is not None:
+                prev_length = sent_lengths.get(idx, 0)
+                current_length = len(arguments_str)
+                
+                # Only send if there's new content
+                if current_length <= prev_length:
+                    continue  # Nothing new to send
+                
+                # Extract only the new delta
+                arguments_delta = arguments_str[prev_length:]
+                
+                # Update tracking
+                sent_lengths[idx] = current_length
+                
+                # For delta mode, always send as string (frontend will assemble)
+                unified_tool_calls.append({
+                    "tool_call_id": tc_buf.get('id', f"streaming_tool_{idx}_{str(uuid.uuid4())}"),
+                    "function_name": tc_buf['function']['name'],
+                    "arguments_delta": arguments_delta,  # Send ONLY the delta
+                    "is_delta": True,  # Flag to indicate this is a delta update
+                    "source": "native"
+                })
+            else:
+                # FULL MODE: Send complete accumulated content (old behavior)
+                # Try to parse arguments as JSON - if successful, use parsed object
+                # If it fails (partial/incomplete JSON), keep as string
+                arguments: Any = arguments_str
+                if arguments_str:
+                    try:
+                        parsed = json.loads(arguments_str)
+                        # Successfully parsed - use the object (avoids double-escaping)
+                        arguments = parsed
+                    except json.JSONDecodeError:
+                        # Partial/incomplete JSON - keep as string for frontend to handle
+                        arguments = arguments_str
+                
+                unified_tool_calls.append({
+                    "tool_call_id": tc_buf.get('id', f"streaming_tool_{idx}_{str(uuid.uuid4())}"),
+                    "function_name": tc_buf['function']['name'],
+                    "arguments": arguments,  # Object if valid JSON, string if partial
+                    "source": "native"  # Always native for native tool calls
+                })
     return unified_tool_calls
 

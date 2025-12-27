@@ -137,7 +137,7 @@ export default function CreateAgentScheduledTriggerToolView({
                     </Badge>
                     <Badge variant="outline" className="text-xs border-purple-200 text-purple-700 bg-purple-50">
                       <Bot className="h-3 w-3 mr-1" />
-                      Agent
+                      Worker
                     </Badge>
                   </div>
                 </div>
@@ -174,7 +174,7 @@ export default function CreateAgentScheduledTriggerToolView({
                   <>
                     <Separator />
                     <div className="space-y-3">
-                      <p className="text-sm font-medium text-foreground">Agent Prompt</p>
+                      <p className="text-sm font-medium text-foreground">Worker Prompt</p>
                       <div className="p-3 bg-muted border border-border rounded-lg text-sm text-foreground">
                         {agent_prompt}
                       </div>

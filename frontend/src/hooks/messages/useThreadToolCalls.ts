@@ -18,7 +18,7 @@ interface UseThreadToolCallsReturn {
   setAutoOpenedPanel: React.Dispatch<React.SetStateAction<boolean>>;
   externalNavIndex: number | undefined;
   setExternalNavIndex: React.Dispatch<React.SetStateAction<number | undefined>>;
-  handleToolClick: (clickedAssistantMessageId: string | null, clickedToolName: string) => void;
+  handleToolClick: (clickedAssistantMessageId: string | null, clickedToolName: string, toolCallId?: string) => void;
   handleStreamingToolCall: (toolCall: UnifiedMessage | null) => void;
   toggleSidePanel: () => void;
   handleSidePanelNavigate: (newIndex: number) => void;
@@ -116,7 +116,7 @@ export function useThreadToolCalls(
         }
 
         const toolName = functionName.replace(/_/g, '-').toLowerCase();
-        const isSuccess = toolResult.success !== false;
+        const isSuccess = toolResult?.success !== false;
 
         // Check if this tool should be filtered out
         if (shouldFilterTool(toolName)) {
@@ -145,9 +145,9 @@ export function useThreadToolCalls(
             source: matchingToolCall.source || 'xml',
           },
           toolResult: {
-            success: toolResult.success !== false,
-            output: toolResult.output,
-            error: toolResult.error || null,
+            success: toolResult?.success !== false,
+            output: toolResult?.output,
+            error: toolResult?.error || null,
           },
           assistantTimestamp: assistantMsg.created_at,
           toolTimestamp: resultMessage.created_at,
@@ -190,7 +190,7 @@ export function useThreadToolCalls(
         setAutoOpenedPanel(true);
       }
     }
-  }, [historicalToolPairs.length, isSidePanelOpen, autoOpenedPanel, agentStatus, isMobile, compact]);
+  }, [historicalToolPairs.length, isSidePanelOpen, autoOpenedPanel, agentStatus, isMobile, compact, setIsSidePanelOpen]);
 
   // Reset user navigation flag when agent stops
   useEffect(() => {
@@ -205,7 +205,7 @@ export function useThreadToolCalls(
     }
   }, [isSidePanelOpen]);
 
-  const handleToolClick = useCallback((clickedAssistantMessageId: string | null, clickedToolName: string) => {
+  const handleToolClick = useCallback((clickedAssistantMessageId: string | null, clickedToolName: string, toolCallId?: string) => {
     userClosedPanelRef.current = false;
     userNavigatedRef.current = true;
 
@@ -218,6 +218,16 @@ export function useThreadToolCalls(
       navigateToToolCall(index);
       setTimeout(() => setExternalNavIndex(undefined), 100);
     };
+
+    // If we have a tool_call_id, use it for precise matching (works for both streaming and completed)
+    if (toolCallId) {
+      const foundIndex = toolCalls.findIndex(tc => tc.toolCall.tool_call_id === toolCallId);
+      if (foundIndex !== -1) {
+        navigateToIndex(foundIndex);
+        return;
+      }
+      console.warn(`[handleToolClick] Could not find tool call with ID: ${toolCallId}`);
+    }
 
     // Handle streaming tool calls (message ID is null)
     if (!clickedAssistantMessageId) {
@@ -294,7 +304,7 @@ export function useThreadToolCalls(
       
       toast.info('Could not find details for this tool call.');
     }
-  }, [messages, toolCalls, navigateToToolCall]);
+  }, [messages, toolCalls, navigateToToolCall, setIsSidePanelOpen]);
 
   const handleStreamingToolCall = useCallback(
     (toolCall: UnifiedMessage | null) => {
@@ -316,9 +326,12 @@ export function useThreadToolCalls(
 
       if (userClosedPanelRef.current) return;
 
+      // Track if we added any new tool calls using an object (to allow mutation in closure)
+      const tracker = { addedNewToolCall: false, newToolCallCount: 0 };
+
       // Process each tool call from metadata
       setToolCalls((prev) => {
-        let updated = [...prev];
+        const updated = [...prev];
         
         // Update or add each tool call from metadata
         filteredToolCalls.forEach((metadataToolCall) => {
@@ -326,23 +339,28 @@ export function useThreadToolCalls(
             tc => tc.toolCall.tool_call_id === metadataToolCall.tool_call_id
           );
 
+          // Keep raw string for streaming partial JSON parsing, parse to object for completed
+          const rawArgs = metadataToolCall.arguments;
+          const parsedArgs = (() => {
+            if (!rawArgs) return {};
+            if (typeof rawArgs === 'object' && rawArgs !== null) return rawArgs;
+            if (typeof rawArgs === 'string') {
+              try {
+                return JSON.parse(rawArgs);
+              } catch {
+                return {}; // Partial JSON - will use rawArgs for streaming
+              }
+            }
+            return {};
+          })();
+
           const newToolCall: ToolCallInput = {
             toolCall: {
               tool_call_id: metadataToolCall.tool_call_id,
               function_name: metadataToolCall.function_name,
-              arguments: (() => {
-                const args = metadataToolCall.arguments;
-                if (!args) return {};
-                if (typeof args === 'object' && args !== null) return args;
-                if (typeof args === 'string') {
-                  try {
-                    return JSON.parse(args);
-                  } catch {
-                    return {};
-                  }
-                }
-                return {};
-              })(),
+              arguments: parsedArgs,
+              // Store raw string for streaming partial JSON parsing
+              rawArguments: typeof rawArgs === 'string' ? rawArgs : undefined,
               source: metadataToolCall.source || 'native',
             },
             isSuccess: true,
@@ -353,10 +371,12 @@ export function useThreadToolCalls(
           if (existingIndex !== -1) {
             const args = metadataToolCall.arguments;
             let normalizedArgs: Record<string, any> = {};
+            let rawArgsStr: string | undefined = undefined;
             if (args) {
               if (typeof args === 'object' && args !== null) {
                 normalizedArgs = args;
               } else if (typeof args === 'string') {
+                rawArgsStr = args; // Keep raw string for streaming
                 try {
                   normalizedArgs = JSON.parse(args);
                 } catch {
@@ -369,31 +389,42 @@ export function useThreadToolCalls(
               toolCall: {
                 ...updated[existingIndex].toolCall,
                 arguments: normalizedArgs,
+                rawArguments: rawArgsStr,
               },
               messages: messages as any,
             };
           } else {
             updated.push(newToolCall);
+            tracker.addedNewToolCall = true;
           }
         });
 
+        tracker.newToolCallCount = updated.length;
         return updated;
       });
 
-      // If agent is running and user hasn't manually navigated, show the latest tool
-      if (!userNavigatedRef.current) {
-        setCurrentToolIndex(prev => {
-          const newLength = toolCalls.length + filteredToolCalls.length;
-          return newLength - 1;
-        });
-      }
-      
       if (!compact) {
         setIsSidePanelOpen(true);
       }
+
+      // Auto-navigate to the latest tool call when a new one is added (if user hasn't manually navigated)
+      if (tracker.addedNewToolCall && !userNavigatedRef.current) {
+        // Use setTimeout to ensure state has updated
+        setTimeout(() => {
+          setCurrentToolIndex(tracker.newToolCallCount - 1);
+          navigateToToolCall(tracker.newToolCallCount - 1);
+        }, 0);
+      }
     },
-    [toolCalls.length, compact],
+    [compact, navigateToToolCall, messages, setIsSidePanelOpen],
   );
+  
+  // Update current tool index when toolCalls changes (if user hasn't manually navigated)
+  useEffect(() => {
+    if (!userNavigatedRef.current && toolCalls.length > 0) {
+      setCurrentToolIndex(toolCalls.length - 1);
+    }
+  }, [toolCalls.length]);
 
   return {
     toolCalls,

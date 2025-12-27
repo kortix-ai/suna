@@ -554,7 +554,7 @@ export function AgentConfigurationDialog({
                       // Static title mode (no agent switching available)
                       <div className="flex items-center gap-2">
                         <DialogTitle className="text-xl font-semibold">
-                          {isLoading ? 'Loading...' : formData.name || 'Agent'}
+                          {isLoading ? 'Loading...' : formData.name || 'Worker'}
                         </DialogTitle>
                         {isNameEditable && (
                           <Button

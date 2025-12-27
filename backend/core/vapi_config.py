@@ -4,10 +4,12 @@ from dataclasses import dataclass, field
 
 @dataclass
 class VoiceConfig:
-    provider: str = "playht"
-    voice_id: str = "jennifer-playht"
+    provider: str = "11labs"
+    voice_id: str = "EXAVITQu4vr4xnSDxMaL"
     settings: Dict[str, Any] = field(default_factory=lambda: {
-        "speed": 1.0
+        "speed": 1.0,
+        "stability": 0.5,
+        "similarity_boost": 0.75
     })
 
 @dataclass
@@ -27,7 +29,7 @@ class ModelConfig:
 class TranscriberConfig:
     provider: str = "deepgram"
     model: str = "nova-2"
-    language: str = "en"
+    language: str = "multi"
     smart_format: bool = True
 
 @dataclass
@@ -40,22 +42,20 @@ class VapiConfig:
     max_duration_seconds: int = 600
     
     voice_options: Dict[str, Dict[str, str]] = field(default_factory=lambda: {
+        "11labs": {
+            "EXAVITQu4vr4xnSDxMaL": "Sarah/Bella (Female, Multilingual - Default)"
+        },
+        "azure": {
+            "multilingual-auto": "Automatic Multilingual",
+            "en-US-AriaNeural": "Aria (Female, US English)",
+            "en-US-GuyNeural": "Guy (Male, US English)",
+            "es-ES-ElviraNeural": "Elvira (Female, Spanish)",
+            "fr-FR-DeniseNeural": "Denise (Female, French)",
+            "de-DE-KatjaNeural": "Katja (Female, German)"
+        },
         "playht": {
             "jennifer-playht": "Jennifer (Female, American)",
-            "matthew-playht": "Matthew (Male, American)",
-            "s3://voice-cloning-zero-shot/d9ff78ba-d016-47f6-b0ef-dd630f59414e/female-us/manifest.json": "AI Assistant (Female)",
-            "s3://voice-cloning-zero-shot/2bc098a7-c1fc-4b32-9452-556c5ab4814e/jason/manifest.json": "Jason (Male)"
-        },
-        "elevenlabs": {
-            "rachel": "Rachel (Female)",
-            "domi": "Domi (Female)",
-            "bella": "Bella (Female)",
-            "antoni": "Antoni (Male)",
-            "elli": "Elli (Female)",
-            "josh": "Josh (Male)",
-            "arnold": "Arnold (Male)",
-            "adam": "Adam (Male)",
-            "sam": "Sam (Male)"
+            "matthew-playht": "Matthew (Male, American)"
         }
     })
     
@@ -154,7 +154,16 @@ class VapiConfig:
 
 vapi_config = VapiConfig()
 
-DEFAULT_SYSTEM_PROMPT = """You are a professional AI assistant making a phone call. Your goals are:
+DEFAULT_SYSTEM_PROMPT = """You are a professional AI assistant making a phone call.
+
+Language Instructions:
+- You can speak and understand: English, Spanish, French, German, Italian, Portuguese, Japanese, Chinese, Korean, Hindi, Russian, Arabic, Dutch, Polish, Turkish, Swedish, Norwegian, Danish, Greek, Hebrew, Thai, Vietnamese, Indonesian, Malay, Bengali, Czech, Hungarian, Romanian, and Ukrainian
+- Automatically detect and respond in the user's language
+- Switch languages seamlessly when the user changes languages
+- Maintain consistent personality across all languages
+- Use culturally appropriate greetings and formality levels
+
+Your goals are:
 1. Be natural and conversational - speak as if you're having a real phone conversation
 2. Be concise - avoid long explanations unless specifically asked
 3. Listen actively and respond appropriately
@@ -162,11 +171,12 @@ DEFAULT_SYSTEM_PROMPT = """You are a professional AI assistant making a phone ca
 5. If you don't know something, admit it honestly
 6. End the call politely when the conversation is complete"""
 
-DEFAULT_FIRST_MESSAGE = "Hello, this is an AI assistant calling. How can I help you today?"
+DEFAULT_FIRST_MESSAGE = "Hello! I'm an AI assistant and I can communicate in multiple languages. How can I help you today?"
 
 VOICE_PROVIDERS = {
+    "11labs": "ElevenLabs",
+    "azure": "Azure",
     "playht": "PlayHT",
-    "elevenlabs": "ElevenLabs",
     "deepgram": "Deepgram",
     "openai": "OpenAI"
 }

@@ -46,7 +46,7 @@ const MARKDOWN_FONT_SIZE = 16;
  */
 let HEIGHT_BUFFER = Platform.select({
   ios: 8,      // iOS - enough to not clip text but still reduce phantom space
-  android: 12,  // Android needs a bit more
+  android: 24,  // Android needs more buffer to prevent top clipping
   default: 8,
 });
 
@@ -307,7 +307,10 @@ function MarkdownWithLinkHandling({
 
     return (
       <View style={[needsSpacing && styles.partSpacing, styles.textWrapper]} pointerEvents="box-none">
-        <View style={[styles.textWrapperInner, { maxHeight }]}>
+        <View 
+          style={[styles.textWrapperInner, { maxHeight }]} 
+          pointerEvents={Platform.OS === 'android' ? 'none' : 'box-none'}
+        >
           <MarkdownTextInput
             value={text.trimEnd()}
             onChangeText={() => { }}
@@ -320,6 +323,7 @@ function MarkdownWithLinkHandling({
             caretHidden={true}
             showSoftInputOnFocus={false}
             selectTextOnFocus={false}
+            contextMenuHidden={Platform.OS === 'android'}
             onFocus={() => Keyboard.dismiss()}
           />
         </View>
@@ -340,7 +344,10 @@ function MarkdownWithLinkHandling({
 
           return (
             <View key={`txt-${idx}`} style={styles.textWrapper} pointerEvents="box-none">
-              <View style={[styles.textWrapperInner, { maxHeight }]}>
+              <View 
+                style={[styles.textWrapperInner, { maxHeight }]} 
+                pointerEvents={Platform.OS === 'android' ? 'none' : 'box-none'}
+              >
                 <MarkdownTextInput
                   value={block.content.trimEnd()}
                   onChangeText={() => { }}
@@ -353,6 +360,7 @@ function MarkdownWithLinkHandling({
                   caretHidden={true}
                   showSoftInputOnFocus={false}
                   selectTextOnFocus={false}
+                  contextMenuHidden={Platform.OS === 'android'}
                   onFocus={() => Keyboard.dismiss()}
                 />
               </View>
@@ -547,11 +555,12 @@ const styles = StyleSheet.create({
   },
   textWrapper: {
     // Wrapper to clip extra TextInput spacing
-    overflow: 'hidden',
+    overflow: Platform.OS === 'android' ? 'visible' : 'hidden',
   },
   textWrapperInner: {
     // Inner wrapper to clip bottom space without cutting content
-    marginBottom: -4, // Moderate negative margin to reduce phantom space
+    // Android: no negative margin to prevent top clipping
+    marginBottom: Platform.OS === 'android' ? 0 : -4,
   },
   base: {
     fontSize: MARKDOWN_FONT_SIZE,

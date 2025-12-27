@@ -13,8 +13,8 @@ export async function generateMetadata({ params }: { params: Promise<{ shareId: 
 
     const template = await response.json();
 
-    const title = `${template.name} - AI Agent Template | Kortix`;
-    const description = template.description || 'Discover and install this AI agent template to enhance your workflow with powerful automation capabilities.';
+    const title = `${template.name} - AI Worker Template | Kortix`;
+    const description = template.description || 'Discover and install this AI worker template to enhance your workflow with powerful automation capabilities.';
 
     const ogImage = `${process.env.NEXT_PUBLIC_URL}/api/og/template?shareId=${templateId}`;
 
@@ -44,11 +44,11 @@ export async function generateMetadata({ params }: { params: Promise<{ shareId: 
     };
   } catch (error) {
     return {
-      title: 'AI Agent Template | Kortix',
-      description: 'Discover and install AI agent templates to enhance your workflow with powerful automation capabilities.',
+      title: 'AI Worker Template | Kortix',
+      description: 'Discover and install AI worker templates to enhance your workflow with powerful automation capabilities.',
       openGraph: {
-        title: 'AI Agent Template | Kortix',
-        description: 'Discover and install AI agent templates to enhance your workflow with powerful automation capabilities.',
+        title: 'AI Worker Template | Kortix',
+        description: 'Discover and install AI worker templates to enhance your workflow with powerful automation capabilities.',
         type: 'website',
         url: `${process.env.NEXT_PUBLIC_URL}/templates/${templateId}`,
         images: [
@@ -56,7 +56,7 @@ export async function generateMetadata({ params }: { params: Promise<{ shareId: 
             url: `${process.env.NEXT_PUBLIC_URL}/share-page/og-fallback.png`,
             width: 1200,
             height: 630,
-            alt: 'Kortix AI Agent Template',
+            alt: 'Kortix AI Worker Template',
           }
         ],
       },

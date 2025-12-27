@@ -418,7 +418,7 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
                 fallbackName={trigger.agent_name}
               />
               <div>
-                <h3 className="font-medium text-foreground">{trigger.agent_name || 'Unknown Agent'}</h3>
+                <h3 className="font-medium text-foreground">{trigger.agent_name || 'Unknown Worker'}</h3>
                 <p className="text-sm text-muted-foreground">Assigned Agent</p>
               </div>
             </div>

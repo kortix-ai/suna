@@ -331,7 +331,7 @@ export const ScheduleTriggerConfigForm: React.FC<ScheduleTriggerConfigFormProps>
               <div>
                 <h3 className="text-sm font-medium mb-4 flex items-center gap-2">
                   <Zap className="h-4 w-4" />
-                  Agent Prompt
+                  Worker Prompt
                 </h3>
                 <div className="space-y-3">
                   <Label htmlFor="agent-prompt" className="text-sm">Instructions for the agent when this trigger fires</Label>

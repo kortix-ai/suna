@@ -317,6 +317,16 @@ async def convert_presentation_to_pdf(request: ConvertRequest):
     """
     try:
         print(f"📥 Received conversion request for: {request.presentation_path}")
+        print(f"📥 Download flag: {request.download}")
+        
+        # Validate presentation path exists before creating converter
+        presentation_path_obj = Path(request.presentation_path)
+        if not presentation_path_obj.exists():
+            error_msg = f"Presentation path does not exist: {request.presentation_path}"
+            print(f"❌ {error_msg}")
+            raise FileNotFoundError(error_msg)
+        
+        print(f"✅ Presentation path exists: {presentation_path_obj}")
         
         # Create converter
         converter = PresentationToPDFAPI(request.presentation_path)
@@ -351,12 +361,23 @@ async def convert_presentation_to_pdf(request: ConvertRequest):
         )
         
     except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        error_msg = str(e)
+        print(f"❌ FileNotFoundError: {error_msg}")
+        raise HTTPException(status_code=404, detail=error_msg)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        error_msg = str(e)
+        print(f"❌ ValueError: {error_msg}")
+        raise HTTPException(status_code=400, detail=error_msg)
     except Exception as e:
-        print(f"❌ Conversion error: {e}")
-        raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")
+        import traceback
+        error_msg = str(e)
+        error_traceback = traceback.format_exc()
+        print(f"❌ Conversion error: {error_msg}")
+        print(f"❌ Traceback:\n{error_traceback}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Conversion failed: {error_msg}"
+        )
 
 
 @router.get("/health")

@@ -23,11 +23,12 @@ class SubscriptionCheckoutHandler:
         price_id: str, 
         success_url: str, 
         cancel_url: str, 
-        commitment_type: Optional[str] = None
+        commitment_type: Optional[str] = None,
+        locale: Optional[str] = None
     ) -> Dict:
         handler = cls()
         return await handler._create_checkout_session(
-            account_id, price_id, success_url, cancel_url, commitment_type
+            account_id, price_id, success_url, cancel_url, commitment_type, locale
         )
     
     async def _create_checkout_session(
@@ -36,42 +37,60 @@ class SubscriptionCheckoutHandler:
         price_id: str, 
         success_url: str, 
         cancel_url: str, 
-        commitment_type: Optional[str] = None
+        commitment_type: Optional[str] = None,
+        locale: Optional[str] = None
     ) -> Dict:
         customer_id = await CustomerHandler.get_or_create_stripe_customer(account_id)
+        
+        # Get customer email for better location detection with adaptive pricing
+        customer_email = await self._get_customer_email(account_id)
+        
         subscription_status = await self.checkout_service.get_current_subscription_status(account_id)
         
-        logger.info(f"[CHECKOUT ROUTING] account_id={account_id}, subscription_status={subscription_status}")
+        logger.debug(f"[CHECKOUT ROUTING] account_id={account_id}, subscription_status={subscription_status}")
         
         idempotency_key = self.checkout_service.generate_idempotency_key(account_id, price_id, commitment_type)
         flow_type = self.checkout_service.determine_checkout_flow(subscription_status)
         
         if flow_type == 'trial_conversion':
             return await self._handle_trial_conversion(
-                customer_id, account_id, price_id, success_url, cancel_url,
-                subscription_status, commitment_type, idempotency_key
+                customer_id, customer_email, account_id, price_id, success_url, cancel_url,
+                subscription_status, commitment_type, idempotency_key, locale
             )
         elif flow_type == 'upgrade_existing':
             return await self._handle_existing_subscription_upgrade(
-                customer_id, account_id, price_id, success_url, cancel_url,
-                subscription_status, commitment_type, idempotency_key
+                customer_id, customer_email, account_id, price_id, success_url, cancel_url,
+                subscription_status, commitment_type, idempotency_key, locale
             )
         else:
             return await self._handle_new_subscription(
-                customer_id, account_id, price_id, success_url, cancel_url,
-                commitment_type, idempotency_key
+                customer_id, customer_email, account_id, price_id, success_url, cancel_url,
+                commitment_type, idempotency_key, locale
             )
+    
+    async def _get_customer_email(self, account_id: str) -> Optional[str]:
+        """Get customer email for better location detection with adaptive pricing."""
+        try:
+            from ..repositories.customer import CustomerRepository
+            repo = CustomerRepository()
+            customer_data = await repo.get_billing_customer(account_id)
+            return customer_data.get('email') if customer_data else None
+        except Exception as e:
+            logger.warning(f"[CHECKOUT] Could not retrieve customer email for account {account_id}: {e}")
+            return None
 
     async def _handle_trial_conversion(
         self,
-        customer_id: str, 
+        customer_id: str,
+        customer_email: Optional[str],
         account_id: str, 
         price_id: str, 
         success_url: str,
         cancel_url: str,
         subscription_status: Dict,
         commitment_type: Optional[str], 
-        idempotency_key: str
+        idempotency_key: str,
+        locale: Optional[str] = None
     ) -> Dict:
         new_tier_info = get_tier_by_price_id(price_id)
         tier_display_name = new_tier_info.display_name if new_tier_info else 'paid plan'
@@ -88,7 +107,7 @@ class SubscriptionCheckoutHandler:
         metadata['cancel_after_checkout'] = existing_subscription_id
 
         session = await self._create_stripe_checkout_session(
-            customer_id, price_id, success_url, metadata, idempotency_key, cancel_url
+            customer_id, customer_email, price_id, success_url, metadata, idempotency_key, cancel_url, locale
         )
         
         return self.checkout_service.build_checkout_response(
@@ -108,38 +127,63 @@ class SubscriptionCheckoutHandler:
     async def _create_stripe_checkout_session(
         self,
         customer_id: str,
+        customer_email: Optional[str],
         price_id: str,
         success_url: str,
         metadata: Dict,
         idempotency_key: str,
-        cancel_url: str = None
+        cancel_url: str = None,
+        locale: Optional[str] = None
     ):
         """
-        Create a Stripe checkout session.
+        Create a Stripe checkout session with adaptive pricing enabled.
         By default uses hosted mode (Stripe's hosted checkout page).
+        
+        Note: We do NOT set currency explicitly - Stripe's adaptive pricing
+        will automatically determine the currency based on customer location.
         """
-        return await StripeAPIWrapper.create_checkout_session(
-            customer=customer_id,
-            payment_method_types=['card'],
-            line_items=[{'price': price_id, 'quantity': 1}],
-            mode='subscription',
-            success_url=success_url,
-            cancel_url=cancel_url or success_url,
-            allow_promotion_codes=True,
-            subscription_data={'metadata': metadata},
-            idempotency_key=idempotency_key
-        )
+        session_params = {
+            'customer': customer_id,
+            'payment_method_types': ['card'],
+            'line_items': [{'price': price_id, 'quantity': 1}],
+            'mode': 'subscription',
+            'success_url': success_url,
+            'cancel_url': cancel_url or success_url,
+            'allow_promotion_codes': True,
+            'subscription_data': {'metadata': metadata},
+            'idempotency_key': idempotency_key,
+            # Enable adaptive pricing - Stripe will automatically convert prices
+            # to customer's local currency based on their location
+            'adaptive_pricing': {
+                'enabled': True
+            }
+        }
+
+        if locale:
+            session_params['locale'] = locale
+            logger.debug(f"[CHECKOUT] Using locale '{locale}' for adaptive pricing")
+        else:
+            # Use 'auto' to let Stripe detect locale from customer's browser
+            session_params['locale'] = 'auto'
+            logger.debug(f"[CHECKOUT] Using locale 'auto' - Stripe will detect from browser")
+        
+        logger.debug(f"[CHECKOUT] Adaptive pricing enabled - Stripe will auto-detect currency from customer IP/location")
+        
+        
+        return await StripeAPIWrapper.create_checkout_session(**session_params)
 
     async def _handle_existing_subscription_upgrade(
         self,
         customer_id: str,
+        customer_email: Optional[str],
         account_id: str, 
         price_id: str,
         success_url: str,
         cancel_url: str,
         subscription_status: Dict,
         commitment_type: Optional[str],
-        idempotency_key: str
+        idempotency_key: str,
+        locale: Optional[str] = None
     ) -> Dict:
         existing_subscription_id = subscription_status['subscription_id']
         subscription = await StripeAPIWrapper.retrieve_subscription(existing_subscription_id)
@@ -149,8 +193,8 @@ class SubscriptionCheckoutHandler:
         
         if current_amount == 0 or current_tier == 'free':
             return await self._handle_free_tier_upgrade(
-                customer_id, account_id, price_id, success_url, cancel_url,
-                subscription_status, commitment_type, idempotency_key
+                customer_id, customer_email, account_id, price_id, success_url, cancel_url,
+                subscription_status, commitment_type, idempotency_key, locale
             )
         
         upgrade_type = self.upgrade_service.classify_upgrade_type(subscription, price_id)
@@ -171,7 +215,7 @@ class SubscriptionCheckoutHandler:
             # For standard paid-to-paid upgrades, use Stripe's subscription modification API
             # This is instant and handles proration automatically - no checkout needed since 
             # payment method is already on file
-            logger.info(f"[STANDARD UPGRADE] Modifying subscription in-place from {current_tier} to {price_id}")
+            logger.debug(f"[STANDARD UPGRADE] Modifying subscription in-place from {current_tier} to {price_id}")
             
             result = await self.upgrade_service.perform_standard_upgrade(
                 existing_subscription_id, subscription, price_id, account_id
@@ -182,13 +226,15 @@ class SubscriptionCheckoutHandler:
     async def _handle_free_tier_upgrade(
         self,
         customer_id: str,
+        customer_email: Optional[str],
         account_id: str,
         price_id: str,
         success_url: str,
         cancel_url: str,
         subscription_status: Dict,
         commitment_type: Optional[str],
-        idempotency_key: str
+        idempotency_key: str,
+        locale: Optional[str] = None
     ) -> Dict:
         new_tier_info = get_tier_by_price_id(price_id)
         tier_display_name = new_tier_info.display_name if new_tier_info else 'paid plan'
@@ -205,7 +251,7 @@ class SubscriptionCheckoutHandler:
         metadata['cancel_after_checkout'] = existing_subscription_id
 
         session = await self._create_stripe_checkout_session(
-            customer_id, price_id, success_url, metadata, idempotency_key, cancel_url
+            customer_id, customer_email, price_id, success_url, metadata, idempotency_key, cancel_url, locale
         )
         
         return self.checkout_service.build_checkout_response(
@@ -215,19 +261,21 @@ class SubscriptionCheckoutHandler:
     async def _handle_new_subscription(
         self,
         customer_id: str,
+        customer_email: Optional[str],
         account_id: str,
         price_id: str,
         success_url: str,
         cancel_url: str,
         commitment_type: Optional[str],
-        idempotency_key: str
+        idempotency_key: str,
+        locale: Optional[str] = None
     ) -> Dict:
         metadata = self.checkout_service.build_subscription_metadata(
             account_id, commitment_type, 'new_subscription'
         )
 
         session = await self._create_stripe_checkout_session(
-            customer_id, price_id, success_url, metadata, idempotency_key, cancel_url
+            customer_id, customer_email, price_id, success_url, metadata, idempotency_key, cancel_url, locale
         )
         
         return self.checkout_service.build_checkout_response(session)

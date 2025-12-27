@@ -5,10 +5,11 @@ from typing import Optional
 
 
 class UnifiedAgentStartResponse(BaseModel):
-    """Unified response model for agent start (both new and existing threads)."""
+    """Unified response model for agent start (both regular and optimistic modes)."""
     thread_id: str
-    agent_run_id: str
-    status: str = "running"
+    agent_run_id: Optional[str] = None  # None in optimistic mode
+    project_id: Optional[str] = None    # Returned in optimistic mode
+    status: str = "running"  # "running" for regular, "pending" for optimistic
 
 
 class CreateThreadResponse(BaseModel):

@@ -28,7 +28,9 @@ import {
   BarChart3,
   FileText,
   TrendingDown,
+  MessageSquare,
   Heart,
+  LifeBuoy,
 } from 'lucide-react';
 import { useAccounts } from '@/hooks/account';
 import { useAccountState } from '@/hooks/billing';
@@ -366,6 +368,12 @@ export function NavUserWithTeams({
                     <span>Knowledge Base</span>
                   </Link>
                 </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/support" className="gap-2 p-2">
+                    <LifeBuoy className="h-4 w-4" />
+                    <span>Support</span>
+                  </Link>
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => {
                     setSettingsTab('billing');
@@ -419,7 +427,6 @@ export function NavUserWithTeams({
                   <span>{t('theme')}</span>
                 </DropdownMenuItem>
               </DropdownMenuGroup>
-
               {(user.isAdmin || isLocalMode()) && (
                 <>
                   <DropdownMenuSeparator className="my-1" />
@@ -432,6 +439,14 @@ export function NavUserWithTeams({
                         <Link href="/admin/billing" className="gap-2 p-2">
                           <Shield className="h-4 w-4" />
                           <span>Admin Panel</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {user.isAdmin && (
+                      <DropdownMenuItem asChild>
+                        <Link href="/admin/feedback" className="gap-2 p-2">
+                          <MessageSquare className="h-4 w-4" />
+                          <span>User Feedback</span>
                         </Link>
                       </DropdownMenuItem>
                     )}
@@ -466,7 +481,6 @@ export function NavUserWithTeams({
                   </DropdownMenuGroup>
                 </>
               )}
-
               <DropdownMenuSeparator className="my-1" />
               <DropdownMenuItem onClick={handleLogout} className="gap-2 p-2">
                 <LogOut className="h-4 w-4" />

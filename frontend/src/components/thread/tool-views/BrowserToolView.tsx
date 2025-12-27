@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useState } from 'react';
 import Image from 'next/image';
 import {
   Globe,
@@ -6,7 +6,6 @@ import {
   ExternalLink,
   CheckCircle,
   AlertTriangle,
-  CircleDashed,
   RefreshCw,
   Code2,
   ImageIcon,
@@ -22,7 +21,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ImageLoader } from './shared/ImageLoader';
-import { ParsedContent } from '../types';
 import { JsonViewer } from './shared/JsonViewer';
 import { KortixComputerHeader } from '../kortix-computer/KortixComputerHeader';
 
@@ -75,14 +73,12 @@ export function BrowserToolView({
   totalCalls = 1,
   viewToggle,
 }: ToolViewProps) {
-  // All hooks must be called unconditionally at the top
+  // All hooks must be called unconditionally at the top - BEFORE any early returns
   const [showContext, setShowContext] = React.useState(false);
-  // Add loading states for images
-  const [imageLoading, setImageLoading] = React.useState(true);
-  const [imageError, setImageError] = React.useState(false);
   const isRunning = isStreaming || agentStatus === 'running';
-
   const [progress, setProgress] = React.useState(100);
+  const [isImageLoading, setIsImageLoading] = useState(true);
+  const [imageError, setImageError] = useState(false);
 
   React.useEffect(() => {
     if (isRunning) {
@@ -102,15 +98,107 @@ export function BrowserToolView({
     }
   }, [isRunning]);
 
-  // Reset loading state when screenshot changes (use optional chaining for safety)
-  const screenshotUrl = toolResult?.output?.image_url || null;
-  const screenshotBase64 = toolResult?.output?.screenshot_base64 || null;
+  // Use useMemo to compute values that hooks depend on - this ensures hooks are always called
+  const computedValues = React.useMemo(() => {
+    if (!toolCall) {
+      return {
+        screenshotUrlFinal: null,
+        browserStateMessageId: undefined,
+        result: null,
+      };
+    }
+
+    let browserStateMessageId: string | undefined;
+    let screenshotUrlFinal: string | null = null;
+    let result: Record<string, any> | null = null;
+
+    if (toolResult?.output) {
+      let output = toolResult.output;
+      
+      if (typeof output === 'string') {
+        try {
+          const parsed = JSON.parse(output);
+          if (typeof parsed === 'object' && parsed !== null) {
+            output = parsed;
+          } else {
+            result = { message: output };
+            output = null;
+          }
+        } catch (e) {
+          result = { message: output };
+          output = null;
+        }
+      }
+      
+      if (output && typeof output === 'object' && output !== null) {
+        if (output.image_url) {
+          screenshotUrlFinal = String(output.image_url).trim().replace(/\?+$/, '');
+        }
+        if (output.message_id) {
+          browserStateMessageId = String(output.message_id).trim();
+        }
+        
+        result = Object.fromEntries(
+          Object.entries(output).filter(([k]) => 
+            k !== 'message_id' && 
+            k !== 'image_url'
+          )
+        ) as Record<string, any>;
+        
+        if (Object.keys(result).length === 0 && output.message) {
+          result = { message: output.message };
+        }
+      }
+    }
+
+    // Try to find browser state message if we have a message_id but no screenshot yet
+    if (!screenshotUrlFinal && browserStateMessageId && messages && messages.length > 0) {
+      const browserStateMessage = messages.find(
+        (msg) =>
+          (msg.type as string) === 'browser_state' &&
+          msg.message_id === browserStateMessageId,
+      );
+
+      if (browserStateMessage) {
+        const browserStateContent = safeJsonParse<{
+          image_url?: string;
+        }>(
+          browserStateMessage.content,
+          {},
+        );
+        
+        if (browserStateContent?.image_url) {
+          screenshotUrlFinal = String(browserStateContent.image_url).trim().replace(/\?+$/, '');
+        }
+      }
+    }
+
+    return {
+      screenshotUrlFinal,
+      browserStateMessageId,
+      result,
+    };
+  }, [toolCall, toolResult?.output, messages]);
+
+  // Log extracted data for debugging
   React.useEffect(() => {
-    if (screenshotUrl || screenshotBase64) {
-      setImageLoading(true);
+    console.log('[BrowserToolView] Extracted data:', {
+      screenshotUrl: computedValues.screenshotUrlFinal,
+      browserStateMessageId: computedValues.browserStateMessageId,
+      hasResult: !!computedValues.result,
+      toolResultOutput: toolResult?.output,
+      toolResultOutputType: typeof toolResult?.output,
+    });
+  }, [computedValues, toolResult?.output]);
+
+  // Reset loading state when screenshot URL changes
+  React.useEffect(() => {
+    if (computedValues.screenshotUrlFinal) {
+      console.log('[BrowserToolView] Screenshot URL:', computedValues.screenshotUrlFinal);
+      setIsImageLoading(true);
       setImageError(false);
     }
-  }, [screenshotUrl, screenshotBase64]);
+  }, [computedValues.screenshotUrlFinal]);
 
   // Defensive check - handle cases where toolCall might be undefined
   if (!toolCall) {
@@ -126,124 +214,53 @@ export function BrowserToolView({
   const url = toolCall.arguments?.url || toolCall.arguments?.target_url || null;
   const parameters = toolCall.arguments || null;
 
-  // Extract result data from toolResult
-  let browserStateMessageId: string | undefined;
-  let screenshotUrlFinal: string | null = screenshotUrl;
-  let screenshotBase64Final: string | null = screenshotBase64;
-  let result: Record<string, any> | null = null;
-
-  if (toolResult?.output) {
-    const output = toolResult.output;
-    
-    if (typeof output === 'object' && output !== null) {
-      // Extract screenshot URL and message ID from output
-      if (output.image_url) {
-        screenshotUrlFinal = output.image_url;
-      }
-      if (output.message_id) {
-        browserStateMessageId = output.message_id;
-      }
-      
-      // Set result, excluding message_id
-      result = Object.fromEntries(
-        Object.entries(output).filter(([k]) => k !== 'message_id')
-      ) as Record<string, any>;
-    } else if (typeof output === 'string') {
-      result = { message: output };
-    }
-  }
-
-  // Try to find browser state message if we have a message_id
-  if (!screenshotUrlFinal && !screenshotBase64Final && browserStateMessageId && messages.length > 0) {
-    const browserStateMessage = messages.find(
-      (msg) =>
-        (msg.type as string) === 'browser_state' &&
-        msg.message_id === browserStateMessageId,
-    );
-
-    if (browserStateMessage) {
-      const browserStateContent = safeJsonParse<{
-        screenshot_base64?: string;
-        image_url?: string;
-      }>(
-        browserStateMessage.content,
-        {},
-      );
-      screenshotBase64Final = browserStateContent?.screenshot_base64 || null;
-      screenshotUrlFinal = browserStateContent?.image_url || null;
-    }
-  }
-
-  const handleImageLoad = () => {
-    setImageLoading(false);
-    setImageError(false);
-  };
-
-  const handleImageError = () => {
-    setImageLoading(false);
-    setImageError(true);
-  };
+  // Use computed values from useMemo
+  const screenshotUrlFinal = computedValues.screenshotUrlFinal;
+  const browserStateMessageId = computedValues.browserStateMessageId;
+  const result = computedValues.result;
 
   const renderScreenshot = () => {
+    if (!screenshotUrlFinal) {
+      return null;
+    }
 
-    if (screenshotUrlFinal) {
-      return (
-        <div className="flex items-center justify-center w-full h-full min-h-[600px] relative p-4" style={{ minHeight: '600px' }}>
-          {imageLoading && (
+    return (
+      <div className="flex items-center justify-center w-full h-full min-h-[600px] relative p-4" style={{ minHeight: '600px' }}>
+        {isImageLoading && !imageError && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-50 dark:bg-zinc-900">
             <ImageLoader />
-          )}
-          <Card className={`p-0 overflow-hidden relative border ${imageLoading ? 'hidden' : 'block'}`}>
+          </div>
+        )}
+        {imageError ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-zinc-50 dark:bg-zinc-900">
+            <div className="text-center text-zinc-500 dark:text-zinc-400">
+              <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
+              <p className="font-medium mb-1">Failed to load screenshot</p>
+              <p className="text-xs text-zinc-400 dark:text-zinc-500 max-w-md break-all px-4">
+                {screenshotUrlFinal}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <Card className="p-0 overflow-hidden relative border">
             <Image
               src={screenshotUrlFinal}
               alt="Browser Screenshot"
               className="max-w-full max-h-full object-contain"
-              onLoad={handleImageLoad}
-              onError={handleImageError}
               width={1920}
               height={1080}
               unoptimized
+              priority
+              onLoadingComplete={() => setIsImageLoading(false)}
+              onError={() => {
+                setIsImageLoading(false);
+                setImageError(true);
+              }}
             />
           </Card>
-          {imageError && !imageLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-zinc-50 dark:bg-zinc-900">
-              <div className="text-center text-zinc-500 dark:text-zinc-400">
-                <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
-                <p>Failed to load screenshot</p>
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    } else if (screenshotBase64Final) {
-      return (
-        <div className="flex items-center justify-center w-full h-full min-h-[600px] relative p-4" style={{ minHeight: '600px' }}>
-          {imageLoading && (
-            <ImageLoader />
-          )}
-          <Card className={`overflow-hidden border ${imageLoading ? 'hidden' : 'block'}`}>
-            <Image
-              src={`data:image/jpeg;base64,${screenshotBase64Final}`}
-              alt="Browser Screenshot"
-              className="max-w-full max-h-full object-contain"
-              onLoad={handleImageLoad}
-              onError={handleImageError}
-              width={1920}
-              height={1080}
-              unoptimized
-            />
-          </Card>
-          {imageError && !imageLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-zinc-50 dark:bg-zinc-900">
-              <div className="text-center text-zinc-500 dark:text-zinc-400">
-                <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
-                <p>Failed to load screenshot</p>
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-    return null;
+        )}
+      </div>
+    );
   };
 
   return (
@@ -313,7 +330,7 @@ export function BrowserToolView({
               />}
             </div>
           )
-          :(screenshotUrlFinal || screenshotBase64Final) ? (
+          : screenshotUrlFinal ? (
             renderScreenshot()
           ) : (
             <div className="p-8 flex flex-col items-center justify-center w-full bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900 text-zinc-700 dark:text-zinc-400 min-h-600">
@@ -325,7 +342,7 @@ export function BrowserToolView({
               </h3>
               <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4 text-center">
                 {isRunning 
-                  ? 'Switch to the Browser tab to see the live browser view.'
+                  ? 'Browser action in progress...'
                   : 'Screenshot will appear here when available.'}
               </p>
               {url && (

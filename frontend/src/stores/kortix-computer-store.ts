@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import { HIDE_BROWSER_TAB } from '@/components/thread/utils';
 
 export type ViewType = 'tools' | 'files' | 'browser';
 export type FilesSubView = 'browser' | 'viewer';
@@ -119,7 +120,20 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       ...initialState,
       
       setActiveView: (view: ViewType) => {
-        set({ activeView: view });
+        // If browser tab is hidden and trying to set browser view, default to tools
+        const effectiveView = HIDE_BROWSER_TAB && view === 'browser' ? 'tools' : view;
+        
+        // Clear file selection when switching away from files view
+        if (effectiveView !== 'files') {
+          set({ 
+            activeView: effectiveView,
+            selectedFilePath: null,
+            filePathList: undefined,
+            currentFileIndex: -1,
+          });
+        } else {
+          set({ activeView: effectiveView });
+        }
       },
       
       openFile: (filePath: string, filePathList?: string[]) => {

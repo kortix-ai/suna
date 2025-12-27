@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { KeyboardAvoidingView, Platform, View } from 'react-native';
+import { View, Pressable, Keyboard } from 'react-native';
 import { runOnJS } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
@@ -103,8 +103,8 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
     }, [router, creditsExhausted]);
 
     const handleCreditsPress = React.useCallback(() => {
-      setIsUsageDrawerOpen(true);
-    }, []);
+      router.push('/usage');
+    }, [router]);
 
     const handleCloseUsageDrawer = React.useCallback(() => {
       setIsUsageDrawerOpen(false);
@@ -200,19 +200,17 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
 
     return (
       <View className="flex-1 bg-background">
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          className="flex-1"
-          keyboardVerticalOffset={0}
-          enabled={false}>
-          <View className="relative flex-1">
-            <TopNav
-              onMenuPress={onMenuPress}
-              onUpgradePress={handleUpgradePress}
-              onCreditsPress={handleCreditsPress}
-            />
+        {/* Main content container - keyboard handling is done in ChatInputSection */}
+        <View className="relative flex-1">
+          <TopNav
+            onMenuPress={onMenuPress}
+            onUpgradePress={handleUpgradePress}
+            onCreditsPress={handleCreditsPress}
+          />
 
-            {/* Content Area - Show either thread list or background logo */}
+          {/* Content Area - Show either thread list or background logo */}
+          {/* Tapping outside chat input dismisses keyboard */}
+          <Pressable className="flex-1" onPress={Keyboard.dismiss}>
             <GestureDetector gesture={panGesture}>
               <View className="flex-1">
                 {showThreadListView ? (
@@ -225,66 +223,67 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
                 )}
               </View>
             </GestureDetector>
+          </Pressable>
 
-            {/* Chat Input Section - Static, not part of swipe */}
-            <ChatInputSection
-              ref={chatInputRef}
-              value={chat.inputValue}
-              onChangeText={chat.setInputValue}
-              onSendMessage={handleSendMessage}
-              onSendAudio={audioHandlers.handleSendAudio}
-              onAttachPress={chat.openAttachmentDrawer}
-              onAgentPress={agentManager.openDrawer}
-              onAudioRecord={audioHandlers.handleStartRecording}
-              onCancelRecording={audioHandlers.handleCancelRecording}
-              onStopAgentRun={chat.stopAgent}
-              placeholder={chat.getPlaceholder()}
-              agent={agentManager.selectedAgent || undefined}
-              isRecording={audioRecorder.isRecording}
-              recordingDuration={audioRecorder.recordingDuration}
-              audioLevel={audioRecorder.audioLevel}
-              audioLevels={audioRecorder.audioLevels}
-              attachments={chat.attachments}
-              onRemoveAttachment={chat.removeAttachment}
-              selectedQuickAction={chat.selectedQuickAction}
-              selectedQuickActionOption={chat.selectedQuickActionOption}
-              onClearQuickAction={chat.clearQuickAction}
-              onQuickActionPress={chat.handleQuickAction}
-              onQuickActionSelectOption={handleQuickActionSelectOption}
-              onQuickActionSelectPrompt={handleQuickActionSelectPrompt}
-              onQuickActionThreadPress={handleQuickActionThreadPress}
-              isAuthenticated={isAuthenticated}
-              isAgentRunning={chat.isAgentRunning}
-              isSendingMessage={chat.isSendingMessage}
-              isTranscribing={isTranscribing}
-              showQuickActions={true}
-            />
-          </View>
-
-          <ChatDrawers
-            isAgentDrawerVisible={agentManager.isDrawerVisible}
-            onCloseAgentDrawer={agentManager.closeDrawer}
-            onOpenWorkerConfig={handleOpenWorkerConfig}
-            onAgentDrawerDismiss={handleAgentDrawerDismiss}
-            isWorkerConfigDrawerVisible={isWorkerConfigDrawerVisible}
-            workerConfigWorkerId={workerConfigWorkerId}
-            workerConfigInitialView={workerConfigInitialView}
-            onCloseWorkerConfigDrawer={handleCloseWorkerConfigDrawer}
-            isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
-            onCloseAttachmentDrawer={chat.closeAttachmentDrawer}
-            onTakePicture={chat.handleTakePicture}
-            onChooseImages={chat.handleChooseImages}
-            onChooseFiles={chat.handleChooseFiles}
+          {/* Chat Input Section - handles its own keyboard avoidance */}
+          <ChatInputSection
+            ref={chatInputRef}
+            value={chat.inputValue}
+            onChangeText={chat.setInputValue}
+            onSendMessage={handleSendMessage}
+            onSendAudio={audioHandlers.handleSendAudio}
+            onAttachPress={chat.openAttachmentDrawer}
+            onAgentPress={agentManager.openDrawer}
+            onAudioRecord={audioHandlers.handleStartRecording}
+            onCancelRecording={audioHandlers.handleCancelRecording}
+            onStopAgentRun={chat.stopAgent}
+            placeholder={chat.getPlaceholder()}
+            agent={agentManager.selectedAgent || undefined}
+            isRecording={audioRecorder.isRecording}
+            recordingDuration={audioRecorder.recordingDuration}
+            audioLevel={audioRecorder.audioLevel}
+            audioLevels={audioRecorder.audioLevels}
+            attachments={chat.attachments}
+            onRemoveAttachment={chat.removeAttachment}
+            selectedQuickAction={chat.selectedQuickAction}
+            selectedQuickActionOption={chat.selectedQuickActionOption}
+            onClearQuickAction={chat.clearQuickAction}
+            onQuickActionPress={chat.handleQuickAction}
+            onQuickActionSelectOption={handleQuickActionSelectOption}
+            onQuickActionSelectPrompt={handleQuickActionSelectPrompt}
+            onQuickActionThreadPress={handleQuickActionThreadPress}
+            isAuthenticated={isAuthenticated}
+            isAgentRunning={chat.isAgentRunning}
+            isSendingMessage={chat.isSendingMessage}
+            isTranscribing={isTranscribing}
+            showQuickActions={true}
           />
-          {isUsageDrawerOpen && (
-            <UsageDrawer
-              visible={isUsageDrawerOpen}
-              onClose={handleCloseUsageDrawer}
-              onUpgradePress={handleUpgradeFromUsage}
-              onThreadPress={handleThreadPressFromUsage}
-            />
-          )}
-        </KeyboardAvoidingView>
+        </View>
+
+        {/* Drawers - rendered outside the main content flow */}
+        <ChatDrawers
+          isAgentDrawerVisible={agentManager.isDrawerVisible}
+          onCloseAgentDrawer={agentManager.closeDrawer}
+          onOpenWorkerConfig={handleOpenWorkerConfig}
+          onAgentDrawerDismiss={handleAgentDrawerDismiss}
+          isWorkerConfigDrawerVisible={isWorkerConfigDrawerVisible}
+          workerConfigWorkerId={workerConfigWorkerId}
+          workerConfigInitialView={workerConfigInitialView}
+          onCloseWorkerConfigDrawer={handleCloseWorkerConfigDrawer}
+          isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
+          onCloseAttachmentDrawer={chat.closeAttachmentDrawer}
+          onTakePicture={chat.handleTakePicture}
+          onChooseImages={chat.handleChooseImages}
+          onChooseFiles={chat.handleChooseFiles}
+        />
+        {isUsageDrawerOpen && (
+          <UsageDrawer
+            visible={isUsageDrawerOpen}
+            onClose={handleCloseUsageDrawer}
+            onUpgradePress={handleUpgradeFromUsage}
+            onThreadPress={handleThreadPressFromUsage}
+          />
+        )}
       </View>
     );
   }

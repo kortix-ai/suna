@@ -78,6 +78,18 @@ class DBConnection:
                 cls._instance._client = None
                 logger.info("Database disconnected successfully")
 
+    async def reset_connection(self):
+        """Reset the connection state, forcing reinitialization on next use."""
+        if self._client:
+            try:
+                if hasattr(self._client, 'close'):
+                    await self._client.close()
+            except Exception as e:
+                logger.warning(f"Error closing client during reset: {e}")
+        self._initialized = False
+        self._client = None
+        logger.debug("Database connection reset")
+
     @property
     async def client(self) -> AsyncClient:
         """Get the Supabase client instance."""

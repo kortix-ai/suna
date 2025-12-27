@@ -266,6 +266,41 @@ export function useUnifiedAgentStart(
       if (!res.ok) {
         const errorText = await res.text().catch(() => 'Unknown error');
         
+        if (res.status === 402) {
+          let errorDetail;
+          try {
+            errorDetail = JSON.parse(errorText);
+          } catch {
+            errorDetail = { detail: { message: 'Payment required' } };
+          }
+          
+          const detail = errorDetail.detail || errorDetail;
+          const errorCode = detail.error_code;
+          
+          // Handle concurrent agent run limit (AGENT_RUN_LIMIT_EXCEEDED)
+          if (errorCode === 'AGENT_RUN_LIMIT_EXCEEDED') {
+            const error: any = new Error(
+              detail.message || `Maximum of ${detail.limit || 1} concurrent agent runs allowed. You currently have ${detail.running_count || 0} running.`
+            );
+            error.code = 'AGENT_RUN_LIMIT_EXCEEDED';
+            error.status = 402;
+            error.detail = {
+              message: detail.message || `Maximum of ${detail.limit || 1} concurrent agent runs allowed. You currently have ${detail.running_count || 0} running.`,
+              running_thread_ids: detail.running_thread_ids || [],
+              running_count: detail.running_count || 0,
+              limit: detail.limit || 1,
+            };
+            throw error;
+          }
+          
+          // For other 402 errors, throw generic billing error
+          const error: any = new Error(detail.message || 'Payment required');
+          error.code = errorCode || 'BILLING_ERROR';
+          error.status = 402;
+          error.detail = detail;
+          throw error;
+        }
+        
         if (res.status === 429) {
           let errorDetail;
           try {

@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - PRODUCTION
+      - '**'  # All branches for preview deployments
   workflow_dispatch:
   repository_dispatch:
     types: [production-updated]
@@ -27,21 +28,31 @@ jobs:
         run: |
           echo "Event name: ${{ github.event_name }}"
           echo "Current ref: ${{ github.ref }}"
-          echo "Branch: ${GITHUB_REF#refs/heads/}"
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          echo "Branch: $BRANCH_NAME"
+          
+          # Sanitize branch name for Docker tag (replace / with -, remove invalid chars)
+          SANITIZED_BRANCH=$(echo "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
           
           if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
             echo "Triggered by repository dispatch - setting prod environment"
             echo "branch=prod" >> $GITHUB_OUTPUT
             echo "environment=prod" >> $GITHUB_OUTPUT
-          elif [[ "${GITHUB_REF#refs/heads/}" == "main" ]]; then
+            echo "is_preview=false" >> $GITHUB_OUTPUT
+          elif [[ "$BRANCH_NAME" == "main" ]]; then
             echo "branch=latest" >> $GITHUB_OUTPUT
             echo "environment=staging" >> $GITHUB_OUTPUT
-          elif [[ "${GITHUB_REF#refs/heads/}" == "PRODUCTION" ]]; then
+            echo "is_preview=false" >> $GITHUB_OUTPUT
+          elif [[ "$BRANCH_NAME" == "PRODUCTION" ]]; then
             echo "branch=prod" >> $GITHUB_OUTPUT
             echo "environment=prod" >> $GITHUB_OUTPUT
+            echo "is_preview=false" >> $GITHUB_OUTPUT
           else
-            echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
-            echo "environment=staging" >> $GITHUB_OUTPUT
+            # Preview deployment for non-main/PRODUCTION branches
+            echo "branch=$SANITIZED_BRANCH" >> $GITHUB_OUTPUT
+            echo "environment=preview" >> $GITHUB_OUTPUT
+            echo "is_preview=true" >> $GITHUB_OUTPUT
+            echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           fi
           echo "aws_region=us-west-2" >> $GITHUB_OUTPUT
         id: get_tag_name
@@ -100,7 +111,9 @@ jobs:
             echo "=== Deployment complete ==="
             docker compose ps
             df -h / | tail -1
-
+      # Temporarily disabled preview deployments
+      # Temporarily disabled preview deployments
+      # Temporarily disabled: Preview deployments
       # - name: Deploy to staging [legacy]
       #   if: steps.get_tag_name.outputs.environment == 'staging'
       #   uses: appleboy/ssh-action@v1

@@ -24,7 +24,7 @@ async def get_custom_mcp_tools_for_agent(
         client = await utils.db.client
         agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).eq('account_id', user_id).execute()
         if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Agent not found")
+            raise HTTPException(status_code=404, detail="Worker not found")
         
         agent = agent_result.data[0]
  
@@ -111,7 +111,7 @@ async def update_custom_mcp_tools_for_agent(
         
         agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).eq('account_id', user_id).execute()
         if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Agent not found")
+            raise HTTPException(status_code=404, detail="Worker not found")
         
         agent = agent_result.data[0]
         
@@ -236,7 +236,7 @@ async def update_agent_custom_mcps(
         client = await utils.db.client
         agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).eq('account_id', user_id).execute()
         if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Agent not found")
+            raise HTTPException(status_code=404, detail="Worker not found")
         
         agent = agent_result.data[0]
         
@@ -366,7 +366,7 @@ async def get_agent_tools(
 
     agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).execute()
     if not agent_result.data:
-        raise HTTPException(status_code=404, detail="Agent not found")
+        raise HTTPException(status_code=404, detail="Worker not found")
     agent = agent_result.data[0]
     if agent['account_id'] != user_id and not agent.get('is_public', False):
         raise HTTPException(status_code=403, detail="Access denied")

@@ -392,29 +392,6 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
     defaultTitle: 'Task Complete',
   },
 
-  // Data Provider
-  'data-provider': {
-    icon: FileSpreadsheet,
-    iconColor: 'text-emerald-600',
-    iconBgColor: 'bg-emerald-50',
-    subtitle: 'Data Provider',
-    defaultTitle: 'Data Retrieved',
-  },
-  'execute-data-provider-call': {
-    icon: Network,
-    iconColor: 'text-purple-600',
-    iconBgColor: 'bg-purple-50',
-    subtitle: 'Data Provider',
-    defaultTitle: 'API Call',
-  },
-  'get-data-provider-endpoints': {
-    icon: Database,
-    iconColor: 'text-blue-600',
-    iconBgColor: 'bg-blue-50',
-    subtitle: 'Data Provider',
-    defaultTitle: 'Endpoints Loaded',
-  },
-
   // Document Parser
   'document-parser': {
     icon: FileText,
@@ -584,14 +561,14 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
     icon: Settings,
     iconColor: 'text-blue-600',
     iconBgColor: 'bg-blue-50',
-    subtitle: 'Agent Config',
+    subtitle: 'Worker Config',
     defaultTitle: 'Current Configuration',
   },
   'update-agent-config': {
     icon: Settings,
     iconColor: 'text-green-600',
     iconBgColor: 'bg-green-50',
-    subtitle: 'Agent Config',
+    subtitle: 'Worker Config',
     defaultTitle: 'Configuration Updated',
   },
   'initialize-tools': {
@@ -607,8 +584,8 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
     icon: Wand2,
     iconColor: 'text-pink-600',
     iconBgColor: 'bg-pink-50',
-    subtitle: 'Agent',
-    defaultTitle: 'Agent Execution',
+    subtitle: 'Worker',
+    defaultTitle: 'Worker Execution',
   },
 
   // Upload File

@@ -89,7 +89,7 @@ export const useImportAgentFromJson = () => {
     },
     onSuccess: (data) => {
       if (data?.status === 'success') {
-        toast.success('Agent imported successfully!');
+        toast.success('Worker imported successfully!');
       }
     },
     onError: async (error) => {

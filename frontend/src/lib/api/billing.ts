@@ -151,6 +151,7 @@ export interface CreateCheckoutSessionRequest {
   cancel_url: string;
   referral_id?: string;
   commitment_type?: 'monthly' | 'yearly' | 'yearly_commitment';
+  locale?: string; // Locale for Stripe adaptive pricing (e.g., 'en', 'de', 'fr', 'es', 'it')
 }
 
 export interface CreateCheckoutSessionResponse {

@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense, lazy } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { PhoneInput } from './phone-input';
 import { OtpVerification } from './otp-verification';
 import {
@@ -16,8 +18,11 @@ import { signOut } from '@/app/auth/actions';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { LogOut, Loader2 } from 'lucide-react';
+import { LogOut, Loader2, Shield } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
+
+const AnimatedBg = lazy(() => import('@/components/ui/animated-bg').then(mod => ({ default: mod.AnimatedBg })));
 
 interface PhoneVerificationPageProps {
   onSuccess?: () => void;
@@ -26,6 +31,7 @@ interface PhoneVerificationPageProps {
 export function PhoneVerificationPage({
   onSuccess,
 }: PhoneVerificationPageProps) {
+  const t = useTranslations('auth.phoneVerification');
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [factorId, setFactorId] = useState('');
@@ -91,7 +97,7 @@ export function PhoneVerificationPage({
       });
 
       setChallengeId(challengeResponse.id);
-      setSuccess('Verification code sent to your phone');
+      setSuccess(t('verificationCodeSent'));
     } catch (err) {
       console.error('❌ Failed to create challenge for existing factor:', err);
     }
@@ -107,7 +113,7 @@ export function PhoneVerificationPage({
       setPhoneNumber('');
       setChallengeId('');
       setHasExistingFactor(false);
-      setSuccess('Phone number removed. You can now add a new one.');
+      setSuccess(t('phoneNumberRemoved'));
     } catch (err) {
       console.error('❌ Failed to unenroll factor:', err);
     }
@@ -133,7 +139,7 @@ export function PhoneVerificationPage({
       setChallengeId(challengeResponse.id);
       setStep('otp');
       setHasExistingFactor(false);
-      setSuccess('Verification code sent to your phone');
+      setSuccess(t('verificationCodeSent'));
     } catch (err) {
       console.error('❌ Phone submission failed:', err);
 
@@ -164,7 +170,7 @@ export function PhoneVerificationPage({
         timestamp: new Date().toISOString(),
       });
 
-      setSuccess('Phone number verified successfully!');
+      setSuccess(t('phoneNumberVerified'));
 
       // Wait a bit for cache invalidation, then redirect
       setTimeout(() => {
@@ -187,7 +193,7 @@ export function PhoneVerificationPage({
       });
 
       setChallengeId(challengeResponse.id);
-      setSuccess('New verification code sent');
+      setSuccess(t('newVerificationCodeSent'));
     } catch (err) {
       console.error('❌ Resend failed:', err);
     }
@@ -219,9 +225,34 @@ export function PhoneVerificationPage({
     null;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4 relative">
-      {/* Logout Button */}
-      <div className="absolute top-4 right-4">
+    <div className="min-h-screen bg-background relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-accent/10 pointer-events-none" />
+      
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <Suspense fallback={null}>
+          <AnimatedBg
+            variant="hero"
+            customArcs={{
+              left: [
+                { pos: { left: -120, top: 150 }, opacity: 0.15 },
+                { pos: { left: -120, top: 400 }, opacity: 0.18 },
+              ],
+              right: [
+                { pos: { right: -150, top: 50 }, opacity: 0.2 },
+                { pos: { right: 10, top: 650 }, opacity: 0.17 },
+              ]
+            }}
+          />
+        </Suspense>
+      </div>
+
+      <div className="absolute top-6 left-6 z-10">
+        <Link href="/" className="flex items-center space-x-2">
+          <KortixLogo size={28} />
+        </Link>
+      </div>
+
+      <div className="absolute top-6 right-6 z-10">
         <Button
           variant="ghost"
           size="sm"
@@ -235,77 +266,63 @@ export function PhoneVerificationPage({
             <LogOut className="h-4 w-4" />
           )}
           <span className="hidden sm:inline">
-            {signOutMutation.isPending ? 'Signing out...' : 'Sign out'}
+            {signOutMutation.isPending ? t('signingOut') : t('signOut')}
           </span>
         </Button>
       </div>
 
-      <div className="w-full max-w-md space-y-6">
-        {/* Debug Information */}
-        {false && (factors || aalData || debugInfo) && (
-          <div className="p-4 rounded-lg text-xs space-y-2">
-            <h3 className="font-semibold">Debug Info:</h3>
-            {aalData && (
-              <div>
-                <strong>AAL:</strong> {aalData.current_level} →{' '}
-                {aalData.next_level}
-                (action: {aalData.action_required})
+      <div className="relative z-10 min-h-screen flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-md space-y-6">
+          <div className="text-center space-y-2 mb-8">
+            <div className="flex justify-center mb-4">
+              <div className="bg-primary/10 rounded-full p-4">
+                <Shield className="h-8 w-8 text-primary" />
               </div>
-            )}
-            {factors && (
-              <div>
-                <strong>Factors:</strong>{' '}
-                {factors.factors
-                  ?.map((f) => `${f.factor_type}:${f.status}:${f.id}`)
-                  .join(', ') || 'none'}
-              </div>
-            )}
-            {debugInfo && (
-              <div>
-                <strong>Last Verification:</strong> {debugInfo.timestamp}
-                <br />
-                <strong>Response:</strong>{' '}
-                {JSON.stringify(debugInfo.verifyResponse)}
-              </div>
-            )}
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {step === 'phone' ? t('title') : t('titleOtp')}
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              {step === 'phone' ? t('description') : t('descriptionOtp')}
+            </p>
           </div>
-        )}
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>
-              {error}
-            </AlertDescription>
-          </Alert>
-        )}
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>
+                {error}
+              </AlertDescription>
+            </Alert>
+          )}
 
-        {success && (
-          <Alert>
-            <AlertDescription>
-              {success}
-            </AlertDescription>
-          </Alert>
-        )}
+          {success && (
+            <Alert className="border-green-500/50 bg-green-500/10">
+              <AlertDescription className="text-green-700 dark:text-green-400">
+                {success}
+              </AlertDescription>
+            </Alert>
+          )}
 
-        {step === 'phone' ? (
-          <PhoneInput
-            onSubmit={handlePhoneSubmit}
-            isLoading={isLoading}
-            error={null}
-          />
-        ) : (
-          <OtpVerification
-            phoneNumber={phoneNumber}
-            onVerify={handleOtpVerify}
-            onResend={handleResendCode}
-            onSendCode={handleCreateChallengeForExistingFactor}
-            onRemovePhone={handleUnenrollFactor}
-            isLoading={isLoading}
-            error={null}
-            showExistingOptions={hasExistingFactor}
-            challengeId={challengeId}
-          />
-        )}
+          {step === 'phone' ? (
+            <PhoneInput
+              onSubmit={handlePhoneSubmit}
+              isLoading={isLoading}
+              error={null}
+            />
+          ) : (
+            <OtpVerification
+              phoneNumber={phoneNumber}
+              onVerify={handleOtpVerify}
+              onResend={handleResendCode}
+              onSendCode={handleCreateChallengeForExistingFactor}
+              onRemovePhone={handleUnenrollFactor}
+              isLoading={isLoading}
+              error={null}
+              showExistingOptions={hasExistingFactor}
+              challengeId={challengeId}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

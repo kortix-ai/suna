@@ -123,9 +123,50 @@
     }
   },
   "onboarding": {
+    "welcome": "看看Kortix能做什么",
+    "welcomeSubtitle": "您的AI助手会采取行动",
     "skip": "跳过",
     "next": "下一步",
     "getStarted": "开始使用",
+    "kortixComputer": "Kortix Computer",
+    "ready": "就绪",
+    "examples": {
+      "presentations": {
+        "title": "演示文稿",
+        "description": "看看它如何创建精彩的演示文稿",
+        "userMessage": "研究并创建关于神经网络的演示文稿",
+        "aiMessage": "我将研究神经网络并为您创建演示文稿...",
+        "researching": "研究中",
+        "creatingFile": "创建文件",
+        "creatingSlides": "创建幻灯片"
+      },
+      "dataAnalysis": {
+        "title": "数据分析",
+        "description": "观看它分析数据并创建可视化报告",
+        "userMessage": "从Google Drive分析第四季度销售业绩",
+        "aiMessage": "我将加载您的销售数据并创建全面的分析...",
+        "loadingFromDrive": "从Google Drive加载中",
+        "creatingVisualization": "创建可视化",
+        "researchingMarket": "研究市场",
+        "creatingReport": "创建报告"
+      },
+      "image": {
+        "title": "图像",
+        "description": "体验AI驱动的标志和品牌设计",
+        "userMessage": "为我们的公司创建标志",
+        "aiMessage": "我看到您之前提到了LUXY。我将为您的品牌创建专业标志...",
+        "researchingBrand": "研究品牌",
+        "creatingLogo": "创建标志",
+        "creatingBrandBoard": "创建品牌板"
+      },
+      "imageEasterEgg": {
+        "title": "图像",
+        "description": "用AI风格转换您的照片",
+        "userMessage": "将我的图像转换为像素艺术风格",
+        "aiMessage": "当然！我将把您的图像转换为风格化的像素艺术风格...",
+        "creatingImage": "创建风格化图像"
+      }
+    },
     "slide1": {
       "title": "与AI聊天",
       "description": "与强大的AI助手进行自然对话，它们理解上下文并提供有用的回应"
@@ -561,7 +602,7 @@
   },
   "models": {
     "selectModel": "选择模型",
-    "chooseModelFor": "为 {{agent}} 选择模型"
+    "chooseModelFor": "为 Worker {{agent}} 选择模型"
   },
   "placeholders": {
     "default": "给 Kortix 一个任务...",
@@ -746,6 +787,9 @@
     "upgradeRequired": "需要升级",
     "upgradeRequiredMessage": "分享会话仅在付费计划中可用。升级以解锁此功能。",
     "upgrade": "升级",
+    "share": "分享",
+    "files": "文件",
+    "delete": "删除",
     "shareThread": "分享会话",
     "shareThreadUpgrade": "分享会话（升级）",
     "availableOnPaidPlans": "在付费计划中可用",
@@ -753,6 +797,7 @@
     "manageFiles": "管理文件",
     "viewManageAttachments": "查看和管理附件",
     "deleteThread": "删除会话",
+    "deleteConfirm": "确定要删除此会话吗？此操作无法撤消。",
     "permanentlyDelete": "永久删除此对话"
   },
   "triggers": {

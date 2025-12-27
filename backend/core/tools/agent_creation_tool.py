@@ -87,7 +87,7 @@ class AgentCreationTool(Tool):
                     },
                     "agentpress_tools": {
                         "type": "object",
-                        "description": "Configuration for AgentPress tools. Each key is a tool name, value is boolean for enabled/disabled. Available tools: sb_shell_tool, sb_files_tool, web_search_tool, browser_tool, sb_vision_tool, data_providers_tool, etc.",
+                        "description": "Configuration for AgentPress tools. Each key is a tool name, value is boolean for enabled/disabled. Available tools: sb_shell_tool, sb_files_tool, web_search_tool, browser_tool, sb_vision_tool, etc.",
                         "additionalProperties": {
                             "type": "boolean"
                         }
@@ -585,13 +585,13 @@ class AgentCreationTool(Tool):
             
             agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', account_id).execute()
             if not agent_result.data:
-                return self.fail_response("Agent not found or access denied")
+                return self.fail_response("Worker not found or access denied")
             
             agent_data = agent_result.data[0]
             current_version_id = agent_data.get('current_version_id')
             
             if not current_version_id:
-                return self.fail_response("Agent has no current version configured")
+                return self.fail_response("Worker has no current version configured")
             
             from core.composio_integration.composio_profile_service import ComposioProfileService
             profile_service = ComposioProfileService(self.db)
@@ -621,7 +621,7 @@ class AgentCreationTool(Tool):
                 .execute()
             
             if not version_result.data or not version_result.data.get('config'):
-                return self.fail_response("Agent version configuration not found")
+                return self.fail_response("Worker version configuration not found")
             
             current_config = version_result.data['config']
             current_tools = current_config.get('tools', {})
@@ -762,7 +762,7 @@ class AgentCreationTool(Tool):
             
             agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', account_id).execute()
             if not agent_result.data:
-                return self.fail_response("Agent not found or access denied")
+                return self.fail_response("Worker not found or access denied")
             
             if not agent_prompt:
                 return self.fail_response("agent_prompt is required")
@@ -789,7 +789,7 @@ class AgentCreationTool(Tool):
                 success_message += f"**Trigger Details:**\n"
                 success_message += f"- Name: {name}\n"
                 success_message += f"- Schedule: `{cron_expression}`\n"
-                success_message += f"- Type: Agent execution\n"
+                success_message += f"- Type: Worker execution\n"
                 success_message += f"- Prompt: {agent_prompt[:50]}{'...' if len(agent_prompt) > 50 else ''}\n"
                 success_message += f"- Status: **Active**\n\n"
                 success_message += f"The trigger is now active and will run according to the schedule."
@@ -843,7 +843,7 @@ class AgentCreationTool(Tool):
             
             agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', account_id).execute()
             if not agent_result.data:
-                return self.fail_response("Agent not found or access denied")
+                return self.fail_response("Worker not found or access denied")
             
             from core.triggers import get_trigger_service, TriggerType
             trigger_svc = get_trigger_service(self.db)
@@ -854,7 +854,7 @@ class AgentCreationTool(Tool):
             
             if not schedule_triggers:
                 return self.success_response({
-                    "message": "No scheduled triggers found for this agent.",
+                    "message": "No scheduled triggers found for this worker.",
                     "agent_id": agent_id,
                     "triggers": [],
                     "total_count": 0
@@ -921,7 +921,7 @@ class AgentCreationTool(Tool):
             
             agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', account_id).execute()
             if not agent_result.data:
-                return self.fail_response("Agent not found or access denied")
+                return self.fail_response("Worker not found or access denied")
             
             from core.triggers import get_trigger_service
             trigger_svc = get_trigger_service(self.db)
@@ -1001,7 +1001,7 @@ class AgentCreationTool(Tool):
             
             agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', account_id).execute()
             if not agent_result.data:
-                return self.fail_response("Agent not found or access denied")
+                return self.fail_response("Worker not found or access denied")
             
             from core.triggers import get_trigger_service
             trigger_svc = get_trigger_service(self.db)
@@ -1116,13 +1116,13 @@ class AgentCreationTool(Tool):
             
             agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', account_id).execute()
             if not agent_result.data:
-                return self.fail_response("Agent not found or access denied")
+                return self.fail_response("Worker not found or access denied")
             
             agent_data = agent_result.data[0]
             current_version_id = agent_data.get('current_version_id')
             
             if not current_version_id:
-                return self.fail_response("Agent has no current version configured")
+                return self.fail_response("Worker has no current version configured")
             
             version_result = await client.table('agent_versions').select('config').eq('version_id', current_version_id).single().execute()
             if not version_result.data:

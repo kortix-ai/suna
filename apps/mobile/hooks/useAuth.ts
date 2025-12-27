@@ -3,8 +3,9 @@ import { supabase } from '@/api/supabase';
 import * as WebBrowser from 'expo-web-browser';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Linking from 'expo-linking';
+import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import { makeRedirectUri } from 'expo-auth-session';
-import { Platform } from 'react-native';
+import { Platform, AppState, AppStateStatus } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { initializeRevenueCat, shouldUseRevenueCat } from '@/lib/billing';
 
@@ -25,7 +26,63 @@ import type {
 } from '@/lib/utils/auth-types';
 import type { Session, User, AuthChangeEvent } from '@supabase/supabase-js';
 
+// Complete any pending auth sessions (required for web)
 WebBrowser.maybeCompleteAuthSession();
+
+/**
+ * Extract tokens from OAuth callback URL
+ * Handles both hash fragment (#) and query params (?)
+ */
+function extractTokensFromUrl(url: string): { access_token: string | null; refresh_token: string | null } {
+  try {
+    // Try hash fragment first (Supabase implicit flow)
+    const hashIndex = url.indexOf('#');
+    if (hashIndex !== -1) {
+      const hashFragment = url.substring(hashIndex + 1);
+      const params = new URLSearchParams(hashFragment);
+      const access_token = params.get('access_token');
+      const refresh_token = params.get('refresh_token');
+      if (access_token && refresh_token) {
+        return { access_token, refresh_token };
+      }
+    }
+    
+    // Try query params (PKCE flow or custom redirect)
+    const { params } = QueryParams.getQueryParams(url);
+    return {
+      access_token: params.access_token || null,
+      refresh_token: params.refresh_token || null,
+    };
+  } catch (e) {
+    console.error('Failed to extract tokens from URL:', e);
+    return { access_token: null, refresh_token: null };
+  }
+}
+
+/**
+ * Create session from OAuth callback URL
+ */
+async function createSessionFromUrl(url: string) {
+  const { access_token, refresh_token } = extractTokensFromUrl(url);
+  
+  if (!access_token || !refresh_token) {
+    console.log('⚠️ No tokens found in URL');
+    return null;
+  }
+  
+  console.log('✅ Tokens extracted, setting session...');
+  const { data, error } = await supabase.auth.setSession({
+    access_token,
+    refresh_token,
+  });
+  
+  if (error) {
+    console.error('❌ Failed to set session:', error);
+    throw error;
+  }
+  
+  return data.session;
+}
 
 export function useAuth() {
   const queryClient = useQueryClient();
@@ -159,6 +216,11 @@ export function useAuth() {
       }
 
       console.log('✅ Sign in successful:', data.user?.email);
+      
+      // Immediately invalidate React Query cache to fetch fresh account state
+      console.log('🔄 Invalidating cache to fetch fresh account state');
+      queryClient.invalidateQueries({ queryKey: ['account-state'] });
+      
       setAuthState((prev) => ({ ...prev, isLoading: false }));
       return { success: true, data };
     } catch (err: any) {
@@ -168,7 +230,7 @@ export function useAuth() {
       setAuthState((prev) => ({ ...prev, isLoading: false }));
       return { success: false, error };
     }
-  }, []);
+  }, [queryClient]);
 
   const signUp = useCallback(
     async ({ email, password, fullName }: SignUpCredentials) => {
@@ -196,6 +258,13 @@ export function useAuth() {
         }
 
         console.log('✅ Sign up successful:', data.user?.email);
+        
+        // If user is auto-logged in after signup, invalidate cache to fetch fresh account state
+        if (data.session) {
+          console.log('🔄 User auto-logged in after signup - invalidating cache to fetch fresh account state');
+          queryClient.invalidateQueries({ queryKey: ['account-state'] });
+        }
+        
         setAuthState((prev) => ({ ...prev, isLoading: false }));
         return { success: true, data };
       } catch (err: any) {
@@ -210,7 +279,13 @@ export function useAuth() {
   );
 
   /**
-   * Sign in with OAuth provider
+   * Sign in with OAuth provider (Supabase standard implementation)
+   * 
+   * Uses Supabase's OAuth flow:
+   * - iOS Google: WebBrowser.openAuthSessionAsync (ASWebAuthenticationSession)
+   * - Android Google: Linking.openURL (external browser) + deep link callback
+   * - Android Other: Linking.openURL (external browser) + deep link callback
+   * - Apple: Native Apple Authentication on iOS
    */
   const signInWithOAuth = useCallback(async (provider: OAuthProvider) => {
     try {
@@ -218,7 +293,10 @@ export function useAuth() {
       setError(null);
       setAuthState((prev) => ({ ...prev, isLoading: true }));
 
-      // Handle Apple Sign In with native module on iOS
+      // ========================================
+      // NATIVE APPLE SIGN-IN (iOS only)
+      // Uses expo-apple-authentication for the best UX
+      // ========================================
       if (provider === 'apple' && Platform.OS === 'ios') {
         console.log('🍎 Using native Apple Authentication for iOS');
         
@@ -246,6 +324,11 @@ export function useAuth() {
           }
 
           console.log('✅ Apple sign in successful');
+          
+          // Immediately invalidate React Query cache to fetch fresh account state
+          console.log('🔄 Invalidating cache to fetch fresh account state');
+          queryClient.invalidateQueries({ queryKey: ['account-state'] });
+          
           setAuthState((prev) => ({ ...prev, isLoading: false }));
           return { success: true, data };
         } catch (appleErr: any) {
@@ -258,10 +341,21 @@ export function useAuth() {
         }
       }
 
-      // Force mobile redirect URL (not web Site URL)
-      const redirectTo = 'kortix://auth/callback';
+      // ========================================
+      // SUPABASE OAUTH FLOW (Google and other providers)
+      // Uses web-based OAuth for all providers:
+      // - iOS Google: WebBrowser.openAuthSessionAsync (ASWebAuthenticationSession)
+      // - Android Google: External browser via Linking.openURL (reliable callback handling)
+      // - Other providers: Platform-specific browser handling
+      // ========================================
+      
+      // Create redirect URL using expo-auth-session
+      const redirectTo = makeRedirectUri({
+        scheme: 'kortix',
+        path: 'auth/callback',
+      });
 
-      console.log('📊 Redirect URL:', redirectTo);
+      console.log('📊 Redirect URL:', redirectTo, 'Platform:', Platform.OS);
 
       // Get OAuth URL from Supabase
       const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
@@ -287,11 +381,11 @@ export function useAuth() {
         return { success: false, error };
       }
 
-      console.log('🌐 Opening OAuth URL in browser');
+      console.log('🌐 Opening OAuth URL:', data.url);
       
       // Prevent multiple simultaneous OAuth sessions
       if (oauthSessionActiveRef.current) {
-        console.warn('⚠️ OAuth session already in progress, waiting...');
+        console.warn('⚠️ OAuth session already in progress');
         setAuthState((prev) => ({ ...prev, isLoading: false }));
         return { success: false, error: { message: 'An authentication session is already in progress' } };
       }
@@ -299,20 +393,116 @@ export function useAuth() {
       try {
         oauthSessionActiveRef.current = true;
         
-        // Ensure any previous auth session is completed before opening a new one
-        // This is especially important on Android
-        await WebBrowser.maybeCompleteAuthSession();
+        // ========================================
+        // ANDROID: Use external browser via Linking.openURL
+        // Chrome Custom Tabs don't properly handle custom URL scheme redirects
+        // The external browser (Chrome, Firefox, etc.) works correctly for all OAuth providers
+        // ========================================
+        if (Platform.OS === 'android') {
+          console.log('🤖 Android: Opening OAuth in external browser');
+          
+          // Open OAuth URL in external browser
+          await Linking.openURL(data.url);
+          
+          // Wait for the app to return from browser and check for session
+          // The deep link handler in _layout.tsx will process the callback
+          console.log('⏳ Android: Waiting for OAuth callback...');
+          
+          return new Promise((resolve) => {
+            let hasResolved = false;
+            let appStateSubscription: any = null;
+            
+            // Timeout after 2 minutes
+            const timeout = setTimeout(() => {
+              if (!hasResolved) {
+                hasResolved = true;
+                appStateSubscription?.remove();
+                console.log('❌ Android: OAuth timeout');
+                setAuthState((prev) => ({ ...prev, isLoading: false }));
+                oauthSessionActiveRef.current = false;
+                resolve({ success: false, error: { message: 'Authentication timed out. Please try again.' } });
+              }
+            }, 120000);
+            
+            const handleAppStateChange = async (nextAppState: AppStateStatus) => {
+              console.log('📱 Android: AppState changed to:', nextAppState);
+              
+              // When app comes back to foreground
+              if (nextAppState === 'active' && !hasResolved) {
+                // Give deep link handler time to process the callback
+                await new Promise(r => setTimeout(r, 1500));
+                
+                // Check if session was set by deep link handler in _layout.tsx
+                const { data: { session } } = await supabase.auth.getSession();
+                
+                if (session) {
+                  hasResolved = true;
+                  clearTimeout(timeout);
+                  appStateSubscription?.remove();
+                  console.log('✅ Android: Session found - OAuth successful:', session.user?.email);
+                  
+                  // Immediately invalidate React Query cache to fetch fresh account state
+                  console.log('🔄 Invalidating cache to fetch fresh account state');
+                  queryClient.invalidateQueries({ queryKey: ['account-state'] });
+                  
+                  setAuthState((prev) => ({ ...prev, isLoading: false }));
+                  oauthSessionActiveRef.current = false;
+                  resolve({ success: true, data: session });
+                } else {
+                  // User might have returned without completing auth
+                  // Wait a bit more in case deep link is still processing
+                  await new Promise(r => setTimeout(r, 1000));
+                  const { data: { session: retrySession } } = await supabase.auth.getSession();
+                  
+                  if (retrySession) {
+                    hasResolved = true;
+                    clearTimeout(timeout);
+                    appStateSubscription?.remove();
+                    console.log('✅ Android: Session found on retry - OAuth successful');
+                    
+                    // Immediately invalidate React Query cache to fetch fresh account state
+                    console.log('🔄 Invalidating cache to fetch fresh account state');
+                    queryClient.invalidateQueries({ queryKey: ['account-state'] });
+                    
+                    setAuthState((prev) => ({ ...prev, isLoading: false }));
+                    oauthSessionActiveRef.current = false;
+                    resolve({ success: true, data: retrySession });
+                  } else {
+                    hasResolved = true;
+                    clearTimeout(timeout);
+                    appStateSubscription?.remove();
+                    console.log('❌ Android: No session after returning from browser');
+                    setAuthState((prev) => ({ ...prev, isLoading: false }));
+                    oauthSessionActiveRef.current = false;
+                    resolve({ success: false, error: { message: 'Authentication was not completed. Please try again.' } });
+                  }
+                }
+              }
+            };
+            
+            appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
+          });
+        }
         
-        // Small delay to ensure cleanup completes
+        // ========================================
+        // iOS: Use WebBrowser.openAuthSessionAsync
+        // ASWebAuthenticationSession works perfectly with custom URL schemes
+        // ========================================
+        console.log('🍎 iOS: Opening OAuth in auth session');
+        
+        await WebBrowser.maybeCompleteAuthSession();
         await new Promise(resolve => setTimeout(resolve, 100));
         
-        // Open OAuth URL in in-app browser
         const result = await WebBrowser.openAuthSessionAsync(
           data.url,
-          redirectTo
+          redirectTo,
+          {
+            preferEphemeralSession: true,
+            showInRecents: true,
+          }
         );
 
-        console.log('📊 WebBrowser result:', result);
+        console.log('📊 WebBrowser result:', result, 'Type:', result.type);
 
         if (result.type === 'success' && result.url) {
           const url = result.url;
@@ -344,6 +534,11 @@ export function useAuth() {
               }
 
               console.log('✅ OAuth sign in successful');
+              
+              // Immediately invalidate React Query cache to fetch fresh account state
+              console.log('🔄 Invalidating cache to fetch fresh account state');
+              queryClient.invalidateQueries({ queryKey: ['account-state'] });
+              
               setAuthState((prev) => ({ ...prev, isLoading: false }));
               oauthSessionActiveRef.current = false;
               return { success: true, data: sessionData };
@@ -369,18 +564,23 @@ export function useAuth() {
             }
 
             console.log('✅ OAuth sign in successful');
+            
+            // Immediately invalidate React Query cache to fetch fresh account state
+            console.log('🔄 Invalidating cache to fetch fresh account state');
+            queryClient.invalidateQueries({ queryKey: ['account-state'] });
+            
             setAuthState((prev) => ({ ...prev, isLoading: false }));
             oauthSessionActiveRef.current = false;
             return { success: true, data: sessionData };
           }
-        } else if (result.type === 'cancel') {
-          console.log('⚠️ OAuth cancelled by user');
+        } else if (result.type === 'cancel' || result.type === 'dismiss') {
+          console.log('⚠️ OAuth cancelled/dismissed by user');
           setAuthState((prev) => ({ ...prev, isLoading: false }));
           oauthSessionActiveRef.current = false;
           return { success: false, error: { message: 'Sign in cancelled' } };
         }
 
-        console.log('❌ OAuth failed - no tokens found');
+        console.log('❌ OAuth failed - unexpected result type:', result.type);
         setAuthState((prev) => ({ ...prev, isLoading: false }));
         oauthSessionActiveRef.current = false;
         return { success: false, error: { message: 'Authentication failed' } };

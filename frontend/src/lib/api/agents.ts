@@ -71,6 +71,7 @@ export const unifiedAgentStart = async (options: {
   threadId?: string;
   prompt?: string;
   files?: File[];
+  file_ids?: string[];
   model_name?: string;
   agent_id?: string;
 }): Promise<{ thread_id: string; agent_run_id: string; status: string }> => {
@@ -107,6 +108,12 @@ export const unifiedAgentStart = async (options: {
         formData.append('files', file);
       });
     }
+    
+    if (options.file_ids && options.file_ids.length > 0) {
+      options.file_ids.forEach((fileId) => {
+        formData.append('file_ids', fileId);
+      });
+    }
 
 
     const response = await backendApi.upload<{ thread_id: string; agent_run_id: string; status: string }>(
@@ -118,9 +125,41 @@ export const unifiedAgentStart = async (options: {
     if (response.error) {
       const status = response.error.status || 500;
       
+      // Check if error is already parsed by api-client (e.g., AgentRunLimitError)
+      if (response.error instanceof AgentRunLimitError) {
+        throw response.error;
+      }
+      
       if (status === 402) {
-        const detail = response.error.details?.detail || { message: response.error.message || 'Payment required' };
-        throw new BillingError(status, detail);
+        // Check error_code to determine the correct error type
+        const errorDetail = response.error.details?.detail || { message: response.error.message || 'Payment required' };
+        const errorCode = errorDetail.error_code || response.error.code;
+        
+        // Handle concurrent agent run limit (should be AgentRunLimitError, not BillingError)
+        if (errorCode === 'AGENT_RUN_LIMIT_EXCEEDED') {
+          const detail = {
+            message: errorDetail.message || `Maximum of ${errorDetail.limit || 1} concurrent agent runs allowed. You currently have ${errorDetail.running_count || 0} running.`,
+            running_thread_ids: errorDetail.running_thread_ids || [],
+            running_count: errorDetail.running_count || 0,
+            limit: errorDetail.limit || 1,
+          };
+          throw new AgentRunLimitError(status, detail);
+        }
+        
+        // For other 402 errors, use parseTierRestrictionError to get the correct error type
+        const parsedError = parseTierRestrictionError({
+          status,
+          detail: errorDetail,
+          response: { data: { detail: errorDetail } },
+        });
+        
+        // If parseTierRestrictionError returned a different error type, throw that
+        if (!(parsedError instanceof BillingError) && parsedError instanceof Error) {
+          throw parsedError;
+        }
+        
+        // Otherwise, throw BillingError
+        throw new BillingError(status, errorDetail);
       }
 
       if (status === 429) {
@@ -228,7 +267,7 @@ export const stopAgent = async (agentRunId: string): Promise<void> => {
 
 export const getAgentStatus = async (agentRunId: string): Promise<AgentRun> => {
   if (nonRunningAgentRuns.has(agentRunId)) {
-    throw new Error(`Agent run ${agentRunId} is not running`);
+    throw new Error(`Worker run ${agentRunId} is not running`);
   }
 
   try {
@@ -349,6 +388,7 @@ export const optimisticAgentStart = async (options: {
   project_id: string;
   prompt: string;
   files?: File[];
+  file_ids?: string[];
   model_name?: string;
   agent_id?: string;
   memory_enabled?: boolean;
@@ -364,6 +404,7 @@ export const optimisticAgentStart = async (options: {
     
     formData.append('thread_id', options.thread_id);
     formData.append('project_id', options.project_id);
+    formData.append('optimistic', 'true');
     
     const promptValue = typeof options.prompt === 'string' ? options.prompt.trim() : options.prompt;
     formData.append('prompt', promptValue);
@@ -376,7 +417,11 @@ export const optimisticAgentStart = async (options: {
       formData.append('agent_id', options.agent_id);
     }
     
-    if (options.files && options.files.length > 0) {
+    if (options.file_ids && options.file_ids.length > 0) {
+      options.file_ids.forEach((fileId) => {
+        formData.append('file_ids', fileId);
+      });
+    } else if (options.files && options.files.length > 0) {
       options.files.forEach((file) => {
         formData.append('files', file);
       });
@@ -387,7 +432,7 @@ export const optimisticAgentStart = async (options: {
     }
 
     const response = await backendApi.upload<OptimisticAgentStartResponse>(
-      '/agent/start-optimistic',
+      '/agent/start',  // Now using unified endpoint
       formData,
       { showErrors: false, cache: 'no-store' }
     );
@@ -395,10 +440,17 @@ export const optimisticAgentStart = async (options: {
     if (response.error) {
       const status = response.error.status || 500;
       
+      // Check if error is already parsed by api-client (e.g., AgentRunLimitError)
+      if (response.error instanceof AgentRunLimitError) {
+        throw response.error;
+      }
+      
       if (status === 402) {
+        const errorDetail = response.error.details?.detail || { message: response.error.message || 'Payment required' };
         const parsedError = parseTierRestrictionError({
           status,
-          detail: response.error.details?.detail || { message: response.error.message || 'Payment required' }
+          detail: errorDetail,
+          response: { data: { detail: errorDetail } },
         });
         throw parsedError;
       }
@@ -508,7 +560,7 @@ export const streamAgent = (
 ): (() => void) => {
   if (nonRunningAgentRuns.has(agentRunId)) {
     setTimeout(() => {
-      callbacks.onError(`Agent run ${agentRunId} is not running`);
+      callbacks.onError(`Worker run ${agentRunId} is not running`);
       callbacks.onClose();
     }, 0);
 
@@ -527,7 +579,7 @@ export const streamAgent = (
         if (status.status !== 'running') {
           nonRunningAgentRuns.add(agentRunId);
           callbacks.onError(
-            `Agent run ${agentRunId} is not running (status: ${status.status})`,
+            `Worker run ${agentRunId} is not running (status: ${status.status})`,
           );
           callbacks.onClose();
           return;
@@ -596,7 +648,7 @@ export const streamAgent = (
             rawData.includes('not found in active runs')
           ) {
             nonRunningAgentRuns.add(agentRunId);
-            callbacks.onError('Agent run not found in active runs');
+            callbacks.onError('Worker run not found in active runs');
             cleanupEventSource(agentRunId, 'agent run not found');
             callbacks.onClose();
             return;

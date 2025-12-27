@@ -58,7 +58,7 @@ const RunningThreadItem: React.FC<RunningThreadItemProps> = ({
         })
       ]);
       
-      toast.success('Agent stopped successfully');
+      toast.success('Worker stopped successfully');
       onThreadStopped();
     } catch (error) {
       console.error('Failed to stop agent:', error);
@@ -235,7 +235,7 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
 
   const handleUpgrade = () => {
     pricingModalStore.openPricingModal({
-      title: 'Upgrade to run more agents in parallel'
+      title: 'Upgrade to run more workers in parallel'
     });
     onOpenChange(false);
   };
@@ -266,7 +266,7 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
             <div className="flex-1">
               <CardTitle className="text-sm">Need more parallel runs?</CardTitle>
               <CardDescription className="text-sm mt-1">
-                Upgrade your plan to run multiple agents simultaneously and boost your productivity.
+                Upgrade your plan to run multiple workers simultaneously and boost your productivity.
               </CardDescription>
             </div>
           </div>
@@ -286,7 +286,7 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
       {(runningThreadIds.length > 0 || runningCount > 0) && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <h4 className="text-sm font-medium">Currently Running Agents</h4>
+            <h4 className="text-sm font-medium">Currently Running Workers</h4>
           </div>
           
           {isLoadingThreads ? (
@@ -296,7 +296,7 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
             </div>
           ) : runningThreadIds.length === 0 ? (
             <div className="text-center py-4 text-sm text-muted-foreground">
-              <p>Found {runningCount} running agents but unable to load thread details.</p>
+              <p>Found {runningCount} running workers but unable to load thread details.</p>
               <p className="text-xs mt-1">Thread IDs: {JSON.stringify(runningThreadIds)}</p>
             </div>
           ) : (
@@ -328,7 +328,7 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
         <ul className="space-y-2 text-sm text-muted-foreground">
           <li className="flex items-start gap-2">
             <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground mt-2 flex-shrink-0" />
-            <span>Click the <Square className="h-3 w-3 inline mx-1" /> button to stop running agents</span>
+            <span>Click the <Square className="h-3 w-3 inline mx-1" /> button to stop running workers</span>
           </li>
           <li className="flex items-start gap-2">
             <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground mt-2 flex-shrink-0" />

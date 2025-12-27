@@ -71,7 +71,7 @@ class SandboxKbTool(SandboxToolsBase):
         # Let kb use its default location (~/.config/kb/ or ~/knowledge-base/)
         # Don't force KB_DIR so file watcher and direct commands use same DB
         
-        response = await self.sandbox.process.exec(command, env=env, cwd=cwd or "/workspace")
+        response = await self.sandbox.process.exec(command, env=env, cwd=cwd or self.workspace_path)
         
         return {
             "output": response.result,
@@ -116,21 +116,22 @@ class SandboxKbTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "semantic_search",
-            "description": "Perform semantic search on files using natural language queries. Searches /workspace by default, or specify a file path for targeted search. NOTE: Only searches already-indexed files. Files are indexed automatically in the background, but large codebases may take time. If no results found, files might still be indexing - use ls_kb to check indexing status.",
+            "description": "Perform semantic search on files using natural language queries. Searches /workspace by default, or specify a file path for targeted search. NOTE: Only searches already-indexed files. Files are indexed automatically in the background, but large codebases may take time. If no results found, files might still be indexing - use ls_kb to check indexing status. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `queries` (REQUIRED), `path` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "queries": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Natural language questions to search for (e.g., 'How does authentication work?', 'Where is the database configured?')"
+                        "description": "**REQUIRED** - Natural language questions to search for. Example: ['How does authentication work?', 'Where is the database configured?']"
                     },
                     "path": {
                         "type": "string",
-                        "description": "Optional: Path to specific file or directory to search. Defaults to /workspace if not provided."
+                        "description": "**OPTIONAL** - Path to specific file or directory to search. Defaults to /workspace if not provided."
                     }
                 },
-                "required": ["queries"]
+                "required": ["queries"],
+                "additionalProperties": False
             }
         }
     })
@@ -157,8 +158,8 @@ class SandboxKbTool(SandboxToolsBase):
             if not init_result.get("success"):
                 return self.fail_response(f"Failed to initialize kb-fusion: {init_result.get('error', 'Unknown error')}")
             
-            # Default to /workspace if no path provided
-            search_path = path or "/workspace"
+            # Default to workspace_path if no path provided
+            search_path = path or self.workspace_path
             
             # Verify path exists in sandbox
             check_path = await self.sandbox.process.exec(f"test -e {search_path} && echo 'exists' || echo 'not_found'")
@@ -199,31 +200,32 @@ class SandboxKbTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "cleanup_kb",
-            "description": "Perform maintenance and cleanup operations on the knowledge base.",
+            "description": "Perform maintenance and cleanup operations on the knowledge base. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `operation` (REQUIRED), `file_paths` (optional), `days` (optional), `retention_days` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "operation": {
                         "type": "string",
                         "enum": ["default", "remove_files", "clear_embeddings", "clear_all"],
-                        "description": "Type of cleanup operation: 'default' (missing files + orphan cleanup), 'remove_files' (remove specific files), 'clear_embeddings' (clear embedding cache), 'clear_all' (nuke everything)."
+                        "description": "**REQUIRED** - Type of cleanup operation: 'default' (missing files + orphan cleanup), 'remove_files' (remove specific files), 'clear_embeddings' (clear embedding cache), 'clear_all' (nuke everything)."
                     },
                     "file_paths": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "List of file paths to remove (only used with 'remove_files' operation)."
+                        "description": "**OPTIONAL** - List of file paths to remove (only used with 'remove_files' operation)."
                     },
                     "days": {
                         "type": "integer",
-                        "description": "Days for embedding retention (only used with 'clear_embeddings'). Use 0 to clear all embeddings."
+                        "description": "**OPTIONAL** - Days for embedding retention (only used with 'clear_embeddings'). Use 0 to clear all embeddings."
                     },
                     "retention_days": {
                         "type": "integer",
-                        "description": "Retention window for default sweep operation (default 30 days).",
+                        "description": "**OPTIONAL** - Retention window for default sweep operation. Default: 30 days.",
                         "default": 30
                     }
                 },
-                "required": ["operation"]
+                "required": ["operation"],
+                "additionalProperties": False
             }
         }
     })
@@ -269,11 +271,12 @@ class SandboxKbTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "ls_kb",
-            "description": "List all indexed files in the knowledge base with their status, size, modification time, and paths. Use this to verify which files are indexed and available for semantic_search. If files are missing, they may still be indexing in the background.",
+            "description": "List all indexed files in the knowledge base with their status, size, modification time, and paths. Use this to verify which files are indexed and available for semantic_search. If files are missing, they may still be indexing in the background. **🚨 PARAMETER NAMES**: This function takes no parameters.",
             "parameters": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": False
             }
         }
     })
@@ -301,11 +304,12 @@ class SandboxKbTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "global_kb_sync",
-            "description": "Sync agent's knowledge base files to /workspace/downloads/global-knowledge/. Downloads all assigned knowledge base files and creates a local copy with proper folder structure. Files are automatically searchable via semantic_search.",
+            "description": "Sync agent's knowledge base files to /workspace/downloads/global-knowledge/. Downloads all assigned knowledge base files and creates a local copy with proper folder structure. Files are automatically searchable via semantic_search. **🚨 PARAMETER NAMES**: This function takes no parameters.",
             "parameters": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": False
             }
         }
     })
@@ -343,11 +347,11 @@ class SandboxKbTool(SandboxToolsBase):
                 return self.success_response({
                     "message": "No knowledge base files to sync",
                     "synced_files": 0,
-                    "kb_directory": "/workspace/downloads/global-knowledge"
+                    "kb_directory": f"{self.workspace_path}/downloads/global-knowledge"
                 })
             
             # Create knowledge base directory in sandbox - in workspace so it's searchable
-            kb_dir = "/workspace/downloads/global-knowledge"
+            kb_dir = f"{self.workspace_path}/downloads/global-knowledge"
             await self.sandbox.process.exec(f"mkdir -p {kb_dir}")
             await self.sandbox.process.exec(f"rm -rf {kb_dir}/*")
             
@@ -428,20 +432,21 @@ Agent ID: {agent_id}
         "type": "function",
         "function": {
             "name": "global_kb_create_folder",
-            "description": "Create a new folder in the global knowledge base. Agent can organize files by creating folders.",
+            "description": "Create a new folder in the global knowledge base. Agent can organize files by creating folders. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `name` (REQUIRED), `description` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "name": {
                         "type": "string",
-                        "description": "Name of the folder to create"
+                        "description": "**REQUIRED** - Name of the folder to create."
                     },
                     "description": {
                         "type": "string",
-                        "description": "Optional description of the folder"
+                        "description": "**OPTIONAL** - Description of the folder."
                     }
                 },
-                "required": ["name"]
+                "required": ["name"],
+                "additionalProperties": False
             }
         }
     })
@@ -469,7 +474,7 @@ Agent ID: {agent_id}
             # Get agent's account ID
             agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).execute()
             if not agent_result.data:
-                return self.fail_response("Agent not found")
+                return self.fail_response("Worker not found")
             
             account_id = agent_result.data[0]['account_id']
             
@@ -517,24 +522,25 @@ Agent ID: {agent_id}
         "type": "function",
         "function": {
             "name": "global_kb_upload_file",
-            "description": "Upload a file from sandbox to the global knowledge base. File must exist in sandbox first.",
+            "description": "Upload a file from sandbox to the global knowledge base. File must exist in sandbox first. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `sandbox_file_path` (REQUIRED), `folder_name` (REQUIRED), `description` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "sandbox_file_path": {
                         "type": "string",
-                        "description": "Path to file in sandbox (e.g., 'workspace/document.pdf')"
+                        "description": "**REQUIRED** - Path to file in sandbox. Example: 'workspace/document.pdf'"
                     },
                     "folder_name": {
                         "type": "string",
-                        "description": "Name of the knowledge base folder to upload to"
+                        "description": "**REQUIRED** - Name of the knowledge base folder to upload to."
                     },
                     "description": {
                         "type": "string",
-                        "description": "Optional description of the file content"
+                        "description": "**OPTIONAL** - Description of the file content."
                     }
                 },
-                "required": ["sandbox_file_path", "folder_name"]
+                "required": ["sandbox_file_path", "folder_name"],
+                "additionalProperties": False
             }
         }
     })
@@ -559,7 +565,7 @@ Agent ID: {agent_id}
             # Get agent's account ID
             agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).execute()
             if not agent_result.data:
-                return self.fail_response("Agent not found")
+                return self.fail_response("Worker not found")
             
             account_id = agent_result.data[0]['account_id']
             
@@ -647,21 +653,22 @@ Agent ID: {agent_id}
         "type": "function",
         "function": {
             "name": "global_kb_delete_item",
-            "description": "Delete a file or folder from the global knowledge base using its ID.",
+            "description": "Delete a file or folder from the global knowledge base using its ID. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `item_type` (REQUIRED), `item_id` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "item_type": {
                         "type": "string",
                         "enum": ["file", "folder"],
-                        "description": "Type of item to delete"
+                        "description": "**REQUIRED** - Type of item to delete: 'file' or 'folder'."
                     },
                     "item_id": {
                         "type": "string",
-                        "description": "ID of the file (file_id) or folder (folder_id) to delete. Get these IDs from list_kb_contents."
+                        "description": "**REQUIRED** - ID of the file (file_id) or folder (folder_id) to delete. Get these IDs from list_kb_contents."
                     }
                 },
-                "required": ["item_type", "item_id"]
+                "required": ["item_type", "item_id"],
+                "additionalProperties": False
             }
         }
     })
@@ -680,7 +687,7 @@ Agent ID: {agent_id}
             # Get agent's account ID
             agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).execute()
             if not agent_result.data:
-                return self.fail_response("Agent not found")
+                return self.fail_response("Worker not found")
             
             account_id = agent_result.data[0]['account_id']
             
@@ -728,25 +735,26 @@ Agent ID: {agent_id}
         "type": "function",
         "function": {
             "name": "global_kb_enable_item",
-            "description": "Enable or disable a knowledge base file for this agent. Only enabled items are synced and available.",
+            "description": "Enable or disable a knowledge base file for this agent. Only enabled items are synced and available. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `item_type` (REQUIRED), `item_id` (REQUIRED), `enabled` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "item_type": {
                         "type": "string",
                         "enum": ["file"],
-                        "description": "Type of item to enable/disable (only 'file' supported)"
+                        "description": "**REQUIRED** - Type of item to enable/disable (only 'file' supported)."
                     },
                     "item_id": {
                         "type": "string",
-                        "description": "ID of the file (file_id) to enable/disable. Get this ID from list_kb_contents."
+                        "description": "**REQUIRED** - ID of the file (file_id) to enable/disable. Get this ID from list_kb_contents."
                     },
                     "enabled": {
                         "type": "boolean",
-                        "description": "True to enable the item for this agent, False to disable it"
+                        "description": "**REQUIRED** - True to enable the item for this agent, False to disable it."
                     }
                 },
-                "required": ["item_type", "item_id", "enabled"]
+                "required": ["item_type", "item_id", "enabled"],
+                "additionalProperties": False
             }
         }
     })
@@ -768,7 +776,7 @@ Agent ID: {agent_id}
             # Get agent's account ID
             agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).execute()
             if not agent_result.data:
-                return self.fail_response("Agent not found")
+                return self.fail_response("Worker not found")
             
             account_id = agent_result.data[0]['account_id']
             
@@ -817,11 +825,12 @@ Agent ID: {agent_id}
         "type": "function",
         "function": {
             "name": "global_kb_list_contents",
-            "description": "List all folders and files in the global knowledge base.",
+            "description": "List all folders and files in the global knowledge base. **🚨 PARAMETER NAMES**: This function takes no parameters.",
             "parameters": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": False
             }
         }
     })
@@ -840,7 +849,7 @@ Agent ID: {agent_id}
             # Get agent's account ID
             agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).execute()
             if not agent_result.data:
-                return self.fail_response("Agent not found")
+                return self.fail_response("Worker not found")
             
             account_id = agent_result.data[0]['account_id']
             

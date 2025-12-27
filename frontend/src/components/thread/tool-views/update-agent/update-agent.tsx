@@ -109,7 +109,7 @@ export function UpdateAgentToolView({
               ) : (
                 <AlertTriangle className="h-3 w-3" />
               )}
-              {actualIsSuccess ? 'Agent updated' : 'Update failed'}
+              {actualIsSuccess ? 'Worker updated' : 'Update failed'}
             </Badge>
           )}
         </div>
@@ -120,7 +120,7 @@ export function UpdateAgentToolView({
             icon={RefreshCw}
             iconColor="text-blue-500 dark:text-blue-400"
             bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
-            title="Updating agent"
+            title="Updating worker"
             filePath={displayName ? `"${displayName}"` : undefined}
             showProgress={true}
           />
@@ -142,7 +142,7 @@ export function UpdateAgentToolView({
                         {displayName}
                       </h3>
                       <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                        Custom AI Agent
+                        Custom AI Worker
                       </p>
                     </div>
                   </div>

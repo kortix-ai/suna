@@ -218,7 +218,6 @@ async def _build_account_state(account_id: str, client) -> Dict:
         models.append({
             'id': model['id'],
             'name': model['name'],
-            'provider': model['provider'],
             'allowed': allowed,
             'context_window': model.get('context_window', 128000),
             'capabilities': model.get('capabilities', []),
@@ -392,7 +391,6 @@ async def get_account_state(
                 {
                     'id': model['id'],
                     'name': model['name'],
-                    'provider': model['provider'],
                     'allowed': True,
                     'context_window': model.get('context_window', 128000),
                     'capabilities': model.get('capabilities', []),

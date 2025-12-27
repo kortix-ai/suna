@@ -2,8 +2,10 @@
 
 import { locales, defaultLocale, type Locale } from '@/i18n/config';
 import { useCallback, useState, useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { detectBestLocale } from '@/lib/utils/geo-detection';
+import { useAuth } from '@/components/AuthProvider';
+import { createClient } from '@/lib/supabase/client';
+import type { User } from '@supabase/supabase-js';
 
 /**
  * Gets the stored locale with priority:
@@ -13,19 +15,13 @@ import { detectBestLocale } from '@/lib/utils/geo-detection';
  * 4. Geo-detection (timezone/browser) - default when nothing is explicitly set
  * 5. Default locale
  */
-async function getStoredLocale(): Promise<Locale> {
+function getStoredLocale(user: User | null): Locale {
   if (typeof window === 'undefined') return defaultLocale;
 
-  try {
-    // Priority 1: Check user profile preference (if authenticated)
-    // This ALWAYS takes precedence - user explicitly set it in settings
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user?.user_metadata?.locale && locales.includes(user.user_metadata.locale as Locale)) {
-      return user.user_metadata.locale as Locale;
-    }
-  } catch (error) {
-    // Silently fail - user might not be authenticated
+  // Priority 1: Check user profile preference (if authenticated)
+  // This ALWAYS takes precedence - user explicitly set it in settings
+  if (user?.user_metadata?.locale && locales.includes(user.user_metadata.locale as Locale)) {
+    return user.user_metadata.locale as Locale;
   }
   
   // Priority 2: Check cookie (explicit user preference)
@@ -53,25 +49,26 @@ async function getStoredLocale(): Promise<Locale> {
 const LOCALE_CHANGE_EVENT = 'locale-change';
 
 export function useLanguage() {
+  // Use AuthProvider's user to avoid unnecessary getUser calls
+  const { user } = useAuth();
   const [locale, setLocale] = useState<Locale>(defaultLocale);
   const [isChanging, setIsChanging] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load locale on mount (async)
+  // Load locale on mount
   useEffect(() => {
     let mounted = true;
     
-    getStoredLocale().then((storedLocale) => {
-      if (mounted) {
-        setLocale(storedLocale);
-        setIsLoading(false);
-      }
-    });
+    const storedLocale = getStoredLocale(user);
+    if (mounted) {
+      setLocale(storedLocale);
+      setIsLoading(false);
+    }
 
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [user]);
 
   // Listen for locale changes from other components
   useEffect(() => {
@@ -95,27 +92,21 @@ export function useLanguage() {
     
     setIsChanging(true);
     
-    try {
-      // Priority 1: Save to user profile if authenticated (highest priority)
-      // This is the explicit user preference from settings
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (user) {
-        try {
-          const { error: updateError } = await supabase.auth.updateUser({
-            data: { locale: newLocale }
-          });
-          
-          if (updateError) {
-            console.warn('Failed to save locale to user profile:', updateError);
-          }
-        } catch (error) {
-          console.warn('Error saving locale to user profile:', error);
+    // Priority 1: Save to user profile if authenticated (highest priority)
+    // Use user from AuthProvider to avoid unnecessary getUser call
+    if (user) {
+      try {
+        const supabase = createClient();
+        const { error: updateError } = await supabase.auth.updateUser({
+          data: { locale: newLocale }
+        });
+        
+        if (updateError) {
+          console.warn('Failed to save locale to user profile:', updateError);
         }
+      } catch (error) {
+        console.warn('Error saving locale to user profile:', error);
       }
-    } catch (error) {
-      // User might not be authenticated, continue with cookie/localStorage
     }
     
     // Priority 2: Store preference in cookie (explicit user preference)
@@ -138,7 +129,7 @@ export function useLanguage() {
     setTimeout(() => {
       setIsChanging(false);
     }, 100);
-  }, [locale]);
+  }, [locale, user]);
 
   return {
     locale,

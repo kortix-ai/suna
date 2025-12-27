@@ -50,6 +50,16 @@ const ModelLabel = ({ label, className }: { label: string; className?: string })
             </span>
         );
     }
+    if (label === 'Kortix Test') {
+        return (
+            <span className={cn("flex items-center gap-2", className)}>
+                <span className="font-medium">Kortix</span>
+                <span className="text-xs font-medium text-amber-600 dark:text-amber-500 px-1.5 py-0.5 bg-amber-500/10 rounded-md">
+                    Test
+                </span>
+            </span>
+        );
+    }
     return <span className={cn("font-medium", className)}>{label}</span>;
 };
 

@@ -1,9 +1,9 @@
 import Purchases, {
-  LOG_LEVEL,
   PurchasesOffering,
   PurchasesPackage,
   CustomerInfo,
   PurchasesStoreProduct,
+  LOG_LEVEL,
 } from 'react-native-purchases';
 import RevenueCatUI from 'react-native-purchases-ui';
 import { Platform } from 'react-native';
@@ -42,9 +42,45 @@ let lastSetEmail: string | null = null;
 let lastSetUserId: string | null = null;
 let currentInitializationParams: { userId: string; email?: string; canTrack: boolean } | null =
   null;
+/**
+ * Ensures the RevenueCat log handler is set.
+ * This must be called before any SDK operations to prevent "customLogHandler is not a function" errors.
+ * Safe to call multiple times - setLogHandler can be called repeatedly.
+ * 
+ * IMPORTANT: This should be called after logout/login cycles as the SDK may reset the handler.
+ */
+function ensureLogHandler(): void {
+  try {
+    Purchases.setLogHandler((logLevel, message) => {
+      switch (logLevel) {
+        case LOG_LEVEL.VERBOSE:
+          console.debug('[RC Verbose]', message);
+          break;
+        case LOG_LEVEL.DEBUG:
+          console.debug('[RC Debug]', message);
+          break;
+        case LOG_LEVEL.INFO:
+          console.info('[RC Info]', message);
+          break;
+        case LOG_LEVEL.WARN:
+          console.warn('[RC Warn]', message);
+          break;
+        case LOG_LEVEL.ERROR:
+          console.error('[RC Error]', message);
+          break;
+      }
+    });
+  } catch (error) {
+    // If setting log handler fails, log it but don't throw - SDK might already be configured
+    // This can happen if the SDK isn't initialized yet, which is fine
+    console.warn('⚠️ Could not set RevenueCat log handler (SDK may not be initialized yet):', error);
+  }
+}
 
 async function isRevenueCatAlreadyConfigured(): Promise<boolean> {
   try {
+    // Ensure log handler is set before any SDK operations
+    ensureLogHandler();
     // Try to get customer info - if this succeeds, RevenueCat is already configured
     await Purchases.getCustomerInfo();
     return true;
@@ -55,6 +91,9 @@ async function isRevenueCatAlreadyConfigured(): Promise<boolean> {
 
 export async function logoutRevenueCat(): Promise<void> {
   try {
+    // Ensure log handler is set before any SDK operations
+    ensureLogHandler();
+    
     console.log('🚪 Logging out from RevenueCat...');
     const customerInfo = await Purchases.getCustomerInfo();
     const wasAnonymous = customerInfo.originalAppUserId.startsWith('$RCAnonymousID:');
@@ -187,6 +226,9 @@ export async function initializeRevenueCat(
       console.log('📧 Email:', email || 'No email provided');
       console.log('📊 Tracking allowed:', canTrack);
 
+      // Ensure log handler is set before configure() to prevent "customLogHandler is not a function" errors
+      ensureLogHandler();
+
       Purchases.configure({ apiKey, appUserID: userId });
 
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -241,6 +283,9 @@ export async function getOfferings(
   forceRefresh: boolean = false
 ): Promise<PurchasesOffering | null> {
   try {
+    // Ensure log handler is set before any SDK operations
+    ensureLogHandler();
+    
     if (forceRefresh) {
       console.log('🔄 Forcing fresh offerings fetch from RevenueCat...');
       try {
@@ -252,6 +297,8 @@ export async function getOfferings(
 
         if (!currentAppUserId.startsWith('$RCAnonymousID:')) {
           await Purchases.logOut();
+          // Re-set log handler after logout/login as it might be reset
+          ensureLogHandler();
           await Purchases.logIn(currentAppUserId);
           console.log('✅ SDK reset completed with logout/login cycle');
         } else {
@@ -292,6 +339,9 @@ export async function getOfferingById(
   forceRefresh: boolean = false
 ): Promise<PurchasesOffering | null> {
   try {
+    // Ensure log handler is set before any SDK operations
+    ensureLogHandler();
+    
     if (forceRefresh) {
       console.log(`🔄 Forcing fresh fetch for offering: ${offeringId}...`);
       try {
@@ -303,6 +353,8 @@ export async function getOfferingById(
 
         if (!currentAppUserId.startsWith('$RCAnonymousID:')) {
           await Purchases.logOut();
+          // Re-set log handler after logout/login as it might be reset
+          ensureLogHandler();
           await Purchases.logIn(currentAppUserId);
           console.log('✅ SDK reset completed with logout/login cycle');
         } else {
@@ -316,6 +368,12 @@ export async function getOfferingById(
     }
 
     const offerings = await Purchases.getOfferings();
+    
+    // Log all available offerings for debugging
+    const availableOfferingIds = Object.keys(offerings.all);
+    console.log(`📦 All available offerings: ${availableOfferingIds.join(', ') || 'none'}`);
+    console.log(`📦 Current offering: ${offerings.current?.identifier || 'none'}`);
+    
     const offering = offerings.all[offeringId];
 
     if (offering) {
@@ -327,12 +385,31 @@ export async function getOfferingById(
       return offering;
     }
 
-    console.warn(
-      `⚠️ Offering '${offeringId}' not found. Available offerings:`,
-      Object.keys(offerings.all)
-    );
-    return null;
-  } catch (error) {
+    // More helpful error message when offering is not found
+    const errorMessage = `Offering '${offeringId}' not found in RevenueCat. Available offerings: ${availableOfferingIds.join(', ') || 'none'}. Please check your RevenueCat dashboard configuration.`;
+    console.warn(`⚠️ ${errorMessage}`);
+    
+    // Create a more descriptive error
+    const error: any = new Error(errorMessage);
+    error.code = 'OFFERING_NOT_FOUND';
+    error.availableOfferings = availableOfferingIds;
+    throw error;
+  } catch (error: any) {
+    // Improve error messages for configuration issues
+    if (error?.message?.includes('configuration') || error?.code === 'CONFIGURATION_ERROR') {
+      const errorMessage = `RevenueCat configuration error for offering '${offeringId}'. This usually means:
+1. The offering '${offeringId}' doesn't exist in your RevenueCat dashboard
+2. The offering exists but has no packages configured
+3. The products in the offering are not properly configured in App Store Connect / Google Play Console
+
+Please check your RevenueCat dashboard and ensure the offering is properly configured.`;
+      console.error(`❌ ${errorMessage}`);
+      const configError: any = new Error(errorMessage);
+      configError.code = 'CONFIGURATION_ERROR';
+      configError.originalError = error;
+      throw configError;
+    }
+    
     console.error(`❌ Error fetching offering '${offeringId}':`, error);
     throw error;
   }
@@ -345,6 +422,9 @@ export async function purchasePackage(
   onSyncComplete?: (response: SyncResponse) => void | Promise<void>
 ): Promise<CustomerInfo> {
   try {
+    // Ensure log handler is set before any SDK operations
+    ensureLogHandler();
+    
     console.log('💳 Purchasing package:', pkg.identifier);
 
     // CRITICAL: Verify RevenueCat is linked to the correct user before purchase
@@ -362,6 +442,8 @@ export async function purchasePackage(
       console.log('🔄 RevenueCat session mismatch - attempting to fix...');
       try {
         // Try to log in with the correct user ID
+        // Re-set log handler after login as it might be reset
+        ensureLogHandler();
         const loginResult = await Purchases.logIn(expectedUserId);
         currentCustomerInfo = loginResult.customerInfo;
         rcUserId = currentCustomerInfo.originalAppUserId;
@@ -455,6 +537,8 @@ export async function purchasePackage(
 
 export async function getCustomerInfo(): Promise<CustomerInfo> {
   try {
+    // Ensure log handler is set before any SDK operations
+    ensureLogHandler();
     const customerInfo = await Purchases.getCustomerInfo();
     return customerInfo;
   } catch (error) {
@@ -614,6 +698,9 @@ export async function presentPaywall(
   paywallName?: string
 ): Promise<{ purchased: boolean; cancelled: boolean }> {
   try {
+    // Ensure log handler is set before any SDK operations
+    ensureLogHandler();
+    
     let offering: PurchasesOffering | null = null;
 
     // If paywall name is provided, try to get that specific offering

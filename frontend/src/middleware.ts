@@ -129,6 +129,45 @@ export async function middleware(request: NextRequest) {
     pathname === route || pathname.startsWith(route + '/')
   );
 
+  // Create a single Supabase client instance that we'll reuse
+  let supabaseResponse = NextResponse.next({
+    request,
+  });
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+          supabaseResponse = NextResponse.next({
+            request,
+          });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          );
+        },
+      },
+    }
+  );
+
+  // Fetch user ONCE and reuse for both locale detection and auth checks
+  let user: { id: string; user_metadata?: { locale?: string } } | null = null;
+  let authError: Error | null = null;
+  
+  try {
+    const { data: { user: fetchedUser }, error: fetchedError } = await supabase.auth.getUser();
+    user = fetchedUser;
+    authError = fetchedError as Error | null;
+  } catch (error) {
+    // User might not be authenticated, continue
+    authError = error as Error;
+  }
+
   // Auto-redirect based on geo-detection for marketing pages
   // Only redirect if:
   // 1. User is visiting a marketing route without locale prefix
@@ -139,32 +178,10 @@ export async function middleware(request: NextRequest) {
     const localeCookie = request.cookies.get('locale')?.value;
     const hasExplicitPreference = !!localeCookie && locales.includes(localeCookie as Locale);
     
-    // Check user metadata (if authenticated) - only if no cookie preference
+    // Check user metadata (if authenticated) - reuse the user we already fetched
     let userLocale: Locale | null = null;
-    if (!hasExplicitPreference) {
-      try {
-        const supabase = createServerClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-          {
-            cookies: {
-              getAll() {
-                return request.cookies.getAll();
-              },
-              setAll() {
-                // No-op for middleware
-              },
-            },
-          }
-        );
-        
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user?.user_metadata?.locale && locales.includes(user.user_metadata.locale as Locale)) {
-          userLocale = user.user_metadata.locale as Locale;
-        }
-      } catch (error) {
-        // User might not be authenticated, continue with geo-detection
-      }
+    if (!hasExplicitPreference && user?.user_metadata?.locale && locales.includes(user.user_metadata.locale as Locale)) {
+      userLocale = user.user_metadata.locale as Locale;
     }
     
     // Only auto-redirect if:
@@ -199,36 +216,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Everything else requires authentication
-  let supabaseResponse = NextResponse.next({
-    request,
-  });
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          supabaseResponse = NextResponse.next({
-            request,
-          });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
-
+  // Everything else requires authentication - reuse the user we already fetched
   try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
     
-    // Redirect to auth if not authenticated
+    // Redirect to auth if not authenticated (using the user we already fetched)
     if (authError || !user) {
       const url = request.nextUrl.clone();
       url.pathname = '/auth';

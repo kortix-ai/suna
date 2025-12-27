@@ -38,6 +38,32 @@ def get_setup_method():
     progress = load_progress()
     return progress.get("data", {}).get("setup_method")
 
+def detect_docker_compose_command():
+    """Detects whether 'docker compose' or 'docker-compose' is available."""
+    candidates = [
+        ["docker", "compose"],
+        ["docker-compose"],
+    ]
+    for cmd in candidates:
+        try:
+            subprocess.run(
+                cmd + ["version"],
+                capture_output=True,
+                text=True,
+                check=True,
+                shell=IS_WINDOWS,
+            )
+            return cmd
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            continue
+
+    print(f"{Colors.RED}Docker Compose command not found. Install Docker Desktop or docker-compose.{Colors.ENDC}")
+    return None
+
+def format_compose_cmd(compose_cmd):
+    """Formats the compose command list for display."""
+    return " ".join(compose_cmd) if compose_cmd else "docker compose"
+
 def check_docker_available():
     """Check if Docker is available and running."""
     try:
@@ -48,16 +74,16 @@ def check_docker_available():
         print(f"{Colors.YELLOW}Please start Docker and try again.{Colors.ENDC}")
         return False
 
-def check_docker_compose_up():
+def check_docker_compose_up(compose_cmd):
     result = subprocess.run(
-        ["docker", "compose", "ps", "-q"],
+        compose_cmd + ["ps", "-q"],
         capture_output=True,
         text=True,
         shell=IS_WINDOWS,
     )
     return len(result.stdout.strip()) > 0
 
-def print_manual_instructions():
+def print_manual_instructions(compose_cmd_str):
     """Prints instructions for manually starting Suna services."""
     progress = load_progress()
     supabase_setup_method = progress.get("data", {}).get("supabase_setup_method")
@@ -75,7 +101,7 @@ def print_manual_instructions():
         step_num += 1
 
     print(f"{Colors.BOLD}{step_num}. Start Infrastructure (in project root):{Colors.ENDC}")
-    print(f"{Colors.CYAN}   docker compose up redis -d{Colors.ENDC}\n")
+    print(f"{Colors.CYAN}   {compose_cmd_str} up redis -d{Colors.ENDC}\n")
     step_num += 1
 
     print(f"{Colors.BOLD}{step_num}. Start Frontend (in a new terminal):{Colors.ENDC}")
@@ -131,8 +157,17 @@ def main():
         if force:
             print("Force awakened. Skipping confirmation.")
 
+        if not check_docker_available():
+            return
+
+        compose_cmd = detect_docker_compose_command()
+        if not compose_cmd:
+            return
+        compose_cmd_str = format_compose_cmd(compose_cmd)
+        print(f"Using Docker Compose command: {compose_cmd_str}")
+
         is_infra_up = subprocess.run(
-            ["docker", "compose", "ps", "-q", "redis"],
+            compose_cmd + ["ps", "-q", "redis"],
             capture_output=True,
             text=True,
             shell=IS_WINDOWS,
@@ -158,14 +193,14 @@ def main():
                     return
 
         if action == "stop":
-            subprocess.run(["docker", "compose", "down"], shell=IS_WINDOWS)
+            subprocess.run(compose_cmd + ["down"], shell=IS_WINDOWS)
             print(f"\n{Colors.GREEN}✅ Infrastructure services stopped.{Colors.ENDC}")
         else:
             subprocess.run(
-                ["docker", "compose", "up", "redis", "-d"], shell=IS_WINDOWS
+                compose_cmd + ["up", "redis", "-d"], shell=IS_WINDOWS
             )
             print(f"\n{Colors.GREEN}✅ Infrastructure services started.{Colors.ENDC}")
-            print_manual_instructions()
+            print_manual_instructions(compose_cmd_str)
 
     else:  # docker setup
         print(f"{Colors.BLUE}{Colors.BOLD}Docker Setup Detected{Colors.ENDC}")
@@ -178,7 +213,13 @@ def main():
         if not check_docker_available():
             return
             
-        is_up = check_docker_compose_up()
+        compose_cmd = detect_docker_compose_command()
+        if not compose_cmd:
+            return
+        compose_cmd_str = format_compose_cmd(compose_cmd)
+        print(f"Using Docker Compose command: {compose_cmd_str}")
+
+        is_up = check_docker_compose_up(compose_cmd)
 
         if is_up:
             action = "stop"
@@ -199,10 +240,10 @@ def main():
                     return
 
         if action == "stop":
-            subprocess.run(["docker", "compose", "down"], shell=IS_WINDOWS)
+            subprocess.run(compose_cmd + ["down"], shell=IS_WINDOWS)
             print(f"\n{Colors.GREEN}✅ All Suna services stopped.{Colors.ENDC}")
         else:
-            subprocess.run(["docker", "compose", "up", "-d"], shell=IS_WINDOWS)
+            subprocess.run(compose_cmd + ["up", "-d"], shell=IS_WINDOWS)
             print(f"\n{Colors.GREEN}✅ All Suna services started.{Colors.ENDC}")
             print(f"{Colors.CYAN}🌐 Access Suna at: http://localhost:3000{Colors.ENDC}")
 

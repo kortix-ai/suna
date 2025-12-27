@@ -78,7 +78,7 @@
         "dialogTitle": "Delete Account",
         "warning": "This action cannot be undone after 30 days",
         "whenDelete": "When you delete your account:",
-        "agentsDeleted": "All your agents and agent versions will be deleted",
+        "agentsDeleted": "All your workers and worker versions will be deleted",
         "threadsDeleted": "All your threads and conversations will be deleted",
         "credentialsRemoved": "All your credentials and integrations will be removed",
         "subscriptionCancelled": "Your subscription will be cancelled",
@@ -176,7 +176,7 @@
       "insufficientCreditsMessage": "Billing check failed: Insufficient credits. Your balance is {balance}. Please add credits to continue.",
       "creditsExhausted": "You ran out of credits. Upgrade now.",
       "billingCheckFailed": "Billing check failed. Please upgrade to continue.",
-      "failedToStartAgent": "Failed to start agent {agentName}: {message}"
+      "failedToStartAgent": "Failed to start worker {agentName}: {message}"
     },
     "usage": {
       "title": "Usage"
@@ -274,8 +274,8 @@
     "createScheduledTask": "Create Scheduled Task",
     "editAppBasedTask": "Edit App-based Task",
     "createAppBasedTask": "Create App-based Task",
-    "updateAgentForTask": "Update the agent for this task",
-    "selectAgentForTask": "First, select which agent should handle this task",
+    "updateAgentForTask": "Update the worker for this task",
+    "selectAgentForTask": "First, select which worker should handle this task",
     "createNew": "Create new",
     "notConfigured": "Not configured",
     "every15Minutes": "Every 15 minutes",
@@ -416,7 +416,7 @@
     "instructions": "Instructions",
     "knowledge": "Knowledge",
     "triggers": "Triggers",
-    "agents": "Agents",
+    "agents": "Workers",
     "superWorker": "Super Worker",
     "searchWorkers": "Search workers...",
     "myWorkers": "My Workers",
@@ -543,7 +543,7 @@
     "credits": "Credits",
     "popular": "Popular",
     "creditsExplained": "Credits explained",
-    "creditsExhausted": "+200 Credits in {time}. Upgrade to use now.",
+      "creditsExhausted": "+100 Credits in {time}. Upgrade to use now.",
     "creditsExhaustedRefreshIn": "You've exhausted your credits. They will refresh in {time}",
     "trialActive": "Trial Active",
     "trialBadge": "7-Day Trial",
@@ -560,16 +560,28 @@
     "cannotDowngradeDuringCommitment": "Cannot downgrade during commitment period",
     "alreadyOnThisPlan": "You are already on this plan.",
     "localModeMessage": "Running in local development mode - billing features are disabled",
+    "holidayPromo": {
+      "badge": "Holiday special",
+      "countdown": "Ends in {time}",
+      "discount": "50% off your first 3 months",
+      "window": "Valid December 24–25",
+      "headerLine": "Use code {code} for {discount}",
+      "description": "Use code {code} at checkout for {discount}. {window}",
+      "copyCode": "Copy code",
+      "copied": "Copied",
+      "codeCopied": "{code} copied",
+      "copyFailed": "Unable to copy promo code"
+    },
     "creditsExplainedPage": {
       "title": "Credits Explained",
       "subtitle": "Everything you need to know about how credits work on Kortix",
       "understandingCredits": {
         "title": "Understanding Credits",
-        "description": "Credits serve as Kortix's universal currency for platform operations. Every action your AI agents perform—from analyzing data to generating code—consumes credits based on the task's complexity and the resources required."
+        "description": "Credits serve as Kortix's universal currency for platform operations. Every action your AI workers perform—from analyzing data to generating code—consumes credits based on the task's complexity and the resources required."
       },
       "howCreditsWork": {
         "title": "How Credits Work",
-        "description": "Credits are consumed based on the resources your AI agents use:",
+        "description": "Credits are consumed based on the resources your AI workers use:",
         "aiModelUsage": {
           "title": "AI Model Usage",
           "description": "The primary driver of credit consumption",
@@ -736,7 +748,42 @@
     "didntReceiveEmail": "Didn't receive the email?",
     "resend": "Resend",
     "alreadySignedIn": "You're already signed in. No action needed.",
-    "goToDashboard": "Go to Dashboard"
+    "goToDashboard": "Go to Dashboard",
+    "signInToContinue": "Sign in to continue",
+    "signInOrCreateAccountToTalk": "Sign in or create an account to talk with Kortix",
+    "orContinueWithEmail": "or continue with email",
+    "signInWithEmail": "Sign in with email",
+    "createNewAccount": "Create new account",
+    "byContinuingYouAgreeSimple": "By continuing, you agree to our",
+    "phoneVerification": {
+      "title": "Verify Your Phone Number",
+      "titleOtp": "Enter Verification Code",
+      "description": "Secure your account with two-factor authentication",
+      "descriptionOtp": "We sent a code to your phone number",
+      "phoneNumber": "Phone Number",
+      "verificationCode": "Verification Code",
+      "enterSixDigitCode": "Enter 6-digit code",
+      "phoneNumberPlaceholder": "Enter your phone number",
+      "sendVerificationCode": "Send Verification Code",
+      "sendingCode": "Sending code...",
+      "verifyCode": "Verify Code",
+      "verifying": "Verifying...",
+      "resendCode": "Resend code",
+      "resendInSeconds": "Resend in {seconds}s",
+      "removePhoneNumber": "Remove Phone Number",
+      "codeSentTo": "Verification code sent to",
+      "sixDigitCodeHint": "We'll send you a 6-digit verification code via SMS",
+      "pleaseEnterPhoneNumber": "Please enter a phone number",
+      "pleaseEnterValidPhoneNumber": "Please enter a valid phone number",
+      "pleaseEnterSixDigitCode": "Please enter a 6-digit code",
+      "verificationCodeSent": "Verification code sent to your phone",
+      "newVerificationCodeSent": "New verification code sent",
+      "phoneNumberVerified": "Phone number verified successfully!",
+      "phoneNumberRemoved": "Phone number removed. You can now add a new one.",
+      "signOut": "Sign out",
+      "signingOut": "Signing out...",
+      "sending": "Sending..."
+    }
   },
   "onboarding": {
     "welcome": "Welcome",

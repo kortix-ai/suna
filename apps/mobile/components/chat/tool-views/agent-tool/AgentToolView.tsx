@@ -56,7 +56,7 @@ export function AgentToolView({ toolCall, toolResult, isStreaming = false, assis
             iconColor={toolMetadata.iconColor}
             bgColor={toolMetadata.iconBgColor}
             title={
-              isCreate ? 'Creating Agent' : isUpdate ? 'Updating Agent' : isTrigger ? 'Managing Trigger' : 'Processing'
+              isCreate ? 'Creating Worker' : isUpdate ? 'Updating Worker' : isTrigger ? 'Managing Trigger' : 'Processing'
             }
             showProgress={false}
           />
@@ -112,7 +112,7 @@ export function AgentToolView({ toolCall, toolResult, isStreaming = false, assis
               <View className="flex-row items-center gap-2">
                 <Icon as={Bot} size={14} className="text-muted-foreground" />
                 <Text className="text-xs font-roobert-medium text-muted-foreground">
-                  Agent ID
+                  Worker ID
                 </Text>
               </View>
               <Text className="text-sm font-roobert-mono text-foreground" selectable>

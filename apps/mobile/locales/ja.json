@@ -118,9 +118,50 @@
     }
   },
   "onboarding": {
+    "welcome": "Kortixができることを見る",
+    "welcomeSubtitle": "行動するAIアシスタント",
     "skip": "スキップ",
     "next": "次へ",
     "getStarted": "始める",
+    "kortixComputer": "Kortix Computer",
+    "ready": "準備完了",
+    "examples": {
+      "presentations": {
+        "title": "プレゼンテーション",
+        "description": "素晴らしいプレゼンテーションを作成する様子をご覧ください",
+        "userMessage": "ニューラルネットワークについて調査してプレゼンテーションを作成",
+        "aiMessage": "ニューラルネットワークを調査して、プレゼンテーションを作成します...",
+        "researching": "調査中",
+        "creatingFile": "ファイル作成中",
+        "creatingSlides": "スライド作成中"
+      },
+      "dataAnalysis": {
+        "title": "データ分析",
+        "description": "データを分析してビジュアルレポートを作成する様子をご覧ください",
+        "userMessage": "Google DriveからQ4の売上パフォーマンスを分析",
+        "aiMessage": "売上データを読み込み、包括的な分析を作成します...",
+        "loadingFromDrive": "Google Driveから読み込み中",
+        "creatingVisualization": "ビジュアライゼーション作成中",
+        "researchingMarket": "市場調査中",
+        "creatingReport": "レポート作成中"
+      },
+      "image": {
+        "title": "画像",
+        "description": "AI搭載のロゴとブランドデザインを体験",
+        "userMessage": "会社のロゴを作成",
+        "aiMessage": "LUXYについて以前言及されましたね。あなたのブランドのプロフェッショナルなロゴを作成します...",
+        "researchingBrand": "ブランド調査中",
+        "creatingLogo": "ロゴ作成中",
+        "creatingBrandBoard": "ブランドボード作成中"
+      },
+      "imageEasterEgg": {
+        "title": "画像",
+        "description": "AIスタイルで写真を変換",
+        "userMessage": "私の画像をブロック状のピクセルアートスタイルに変換して",
+        "aiMessage": "もちろん！あなたの画像をスタイリッシュなブロック調に変換します...",
+        "creatingImage": "スタイル化画像を作成中"
+      }
+    },
     "slide1": {
       "title": "AIとチャット",
       "description": "文脈を理解し、役立つ回答を提供する強力なAIアシスタントと自然な会話をしよう"
@@ -554,7 +595,7 @@
   },
   "models": {
     "selectModel": "モデルを選択",
-    "chooseModelFor": "{{agent}}のモデルを選択"
+    "chooseModelFor": "Worker {{agent}} のモデルを選択"
   },
   "placeholders": {
     "default": "Kortixにタスクを...",
@@ -739,6 +780,9 @@
     "upgradeRequired": "アップグレードが必要",
     "upgradeRequiredMessage": "スレッドの共有は有料プランで利用可能です。この機能のロックを解除するにはアップグレードしてください。",
     "upgrade": "アップグレード",
+    "share": "共有",
+    "files": "ファイル",
+    "delete": "削除",
     "shareThread": "スレッドを共有",
     "shareThreadUpgrade": "スレッドを共有（アップグレード）",
     "availableOnPaidPlans": "有料プランで利用可能",
@@ -746,6 +790,7 @@
     "manageFiles": "ファイルを管理",
     "viewManageAttachments": "添付ファイルを表示・管理",
     "deleteThread": "スレッドを削除",
+    "deleteConfirm": "このスレッドを削除しますか？この操作は取り消せません。",
     "permanentlyDelete": "この会話を完全に削除"
   },
   "triggers": {

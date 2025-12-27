@@ -1,0 +1,76 @@
+name: E2E Test Harness - Emergency Stop
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: 'staging'
+      confirm:
+        description: 'Type STOP to confirm'
+        required: true
+        type: string
+
+jobs:
+  emergency-stop:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "STOP" ]; then
+            echo "❌ Confirmation failed. You must type 'STOP' to proceed."
+            exit 1
+          fi
+          echo "✅ Confirmation received"
+      
+      - name: Emergency Stop All Tests
+        env:
+          API_URL: ${{ inputs.environment == 'production' && 'https://api.kortix.com' || 'https://staging-api.suna.so' }}
+          ADMIN_API_KEY: ${{ secrets.KORTIX_ADMIN_API_KEY }}
+        run: |
+          set -e
+          
+          # Mask secrets
+          echo "::add-mask::$ADMIN_API_KEY"
+          
+          echo "🚨 EMERGENCY STOP - Cancelling all active tests on ${{ inputs.environment }}"
+          echo ""
+          
+          RESULT=$(curl -sf -X POST "$API_URL/v1/admin/test-harness/emergency-stop" \
+            -H "X-Admin-Api-Key: $ADMIN_API_KEY" 2>&1) || {
+            echo "❌ Emergency stop request failed"
+            echo "$RESULT"
+            exit 1
+          }
+          
+          echo "✅ Emergency stop completed"
+          echo ""
+          echo "📊 Results:"
+          echo "$RESULT" | jq '.'
+          
+          CANCELLED_COUNT=$(echo "$RESULT" | jq -r '.cancelled_count // 0')
+          echo ""
+          echo "🛑 Cancelled $CANCELLED_COUNT test run(s)"
+          
+          # Save summary
+          echo "## 🚨 Emergency Stop Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cancelled Tests**: $CANCELLED_COUNT" >> $GITHUB_STEP_SUMMARY
+          echo "- **Time**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "$CANCELLED_COUNT" -eq 0 ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "ℹ️  No active tests were running at the time." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Cancelled Run IDs:" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+            echo "$RESULT" | jq '.cancelled_runs' >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi

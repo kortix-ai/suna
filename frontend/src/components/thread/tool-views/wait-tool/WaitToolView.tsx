@@ -6,7 +6,6 @@ import { ToolViewProps } from '../types';
 import { formatTimestamp, getToolTitle } from '../utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from '@/lib/utils';
 
 interface WaitToolViewProps extends ToolViewProps {
@@ -14,24 +13,52 @@ interface WaitToolViewProps extends ToolViewProps {
 }
 
 const extractWaitData = (
-  toolCall: { function_name: string; arguments?: Record<string, any> },
+  toolCall: { function_name: string; arguments?: Record<string, any>; rawArguments?: string },
   toolResult?: { success?: boolean; output?: any },
-  isSuccess: boolean = true
+  isSuccess: boolean = true,
+  streamingText?: string,
+  isStreaming: boolean = false
 ) => {
-  const args = toolCall.arguments || {};
   let seconds = 0;
   
-  // Extract seconds from arguments
-  if (args.seconds !== undefined && args.seconds !== null) {
-    seconds = typeof args.seconds === 'string' ? parseInt(args.seconds, 10) : Number(args.seconds);
-  } else if (args.duration !== undefined && args.duration !== null) {
-    seconds = typeof args.duration === 'string' ? parseInt(args.duration, 10) : Number(args.duration);
+  // STREAMING: Use toolCall.rawArguments (per-tool-call) instead of shared streamingText
+  const streamingSource = toolCall.rawArguments || streamingText;
+  if (isStreaming && streamingSource) {
+    try {
+      const parsed = JSON.parse(streamingSource);
+      if (parsed.seconds !== undefined && parsed.seconds !== null) {
+        seconds = typeof parsed.seconds === 'string' ? parseInt(parsed.seconds, 10) : Number(parsed.seconds);
+      } else if (parsed.duration !== undefined && parsed.duration !== null) {
+        seconds = typeof parsed.duration === 'string' ? parseInt(parsed.duration, 10) : Number(parsed.duration);
+      }
+    } catch {
+      // JSON incomplete - try to extract partial seconds value
+      const secondsMatch = streamingSource.match(/"seconds"\s*:\s*(\d+)/);
+      if (secondsMatch) {
+        seconds = parseInt(secondsMatch[1], 10);
+      } else {
+        const durationMatch = streamingSource.match(/"duration"\s*:\s*(\d+)/);
+        if (durationMatch) {
+          seconds = parseInt(durationMatch[1], 10);
+        }
+      }
+    }
+  }
+  
+  // Fallback to toolCall.arguments if seconds not found from streaming
+  if (seconds === 0) {
+    const args = toolCall.arguments || {};
+    if (args.seconds !== undefined && args.seconds !== null) {
+      seconds = typeof args.seconds === 'string' ? parseInt(args.seconds, 10) : Number(args.seconds);
+    } else if (args.duration !== undefined && args.duration !== null) {
+      seconds = typeof args.duration === 'string' ? parseInt(args.duration, 10) : Number(args.duration);
+    }
   }
   
   const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;
 
   return {
-    seconds: Math.max(0, seconds), // Ensure non-negative
+    seconds: Math.max(0, seconds),
     isSuccess: actualIsSuccess
   };
 };
@@ -43,10 +70,11 @@ export function WaitToolView({
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
+  streamingText,
 }: WaitToolViewProps) {
   // Defensive check - ensure toolCall is defined
   if (!toolCall) {
-    console.warn('WaitToolView: toolCall is undefined. Tool views should use structured props.');
+    console.warn('WaitToolView: toolCall is undefined.');
     return (
       <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4">
@@ -56,7 +84,7 @@ export function WaitToolView({
         </CardHeader>
         <CardContent className="p-4">
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            This tool view requires structured metadata. Please update the component to use toolCall and toolResult props.
+            This tool view requires structured metadata.
           </p>
         </CardContent>
       </Card>
@@ -66,27 +94,18 @@ export function WaitToolView({
   const { seconds, isSuccess: actualIsSuccess } = extractWaitData(
     toolCall,
     toolResult,
-    isSuccess
+    isSuccess,
+    streamingText,
+    isStreaming
   );
 
-  // Debug logging (can be removed in production)
-  if (process.env.NODE_ENV === 'development') {
-    console.log('WaitToolView data:', {
-      seconds,
-      toolCall: toolCall?.function_name,
-      arguments: toolCall?.arguments,
-      toolResult: toolResult ? { success: toolResult.success, hasOutput: !!toolResult.output } : null,
-      actualIsSuccess
-    });
-  }
-
-  const formatDuration = (seconds: number) => {
-    if (seconds < 60) {
-      return `${seconds}s`;
+  const formatDuration = (secs: number) => {
+    if (secs < 60) {
+      return `${secs}s`;
     } else {
-      const minutes = Math.floor(seconds / 60);
-      const remainingSeconds = seconds % 60;
-      return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+      const minutes = Math.floor(secs / 60);
+      const remainingSecs = secs % 60;
+      return remainingSecs > 0 ? `${minutes}m ${remainingSecs}s` : `${minutes}m`;
     }
   };
 
@@ -137,22 +156,46 @@ export function WaitToolView({
       <CardContent className="p-0 flex-1 overflow-hidden relative">
         <div className="h-full flex items-center justify-center p-8">
           <div className="flex flex-col items-center text-center max-w-md">
-            <Timer className="h-24 w-24 text-muted-foreground mb-6" />
+            {/* Timer icon with spinning animation when streaming */}
+            <div className="relative mb-6">
+              <Timer className={cn(
+                "h-24 w-24",
+                isStreaming ? "text-orange-500 dark:text-orange-400" : "text-muted-foreground"
+              )} />
+              {isStreaming && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="h-20 w-20 rounded-full border-4 border-orange-500/30 border-t-orange-500 animate-spin" />
+                </div>
+              )}
+            </div>
             
-            <div className="text-5xl font-medium text-foreground mb-3">
+            {/* Time display */}
+            <div className="text-5xl font-medium text-foreground mb-3 tabular-nums">
               {formatDuration(seconds)}
             </div>
             
             <div className="text-sm text-muted-foreground mb-4">
               {isStreaming 
-                ? 'The system is currently pausing execution for the specified duration.' 
+                ? `Pausing execution for ${formatDuration(seconds)}...`
                 : `The system paused execution for ${formatDuration(seconds)} as requested.`
               }
             </div>
             
             {seconds > 0 && (
-              <div className="text-xs text-muted-foreground bg-muted/50 px-3 py-2 rounded-full">
-                {isStreaming ? 'Please wait...' : 'Wait completed successfully'}
+              <div className={cn(
+                "text-xs px-3 py-2 rounded-full",
+                isStreaming 
+                  ? "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300"
+                  : "bg-muted/50 text-muted-foreground"
+              )}>
+                {isStreaming ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Waiting in progress...
+                  </span>
+                ) : (
+                  'Wait completed successfully'
+                )}
               </div>
             )}
           </div>

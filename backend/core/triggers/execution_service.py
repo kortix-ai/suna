@@ -93,7 +93,7 @@ class ExecutionService:
                 "success": True,
                 "thread_id": result.get("thread_id"),
                 "agent_run_id": result.get("agent_run_id"),
-                "message": "Agent execution started successfully"
+                "message": "Worker execution started successfully"
             }
                 
         except Exception as e:

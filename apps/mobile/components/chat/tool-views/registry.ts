@@ -23,9 +23,6 @@ import { TerminateCommandToolView } from './terminate-command-tool/TerminateComm
 import { ListCommandsToolView } from './list-commands-tool/ListCommandsToolView';
 import { AskToolView } from './ask-tool/AskToolView';
 import { CompleteToolView } from './complete-tool/CompleteToolView';
-import { DataProviderToolView } from './data-provider-tool/DataProviderToolView';
-import { DataProviderEndpointsToolView } from './data-provider-tool/DataProviderEndpointsToolView';
-import { ExecuteDataProviderCallToolView } from './data-provider-tool/ExecuteDataProviderCallToolView';
 import { DocumentParserToolView } from './document-parser-tool/DocumentParserToolView';
 import { DocsToolView } from './docs-tool/DocsToolView';
 import { PeopleSearchToolView } from './people-search-tool/PeopleSearchToolView';
@@ -55,6 +52,7 @@ import { PresentationToolView } from './presentation-tool/PresentationToolView';
 import { ListPresentationsToolView } from './list-presentations-tool/ListPresentationsToolView';
 import { ExportToolView } from './export-tool/ExportToolView';
 import { RealityDefenderToolView } from './reality-defender-tool/RealityDefenderToolView';
+import { ApifyToolView } from './apify-tool/ApifyToolView';
 
 /**
  * Registry mapping tool names to their view components
@@ -128,9 +126,6 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'ask': AskToolView,
   'complete': CompleteToolView,
   
-  // Data provider tools
-  'execute-data-provider-call': ExecuteDataProviderCallToolView,
-  'get-data-provider-endpoints': DataProviderEndpointsToolView,
   
   // Research tools
   'people-search': PeopleSearchToolView,
@@ -250,6 +245,22 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   // Deepfake detection
   'detect-deepfake': RealityDefenderToolView,
   'detect_deepfake': RealityDefenderToolView,
+  
+  // Apify tools
+  'search-apify-actors': ApifyToolView,
+  'search_apify_actors': ApifyToolView,
+  'get-actor-details': ApifyToolView,
+  'get_actor_details': ApifyToolView,
+  'request-apify-approval': ApifyToolView,
+  'request_apify_approval': ApifyToolView,
+  'approve-apify-request': ApifyToolView,
+  'approve_apify_request': ApifyToolView,
+  'get-apify-approval-status': ApifyToolView,
+  'get_apify_approval_status': ApifyToolView,
+  'run-apify-actor': ApifyToolView,
+  'run_apify_actor': ApifyToolView,
+  'get-actor-run-results': ApifyToolView,
+  'get_actor_run_results': ApifyToolView,
   
   // Default fallback
   'default': GenericToolView,

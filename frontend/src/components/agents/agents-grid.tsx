@@ -94,7 +94,7 @@ const AgentModal: React.FC<AgentModalProps> = ({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-md p-0 overflow-hidden border-none">
-        <DialogTitle className="sr-only">Agent actions</DialogTitle>
+        <DialogTitle className="sr-only">Worker actions</DialogTitle>
         <div className="relative">
           <div className={`p-4 h-24 flex items-start justify-start relative`}>
             <AgentAvatar
@@ -249,7 +249,7 @@ export const AgentsGrid: React.FC<AgentsGridProps> = ({
     try {
       setUnpublishingId(agentId);
       await unpublishAgentMutation.mutateAsync(agentId);
-      toast.success('Agent made private');
+      toast.success('Worker made private');
       setSelectedAgent(null);
     } catch (error: any) {
       toast.error('Failed to make Worker private');

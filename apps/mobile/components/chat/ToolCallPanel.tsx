@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { View, Pressable } from 'react-native';
+import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { extractToolCallAndResult } from '@/lib/utils/tool-data-extractor';
 import { getToolViewComponent } from './tool-views';
 import { ToolHeader } from './tool-views/shared/ToolHeader';
 import { getToolMetadata } from './tool-views/tool-metadata';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -216,6 +216,7 @@ export function ToolCallPanel({
               currentIndex={currentIndex}
               totalCalls={toolMessages.length}
               project={project}
+              threadId={currentPair.toolMessage?.thread_id || currentPair.assistantMessage?.thread_id}
               onPromptFill={handlePromptFill}
             />
           </View>

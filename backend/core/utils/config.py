@@ -1,6 +1,5 @@
 import os
 from enum import Enum
-from re import S
 from typing import Dict, Any, Optional, get_type_hints, Union
 from dotenv import load_dotenv
 import logging
@@ -342,6 +341,12 @@ class Configuration:
     # Reality Defender deepfake detection
     REALITY_DEFENDER_API_KEY: Optional[str] = None
     
+    # Apify integration
+    APIFY_API_TOKEN: Optional[str] = None
+    
+    # Replicate API for image models
+    REPLICATE_API_TOKEN: Optional[str] = None
+    
     VAPI_PRIVATE_KEY: Optional[str] = None
     VAPI_PHONE_NUMBER_ID: Optional[str] = None
     VAPI_SERVER_URL: Optional[str] = None
@@ -357,6 +362,7 @@ class Configuration:
     
     # RevenueCat configuration
     REVENUECAT_WEBHOOK_SECRET: Optional[str] = None
+    REVENUECAT_API_KEY: Optional[str] = None
     
     # Stripe Product IDs
     STRIPE_PRODUCT_ID_PROD: Optional[str] = 'prod_SCl7AQ2C8kK1CD'
@@ -370,7 +376,7 @@ class Configuration:
     # Debug configuration
     # Set to True to save LLM API call inputs and stream outputs to debug_streams/ directory
     # Always False in production, regardless of environment variable
-    _DEBUG_SAVE_LLM_IO: Optional[bool] = True
+    _DEBUG_SAVE_LLM_IO: Optional[bool] = False
     
     @property
     def DEBUG_SAVE_LLM_IO(self) -> bool:

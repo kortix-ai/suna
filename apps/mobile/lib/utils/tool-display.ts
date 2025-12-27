@@ -114,14 +114,6 @@ export const getToolIcon = (toolName: string): LucideIcon => {
     case 'scrape_webpage':
       return Globe;
 
-    case 'call-data-provider':
-    case 'call_data_provider':
-      return ExternalLink;
-    case 'get-data-provider-endpoints':
-    case 'get_data_provider_endpoints':
-    case 'execute-data-provider-call':
-    case 'execute_data_provider_call':
-      return Network;
 
     case 'create-sheet':
     case 'create_sheet':
@@ -277,8 +269,8 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['visualize-sheet', 'Visualizing Sheet'],
   ['format-sheet', 'Formatting Sheet'],
 
-  ['update-agent', 'Updating Agent'],
-  ['get-current-agent-config', 'Getting Agent Config'],
+  ['update-agent', 'Updating Worker'],
+  ['get-current-agent-config', 'Getting Worker Config'],
   ['search-mcp-servers', 'Searching MCP Servers'],
   ['get-mcp-server-tools', 'Getting MCP Server Tools'],
   ['configure-mcp-server', 'Configuring MCP Server'],
@@ -303,8 +295,6 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['str_replace', 'Editing Text'],
   ['edit_file', 'Editing File'],
 
-  ['execute_data_provider_call', 'Calling data provider'],
-  ['get_data_provider_endpoints', 'Getting endpoints'],
   
   ['get-paper-details', 'Getting Paper Details'],
   ['search-authors', 'Searching Authors'],
@@ -320,23 +310,23 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['web_search', 'Searching Web'],
   ['load_image', 'Loading Image'],
   
-  ['update_agent', 'Updating Agent'],
-  ['get_current_agent_config', 'Getting Agent Config'],
+  ['update_agent', 'Updating Worker'],
+  ['get_current_agent_config', 'Getting Worker Config'],
   ['search_mcp_servers', 'Searching MCP Servers'],
   ['get_popular_mcp_servers', 'Getting Popular MCP Servers'],
   ['test_mcp_server_connection', 'Testing MCP Server Connection'],
   ['discover-user-mcp-servers', 'Discovering tools'],
   ['create-credential-profile', 'Creating profile'],
   ['get-credential-profiles', 'Getting profiles'],
-  ['configure-profile-for-agent', 'Adding tools to agent'],
+  ['configure-profile-for-agent', 'Adding tools to worker'],
 
-  ['create-new-agent', 'Creating New Agent'],
+  ['create-new-agent', 'Creating New Worker'],
   ['search-mcp-servers-for-agent', 'Searching MCP Servers'],
   ['create-credential-profile-for-agent', 'Creating Credential Profile'],
   ['discover-mcp-tools-for-agent', 'Discovering MCP Tools'],
-  ['configure-agent-integration', 'Configuring Agent Integration'],
+  ['configure-agent-integration', 'Configuring Worker Integration'],
   ['create-agent-scheduled-trigger', 'Creating Scheduled Trigger'],
-  ['list-agent-scheduled-triggers', 'Listing Agent Scheduled Triggers'],
+  ['list-agent-scheduled-triggers', 'Listing Worker Scheduled Triggers'],
 
   ['make-phone-call', 'Making Phone Call'],
   ['make_phone_call', 'Making Phone Call'],

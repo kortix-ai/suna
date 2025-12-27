@@ -11,17 +11,8 @@ from core.utils.suna_default_agent_service import SunaDefaultAgentService
 from core.utils.config import config, EnvMode
 from dotenv import load_dotenv, set_key, find_dotenv, dotenv_values
 import os
-import re
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-
-
-def escape_like_pattern(value: str) -> str:
-    if not value:
-        return value
-    # Escape backslashes first, then % and _
-    escaped = value.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-    return escaped
 
 # ============================================================================
 # MODELS
@@ -69,142 +60,40 @@ async def list_users(
         
         pagination_params = PaginationParams(page=page, page_size=page_size)
         
-        tier_filtered_account_ids: Optional[List[str]] = None
-        if tier_filter:
-            tier_result = await client.from_('credit_accounts').select(
-                'account_id'
-            ).eq('tier', tier_filter).execute()
-            tier_filtered_account_ids = [item['account_id'] for item in tier_result.data or []]
-            
-            if not tier_filtered_account_ids:
-                return await PaginationService.paginate_with_total_count(
-                    items=[],
-                    total_count=0,
-                    params=pagination_params
-                )
+        # Use RPC to handle the join, filter, sort, and pagination at the database level
+        # This avoids Supabase client limitations (1000 row limit, URI length limits)
+        rpc_result = await client.rpc('admin_list_users_by_tier', {
+            'p_tier': tier_filter,
+            'p_search_email': search_email,
+            'p_page': page,
+            'p_page_size': page_size,
+            'p_sort_by': sort_by,
+            'p_sort_order': sort_order.lower()
+        }).execute()
         
-        if search_email:
-            safe_email = escape_like_pattern(search_email)
-            email_result = await client.schema('basejump').from_('billing_customers').select(
-                'account_id'
-            ).ilike('email', f'%{safe_email}%').limit(1000).execute()
-            
-            matching_account_ids = [item['account_id'] for item in email_result.data or []]
-            
-            if tier_filtered_account_ids is not None:
-                matching_account_ids = [aid for aid in matching_account_ids if aid in tier_filtered_account_ids]
-            
-            if not matching_account_ids:
-                return await PaginationService.paginate_with_total_count(
-                    items=[],
-                    total_count=0,
-                    params=pagination_params
-                )
-            
-            base_query = client.schema('basejump').from_('accounts').select(
-                '''
-                id,
-                created_at,
-                primary_owner_user_id,
-                billing_customers(email),
-                billing_subscriptions(status)
-                '''
-            ).in_('id', matching_account_ids)
-            
-            total_count = len(matching_account_ids)
-        elif tier_filtered_account_ids is not None:
-            base_query = client.schema('basejump').from_('accounts').select(
-                '''
-                id,
-                created_at,
-                primary_owner_user_id,
-                billing_customers(email),
-                billing_subscriptions(status)
-                '''
-            ).in_('id', tier_filtered_account_ids)
-            
-            total_count = len(tier_filtered_account_ids)
-        else:
-            base_query = client.schema('basejump').from_('accounts').select(
-                '''
-                id,
-                created_at,
-                primary_owner_user_id,
-                billing_customers(email),
-                billing_subscriptions(status)
-                '''
-            )
-            
-            count_result = await client.schema('basejump').from_('accounts').select('*', count='exact').execute()
-            total_count = count_result.count or 0
-        
-        sort_column = sort_by
-        if sort_by == "email":
-            sort_column = "billing_customers.email"
-        
-        if sort_by not in ["balance", "tier"]:
-            ascending = sort_order.lower() == "asc"
-            base_query = base_query.order(sort_column, desc=not ascending)
-        
-        offset = (pagination_params.page - 1) * pagination_params.page_size
-        data_result = await base_query.range(offset, offset + pagination_params.page_size - 1).execute()
-        
-        user_ids = [item['id'] for item in data_result.data or []]
-        credit_accounts = {}
-        if user_ids:
-            credit_result = await client.from_('credit_accounts').select(
-                'account_id, balance, tier, lifetime_purchased, lifetime_used, trial_status'
-            ).in_('account_id', user_ids).execute()
-            
-            for credit in credit_result.data or []:
-                credit_accounts[credit['account_id']] = credit
-        
-        if sort_by in ["balance", "tier"]:
-            def get_sort_value(item):
-                credit = credit_accounts.get(item['id'], {})
-                if sort_by == "balance":
-                    return float(credit.get('balance', 0))
-                else:
-                    return credit.get('tier', 'free')
-            
-            ascending = sort_order.lower() == "asc"
-            data_result.data = sorted(
-                data_result.data or [], 
-                key=get_sort_value,
-                reverse=not ascending
+        if not rpc_result.data:
+            return await PaginationService.paginate_with_total_count(
+                items=[],
+                total_count=0,
+                params=pagination_params
             )
         
-        paginated_data = data_result.data or []
+        result_data = rpc_result.data
+        total_count = result_data.get('total_count', 0)
+        raw_users = result_data.get('data', []) or []
         
         users = []
-        for item in paginated_data:
-            subscription_status = None
-            if item.get('billing_subscriptions'):
-                subscription_status = item['billing_subscriptions'][0].get('status')
-            
-            credit_account = credit_accounts.get(item['id'], {})
-            
-            email = 'N/A'
-            if item.get('billing_customers') and item['billing_customers'][0].get('email'):
-                email = item['billing_customers'][0]['email']
-            elif item.get('primary_owner_user_id'):
-                try:
-                    user_email_result = await client.rpc('get_user_email', {'user_id': item['primary_owner_user_id']}).execute()
-                    if user_email_result.data:
-                        email = user_email_result.data
-                except Exception as e:
-                    logger.warning(f"Failed to get email for account {item['id']}: {e}")
-            
+        for item in raw_users:
             users.append(UserSummary(
                 id=item['id'],
-                email=email,
+                email=item.get('email') or 'N/A',
                 created_at=datetime.fromisoformat(item['created_at'].replace('Z', '+00:00')),
-                tier=credit_account.get('tier', 'free'),
-                credit_balance=float(credit_account.get('balance', 0)),
-                total_purchased=float(credit_account.get('lifetime_purchased', 0)),
-                total_used=float(credit_account.get('lifetime_used', 0)),
-                subscription_status=subscription_status,
-                trial_status=credit_account.get('trial_status')
+                tier=item.get('tier', 'free'),
+                credit_balance=float(item.get('credit_balance', 0)),
+                total_purchased=float(item.get('total_purchased', 0)),
+                total_used=float(item.get('total_used', 0)),
+                subscription_status=item.get('subscription_status'),
+                trial_status=item.get('trial_status')
             ))
         
         return await PaginationService.paginate_with_total_count(

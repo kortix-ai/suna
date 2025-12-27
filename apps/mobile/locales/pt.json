@@ -118,9 +118,50 @@
     }
   },
   "onboarding": {
+    "welcome": "Veja o que o Kortix pode fazer",
+    "welcomeSubtitle": "Seu assistente IA que age",
     "skip": "Pular",
     "next": "Próximo",
     "getStarted": "Começar",
+    "kortixComputer": "Kortix Computer",
+    "ready": "Pronto",
+    "examples": {
+      "presentations": {
+        "title": "Apresentações",
+        "description": "Veja como ele cria apresentações incríveis",
+        "userMessage": "Pesquise e crie uma apresentação sobre redes neurais",
+        "aiMessage": "Vou pesquisar redes neurais e criar uma apresentação para você...",
+        "researching": "Pesquisando",
+        "creatingFile": "Criando arquivo",
+        "creatingSlides": "Criando slides"
+      },
+      "dataAnalysis": {
+        "title": "Análise de dados",
+        "description": "Veja como ele analisa dados e cria relatórios visuais",
+        "userMessage": "Analise o desempenho de vendas Q4 do Google Drive",
+        "aiMessage": "Vou carregar seus dados de vendas e criar uma análise completa...",
+        "loadingFromDrive": "Carregando do Google Drive",
+        "creatingVisualization": "Criando visualização",
+        "researchingMarket": "Pesquisando mercado",
+        "creatingReport": "Criando relatório"
+      },
+      "image": {
+        "title": "Imagem",
+        "description": "Experimente o design de logos e marcas com IA",
+        "userMessage": "Crie um logo para nossa empresa",
+        "aiMessage": "Vejo que você mencionou LUXY. Vou criar um logo profissional para sua marca...",
+        "researchingBrand": "Pesquisando marca",
+        "creatingLogo": "Criando logo",
+        "creatingBrandBoard": "Criando quadro de marca"
+      },
+      "imageEasterEgg": {
+        "title": "Imagem",
+        "description": "Transforme suas fotos com estilos de IA",
+        "userMessage": "Converta minha imagem para estilo pixel art blocky",
+        "aiMessage": "Claro! Vou transformar sua imagem em um visual estilizado blocky...",
+        "creatingImage": "Criando imagem estilizada"
+      }
+    },
     "slide1": {
       "title": "Chat com IA",
       "description": "Tenha conversas naturais com assistentes IA poderosos que entendem o contexto e fornecem respostas úteis"
@@ -170,7 +211,7 @@
     "superworker": {
       "title": "Seu Super Worker IA",
       "description": "Combine todos os recursos para construir workers IA personalizados para qualquer tarefa que você precisar.",
-      "example": "Crie um agente de suporte ao cliente"
+      "example": "Crie um worker de suporte ao cliente"
     }
   },
   "settings": {
@@ -533,7 +574,7 @@
     "actionCannotBeUndone": "Esta ação não pode ser desfeita",
     "accountWillBeDeleted": "Sua conta será excluída permanentemente",
     "whatWillBeDeleted": "O que Será Excluído",
-    "allAgents": "Todos os seus agentes e versões de agentes",
+    "allAgents": "Todos os seus workers e versões de workers",
     "allThreads": "Todas as suas threads e conversações",
     "allCredentials": "Todas as suas credenciais e integrações",
     "subscriptionData": "Seus dados de assinatura e cobrança",
@@ -556,7 +597,7 @@
   },
   "models": {
     "selectModel": "Selecionar Modelo",
-    "chooseModelFor": "Escolhe um modelo para {{agent}}"
+    "chooseModelFor": "Escolhe um modelo para o worker {{agent}}"
   },
   "placeholders": {
     "default": "Dê uma tarefa para o Kortix...",
@@ -628,7 +669,7 @@
   },
   "integrations": {
     "title": "Integrações",
-    "description": "Conecte seus aplicativos e serviços favoritos para automatizar fluxos de trabalho e estender as capacidades do seu agente.",
+    "description": "Conecte seus aplicativos e serviços favoritos para automatizar fluxos de trabalho e estender as capacidades do seu worker.",
     "connectApps": "Conecte seus Apps",
     "externalApps": "Aplicativos Externos",
     "externalAppsDescription": "Conectar aplicativos e serviços populares",
@@ -637,7 +678,7 @@
     "composioApps": "Aplicativos Composio",
     "composioAppsDescription": "Conectar-se a centenas de aplicações empresariais",
     "connected": "Conectado",
-    "connectedToAgent": "Conectado a este agente",
+    "connectedToAgent": "Conectado a este worker",
     "available": "Aplicativos Disponíveis",
     "connect": "Conectar",
     "setup": "Configurar",
@@ -694,7 +735,7 @@
     },
     "toolsSelector": {
       "configureTools": "Configurar Ferramentas {{app}}",
-      "selectTools": "Selecione ferramentas para adicionar ao seu agente",
+      "selectTools": "Selecione ferramentas para adicionar ao seu worker",
       "readyToConfigureTools": "Pronto para configurar",
       "selected": "{{count}} de {{total}} selecionadas",
       "selectAll": "Selecionar Todas",
@@ -741,6 +782,9 @@
     "upgradeRequired": "Upgrade Necessário",
     "upgradeRequiredMessage": "Compartilhar conversas está disponível em planos pagos. Faça upgrade para desbloquear esta funcionalidade.",
     "upgrade": "Fazer Upgrade",
+    "share": "Compartilhar",
+    "files": "Arquivos",
+    "delete": "Excluir",
     "shareThread": "Compartilhar Conversa",
     "shareThreadUpgrade": "Compartilhar Conversa (Upgrade)",
     "availableOnPaidPlans": "Disponível em planos pagos",
@@ -748,6 +792,7 @@
     "manageFiles": "Gerenciar Arquivos",
     "viewManageAttachments": "Ver e gerenciar anexos",
     "deleteThread": "Excluir Conversa",
+    "deleteConfirm": "Tem certeza de que deseja excluir esta conversa? Esta ação não pode ser desfeita.",
     "permanentlyDelete": "Excluir permanentemente esta conversa"
   },
   "triggers": {
@@ -806,7 +851,7 @@
     "core": "Principal",
     "capabilitiesEnabled": "{{enabled}} / {{total}} capacidades habilitadas",
     "toolConfiguration": "Configuração de ferramentas",
-    "configureToolsDescription": "Configure as ferramentas e suas capacidades individuais para seu agente",
+    "configureToolsDescription": "Configure as ferramentas e suas capacidades individuais para seu worker",
     "toolsEnabled": "{{enabled}} / {{total}} habilitadas",
     "loadingTools": "Carregando ferramentas...",
     "noToolsAvailable": "Nenhuma ferramenta disponível",

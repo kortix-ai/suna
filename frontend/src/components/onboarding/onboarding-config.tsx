@@ -29,15 +29,15 @@ export const onboardingSteps: OnboardingStep[] = [
   },
   {
     id: 'workforce-selection',
-    title: 'Choose Agents',
+    title: 'Choose Workers',
     description: 'Select your AI workforce',
     content: <WorkforceSelectionStep />,
     canSkip: true,
-    actionLabel: 'Configure Agents'
+    actionLabel: 'Configure Workers'
   },
   {
     id: 'agent-configuration',
-    title: 'Configure Agents',
+    title: 'Configure Workers',
     description: 'Customize your AI team',
     content: <MultiAgentConfigurationStep />,
     canSkip: true,

@@ -1,7 +1,57 @@
 import type { NextConfig } from 'next';
 
+// Dynamically determine backend URL based on Vercel environment
+const getBackendUrl = (): string => {
+  // If explicitly set via Vercel dashboard/env, use that (highest priority)
+  const explicitUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  if (explicitUrl && explicitUrl.trim() !== '') {
+    return explicitUrl;
+  }
+  
+  // Vercel environment detection
+  const vercelEnv = process.env.VERCEL_ENV; // 'production', 'preview', or 'development'
+  const gitRef = process.env.VERCEL_GIT_COMMIT_REF || ''; // Branch name
+  
+  // Production environment
+  if (vercelEnv === 'production') {
+    return 'https://api.kortix.com/v1';
+  }
+  
+  // Preview deployments (non-main branches)
+  if (vercelEnv === 'preview' && gitRef && gitRef !== 'main') {
+    // Sanitize branch name for URL
+    const sanitizedBranch = gitRef
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+    return `https://${sanitizedBranch}.api-staging.suna.so/v1`;
+  }
+  
+  // Main branch / staging (default)
+  return 'https://staging-api.suna.so/v1';
+};
+
 const nextConfig = (): NextConfig => ({
   output: (process.env.NEXT_OUTPUT as 'standalone') || undefined,
+  
+  // Set environment variables
+  env: {
+    NEXT_PUBLIC_BACKEND_URL: getBackendUrl(),
+  },
+  
+  // Webpack configuration to make Konva work with Next.js
+  webpack: (config) => {
+    config.externals = [...config.externals, { canvas: 'canvas' }]; // required to make Konva & react-konva work
+    return config;
+  },
+  
+  // Turbopack configuration
+  turbopack: {
+    // Note: Turbopack handles externals differently than webpack.
+    // The canvas external is handled automatically for browser builds.
+    // If you need to configure loaders or aliases, add them here.
+  },
   
   // Performance optimizations
   experimental: {

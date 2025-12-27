@@ -71,7 +71,7 @@ export const AgentConfiguration = ({
         >
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Agent Settings</CardTitle>
+              <CardTitle className="text-lg">Worker Settings</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               {configFields.map((field, index) => (

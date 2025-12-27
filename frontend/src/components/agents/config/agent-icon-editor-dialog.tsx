@@ -260,7 +260,7 @@ export function AgentIconEditorDialog({
           className="border shadow-lg"
         />
         <div className="text-center">
-          <p className="font-medium">{agentName || 'Agent'}</p>
+          <p className="font-medium">{agentName || 'Worker'}</p>
         </div>
       </div>
 

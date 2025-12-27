@@ -127,8 +127,9 @@ export function Navbar({ tabs }: NavbarProps = {}) {
       )}
     >
       <motion.div
-        initial={{ width: INITIAL_WIDTH }}
-        animate={{ width: hasScrolled ? MAX_WIDTH : INITIAL_WIDTH }}
+        className="w-full px-2 sm:px-3 md:px-0"
+        initial={false}
+        animate={{ maxWidth: hasScrolled ? MAX_WIDTH : INITIAL_WIDTH }}
         transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
       >
         <div
@@ -152,48 +153,43 @@ export function Navbar({ tabs }: NavbarProps = {}) {
             </div> */}
 
             {/* Right Section - Actions */}
-            <div className="flex items-center justify-end flex-shrink-0 w-auto md:w-[200px] ml-auto">
-              <div className="flex flex-row items-center gap-2 md:gap-3 shrink-0">
-                <div className="flex items-center space-x-3">
-                  <LocaleSwitcher variant="compact" />
-                  <Link
-                    href="https://github.com/kortix-ai/suna"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 h-7 px-2.5 text-xs font-medium rounded-full bg-transparent text-muted-foreground/60 hover:text-muted-foreground hover:bg-accent/30 transition-all duration-200"
-                    aria-label="GitHub Repository"
-                  >
-                    <Github className="size-3.5" />
-                    <span className={`text-xs font-medium transition-opacity duration-200 ${starsLoading ? 'opacity-50' : 'opacity-100'}`}>
-                      {formattedStars}
-                    </span>
+            <div className="flex items-center justify-end flex-1 ml-auto gap-2 sm:gap-3 flex-wrap">
+              <LocaleSwitcher variant="compact" />
+              <Link
+                href="https://github.com/kortix-ai/suna"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hidden sm:flex items-center gap-1.5 h-7 px-2.5 text-xs font-medium rounded-full bg-transparent text-muted-foreground/60 hover:text-muted-foreground hover:bg-accent/30 transition-all duration-200"
+                aria-label="GitHub Repository"
+              >
+                <Github className="size-3.5" />
+                <span className={`text-xs font-medium transition-opacity duration-200 ${starsLoading ? 'opacity-50' : 'opacity-100'}`}>
+                  {formattedStars}
+                </span>
+              </Link>
+              {user ? (
+                <Button
+                  asChild
+                  variant="default"
+                  size="sm"
+                  className="w-fit flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
+                >
+                  <Link href="/dashboard">
+                    Dashboard
                   </Link>
-                  {user ? (
-                    <Button
-                      asChild
-                      variant="default"
-                      size="sm"
-                      className="w-fit flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
-                    >
-                      <Link href="/dashboard">
-                        Dashboard
-                      </Link>
-                    </Button>
-                  ) : (
-                    <Button
-                      asChild
-                      variant="default"
-                      size="sm"
-                      className="w-fit flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
-                    >
-                      <Link href="/auth">
-                        {t('tryFree')}
-                      </Link>
-                    </Button>
-                  )}
-                </div>
-                {/* <ThemeToggle /> */}
-              </div>
+                </Button>
+              ) : (
+                <Button
+                  asChild
+                  variant="default"
+                  size="sm"
+                  className="w-fit flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
+                >
+                  <Link href="/auth">
+                    {t('tryFree')}
+                  </Link>
+                </Button>
+              )}
             </div>
           </div>
         </div>

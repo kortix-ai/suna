@@ -2,7 +2,7 @@
   "expo": {
     "name": "Kortix",
     "slug": "kortix",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "orientation": "portrait",
     "icon": "./assets/images/AppIcon-Light.png",
     "scheme": "kortix",
@@ -78,6 +78,15 @@
       "expo-router",
       "expo-notifications",
       [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash.png",
+          "backgroundColor": "#ffffff",
+          "resizeMode": "contain",
+          "imageWidth": 80
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "cameraPermission": "Kortix needs camera access to let you capture photos and attach them to your saved conversations with the AI Worker. For example, you can photograph a document, whiteboard, or product for analysis and receive insights that are stored in your conversation history.",
@@ -115,7 +124,7 @@
       }
     },
     "owner": "kortix",
-    "runtimeVersion": "1.1.0",
+    "runtimeVersion": "1.1.1",
     "updates": {
       "url": "https://u.expo.dev/9fca3cff-a291-41c9-88b9-feb8053b990f",
       "checkAutomatically": "ON_LOAD",

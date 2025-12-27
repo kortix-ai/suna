@@ -205,7 +205,7 @@ class VersionService:
         current_result = await client.table('agents').select('current_version_id, version_count').eq('agent_id', agent_id).single().execute()
         
         if not current_result.data:
-            raise Exception("Agent not found")
+            raise Exception("Worker not found")
         
         previous_version_id = current_result.data.get('current_version_id')
         

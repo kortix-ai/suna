@@ -344,7 +344,7 @@ async def export_agent(agent_id: str, user_id: str = Depends(verify_and_get_user
         # Get agent data
         agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', user_id).execute()
         if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Agent not found")
+            raise HTTPException(status_code=404, detail="Worker not found")
         
         agent = agent_result.data[0]
         

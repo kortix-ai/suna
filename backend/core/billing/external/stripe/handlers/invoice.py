@@ -251,6 +251,29 @@ class InvoiceHandler:
                     logger.info(f"[RENEWAL] Cancelled trial user subscribing - resetting trial status to 'none'")
                     trial_status = 'none'
                 
+                # Check tier config first to see if monthly_refill is enabled
+                tier_config = get_tier_by_name(tier)
+                if not tier_config:
+                    logger.error(f"[RENEWAL] Tier {tier} not found in configuration - cannot process invoice")
+                    raise ValueError(f"Tier not found: {tier}")
+                
+                # For tiers with monthly_refill_enabled=False (e.g., free tier), skip credit grant but still update metadata
+                if not tier_config.monthly_refill_enabled:
+                    logger.info(f"[RENEWAL] Skipping credit grant for tier {tier} - monthly_refill_enabled=False")
+                    # Still update invoice tracking and metadata
+                    await client.from_('credit_accounts').update({
+                        'last_processed_invoice_id': invoice_id,
+                        'stripe_subscription_id': subscription_id,
+                        'tier': tier,
+                        'billing_cycle_anchor': period_start_dt.isoformat(),
+                        'next_credit_grant': BillingPeriodHandler._calculate_next_credit_grant(price_id, period_start, period_end) if price_id else None
+                    }).eq('account_id', account_id).execute()
+                    await Cache.invalidate(f"credit_balance:{account_id}")
+                    await Cache.invalidate(f"credit_summary:{account_id}")
+                    await Cache.invalidate(f"subscription_tier:{account_id}")
+                    await invalidate_account_state_cache(account_id)
+                    return
+                
                 monthly_credits = get_monthly_credits(tier)
                 logger.info(f"[RENEWAL] invoice_id={invoice_id}, billing_reason={billing_reason}, monthly_credits={monthly_credits}, tier={tier}")
                 
@@ -276,7 +299,7 @@ class InvoiceHandler:
                                 'tier': tier,
                                 'stripe_subscription_id': subscription_id,
                                 'billing_cycle_anchor': period_start_dt.isoformat(),
-                                'next_credit_grant': BillingPeriodHandler._calculate_next_credit_grant(price_id, period_start, period_end)
+                                'next_credit_grant': BillingPeriodHandler._calculate_next_credit_grant(price_id, period_start, period_end) if price_id else None
                             }
                             if trial_status != account.get('trial_status'):
                                 update_data['trial_status'] = trial_status
@@ -325,11 +348,12 @@ class InvoiceHandler:
                             amount = entry.get('amount', 0)
                             stripe_event_id_check = entry.get('stripe_event_id', '')
                             
-                            if ((('checkout.session.completed' in description or 'checkout_' in stripe_event_id_check) and
+                            if ((('checkout.session.completed' in description or 'checkout_' in stripe_event_id_check or 'free_upgrade_' in stripe_event_id_check) and
                                 float(amount) == float(monthly_credits) and
                                 tier in description) or 
                                 ('Tier upgrade to' in description and float(amount) == float(monthly_credits)) or
-                                ('Subscription credits for' in description and float(amount) == float(monthly_credits))):
+                                ('Subscription credits for' in description and float(amount) == float(monthly_credits)) or
+                                ('New subscription:' in description and tier in description and float(amount) == float(monthly_credits))):
                                 checkout_credits_already_granted = True
                                 logger.info(f"[INITIAL GRANT SKIP] Found recent upgrade credit grant: {description} (${amount})")
                                 break
@@ -337,14 +361,14 @@ class InvoiceHandler:
                     if checkout_credits_already_granted:
                         logger.info(f"[INITIAL GRANT SKIP] Checkout handler already granted ${monthly_credits} credits for {account_id}, skipping invoice grant")
                         
-                        plan_type = get_plan_type(price_id)
+                        plan_type = get_plan_type(price_id) if price_id else None
                         update_data = {
                             'tier': tier,
                             'plan_type': plan_type,
                             'last_processed_invoice_id': invoice_id,
                             'stripe_subscription_id': subscription_id,
                             'billing_cycle_anchor': datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc).isoformat(),
-                            'next_credit_grant': BillingPeriodHandler._calculate_next_credit_grant(price_id, period_start, period_end)
+                            'next_credit_grant': BillingPeriodHandler._calculate_next_credit_grant(price_id, period_start, period_end) if price_id else None
                         }
                         
                         if trial_status in ['cancelled', 'expired']:
@@ -370,7 +394,7 @@ class InvoiceHandler:
                     update_data = {
                         'tier': tier,
                         'last_grant_date': datetime.fromtimestamp(period_start, tz=timezone.utc).isoformat(),
-                        'next_credit_grant': BillingPeriodHandler._calculate_next_credit_grant(price_id, period_start, period_end),
+                        'next_credit_grant': BillingPeriodHandler._calculate_next_credit_grant(price_id, period_start, period_end) if price_id else None,
                         'last_processed_invoice_id': invoice_id,
                         'stripe_subscription_id': subscription_id,
                         'billing_cycle_anchor': datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc).isoformat()
@@ -403,10 +427,13 @@ class InvoiceHandler:
                             'trial_status': 'none'
                         }).eq('account_id', account_id).execute()
                     
-                    await Cache.invalidate(f"credit_balance:{account_id}")
-                    await Cache.invalidate(f"credit_summary:{account_id}")
-                    await Cache.invalidate(f"subscription_tier:{account_id}")
-                    await invalidate_account_state_cache(account_id)
+                    try:
+                        await Cache.invalidate(f"credit_balance:{account_id}")
+                        await Cache.invalidate(f"credit_summary:{account_id}")
+                        await Cache.invalidate(f"subscription_tier:{account_id}")
+                        await invalidate_account_state_cache(account_id)
+                    except Exception as cache_err:
+                        logger.warning(f"[RENEWAL] Cache invalidation failed for {account_id}: {str(cache_err)}")
                 elif is_true_renewal and result and hasattr(result, 'data') and result.data and result.data.get('duplicate_prevented'):
                     logger.info(
                         f"[RENEWAL DEDUPE] ⛔ Duplicate renewal prevented for {account_id} period {period_start} "
@@ -418,31 +445,50 @@ class InvoiceHandler:
                 elif not is_true_renewal and result and result.get('success'):
                     logger.info(f"[INITIAL GRANT SUCCESS] ✅ Granted ${monthly_credits} initial subscription credits to {account_id}")
                     
-                    await Cache.invalidate(f"credit_balance:{account_id}")
-                    await Cache.invalidate(f"credit_summary:{account_id}")
-                    await Cache.invalidate(f"subscription_tier:{account_id}")
-                    await invalidate_account_state_cache(account_id)
+                    try:
+                        await Cache.invalidate(f"credit_balance:{account_id}")
+                        await Cache.invalidate(f"credit_summary:{account_id}")
+                        await Cache.invalidate(f"subscription_tier:{account_id}")
+                        await invalidate_account_state_cache(account_id)
+                    except Exception as cache_err:
+                        logger.warning(f"[RENEWAL] Cache invalidation failed for {account_id}: {str(cache_err)}")
             
             except Exception as e:
-                logger.error(f"Error handling subscription renewal: {e}")
+                logger.error(
+                    f"Error handling subscription renewal for invoice {invoice_id}, account {account_id}, tier {tier}: {str(e)}",
+                    exc_info=True
+                )
             
             finally:
                 await lock.release()
 
         except Exception as e:
-            logger.error(f"Outer error in handle_subscription_renewal: {e}")
+            invoice_id_str = invoice.get('id', 'unknown') if 'invoice' in locals() else 'unknown'
+            account_id_str = account_id if 'account_id' in locals() else 'unknown'
+            tier_str = tier if 'tier' in locals() else 'unknown'
+            logger.error(
+                f"Outer error in handle_subscription_renewal - invoice_id={invoice_id_str}, account_id={account_id_str}, tier={tier_str}: {str(e)}",
+                exc_info=True
+            )
 
     @staticmethod
     async def handle_invoice_payment_failed(event, client):
         invoice = event.data.object
         subscription_id = invoice.get('subscription')
+        billing_reason = invoice.get('billing_reason')
+        
+        logger.info(f"[PAYMENT FAILED] Processing: subscription_id={subscription_id}, billing_reason={billing_reason}")
         
         if not subscription_id:
+            logger.info("[PAYMENT FAILED] No subscription_id in invoice, skipping")
             return
             
         try:
             subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
             account_id = subscription.metadata.get('account_id')
+            subscription_status = subscription.get('status')
+            
+            logger.debug(f"[PAYMENT FAILED] Retrieved subscription: status={subscription_status}, account_id={account_id}")
             
             if not account_id:
                 customer_result = await client.schema('basejump').from_('billing_customers')\
@@ -452,16 +498,45 @@ class InvoiceHandler:
                 
                 if customer_result.data:
                     account_id = customer_result.data[0]['account_id']
+                    logger.info(f"[PAYMENT FAILED] Found account_id from billing_customers: {account_id}")
             
             if account_id:
                 try:
-                    await client.from_('credit_accounts').update({
-                        'payment_status': 'failed',
-                        'last_payment_failure': datetime.now(timezone.utc).isoformat()
-                    }).eq('account_id', account_id).execute()
-                    logger.info(f"[WEBHOOK] Marked payment as failed for account {account_id}")
+                    # Check if this is a failed payment for a NEW subscription that never became active
+                    # Include 'canceled' status because Stripe may delete incomplete subscriptions
+                    is_new_subscription_failure = (
+                        billing_reason == 'subscription_create' and 
+                        subscription_status in ['incomplete', 'incomplete_expired', 'canceled']
+                    )
+                    
+                    if is_new_subscription_failure:
+                        # Payment failed for initial subscription - revert tier and clean up
+                        # This is a safety net in case tier was incorrectly set
+                        logger.info(f"[PAYMENT FAILED] Initial subscription payment failed for {account_id} - reverting tier to 'free'")
+                        
+                        await client.from_('credit_accounts').update({
+                            'payment_status': 'failed',
+                            'last_payment_failure': datetime.now(timezone.utc).isoformat(),
+                            'tier': 'free',  # Revert to free tier
+                            'stripe_subscription_id': None,  # Clear the failed subscription
+                            'stripe_subscription_status': None
+                        }).eq('account_id', account_id).execute()
+                        
+                        logger.info(f"[PAYMENT FAILED] Successfully reverted {account_id} to free tier")
+                    else:
+                        # Existing subscription payment failed - just mark as failed
+                        # User keeps their tier during grace period
+                        await client.from_('credit_accounts').update({
+                            'payment_status': 'failed',
+                            'last_payment_failure': datetime.now(timezone.utc).isoformat()
+                        }).eq('account_id', account_id).execute()
+                        
+                        logger.info(f"[PAYMENT FAILED] Marked payment as failed for account {account_id}")
+                    
                 except Exception as update_error:
-                    logger.warning(f"[WEBHOOK] Could not update payment status (non-critical): {update_error}")
+                    logger.warning(f"[WEBHOOK] Could not update payment status: {update_error}")
+            else:
+                logger.warning(f"[PAYMENT FAILED] Could not find account_id for subscription {subscription_id}")
                 
         except Exception as e:
             logger.error(f"[WEBHOOK] Error processing payment failure: {e}")

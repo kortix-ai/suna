@@ -24,7 +24,6 @@ The tool discovery system automatically generates human-readable metadata when d
 | `sb_shell_tool` | `Sb Shell` |
 | `MessageTool` | `Message` |
 | `BrowserTool` | `Browser` |
-| `DataProvidersTool` | `Data Providers` |
 | `sb_image_edit_tool` | `Sb Image Edit` |
 
 **Code Location:** `tool_discovery.py:_generate_display_name()`

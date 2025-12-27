@@ -17,7 +17,7 @@ class BillingIntegration:
         
         try:
             import asyncio
-            from core.services import redis_worker as redis
+            from core.services import redis
             today = datetime.now(timezone.utc).date().isoformat()
             cache_key = f"daily_credit_check:{account_id}:{today}"
             
@@ -140,7 +140,7 @@ class BillingIntegration:
             
             cost = cached_read_cost + cache_write_cost + non_cached_cost
             
-            logger.info(f"[BILLING] Cost breakdown: cached_read=${cached_read_cost:.6f} + cache_write=${cache_write_cost:.6f} + regular=${non_cached_cost:.6f} = total=${cost:.6f}")
+            logger.debug(f"[BILLING] Cost breakdown: cached_read=${cached_read_cost:.6f} + cache_write=${cache_write_cost:.6f} + regular=${non_cached_cost:.6f} = total=${cost:.6f}")
         else:
             cost = calculate_token_cost(prompt_tokens, completion_tokens, model)
         
@@ -153,7 +153,7 @@ class BillingIntegration:
                 balance_value = float(balance_info or 0)
             return {'success': True, 'cost': 0, 'new_balance': balance_value}
         
-        logger.info(f"[BILLING] Calculated cost: ${cost:.6f} for {model}")
+        logger.debug(f"[BILLING] Calculated cost: ${cost:.6f} for {model}")
         
         result = await credit_manager.deduct_credits(
             account_id=account_id,
@@ -165,7 +165,7 @@ class BillingIntegration:
         )
         
         if result.get('success'):
-            logger.info(f"[BILLING] Successfully deducted ${cost:.6f} from user {account_id}. New balance: ${result.get('new_total', result.get('new_balance', 0)):.2f} (expiring: ${result.get('from_expiring', 0):.2f}, non-expiring: ${result.get('from_non_expiring', 0):.2f})")
+            logger.debug(f"[BILLING] Successfully deducted ${cost:.6f} from user {account_id}. New balance: ${result.get('new_total', result.get('new_balance', 0)):.2f} (expiring: ${result.get('from_expiring', 0):.2f}, non-expiring: ${result.get('from_non_expiring', 0):.2f})")
             await invalidate_account_state_cache(account_id)
         else:
             logger.error(f"[BILLING] Failed to deduct credits for user {account_id}: {result.get('error')}")

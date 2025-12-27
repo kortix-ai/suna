@@ -1,0 +1,269 @@
+name: E2E Benchmark Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: 'staging'
+      mode:
+        description: 'Test mode'
+        required: true
+        type: choice
+        options:
+          - core_test
+          - stress_test
+      concurrency:
+        description: 'Concurrency level'
+        required: false
+        default: '5'
+      num_executions:
+        description: 'Number of executions (stress test only)'
+        required: false
+        default: '100'
+      prompt_ids:
+        description: 'Comma-separated prompt IDs (empty = all prompts)'
+        required: false
+        default: ''
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run E2E Benchmark
+        env:
+          API_URL: ${{ inputs.environment == 'production' && 'https://api.kortix.com' || 'https://staging-api.suna.so' }}
+          ADMIN_API_KEY: ${{ secrets.KORTIX_ADMIN_API_KEY }}
+        run: |
+          set -e
+          
+          # Validate admin API key is configured
+          if [ -z "$ADMIN_API_KEY" ]; then
+            echo "❌ Error: KORTIX_ADMIN_API_KEY is not set"
+            echo "Please add it at: https://github.com/${{ github.repository }}/settings/secrets/actions"
+            exit 1
+          fi
+          
+          # Mask secrets
+          echo "::add-mask::$ADMIN_API_KEY"
+          
+          echo "🧪 Starting ${{ inputs.mode }} on ${{ inputs.environment }}"
+          echo "📍 API URL: $API_URL"
+          echo ""
+          
+          # Test API connectivity
+          echo "🔍 Testing API connectivity..."
+          HEALTH_CHECK=$(curl -s -w "\n%{http_code}" "$API_URL/v1/health" 2>&1 || echo -e "\nERROR")
+          HEALTH_STATUS=$(echo "$HEALTH_CHECK" | tail -n1)
+          
+          if [ "$HEALTH_STATUS" != "200" ]; then
+            echo "⚠️  Warning: API health check failed (HTTP $HEALTH_STATUS)"
+            echo "The API might be unreachable or down. Continuing anyway..."
+          else
+            echo "✅ API is reachable"
+          fi
+          echo ""
+          
+          # Build prompt_ids array
+          PROMPT_IDS_JSON="null"
+          if [ -n "${{ inputs.prompt_ids }}" ]; then
+            PROMPT_IDS_JSON=$(echo "${{ inputs.prompt_ids }}" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$";""))')
+          fi
+          
+          # Build metadata
+          METADATA=$(jq -n \
+            --arg branch "${{ github.ref_name }}" \
+            --arg commit "${{ github.sha }}" \
+            --arg env "${{ inputs.environment }}" \
+            --arg workflow "${{ github.run_id }}" \
+            '{
+              branch: $branch,
+              commit: $commit,
+              environment: $env,
+              workflow_run_id: $workflow,
+              triggered_by: "${{ github.actor }}"
+            }')
+          
+          # Start test
+          REQUEST_BODY=$(jq -n \
+            --arg mode "${{ inputs.mode }}" \
+            --argjson concurrency "${{ inputs.concurrency }}" \
+            --argjson num_executions "${{ inputs.num_executions }}" \
+            --argjson prompt_ids "$PROMPT_IDS_JSON" \
+            --argjson metadata "$METADATA" \
+            '{
+              mode: $mode,
+              concurrency: $concurrency,
+              num_executions: $num_executions,
+              prompt_ids: $prompt_ids,
+              metadata: $metadata
+            }')
+          
+          echo "📤 Request payload:"
+          echo "$REQUEST_BODY" | jq '.'
+          echo ""
+          
+          # Make API request with detailed error handling
+          HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/v1/admin/test-harness/run" \
+            -H "X-Admin-Api-Key: $ADMIN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$REQUEST_BODY" 2>&1)
+          
+          # Extract HTTP status code and body
+          HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tail -n1)
+          START_RESPONSE=$(echo "$HTTP_RESPONSE" | sed '$d')
+          
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "❌ Failed to start test (HTTP $HTTP_STATUS)"
+            echo ""
+            echo "Response body:"
+            echo "$START_RESPONSE" | jq '.' 2>/dev/null || echo "$START_RESPONSE"
+            echo ""
+            echo "🔍 Troubleshooting:"
+            echo "  1. Verify API URL is correct: $API_URL"
+            echo "  2. Check that KORTIX_ADMIN_API_KEY is valid"
+            echo "  3. Ensure the API server is running and accessible"
+            echo "  4. Check API server logs for more details"
+            exit 1
+          fi
+          
+          # Parse response
+          RUN_ID=$(echo "$START_RESPONSE" | jq -r '.run_id')
+          
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "❌ Failed to extract run_id from response"
+            echo "Response:"
+            echo "$START_RESPONSE" | jq '.'
+            exit 1
+          fi
+          
+          echo "✅ Test started: $RUN_ID"
+          echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
+          echo ""
+          
+          # Monitor test
+          MAX_WAIT=1800  # 30 minutes
+          WAIT_INTERVAL=10
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            sleep $WAIT_INTERVAL
+            ELAPSED=$((ELAPSED + WAIT_INTERVAL))
+            
+            # Fetch status with error handling
+            STATUS_HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" "$API_URL/v1/admin/test-harness/runs/$RUN_ID" \
+              -H "X-Admin-Api-Key: $ADMIN_API_KEY" 2>&1)
+            
+            STATUS_HTTP_CODE=$(echo "$STATUS_HTTP_RESPONSE" | tail -n1)
+            RESULT=$(echo "$STATUS_HTTP_RESPONSE" | sed '$d')
+            
+            if [ "$STATUS_HTTP_CODE" -ne 200 ]; then
+              echo "⚠️  Failed to fetch status (HTTP $STATUS_HTTP_CODE) - retry $((ELAPSED/WAIT_INTERVAL))"
+              continue
+            fi
+            
+            STATUS=$(echo "$RESULT" | jq -r '.status // "unknown"')
+            SUCCESS=$(echo "$RESULT" | jq -r '.summary.successful // 0')
+            TOTAL=$(echo "$RESULT" | jq -r '.summary.total_prompts // 0')
+            
+            echo "[$ELAPSED/${MAX_WAIT}s] Status: $STATUS | Progress: $SUCCESS/$TOTAL"
+            
+            if [ "$STATUS" = "completed" ]; then
+              echo ""
+              echo "✅ Test completed successfully!"
+              echo "$RESULT" | jq '.'
+              echo "$RESULT" > benchmark-results.json
+              
+              # Create summary
+              echo "## ✅ Benchmark Test Results" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "- **Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+              echo "- **Mode**: ${{ inputs.mode }}" >> $GITHUB_STEP_SUMMARY
+              echo "- **Run ID**: \`$RUN_ID\`" >> $GITHUB_STEP_SUMMARY
+              echo "- **Success Rate**: $SUCCESS/$TOTAL prompts" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              
+              # Add individual test results
+              echo "### 📋 Individual Test Results:" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              
+              # Loop through each result with color-coded deviations
+              echo "$RESULT" | jq -r '.results[]? | 
+                "#### \(.prompt_id)\n" +
+                "- **Status**: \(if .status == "completed" then "✅ Passed" else "❌ Failed" end)\n" +
+                "- **Duration**: \(.total_duration_ms)ms (cold start: \(.cold_start_ms)ms)\n" +
+                "- **Tool Calls**: \(.tool_calls_count) calls\n" +
+                "- **Expected Tools**: \(if .expected_tools_present then "✅ All present" else "⚠️ Missing: \(.missing_tools | join(", "))" end)\n" +
+                "- **Tool Call Accuracy**:\n" +
+                (if (.tool_call_deviations | length) > 0 then
+                  (.tool_call_deviations | to_entries | map(
+                    "  - `\(.key)`: " + 
+                    (if .value.deviation == 0 then 
+                      "$\\color{Green}{\\textsf{✓ \(.value.actual)/\(.value.expected)}}$"
+                    elif .value.deviation == 1 then
+                      "$\\color{Yellow}{\\textsf{⚠ \(.value.actual)/\(.value.expected) (+\(.value.deviation))}}$"
+                    elif .value.deviation == 2 then
+                      "$\\color{Orange}{\\textsf{⚠⚠ \(.value.actual)/\(.value.expected) (+\(.value.deviation))}}$"
+                    elif .value.deviation > 2 then
+                      "$\\color{Red}{\\textbf{✗ \(.value.actual)/\(.value.expected) (+\(.value.deviation))}}$"
+                    elif .value.deviation < 0 then
+                      "$\\color{Red}{\\textbf{✗ \(.value.actual)/\(.value.expected) (\(.value.deviation))}}$"
+                    else
+                      "\(.value.actual)/\(.value.expected)"
+                    end)
+                  ) | join("\n"))
+                else
+                  "  - _(No expected tool calls defined)_"
+                end) + "\n"
+              ' 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "_(Could not parse individual results)_" >> $GITHUB_STEP_SUMMARY
+              
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### 📊 Overall Summary:" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+              echo "$RESULT" | jq '.summary' >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              
+              # Add tool validation section if there are missing tools
+              TESTS_WITH_MISSING=$(echo "$RESULT" | jq '[.results[]? | select(.expected_tools_present == false)] | length' 2>/dev/null || echo "0")
+              if [ "$TESTS_WITH_MISSING" != "0" ] && [ "$TESTS_WITH_MISSING" != "null" ]; then
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "### ⚠️ Tool Validation Issues ($TESTS_WITH_MISSING tests):" >> $GITHUB_STEP_SUMMARY
+                echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+                echo "$RESULT" | jq '[.results[]? | select(.expected_tools_present == false) | {prompt_id, missing_tools, called: .tool_call_breakdown}]' 2>/dev/null >> $GITHUB_STEP_SUMMARY
+                echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              fi
+              
+              exit 0
+            elif [ "$STATUS" = "failed" ]; then
+              echo ""
+              echo "❌ Test failed"
+              echo "$RESULT" | jq '.'
+              echo "$RESULT" > benchmark-results.json
+              
+              # Create summary
+              echo "## ❌ Benchmark Test Failed" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "- **Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+              echo "- **Mode**: ${{ inputs.mode }}" >> $GITHUB_STEP_SUMMARY
+              echo "- **Run ID**: \`$RUN_ID\`" >> $GITHUB_STEP_SUMMARY
+              
+              exit 1
+            fi
+          done
+          
+          echo ""
+          echo "❌ Test timed out after ${MAX_WAIT}s"
+          exit 1
+      
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results-${{ inputs.environment }}-${{ inputs.mode }}
+          path: benchmark-results.json

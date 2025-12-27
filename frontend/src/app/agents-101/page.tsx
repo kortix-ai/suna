@@ -27,8 +27,8 @@ const slides: Slide[] = [
   {
     id: 1,
     type: 'event',
-    title: 'Agents',
-    subtitle: 'Agents Agents Agents',
+    title: 'Workers',
+    subtitle: 'Workers Workers Workers',
   },
   {
     id: 2,
@@ -43,11 +43,11 @@ const slides: Slide[] = [
     subtitle: 'Let\'s see Kortix in action',
   },
 
-  // Part 2: What Are Agents?
+  // Part 2: What Are Workers?
   {
     id: 4,
     type: 'diagram',
-    title: 'What is an AI Agent?',
+    title: 'What is an AI Worker?',
     subtitle: 'A software system that can perceive its environment, make decisions, and take actions autonomously to achieve specific goals',
     diagram: 'agent-loop',
     accent: '#82DD95',
@@ -59,7 +59,7 @@ const slides: Slide[] = [
     type: 'comparison',
     title: 'Autonomy vs Determinism',
     leftColumn: {
-      title: 'Autonomous AI Agent',
+      title: 'Autonomous AI Worker',
       points: [
         'Runs open-ended until goal is achieved',
         'LLM decides actions at each step',
@@ -68,12 +68,12 @@ const slides: Slide[] = [
       ],
     },
     rightColumn: {
-      title: 'Agentic Workflow',
+      title: 'Worker Workflow',
       points: [
         'Runs close-ended through fixed steps',
         'LLM used one step at a time, highly controlled',
         'High predictability, lower autonomy',
-        'Often mislabeled as "AI Agents"',
+        'Often mislabeled as "AI Workers"',
       ],
     },
   },
@@ -82,7 +82,7 @@ const slides: Slide[] = [
   {
     id: 6,
     type: 'interactive',
-    title: 'Building an Agent',
+    title: 'Building a Worker',
     subtitle: 'Step by step walkthrough',
   },
 
@@ -108,11 +108,11 @@ const GrainOverlay = () => (
   />
 );
 
-// Agent Loop Diagram - Classic RL cycle
+// Worker Loop Diagram - Classic RL cycle
 const AgentLoopDiagram = () => (
   <div className="relative w-full max-w-4xl mx-auto">
     <div className="flex items-center justify-center gap-6 md:gap-12">
-      {/* Agent */}
+      {/* Worker */}
       <motion.div
         className="flex flex-col items-center"
         initial={{ opacity: 0, scale: 0.8 }}
@@ -121,7 +121,7 @@ const AgentLoopDiagram = () => (
       >
         <div className="w-32 h-32 md:w-40 md:h-40 rounded-2xl bg-[#9DC2FF] flex flex-col items-center justify-center">
           <span className="text-3xl mb-1">🤖</span>
-          <span className="text-black font-semibold text-lg md:text-xl">Agent</span>
+          <span className="text-black font-semibold text-lg md:text-xl">Worker</span>
         </div>
       </motion.div>
 
@@ -173,7 +173,7 @@ const AgentLoopDiagram = () => (
       animate={{ opacity: 1 }}
       transition={{ delay: 0.6 }}
     >
-      Agent takes action → Environment returns result → Agent decides next action
+      Worker takes action → Environment returns result → Worker decides next action
     </motion.p>
   </div>
 );
@@ -359,7 +359,7 @@ const InteractiveDemo = () => {
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-3 h-3 rounded-full bg-[#82DD95]" />
                 <span className="font-semibold text-[#82DD95]">messages[]</span>
-                <span className="text-muted-foreground text-sm">— the agent&apos;s context / state</span>
+                <span className="text-muted-foreground text-sm">— the worker&apos;s context / state</span>
               </div>
               
               <div className="space-y-2 font-mono text-sm">
@@ -368,7 +368,7 @@ const InteractiveDemo = () => {
                   animate={{ scale: step === 2 ? 1.02 : 1 }}
                 >
                   <span className="px-2 py-0.5 rounded bg-[#9DC2FF] text-black text-xs font-bold">system</span>
-                  <span className="text-white/70 text-xs">Agent persona & instructions</span>
+                  <span className="text-white/70 text-xs">Worker persona & instructions</span>
                 </motion.div>
                 
                 <motion.div 
@@ -520,7 +520,7 @@ const InteractiveDemo = () => {
 const KortixStackDiagram = () => {
   const layers = [
     { label: 'User Interface', color: '#9DC2FF', width: '100%' },
-    { label: 'Agent Orchestration', color: '#82DD95', width: '90%' },
+    { label: 'Worker Orchestration', color: '#82DD95', width: '90%' },
     { label: 'Tool Execution Layer', color: '#FFCD7E', width: '80%' },
     { label: 'Sandboxed Environment', color: '#FFB5E4', width: '70%' },
     { label: 'LLM Foundation', color: '#FFAFAF', width: '60%' },
@@ -548,7 +548,7 @@ const KortixStackDiagram = () => {
 const SandboxArchDiagram = () => {
   const layers = [
     { label: 'User Request', sublabel: '"Build me a landing page"', color: '#9DC2FF', icon: '💬' },
-    { label: 'Agent Orchestration', sublabel: 'ThreadManager → run_agent()', color: '#82DD95', icon: '🧠' },
+    { label: 'Worker Orchestration', sublabel: 'ThreadManager → run_agent()', color: '#82DD95', icon: '🧠' },
     { label: 'Tool Execution', sublabel: 'sb_files, sb_shell, browser', color: '#FFCD7E', icon: '🔧' },
     { label: 'Sandboxed Container', sublabel: 'Isolated Linux environment', color: '#FFB5E4', icon: '📦' },
   ];

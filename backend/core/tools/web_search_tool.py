@@ -34,24 +34,28 @@ import time
 **RESEARCH BEST PRACTICES:**
 1. **Multi-source approach for thorough research:**
    - Start with web-search using BATCH MODE (multiple queries concurrently) to find direct answers, images, and relevant URLs efficiently
-   - ALWAYS use `web_search(query=["query1", "query2", "query3"])` format when researching multiple aspects of a topic
-   - Only use scrape-webpage when you need detailed content not available in search results
+   - ALWAYS use web_search with multiple queries in batch mode when researching multiple aspects of a topic
+   - **AUTOMATICALLY identify and scrape qualitative sources** (papers, articles, detailed content) from search results
    - Only use browser tools when scrape-webpage fails or interaction is needed
 
-2. **Research Workflow:**
+2. **Research Workflow with Automatic Content Extraction:**
    - **MANDATORY**: Use web-search in BATCH MODE with multiple queries for direct answers and URLs
    - **CRITICAL**: When researching any topic with multiple dimensions, ALWAYS use batch mode
-   - **CORRECT FORMAT**: `web_search(query=["topic overview", "use cases", "pricing"], num_results=5)`
-   - **WRONG FORMAT**: Never use `query='["topic overview", "use cases"]'` (JSON string)
-   - Example: `web_search(query=["topic overview", "use cases", "pricing", "user demographics"], num_results=5)` runs all searches in parallel
-   - Only if you need specific details not found in search results: use scrape-webpage on specific URLs
+   - **CORRECT FORMAT**: use web_search with query parameter containing multiple queries (e.g., topic overview, use cases, pricing) and num_results set to 5
+   - **WRONG FORMAT**: Never pass query as a JSON string - use native array format
+   - Example: use web_search with query parameter containing multiple queries (topic overview, use cases, pricing, user demographics) and num_results 5 - runs all searches in parallel
+   - **AUTOMATIC CONTENT EXTRACTION**: After web_search, automatically identify qualitative sources:
+     * Academic papers (arxiv.org, pubmed, Semantic Scholar, etc.) → Use get_paper_details for papers with paper IDs
+     * Long-form articles, research reports, detailed content → Use scrape-webpage to extract full content
+     * Collect multiple qualitative URLs and scrape them in batch for efficiency
+   - **MANDATORY**: Never rely solely on search snippets - always extract and read full content from qualitative sources
    - Only if scrape-webpage fails or interaction required: use browser automation tools
 
 **WEB SEARCH BEST PRACTICES:**
-- **BATCH SEARCHING FOR EFFICIENCY:** Use batch mode by providing an array of queries to execute multiple searches concurrently
+- **BATCH SEARCHING FOR EFFICIENCY:** Use batch mode by providing multiple queries to execute searches concurrently
 - **CRITICAL FORMAT REQUIREMENTS:**
-  * Single query: `web_search(query="Tesla news", num_results=5)`
-  * Batch queries: `web_search(query=["Tesla news", "Tesla stock", "Tesla products"], num_results=5)`
+  * Single query: use web_search with query parameter "Tesla news" and num_results 5
+  * Batch queries: use web_search with query parameter containing multiple queries (Tesla news, Tesla stock, Tesla products) and num_results 5
   * The query parameter MUST be a native array, NOT a JSON string
   * num_results MUST be an integer, NOT a string
 - **WHEN TO USE BATCH MODE:** Researching multiple related topics, gathering comprehensive information, parallel searches
@@ -64,9 +68,18 @@ import time
 
 **CONTENT EXTRACTION DECISION TREE:**
 1. ALWAYS start with web-search using BATCH MODE to get direct answers and search results
-2. Only use scrape-webpage when you need complete article text beyond search snippets, structured data from specific pages, or lengthy documentation
-3. Never use scrape-webpage when web-search already answers the query or only basic facts are needed
-4. Only use browser tools if scrape-webpage fails or interaction is required
+2. **AUTOMATICALLY identify qualitative sources** from search results:
+   - Academic papers (arxiv.org, pubmed, Semantic Scholar, IEEE, ACM, Nature, Science, etc.)
+   - Long-form articles, research reports, detailed blog posts
+   - Documentation pages, guides, whitepapers
+   - Any source with substantial qualitative content
+3. **AUTOMATICALLY extract content** from identified qualitative sources:
+   - For Semantic Scholar papers: Use get_paper_details with paper_id (extract from URL or search result)
+   - For other papers/articles: Use scrape-webpage to get full content
+   - Batch scrape multiple URLs together for efficiency
+4. **MANDATORY**: Read extracted content thoroughly - don't rely on search snippets alone
+5. Only skip scraping if web-search already provides complete answers AND no qualitative sources are present
+6. Only use browser tools if scrape-webpage fails or interaction is required
 
 **DATA FRESHNESS:**
 - Always check publication dates of search results
@@ -103,7 +116,7 @@ class SandboxWebSearchTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Search the web for up-to-date information using the Tavily API. IMPORTANT: For batch searches, pass query as a native array like [\"query1\", \"query2\"], NOT as a JSON string. For num_results, pass an integer like 5, NOT a string like \"5\". This tool supports both single and batch queries for efficient research. You can search for multiple topics simultaneously by providing an array of queries, which executes searches concurrently for faster results. Use batch mode when researching multiple related topics, gathering comprehensive information, or performing parallel searches. Results include titles, URLs, publication dates, direct answers, and images.",
+            "description": "Search the web for up-to-date information using the Tavily API. IMPORTANT: For batch searches, pass query as a native array of strings, NOT as a JSON string. For num_results, pass an integer, NOT a string. This tool supports both single and batch queries for efficient research. You can search for multiple topics simultaneously by providing multiple queries as an array, which executes searches concurrently for faster results. Use batch mode when researching multiple related topics, gathering comprehensive information, or performing parallel searches. Results include titles, URLs, publication dates, direct answers, and images. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `query` (REQUIRED), `num_results` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -111,25 +124,26 @@ class SandboxWebSearchTool(SandboxToolsBase):
                         "oneOf": [
                             {
                                 "type": "string",
-                                "description": "A single search query to find relevant web pages. Be specific and include key terms to improve search accuracy. For best results, use natural language questions or keyword combinations that precisely describe what you're looking for. Example: \"Tesla latest news 2025\""
+                                "description": "**REQUIRED** - A single search query to find relevant web pages. Be specific and include key terms to improve search accuracy. For best results, use natural language questions or keyword combinations that precisely describe what you're looking for. Example: \"Tesla latest news 2025\""
                             },
                             {
                                 "type": "array",
                                 "items": {
                                     "type": "string"
                                 },
-                                "description": "Multiple search queries to execute concurrently. CRITICAL: Pass as a native array like [\"query1\", \"query2\", \"query3\"], NOT as a JSON string. Use this for batch searching when you need to research multiple related topics simultaneously. Each query will be processed in parallel for faster results. Example: [\"Tesla news\", \"Tesla stock price\", \"Tesla products\"]"
+                                "description": "**REQUIRED** - Multiple search queries to execute concurrently. CRITICAL: Pass as a native array of strings, NOT as a JSON string. Use this for batch searching when you need to research multiple related topics simultaneously. Each query will be processed in parallel for faster results. Example: [\"Tesla news\", \"Tesla stock price\", \"Tesla products\"]"
                             }
                         ],
-                        "description": "Either a single search query (string) or multiple queries (NATIVE array of strings, NOT JSON string) to execute concurrently. For batch mode, use: query=[\"query1\", \"query2\"], NOT query='[\"query1\", \"query2\"]'"
+                        "description": "**REQUIRED** - Either a single search query (string) or multiple queries (NATIVE array of strings, NOT JSON string) to execute concurrently. For batch mode, provide multiple queries as an array, NOT as a JSON string."
                     },
                     "num_results": {
                         "type": "integer",
-                        "description": "The number of search results to return per query (1-50). MUST be a native integer like 5, NOT a string like \"5\". Increase for more comprehensive research or decrease for focused, high-relevance results. Applies to each query when using batch mode.",
+                        "description": "**OPTIONAL** - The number of search results to return per query (1-50). MUST be a native integer like 5, NOT a string like \"5\". Increase for more comprehensive research or decrease for focused, high-relevance results. Applies to each query when using batch mode. Default: 5.",
                         "default": 5
                     }
                 },
-                "required": ["query"]
+                "required": ["query"],
+                "additionalProperties": False
             }
         }
     })
@@ -315,21 +329,22 @@ class SandboxWebSearchTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "scrape_webpage",
-            "description": "Extract full text content from multiple webpages in a single operation. IMPORTANT: You should ALWAYS collect multiple relevant URLs from web-search results and scrape them all in a single call for efficiency. This tool saves time by processing multiple pages simultaneously rather than one at a time. The extracted text includes the main content of each page without HTML markup by default, but can optionally include full HTML if needed for structure analysis.",
+            "description": "Extract full text content from multiple webpages in a single operation. IMPORTANT: You should ALWAYS collect multiple relevant URLs from web-search results and scrape them all in a single call for efficiency. This tool saves time by processing multiple pages simultaneously rather than one at a time. The extracted text includes the main content of each page without HTML markup by default, but can optionally include full HTML if needed for structure analysis. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `urls` (REQUIRED), `include_html` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "urls": {
                         "type": "string",
-                        "description": "Multiple URLs to scrape, separated by commas. You should ALWAYS include several URLs when possible for efficiency. Example: 'https://example.com/page1,https://example.com/page2,https://example.com/page3'"
+                        "description": "**REQUIRED** - Multiple URLs to scrape, separated by commas. You should ALWAYS include several URLs when possible for efficiency. Example: 'https://example.com/page1,https://example.com/page2,https://example.com/page3'"
                     },
                     "include_html": {
                         "type": "boolean",
-                        "description": "Whether to include the full raw HTML content alongside the extracted text. Set to true when you need to analyze page structure, extract specific HTML elements, or work with complex layouts. Default is false for cleaner text extraction.",
+                        "description": "**OPTIONAL** - Whether to include the full raw HTML content alongside the extracted text. Set to true when you need to analyze page structure, extract specific HTML elements, or work with complex layouts. Default: false.",
                         "default": False
                     }
                 },
-                "required": ["urls"]
+                "required": ["urls"],
+                "additionalProperties": False
             }
         }
     })

@@ -71,9 +71,16 @@ class MCPJITLoader:
             logger.debug(f"⚡ [MCP JIT] {toolkit}: {count} tools")
     
     async def _process_mcp_config(self, mcp_config: Dict[str, Any], config_type: str, cache_only: bool = False) -> None:
+        custom_type = mcp_config.get("customType", mcp_config.get("type", ""))
+        server_name = mcp_config.get('name', 'unnamed')
+        
+        if custom_type in ("sse", "http", "json"):
+            await self._process_custom_mcp_config(mcp_config, custom_type, server_name, cache_only)
+            return
+        
         toolkit_slug = self._extract_toolkit_slug(mcp_config)
         
-        logger.debug(f"⚡ [MCP JIT] Processing {config_type} MCP: {mcp_config.get('name', 'unnamed')} -> toolkit_slug={toolkit_slug}")
+        logger.debug(f"⚡ [MCP JIT] Processing {config_type} MCP: {server_name} -> toolkit_slug={toolkit_slug}")
         
         if not toolkit_slug:
             logger.warning(f"⚠️  [MCP JIT] No toolkit_slug found in {config_type} MCP config: {mcp_config}")
@@ -111,6 +118,156 @@ class MCPJITLoader:
                 toolkit_slug=toolkit_slug,
                 mcp_config=mcp_config
             )
+    
+    async def _process_custom_mcp_config(self, mcp_config: Dict[str, Any], custom_type: str, server_name: str, cache_only: bool = False) -> None:
+        logger.debug(f"⚡ [MCP JIT] Processing custom MCP: {server_name} (type: {custom_type})")
+        
+        config = mcp_config.get('config', {})
+        enabled_tools = mcp_config.get('enabledTools', [])
+        
+        if cache_only:
+            if enabled_tools:
+                for tool_name in enabled_tools:
+                    if tool_name not in self.tool_map:
+                        self.tool_map[tool_name] = MCPToolInfo(
+                            tool_name=tool_name,
+                            toolkit_slug=f"custom_{custom_type}_{server_name}",
+                            mcp_config=mcp_config
+                        )
+                logger.debug(f"⚡ [MCP JIT] Custom MCP {server_name}: Added {len(enabled_tools)} enabled tools from config (cache-only mode)")
+            else:
+                logger.debug(f"⚡ [MCP JIT] Custom MCP {server_name}: No enabled tools in config, will discover later")
+            return
+        
+        try:
+            available_tools = await self._discover_custom_mcp_tools(custom_type, config)
+            
+            if not available_tools:
+                logger.warning(f"⚠️  [MCP JIT] No tools discovered for custom MCP: {server_name}")
+                return
+            
+            if enabled_tools:
+                tools_to_add = [tool for tool in available_tools if tool in enabled_tools]
+                logger.debug(f"⚡ [MCP JIT] Custom MCP {server_name}: Filtered to {len(tools_to_add)}/{len(available_tools)} enabled tools")
+            else:
+                tools_to_add = available_tools
+                logger.debug(f"⚡ [MCP JIT] Custom MCP {server_name}: No enabledTools filter, loading all {len(tools_to_add)} tools")
+            
+            toolkit_slug = f"custom_{custom_type}_{server_name.replace(' ', '_').lower()}"
+            
+            for tool_name in tools_to_add:
+                if tool_name in self.tool_map:
+                    logger.warning(f"⚠️  [MCP JIT] Tool '{tool_name}' already registered, skipping duplicate")
+                    continue
+                
+                self.tool_map[tool_name] = MCPToolInfo(
+                    tool_name=tool_name,
+                    toolkit_slug=toolkit_slug,
+                    mcp_config=mcp_config
+                )
+            
+            logger.info(f"⚡ [MCP JIT] Custom MCP {server_name}: Registered {len(tools_to_add)} tools")
+            
+        except Exception as e:
+            logger.error(f"❌ [MCP JIT] Failed to discover tools for custom MCP {server_name}: {e}")
+    
+    async def _discover_custom_mcp_tools(self, custom_type: str, config: Dict[str, Any]) -> List[str]:
+        if custom_type == "sse":
+            return await self._discover_sse_tools(config)
+        elif custom_type == "http":
+            return await self._discover_http_tools(config)
+        elif custom_type == "json":
+            return await self._discover_json_tools(config)
+        else:
+            logger.warning(f"⚠️  [MCP JIT] Unknown custom MCP type: {custom_type}")
+            return []
+    
+    async def _discover_sse_tools(self, config: Dict[str, Any]) -> List[str]:
+        url = config.get('url')
+        if not url:
+            logger.error("❌ [MCP JIT] Missing 'url' in SSE MCP config")
+            return []
+        
+        from mcp.client.sse import sse_client
+        from mcp import ClientSession
+        
+        headers = config.get('headers', {})
+        
+        try:
+            try:
+                async with sse_client(url, headers=headers) as (read_stream, write_stream):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        await session.initialize()
+                        tools_result = await session.list_tools()
+                        tools = tools_result.tools if hasattr(tools_result, 'tools') else tools_result
+                        tool_names = [tool.name for tool in tools]
+                        logger.debug(f"⚡ [MCP JIT] Discovered {len(tool_names)} SSE tools")
+                        return tool_names
+            except TypeError as e:
+                if "unexpected keyword argument" in str(e):
+                    async with sse_client(url) as (read_stream, write_stream):
+                        async with ClientSession(read_stream, write_stream) as session:
+                            await session.initialize()
+                            tools_result = await session.list_tools()
+                            tools = tools_result.tools if hasattr(tools_result, 'tools') else tools_result
+                            tool_names = [tool.name for tool in tools]
+                            logger.debug(f"⚡ [MCP JIT] Discovered {len(tool_names)} SSE tools (no headers)")
+                            return tool_names
+                else:
+                    raise
+        except Exception as e:
+            logger.error(f"❌ [MCP JIT] Failed to discover SSE tools: {e}")
+            return []
+    
+    async def _discover_http_tools(self, config: Dict[str, Any]) -> List[str]:
+        url = config.get('url')
+        if not url:
+            logger.error("❌ [MCP JIT] Missing 'url' in HTTP MCP config")
+            return []
+        
+        from mcp.client.streamable_http import streamablehttp_client
+        from mcp import ClientSession
+        
+        try:
+            async with streamablehttp_client(url) as (read_stream, write_stream, _):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    tools_result = await session.list_tools()
+                    tools = tools_result.tools if hasattr(tools_result, 'tools') else tools_result
+                    tool_names = [tool.name for tool in tools]
+                    logger.debug(f"⚡ [MCP JIT] Discovered {len(tool_names)} HTTP tools")
+                    return tool_names
+        except Exception as e:
+            logger.error(f"❌ [MCP JIT] Failed to discover HTTP tools: {e}")
+            return []
+    
+    async def _discover_json_tools(self, config: Dict[str, Any]) -> List[str]:
+        command = config.get('command')
+        if not command:
+            logger.error("❌ [MCP JIT] Missing 'command' in JSON/stdio MCP config")
+            return []
+        
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+        
+        try:
+            server_params = StdioServerParameters(
+                command=command,
+                args=config.get("args", []),
+                env=config.get("env", {})
+            )
+            
+            async with stdio_client(server_params) as (read_stream, write_stream):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    tools_result = await session.list_tools()
+                    tools = tools_result.tools if hasattr(tools_result, 'tools') else tools_result
+                    tool_names = [tool.name for tool in tools]
+                    logger.debug(f"⚡ [MCP JIT] Discovered {len(tool_names)} JSON/stdio tools")
+                    return tool_names
+        except Exception as e:
+            logger.error(f"❌ [MCP JIT] Failed to discover JSON/stdio tools: {e}")
+            return []
     
     def _extract_toolkit_slug(self, mcp_config: Dict[str, Any]) -> Optional[str]:
         toolkit_slug = mcp_config.get("toolkit_slug")
@@ -233,12 +390,14 @@ class MCPJITLoader:
         toolkit_slug = tool_info.toolkit_slug
         mcp_config = tool_info.mcp_config
         
-        server_type = mcp_config.get("type", "standard")
+        custom_type = mcp_config.get("customType", mcp_config.get("type", "standard"))
         
-        if server_type == "composio":
+        if custom_type == "composio":
             return await self._load_composio_schema(tool_name, toolkit_slug, mcp_config)
+        elif custom_type in ("sse", "http", "json"):
+            return await self._load_custom_mcp_schema(tool_name, toolkit_slug, mcp_config, custom_type)
         else:
-            return await self._load_standard_mcp_schema(tool_name, toolkit_slug, mcp_config)
+            return await self._load_custom_mcp_schema(tool_name, toolkit_slug, mcp_config, "http")
     
     async def _load_composio_schema(self, tool_name: str, toolkit_slug: str, mcp_config: Dict[str, Any]) -> Dict[str, Any]:
         try:
@@ -282,26 +441,133 @@ class MCPJITLoader:
             logger.error(f"❌ [MCP JIT] Failed to load Composio schema for {tool_name}: {e}")
             raise
     
-    async def _load_standard_mcp_schema(self, tool_name: str, toolkit_slug: str, mcp_config: Dict[str, Any]) -> Dict[str, Any]:
+    async def _load_custom_mcp_schema(self, tool_name: str, toolkit_slug: str, mcp_config: Dict[str, Any], custom_type: str) -> Dict[str, Any]:
         try:
-            from core.mcp_module import mcp_service
+            config = mcp_config.get('config', {})
+            url = config.get('url')
             
-            qualified_name = mcp_config.get("qualifiedName")
-            if not mcp_service.is_connected(qualified_name):
-                await mcp_service.connect_server(mcp_config)
-            
-            all_tools = mcp_service.get_all_tools_openapi()
-            
-            for tool in all_tools:
-                if tool.get("name") == tool_name:
-                    logger.debug(f"⚡ [MCP JIT] Loaded standard MCP schema for {tool_name}")
-                    return tool
-            
-            raise ValueError(f"Tool '{tool_name}' not found in MCP server response")
+            if custom_type == "sse":
+                return await self._load_sse_schema(tool_name, url, config)
+            elif custom_type == "http":
+                return await self._load_http_schema(tool_name, url, config)
+            elif custom_type == "json":
+                return await self._load_json_schema(tool_name, config)
+            else:
+                return await self._load_http_schema(tool_name, url, config)
             
         except Exception as e:
-            logger.error(f"❌ [MCP JIT] Failed to load standard MCP schema for {tool_name}: {e}")
+            logger.error(f"❌ [MCP JIT] Failed to load {custom_type} MCP schema for {tool_name}: {e}")
             raise
+    
+    async def _load_sse_schema(self, tool_name: str, url: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        if not url:
+            raise ValueError(f"Missing 'url' in SSE MCP config for {tool_name}")
+        
+        from mcp.client.sse import sse_client
+        from mcp import ClientSession
+        
+        headers = config.get('headers', {})
+        
+        try:
+            async with sse_client(url, headers=headers) as (read_stream, write_stream):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    tools_result = await session.list_tools()
+                    tools = tools_result.tools if hasattr(tools_result, 'tools') else tools_result
+                    
+                    for tool in tools:
+                        if tool.name == tool_name:
+                            schema = {
+                                "name": tool.name,
+                                "description": tool.description,
+                                "input_schema": tool.inputSchema
+                            }
+                            logger.debug(f"⚡ [MCP JIT] Found SSE schema for {tool_name}")
+                            return schema
+                    
+                    available_tools = [tool.name for tool in tools]
+                    raise ValueError(f"Tool '{tool_name}' not found in SSE server. Available: {available_tools}")
+        except TypeError as e:
+            if "unexpected keyword argument" in str(e):
+                async with sse_client(url) as (read_stream, write_stream):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        await session.initialize()
+                        tools_result = await session.list_tools()
+                        tools = tools_result.tools if hasattr(tools_result, 'tools') else tools_result
+                        
+                        for tool in tools:
+                            if tool.name == tool_name:
+                                schema = {
+                                    "name": tool.name,
+                                    "description": tool.description,
+                                    "input_schema": tool.inputSchema
+                                }
+                                logger.debug(f"⚡ [MCP JIT] Found SSE schema for {tool_name} (no headers)")
+                                return schema
+                        
+                        available_tools = [tool.name for tool in tools]
+                        raise ValueError(f"Tool '{tool_name}' not found in SSE server. Available: {available_tools}")
+            else:
+                raise
+    
+    async def _load_http_schema(self, tool_name: str, url: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        if not url:
+            raise ValueError(f"Missing 'url' in HTTP MCP config for {tool_name}")
+        
+        from mcp.client.streamable_http import streamablehttp_client
+        from mcp import ClientSession
+        
+        async with streamablehttp_client(url) as (read_stream, write_stream, _):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                tools_result = await session.list_tools()
+                tools = tools_result.tools if hasattr(tools_result, 'tools') else tools_result
+                
+                for tool in tools:
+                    if tool.name == tool_name:
+                        schema = {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "input_schema": tool.inputSchema
+                        }
+                        logger.debug(f"⚡ [MCP JIT] Found HTTP schema for {tool_name}")
+                        return schema
+                
+                available_tools = [tool.name for tool in tools]
+                raise ValueError(f"Tool '{tool_name}' not found in HTTP server. Available: {available_tools}")
+    
+    async def _load_json_schema(self, tool_name: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        command = config.get('command')
+        if not command:
+            raise ValueError(f"Missing 'command' in JSON/stdio MCP config for {tool_name}")
+        
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+        
+        server_params = StdioServerParameters(
+            command=command,
+            args=config.get("args", []),
+            env=config.get("env", {})
+        )
+        
+        async with stdio_client(server_params) as (read_stream, write_stream):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                tools_result = await session.list_tools()
+                tools = tools_result.tools if hasattr(tools_result, 'tools') else tools_result
+                
+                for tool in tools:
+                    if tool.name == tool_name:
+                        schema = {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "input_schema": tool.inputSchema
+                        }
+                        logger.debug(f"⚡ [MCP JIT] Found JSON/stdio schema for {tool_name}")
+                        return schema
+                
+                available_tools = [tool.name for tool in tools]
+                raise ValueError(f"Tool '{tool_name}' not found in JSON/stdio server. Available: {available_tools}")
     
     def get_activation_stats(self) -> Dict[str, Any]:
         loaded_count = sum(1 for tool_info in self.tool_map.values() if tool_info.loaded)

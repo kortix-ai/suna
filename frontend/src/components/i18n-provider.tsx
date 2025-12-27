@@ -4,7 +4,8 @@ import { NextIntlClientProvider } from 'next-intl';
 import { ReactNode, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { locales, defaultLocale, type Locale } from '@/i18n/config';
 import { detectBestLocale } from '@/lib/utils/geo-detection';
-import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/components/AuthProvider';
+import type { User } from '@supabase/supabase-js';
 
 // Preload default translations synchronously for immediate render
 // This prevents the loading spinner from blocking FCP
@@ -32,19 +33,13 @@ async function getTranslations(locale: Locale) {
  * 4. Geo-detection (timezone/browser) - default when nothing is set
  * 5. Default locale
  */
-async function getStoredLocale(): Promise<Locale> {
+function getStoredLocale(user: User | null): Locale {
   if (typeof window === 'undefined') return defaultLocale;
   
-  try {
-    // Priority 1: Check user profile preference (if authenticated)
-    // This ALWAYS takes precedence - user explicitly set it in settings
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user?.user_metadata?.locale && locales.includes(user.user_metadata.locale as Locale)) {
-      return user.user_metadata.locale as Locale;
-    }
-  } catch (error) {
-    // Silently fail - user might not be authenticated
+  // Priority 1: Check user profile preference (if authenticated)
+  // This ALWAYS takes precedence - user explicitly set it in settings
+  if (user?.user_metadata?.locale && locales.includes(user.user_metadata.locale as Locale)) {
+    return user.user_metadata.locale as Locale;
   }
   
   // Priority 2: Check cookie (explicit user preference)
@@ -72,6 +67,7 @@ async function getStoredLocale(): Promise<Locale> {
 const LOCALE_CHANGE_EVENT = 'locale-change';
 
 export function I18nProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const [locale, setLocale] = useState<Locale>(defaultLocale);
   // Initialize with preloaded English translations to prevent blocking FCP
   const [messages, setMessages] = useState<any>(defaultTranslations);
@@ -126,29 +122,18 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
     
-    async function initializeLocale() {
-      const currentLocale = await getStoredLocale();
+    function initializeLocale() {
+      const currentLocale = getStoredLocale(user);
       
       if (!mounted) return;
       
       // Check if user has explicitly set a preference (metadata, cookie, or localStorage)
-      const supabase = createClient();
-      let hasExplicitPreference = false;
-      
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user?.user_metadata?.locale) {
-          hasExplicitPreference = true;
-        }
-      } catch (error) {
-        // User might not be authenticated
-      }
-      
+      const hasUserMetadataLocale = user?.user_metadata?.locale;
       const cookies = document.cookie.split(';');
       const hasLocaleCookie = cookies.some(c => c.trim().startsWith('locale='));
       const hasLocalStorage = localStorage.getItem('locale');
       
-      hasExplicitPreference = hasExplicitPreference || hasLocaleCookie || !!hasLocalStorage;
+      const hasExplicitPreference = hasUserMetadataLocale || hasLocaleCookie || !!hasLocalStorage;
       
       // Only auto-save geo-detected locale if:
       // 1. User has NO explicit preference (no metadata, cookie, or localStorage)
@@ -172,7 +157,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted = false;
     };
-  }, [loadTranslations]);
+  }, [loadTranslations, user]);
 
   // Listen for locale change events from useLanguage hook
   useEffect(() => {

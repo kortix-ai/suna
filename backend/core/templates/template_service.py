@@ -190,7 +190,7 @@ class TemplateService:
         
         agent = await self._get_agent_by_id(agent_id)
         if not agent:
-            raise TemplateNotFoundError("Agent not found")
+            raise TemplateNotFoundError("Worker not found")
         
         if agent['account_id'] != creator_id:
             raise TemplateAccessDeniedError("You can only create templates from your own agents")

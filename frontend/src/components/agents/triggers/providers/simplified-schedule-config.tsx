@@ -496,15 +496,15 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
               </div>
               <div className="flex-1 overflow-y-auto p-6" style={{ maxHeight: 'calc(90vh - 200px)' }}>
                 <div className="max-w-2xl mx-auto space-y-6">
-                  {/* Agent Selection */}
+                  {/* Worker Selection */}
                   {onAgentSelect && (
                     <div className="border rounded-lg p-4 space-y-4">
                       <div>
-                        <h3 className="font-medium mb-1">Agent Selection</h3>
+                        <h3 className="font-medium mb-1">Worker Selection</h3>
                         <p className="text-sm text-muted-foreground">Choose which agent will handle this task</p>
                       </div>
                       <div className="space-y-2">
-                        <Label>Agent</Label>
+                        <Label>Worker</Label>
                         <AgentSelector
                           selectedAgentId={selectedAgent}
                           onAgentSelect={onAgentSelect}
@@ -1016,7 +1016,7 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
                           <Sparkles className="h-4 w-4 text-primary" />
                         </div>
                         <div className="flex-1">
-                          <Label className="font-medium">Agent Instructions</Label>
+                          <Label className="font-medium">Worker Instructions</Label>
                           <p className="text-sm text-muted-foreground">
                             Provide instructions for your agent to execute
                           </p>
@@ -1026,11 +1026,11 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
 
                   </div>
 
-                  {/* Agent Instructions */}
+                  {/* Worker Instructions */}
                   {true && (
                     <div className="border rounded-lg p-4 space-y-4">
                       <div>
-                        <h3 className="font-medium mb-1">Agent Instructions</h3>
+                        <h3 className="font-medium mb-1">Worker Instructions</h3>
                         <p className="text-sm text-muted-foreground">Provide specific instructions for your agent</p>
                       </div>
                       <div className="space-y-2">

@@ -338,8 +338,9 @@ export function AdminUserDetailsDialog({
                                   <Badge variant="outline" className="text-xs">Public</Badge>
                                 )}
                               </div>
-                              <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                                <span>Updated {formatDate(thread.updated_at)}</span>
+                              <div className="mt-1 text-xs text-muted-foreground space-y-0.5">
+                                <div>Created {formatDate(thread.created_at)}</div>
+                                <div>Updated {formatDate(thread.updated_at)}</div>
                               </div>
                               <p className="text-xs text-muted-foreground mt-1 font-mono truncate">
                                 {thread.thread_id}

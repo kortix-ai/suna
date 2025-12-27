@@ -7,6 +7,8 @@ export interface ToolCallData {
   tool_call_id: string;
   function_name: string;
   arguments: Record<string, any>;
+  /** Raw string arguments for streaming partial JSON parsing */
+  rawArguments?: string;
   source: 'native' | 'xml';
 }
 
@@ -17,6 +19,7 @@ export interface ToolResultData {
   success: boolean;
   output: any;
   error?: string | null;
+  timestamp?: string;
 }
 
 export interface ToolViewProps {

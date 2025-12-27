@@ -57,7 +57,7 @@ interface MyAgentsTabProps {
 }
 
 const filterOptions = [
-  { value: 'all', label: 'All Agents' },
+  { value: 'all', label: 'All Workers' },
   { value: 'templates', label: 'Templates' },
 ];
 
@@ -122,7 +122,7 @@ export const MyAgentsTab = ({
             </div>
             <h3 className="text-xl font-semibold mb-3">No published templates yet</h3>
             <p className="text-muted-foreground mb-8 max-w-md mx-auto">
-              Publish your agents to the marketplace to share them with the community and track their usage.
+              Publish your workers to the marketplace to share them with the community and track their usage.
             </p>
           </div>
         ) : (
@@ -183,14 +183,14 @@ export const MyAgentsTab = ({
     <div className="space-y-6 mt-8 flex flex-col min-h-full">
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between mb-6">
         <SearchBar
-          placeholder="Search agents..."
+          placeholder="Search workers..."
           value={agentsSearchQuery}
           onChange={setAgentsSearchQuery}
         />
         <div className="flex items-center gap-3">
           <Select value={agentFilter} onValueChange={(value: AgentFilter) => setAgentFilter(value)}>
             <SelectTrigger className="w-[180px] h-12 rounded-xl">
-              <SelectValue placeholder="Filter agents" />
+              <SelectValue placeholder="Filter workers" />
             </SelectTrigger>
             <SelectContent className='rounded-xl'>
               {filterOptions.map((filter) => (

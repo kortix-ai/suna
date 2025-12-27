@@ -53,34 +53,35 @@ async def create_checkout_session(
                 raise HTTPException(status_code=400, detail="Yearly commitment not available for this tier")
             price_id = price_ids[0]
         elif request.commitment_type == 'yearly':
-            logger.info(f"[YEARLY-BILLING-DEBUG] Selecting yearly price for tier: {tier.name}, available price_ids: {tier.price_ids}")
+            logger.debug(f"[YEARLY-BILLING] Selecting yearly price for tier: {tier.name}, available price_ids: {tier.price_ids}")
             price_id = None
             if tier.name == 'tier_2_20':
                 price_id = config.STRIPE_TIER_2_20_YEARLY_ID
-                logger.info(f"[YEARLY-BILLING-DEBUG] Selected tier_2_20 yearly: {price_id}")
+                logger.debug(f"[YEARLY-BILLING] Selected tier_2_20 yearly: {price_id}")
             elif tier.name == 'tier_6_50':
                 price_id = config.STRIPE_TIER_6_50_YEARLY_ID
-                logger.info(f"[YEARLY-BILLING-DEBUG] Selected tier_6_50 yearly: {price_id}")
+                logger.debug(f"[YEARLY-BILLING] Selected tier_6_50 yearly: {price_id}")
             elif tier.name == 'tier_25_200':
                 price_id = config.STRIPE_TIER_25_200_YEARLY_ID
-                logger.info(f"[YEARLY-BILLING-DEBUG] Selected tier_25_200 yearly: {price_id}")
+                logger.debug(f"[YEARLY-BILLING] Selected tier_25_200 yearly: {price_id}")
             else:
-                logger.info(f"[YEARLY-BILLING-DEBUG] Using fallback string matching for tier: {tier.name}")
+                logger.debug(f"[YEARLY-BILLING] Using fallback string matching for tier: {tier.name}")
                 price_ids = [pid for pid in tier.price_ids if 'yearly' in pid.lower() and 'commitment' not in pid.lower()]
-                logger.info(f"[YEARLY-BILLING-DEBUG] Found yearly price_ids: {price_ids}")
+                logger.debug(f"[YEARLY-BILLING] Found yearly price_ids: {price_ids}")
                 price_id = price_ids[0] if price_ids else tier.price_ids[0]
         else:
             price_ids = [pid for pid in tier.price_ids if 'yearly' not in pid.lower()]
             price_id = price_ids[0] if price_ids else tier.price_ids[0]
         
-        logger.info(f"[BILLING-DEBUG] Creating checkout session: account_id={account_id}, tier={tier.name}, commitment_type={request.commitment_type}, selected_price_id={price_id}")
+        logger.debug(f"[BILLING] Creating checkout session: account_id={account_id}, tier={tier.name}, commitment_type={request.commitment_type}, selected_price_id={price_id}")
         
         result = await subscription_service.create_checkout_session(
             account_id=account_id,
             price_id=price_id,
             success_url=request.success_url,
             cancel_url=request.cancel_url or request.success_url,
-            commitment_type=request.commitment_type
+            commitment_type=request.commitment_type,
+            locale=request.locale
         )
         
         # Invalidate cache if subscription was created/updated

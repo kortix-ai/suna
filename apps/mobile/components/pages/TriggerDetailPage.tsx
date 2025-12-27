@@ -391,7 +391,7 @@ export function TriggerDetailPage({ triggerId }: TriggerDetailPageProps) {
 
         {/* Agent Prompt */}
         {trigger.config?.agent_prompt && (
-          <Section title="Agent Prompt">
+          <Section title="Worker Prompt">
             <InfoRow icon={MessageSquare} label="Instruction" value={trigger.config.agent_prompt} />
           </Section>
         )}

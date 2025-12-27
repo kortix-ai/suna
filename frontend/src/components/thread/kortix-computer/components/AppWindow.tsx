@@ -1,9 +1,13 @@
 'use client';
 
-import { memo, useState, useRef, useCallback, useEffect } from 'react';
+import { memo, useState, useRef, useCallback } from 'react';
 import { motion, useDragControls, PanInfo } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { Minus, Square, X } from 'lucide-react';
+
+export const DESKTOP_HEADER_HEIGHT = 36;
+export const DESKTOP_DOCK_HEIGHT = 68;
+export const DESKTOP_PADDING = 4;
 
 interface AppWindowProps {
   id: string;
@@ -56,10 +60,13 @@ export const AppWindow = memo(function AppWindow({
       setIsMaximized(false);
     } else {
       setPreMaximizeState({ position, size });
-      setPosition({ x: 20, y: 20 });
+      const containerHeight = window.innerHeight - DESKTOP_HEADER_HEIGHT;
+      const usableHeight = containerHeight - DESKTOP_DOCK_HEIGHT - (DESKTOP_PADDING * 2);
+      const usableWidth = window.innerWidth - (DESKTOP_PADDING * 2);
+      setPosition({ x: DESKTOP_PADDING, y: DESKTOP_PADDING });
       setSize({ 
-        width: window.innerWidth - 40, 
-        height: window.innerHeight - 40 
+        width: usableWidth, 
+        height: usableHeight 
       });
       setIsMaximized(true);
     }
@@ -142,17 +149,11 @@ export const AppWindow = memo(function AppWindow({
       dragMomentum={false}
       onDragEnd={handleDragEnd}
       onMouseDown={onFocus}
-      style={{ 
-        zIndex,
-        transformOrigin: 'center center',
-        boxShadow: isActive 
-          ? '0 25px 50px -12px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.1) inset' 
-          : '0 10px 40px -10px rgba(0,0,0,0.2), 0 0 0 1px rgba(255,255,255,0.1) inset'
-      }}
+      style={{ zIndex }}
       className={cn(
-        "absolute flex flex-col rounded-2xl overflow-hidden",
-        "backdrop-blur-2xl backdrop-saturate-150",
-        "border border-neutral-300/20"
+        "absolute flex flex-col rounded-xl overflow-hidden",
+        "border border-border/60",
+        isActive ? "shadow-2xl shadow-black/20" : "shadow-xl shadow-black/10"
       )}
     >
       <div
@@ -163,9 +164,8 @@ export const AppWindow = memo(function AppWindow({
         }}
         onDoubleClick={handleMaximize}
         className={cn(
-          "flex items-center h-9 px-2.5 gap-3 select-none flex-shrink-0",
-          "border-b border-black/5",
-          isActive ? "bg-background" : "bg-background"
+          "flex items-center h-9 px-2.5 gap-2 select-none flex-shrink-0",
+          "border-b border-border/50 bg-background/80 backdrop-blur-2xl"
         )}
       >
         <div className="flex items-center gap-1.5">
@@ -174,43 +174,41 @@ export const AppWindow = memo(function AppWindow({
               e.stopPropagation();
               onClose();
             }}
-            className="group w-6 h-6 rounded-md bg-muted hover:bg-destructive/20 flex items-center justify-center transition-colors"
+            className="group w-3 h-3 rounded-full bg-[#ff5f57] hover:bg-[#ff5f57]/80 flex items-center justify-center transition-all"
           >
-            <X className="w-3.5 h-3.5 text-muted-foreground group-hover:text-destructive transition-colors" strokeWidth={2} />
+            <X className="w-2 h-2 text-[#ff5f57] group-hover:text-red-900 transition-colors opacity-0 group-hover:opacity-100" strokeWidth={2.5} />
           </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
               onMinimize?.();
             }}
-            className="group w-6 h-6 rounded-md bg-muted hover:bg-muted-foreground/20 flex items-center justify-center transition-colors"
+            className="group w-3 h-3 rounded-full bg-[#febc2e] hover:bg-[#febc2e]/80 flex items-center justify-center transition-all"
           >
-            <Minus className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground transition-colors" strokeWidth={2} />
+            <Minus className="w-2 h-2 text-[#febc2e] group-hover:text-yellow-900 transition-colors opacity-0 group-hover:opacity-100" strokeWidth={2.5} />
           </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
               handleMaximize();
             }}
-            className="group w-6 h-6 rounded-md bg-muted hover:bg-muted-foreground/20 flex items-center justify-center transition-colors"
+            className="group w-3 h-3 rounded-full bg-[#28c840] hover:bg-[#28c840]/80 flex items-center justify-center transition-all"
           >
-            <Square className="w-3 h-3 text-muted-foreground group-hover:text-foreground transition-colors" strokeWidth={2} />
+            <Square className="w-1.5 h-1.5 text-[#28c840] group-hover:text-green-900 transition-colors opacity-0 group-hover:opacity-100" strokeWidth={2.5} />
           </button>
         </div>
 
-        <div className="flex-1 flex items-center justify-center gap-2">
-          {icon && <div className="w-4 h-4 flex-shrink-0">{icon}</div>}
-          <span className={cn(
-            "text-[13px] font-semibold truncate text-muted-foreground",
-          )}>
+        <div className="flex-1 flex items-center justify-center gap-1.5">
+          {icon && <div className="w-3.5 h-3.5 flex-shrink-0">{icon}</div>}
+          <span className="text-xs font-medium truncate text-muted-foreground">
             {title}
           </span>
         </div>
 
-        <div className="w-[52px]" />
+        <div className="w-[44px]" />
       </div>
 
-      <div className="flex-1 overflow-hidden bg-background">
+      <div className="flex-1 overflow-hidden bg-background/95 backdrop-blur-2xl">
         {children}
       </div>
 

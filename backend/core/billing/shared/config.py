@@ -2,7 +2,6 @@ from decimal import Decimal
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 
-from click.decorators import R
 from core.utils.config import config
 
 TRIAL_ENABLED = False
@@ -76,7 +75,7 @@ TIERS: Dict[str, Tier] = {
         },
         daily_credit_config={
             'enabled': True,
-            'amount': Decimal('2.00'),
+            'amount': Decimal('1.00'),
             'refresh_interval_hours': 24
         },
         monthly_refill_enabled=False

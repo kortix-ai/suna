@@ -30,7 +30,7 @@ class CustomerHandler:
         customer_id = customer_data['id']
         
         if await self.service.validate_stripe_customer(customer_id):
-            logger.info(f"[BILLING] Found existing Stripe customer {customer_id} for account {account_id}")
+            logger.debug(f"[BILLING] Found existing Stripe customer {customer_id} for account {account_id}")
             return customer_id
         
         await self.service.cleanup_stale_customer_record(account_id)

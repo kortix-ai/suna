@@ -117,9 +117,50 @@
     }
   },
   "onboarding": {
+    "welcome": "Scopri cosa può fare Kortix",
+    "welcomeSubtitle": "Il tuo assistente IA che agisce",
     "skip": "Salta",
     "next": "Avanti",
     "getStarted": "Inizia",
+    "kortixComputer": "Kortix Computer",
+    "ready": "Pronto",
+    "examples": {
+      "presentations": {
+        "title": "Presentazioni",
+        "description": "Guarda come crea presentazioni straordinarie",
+        "userMessage": "Ricerca e crea una presentazione sulle reti neurali",
+        "aiMessage": "Ricercherò le reti neurali e creerò una presentazione per te...",
+        "researching": "Ricerca in corso",
+        "creatingFile": "Creazione file",
+        "creatingSlides": "Creazione diapositive"
+      },
+      "dataAnalysis": {
+        "title": "Analisi dati",
+        "description": "Guardalo analizzare i dati e creare report visivi",
+        "userMessage": "Analizza le prestazioni di vendita Q4 da Google Drive",
+        "aiMessage": "Caricherò i tuoi dati di vendita e creerò un'analisi completa...",
+        "loadingFromDrive": "Caricamento da Google Drive",
+        "creatingVisualization": "Creazione visualizzazione",
+        "researchingMarket": "Ricerca mercato",
+        "creatingReport": "Creazione report"
+      },
+      "image": {
+        "title": "Immagine",
+        "description": "Sperimenta la progettazione di loghi e brand con IA",
+        "userMessage": "Crea un logo per la nostra azienda",
+        "aiMessage": "Vedo che hai menzionato LUXY. Creerò un logo professionale per il tuo brand...",
+        "researchingBrand": "Ricerca brand",
+        "creatingLogo": "Creazione logo",
+        "creatingBrandBoard": "Creazione board brand"
+      },
+      "imageEasterEgg": {
+        "title": "Immagine",
+        "description": "Trasforma le tue foto con stili IA",
+        "userMessage": "Converti la mia immagine in stile pixel art blocky",
+        "aiMessage": "Certo! Trasformerò la tua immagine in un look stilizzato blocky...",
+        "creatingImage": "Creazione immagine stilizzata"
+      }
+    },
     "slide1": {
       "title": "Chat con IA",
       "description": "Abbi conversazioni naturali con potenti assistenti IA che comprendono il contesto e forniscono risposte utili"
@@ -169,7 +210,7 @@
     "superworker": {
       "title": "Il Tuo Super Worker IA",
       "description": "Combina tutte le funzionalità per costruire worker IA personalizzati per qualsiasi attività di cui hai bisogno.",
-      "example": "Crea un agente di supporto clienti"
+      "example": "Crea un worker di supporto clienti"
     }
   },
   "settings": {
@@ -532,7 +573,7 @@
     "actionCannotBeUndone": "Questa azione non può essere annullata",
     "accountWillBeDeleted": "Il tuo account sarà eliminato permanentemente",
     "whatWillBeDeleted": "Cosa Sarà Eliminato",
-    "allAgents": "Tutti i tuoi agenti e versioni degli agenti",
+    "allAgents": "Tutti i tuoi worker e versioni dei worker",
     "allThreads": "Tutti i tuoi thread e conversazioni",
     "allCredentials": "Tutte le tue credenziali e integrazioni",
     "subscriptionData": "I tuoi dati di abbonamento e fatturazione",
@@ -555,7 +596,7 @@
   },
   "models": {
     "selectModel": "Seleziona Modello",
-    "chooseModelFor": "Scegli un modello per {{agent}}"
+    "chooseModelFor": "Scegli un modello per il worker {{agent}}"
   },
   "placeholders": {
     "default": "Dai a Kortix un compito...",
@@ -627,7 +668,7 @@
   },
   "integrations": {
     "title": "Integrazioni",
-    "description": "Connetti le tue app e servizi preferiti per automatizzare i flussi di lavoro ed estendere le capacità del tuo agente.",
+    "description": "Connetti le tue app e servizi preferiti per automatizzare i flussi di lavoro ed estendere le capacità del tuo worker.",
     "connectApps": "Connetti le tue App",
     "externalApps": "App Esterne",
     "externalAppsDescription": "Connetti app e servizi popolari",
@@ -636,7 +677,7 @@
     "composioApps": "App Composio",
     "composioAppsDescription": "Connettiti a centinaia di applicazioni aziendali",
     "connected": "Connesso",
-    "connectedToAgent": "Connesso a questo agente",
+    "connectedToAgent": "Connesso a questo worker",
     "available": "App Disponibili",
     "connect": "Connetti",
     "setup": "Configura",
@@ -693,7 +734,7 @@
     },
     "toolsSelector": {
       "configureTools": "Configura Strumenti {{app}}",
-      "selectTools": "Seleziona strumenti da aggiungere al tuo agente",
+      "selectTools": "Seleziona strumenti da aggiungere al tuo worker",
       "readyToConfigureTools": "Pronto per configurare",
       "selected": "{{count}} di {{total}} selezionati",
       "selectAll": "Seleziona Tutti",
@@ -740,6 +781,9 @@
     "upgradeRequired": "Upgrade Richiesto",
     "upgradeRequiredMessage": "La condivisione dei thread è disponibile nei piani a pagamento. Aggiorna per sbloccare questa funzione.",
     "upgrade": "Aggiorna",
+    "share": "Condividi",
+    "files": "File",
+    "delete": "Elimina",
     "shareThread": "Condividi Thread",
     "shareThreadUpgrade": "Condividi Thread (Upgrade)",
     "availableOnPaidPlans": "Disponibile nei piani a pagamento",
@@ -747,6 +791,7 @@
     "manageFiles": "Gestisci File",
     "viewManageAttachments": "Visualizza e gestisci allegati",
     "deleteThread": "Elimina Thread",
+    "deleteConfirm": "Sei sicuro di voler eliminare questo thread? Questa azione non può essere annullata.",
     "permanentlyDelete": "Elimina definitivamente questa conversazione"
   },
   "triggers": {
@@ -805,7 +850,7 @@
     "core": "Principale",
     "capabilitiesEnabled": "{{enabled}} / {{total}} capacità abilitate",
     "toolConfiguration": "Configurazione strumenti",
-    "configureToolsDescription": "Configura gli strumenti e le loro capacità individuali per il tuo agente",
+    "configureToolsDescription": "Configura gli strumenti e le loro capacità individuali per il tuo worker",
     "toolsEnabled": "{{enabled}} / {{total}} abilitati",
     "loadingTools": "Caricamento strumenti...",
     "noToolsAvailable": "Nessuno strumento disponibile",

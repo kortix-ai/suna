@@ -3,7 +3,6 @@ from typing import Optional, List
 from core.tools.message_tool import MessageTool
 from core.tools.web_search_tool import SandboxWebSearchTool
 from core.tools.image_search_tool import SandboxImageSearchTool
-from core.tools.data_providers_tool import DataProvidersTool
 from core.tools.expand_msg_tool import ExpandMessageTool
 from core.tools.task_list_tool import TaskListTool
 from core.tools.people_search_tool import PeopleSearchTool
@@ -102,6 +101,7 @@ class ToolManager:
             'sb_shell_tool', 
             'sb_git_sync', 
             'sb_files_tool',
+            'sb_file_reader_tool',
             'sb_vision_tool',
             'sb_image_edit_tool',
             'sb_upload_file_tool',
@@ -132,6 +132,7 @@ class ToolManager:
             'sb_shell_tool', 
             'sb_git_sync', 
             'sb_files_tool', 
+            'sb_file_reader_tool',
             'web_search_tool',
             'image_search_tool',
             'sb_vision_tool',
@@ -167,10 +168,6 @@ class ToolManager:
                 self.thread_manager.add_tool(tool_class, function_names=enabled_methods, **kwargs)
     
     def _register_utility_tools(self, disabled_tools: List[str]):
-        if config.RAPID_API_KEY and 'data_providers_tool' not in disabled_tools:
-            enabled_methods = self._get_enabled_methods_for_tool('data_providers_tool')
-            self.thread_manager.add_tool(DataProvidersTool, function_names=enabled_methods)
-        
         if config.SEMANTIC_SCHOLAR_API_KEY and 'paper_search_tool' not in disabled_tools:
             if 'paper_search_tool' not in disabled_tools:
                 enabled_methods = self._get_enabled_methods_for_tool('paper_search_tool')
@@ -193,6 +190,11 @@ class ToolManager:
             from core.tools.reality_defender_tool import RealityDefenderTool
             enabled_methods = self._get_enabled_methods_for_tool('reality_defender_tool')
             self.thread_manager.add_tool(RealityDefenderTool, function_names=enabled_methods, project_id=self.project_id, thread_manager=self.thread_manager)
+            
+        if config.APIFY_API_TOKEN and 'apify_tool' not in disabled_tools:
+            from core.tools.apify_tool import ApifyTool
+            enabled_methods = self._get_enabled_methods_for_tool('apify_tool')
+            self.thread_manager.add_tool(ApifyTool, function_names=enabled_methods, project_id=self.project_id, thread_manager=self.thread_manager)
             
     def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
         from core.tools.tool_registry import AGENT_BUILDER_TOOLS, get_tool_class
