@@ -1,6 +1,5 @@
 import os
 from enum import Enum
-from re import S
 from typing import Dict, Any, Optional, get_type_hints, Union
 from dotenv import load_dotenv
 import logging
@@ -376,7 +375,6 @@ class Configuration:
     
     # Debug configuration
     # Set to True to save LLM API call inputs and stream outputs to debug_streams/ directory
-    # Defaults to False (disabled). Can be enabled via DEBUG_SAVE_LLM_IO environment variable.
     # Always False in production, regardless of environment variable
     _DEBUG_SAVE_LLM_IO: Optional[bool] = False
     

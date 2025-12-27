@@ -126,7 +126,7 @@ class ExpandMessageTool(Tool):
                     },
                     "args": {
                         "type": "object", 
-                        "description": "Arguments matching discovered schema parameters. Use exact parameter names from schema in conversation history. Use empty object {} if no parameters required."
+                        "description": "Arguments matching discovered schema parameters. Use exact parameter names from schema in conversation history. If no parameters are required, provide an empty object."
                     }
                 },
                 "required": ["tool_name", "args"]

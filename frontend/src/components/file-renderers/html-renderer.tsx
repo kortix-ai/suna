@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Monitor, Code, ExternalLink } from 'lucide-react';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
+import { IframePreview } from '@/components/thread/iframe-preview';
 
 interface FileRendererProject {
   id?: string;
@@ -186,12 +187,10 @@ export function HtmlRenderer({
         {viewMode === 'preview' ? (
           <div className="absolute inset-0">
             {htmlPreviewUrl ? (
-              <iframe
-                src={htmlPreviewUrl}
+              <IframePreview
+                url={htmlPreviewUrl}
                 title="HTML Preview"
-                className="w-full h-full border-0"
-                sandbox="allow-same-origin allow-scripts"
-                style={{ background: 'white' }}
+                className="w-full h-full"
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-muted-foreground">

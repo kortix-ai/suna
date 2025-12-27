@@ -149,7 +149,7 @@ class SandboxImageEditTool(SandboxToolsBase):
                         },
                         "video_options": {
                             "type": "object",
-                            "description": "Include this to generate VIDEO instead of image. Options: {\"duration\": 5, \"aspect_ratio\": \"16:9\", \"fps\": 24, \"generate_audio\": true, \"camera_fixed\": false, \"last_frame_image\": \"path/to/end.png\"}",
+                            "description": "Include this to generate VIDEO instead of image. Provide an object with optional properties: duration as a number (e.g., 5), aspect_ratio as a string (e.g., \"16:9\"), fps as a number (e.g., 24), generate_audio as a boolean, camera_fixed as a boolean, and last_frame_image as a string path.",
                         },
                         "canvas_path": {"type": "string", "description": "Optional: Canvas file path to auto-add result."},
                         "canvas_x": {"type": "number", "description": "Optional: X position on canvas"},

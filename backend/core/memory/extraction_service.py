@@ -25,7 +25,7 @@ class MemoryExtractionService:
     
     def _get_resolved_model(self) -> str:
         resolved = model_manager.resolve_model_id(self.model)
-        litellm_model = model_manager.registry.get_litellm_model_id(resolved)
+        litellm_model = model_manager.get_litellm_model_id(resolved)
         return litellm_model
     
     def _format_conversation(self, messages: List[Dict[str, Any]]) -> str:

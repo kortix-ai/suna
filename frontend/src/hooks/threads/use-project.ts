@@ -75,13 +75,13 @@ export const useProjectQuery = (projectId: string | undefined, options?) => {
 export const useProjects = (options?) => {
   const queryClient = useQueryClient();
   
-  // Get threads from React Query cache ONLY (don't fetch!)
-  const threadsQueryKey = [...threadKeys.lists(), 'paginated', 1, 50];
-  const cachedThreads = queryClient.getQueryData<ThreadsResponse>(threadsQueryKey);
-  const threads = cachedThreads?.threads || [];
-  
   // Derive projects from cached threads data ONLY (no API call!)
   const projects = useMemo(() => {
+    // Get threads from React Query cache ONLY (don't fetch!)
+    const threadsQueryKey = [...threadKeys.lists(), 'paginated', 1, 50];
+    const cachedThreads = queryClient.getQueryData<ThreadsResponse>(threadsQueryKey);
+    const threads = cachedThreads?.threads || [];
+    
     if (!threads.length) return [];
     
     const projectsMap = new Map<string, Project>();
@@ -114,7 +114,7 @@ export const useProjects = (options?) => {
     });
     
     return Array.from(projectsMap.values());
-  }, [threads]);
+  }, [queryClient]);
   
   return {
     data: projects,
@@ -126,13 +126,13 @@ export const useProjects = (options?) => {
 export const usePublicProjectsQuery = (options?) => {
   const queryClient = useQueryClient();
   
-  // Get threads from React Query cache ONLY (don't fetch!)
-  const threadsQueryKey = [...threadKeys.lists(), 'paginated', 1, 50];
-  const cachedThreads = queryClient.getQueryData<ThreadsResponse>(threadsQueryKey);
-  const threads = cachedThreads?.threads || [];
-  
   // Derive public projects from cached threads data ONLY (no API call!)
   const publicProjects = useMemo(() => {
+    // Get threads from React Query cache ONLY (don't fetch!)
+    const threadsQueryKey = [...threadKeys.lists(), 'paginated', 1, 50];
+    const cachedThreads = queryClient.getQueryData<ThreadsResponse>(threadsQueryKey);
+    const threads = cachedThreads?.threads || [];
+    
     if (!threads.length) return [];
     
     const projectsMap = new Map<string, Project>();
@@ -161,7 +161,7 @@ export const usePublicProjectsQuery = (options?) => {
     });
     
     return Array.from(projectsMap.values());
-  }, [threads]);
+  }, [queryClient]);
   
   return {
     data: publicProjects,

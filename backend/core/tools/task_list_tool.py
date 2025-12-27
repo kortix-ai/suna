@@ -346,7 +346,7 @@ class TaskListTool(SandboxToolsBase):
                 "properties": {
                     "sections": {
                         "type": "array",
-                        "description": "List of sections with their tasks for batch creation. CRITICAL: This MUST be an array of objects (not a JSON string). Each element should be an object with 'title' (string) and 'tasks' (array of strings). Example: [{\"title\": \"Section 1\", \"tasks\": [\"task 1\", \"task 2\"]}, {\"title\": \"Section 2\", \"tasks\": [\"task 3\"]}]",
+                        "description": "List of sections with their tasks for batch creation. CRITICAL: This MUST be an array of objects (not a JSON string). Each element should be an object with title as a string and tasks as an array of strings. For example, provide objects with titles like Section 1 and Section 2, each containing their respective task arrays.",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -374,7 +374,7 @@ class TaskListTool(SandboxToolsBase):
                     },
                     "task_contents": {
                         "type": "array",
-                        "description": "Task contents for single section creation (use with section_title or section_id). CRITICAL: This MUST be an array of strings, not a JSON string. Example: [\"task 1\", \"task 2\", \"task 3\"]",
+                        "description": "Task contents for single section creation (use with section_title or section_id). CRITICAL: This MUST be an array of strings, not a JSON string. Provide multiple task descriptions as separate strings in the array.",
                         "items": {"type": "string"}
                     }
                 },
@@ -514,7 +514,7 @@ class TaskListTool(SandboxToolsBase):
                             {"type": "string"},
                             {"type": "array", "items": {"type": "string"}, "minItems": 1}
                         ],
-                        "description": "Task ID (string) or array of task IDs to update. EFFICIENT APPROACH: Batch multiple completed tasks into a single call rather than making multiple consecutive update calls. Always maintain sequential execution order. CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string). Example: [\"id1\", \"id2\", \"id3\"]"
+                        "description": "Task ID (string) or array of task IDs to update. EFFICIENT APPROACH: Batch multiple completed tasks into a single call rather than making multiple consecutive update calls. Always maintain sequential execution order. CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string). Provide multiple task IDs as separate strings in the array."
                     },
                     "content": {
                         "type": "string",
@@ -610,14 +610,14 @@ class TaskListTool(SandboxToolsBase):
                             {"type": "string"},
                             {"type": "array", "items": {"type": "string"}, "minItems": 1}
                         ],
-                        "description": "Task ID (string) or array of task IDs to delete (optional). CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string). Example: [\"id1\", \"id2\", \"id3\"]"
+                        "description": "Task ID (string) or array of task IDs to delete (optional). CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string). Provide multiple task IDs as separate strings in the array."
                     },
                     "section_ids": {
                         "oneOf": [
                             {"type": "string"},
                             {"type": "array", "items": {"type": "string"}, "minItems": 1}
                         ],
-                        "description": "Section ID (string) or array of section IDs to delete (will also delete all tasks in these sections) (optional). CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string). Example: [\"id1\", \"id2\"]"
+                        "description": "Section ID (string) or array of section IDs to delete (will also delete all tasks in these sections) (optional). CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string). Provide multiple section IDs as separate strings in the array."
                     },
                     "confirm": {
                         "type": "boolean",

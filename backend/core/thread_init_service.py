@@ -283,10 +283,12 @@ async def create_thread_optimistically(
             raise
     
     try:
+        # Create thread with default name, will be updated by LLM in background
         thread_data = {
             "thread_id": thread_id,
             "project_id": project_id,
             "account_id": account_id,
+            "name": "New Chat",
             "status": "pending",
             "created_at": datetime.now(timezone.utc).isoformat()
         }
@@ -295,7 +297,12 @@ async def create_thread_optimistically(
         
         await client.table('threads').insert(thread_data).execute()
         
-        logger.debug(f"Created thread {thread_id} with status=pending, memory_enabled={memory_enabled}")
+        logger.debug(f"Created thread {thread_id} with default name, status=pending, memory_enabled={memory_enabled}")
+        
+        # Generate proper thread name in background using LLM (fire-and-forget)
+        if prompt:
+            from core.utils.thread_name_generator import generate_and_update_thread_name
+            asyncio.create_task(generate_and_update_thread_name(thread_id=thread_id, prompt=prompt))
         
     except Exception as e:
         logger.error(f"Failed to create thread optimistically: {str(e)}")

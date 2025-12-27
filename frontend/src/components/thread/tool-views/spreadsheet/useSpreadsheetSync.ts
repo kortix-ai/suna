@@ -90,7 +90,7 @@ export function useSpreadsheetSync({
   filePath,
   spreadsheetRef,
   enabled = true,
-  debounceMs = 1500,
+  debounceMs = 2000,
   maxRetries = 3,
   pollIntervalMs = 30000,
 }: UseSpreadsheetSyncOptions) {
@@ -101,10 +101,11 @@ export function useSpreadsheetSync({
     retryCount: 0,
   });
 
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isComponentReady, setIsComponentReady] = useState(false);
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasInitiallyLoadedRef = useRef(false);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const currentVersionRef = useRef<string | null>(null);
@@ -112,6 +113,10 @@ export function useSpreadsheetSync({
   const pendingSaveRef = useRef(false);
   const lastKnownHashRef = useRef<string | null>(null);
   const isOnlineRef = useRef(navigator.onLine);
+  const isEditingRef = useRef(false);
+  const lastEditTimeRef = useRef<number>(0);
+  const saveQueueRef = useRef<Blob | null>(null);
+  const initialLoadDoneRef = useRef(false);
 
   const cacheKey = sandboxId && filePath ? `${sandboxId}:${filePath}` : null;
 
@@ -120,12 +125,12 @@ export function useSpreadsheetSync({
       isOnlineRef.current = true;
       setSyncState(prev => {
         if (prev.status === 'offline' && prev.pendingChanges) {
-          return { ...prev, status: 'syncing' };
+          return { ...prev, status: 'idle' };
         }
         return prev.status === 'offline' ? { ...prev, status: 'idle' } : prev;
       });
       if (pendingSaveRef.current) {
-        triggerSave();
+        triggerBackgroundSave();
       }
     };
 
@@ -166,8 +171,9 @@ export function useSpreadsheetSync({
       return false;
     }
 
-    setIsLoading(true);
-    setSyncState(prev => ({ ...prev, status: 'syncing' }));
+    if (!initialLoadDoneRef.current) {
+      setIsLoading(true);
+    }
 
     try {
       const content = await getSandboxFileContent(sandboxId, filePath);
@@ -211,6 +217,7 @@ export function useSpreadsheetSync({
         retryCount: 0,
       });
 
+      initialLoadDoneRef.current = true;
       return true;
     } catch (error: any) {
       console.error('[SpreadsheetSync] Load error:', error);
@@ -232,6 +239,7 @@ export function useSpreadsheetSync({
           });
 
           setIsLoading(false);
+          initialLoadDoneRef.current = true;
           return true;
         }
       }
@@ -279,7 +287,7 @@ export function useSpreadsheetSync({
     }
   }, [sandboxId, filePath, cacheKey]);
 
-  const triggerSave = useCallback(() => {
+  const triggerBackgroundSave = useCallback(() => {
     if (!spreadsheetRef.current || !sandboxId || !filePath || !enabled) {
       return;
     }
@@ -290,11 +298,7 @@ export function useSpreadsheetSync({
     }
 
     isSavingRef.current = true;
-    setSyncState(prev => ({ ...prev, status: 'syncing' }));
-
-    try {
-      spreadsheetRef.current.endEdit();
-    } catch {}
+    setSyncState(prev => ({ ...prev, status: 'syncing', pendingChanges: true }));
 
     const fileExt = filePath.split('.').pop()?.toLowerCase();
     const saveType = fileExt === 'csv' ? 'Csv' : 'Xlsx';
@@ -360,13 +364,12 @@ export function useSpreadsheetSync({
         if (newRetryCount < maxRetries) {
           const delay = Math.min(1000 * Math.pow(2, newRetryCount), 30000);
           retryTimeoutRef.current = setTimeout(() => {
-            triggerSave();
+            triggerBackgroundSave();
           }, delay);
 
           return {
             ...prev,
-            status: 'error',
-            errorMessage: `Retrying... (${newRetryCount}/${maxRetries})`,
+            status: 'syncing',
             retryCount: newRetryCount,
             pendingChanges: true,
           };
@@ -375,40 +378,59 @@ export function useSpreadsheetSync({
         return {
           ...prev,
           status: 'error',
-          errorMessage: error?.message || 'Save failed',
+          errorMessage: error?.message || 'Save failed - changes saved locally',
           retryCount: newRetryCount,
           pendingChanges: true,
         };
       });
+
+      if (cacheKey) {
+        const tempVersion = `pending-${Date.now()}`;
+        await setCachedFile(cacheKey, blob, tempVersion);
+      }
     } finally {
       isSavingRef.current = false;
 
       if (pendingSaveRef.current && isOnlineRef.current) {
         pendingSaveRef.current = false;
-        setTimeout(triggerSave, 100);
+        setTimeout(triggerBackgroundSave, 500);
       }
     }
-  }, [cacheKey, saveToServer, maxRetries, triggerSave]);
+  }, [cacheKey, saveToServer, maxRetries, triggerBackgroundSave]);
 
   const scheduleAutoSave = useCallback(() => {
-    if (!enabled) return;
+    if (!enabled || !hasInitiallyLoadedRef.current) return;
 
-    setSyncState(prev => ({ ...prev, pendingChanges: true }));
+    lastEditTimeRef.current = Date.now();
+    
+    setSyncState(prev => {
+      if (prev.status === 'synced' || prev.status === 'idle') {
+        return { ...prev, pendingChanges: true, status: 'idle' };
+      }
+      return { ...prev, pendingChanges: true };
+    });
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
 
     saveTimeoutRef.current = setTimeout(() => {
-      triggerSave();
+      if (Date.now() - lastEditTimeRef.current >= debounceMs - 100) {
+        triggerBackgroundSave();
+      }
     }, debounceMs);
-  }, [enabled, debounceMs, triggerSave]);
+  }, [enabled, debounceMs, triggerBackgroundSave]);
 
-  const handleCellEdit = useCallback(() => {
+  const handleCellEdit = useCallback((args: any) => {
+    isEditingRef.current = true;
+  }, []);
+
+  const handleCellSave = useCallback((args: any) => {
+    isEditingRef.current = false;
     scheduleAutoSave();
   }, [scheduleAutoSave]);
 
-  const SAVE_TRIGGERING_ACTIONS = new Set([
+  const SAVE_TRIGGERING_ACTIONS = useMemo(() => new Set([
     'cellSave',
     'cellDelete',
     'format',
@@ -429,8 +451,6 @@ export function useSpreadsheetSync({
     'columnWidth',
     'clear',
     'clearFormat',
-    'copy',
-    'cut',
     'paste',
     'undo',
     'redo',
@@ -460,21 +480,18 @@ export function useSpreadsheetSync({
     'unprotectSheet',
     'lockCells',
     'unlockCells',
-  ]);
+  ]), []);
 
   const handleActionComplete = useCallback((args: any) => {
     const action = args?.action;
-    if (action && SAVE_TRIGGERING_ACTIONS.has(action)) {
+    if (action && SAVE_TRIGGERING_ACTIONS.has(action) && hasInitiallyLoadedRef.current) {
       scheduleAutoSave();
     }
-  }, [scheduleAutoSave]);
-
-  const handleCellSave = useCallback(() => {
-    scheduleAutoSave();
-  }, [scheduleAutoSave]);
+  }, [scheduleAutoSave, SAVE_TRIGGERING_ACTIONS]);
 
   const handleOpenComplete = useCallback(() => {
     setIsLoading(false);
+    hasInitiallyLoadedRef.current = true;
     setSyncState(prev => ({
       ...prev,
       status: isOnlineRef.current ? 'synced' : 'offline',
@@ -497,7 +514,7 @@ export function useSpreadsheetSync({
   }, []);
 
   useEffect(() => {
-    if (sandboxId && filePath && isComponentReady && enabled && !isLoading) {
+    if (sandboxId && filePath && isComponentReady && enabled && !initialLoadDoneRef.current) {
       loadFromServer();
     }
   }, [sandboxId, filePath, isComponentReady, enabled]);
@@ -506,7 +523,16 @@ export function useSpreadsheetSync({
     if (!enabled || !sandboxId || !filePath || pollIntervalMs <= 0) return;
 
     pollIntervalRef.current = setInterval(async () => {
-      if (isSavingRef.current || !isOnlineRef.current || isLoading) {
+      if (!hasInitiallyLoadedRef.current || isSavingRef.current || !isOnlineRef.current || isLoading || isEditingRef.current) {
+        return;
+      }
+
+      if (syncState.pendingChanges) {
+        return;
+      }
+
+      const timeSinceLastEdit = Date.now() - lastEditTimeRef.current;
+      if (timeSinceLastEdit < 2000) {
         return;
       }
 
@@ -524,7 +550,7 @@ export function useSpreadsheetSync({
         const hash = await generateHash(blob);
 
         if (lastKnownHashRef.current && hash !== lastKnownHashRef.current) {
-          if (syncState.pendingChanges) {
+          if (syncState.pendingChanges || isEditingRef.current) {
             setSyncState(prev => ({
               ...prev,
               status: 'conflict',
@@ -534,6 +560,10 @@ export function useSpreadsheetSync({
             console.log('[SpreadsheetSync] External changes detected, auto-refreshing...');
             lastKnownHashRef.current = hash;
             currentVersionRef.current = hash;
+            
+            if (cacheKey) {
+              await setCachedFile(cacheKey, blob, hash);
+            }
             
             const fileName = filePath.split('/').pop() || 'spreadsheet.xlsx';
             const fileExt = fileName.split('.').pop()?.toLowerCase();
@@ -551,17 +581,13 @@ export function useSpreadsheetSync({
             
             if (spreadsheetRef.current) {
               spreadsheetRef.current.open({ file });
-              
-              if (cacheKey) {
-                await setCachedFile(cacheKey, fileBlob, hash);
-              }
-              
-              setSyncState(prev => ({
-                ...prev,
-                status: 'synced',
-                lastSyncedAt: Date.now(),
-              }));
             }
+            
+            setSyncState(prev => ({
+              ...prev,
+              status: 'synced',
+              lastSyncedAt: Date.now(),
+            }));
           }
         }
       } catch {}
@@ -578,6 +604,9 @@ export function useSpreadsheetSync({
     if (cacheKey) {
       await clearCachedFile(cacheKey);
     }
+    initialLoadDoneRef.current = false;
+    hasInitiallyLoadedRef.current = false;
+    setIsLoading(true);
     setSyncState(prev => ({ ...prev, pendingChanges: false, status: 'idle' }));
     return loadFromServer();
   }, [cacheKey, loadFromServer]);
@@ -586,8 +615,8 @@ export function useSpreadsheetSync({
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
-    triggerSave();
-  }, [triggerSave]);
+    triggerBackgroundSave();
+  }, [triggerBackgroundSave]);
 
   const resolveConflict = useCallback(async (keepLocal: boolean) => {
     if (keepLocal) {
