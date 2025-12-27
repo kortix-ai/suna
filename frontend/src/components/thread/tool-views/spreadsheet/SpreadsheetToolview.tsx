@@ -158,7 +158,7 @@ export function SpreadsheetToolView({
         />
         {isStreaming && (
           <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-sm">
-            <SpreadsheetSimulation mode="mini" />
+            <SpreadsheetSimulation mode="max" />
           </div>
         )}
         {isLoading && !isStreaming && (
