@@ -1307,155 +1307,100 @@ class ResponseProcessor:
                     assistant_metadata["tool_calls"] = unified_tool_calls
                     logger.debug(f"Storing {len(unified_tool_calls)} unified tool calls in assistant message metadata ({len(complete_native_tool_calls) if complete_native_tool_calls else 0} native, {len(xml_tool_calls_with_ids)} XML)")
 
-<<<<<<< HEAD
                 # If we already have a placeholder assistant message, update it instead of creating a new one
                 if last_assistant_message_object and last_assistant_message_object.get('message_id'):
                     # Store placeholder message_id for cleanup if update fails
                     placeholder_message_id = last_assistant_message_object['message_id']
-                    # Update the existing placeholder message with final content and metadata
-                    from core.services.supabase import DBConnection
-                    db = DBConnection()
-                    client = await db.client
-                    try:
-                        await client.table('messages').update({
-                            'content': message_data,
-                            'metadata': assistant_metadata,
-                            'updated_at': datetime.now(timezone.utc).isoformat()
-                        }).eq('message_id', placeholder_message_id).execute()
-                        
-                        # Fetch the updated message
-                        result = await client.table('messages').select('*').eq('message_id', placeholder_message_id).single().execute()
-                        if result.data:
-                            last_assistant_message_object = result.data
-                            logger.debug(f"Updated placeholder assistant message {last_assistant_message_object['message_id']} with final content")
-                            self.trace.event(
-                                name="updated_placeholder_assistant_message",
-                                level="DEFAULT",
-                                status_message=(f"Updated placeholder assistant message {last_assistant_message_object['message_id']} with final content")
-                            )
-                        else:
+                    # Acquire thread lock to prevent race conditions with concurrent tool completions
+                    thread_lock = await self._get_thread_lock(thread_id)
+                    async with thread_lock:
+                        # Update the existing placeholder message with final content and metadata
+                        from core.services.supabase import DBConnection
+                        db = DBConnection()
+                        client = await db.client
+                        try:
+                            result = await client.table('messages').update({
+                                'content': message_data,
+                                'metadata': assistant_metadata,
+                                'updated_at': datetime.now(timezone.utc).isoformat()
+                            }).eq('message_id', placeholder_message_id).execute()
+                            
+                            # Fetch the updated message
+                            if result.data and len(result.data) > 0:
+                                last_assistant_message_object = result.data[0]
+                                logger.debug(f"Updated placeholder assistant message {last_assistant_message_object['message_id']} with final content")
+                                self.trace.event(
+                                    name="updated_placeholder_assistant_message",
+                                    level="DEFAULT",
+                                    status_message=(f"Updated placeholder assistant message {last_assistant_message_object['message_id']} with final content")
+                                )
+                                # Log DB write for assistant message update
+                                if hasattr(self, '_log_db_write') and last_assistant_message_object:
+                                    self._log_db_write("update", "assistant", last_assistant_message_object, is_update=True)
+                            else:
+                                # Fallback to creating new message if update failed
+                                logger.warning(f"Failed to fetch updated message, creating new one and cleaning up placeholder {placeholder_message_id}")
+                                # Create new message first
+                                last_assistant_message_object = await self._add_message_with_agent_info(
+                                    thread_id=thread_id, type="assistant", content=message_data,
+                                    is_llm_message=True, metadata=assistant_metadata
+                                )
+                                
+                                # If new message was created successfully, migrate tool results and delete placeholder
+                                if last_assistant_message_object and last_assistant_message_object.get('message_id'):
+                                    new_message_id = last_assistant_message_object['message_id']
+                                    try:
+                                        # Update tool results to point to the new message_id
+                                        tool_results = await client.table('messages').select('message_id, metadata').eq('thread_id', thread_id).eq('type', 'tool').execute()
+                                        if tool_results.data:
+                                            updated_count = 0
+                                            for tool_result in tool_results.data:
+                                                metadata = tool_result.get('metadata', {})
+                                                if metadata.get('assistant_message_id') == placeholder_message_id:
+                                                    # Update this tool result to point to the new message
+                                                    updated_metadata = metadata.copy()
+                                                    updated_metadata['assistant_message_id'] = new_message_id
+                                                    await client.table('messages').update({
+                                                        'metadata': updated_metadata
+                                                    }).eq('message_id', tool_result['message_id']).execute()
+                                                    updated_count += 1
+                                            if updated_count > 0:
+                                                logger.debug(f"Migrated {updated_count} tool result(s) from placeholder {placeholder_message_id} to new message {new_message_id}")
+                                        
+                                        # Delete the orphaned placeholder message
+                                        await client.table('messages').delete().eq('message_id', placeholder_message_id).eq('thread_id', thread_id).execute()
+                                        logger.info(f"Deleted orphaned placeholder message {placeholder_message_id} after failed update")
+                                        self.trace.event(
+                                            name="deleted_orphaned_placeholder_message",
+                                            level="DEFAULT",
+                                            status_message=(f"Deleted orphaned placeholder message {placeholder_message_id} after failed update")
+                                        )
+                                    except Exception as cleanup_e:
+                                        logger.error(f"Error cleaning up placeholder message {placeholder_message_id}: {cleanup_e}", exc_info=True)
+                                        # Continue even if cleanup fails - the new message was created successfully
+                                
+                                # Log DB write for assistant message creation (fallback)
+                                if hasattr(self, '_log_db_write') and last_assistant_message_object:
+                                    self._log_db_write("save", "assistant", last_assistant_message_object, is_update=False)
+                        except Exception as e:
+                            logger.error(f"Failed to update placeholder assistant message: {e}, creating new one and cleaning up placeholder {placeholder_message_id}")
                             # Fallback to creating new message if update failed
-                            logger.warning(f"Failed to fetch updated message, creating new one and cleaning up placeholder {placeholder_message_id}")
-                            # Create new message first
                             last_assistant_message_object = await self._add_message_with_agent_info(
                                 thread_id=thread_id, type="assistant", content=message_data,
                                 is_llm_message=True, metadata=assistant_metadata
                             )
-                            
-                            # If new message was created successfully, migrate tool results and delete placeholder
-                            if last_assistant_message_object and last_assistant_message_object.get('message_id'):
-                                new_message_id = last_assistant_message_object['message_id']
-                                try:
-                                    # Update tool results to point to the new message_id
-                                    tool_results = await client.table('messages').select('message_id, metadata').eq('thread_id', thread_id).eq('type', 'tool').execute()
-                                    if tool_results.data:
-                                        updated_count = 0
-                                        for tool_result in tool_results.data:
-                                            metadata = tool_result.get('metadata', {})
-                                            if metadata.get('assistant_message_id') == placeholder_message_id:
-                                                # Update this tool result to point to the new message
-                                                updated_metadata = metadata.copy()
-                                                updated_metadata['assistant_message_id'] = new_message_id
-                                                await client.table('messages').update({
-                                                    'metadata': updated_metadata
-                                                }).eq('message_id', tool_result['message_id']).execute()
-                                                updated_count += 1
-                                        if updated_count > 0:
-                                            logger.debug(f"Migrated {updated_count} tool result(s) from placeholder {placeholder_message_id} to new message {new_message_id}")
-                                    
-                                    # Delete the orphaned placeholder message
-                                    await client.table('messages').delete().eq('message_id', placeholder_message_id).eq('thread_id', thread_id).execute()
-                                    logger.info(f"Deleted orphaned placeholder message {placeholder_message_id} after failed update")
-                                    self.trace.event(
-                                        name="deleted_orphaned_placeholder_message",
-                                        level="DEFAULT",
-                                        status_message=(f"Deleted orphaned placeholder message {placeholder_message_id} after failed update")
-                                    )
-                                except Exception as cleanup_e:
-                                    logger.error(f"Error cleaning up placeholder message {placeholder_message_id}: {cleanup_e}", exc_info=True)
-                                    # Continue even if cleanup fails - the new message was created successfully
-                    except Exception as e:
-                        logger.error(f"Failed to update placeholder assistant message: {e}, creating new one and cleaning up placeholder {placeholder_message_id}")
-                        # Fallback to creating new message if update failed
-=======
-                # Update existing partial message if it exists, otherwise create new
-                if partial_assistant_message_id:
-                    # Update existing partial message to final complete version
-                    # Acquire thread lock to prevent race conditions with concurrent tool completions
-                    thread_lock = await self._get_thread_lock(thread_id)
-                    async with thread_lock:
-                        client = await self.thread_manager.db.client
-                        result = await client.table('messages').update({
-                            'content': message_data,
-                            'metadata': assistant_metadata
-                        }).eq('message_id', partial_assistant_message_id).execute()
-                    
-                    if result.data and len(result.data) > 0:
-                        last_assistant_message_object = result.data[0]
-                        logger.debug(f"Updated partial assistant message {partial_assistant_message_id} to final complete version")
-                        # Log DB write for assistant message update
-                        if hasattr(self, '_log_db_write') and last_assistant_message_object:
-                            self._log_db_write("update", "assistant", last_assistant_message_object, is_update=True)
-                    else:
-                        logger.warning(f"Failed to update partial assistant message {partial_assistant_message_id}, creating new message")
->>>>>>> 4433c658 (Add race condition protection for parallel tool execution)
-                        last_assistant_message_object = await self._add_message_with_agent_info(
-                            thread_id=thread_id, type="assistant", content=message_data,
-                            is_llm_message=True, metadata=assistant_metadata
-                        )
-<<<<<<< HEAD
-                        
-                        # If new message was created successfully, migrate tool results and delete placeholder
-                        if last_assistant_message_object and last_assistant_message_object.get('message_id'):
-                            new_message_id = last_assistant_message_object['message_id']
-                            try:
-                                # Update tool results to point to the new message_id
-                                tool_results = await client.table('messages').select('message_id, metadata').eq('thread_id', thread_id).eq('type', 'tool').execute()
-                                if tool_results.data:
-                                    updated_count = 0
-                                    for tool_result in tool_results.data:
-                                        metadata = tool_result.get('metadata', {})
-                                        if metadata.get('assistant_message_id') == placeholder_message_id:
-                                            # Update this tool result to point to the new message
-                                            updated_metadata = metadata.copy()
-                                            updated_metadata['assistant_message_id'] = new_message_id
-                                            await client.table('messages').update({
-                                                'metadata': updated_metadata
-                                            }).eq('message_id', tool_result['message_id']).execute()
-                                            updated_count += 1
-                                    if updated_count > 0:
-                                        logger.debug(f"Migrated {updated_count} tool result(s) from placeholder {placeholder_message_id} to new message {new_message_id}")
-                                
-                                # Delete the orphaned placeholder message
-                                await client.table('messages').delete().eq('message_id', placeholder_message_id).eq('thread_id', thread_id).execute()
-                                logger.info(f"Deleted orphaned placeholder message {placeholder_message_id} after failed update")
-                                self.trace.event(
-                                    name="deleted_orphaned_placeholder_message",
-                                    level="DEFAULT",
-                                    status_message=(f"Deleted orphaned placeholder message {placeholder_message_id} after failed update")
-                                )
-                            except Exception as cleanup_e:
-                                logger.error(f"Error cleaning up placeholder message {placeholder_message_id}: {cleanup_e}", exc_info=True)
-                                # Continue even if cleanup fails - the new message was created successfully
+                            # Log DB write for assistant message creation (fallback)
+                            if hasattr(self, '_log_db_write') and last_assistant_message_object:
+                                self._log_db_write("save", "assistant", last_assistant_message_object, is_update=False)
                 else:
                     # No placeholder exists, create new message
-=======
-                        # Log DB write for assistant message creation (fallback)
-                        if hasattr(self, '_log_db_write') and last_assistant_message_object:
-                            self._log_db_write("save", "assistant", last_assistant_message_object, is_update=False)
-                else:
-                    # Create new message (no tools executed during streaming)
->>>>>>> 4433c658 (Add race condition protection for parallel tool execution)
                     last_assistant_message_object = await self._add_message_with_agent_info(
                         thread_id=thread_id, type="assistant", content=message_data,
                         is_llm_message=True, metadata=assistant_metadata
                     )
-<<<<<<< HEAD
-=======
                     # Log DB write for assistant message creation
                     if hasattr(self, '_log_db_write') and last_assistant_message_object:
                         self._log_db_write("save", "assistant", last_assistant_message_object, is_update=False)
->>>>>>> 4433c658 (Add race condition protection for parallel tool execution)
 
                 if last_assistant_message_object:
                     # Yield the complete saved object, adding stream_status metadata just for yield
