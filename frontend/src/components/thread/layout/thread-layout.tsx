@@ -142,13 +142,19 @@ export const ThreadLayout = memo(function ThreadLayout({
   // Get selected file path from store
   const selectedFilePath = useKortixComputerStore((state) => state.selectedFilePath);
   
-  // Suite Mode - ONLY activates when VIEWING files in file browser
-  // NOT for tool views in chat - those stay normal size
+  const SUITE_MODE_FILE_EXTENSIONS = [
+    'kanvax', 
+    'pptx', 
+    'ppt', 
+    'xlsx', 
+    'xls', 
+    'csv'
+  ];
+
   const isSuiteMode = useMemo(() => {
-    // ONLY check file being viewed in file browser
     if (selectedFilePath) {
       const ext = selectedFilePath.split('.').pop()?.toLowerCase();
-      if (['kanvax', 'pptx', 'ppt'].includes(ext || '')) {
+      if (SUITE_MODE_FILE_EXTENSIONS.includes(ext || '')) {
         return true;
       }
     }

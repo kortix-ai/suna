@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SpreadsheetComponent } from '@syncfusion/ej2-react-spreadsheet';
 import { backendApi } from '@/lib/api-client';
 import { getSandboxFileContent } from '@/lib/api/sandbox';
@@ -597,24 +597,28 @@ export function useSpreadsheetSync({
     }
   }, [forceSave, forceRefresh]);
 
+  const memoizedHandlers = useMemo(() => ({
+    handleCellEdit,
+    handleCellSave,
+    handleActionComplete,
+    handleBeforeSave,
+    handleSaveComplete,
+    handleOpenComplete,
+    handleOpenFailure,
+    handleCreated,
+  }), [handleCellEdit, handleCellSave, handleActionComplete, handleBeforeSave, handleSaveComplete, handleOpenComplete, handleOpenFailure, handleCreated]);
+
+  const memoizedActions = useMemo(() => ({
+    forceRefresh,
+    forceSave,
+    resolveConflict,
+  }), [forceRefresh, forceSave, resolveConflict]);
+
   return {
     syncState,
     isLoading,
     isComponentReady,
-    handlers: {
-      handleCellEdit,
-      handleCellSave,
-      handleActionComplete,
-      handleBeforeSave,
-      handleSaveComplete,
-      handleOpenComplete,
-      handleOpenFailure,
-      handleCreated,
-    },
-    actions: {
-      forceRefresh,
-      forceSave,
-      resolveConflict,
-    },
+    handlers: memoizedHandlers,
+    actions: memoizedActions,
   };
 }
