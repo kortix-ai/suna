@@ -46,6 +46,13 @@ const nextConfig = (): NextConfig => ({
     return config;
   },
   
+  // Turbopack configuration
+  turbopack: {
+    // Note: Turbopack handles externals differently than webpack.
+    // The canvas external is handled automatically for browser builds.
+    // If you need to configure loaders or aliases, add them here.
+  },
+  
   // Performance optimizations
   experimental: {
     // Optimize package imports for faster builds and smaller bundles

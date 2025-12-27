@@ -642,24 +642,45 @@ async def create_thread(
                     logger.error(f"Error deleting sandbox: {str(e)}")
             raise Exception("Failed to create sandbox")
 
-        update_result = await client.table('projects').update({
-            'sandbox': {
-                'id': sandbox_id, 
-                'pass': sandbox_pass, 
+        # Create resource record and link to project using ResourceService
+        try:
+            from core.resources import ResourceService, ResourceType, ResourceStatus
+            resource_service = ResourceService(client)
+            
+            sandbox_config = {
+                'pass': sandbox_pass,
                 'vnc_preview': vnc_url,
-                'sandbox_url': website_url, 
+                'sandbox_url': website_url,
                 'token': token
             }
-        }).eq('project_id', project_id).execute()
-
-        if not update_result.data:
-            logger.error(f"Failed to update project {project_id} with new sandbox {sandbox_id}")
+            
+            resource = await resource_service.create_resource(
+                account_id=account_id,
+                resource_type=ResourceType.SANDBOX,
+                external_id=sandbox_id,
+                config=sandbox_config,
+                status=ResourceStatus.ACTIVE
+            )
+            resource_id = resource['id']
+            
+            # Link resource to project
+            if not await resource_service.link_resource_to_project(project_id, resource_id):
+                logger.error(f"Failed to link resource {resource_id} to project {project_id}")
+                if sandbox_id:
+                    try: 
+                        await delete_sandbox(sandbox_id)
+                        await resource_service.delete_resource(resource_id)
+                    except Exception as e: 
+                        logger.error(f"Error deleting sandbox: {str(e)}")
+                raise Exception("Database update failed")
+        except Exception as e:
+            logger.error(f"Failed to create resource for sandbox {sandbox_id}: {str(e)}")
             if sandbox_id:
                 try: 
                     await delete_sandbox(sandbox_id)
                 except Exception as e: 
                     logger.error(f"Error deleting sandbox: {str(e)}")
-            raise Exception("Database update failed")
+            raise Exception(f"Failed to create sandbox resource: {str(e)}")
 
         # Update project metadata cache with sandbox data (instead of invalidate)
         try:

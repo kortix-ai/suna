@@ -114,4 +114,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE resources TO authenticated, servic
 
 -- Drop the old sandbox JSONB column from projects table
 -- All data has been migrated to the resources table above
+-- First drop the index that references the sandbox column
+DROP INDEX IF EXISTS idx_projects_sandbox_gin;
+-- Then drop the column
 ALTER TABLE projects DROP COLUMN IF EXISTS sandbox;

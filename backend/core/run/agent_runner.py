@@ -208,6 +208,7 @@ class AgentRunner:
             cached_project = await get_cached_project_metadata(self.config.project_id)
             if cached_project:
                 project_data = cached_project
+                sandbox_info = cached_project  # Cache stores sandbox metadata directly
                 logger.debug(f"⏱️ [TIMING] ⚡ Project from cache: {(time.time() - q_start) * 1000:.1f}ms")
             else:
                 project = await self.client.table('projects').select('project_id, sandbox_resource_id').eq('project_id', self.config.project_id).execute()
