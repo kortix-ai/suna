@@ -12,22 +12,20 @@ def calculate_token_cost(prompt_tokens: int, completion_tokens: int, model: str)
             logger.debug(f"[COST_CALC] Skipping cost calculation for mock-ai (test harness)")
             return Decimal('0')
         
-        resolved_model = model_manager.resolve_model_id(model)
-        logger.debug(f"[COST_CALC] Model '{model}' resolved to '{resolved_model}'")
+        # Use get_pricing which handles registry models, aliases, and fallback LiteLLM IDs
+        pricing = model_manager.get_pricing(model)
         
-        model_obj = model_manager.get_model(resolved_model)
-        
-        if model_obj and model_obj.pricing:
-            input_cost = Decimal(prompt_tokens) / Decimal('1000000') * Decimal(str(model_obj.pricing.input_cost_per_million_tokens))
-            output_cost = Decimal(completion_tokens) / Decimal('1000000') * Decimal(str(model_obj.pricing.output_cost_per_million_tokens))
+        if pricing:
+            input_cost = Decimal(prompt_tokens) / Decimal('1000000') * Decimal(str(pricing.input_cost_per_million_tokens))
+            output_cost = Decimal(completion_tokens) / Decimal('1000000') * Decimal(str(pricing.output_cost_per_million_tokens))
             total_cost = (input_cost + output_cost) * TOKEN_PRICE_MULTIPLIER
             
-            logger.debug(f"[COST_CALC] Model '{model}' pricing: input=${model_obj.pricing.input_cost_per_million_tokens}/M, output=${model_obj.pricing.output_cost_per_million_tokens}/M")
+            logger.debug(f"[COST_CALC] Model '{model}' pricing: input=${pricing.input_cost_per_million_tokens}/M, output=${pricing.output_cost_per_million_tokens}/M")
             logger.debug(f"[COST_CALC] Calculated: input=${input_cost:.6f}, output=${output_cost:.6f}, total with {TOKEN_PRICE_MULTIPLIER}x markup=${total_cost:.6f}")
             
             return total_cost
         
-        logger.warning(f"[COST_CALC] No pricing found for model '{model}' (resolved: '{resolved_model}'), using default $0.01")
+        logger.warning(f"[COST_CALC] No pricing found for model '{model}', using default $0.01")
         return Decimal('0.01')
     except Exception as e:
         logger.error(f"[COST_CALC] Error calculating token cost for model '{model}': {e}")
@@ -43,11 +41,10 @@ def calculate_cached_token_cost(cached_tokens: int, model: str) -> Decimal:
         if model == "mock-ai":
             return Decimal('0')
         
-        resolved_model = model_manager.resolve_model_id(model)
-        model_obj = model_manager.get_model(resolved_model)
+        pricing = model_manager.get_pricing(model)
         
-        if model_obj and model_obj.pricing:
-            cached_read_cost_per_token = model_obj.pricing.cached_read_cost_per_token
+        if pricing:
+            cached_read_cost_per_token = pricing.cached_read_cost_per_token
             cost = Decimal(cached_tokens) * Decimal(str(cached_read_cost_per_token)) * TOKEN_PRICE_MULTIPLIER
             logger.debug(f"[COST_CALC] Cached read cost for {cached_tokens} tokens: ${cost:.6f}")
             return cost
@@ -69,15 +66,14 @@ def calculate_cache_write_cost(cache_creation_tokens: int, model: str, cache_ttl
         if model == "mock-ai":
             return Decimal('0')
         
-        resolved_model = model_manager.resolve_model_id(model)
-        model_obj = model_manager.get_model(resolved_model)
+        pricing = model_manager.get_pricing(model)
         
-        if model_obj and model_obj.pricing:
+        if pricing:
             if cache_ttl == "1h":
-                cache_write_cost_per_token = model_obj.pricing.cache_write_1h_cost_per_token
+                cache_write_cost_per_token = pricing.cache_write_1h_cost_per_token
             else:
                 # Default to 5-minute cache pricing
-                cache_write_cost_per_token = model_obj.pricing.cache_write_5m_cost_per_token
+                cache_write_cost_per_token = pricing.cache_write_5m_cost_per_token
             
             cost = Decimal(cache_creation_tokens) * Decimal(str(cache_write_cost_per_token)) * TOKEN_PRICE_MULTIPLIER
             logger.debug(f"[COST_CALC] Cache write cost for {cache_creation_tokens} tokens (TTL: {cache_ttl}): ${cost:.6f}")

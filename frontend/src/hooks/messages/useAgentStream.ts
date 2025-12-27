@@ -16,6 +16,7 @@ import { agentKeys } from '@/hooks/agents/keys';
 import { composioKeys } from '@/hooks/composio/keys';
 import { knowledgeBaseKeys } from '@/hooks/knowledge-base/keys';
 import { fileQueryKeys } from '@/hooks/files/use-file-queries';
+import { threadKeys } from '@/hooks/threads/keys';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { accountStateKeys } from '@/hooks/billing';
 
@@ -301,6 +302,10 @@ export function useAgentStream(
       // Invalidate account state after agent run completes (credits may have been deducted)
       queryClient.invalidateQueries({ 
         queryKey: accountStateKeys.all,
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: threadKeys.messages(currentThreadId),
       });
 
       if (agentId) {

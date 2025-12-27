@@ -100,11 +100,9 @@ function StatusBar() {
 interface PanelHeaderProps {
   agentName?: string;
   onClose: () => void;
-  onMinimize?: () => void;
   onMaximize?: () => void;
   isStreaming?: boolean;
   variant?: 'drawer' | 'desktop' | 'motion';
-  showMinimize?: boolean;
   layoutId?: string;
   currentView: ViewType;
   onViewChange: (view: ViewType) => void;
@@ -120,11 +118,9 @@ interface PanelHeaderProps {
 export const PanelHeader = memo(function PanelHeader({
   agentName,
   onClose,
-  onMinimize,
   onMaximize,
   isStreaming = false,
   variant = 'desktop',
-  showMinimize = false,
   layoutId,
   currentView,
   onViewChange,
@@ -173,7 +169,6 @@ export const PanelHeader = memo(function PanelHeader({
       <div className="flex items-center justify-start">
         <ToolbarButtons 
           onClose={onClose}
-          onMinimize={onMinimize || onClose}
           onMaximize={onMaximize || (() => {})}
           isMaximized={isMaximized}
         />

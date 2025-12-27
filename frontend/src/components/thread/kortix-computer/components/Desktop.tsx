@@ -1091,7 +1091,6 @@ export const SandboxDesktop = memo(function SandboxDesktop({
             sandboxInfoOpen={sandboxInfoOpen}
             setSandboxInfoOpen={setSandboxInfoOpen}
             onClose={onClose}
-            onMinimize={onClose}
             onMaximize={() => {}}
             isStreaming={isStreaming}
             variant="motion"

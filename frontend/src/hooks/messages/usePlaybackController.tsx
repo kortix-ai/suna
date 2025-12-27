@@ -132,7 +132,7 @@ export function usePlaybackController({
         if (enabled && messages.length > 0 && state.visibleMessages.length === 0) {
             dispatch({ type: 'SET_VISIBLE_MESSAGES', messages: [messages[0]] });
         }
-    }, [enabled, messages.length, state.visibleMessages.length]);
+    }, [enabled, messages, state.visibleMessages.length, dispatch]);
 
     // Stream text character by character with realistic typing animation
     const streamText = useCallback((text: string, onComplete: () => void) => {
@@ -269,7 +269,7 @@ export function usePlaybackController({
                             textToStream = metadata?.text_content || '';
                         } catch (e) {
                             // Fallback to parsing content for legacy messages
-                            let content = currentMessage.content;
+                            const content = currentMessage.content;
                             if (typeof content === 'string') {
                                 try {
                                     const parsed = JSON.parse(content);

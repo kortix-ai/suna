@@ -190,7 +190,7 @@ export function useThreadToolCalls(
         setAutoOpenedPanel(true);
       }
     }
-  }, [historicalToolPairs.length, isSidePanelOpen, autoOpenedPanel, agentStatus, isMobile, compact]);
+  }, [historicalToolPairs.length, isSidePanelOpen, autoOpenedPanel, agentStatus, isMobile, compact, setIsSidePanelOpen]);
 
   // Reset user navigation flag when agent stops
   useEffect(() => {
@@ -304,7 +304,7 @@ export function useThreadToolCalls(
       
       toast.info('Could not find details for this tool call.');
     }
-  }, [messages, toolCalls, navigateToToolCall]);
+  }, [messages, toolCalls, navigateToToolCall, setIsSidePanelOpen]);
 
   const handleStreamingToolCall = useCallback(
     (toolCall: UnifiedMessage | null) => {
@@ -331,7 +331,7 @@ export function useThreadToolCalls(
 
       // Process each tool call from metadata
       setToolCalls((prev) => {
-        let updated = [...prev];
+        const updated = [...prev];
         
         // Update or add each tool call from metadata
         filteredToolCalls.forEach((metadataToolCall) => {
@@ -416,7 +416,7 @@ export function useThreadToolCalls(
         }, 0);
       }
     },
-    [compact, navigateToToolCall],
+    [compact, navigateToToolCall, messages, setIsSidePanelOpen],
   );
   
   // Update current tool index when toolCalls changes (if user hasn't manually navigated)

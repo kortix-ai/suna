@@ -359,7 +359,7 @@ Batch mode reads up to 20 files concurrently - much faster for multiple files!""
                     "file_paths": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Array of file paths to read concurrently (e.g., ['uploads/doc1.pdf', 'uploads/doc2.csv']). Max 20 files per batch."
+                        "description": "Array of file paths to read concurrently. Provide multiple file paths as separate strings in the array, such as uploads/doc1.pdf and uploads/doc2.csv. Max 20 files per batch."
                     }
                 }
             }
@@ -422,8 +422,9 @@ Use this instead of read_file for:
 - Multiple files where you need to find something
 
 Examples:
-- search_file(file_path="uploads/contract.pdf", query="termination clause")
-- search_file(file_paths=["uploads/doc1.pdf", "uploads/doc2.pdf"], query="payment terms")""",
+- Use search_file with file_path "uploads/contract.pdf" and query "termination clause"
+- Use search_file with file_paths containing multiple file paths and query "payment terms"
+""",
             "parameters": {
                 "type": "object",
                 "properties": {

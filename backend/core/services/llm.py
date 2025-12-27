@@ -42,18 +42,10 @@ def setup_api_keys() -> None:
         os.environ["AWS_BEARER_TOKEN_BEDROCK"] = config.AWS_BEARER_TOKEN_BEDROCK
 
 def setup_provider_router(openai_compatible_api_key: str = None, openai_compatible_api_base: str = None):
-    """Configure LiteLLM Router with fallback chains for Bedrock models."""
+    """Configure LiteLLM Router with fallback chains from model registry."""
     global provider_router
     
-    from core.ai_models.registry import (
-        HAIKU_4_5_PROFILE_ID, SONNET_4_5_PROFILE_ID, build_bedrock_profile_arn
-    )
-    
-    # Build ARNs once
-    arns = {
-        "haiku": build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID),
-        "sonnet45": build_bedrock_profile_arn(SONNET_4_5_PROFILE_ID),
-    }
+    from core.ai_models.registry import registry
     
     # Model list for router
     model_list = [
@@ -68,22 +60,13 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
         {"model_name": "*", "litellm_params": {"model": "*"}},
     ]
     
-    # Fallback chains: primary -> [fallbacks]
-    fallbacks = [
-        # {arns["haiku"]: [arns["sonnet45"]]},
-        {arns["sonnet45"]: [arns["haiku"]]},
-    ]
-    
-    # Context window fallbacks: smaller context -> larger context
-    # context_window_fallbacks = [
-    #     {arns["haiku"]: [arns["sonnet45"]]},  # 200k -> 1M
-    # ]
+    # Get fallback chains from registry (single source of truth)
+    fallbacks = registry.get_fallback_chains()
     
     provider_router = Router(
         model_list=model_list,
         num_retries=3,
         fallbacks=fallbacks,
-        # context_window_fallbacks=context_window_fallbacks,
     )
     
     logger.info(f"LiteLLM Router configured with {len(fallbacks)} fallback rules")
