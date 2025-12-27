@@ -274,15 +274,44 @@ class ModelRegistry:
         
         return fallbacks
     
+    def _normalize_model_id(self, model_id: str) -> str:
+        """Normalize model ID for consistent matching.
+        
+        LiteLLM/OpenRouter may return model IDs without provider prefix (e.g., 'minimax/minimax-m2.1')
+        but we store them with prefix (e.g., 'openrouter/minimax/minimax-m2.1').
+        """
+        if not model_id:
+            return model_id
+        
+        # Common provider prefixes that LiteLLM might strip
+        provider_prefixes = ['openrouter/', 'anthropic/', 'bedrock/', 'openai/']
+        
+        # If ID already has a known prefix, return as-is
+        for prefix in provider_prefixes:
+            if model_id.startswith(prefix):
+                return model_id
+        
+        # Try adding openrouter/ prefix (most common case for external models)
+        openrouter_variant = f"openrouter/{model_id}"
+        return openrouter_variant
+    
     def resolve_from_litellm_id(self, litellm_model_id: str) -> str:
         """Reverse lookup: resolve a LiteLLM model ID back to registry model ID.
         
         Used by cost calculator to find pricing. Returns input if not found.
+        Handles model ID variations (with/without provider prefix).
         """
         # Direct lookup in registered models
         for model in self._models.values():
             if model.litellm_model_id == litellm_model_id:
                 return model.id
+        
+        # Try normalized version (handles openrouter/ prefix)
+        normalized_id = self._normalize_model_id(litellm_model_id)
+        if normalized_id != litellm_model_id:
+            for model in self._models.values():
+                if model.litellm_model_id == normalized_id:
+                    return model.id
         
         # Check if this is already a registry ID
         if self.get(litellm_model_id):
@@ -295,7 +324,7 @@ class ModelRegistry:
         
         This is the primary method for billing to resolve pricing, as it handles:
         1. Registry model IDs (kortix/basic)
-        2. LiteLLM model IDs that map to registry models
+        2. LiteLLM model IDs that map to registry models (with/without provider prefix)
         3. Fallback model IDs (like Haiku Bedrock ARN) that have explicit pricing
         """
         # First, check if it's a registry model or maps to one
@@ -307,6 +336,11 @@ class ModelRegistry:
         # Check explicit litellm ID to pricing mapping (for fallback models)
         if litellm_model_id in self._litellm_id_to_pricing:
             return self._litellm_id_to_pricing[litellm_model_id]
+        
+        # Try with normalized ID in pricing mapping
+        normalized_id = self._normalize_model_id(litellm_model_id)
+        if normalized_id in self._litellm_id_to_pricing:
+            return self._litellm_id_to_pricing[normalized_id]
         
         # Handle Bedrock ARN patterns
         if "application-inference-profile" in litellm_model_id:
