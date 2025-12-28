@@ -29,6 +29,7 @@ def is_retryable_error(error: Exception) -> bool:
     """Check if an error is a transient error that should be retried."""
     error_str = str(error).lower()
     # Check for gateway errors (502, 503, 504) and connection errors
+    # Also include sandbox startup/state errors that might be transient
     retryable_patterns = [
         '502', 'bad gateway',
         '503', 'service unavailable',
@@ -37,6 +38,10 @@ def is_retryable_error(error: Exception) -> bool:
         'connection refused',
         'connection error',
         'timeout',
+        'starting',  # Sandbox is starting
+        'not ready',  # Sandbox not ready yet
+        'state',  # State transition errors
+        'temporarily unavailable',  # Temporary unavailability
     ]
     return any(pattern in error_str for pattern in retryable_patterns)
 
@@ -151,6 +156,7 @@ def normalize_path(path: str) -> str:
 async def get_sandbox_by_id_safely(client, sandbox_id: str) -> AsyncSandbox:
     """
     Safely retrieve a sandbox object by its ID, using the resource that owns it.
+    Includes retry logic for transient sandbox startup failures.
     
     Args:
         client: The Supabase client
@@ -160,7 +166,7 @@ async def get_sandbox_by_id_safely(client, sandbox_id: str) -> AsyncSandbox:
         AsyncSandbox: The sandbox object
         
     Raises:
-        HTTPException: If the sandbox doesn't exist or can't be retrieved
+        HTTPException: If the sandbox doesn't exist or can't be retrieved after retries
     """
     from core.resources import ResourceService, ResourceType
     
@@ -172,18 +178,27 @@ async def get_sandbox_by_id_safely(client, sandbox_id: str) -> AsyncSandbox:
         logger.error(f"No resource found for sandbox ID: {sandbox_id}")
         raise HTTPException(status_code=404, detail="Sandbox not found - no resource exists for this sandbox ID")
     
-    # project_id = project_result.data[0]['project_id']
-    # logger.debug(f"Found project {project_id} for sandbox {sandbox_id}")
-    
+    # Get the sandbox with retry logic for transient startup failures
     try:
-        # Get the sandbox
-        sandbox = await get_or_start_sandbox(sandbox_id)
-        # Extract just the sandbox object from the tuple (sandbox, sandbox_id, sandbox_pass)
-        # sandbox = sandbox_tuple[0]
-            
+        sandbox = await retry_with_backoff(
+            operation=lambda: get_or_start_sandbox(sandbox_id),
+            operation_name=f"get_or_start_sandbox({sandbox_id})",
+            max_attempts=3,  # Retry up to 3 times for sandbox startup
+            base_delay=2.0,  # Start with 2 second delay (sandbox startup takes time)
+            max_delay=10.0  # Max 10 second delay between retries
+        )
         return sandbox
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
-        logger.error(f"Error retrieving sandbox {sandbox_id}: {str(e)}")
+        error_str = str(e).lower()
+        # Check if it's a "not found" error
+        if 'not found' in error_str or '404' in error_str:
+            logger.error(f"Sandbox {sandbox_id} not found: {str(e)}")
+            raise HTTPException(status_code=404, detail=f"Sandbox not found: {sandbox_id}")
+        # For other errors, return 500
+        logger.error(f"Error retrieving sandbox {sandbox_id} after retries: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve sandbox: {str(e)}")
 
 @router.post("/sandboxes/{sandbox_id}/files")
