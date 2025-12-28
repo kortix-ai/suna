@@ -300,12 +300,14 @@ export const ComposioUrlDetector: React.FC<ComposioUrlDetectorProps> = ({
   className,
   isStreaming = false,
 }) => {
-  const composioUrls = detectComposioUrls(content);
+  // Ensure content is a string to prevent React error #301
+  const safeContent = typeof content === 'string' ? content : (content ? String(content) : '');
+  const composioUrls = detectComposioUrls(safeContent);
 
   // Don't pass prose/chat-markdown classes to UnifiedMarkdown - it has its own styling
   if (composioUrls.length === 0) {
     return (
-      <UnifiedMarkdown content={content} isStreaming={isStreaming} />
+      <UnifiedMarkdown content={safeContent} isStreaming={isStreaming} />
     );
   }
 
@@ -314,9 +316,9 @@ export const ComposioUrlDetector: React.FC<ComposioUrlDetectorProps> = ({
 
   composioUrls.forEach((composioUrl, index) => {
     if (composioUrl.startIndex > lastIndex) {
-      const textBefore = content.substring(lastIndex, composioUrl.startIndex);
+      const textBefore = safeContent.substring(lastIndex, composioUrl.startIndex);
       
-      const cleanedTextBefore = hasAuthUrlPattern(content, composioUrl)
+      const cleanedTextBefore = hasAuthUrlPattern(safeContent, composioUrl)
         ? textBefore
             // Remove [toolkit:slug:name] pattern
             .replace(/\[toolkit:[^:]+:[^\]]+\]\s+/gi, '')
@@ -344,8 +346,8 @@ export const ComposioUrlDetector: React.FC<ComposioUrlDetectorProps> = ({
     lastIndex = composioUrl.endIndex;
   });
 
-  if (lastIndex < content.length) {
-    const remainingText = content.substring(lastIndex);
+  if (lastIndex < safeContent.length) {
+    const remainingText = safeContent.substring(lastIndex);
     if (remainingText.trim()) {
       contentParts.push(
         <UnifiedMarkdown key="text-final" content={remainingText} isStreaming={isStreaming} />

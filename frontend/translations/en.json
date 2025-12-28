@@ -952,7 +952,8 @@
       "slides": "Slides",
       "data": "Data",
       "docs": "Docs",
-      "people": "People",
+      "canvas": "Canvas",
+      "video": "Video",
       "research": "Research"
     },
     "styles": {
@@ -1161,17 +1162,29 @@
         "8": "Write a security incident response plan with escalation procedures",
         "9": "Create a comprehensive style guide for brand and content"
       },
-      "people": {
-        "0": "Find VP of Engineering candidates at Series B+ AI/ML startups in San Francisco Bay Area with 10+ years experience and proven track record scaling engineering teams",
-        "1": "Build lead list of CMOs at B2B SaaS companies ($10M-$50M ARR) who recently raised Series A/B funding - include email patterns and tech stack",
-        "2": "Research Senior Blockchain Engineers with Solidity/Rust experience at top crypto projects, open to relocation to Dubai or Singapore",
-        "3": "Generate prospect list of technical founders at Seed-Series A startups in Enterprise AI who raised $2M-$15M in last 6 months",
-        "4": "Identify Senior Product Managers at fintech companies with 5-10 years experience from FAANG or unicorns, skilled in 0-1 product development",
-        "5": "Find CIOs and VP Engineering at mid-market healthcare IT companies (500-5000 employees) with $500K+ IT budgets planning cloud migration",
-        "6": "Research VP Sales at B2B SaaS companies showing 100%+ YoY growth, with 7+ years closing $100K+ deals and PLG experience",
-        "7": "Build list of CTOs at enterprise companies actively implementing AI infrastructure with multi-million dollar budgets in 2024",
-        "8": "Find Senior UX/UI Designers with mobile-first consumer app experience and 1M+ user portfolios, actively looking or open to opportunities",
-        "9": "Identify Senior DevOps Engineers at cloud-native startups with Kubernetes/Terraform expertise and 5-8 years building infrastructure for 10M+ users"
+      "canvas": {
+        "0": "Add a tech startup banner to canvas with futuristic city skyline",
+        "1": "Create a coffee brand logo on canvas using earthy minimalist style",
+        "2": "Add my product photo to canvas and remove its background",
+        "3": "Design a renewable energy infographic on canvas with flat icons",
+        "4": "Create a sci-fi book cover on canvas with cyberpunk aesthetics",
+        "5": "Add a YouTube thumbnail to canvas for productivity tips video",
+        "6": "Build a luxury fashion mood board on canvas for millennials",
+        "7": "Design an elegant wedding invitation on canvas with floral patterns",
+        "8": "Add my portrait to canvas and apply vintage film effect",
+        "9": "Create a music festival poster on canvas with psychedelic vibes"
+      },
+      "video": {
+        "0": "Animate my product photo rotating smoothly with studio lighting",
+        "1": "Transform my portrait into a cinematic scene with camera movement",
+        "2": "Generate a peaceful nature video of cherry blossoms falling slowly",
+        "3": "Create abstract glowing particles swirling together in slow motion",
+        "4": "Make my product float and rotate with soft shadows and reflections",
+        "5": "Add dramatic cinematic lighting and color grading to my portrait",
+        "6": "Generate a smooth drone shot flying through foggy mountain peaks",
+        "7": "Create a looping video of liquid metal flowing into organic shapes",
+        "8": "Transform my photo background into an underwater scene with light rays",
+        "9": "Generate a futuristic cityscape video with neon lights and reflections"
       },
       "research": {
         "0": "Analyze emerging trends in quantum computing and potential business applications",

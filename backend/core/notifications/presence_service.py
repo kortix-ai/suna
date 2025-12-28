@@ -34,10 +34,20 @@ class PresenceService:
             return False
     
     async def _fetch_session(self, session_id: str):
-        client = await self.db.client
-        return await client.table('user_presence_sessions').select('*').eq(
-            'session_id', session_id
-        ).maybe_single().execute()
+        """Fetch a presence session by session_id. Returns None if not found (handles 204 responses silently)."""
+        try:
+            client = await self.db.client
+            return await client.table('user_presence_sessions').select('*').eq(
+                'session_id', session_id
+            ).maybe_single().execute()
+        except Exception as e:
+            # Handle PostgREST 204 "Missing response" - this is a valid "not found" case, not an error
+            error_str = str(e).lower()
+            if '204' in error_str and 'missing response' in error_str:
+                # Session not found - return None silently (not an error)
+                return None
+            # Re-raise other exceptions
+            raise
 
     async def _upsert_session(
         self,
@@ -127,7 +137,8 @@ class PresenceService:
         
         try:
             existing = await self._fetch_session(session_id)
-            existing_data = existing.data if existing and existing.data else None
+            # Handle None result (session not found) gracefully - 204 responses return None
+            existing_data = existing.data if existing and hasattr(existing, 'data') and existing.data else None
             
             is_new_session = not existing_data
 

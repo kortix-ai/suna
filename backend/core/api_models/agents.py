@@ -93,13 +93,6 @@ class AgentsResponse(BaseModel):
     pagination: PaginationInfo
 
 
-class ThreadAgentResponse(BaseModel):
-    """Response model for thread agent information."""
-    agent: Optional[AgentResponse]
-    source: str
-    message: str
-
-
 class AgentExportData(BaseModel):
     """Model for agent export data."""
     name: str

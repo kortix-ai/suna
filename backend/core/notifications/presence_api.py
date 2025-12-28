@@ -54,7 +54,8 @@ async def update_presence(
         )
         
         if not success:
-            logger.error(f"Presence service returned False for session {payload.session_id}")
+            # Log warning instead of error - this could be a validation/permission issue
+            logger.warning(f"Presence update failed for session {payload.session_id}, account {account_id}")
             raise HTTPException(status_code=500, detail="Failed to update presence")
         
         return {"success": True, "session_id": payload.session_id}
@@ -62,7 +63,10 @@ async def update_presence(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in update_presence endpoint: {str(e)}", exc_info=True)
+        error_str = str(e).lower()
+        # Don't log 204 "Missing response" errors - they're handled silently now
+        if '204' not in error_str or 'missing response' not in error_str:
+            logger.error(f"Error in update_presence endpoint: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 

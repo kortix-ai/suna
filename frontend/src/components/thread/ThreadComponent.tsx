@@ -8,10 +8,14 @@ import React, {
   useState,
 } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { AgentRunLimitError, ProjectLimitError, BillingError } from '@/lib/api/errors';
+import { 
+  AgentRunLimitError, 
+  ProjectLimitError, 
+  BillingError 
+} from '@/lib/api/errors';
 import { toast } from 'sonner';
 import { ChatInput, ChatInputHandles } from '@/components/thread/chat-input/chat-input';
-import { useSidebar, SidebarContext } from '@/components/ui/sidebar';
+import { SidebarContext } from '@/components/ui/sidebar';
 import { useAgentStream } from '@/hooks/messages';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/utils';
@@ -44,7 +48,6 @@ import { PlanSelectionModal } from '@/components/billing/pricing';
 import { useBillingModal } from '@/hooks/billing/use-billing-modal';
 
 import {
-  useThreadAgent,
   useAgents,
 } from '@/hooks/agents/use-agents';
 import { AgentRunLimitBanner } from '@/components/thread/agent-run-limit-banner';
@@ -61,7 +64,6 @@ import { fileQueryKeys } from '@/hooks/files';
 import { useProjectRealtime } from '@/hooks/threads';
 import { handleGoogleSlidesUpload } from './tool-views/utils/presentation-utils';
 import { useTranslations } from 'next-intl';
-import { backendApi } from '@/lib/api-client';
 import { useKortixComputerStore, useSetIsSidePanelOpen } from '@/stores/kortix-computer-store';
 import { useToolStreamStore } from '@/stores/tool-stream-store';
 import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
@@ -104,7 +106,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const getCurrentAgent = isShared ? (() => undefined) : storeGetCurrentAgent;
   const isSunaAgent = isShared ? false : storeIsSunaAgentFn;
 
-  const agents = isShared ? [] : (agentsQuery?.data?.agents || []);
+  // Memoize agents array to prevent unnecessary recalculations
+  const agents = useMemo(() => {
+    if (isShared) return [];
+    return agentsQuery?.data?.agents || [];
+  }, [isShared, agentsQuery?.data?.agents]);
   const [isSidePanelAnimating, setIsSidePanelAnimating] = useState(false);
   const [userInitiatedRun, setUserInitiatedRun] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
@@ -122,26 +128,21 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const pendingMessageRef = useRef<string | null>(null);
   const chatInputRef = useRef<ChatInputHandles>(null);
 
-  // Helper to check if user has active text selection - prevents scroll from disrupting copy
   const hasActiveSelection = useCallback((): boolean => {
     const selection = window.getSelection();
     return selection !== null && selection.toString().trim().length > 0;
   }, []);
 
-  // Message queue for when agent is running - using Zustand store
   const queueMessage = useMessageQueueStore((state) => state.queueMessage);
   const removeQueuedMessage = useMessageQueueStore((state) => state.removeMessage);
   const clearQueue = useMessageQueueStore((state) => state.clearQueue);
   const allQueuedMessages = useMessageQueueStore((state) => state.queuedMessages);
   
-  // Filter messages for this thread using useMemo to avoid infinite loop
   const queuedMessages = useMemo(() => 
     allQueuedMessages.filter((msg) => msg.threadId === threadId),
     [allQueuedMessages, threadId]
   );
 
-  // Sidebar - safely use it if SidebarProvider is available (logged in users on share page will have it)
-  // Use React.useContext directly which returns null if context is not available (doesn't throw)
   const sidebarContext = React.useContext(SidebarContext);
   const leftSidebarState: 'expanded' | 'collapsed' | undefined = sidebarContext?.state;
   const setLeftSidebarOpen: ((open: boolean) => void) | undefined = sidebarContext?.setOpen;
@@ -179,7 +180,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     projectQuery,
     agentRunsQuery,
   } = useThreadData(threadId, projectId, isShared, {
-    // Only actively poll for agent when: new thread + haven't found agent yet
     waitingForAgent: isNewThread && !hasDataLoaded.current,
   });
   
@@ -220,17 +220,12 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         sessionStorage.removeItem('optimistic_thread');
       }
     } catch (e) {
-      // SessionStorage access error - silently fail
     }
   }
   
-  // Stop polling only when we have confirmed the agent is running (agentRunId exists)
-  // This prevents the race condition where polling stops before the agent is detected
   useEffect(() => {
     if (isNewThread && !hasDataLoaded.current && agentRunId) {
       hasDataLoaded.current = true;
-      console.log('[ThreadComponent] Agent detected, stopping polling:', agentRunId);
-      // Clean up the ?new=true URL param to prevent future polling issues
       if (typeof window !== 'undefined') {
         const url = new URL(window.location.href);
         if (url.searchParams.get('new') === 'true') {
@@ -241,8 +236,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }, [isNewThread, agentRunId]);
   
-  // Hide optimistic UI only when we have both agentRunId AND initialLoadCompleted
-  // This ensures the stream is ready before transitioning
   const shouldHideOptimisticUI = isNewThread 
     ? (agentRunId && initialLoadCompleted)
     : ((agentRunId || messages.length > 0 || threadStatus === 'ready') && initialLoadCompleted);
@@ -304,10 +297,55 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const addUserMessageMutation = useAddUserMessageMutation();
   const startAgentMutation = useStartAgentMutation();
   const stopAgentMutation = useStopAgentMutation();
-  const threadAgentQuery = useThreadAgent(threadId, { enabled: isAuthenticated && !isShared });
 
-  const { data: threadAgentData } = isShared ? { data: undefined } : threadAgentQuery;
-  const agent = threadAgentData?.agent;
+  // Extract stable primitive values to avoid infinite loops
+  // Optimize: search from end instead of reversing entire array (important for large message arrays)
+  const derivedAgentId = useMemo(() => {
+    if (isShared) return undefined;
+    
+    // Search from the end backwards to find most recent assistant message
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.type === "assistant" && (msg.agents?.name || msg.agent_id)) {
+        return msg.agent_id;
+      }
+    }
+    
+    return undefined;
+  }, [messages, isShared]);
+
+  const derivedAgentName = useMemo(() => {
+    if (isShared) return undefined;
+    
+    // Search from the end backwards to find most recent assistant message
+    let recentAssistantMessage: UnifiedMessage | undefined;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.type === "assistant" && (msg.agents?.name || msg.agent_id)) {
+        recentAssistantMessage = msg;
+        break;
+      }
+    }
+    
+    if (!recentAssistantMessage) return undefined;
+    
+    const agentNameFromMessage = recentAssistantMessage.agents?.name;
+    const agentIdFromMessage = recentAssistantMessage.agent_id;
+    
+    // Find agent name from agents list if we have an agent_id but no name from message
+    if (agentIdFromMessage && !agentNameFromMessage && agents.length > 0) {
+      const foundAgent = agents.find(a => a.agent_id === agentIdFromMessage);
+      return foundAgent?.name;
+    }
+    
+    return agentNameFromMessage;
+  }, [messages, agents, isShared]);
+
+  // Keep derivedAgentInfo for backward compatibility with existing code
+  const derivedAgentInfo = useMemo(() => ({
+    agentId: derivedAgentId,
+    agentName: derivedAgentName,
+  }), [derivedAgentId, derivedAgentName]);
 
   useEffect(() => {
     if (!isShared) {
@@ -317,9 +355,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }, [threadId, queryClient, isShared, resetKortixComputerStore]);
 
-  // Fallback timeout for new thread polling
-  // If we haven't detected an agent after 30 seconds, stop polling and hide optimistic UI
-  // This prevents infinite polling if the agent fails to start
   useEffect(() => {
     if (!isNewThread || hasDataLoaded.current || !showOptimisticUI) return;
     
@@ -328,7 +363,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         console.warn('[ThreadComponent] Polling timeout reached, no agent detected after 30s');
         hasDataLoaded.current = true;
         setShowOptimisticUI(false);
-        // Clean up URL param
         if (typeof window !== 'undefined') {
           const url = new URL(window.location.href);
           if (url.searchParams.get('new') === 'true') {
@@ -338,7 +372,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         }
         toast.error('Failed to start the conversation. Please try again.');
       }
-    }, 30000); // 30 second timeout
+    }, 30000);
     
     return () => clearTimeout(timeoutId);
   }, [isNewThread, showOptimisticUI]);
@@ -372,6 +406,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       return;
     }
 
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let isMounted = true;
+
     const uploadFiles = async () => {
       setOptimisticFilesUploading(true);
       optimisticFilesUploadedRef.current = true;
@@ -388,19 +425,35 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           }
         });
         
-        setTimeout(() => {
-          clearOptimisticFiles(threadId);
-          sessionStorage.removeItem('optimistic_files');
-        }, 2000);
+        // Only clear files if component is still mounted
+        if (isMounted) {
+          timeoutId = setTimeout(() => {
+            if (isMounted) {
+              clearOptimisticFiles(threadId);
+              sessionStorage.removeItem('optimistic_files');
+            }
+          }, 2000);
+        }
       } catch (error) {
         console.error('Failed to upload optimistic files:', error);
-        pendingFiles.forEach((f) => updateFileStatus(f.id, 'error', 'Upload failed'));
+        if (isMounted) {
+          pendingFiles.forEach((f) => updateFileStatus(f.id, 'error', 'Upload failed'));
+        }
       } finally {
-        setOptimisticFilesUploading(false);
+        if (isMounted) {
+          setOptimisticFilesUploading(false);
+        }
       }
     };
 
     uploadFiles();
+
+    return () => {
+      isMounted = false;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
   }, [
     optimisticFiles,
     optimisticFilesUploading,
@@ -455,17 +508,33 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }, []);
 
+  // Track previous agentId to prevent unnecessary effect runs
+  const prevAgentIdRef = useRef<string | undefined>(undefined);
+  const prevAgentsLengthRef = useRef<number>(0);
+  
   useEffect(() => {
-    if (agents.length > 0) {
-      const threadAgentId = threadAgentData?.agent?.agent_id;
-      const agentIdToUse = configuredAgentId || threadAgentId;
-
-      initializeFromAgents(agents, agentIdToUse);
-      if (configuredAgentId && selectedAgentId !== configuredAgentId) {
-        setSelectedAgent(configuredAgentId);
-      }
+    if (agents.length === 0) return;
+    
+    const agentIdToUse = configuredAgentId || derivedAgentId;
+    
+    // Only run if agentId actually changed or agents array length changed
+    // This prevents infinite loops when agents array reference changes but content is the same
+    if (
+      agentIdToUse === prevAgentIdRef.current && 
+      agents.length === prevAgentsLengthRef.current &&
+      selectedAgentId === configuredAgentId
+    ) {
+      return; // No actual change, skip effect
     }
-  }, [threadAgentData, agents, initializeFromAgents, configuredAgentId, selectedAgentId, setSelectedAgent]);
+    
+    prevAgentIdRef.current = agentIdToUse;
+    prevAgentsLengthRef.current = agents.length;
+    
+    initializeFromAgents(agents, agentIdToUse);
+    if (configuredAgentId && selectedAgentId !== configuredAgentId) {
+      setSelectedAgent(configuredAgentId);
+    }
+  }, [derivedAgentId, agents, initializeFromAgents, configuredAgentId, selectedAgentId, setSelectedAgent]);
 
   const sharedSubscription = useSharedSubscription();
   const { data: subscriptionData } = isShared ? { data: undefined } : sharedSubscription;
@@ -488,7 +557,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   }, [configuredAgentId, setSelectedAgent]);
 
   const scrollToBottom = useCallback(() => {
-    // Don't scroll if user has text selected - preserves copy ability during streaming
     if (hasActiveSelection()) return;
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
@@ -506,12 +574,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   const handleNewMessageFromStream = useCallback(
     (message: UnifiedMessage) => {
-      if (!message.message_id) {
-        console.warn(
-          `[STREAM HANDLER] Received message is missing ID: Type=${message.type}`,
-        );
-      }
-
       setMessages((prev) => {
         const messageExists = prev.some(
           (m) => m.message_id === message.message_id,
@@ -543,7 +605,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       }
 
       setTimeout(() => {
-        // Don't scroll if user has text selected - preserves copy ability during streaming
         if (hasActiveSelection()) return;
         if (scrollContainerRef.current) {
           scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
@@ -566,11 +627,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           setAgentRunId(null);
           setAutoOpenedPanel(false);
 
-          // Send queued messages when agent stops (feature flag)
           const ENABLE_MESSAGE_QUEUE = false;
           if (ENABLE_MESSAGE_QUEUE && queuedMessages.length > 0) {
             console.log('[ThreadComponent] Agent stopped, will send queued messages:', queuedMessages.length);
-            // Auto-send first queued message after a short delay
             setTimeout(() => {
               const firstMessage = queuedMessages[0];
               if (firstMessage) {
@@ -580,7 +639,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
             }, 500);
           }
 
-          // No scroll needed with flex-column-reverse
           break;
         case 'connecting':
           setAgentStatus('connecting');
@@ -601,7 +659,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
             pendingMessageRef.current = null;
 
             setTimeout(() => {
-              // Don't scroll if user has text selected - preserves copy ability during streaming
               if (hasActiveSelection()) return;
               if (scrollContainerRef.current) {
                 scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
@@ -699,7 +756,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     streamCallbacks,
     threadId,
     setMessages,
-    threadAgentData?.agent?.agent_id,
+    derivedAgentId,
   );
 
   const handleSubmitMessage = useCallback(
@@ -708,31 +765,21 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       options?: { model_name?: string; file_ids?: string[] },
     ) => {
       if (!message.trim() || isShared || !addUserMessageMutation || !startAgentMutation) return;
-
-      // Message queue feature flag - when disabled, don't queue messages while agent is running
       const ENABLE_MESSAGE_QUEUE = false;
-      
-      // Check if agent is running - if so, queue the message instead (only if feature is enabled)
       if (ENABLE_MESSAGE_QUEUE && (agentStatus === 'running' || agentStatus === 'connecting')) {
-        console.log('[ThreadComponent] Agent is running, queueing message:', { message, options, agentStatus });
         const queuedId = queueMessage(threadId, message, {
           ...options,
           agent_id: selectedAgentId,
         });
-        console.log('[ThreadComponent] Queued message ID:', queuedId);
-        
-        // Clear the input - the queue panel will show the message
         chatInputRef.current?.setValue('');
         return;
       }
       
-      // If agent is running and queue is disabled, don't do anything (keep text in input)
       if (agentStatus === 'running' || agentStatus === 'connecting') {
         return;
       }
 
       setIsSending(true);
-
       pendingMessageRef.current = message;
 
       try {
@@ -781,7 +828,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
               runningCount: running_count,
               runningThreadIds: running_thread_ids,
             });
-            // Show inline banner for better UX context
             setShowAgentLimitBanner(true);
             return;
           }
@@ -1081,7 +1127,23 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   useEffect(() => {
     if (!initialLoadCompleted) return;
 
+    let rafId: number | null = null;
+    let lastScrollCheck = 0;
+    const SCROLL_CHECK_THROTTLE = 100;
+
     const checkScrollPosition = () => {
+      const now = Date.now();
+      if (now - lastScrollCheck < SCROLL_CHECK_THROTTLE) {
+        if (!rafId) {
+          rafId = requestAnimationFrame(() => {
+            rafId = null;
+            checkScrollPosition();
+          });
+        }
+        return;
+      }
+      lastScrollCheck = now;
+
       if (!scrollContainerRef.current) {
         setShowScrollToBottom(false);
         return;
@@ -1109,27 +1171,17 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       passive: true,
     });
 
-    const resizeObserver = new ResizeObserver(() => {
-      checkScrollPosition();
-    });
-    resizeObserver.observe(scrollContainer);
-
-    const timeout1 = setTimeout(checkScrollPosition, 100);
-    const timeout2 = setTimeout(checkScrollPosition, 300);
-    const timeout3 = setTimeout(checkScrollPosition, 500);
-    const timeout4 = setTimeout(checkScrollPosition, 1000);
+    const timeout = setTimeout(checkScrollPosition, 100);
 
     return () => {
       scrollContainer.removeEventListener('scroll', checkScrollPosition);
-      resizeObserver.disconnect();
-      clearTimeout(timeout1);
-      clearTimeout(timeout2);
-      clearTimeout(timeout3);
-      clearTimeout(timeout4);
+      if (rafId) cancelAnimationFrame(rafId);
+      clearTimeout(timeout);
     };
-  }, [messages, initialLoadCompleted]);
+  }, [initialLoadCompleted]);
 
   const prevMessagesLengthRef = useRef(0);
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (initialLoadCompleted && scrollContainerRef.current && messages.length > 0) {
@@ -1144,16 +1196,23 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       const isNearBottom = scrollTop > -threshold;
 
       if (isNearBottom) {
-        const timeoutId = setTimeout(() => {
-          // Don't scroll if user has text selected - preserves copy ability during streaming
+        if (scrollTimeoutRef.current) {
+          clearTimeout(scrollTimeoutRef.current);
+        }
+        scrollTimeoutRef.current = setTimeout(() => {
           if (hasActiveSelection()) return;
           if (scrollContainerRef.current) {
             scrollContainerRef.current.scrollTo({ top: 0, behavior: 'auto' });
           }
-        }, 200);
-        return () => clearTimeout(timeoutId);
+        }, 100);
       }
     }
+    
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
   }, [initialLoadCompleted, messages.length, hasActiveSelection]);
 
   const optimisticMessages: UnifiedMessage[] = useMemo(() => {
@@ -1240,7 +1299,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         isLoading={!initialLoadCompleted || isLoading}
         isMobile={isMobile}
         initialLoadCompleted={initialLoadCompleted}
-        agentName={agent && agent.name}
+        agentName={derivedAgentInfo.agentName}
       >
         <ThreadError error={error} />
       </ThreadLayout>
@@ -1272,7 +1331,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           isLoading={showOptimisticUI ? false : (!initialLoadCompleted || isLoading)}
           isMobile={isMobile}
           initialLoadCompleted={showOptimisticUI ? true : initialLoadCompleted}
-          agentName={agent && agent.name}
+          agentName={derivedAgentInfo.agentName}
           disableInitialAnimation={showOptimisticUI || isNewThread || (!initialLoadCompleted && toolCalls.length > 0)}
           compact={true}
           streamingTextContent={isShared ? '' : displayStreamingText}
@@ -1298,7 +1357,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
                 streamHookStatus={displayStreamHookStatus}
                 sandboxId={showOptimisticUI ? null : sandboxId}
                 project={showOptimisticUI ? null : project}
-                agentName={agent && agent.name}
+                agentName={derivedAgentInfo.agentName}
                 agentAvatar={undefined}
                 scrollContainerRef={scrollContainerRef}
                 isPreviewMode={true}
@@ -1326,7 +1385,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
                 sandboxId={showOptimisticUI ? undefined : (sandboxId || undefined)}
                 projectId={projectId}
                 messages={displayMessages}
-                agentName={agent && agent.name}
+                agentName={derivedAgentInfo.agentName}
                 selectedAgentId={selectedAgentId}
                 onAgentSelect={handleAgentSelect}
                 hideAgentSelection={!!configuredAgentId}
@@ -1397,7 +1456,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         sandboxId={showOptimisticUI ? undefined : (sandboxId || undefined)}
         projectId={projectId}
         messages={displayMessages}
-        agentName={agent && agent.name}
+        agentName={derivedAgentInfo.agentName}
         selectedAgentId={selectedAgentId}
         onAgentSelect={handleAgentSelect}
         threadId={threadId}
@@ -1438,7 +1497,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         isLoading={showOptimisticUI ? false : (!initialLoadCompleted || isLoading)}
         isMobile={isMobile}
         initialLoadCompleted={showOptimisticUI ? true : initialLoadCompleted}
-        agentName={agent && agent.name}
+        agentName={derivedAgentInfo.agentName}
         disableInitialAnimation={showOptimisticUI || isNewThread || (!initialLoadCompleted && toolCalls.length > 0)}
         variant={isShared ? 'shared' : 'default'}
         chatInput={chatInputElement}
@@ -1461,7 +1520,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           streamHookStatus={displayStreamHookStatus}
           sandboxId={showOptimisticUI ? null : sandboxId}
           project={showOptimisticUI ? null : project}
-          agentName={agent && agent.name}
+          agentName={derivedAgentInfo.agentName}
           agentAvatar={undefined}
           scrollContainerRef={scrollContainerRef}
           threadId={threadId}
@@ -1505,3 +1564,4 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     </>
   );
 }
+

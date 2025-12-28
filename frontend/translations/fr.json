@@ -944,7 +944,8 @@
       "slides": "Slides",
       "data": "Données",
       "docs": "Documents",
-      "people": "Gens",
+      "canvas": "Toile",
+      "video": "Vidéo",
       "research": "Recherche"
     },
     "styles": {
@@ -1153,17 +1154,29 @@
         "8": "Rédiger un plan de réponse aux incidents de sécurité avec des procédures d'escalade",
         "9": "Créer un guide de style complet pour la marque et le contenu"
       },
-      "people": {
-        "0": "Trouver des candidats VP d'Ingénierie dans des startups IA/ML Série B+ de la région de la baie de San Francisco avec 10+ ans d'expérience et un historique prouvé de mise à l'échelle d'équipes d'ingénierie",
-        "1": "Construire une liste de prospects de CMO dans des entreprises B2B SaaS ($10M-$50M ARR) qui ont récemment levé des fonds Série A/B - inclure les modèles d'email et la stack technologique",
-        "2": "Rechercher des Ingénieurs Blockchain Senior avec expérience Solidity/Rust dans des projets crypto de premier plan, ouverts à la réinstallation à Dubaï ou Singapour",
-        "3": "Générer une liste de prospects de fondateurs techniques dans des startups Seed-Série A en IA d'entreprise qui ont levé $2M-$15M au cours des 6 derniers mois",
-        "4": "Identifier des Product Managers Senior dans des entreprises fintech avec 5-10 ans d'expérience de FAANG ou de licornes, compétents en développement de produit 0-1",
-        "5": "Trouver des CIO et VP d'Ingénierie dans des entreprises de TI de santé de marché moyen (500-5000 employés) avec des budgets TI de $500K+ planifiant une migration cloud",
-        "6": "Rechercher des VP Ventes dans des entreprises B2B SaaS affichant une croissance de 100%+ en glissement annuel, avec 7+ ans de clôture de transactions de $100K+ et expérience PLG",
-        "7": "Construire une liste de CTO dans des entreprises qui mettent activement en œuvre une infrastructure IA avec des budgets multi-millions en 2024",
-        "8": "Trouver des Designers UX/UI Senior avec expérience d'apps consommateurs mobile-first et portefeuilles de 1M+ utilisateurs, recherchant activement ou ouverts aux opportunités",
-        "9": "Identifier des Ingénieurs DevOps Senior dans des startups cloud-native avec expertise Kubernetes/Terraform et 5-8 ans de construction d'infrastructure pour 10M+ utilisateurs"
+      "canvas": {
+        "0": "Ajouter une bannière de startup tech au canvas avec horizon urbain futuriste",
+        "1": "Créer un logo de marque de café sur canvas avec style minimaliste terreux",
+        "2": "Ajouter ma photo produit au canvas et supprimer l'arrière-plan",
+        "3": "Concevoir une infographie sur l'énergie renouvelable sur canvas avec icônes plates",
+        "4": "Créer une couverture de livre de science-fiction sur canvas avec esthétique cyberpunk",
+        "5": "Ajouter une miniature YouTube au canvas pour vidéo de conseils de productivité",
+        "6": "Construire un moodboard de mode de luxe sur canvas pour millennials",
+        "7": "Concevoir un faire-part de mariage élégant sur canvas avec motifs floraux",
+        "8": "Ajouter mon portrait au canvas et appliquer effet film vintage",
+        "9": "Créer une affiche de festival de musique sur canvas avec vibrations psychédéliques"
+      },
+      "video": {
+        "0": "Anime ma photo produit en rotation douce avec éclairage studio",
+        "1": "Transforme mon portrait en scène cinématique avec mouvement de caméra",
+        "2": "Génère une vidéo nature de pétales de cerisier tombant lentement",
+        "3": "Crée des particules lumineuses tourbillonnant ensemble au ralenti",
+        "4": "Fais flotter mon produit en rotation avec ombres douces et reflets",
+        "5": "Ajoute un éclairage dramatique et étalonnage couleur à mon portrait",
+        "6": "Génère un vol de drone fluide à travers des sommets montagneux brumeux",
+        "7": "Crée une vidéo en boucle de métal liquide coulant en formes organiques",
+        "8": "Transforme l'arrière-plan de ma photo en scène sous-marine avec rayons lumineux",
+        "9": "Génère une vidéo de paysage urbain futuriste avec néons et reflets"
       },
       "research": {
         "0": "Analyser les tendances émergentes en informatique quantique et les applications commerciales potentielles",

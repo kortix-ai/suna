@@ -76,11 +76,7 @@ export type AgentsParams = {
   content_type?: string;
 };
 
-export type ThreadAgentResponse = {
-  agent: Agent | null;
-  source: 'thread' | 'default' | 'none' | 'missing';
-  message: string;
-};
+// Removed ThreadAgentResponse - agent info now derived from messages/agent runs
 
 export type AgentCreateRequest = {
   name: string;
@@ -336,35 +332,6 @@ export const deleteAgent = async (agentId: string): Promise<void> => {
   }
 };
 
-export const getThreadAgent = async (threadId: string): Promise<ThreadAgentResponse> => {
-  try {
-    const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-
-    if (!session) {
-      throw new Error('You must be logged in to get thread agent');
-    }
-
-    const response = await fetch(`${API_URL}/thread/${threadId}/agent`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`,
-      },
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
-      throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const agent = await response.json();
-    return agent;
-  } catch (err) {
-    console.error('Error fetching thread agent:', err);
-    throw err;
-  }
-};
 
 
 

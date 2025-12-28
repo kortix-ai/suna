@@ -8,7 +8,7 @@ export function ReactScan() {
     if (process.env.NODE_ENV === 'development') {
       import('react-scan').then((reactScan) => {
         reactScan.scan({
-          enabled: false,
+          enabled: true,
           log: true,
         });
       }).catch((error) => {

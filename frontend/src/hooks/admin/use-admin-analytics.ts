@@ -296,9 +296,12 @@ export interface FieldOverrides {
   arr?: boolean;
 }
 
+export type Platform = 'web' | 'app';
+
 export interface WeeklyActualData {
   week_number: number;
   week_start_date: string;
+  platform: Platform;  // 'web' (auto-sync) or 'app' (manual/RevenueCat)
   views: number;
   signups: number;
   new_paid: number;
@@ -310,7 +313,8 @@ export interface WeeklyActualData {
 }
 
 export interface WeeklyActualsResponse {
-  actuals: Record<number, WeeklyActualData>;
+  // Key is "{week_number}_{platform}" e.g. "1_web", "1_app"
+  actuals: Record<string, WeeklyActualData>;
 }
 
 export function useARRWeeklyActuals() {
@@ -332,7 +336,8 @@ export function useUpdateARRWeeklyActual() {
   
   return useMutation({
     mutationFn: async (data: WeeklyActualData): Promise<WeeklyActualData> => {
-      const response = await backendApi.put(`/admin/analytics/arr/actuals/${data.week_number}`, data);
+      const platform = data.platform || 'web';
+      const response = await backendApi.put(`/admin/analytics/arr/actuals/${data.week_number}?platform=${platform}`, data);
       if (response.error) {
         throw new Error(response.error.message);
       }
@@ -344,12 +349,17 @@ export function useUpdateARRWeeklyActual() {
   });
 }
 
+export interface DeleteWeeklyActualParams {
+  weekNumber: number;
+  platform: Platform;
+}
+
 export function useDeleteARRWeeklyActual() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (weekNumber: number): Promise<{ message: string }> => {
-      const response = await backendApi.delete(`/admin/analytics/arr/actuals/${weekNumber}`);
+    mutationFn: async ({ weekNumber, platform }: DeleteWeeklyActualParams): Promise<{ message: string }> => {
+      const response = await backendApi.delete(`/admin/analytics/arr/actuals/${weekNumber}?platform=${platform}`);
       if (response.error) {
         throw new Error(response.error.message);
       }
@@ -364,6 +374,7 @@ export function useDeleteARRWeeklyActual() {
 // Toggle override for a specific field in a week
 export interface ToggleOverrideParams {
   weekNumber: number;
+  platform: Platform;
   field: keyof FieldOverrides;
   override: boolean;
 }
@@ -372,8 +383,8 @@ export function useToggleFieldOverride() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async ({ weekNumber, field, override }: ToggleOverrideParams): Promise<{ message: string }> => {
-      const response = await backendApi.patch(`/admin/analytics/arr/actuals/${weekNumber}/override`, {
+    mutationFn: async ({ weekNumber, platform, field, override }: ToggleOverrideParams): Promise<{ message: string }> => {
+      const response = await backendApi.patch(`/admin/analytics/arr/actuals/${weekNumber}/override?platform=${platform}`, {
         field,
         override,
       });
@@ -558,6 +569,7 @@ export function useChurnByDate(dateFrom: string, dateTo: string) {
 export interface MonthlyActualData {
   month_index: number;  // 0=Dec 2024, 1=Jan 2025, etc.
   month_name: string;   // 'Dec 2024', 'Jan 2025', etc.
+  platform: Platform;   // 'web' (auto-sync) or 'app' (manual/RevenueCat)
   views: number;
   signups: number;
   new_paid: number;
@@ -569,7 +581,8 @@ export interface MonthlyActualData {
 }
 
 export interface MonthlyActualsResponse {
-  actuals: Record<number, MonthlyActualData>;
+  // Key is "{month_index}_{platform}" e.g. "0_web", "0_app"
+  actuals: Record<string, MonthlyActualData>;
 }
 
 export function useARRMonthlyActuals() {
@@ -591,7 +604,8 @@ export function useUpdateARRMonthlyActual() {
   
   return useMutation({
     mutationFn: async (data: MonthlyActualData): Promise<MonthlyActualData> => {
-      const response = await backendApi.put(`/admin/analytics/arr/monthly-actuals/${data.month_index}`, data);
+      const platform = data.platform || 'web';
+      const response = await backendApi.put(`/admin/analytics/arr/monthly-actuals/${data.month_index}?platform=${platform}`, data);
       if (response.error) {
         throw new Error(response.error.message);
       }
@@ -603,12 +617,17 @@ export function useUpdateARRMonthlyActual() {
   });
 }
 
+export interface DeleteMonthlyActualParams {
+  monthIndex: number;
+  platform: Platform;
+}
+
 export function useDeleteARRMonthlyActual() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (monthIndex: number): Promise<{ message: string }> => {
-      const response = await backendApi.delete(`/admin/analytics/arr/monthly-actuals/${monthIndex}`);
+    mutationFn: async ({ monthIndex, platform }: DeleteMonthlyActualParams): Promise<{ message: string }> => {
+      const response = await backendApi.delete(`/admin/analytics/arr/monthly-actuals/${monthIndex}?platform=${platform}`);
       if (response.error) {
         throw new Error(response.error.message);
       }
@@ -623,6 +642,7 @@ export function useDeleteARRMonthlyActual() {
 // Toggle override for a specific field in a month
 export interface ToggleMonthlyOverrideParams {
   monthIndex: number;
+  platform: Platform;
   field: keyof FieldOverrides;
   override: boolean;
 }
@@ -631,8 +651,8 @@ export function useToggleMonthlyFieldOverride() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async ({ monthIndex, field, override }: ToggleMonthlyOverrideParams): Promise<{ message: string }> => {
-      const response = await backendApi.patch(`/admin/analytics/arr/monthly-actuals/${monthIndex}/override`, {
+    mutationFn: async ({ monthIndex, platform, field, override }: ToggleMonthlyOverrideParams): Promise<{ message: string }> => {
+      const response = await backendApi.patch(`/admin/analytics/arr/monthly-actuals/${monthIndex}/override?platform=${platform}`, {
         field,
         override,
       });

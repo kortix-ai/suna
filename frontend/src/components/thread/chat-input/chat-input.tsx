@@ -18,7 +18,7 @@ import { handleFiles, FileUploadHandler } from './file-upload-handler';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { X, Image as ImageIcon, Presentation, BarChart3, FileText, Search, Users, Code2, Sparkles, Brain as BrainIcon, MessageSquare, CornerDownLeft, Plug, Lock } from 'lucide-react';
+import { X, Image as ImageIcon, Presentation, BarChart3, FileText, Search, Palette, Video, Code2, Sparkles, Brain as BrainIcon, MessageSquare, CornerDownLeft, Plug, Lock } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { VoiceRecorder } from './voice-recorder';
 import { useTheme } from 'next-themes';
@@ -37,6 +37,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 import { IntegrationsRegistry } from '@/components/agents/integrations-registry';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useAccountState, accountStateSelectors } from '@/hooks/billing';
 import { isStagingMode, isLocalMode } from '@/lib/config';
 import { PlanSelectionModal } from '@/components/billing/pricing';
@@ -82,9 +83,15 @@ const IsolatedTextarea = memo(forwardRef<HTMLTextAreaElement, IsolatedTextareaPr
   const [value, setValue] = useState(initialValue);
   const internalRef = useRef<HTMLTextAreaElement>(null);
   const prevHasContent = useRef(false);
+  const [mounted, setMounted] = useState(false);
   
   // Use the forwarded ref or internal ref
   useImperativeHandle(ref, () => internalRef.current!, []);
+  
+  // Mark as mounted after hydration to prevent hydration mismatches
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   
   // Keep parent's valueRef in sync
   useEffect(() => {
@@ -116,20 +123,22 @@ const IsolatedTextarea = memo(forwardRef<HTMLTextAreaElement, IsolatedTextareaPr
   }, [value, adjustHeight]);
 
   useEffect(() => {
+    if (!mounted) return;
     window.addEventListener('resize', adjustHeight);
     return () => window.removeEventListener('resize', adjustHeight);
-  }, [adjustHeight]);
+  }, [adjustHeight, mounted]);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setValue(e.target.value);
   }, []);
 
-  // Detect if we're on a mobile device
+  // Detect if we're on a mobile device - only after mount to prevent hydration mismatch
+  // Used only for keyboard behavior, not for styling (styling uses CSS media queries)
   const isMobile = useMemo(() => {
-    if (typeof window === 'undefined') return false;
+    if (!mounted || typeof window === 'undefined') return false;
     return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
            (window.innerWidth <= 768 && 'ontouchstart' in window);
-  }, []);
+  }, [mounted]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // On mobile, allow Enter to create a new line instead of submitting
@@ -175,7 +184,8 @@ const IsolatedTextarea = memo(forwardRef<HTMLTextAreaElement, IsolatedTextareaPr
         className={cn(
           'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 min-h-[100px] sm:min-h-[72px] max-h-[200px] overflow-y-auto resize-none rounded-[24px]',
           // Use 16px on mobile to prevent zoom, 15px on desktop
-          isMobile ? '!text-[16px]' : '!text-[15px]',
+          // Use Tailwind responsive classes to avoid hydration mismatch (same classes on server and client)
+          '!text-[16px] sm:!text-[15px]',
           isDraggingOver ? 'opacity-40' : '',
         )}
         disabled={disabled && !isAgentRunning}
@@ -407,8 +417,10 @@ const ModeButton = memo(function ModeButton({
     switch (mode) {
       case 'research':
         return <Search className={iconClass} />;
-      case 'people':
-        return <Users className={iconClass} />;
+      case 'canvas':
+        return <Palette className={iconClass} />;
+      case 'video':
+        return <Video className={iconClass} />;
       case 'code':
         return <Code2 className={iconClass} />;
       case 'docs':
@@ -442,7 +454,11 @@ const ModeButton = memo(function ModeButton({
       )}
     >
       {selectedMode && getModeIcon(selectedMode)}
-      <span className="hidden sm:inline text-sm">{selectedMode?.charAt(0).toUpperCase()}{selectedMode?.slice(1)}</span>
+      {selectedMode && (
+        <span className="hidden sm:inline text-sm">
+          {selectedMode.charAt(0).toUpperCase()}{selectedMode.slice(1)}
+        </span>
+      )}
       <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
     </Button>
   );
@@ -1572,9 +1588,9 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             }
           }}>
             <DialogContent className="p-0 max-w-6xl h-[90vh] overflow-hidden">
-              <DialogHeader className="sr-only">
+              <VisuallyHidden>
                 <DialogTitle>Integrations</DialogTitle>
-              </DialogHeader>
+              </VisuallyHidden>
               <IntegrationsRegistry
                 showAgentSelector={true}
                 selectedAgentId={selectedAgentId}

@@ -46,6 +46,7 @@ import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { useAgentSelection } from '@/stores/agent-selection-store';
 import { useTranslations } from 'next-intl';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
+import { useAccountState } from '@/hooks/billing';
 import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
 import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 
@@ -94,7 +95,15 @@ export function HeroSection() {
     const router = useRouter();
     const { user, isLoading } = useAuth();
     const pricingModalStore = usePricingModalStore();
+    const { data: accountState } = useAccountState({ enabled: !!user });
     const queryClient = useQueryClient();
+    
+    // Check if user is on free tier (for video generation lock)
+    const isFreeTier = accountState && (
+        accountState.subscription.tier_key === 'free' ||
+        accountState.subscription.tier_key === 'none' ||
+        !accountState.subscription.tier_key
+    );
     const chatInputRef = useRef<ChatInputHandles>(null);
     const [showAgentLimitBanner, setShowAgentLimitBanner] = useState(false);
     const [agentLimitData, setAgentLimitData] = useState<{
@@ -451,6 +460,8 @@ export function HeroSection() {
                                     onOutputFormatChange={setSelectedOutputFormat}
                                     selectedTemplate={selectedTemplate}
                                     onTemplateChange={setSelectedTemplate}
+                                    isFreeTier={isFreeTier || false}
+                                    onUpgradeClick={() => pricingModalStore.openPricingModal()}
                                 />
                             </Suspense>
                         </div>
