@@ -945,7 +945,8 @@
       "slides": "Folien",
       "data": "Daten",
       "docs": "Dokumente",
-      "people": "Personen",
+      "canvas": "Leinwand",
+      "video": "Video",
       "research": "Recherche"
     },
     "styles": {
@@ -1064,17 +1065,29 @@
         "8": "Schreibe einen Sicherheitsvorfall-Reaktionsplan mit Eskalationsverfahren",
         "9": "Erstelle einen umfassenden Styleguide für Marke und Content"
       },
-      "people": {
-        "0": "Finde VP of Engineering-Kandidaten bei Series B+ KI/ML-Startups im San Francisco Bay Area mit 10+ Jahren Erfahrung und bewährter Erfolgsbilanz beim Skalieren von Engineering-Teams",
-        "1": "Erstelle eine Lead-Liste von CMOs bei B2B-SaaS-Unternehmen (10-50 Mio. $ ARR), die kürzlich Series A/B-Finanzierung erhalten haben - inklusive E-Mail-Mustern und Tech-Stack",
-        "2": "Recherchiere Senior Blockchain Engineers mit Solidity/Rust-Erfahrung bei Top-Krypto-Projekten, offen für Umzug nach Dubai oder Singapur",
-        "3": "Generiere eine Prospect-Liste von technischen Gründern bei Seed-Series A-Startups im Enterprise-KI-Bereich, die in den letzten 6 Monaten 2-15 Mio. $ erhalten haben",
-        "4": "Identifiziere Senior Product Manager bei Fintech-Unternehmen mit 5-10 Jahren Erfahrung von FAANG oder Unicorns, versiert in 0-1-Produktentwicklung",
-        "5": "Finde CIOs und VP Engineering bei mittelständischen Healthcare-IT-Unternehmen (500-5000 Mitarbeiter) mit 500K+ $ IT-Budgets, die Cloud-Migration planen",
-        "6": "Recherchiere VP Sales bei B2B-SaaS-Unternehmen mit 100%+ YoY-Wachstum, mit 7+ Jahren Erfahrung im Abschluss von 100K+ $ Deals und PLG-Erfahrung",
-        "7": "Erstelle eine Liste von CTOs bei Enterprise-Unternehmen, die aktiv KI-Infrastruktur mit Multi-Millionen-Dollar-Budgets in 2024 implementieren",
-        "8": "Finde Senior UX/UI Designer mit Mobile-First Consumer-App-Erfahrung und 1M+ Nutzer-Portfolios, aktiv suchend oder offen für Möglichkeiten",
-        "9": "Identifiziere Senior DevOps Engineers bei Cloud-Native-Startups mit Kubernetes/Terraform-Expertise und 5-8 Jahren Erfahrung beim Aufbau von Infrastruktur für 10M+ Nutzer"
+      "canvas": {
+        "0": "Füge ein Tech-Startup-Banner zur Canvas mit futuristischer Stadtsilhouette hinzu",
+        "1": "Erstelle ein Kaffeemarken-Logo auf Canvas im minimalistischen Erdton-Stil",
+        "2": "Füge mein Produktfoto zur Canvas hinzu und entferne den Hintergrund",
+        "3": "Designe eine Infografik zu erneuerbaren Energien auf Canvas mit flachen Icons",
+        "4": "Erstelle ein Sci-Fi-Buchcover auf Canvas im Cyberpunk-Stil",
+        "5": "Füge ein YouTube-Thumbnail zur Canvas für Produktivitätstipps-Video hinzu",
+        "6": "Erstelle ein Luxus-Mode-Moodboard auf Canvas für Millennials",
+        "7": "Designe eine elegante Hochzeitseinladung auf Canvas mit Blumenmustern",
+        "8": "Füge mein Porträt zur Canvas hinzu und wende Vintage-Film-Effekt an",
+        "9": "Erstelle ein Musikfestival-Poster auf Canvas mit psychedelischem Vibe"
+      },
+      "video": {
+        "0": "Animiere mein Produktfoto mit sanfter Rotation und Studiobeleuchtung",
+        "1": "Verwandle mein Porträt in eine cinematische Szene mit Kamerabewegung",
+        "2": "Generiere ein Naturvideo von langsam fallenden Kirschblüten",
+        "3": "Erstelle leuchtende Partikel die zusammen wirbeln in Zeitlupe",
+        "4": "Mein Produkt schwebend und rotierend mit weichen Schatten",
+        "5": "Füge dramatische Beleuchtung und Farbkorrektur zu meinem Porträt hinzu",
+        "6": "Generiere einen Drohnenflug durch neblige Berggipfel",
+        "7": "Erstelle ein Loop-Video von flüssigem Metall in organischen Formen",
+        "8": "Verwandle meinen Fotohintergrund in Unterwasser mit Lichtstrahlen",
+        "9": "Generiere eine futuristische Stadtansicht mit Neonlichtern und Reflexionen"
       },
       "research": {
         "0": "Analysiere aufkommende Trends im Quantencomputing und potenzielle Geschäftsanwendungen",

@@ -1776,43 +1776,52 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   // This allows AI updates to appear in real-time
   const lastFetchTimeRef = useRef<number>(0);
   const isUserEditingRef = useRef(false);
+  const elementsRef = useRef(elements);
+
+  // Keep elementsRef in sync
+  useEffect(() => {
+    elementsRef.current = elements;
+  }, [elements]);
 
   useEffect(() => {
     if (!sandboxId || !filePath || !authToken) return;
 
-    // Poll interval: 2 seconds when not editing, skip when user is editing
-    const POLL_INTERVAL = 2000;
+    // Poll interval: 1.5 seconds for faster AI updates, skip when user is editing
+    const POLL_INTERVAL = 1500;
 
     const fetchLatestContent = async () => {
       // Skip if user is actively editing (has unsaved changes)
       if (hasUnsavedChanges || isUserEditingRef.current) return;
 
-      // Skip if we just fetched
+      // Skip if we just fetched (with small buffer)
       const now = Date.now();
-      if (now - lastFetchTimeRef.current < POLL_INTERVAL - 100) return;
+      if (now - lastFetchTimeRef.current < POLL_INTERVAL - 200) return;
       lastFetchTimeRef.current = now;
 
       try {
-        const url = getSandboxFileUrl(sandboxId, filePath);
+        // Add cache-busting to ensure fresh content from server
+        const baseUrl = getSandboxFileUrl(sandboxId, filePath);
+        const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}_t=${Date.now()}`;
         const response = await fetch(url, {
           headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
           credentials: 'include',
+          cache: 'no-store', // Prevent browser caching
         });
 
         if (!response.ok) return;
 
         const newContent = await response.text();
-        if (!newContent || newContent === content) return;
+        if (!newContent) return;
 
-        // Parse and update if different
+        // Parse and update if different - always parse to compare element IDs
         try {
           const parsed: CanvasData = JSON.parse(newContent);
           const newElementIds = (parsed.elements || []).map(e => e.id).sort().join(',');
-          const currentElementIds = elements.map(e => e.id).sort().join(',');
+          const currentElementIds = elementsRef.current.map(e => e.id).sort().join(',');
 
-          // Only update if structure actually changed
+          // Only update if structure actually changed (new/removed elements)
           if (newElementIds !== currentElementIds) {
-            console.log('[CanvasRenderer] Live update: new elements detected', parsed.elements?.length);
+            console.log('[CanvasRenderer] Live update: new elements detected', parsed.elements?.length, 'vs current', elementsRef.current.length);
             setCanvasData(parsed);
             setElements(sanitizeElements(parsed.elements || []));
             hasCenteredRef.current = false; // Re-center to show new content
@@ -1828,7 +1837,8 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     const interval = setInterval(fetchLatestContent, POLL_INTERVAL);
 
     return () => clearInterval(interval);
-  }, [sandboxId, filePath, authToken, hasUnsavedChanges, content, elements]);
+    // Note: elements is accessed via ref pattern inside fetchLatestContent to avoid re-creating interval
+  }, [sandboxId, filePath, authToken, hasUnsavedChanges]);
 
   // Center canvas ONCE on initial load only
   useEffect(() => {

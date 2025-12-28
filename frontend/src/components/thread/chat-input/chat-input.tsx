@@ -18,7 +18,7 @@ import { handleFiles, FileUploadHandler } from './file-upload-handler';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { X, Image as ImageIcon, Presentation, BarChart3, FileText, Search, Users, Code2, Sparkles, Brain as BrainIcon, MessageSquare, CornerDownLeft, Plug, Lock } from 'lucide-react';
+import { X, Image as ImageIcon, Presentation, BarChart3, FileText, Search, Palette, Video, Code2, Sparkles, Brain as BrainIcon, MessageSquare, CornerDownLeft, Plug, Lock } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { VoiceRecorder } from './voice-recorder';
 import { useTheme } from 'next-themes';
@@ -417,8 +417,10 @@ const ModeButton = memo(function ModeButton({
     switch (mode) {
       case 'research':
         return <Search className={iconClass} />;
-      case 'people':
-        return <Users className={iconClass} />;
+      case 'canvas':
+        return <Palette className={iconClass} />;
+      case 'video':
+        return <Video className={iconClass} />;
       case 'code':
         return <Code2 className={iconClass} />;
       case 'docs':

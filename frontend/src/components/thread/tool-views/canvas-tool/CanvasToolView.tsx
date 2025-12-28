@@ -1,6 +1,10 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
+
+// Module-level Set to track which tool_call_ids we've already auto-opened
+// Persists across component mounts within the same session
+const autoOpenedToolCalls = new Set<string>();
 import {
   Layout,
   ImagePlus,
@@ -106,9 +110,108 @@ export function CanvasToolView({
   const toolName = toolCall?.function_name || '';
   const args = toolCall?.arguments || {};
 
+  // Check if this is a create canvas action (explicit create_canvas tool)
+  const isExplicitCreateCanvas = toolName.includes('create_canvas') || toolName.includes('create-canvas');
+  // Check if this is image generation that adds to canvas
+  const isImageGenToCanvas = (toolName.includes('image_edit') || toolName.includes('image-edit')) && args.canvas_path;
+  // Any operation that involves a canvas path should auto-open
+  const hasCanvasPath = !!(args.canvas_path || canvasPath);
+
+  // Get tool_call_id for tracking
+  const toolCallId = toolCall?.tool_call_id;
+
+  // Check if result is recent (within last 30 seconds) - to distinguish live ops from history
+  // This is when the RESULT was received, not when the tool started, so even 60s tools work
+  const toolTimestampMs = toolTimestamp ? new Date(toolTimestamp).getTime() : 0;
+  const isRecentResult = (Date.now() - toolTimestampMs) < 30000;
+
+  // Debug logging on mount
+  useEffect(() => {
+    console.log('[CanvasToolView] Mounted', {
+      toolName,
+      toolCallId,
+      hasCanvasPath,
+      toolResult: !!toolResult,
+      actualIsSuccess,
+      isStreaming,
+      canvasPath,
+      canvasName,
+      argsCanvasPath: args.canvas_path,
+      hasOnFileClick: !!onFileClick,
+      isRecentResult,
+      toolTimestampMs,
+      nowMs: Date.now(),
+      alreadyAutoOpened: toolCallId ? autoOpenedToolCalls.has(toolCallId) : false,
+    });
+  }, []);
+
+  // Auto-open canvas editor when tool completes
+  // Uses tool_call_id to ensure we only open once per tool call
+  // Uses timestamp to distinguish live operations from viewing old history
+  useEffect(() => {
+    const path = canvasPath || args.canvas_path || (canvasName ? `canvases/${canvasName}.kanvax` : null);
+    const recentCheck = (Date.now() - toolTimestampMs) < 30000;
+
+    console.log('[CanvasToolView] Effect triggered', {
+      toolCallId,
+      hasToolResult: !!toolResult,
+      actualIsSuccess,
+      hasCanvasPath,
+      hasOnFileClick: !!onFileClick,
+      hasPath: !!path,
+      isRecentResult: recentCheck,
+      alreadyAutoOpened: toolCallId ? autoOpenedToolCalls.has(toolCallId) : false,
+      path,
+    });
+
+    // Skip if we've already auto-opened this specific tool call
+    if (toolCallId && autoOpenedToolCalls.has(toolCallId)) {
+      console.log('[CanvasToolView] Skipping: already auto-opened tool_call_id:', toolCallId);
+      return;
+    }
+
+    // Skip if result is old (viewing history after page refresh)
+    if (!recentCheck) {
+      console.log('[CanvasToolView] Skipping: result is old (viewing history)', {
+        toolTimestampMs,
+        nowMs: Date.now(),
+        diffMs: Date.now() - toolTimestampMs,
+      });
+      return;
+    }
+
+    // Auto-open if we have all conditions
+    if (
+      toolCallId &&
+      toolResult &&
+      actualIsSuccess &&
+      hasCanvasPath &&
+      onFileClick &&
+      path
+    ) {
+      console.log('[CanvasToolView] Auto-opening canvas:', path);
+      autoOpenedToolCalls.add(toolCallId);
+      // Delay to let user see the success state briefly before opening canvas
+      setTimeout(() => {
+        console.log('[CanvasToolView] Executing onFileClick for:', path);
+        onFileClick(path);
+      }, 500);
+    } else {
+      console.log('[CanvasToolView] Not auto-opening, missing conditions:', {
+        hasToolCallId: !!toolCallId,
+        hasToolResult: !!toolResult,
+        actualIsSuccess,
+        hasCanvasPath,
+        hasOnFileClick: !!onFileClick,
+        hasPath: !!path,
+      });
+    }
+  }, [toolCallId, toolResult, actualIsSuccess, hasCanvasPath, onFileClick, canvasPath, canvasName, args.canvas_path, toolTimestampMs]);
+
   // Determine what action was taken
   const getActionInfo = () => {
-    if (toolName.includes('create_canvas') || toolName.includes('create-canvas')) {
+    // Explicit create_canvas or image gen that creates/adds to canvas
+    if (isExplicitCreateCanvas || isImageGenToCanvas) {
       return {
         icon: Sparkles,
         title: 'Canvas Created',
