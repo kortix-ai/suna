@@ -133,7 +133,9 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
   className,
   isStreaming = false,
 }) => {
-  if (!content) {
+  const safeContent = typeof content === 'string' ? content : (content ? String(content) : '');
+  
+  if (!safeContent) {
     return (
       <div className={cn('text-muted-foreground text-sm', className)}>
         No content
@@ -142,7 +144,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
   }
 
   // Auto-link plain URLs before rendering
-  const processedContent = autoLinkUrls(content);
+  const processedContent = autoLinkUrls(safeContent);
 
   return (
     <div className={cn('kortix-markdown', className)}>

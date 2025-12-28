@@ -19,7 +19,7 @@ import dramatiq
 
 from core.ai_models import model_manager
 
-from .api_models import AgentVersionResponse, AgentResponse, ThreadAgentResponse, UnifiedAgentStartResponse
+from .api_models import AgentVersionResponse, AgentResponse, UnifiedAgentStartResponse
 from . import core_utils as utils
 
 from .core_utils import (
@@ -1291,119 +1291,6 @@ async def get_agent_run(agent_run_id: str, user_id: str = Depends(verify_and_get
         "completedAt": agent_run_data['completed_at'],
         "error": agent_run_data['error']
     }
-
-@router.get("/thread/{thread_id}/agent", response_model=ThreadAgentResponse, summary="Get Thread Agent", operation_id="get_thread_agent")
-async def get_thread_agent(thread_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
-    structlog.contextvars.bind_contextvars(
-        thread_id=thread_id,
-    )
-    logger.debug(f"Fetching agent details for thread: {thread_id}")
-    client = await utils.db.client
-    
-    try:
-        await verify_and_authorize_thread_access(client, thread_id, user_id)
-        thread_result = await client.table('threads').select('account_id').eq('thread_id', thread_id).execute()
-        
-        if not thread_result.data:
-            raise HTTPException(status_code=404, detail="Thread not found")
-        
-        thread_data = thread_result.data[0]
-        account_id = thread_data.get('account_id')
-        
-        effective_agent_id = None
-        agent_source = "none"
-        
-        recent_agent_result = await client.table('agent_runs').select('agent_id', 'agent_version_id').eq('thread_id', thread_id).not_.is_('agent_id', 'null').order('created_at', desc=True).limit(1).execute()
-        if recent_agent_result.data:
-            effective_agent_id = recent_agent_result.data[0]['agent_id']
-            recent_version_id = recent_agent_result.data[0].get('agent_version_id')
-            agent_source = "recent"
-            logger.debug(f"Found most recently used agent: {effective_agent_id} (version: {recent_version_id})")
-        
-        if not effective_agent_id:
-            return {
-                "agent": None,
-                "source": "none",
-                "message": "No worker has been used in this thread yet. Threads are worker-agnostic - use /agent/start to select a worker."
-            }
-        
-        agent_result = await client.table('agents').select('*').eq('agent_id', effective_agent_id).eq('account_id', account_id).execute()
-        
-        if not agent_result.data:
-            return {
-                "agent": None,
-                "source": "missing",
-                "message": f"Worker {effective_agent_id} not found or was deleted. You can select a different worker."
-            }
-        
-        agent_data = agent_result.data[0]
-        
-        version_data = None
-        current_version = None
-        if agent_data.get('current_version_id'):
-            try:
-                version_service = await _get_version_service()
-                current_version_obj = await version_service.get_version(
-                    agent_id=effective_agent_id,
-                    version_id=agent_data['current_version_id'],
-                    user_id=user_id
-                )
-                current_version_data = current_version_obj.to_dict()
-                version_data = current_version_data
-                
-                current_version = AgentVersionResponse(
-                    version_id=current_version_data['version_id'],
-                    agent_id=current_version_data['agent_id'],
-                    version_number=current_version_data['version_number'],
-                    version_name=current_version_data['version_name'],
-                    system_prompt=current_version_data['system_prompt'],
-                    model=current_version_data.get('model'),
-                    configured_mcps=current_version_data.get('configured_mcps', []),
-                    custom_mcps=current_version_data.get('custom_mcps', []),
-                    agentpress_tools=current_version_data.get('agentpress_tools', {}),
-                    is_active=current_version_data.get('is_active', True),
-                    created_at=current_version_data['created_at'],
-                    updated_at=current_version_data.get('updated_at', current_version_data['created_at']),
-                    created_by=current_version_data.get('created_by')
-                )
-                
-                logger.debug(f"Using agent {agent_data['name']} version {current_version_data.get('version_name', 'v1')}")
-            except Exception as e:
-                logger.warning(f"Failed to get version data for agent {effective_agent_id}: {e}")
-        
-        version_data = None
-        if current_version:
-            version_data = {
-                'version_id': current_version.version_id,
-                'agent_id': current_version.agent_id,
-                'version_number': current_version.version_number,
-                'version_name': current_version.version_name,
-                'system_prompt': current_version.system_prompt,
-                'model': current_version.model,
-                'configured_mcps': current_version.configured_mcps,
-                'custom_mcps': current_version.custom_mcps,
-                'agentpress_tools': current_version.agentpress_tools,
-                'is_active': current_version.is_active,
-                'created_at': current_version.created_at,
-                'updated_at': current_version.updated_at,
-                'created_by': current_version.created_by
-            }
-        
-        from .agent_loader import get_agent_loader
-        loader = await get_agent_loader()
-        agent_obj = await loader.load_agent(agent_data['agent_id'], user_id, load_config=True)
-        
-        return {
-            "agent": agent_obj.to_pydantic_model(),
-            "source": agent_source,
-            "message": f"Using {agent_source} agent: {agent_data['name']}. Threads are agent-agnostic - you can change agents anytime."
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching agent for thread {thread_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch thread agent: {str(e)}")
 
 @router.get("/agent-run/{agent_run_id}/stream", summary="Stream Agent Run", operation_id="stream_agent_run")
 async def stream_agent_run(

@@ -48,7 +48,6 @@ import { PlanSelectionModal } from '@/components/billing/pricing';
 import { useBillingModal } from '@/hooks/billing/use-billing-modal';
 
 import {
-  useThreadAgent,
   useAgents,
 } from '@/hooks/agents/use-agents';
 import { AgentRunLimitBanner } from '@/components/thread/agent-run-limit-banner';
@@ -294,10 +293,31 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const addUserMessageMutation = useAddUserMessageMutation();
   const startAgentMutation = useStartAgentMutation();
   const stopAgentMutation = useStopAgentMutation();
-  const threadAgentQuery = useThreadAgent(threadId, { enabled: isAuthenticated && !isShared });
 
-  const { data: threadAgentData } = isShared ? { data: undefined } : threadAgentQuery;
-  const agent = threadAgentData?.agent;
+  const derivedAgentInfo = useMemo(() => {
+    if (isShared) return { agentId: undefined, agentName: undefined };
+    
+    // Get agent info from most recent assistant message
+    // Messages API returns: { agent_id: "...", agents: { name: "..." }, ... }
+    const recentAssistantMessage = [...messages]
+      .reverse()
+      .find((msg) => msg.type === "assistant" && (msg.agents?.name || msg.agent_id));
+    
+    const agentNameFromMessage = recentAssistantMessage?.agents?.name;
+    const agentIdFromMessage = recentAssistantMessage?.agent_id;
+    
+    // Find agent name from agents list if we have an agent_id but no name from message
+    let agentName = agentNameFromMessage;
+    if (agentIdFromMessage && !agentName && agents.length > 0) {
+      const foundAgent = agents.find(a => a.agent_id === agentIdFromMessage);
+      agentName = foundAgent?.name;
+    }
+    
+    return {
+      agentId: agentIdFromMessage,
+      agentName: agentName,
+    };
+  }, [messages, agents, isShared]);
 
   useEffect(() => {
     if (!isShared) {
@@ -443,15 +463,14 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   useEffect(() => {
     if (agents.length > 0) {
-      const threadAgentId = threadAgentData?.agent?.agent_id;
-      const agentIdToUse = configuredAgentId || threadAgentId;
+      const agentIdToUse = configuredAgentId || derivedAgentInfo.agentId;
 
       initializeFromAgents(agents, agentIdToUse);
       if (configuredAgentId && selectedAgentId !== configuredAgentId) {
         setSelectedAgent(configuredAgentId);
       }
     }
-  }, [threadAgentData, agents, initializeFromAgents, configuredAgentId, selectedAgentId, setSelectedAgent]);
+  }, [derivedAgentInfo.agentId, agents, initializeFromAgents, configuredAgentId, selectedAgentId, setSelectedAgent]);
 
   const sharedSubscription = useSharedSubscription();
   const { data: subscriptionData } = isShared ? { data: undefined } : sharedSubscription;
@@ -673,7 +692,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     streamCallbacks,
     threadId,
     setMessages,
-    threadAgentData?.agent?.agent_id,
+    derivedAgentInfo.agentId,
   );
 
   const handleSubmitMessage = useCallback(
@@ -1216,7 +1235,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         isLoading={!initialLoadCompleted || isLoading}
         isMobile={isMobile}
         initialLoadCompleted={initialLoadCompleted}
-        agentName={agent && agent.name}
+        agentName={derivedAgentInfo.agentName}
       >
         <ThreadError error={error} />
       </ThreadLayout>
@@ -1248,7 +1267,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           isLoading={showOptimisticUI ? false : (!initialLoadCompleted || isLoading)}
           isMobile={isMobile}
           initialLoadCompleted={showOptimisticUI ? true : initialLoadCompleted}
-          agentName={agent && agent.name}
+          agentName={derivedAgentInfo.agentName}
           disableInitialAnimation={showOptimisticUI || isNewThread || (!initialLoadCompleted && toolCalls.length > 0)}
           compact={true}
           streamingTextContent={isShared ? '' : displayStreamingText}
@@ -1274,7 +1293,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
                 streamHookStatus={displayStreamHookStatus}
                 sandboxId={showOptimisticUI ? null : sandboxId}
                 project={showOptimisticUI ? null : project}
-                agentName={agent && agent.name}
+                agentName={derivedAgentInfo.agentName}
                 agentAvatar={undefined}
                 scrollContainerRef={scrollContainerRef}
                 isPreviewMode={true}
@@ -1302,7 +1321,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
                 sandboxId={showOptimisticUI ? undefined : (sandboxId || undefined)}
                 projectId={projectId}
                 messages={displayMessages}
-                agentName={agent && agent.name}
+                agentName={derivedAgentInfo.agentName}
                 selectedAgentId={selectedAgentId}
                 onAgentSelect={handleAgentSelect}
                 hideAgentSelection={!!configuredAgentId}
@@ -1373,7 +1392,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         sandboxId={showOptimisticUI ? undefined : (sandboxId || undefined)}
         projectId={projectId}
         messages={displayMessages}
-        agentName={agent && agent.name}
+        agentName={derivedAgentInfo.agentName}
         selectedAgentId={selectedAgentId}
         onAgentSelect={handleAgentSelect}
         threadId={threadId}
@@ -1414,7 +1433,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         isLoading={showOptimisticUI ? false : (!initialLoadCompleted || isLoading)}
         isMobile={isMobile}
         initialLoadCompleted={showOptimisticUI ? true : initialLoadCompleted}
-        agentName={agent && agent.name}
+        agentName={derivedAgentInfo.agentName}
         disableInitialAnimation={showOptimisticUI || isNewThread || (!initialLoadCompleted && toolCalls.length > 0)}
         variant={isShared ? 'shared' : 'default'}
         chatInput={chatInputElement}
@@ -1437,7 +1456,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           streamHookStatus={displayStreamHookStatus}
           sandboxId={showOptimisticUI ? null : sandboxId}
           project={showOptimisticUI ? null : project}
-          agentName={agent && agent.name}
+          agentName={derivedAgentInfo.agentName}
           agentAvatar={undefined}
           scrollContainerRef={scrollContainerRef}
           threadId={threadId}

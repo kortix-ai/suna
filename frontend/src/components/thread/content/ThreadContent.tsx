@@ -722,8 +722,11 @@ import React, {
           };
         }
         if (recentAssistantWithAgent?.agents?.name) {
+          // Ensure name is a string to prevent React error #301
+          const rawName = recentAssistantWithAgent.agents.name;
+          const name = typeof rawName === 'string' ? rawName : String(rawName || 'Kortix');
           return {
-            name: recentAssistantWithAgent.agents.name,
+            name,
             avatar: (
               <div className="h-5 w-5 flex items-center justify-center rounded text-xs">
                 <KortixLogo size={14} />
@@ -731,8 +734,10 @@ import React, {
             ),
           };
         }
+        // Ensure agentName is a string to prevent React error #301
+        const fallbackName = typeof agentName === 'string' ? agentName : 'Kortix';
         return {
-          name: agentName || "Kortix",
+          name: fallbackName || "Kortix",
           avatar: agentAvatar,
         };
       }, [threadMetadata, displayMessages, agentName, agentAvatar]);

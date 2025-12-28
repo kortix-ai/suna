@@ -224,7 +224,9 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
   const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
   
   const toolCalls = metadata.tool_calls || [];
-  const textContent = metadata.text_content || '';
+  // Ensure textContent is a string to prevent React error #301
+  const rawTextContent = metadata.text_content;
+  const textContent = typeof rawTextContent === 'string' ? rawTextContent : (rawTextContent ? String(rawTextContent) : '');
   
   const contentParts: React.ReactNode[] = [];
   
