@@ -439,6 +439,8 @@ export function FileOperationToolView({
   const fileExtension = getFileExtension(fileName);
 
   const isHtml = isFileType.html(fileExtension);
+  const isCsv = fileExtension === 'csv' || fileExtension === 'tsv';
+  const isXlsx = fileExtension === 'xlsx' || fileExtension === 'xls';
 
   // Check if this is a presentation slide file
   const isPresentationSlide = processedFilePath ? isPresentationSlideFile(processedFilePath) : false;
@@ -677,12 +679,9 @@ export function FileOperationToolView({
       );
     }
 
-    // Determine file type for rendering
     const fileType = getFileTypeFromExtension(fileName);
     const isMarkdown = fileExtension === 'md' || fileExtension === 'markdown';
     const isJson = fileExtension === 'json';
-    const isCsv = fileExtension === 'csv' || fileExtension === 'tsv';
-    const isXlsx = fileExtension === 'xlsx' || fileExtension === 'xls';
     
     // For HTML files, use HtmlRenderer with Preview/Code/Open buttons (but show CodeMirror during streaming)
     if (isHtml && !isStreaming) {
@@ -717,15 +716,14 @@ export function FileOperationToolView({
     // For CSV and XLSX files
     if (isCsv || isXlsx) {
       return (
-        <div className="p-6 flex flex-col">
-          <div className="flex-1 min-h-[400px] w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden">
-            <SpreadsheetViewer
-              filePath={filePath}
-              fileName={fileName}
-              sandboxId={project?.sandbox?.id}
-              project={project}
-            />
-          </div>
+        <div className="w-full h-full overflow-hidden">
+          <SpreadsheetViewer
+            filePath={filePath}
+            fileName={fileName}
+            sandboxId={project?.sandbox?.id}
+            project={project}
+            className="w-full h-full"
+          />
         </div>
       );
     }
@@ -976,6 +974,10 @@ export function FileOperationToolView({
                 {renderFilePreview()}
               </div>
             ) : isHtml && htmlPreviewUrl && !isStreaming ? (
+              <div className="w-full max-w-full h-full relative bg-white dark:bg-zinc-900 flex-1 min-h-0 min-w-0 overflow-hidden">
+                {renderFilePreview()}
+              </div>
+            ) : (isCsv || isXlsx) ? (
               <div className="w-full max-w-full h-full relative bg-white dark:bg-zinc-900 flex-1 min-h-0 min-w-0 overflow-hidden">
                 {renderFilePreview()}
               </div>
