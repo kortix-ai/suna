@@ -16,6 +16,12 @@ npm run android:build
 npm run android:dev      
 ```
 
+## IOS Development Setup
+```bash
+cd apps/mobile
+npx expo run:ios  
+```
+
 ## Build & Submit
 
 **Production (iOS - App Store):**

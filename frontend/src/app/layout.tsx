@@ -24,6 +24,7 @@ const PostHogIdentify = lazy(() => import('@/components/posthog-identify').then(
 const PlanSelectionModal = lazy(() => import('@/components/billing/pricing/plan-selection-modal').then(mod => ({ default: mod.PlanSelectionModal })));
 const AnnouncementDialog = lazy(() => import('@/components/announcements/announcement-dialog').then(mod => ({ default: mod.AnnouncementDialog })));
 const ReactScan = lazy(() => import('@/components/react-scan').then(mod => ({ default: mod.ReactScan })));
+const CookieConsent = lazy(() => import('@/components/cookie-consent').then(mod => ({ default: mod.CookieConsent })));
 
 
 export const viewport: Viewport = {
@@ -259,6 +260,10 @@ export default function RootLayout({
           {/* React Scan - only loads in development */}
           <Suspense fallback={null}>
             <ReactScan />
+          </Suspense>
+          {/* Cookie Consent - only loads script on homepage, but always runs cleanup on all pages */}
+          <Suspense fallback={null}>
+            <CookieConsent />
           </Suspense>
         </ThemeProvider>
       </body>
