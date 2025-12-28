@@ -106,7 +106,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const getCurrentAgent = isShared ? (() => undefined) : storeGetCurrentAgent;
   const isSunaAgent = isShared ? false : storeIsSunaAgentFn;
 
-  const agents = isShared ? [] : (agentsQuery?.data?.agents || []);
+  // Memoize agents array to prevent unnecessary recalculations
+  const agents = useMemo(() => {
+    if (isShared) return [];
+    return agentsQuery?.data?.agents || [];
+  }, [isShared, agentsQuery?.data?.agents]);
   const [isSidePanelAnimating, setIsSidePanelAnimating] = useState(false);
   const [userInitiatedRun, setUserInitiatedRun] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
@@ -294,30 +298,54 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const startAgentMutation = useStartAgentMutation();
   const stopAgentMutation = useStopAgentMutation();
 
-  const derivedAgentInfo = useMemo(() => {
-    if (isShared) return { agentId: undefined, agentName: undefined };
+  // Extract stable primitive values to avoid infinite loops
+  // Optimize: search from end instead of reversing entire array (important for large message arrays)
+  const derivedAgentId = useMemo(() => {
+    if (isShared) return undefined;
     
-    // Get agent info from most recent assistant message
-    // Messages API returns: { agent_id: "...", agents: { name: "..." }, ... }
-    const recentAssistantMessage = [...messages]
-      .reverse()
-      .find((msg) => msg.type === "assistant" && (msg.agents?.name || msg.agent_id));
-    
-    const agentNameFromMessage = recentAssistantMessage?.agents?.name;
-    const agentIdFromMessage = recentAssistantMessage?.agent_id;
-    
-    // Find agent name from agents list if we have an agent_id but no name from message
-    let agentName = agentNameFromMessage;
-    if (agentIdFromMessage && !agentName && agents.length > 0) {
-      const foundAgent = agents.find(a => a.agent_id === agentIdFromMessage);
-      agentName = foundAgent?.name;
+    // Search from the end backwards to find most recent assistant message
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.type === "assistant" && (msg.agents?.name || msg.agent_id)) {
+        return msg.agent_id;
+      }
     }
     
-    return {
-      agentId: agentIdFromMessage,
-      agentName: agentName,
-    };
+    return undefined;
+  }, [messages, isShared]);
+
+  const derivedAgentName = useMemo(() => {
+    if (isShared) return undefined;
+    
+    // Search from the end backwards to find most recent assistant message
+    let recentAssistantMessage: UnifiedMessage | undefined;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.type === "assistant" && (msg.agents?.name || msg.agent_id)) {
+        recentAssistantMessage = msg;
+        break;
+      }
+    }
+    
+    if (!recentAssistantMessage) return undefined;
+    
+    const agentNameFromMessage = recentAssistantMessage.agents?.name;
+    const agentIdFromMessage = recentAssistantMessage.agent_id;
+    
+    // Find agent name from agents list if we have an agent_id but no name from message
+    if (agentIdFromMessage && !agentNameFromMessage && agents.length > 0) {
+      const foundAgent = agents.find(a => a.agent_id === agentIdFromMessage);
+      return foundAgent?.name;
+    }
+    
+    return agentNameFromMessage;
   }, [messages, agents, isShared]);
+
+  // Keep derivedAgentInfo for backward compatibility with existing code
+  const derivedAgentInfo = useMemo(() => ({
+    agentId: derivedAgentId,
+    agentName: derivedAgentName,
+  }), [derivedAgentId, derivedAgentName]);
 
   useEffect(() => {
     if (!isShared) {
@@ -378,6 +406,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       return;
     }
 
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let isMounted = true;
+
     const uploadFiles = async () => {
       setOptimisticFilesUploading(true);
       optimisticFilesUploadedRef.current = true;
@@ -394,19 +425,35 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           }
         });
         
-        setTimeout(() => {
-          clearOptimisticFiles(threadId);
-          sessionStorage.removeItem('optimistic_files');
-        }, 2000);
+        // Only clear files if component is still mounted
+        if (isMounted) {
+          timeoutId = setTimeout(() => {
+            if (isMounted) {
+              clearOptimisticFiles(threadId);
+              sessionStorage.removeItem('optimistic_files');
+            }
+          }, 2000);
+        }
       } catch (error) {
         console.error('Failed to upload optimistic files:', error);
-        pendingFiles.forEach((f) => updateFileStatus(f.id, 'error', 'Upload failed'));
+        if (isMounted) {
+          pendingFiles.forEach((f) => updateFileStatus(f.id, 'error', 'Upload failed'));
+        }
       } finally {
-        setOptimisticFilesUploading(false);
+        if (isMounted) {
+          setOptimisticFilesUploading(false);
+        }
       }
     };
 
     uploadFiles();
+
+    return () => {
+      isMounted = false;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
   }, [
     optimisticFiles,
     optimisticFilesUploading,
@@ -461,16 +508,33 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }, []);
 
+  // Track previous agentId to prevent unnecessary effect runs
+  const prevAgentIdRef = useRef<string | undefined>(undefined);
+  const prevAgentsLengthRef = useRef<number>(0);
+  
   useEffect(() => {
-    if (agents.length > 0) {
-      const agentIdToUse = configuredAgentId || derivedAgentInfo.agentId;
-
-      initializeFromAgents(agents, agentIdToUse);
-      if (configuredAgentId && selectedAgentId !== configuredAgentId) {
-        setSelectedAgent(configuredAgentId);
-      }
+    if (agents.length === 0) return;
+    
+    const agentIdToUse = configuredAgentId || derivedAgentId;
+    
+    // Only run if agentId actually changed or agents array length changed
+    // This prevents infinite loops when agents array reference changes but content is the same
+    if (
+      agentIdToUse === prevAgentIdRef.current && 
+      agents.length === prevAgentsLengthRef.current &&
+      selectedAgentId === configuredAgentId
+    ) {
+      return; // No actual change, skip effect
     }
-  }, [derivedAgentInfo.agentId, agents, initializeFromAgents, configuredAgentId, selectedAgentId, setSelectedAgent]);
+    
+    prevAgentIdRef.current = agentIdToUse;
+    prevAgentsLengthRef.current = agents.length;
+    
+    initializeFromAgents(agents, agentIdToUse);
+    if (configuredAgentId && selectedAgentId !== configuredAgentId) {
+      setSelectedAgent(configuredAgentId);
+    }
+  }, [derivedAgentId, agents, initializeFromAgents, configuredAgentId, selectedAgentId, setSelectedAgent]);
 
   const sharedSubscription = useSharedSubscription();
   const { data: subscriptionData } = isShared ? { data: undefined } : sharedSubscription;
@@ -692,7 +756,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     streamCallbacks,
     threadId,
     setMessages,
-    derivedAgentInfo.agentId,
+    derivedAgentId,
   );
 
   const handleSubmitMessage = useCallback(

@@ -8,15 +8,11 @@ import { ReactQueryProvider } from './react-query-provider';
 import { Toaster } from '@/components/ui/sonner';
 import Script from 'next/script';
 import '@/lib/polyfills';
-// Initialize React error handler early
-import '@/lib/react-error-handler';
 import { roobert } from './fonts/roobert';
 import { roobertMono } from './fonts/roobert-mono';
 import { Suspense, lazy } from 'react';
 import { I18nProvider } from '@/components/i18n-provider';
 import { featureFlags } from '@/lib/feature-flags';
-import { ErrorBoundary } from '@/components/error-boundary';
-import { ErrorHandlerInit } from '@/components/error-handler-init';
 
 // Lazy load non-critical analytics and global components
 // Note: Analytics scripts will be automatically blocked by cookie consent service until consent is given
@@ -225,28 +221,25 @@ export default function RootLayout({
       </head>
 
       <body className="antialiased font-sans bg-background">
-        <ErrorHandlerInit />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange
         >
-          <ErrorBoundary>
-            <AuthProvider>
-              <I18nProvider>
-                <PresenceProvider>
-                <ReactQueryProvider>
-                  {children}
-                  <Toaster />
-                  <Suspense fallback={null}>
-                    <PlanSelectionModal />
-                  </Suspense>
-                </ReactQueryProvider>
-                </PresenceProvider>
-              </I18nProvider>
-            </AuthProvider>
-          </ErrorBoundary>
+          <AuthProvider>
+            <I18nProvider>
+              <PresenceProvider>
+              <ReactQueryProvider>
+                {children}
+                <Toaster />
+                <Suspense fallback={null}>
+                  <PlanSelectionModal />
+                </Suspense>
+              </ReactQueryProvider>
+              </PresenceProvider>
+            </I18nProvider>
+          </AuthProvider>
           {/* Analytics - lazy loaded to not block FCP */}
           <Suspense fallback={null}>
             <Analytics />
