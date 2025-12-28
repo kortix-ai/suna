@@ -173,8 +173,12 @@ export function useThreadToolCalls(
     if (historicalToolPairs.length !== prevToolCallsCountRef.current) {
       prevToolCallsCountRef.current = historicalToolPairs.length;
       setToolCalls(historicalToolPairs);
+      
+      // #region agent log - track toolCalls state update
+      fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useThreadToolCalls.ts:175',message:'toolCalls state updated',data:{toolCallsLength:historicalToolPairs.length,toolCalls:historicalToolPairs.map(tc=>({functionName:tc.toolCall?.function_name,hasResult:!!tc.toolResult})),messagesLength:messages.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'TOOL_CALLS_STATE'})}).catch(()=>{});
+      // #endregion
     }
-  }, [historicalToolPairs, messageIdAndToolNameToIndex]);
+  }, [historicalToolPairs, messageIdAndToolNameToIndex, messages.length]);
 
   // Separate effect for UI state management (side panel, current index)
   // This prevents recomputation of tool calls when UI state changes
@@ -206,11 +210,19 @@ export function useThreadToolCalls(
   }, [isSidePanelOpen]);
 
   const handleToolClick = useCallback((clickedAssistantMessageId: string | null, clickedToolName: string, toolCallId?: string) => {
+    // #region agent log - track tool click entry
+    fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useThreadToolCalls.ts:208',message:'handleToolClick called',data:{clickedAssistantMessageId,clickedToolName,toolCallId,toolCallsLength:toolCalls.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'TOOL_CLICK'})}).catch(()=>{});
+    // #endregion
+    
     userClosedPanelRef.current = false;
     userNavigatedRef.current = true;
 
     // Helper function to navigate to a tool index
     const navigateToIndex = (index: number) => {
+      // #region agent log - track navigation
+      fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useThreadToolCalls.ts:213',message:'navigateToIndex called',data:{index,toolCallsLength:toolCalls.length,hasToolCallAtIndex:!!toolCalls[index]},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'NAVIGATE'})}).catch(()=>{});
+      // #endregion
+      
       setExternalNavIndex(index);
       setCurrentToolIndex(index);
       setIsSidePanelOpen(true);
@@ -264,6 +276,19 @@ export function useThreadToolCalls(
     // Use the pre-computed mapping with composite key: assistantMessageId:toolName
     const compositeKey = `${clickedAssistantMessageId}:${normalizedToolName}`;
     const toolIndex = assistantMessageToToolIndex.current.get(compositeKey);
+
+    // #region debug - tool click debugging
+    console.log('[handleToolClick] Debug', {
+      clickedAssistantMessageId,
+      clickedToolName,
+      normalizedToolName,
+      compositeKey,
+      toolIndex,
+      toolCallsLength: toolCalls.length,
+      mapSize: assistantMessageToToolIndex.current.size,
+      mapKeys: Array.from(assistantMessageToToolIndex.current.keys()).slice(0, 10),
+    });
+    // #endregion
 
     if (toolIndex !== undefined) {
       navigateToIndex(toolIndex);
