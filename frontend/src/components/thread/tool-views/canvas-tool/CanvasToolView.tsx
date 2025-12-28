@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import {
   Layout,
   ImagePlus,
@@ -106,9 +106,36 @@ export function CanvasToolView({
   const toolName = toolCall?.function_name || '';
   const args = toolCall?.arguments || {};
 
+  // Check if this is a create canvas action
+  const isCreateCanvas = toolName.includes('create_canvas') || toolName.includes('create-canvas');
+
+  // Track if we've already auto-opened to prevent duplicate opens
+  const hasAutoOpenedRef = useRef(false);
+
+  // Auto-open canvas editor when canvas is created successfully
+  useEffect(() => {
+    if (
+      isCreateCanvas &&
+      actualIsSuccess &&
+      !isStreaming &&
+      onFileClick &&
+      (canvasPath || canvasName) &&
+      !hasAutoOpenedRef.current
+    ) {
+      hasAutoOpenedRef.current = true;
+      const path = canvasPath || (canvasName ? `canvases/${canvasName}.kanvax` : null);
+      if (path) {
+        // Small delay to ensure the file is written
+        setTimeout(() => {
+          onFileClick(path);
+        }, 100);
+      }
+    }
+  }, [isCreateCanvas, actualIsSuccess, isStreaming, onFileClick, canvasPath, canvasName]);
+
   // Determine what action was taken
   const getActionInfo = () => {
-    if (toolName.includes('create_canvas') || toolName.includes('create-canvas')) {
+    if (isCreateCanvas) {
       return {
         icon: Sparkles,
         title: 'Canvas Created',
