@@ -203,12 +203,11 @@ export const GranularToolConfiguration = ({
   };
 
   const getEnabledToolsCount = (): number => {
-    // Count all visible tools from TOOL_GROUPS, not just those in the tools object
-    return Object.values(TOOL_GROUPS)
-      .filter(toolGroup => toolGroup.visible !== false) // Only count visible tools
-      .filter(toolGroup => {
-        // Check if tool is enabled (either explicitly in tools, or default to enabled if not present)
-        return isToolGroupEnabled(toolGroup.name);
+    // Count all enabled tools directly from agentpress_tools
+    // This matches what's actually configured in the agent
+    return Object.entries(tools)
+      .filter(([toolName, toolConfig]) => {
+        return isToolGroupEnabled(toolName);
       }).length;
   };
 
