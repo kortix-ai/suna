@@ -375,15 +375,17 @@ class SandboxSpreadsheetTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "spreadsheet_create",
-            "required": ["file_path", "headers", "rows"],
+            "description": "Create a new Excel spreadsheet file with headers and rows. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `file_path` (REQUIRED), `headers` (REQUIRED), `rows` (REQUIRED), `sheet_name` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "file_path": {"type": "string"},
-                    "sheet_name": {"type": "string"},
-                    "headers": {"type": "array", "items": {"type": "string"}},
-                    "rows": {"type": "array", "items": {"type": "array"}}
-                }
+                    "file_path": {"type": "string", "description": "**REQUIRED** - Path to the Excel file to create, relative to /workspace. Example: 'data/report.xlsx'"},
+                    "sheet_name": {"type": "string", "description": "**OPTIONAL** - Name for the sheet. Default: 'Sheet1'."},
+                    "headers": {"type": "array", "items": {"type": "string"}, "description": "**REQUIRED** - Array of header strings for the first row. Example: ['Name', 'Age', 'City']"},
+                    "rows": {"type": "array", "items": {"type": "array"}, "description": "**REQUIRED** - Array of rows, where each row is an array of cell values. Example: [['John', 25, 'NYC'], ['Jane', 30, 'LA']]"}
+                },
+                "required": ["file_path", "headers", "rows"],
+                "additionalProperties": False
             }
         }
     })
@@ -458,16 +460,17 @@ print('SUCCESS')
         "type": "function",
         "function": {
             "name": "spreadsheet_add_sheet",
-            "description": "Add a new sheet to an existing Excel file. Use this instead of spreadsheet_create when adding sheets to existing files.",
-            "required": ["file_path", "sheet_name", "headers", "rows"],
+            "description": "Add a new sheet to an existing Excel file. Use this instead of spreadsheet_create when adding sheets to existing files. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `file_path` (REQUIRED), `sheet_name` (REQUIRED), `headers` (REQUIRED), `rows` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "file_path": {"type": "string", "description": "Full path to existing Excel file"},
-                    "sheet_name": {"type": "string", "description": "Name for the new sheet"},
-                    "headers": {"type": "array", "items": {"type": "string"}},
-                    "rows": {"type": "array", "items": {"type": "array"}}
-                }
+                    "file_path": {"type": "string", "description": "**REQUIRED** - Full path to existing Excel file. Example: 'data/report.xlsx'"},
+                    "sheet_name": {"type": "string", "description": "**REQUIRED** - Name for the new sheet. Example: 'Q2 Data'"},
+                    "headers": {"type": "array", "items": {"type": "string"}, "description": "**REQUIRED** - Array of header strings for the first row. Example: ['Product', 'Sales', 'Revenue']"},
+                    "rows": {"type": "array", "items": {"type": "array"}, "description": "**REQUIRED** - Array of rows, where each row is an array of cell values. Example: [['Widget A', 100, 5000], ['Widget B', 200, 10000]]"}
+                },
+                "required": ["file_path", "sheet_name", "headers", "rows"],
+                "additionalProperties": False
             }
         }
     })
@@ -539,28 +542,31 @@ except Exception as e:
         "type": "function",
         "function": {
             "name": "spreadsheet_batch_update",
-            "required": ["file_path", "requests"],
+            "description": "Batch update multiple cells, formats, or add rows/sheets to an Excel file in a single operation. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `file_path` (REQUIRED), `requests` (REQUIRED), `sheet_name` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "file_path": {"type": "string"},
-                    "sheet_name": {"type": "string", "description": "Optional: specify which sheet to update (defaults to active sheet)"},
+                    "file_path": {"type": "string", "description": "**REQUIRED** - Path to the Excel file to update. Example: 'data/report.xlsx'"},
+                    "sheet_name": {"type": "string", "description": "**OPTIONAL** - Specify which sheet to update. Defaults to active sheet."},
                     "requests": {
                         "type": "array",
+                        "description": "**REQUIRED** - Array of update requests. Each request must have a 'type' field: 'update_cell', 'format_cells', 'add_rows', or 'add_sheet'.",
                         "items": {
                             "type": "object",
                             "properties": {
                                 "type": {
                                     "type": "string",
-                                    "enum": ["update_cell", "format_cells", "add_rows", "add_sheet"]
+                                    "enum": ["update_cell", "format_cells", "add_rows", "add_sheet"],
+                                    "description": "Type of update operation."
                                 },
-                                "cell": {"type": "string"},
-                                "value": {"type": "string"},
-                                "range": {"type": "string"},
-                                "sheet_name": {"type": "string"},
-                                "headers": {"type": "array", "items": {"type": "string"}},
+                                "cell": {"type": "string", "description": "Cell reference (e.g., 'A1') for update_cell operations."},
+                                "value": {"type": "string", "description": "Value to set in the cell."},
+                                "range": {"type": "string", "description": "Cell range (e.g., 'A1:B10') for format_cells operations."},
+                                "sheet_name": {"type": "string", "description": "Sheet name for add_sheet operations."},
+                                "headers": {"type": "array", "items": {"type": "string"}, "description": "Headers array for add_rows or add_sheet operations."},
                                 "style": {
                                     "type": "object",
+                                    "description": "Style object for format_cells operations.",
                                     "properties": {
                                         "background_color": {"type": "string"},
                                         "text_color": {"type": "string"},
@@ -572,13 +578,16 @@ except Exception as e:
                                 },
                                 "rows": {
                                     "type": "array",
-                                    "items": {"type": "array"}
+                                    "items": {"type": "array"},
+                                    "description": "Rows array for add_rows operations."
                                 }
                             },
                             "required": ["type"]
                         }
                     }
-                }
+                },
+                "required": ["file_path", "requests"],
+                "additionalProperties": False
             }
         }
     })

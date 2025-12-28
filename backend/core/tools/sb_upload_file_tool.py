@@ -62,20 +62,21 @@ class SandboxUploadFileTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "upload_file",
-            "description": "Securely upload a file from the sandbox workspace to private cloud storage (Supabase S3). Returns a secure signed URL that expires after 24 hours for access control and security.",
+            "description": "Securely upload a file from the sandbox workspace to private cloud storage (Supabase S3). Returns a secure signed URL that expires after 24 hours for access control and security. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `file_path` (REQUIRED), `custom_filename` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "Path to the file in the sandbox, relative to /workspace (e.g., 'output.pdf', 'data/results.csv')"
+                        "description": "**REQUIRED** - Path to the file in the sandbox, relative to /workspace. Example: 'output.pdf', 'data/results.csv'"
                     },
                     "custom_filename": {
                         "type": "string",
-                        "description": "Optional custom filename for the uploaded file. If not provided, uses original filename with timestamp"
-                    },
+                        "description": "**OPTIONAL** - Custom filename for the uploaded file. If not provided, uses original filename with timestamp."
+                    }
                 },
-                "required": ["file_path"]
+                "required": ["file_path"],
+                "additionalProperties": False
             }
         }
     })

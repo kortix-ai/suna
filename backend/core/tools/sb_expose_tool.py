@@ -48,18 +48,19 @@ class SandboxExposeTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "expose_port",
-            "description": "Expose a CUSTOM port from the sandbox (NOT port 8080 - already auto-exposed). **IMPORTANT**: Port 8080 is automatically exposed. When you create HTML files with create_file or full_file_rewrite, they automatically return preview URLs. You ONLY need this tool for custom dev servers running on OTHER ports (like React on 3000, API on 5000, etc.). For static HTML files on port 8080, just create the file and the tool will give you the URL - no need to expose or wait.",
+            "description": "Expose a CUSTOM port from the sandbox (NOT port 8080 - already auto-exposed). **IMPORTANT**: Port 8080 is automatically exposed. When you create HTML files with create_file or full_file_rewrite, they automatically return preview URLs. You ONLY need this tool for custom dev servers running on OTHER ports (like React on 3000, API on 5000, etc.). For static HTML files on port 8080, just create the file and the tool will give you the URL - no need to expose or wait. **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `port` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "port": {
                         "type": "integer",
-                        "description": "The port number to expose (DO NOT use 8080 - already auto-exposed). Use this ONLY for custom development servers on other ports.",
+                        "description": "**REQUIRED** - The port number to expose (DO NOT use 8080 - already auto-exposed). Use this ONLY for custom development servers on other ports. Minimum: 1, Maximum: 65535.",
                         "minimum": 1,
                         "maximum": 65535
                     }
                 },
-                "required": ["port"]
+                "required": ["port"],
+                "additionalProperties": False
             }
         }
     })

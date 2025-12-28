@@ -116,7 +116,7 @@ class SandboxWebSearchTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Search the web for up-to-date information using the Tavily API. IMPORTANT: For batch searches, pass query as a native array of strings, NOT as a JSON string. For num_results, pass an integer, NOT a string. This tool supports both single and batch queries for efficient research. You can search for multiple topics simultaneously by providing multiple queries as an array, which executes searches concurrently for faster results. Use batch mode when researching multiple related topics, gathering comprehensive information, or performing parallel searches. Results include titles, URLs, publication dates, direct answers, and images.",
+            "description": "Search the web for up-to-date information using the Tavily API. IMPORTANT: For batch searches, pass query as a native array of strings, NOT as a JSON string. For num_results, pass an integer, NOT a string. This tool supports both single and batch queries for efficient research. You can search for multiple topics simultaneously by providing multiple queries as an array, which executes searches concurrently for faster results. Use batch mode when researching multiple related topics, gathering comprehensive information, or performing parallel searches. Results include titles, URLs, publication dates, direct answers, and images. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `query` (REQUIRED), `num_results` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -124,25 +124,26 @@ class SandboxWebSearchTool(SandboxToolsBase):
                         "oneOf": [
                             {
                                 "type": "string",
-                                "description": "A single search query to find relevant web pages. Be specific and include key terms to improve search accuracy. For best results, use natural language questions or keyword combinations that precisely describe what you're looking for. Example: \"Tesla latest news 2025\""
+                                "description": "**REQUIRED** - A single search query to find relevant web pages. Be specific and include key terms to improve search accuracy. For best results, use natural language questions or keyword combinations that precisely describe what you're looking for. Example: \"Tesla latest news 2025\""
                             },
                             {
                                 "type": "array",
                                 "items": {
                                     "type": "string"
                                 },
-                                "description": "Multiple search queries to execute concurrently. CRITICAL: Pass as a native array of strings, NOT as a JSON string. Use this for batch searching when you need to research multiple related topics simultaneously. Each query will be processed in parallel for faster results. For example, provide multiple search terms such as Tesla news, Tesla stock price, and Tesla products as separate strings in the array."
+                                "description": "**REQUIRED** - Multiple search queries to execute concurrently. CRITICAL: Pass as a native array of strings, NOT as a JSON string. Use this for batch searching when you need to research multiple related topics simultaneously. Each query will be processed in parallel for faster results. Example: [\"Tesla news\", \"Tesla stock price\", \"Tesla products\"]"
                             }
                         ],
-                        "description": "Either a single search query (string) or multiple queries (NATIVE array of strings, NOT JSON string) to execute concurrently. For batch mode, provide multiple queries as an array, NOT as a JSON string"
+                        "description": "**REQUIRED** - Either a single search query (string) or multiple queries (NATIVE array of strings, NOT JSON string) to execute concurrently. For batch mode, provide multiple queries as an array, NOT as a JSON string."
                     },
                     "num_results": {
                         "type": "integer",
-                        "description": "The number of search results to return per query (1-50). MUST be a native integer like 5, NOT a string like \"5\". Increase for more comprehensive research or decrease for focused, high-relevance results. Applies to each query when using batch mode.",
+                        "description": "**OPTIONAL** - The number of search results to return per query (1-50). MUST be a native integer like 5, NOT a string like \"5\". Increase for more comprehensive research or decrease for focused, high-relevance results. Applies to each query when using batch mode. Default: 5.",
                         "default": 5
                     }
                 },
-                "required": ["query"]
+                "required": ["query"],
+                "additionalProperties": False
             }
         }
     })
@@ -328,21 +329,22 @@ class SandboxWebSearchTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "scrape_webpage",
-            "description": "Extract full text content from multiple webpages in a single operation. IMPORTANT: You should ALWAYS collect multiple relevant URLs from web-search results and scrape them all in a single call for efficiency. This tool saves time by processing multiple pages simultaneously rather than one at a time. The extracted text includes the main content of each page without HTML markup by default, but can optionally include full HTML if needed for structure analysis.",
+            "description": "Extract full text content from multiple webpages in a single operation. IMPORTANT: You should ALWAYS collect multiple relevant URLs from web-search results and scrape them all in a single call for efficiency. This tool saves time by processing multiple pages simultaneously rather than one at a time. The extracted text includes the main content of each page without HTML markup by default, but can optionally include full HTML if needed for structure analysis. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `urls` (REQUIRED), `include_html` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "urls": {
                         "type": "string",
-                        "description": "Multiple URLs to scrape, separated by commas. You should ALWAYS include several URLs when possible for efficiency. Example: 'https://example.com/page1,https://example.com/page2,https://example.com/page3'"
+                        "description": "**REQUIRED** - Multiple URLs to scrape, separated by commas. You should ALWAYS include several URLs when possible for efficiency. Example: 'https://example.com/page1,https://example.com/page2,https://example.com/page3'"
                     },
                     "include_html": {
                         "type": "boolean",
-                        "description": "Whether to include the full raw HTML content alongside the extracted text. Set to true when you need to analyze page structure, extract specific HTML elements, or work with complex layouts. Default is false for cleaner text extraction.",
+                        "description": "**OPTIONAL** - Whether to include the full raw HTML content alongside the extracted text. Set to true when you need to analyze page structure, extract specific HTML elements, or work with complex layouts. Default: false.",
                         "default": False
                     }
                 },
-                "required": ["urls"]
+                "required": ["urls"],
+                "additionalProperties": False
             }
         }
     })

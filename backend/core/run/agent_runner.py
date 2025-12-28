@@ -211,6 +211,12 @@ class AgentRunner:
                 sandbox_info = cached_project  # Cache stores sandbox metadata directly
                 logger.debug(f"⏱️ [TIMING] ⚡ Project from cache: {(time.time() - q_start) * 1000:.1f}ms")
             else:
+                from core.resources import ResourceService
+                resource_service = ResourceService(self.client)
+                
+                # Lazy migration: Migrate sandbox JSONB to resources table if needed
+                await resource_service.migrate_project_sandbox_if_needed(self.config.project_id)
+                
                 project = await self.client.table('projects').select('project_id, sandbox_resource_id').eq('project_id', self.config.project_id).execute()
                 
                 if not project.data or len(project.data) == 0:
@@ -222,8 +228,6 @@ class AgentRunner:
                 # Get sandbox info from resource if it exists
                 sandbox_info = {}
                 if sandbox_resource_id:
-                    from core.resources import ResourceService
-                    resource_service = ResourceService(self.client)
                     resource = await resource_service.get_resource_by_id(sandbox_resource_id)
                     if resource:
                         sandbox_info = {

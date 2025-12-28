@@ -315,11 +315,12 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "view_tasks",
-            "description": "View all tasks and sections. Use this REGULARLY throughout execution to see current tasks, check progress, or review completed work. IMPORTANT: Use this tool every 2-3 task completions to check progress and identify the next task to execute in the sequential workflow. Always execute tasks in the exact order they appear, completing one task fully (with comprehensive research using multiple queries and sources) before moving to the next. Use this to determine which task is currently pending and should be tackled next. For research tasks, ensure each task receives thorough, in-depth research before marking complete. Before final output, use this to verify all tasks are marked complete.",
+            "description": "View all tasks and sections. Use this REGULARLY throughout execution to see current tasks, check progress, or review completed work. IMPORTANT: Use this tool every 2-3 task completions to check progress and identify the next task to execute in the sequential workflow. Always execute tasks in the exact order they appear, completing one task fully (with comprehensive research using multiple queries and sources) before moving to the next. Use this to determine which task is currently pending and should be tackled next. For research tasks, ensure each task receives thorough, in-depth research before marking complete. Before final output, use this to verify all tasks are marked complete. **🚨 PARAMETER NAMES**: This function takes no parameters.",
             "parameters": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": False
             }
         }
     })
@@ -340,13 +341,13 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "create_tasks",
-            "description": "Create tasks organized by sections. Supports both single section and multi-section batch creation. Creates sections automatically if they don't exist. USE ONLY FOR LARGE, COMPLEX TASKS: Only create task lists for substantial projects (10+ items, multi-phase work, large-scale research, complex multi-file projects). For research tasks involving many items, create SEPARATE individual tasks for EACH item to ensure deep, thorough research. Each research task should be comprehensive, requiring multiple queries and sources. Break down complex operations into granular, sequential tasks. Create tasks in the exact order they will be executed. Each task should represent a single, specific operation that can be completed independently. IMPORTANT: You can also use this tool DURING execution to add new tasks when you discover additional work is needed. You MUST specify either 'sections' array OR both 'task_contents' and ('section_title' OR 'section_id'). CRITICAL: The 'sections' parameter MUST be passed as an array of objects, NOT as a JSON string. Pass the actual array structure, not a stringified version.",
+            "description": "Create tasks organized by sections. Supports both single section and multi-section batch creation. Creates sections automatically if they don't exist. USE ONLY FOR LARGE, COMPLEX TASKS: Only create task lists for substantial projects (10+ items, multi-phase work, large-scale research, complex multi-file projects). For research tasks involving many items, create SEPARATE individual tasks for EACH item to ensure deep, thorough research. Each research task should be comprehensive, requiring multiple queries and sources. Break down complex operations into granular, sequential tasks. Create tasks in the exact order they will be executed. Each task should represent a single, specific operation that can be completed independently. IMPORTANT: You can also use this tool DURING execution to add new tasks when you discover additional work is needed. You MUST specify either 'sections' array OR both 'task_contents' and ('section_title' OR 'section_id'). CRITICAL: The 'sections' parameter MUST be passed as an array of objects, NOT as a JSON string. Pass the actual array structure, not a stringified version. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `sections` (optional, batch mode), `section_title` (optional, single section), `section_id` (optional, single section), `task_contents` (optional, single section).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "sections": {
                         "type": "array",
-                        "description": "List of sections with their tasks for batch creation. CRITICAL: This MUST be an array of objects (not a JSON string). Each element should be an object with title as a string and tasks as an array of strings. For example, provide objects with titles like Section 1 and Section 2, each containing their respective task arrays.",
+                        "description": "**OPTIONAL** - List of sections with their tasks for batch creation. CRITICAL: This MUST be an array of objects (not a JSON string). Each element should be an object with title as a string and tasks as an array of strings.",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -366,19 +367,20 @@ class TaskListTool(SandboxToolsBase):
                     },
                     "section_title": {
                         "type": "string",
-                        "description": "Single section title (creates if doesn't exist - use this OR sections array)"
+                        "description": "**OPTIONAL** - Single section title (creates if doesn't exist). Use this OR sections array OR section_id."
                     },
                     "section_id": {
                         "type": "string",
-                        "description": "Existing section ID (use this OR sections array OR section_title)"
+                        "description": "**OPTIONAL** - Existing section ID. Use this OR sections array OR section_title."
                     },
                     "task_contents": {
                         "type": "array",
-                        "description": "Task contents for single section creation (use with section_title or section_id). CRITICAL: This MUST be an array of strings, not a JSON string. Provide multiple task descriptions as separate strings in the array.",
+                        "description": "**OPTIONAL** - Task contents for single section creation (use with section_title or section_id). CRITICAL: This MUST be an array of strings, not a JSON string.",
                         "items": {"type": "string"}
                     }
                 },
-                "required": []
+                "required": [],
+                "additionalProperties": False
             }
         }
     })
@@ -505,7 +507,7 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "update_tasks",
-                "description": "Update one or more tasks. CRITICAL: Mark tasks as 'completed' IMMEDIATELY after finishing each task - don't wait. This is essential for active task list management. EFFICIENT BATCHING: When you've completed multiple tasks, batch them into a single update call. Always execute tasks in the exact sequence they appear, but batch your updates when possible. You can also update task content if requirements change. Use this tool actively throughout execution to keep the task list current and accurate.",
+            "description": "Update one or more tasks. CRITICAL: Mark tasks as 'completed' IMMEDIATELY after finishing each task - don't wait. This is essential for active task list management. EFFICIENT BATCHING: When you've completed multiple tasks, batch them into a single update call. Always execute tasks in the exact sequence they appear, but batch your updates when possible. You can also update task content if requirements change. Use this tool actively throughout execution to keep the task list current and accurate. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `task_ids` (REQUIRED), `content` (optional), `status` (optional), `section_id` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -514,23 +516,24 @@ class TaskListTool(SandboxToolsBase):
                             {"type": "string"},
                             {"type": "array", "items": {"type": "string"}, "minItems": 1}
                         ],
-                        "description": "Task ID (string) or array of task IDs to update. EFFICIENT APPROACH: Batch multiple completed tasks into a single call rather than making multiple consecutive update calls. Always maintain sequential execution order. CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string). Provide multiple task IDs as separate strings in the array."
+                        "description": "**REQUIRED** - Task ID (string) or array of task IDs to update. EFFICIENT APPROACH: Batch multiple completed tasks into a single call. CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string)."
                     },
                     "content": {
                         "type": "string",
-                        "description": "New content for the task(s) (optional)"
+                        "description": "**OPTIONAL** - New content for the task(s)."
                     },
                     "status": {
                         "type": "string",
                         "enum": ["pending", "completed", "cancelled"],
-                        "description": "New status for the task(s) (optional). Set to 'completed' for finished tasks. Batch multiple completed tasks when possible."
+                        "description": "**OPTIONAL** - New status for the task(s). Set to 'completed' for finished tasks. Batch multiple completed tasks when possible."
                     },
                     "section_id": {
                         "type": "string",
-                        "description": "Section ID to move task(s) to (optional)"
+                        "description": "**OPTIONAL** - Section ID to move task(s) to."
                     }
                 },
-                "required": ["task_ids"]
+                "required": ["task_ids"],
+                "additionalProperties": False
             }
         }
     })
@@ -601,7 +604,7 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "delete_tasks",
-            "description": "Delete one or more tasks and/or sections. Can delete tasks by their IDs or sections by their IDs (which will also delete all tasks in those sections). IMPORTANT: Use this tool DURING execution when tasks become unnecessary, redundant, or if requirements change. Active task list management includes removing tasks that are no longer needed. This helps keep the task list clean and focused on actual work remaining.",
+            "description": "Delete one or more tasks and/or sections. Can delete tasks by their IDs or sections by their IDs (which will also delete all tasks in those sections). IMPORTANT: Use this tool DURING execution when tasks become unnecessary, redundant, or if requirements change. Active task list management includes removing tasks that are no longer needed. This helps keep the task list clean and focused on actual work remaining. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `task_ids` (optional), `section_ids` (optional), `confirm` (optional, required when deleting sections).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -610,21 +613,22 @@ class TaskListTool(SandboxToolsBase):
                             {"type": "string"},
                             {"type": "array", "items": {"type": "string"}, "minItems": 1}
                         ],
-                        "description": "Task ID (string) or array of task IDs to delete (optional). CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string). Provide multiple task IDs as separate strings in the array."
+                        "description": "**OPTIONAL** - Task ID (string) or array of task IDs to delete. CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string)."
                     },
                     "section_ids": {
                         "oneOf": [
                             {"type": "string"},
                             {"type": "array", "items": {"type": "string"}, "minItems": 1}
                         ],
-                        "description": "Section ID (string) or array of section IDs to delete (will also delete all tasks in these sections) (optional). CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string). Provide multiple section IDs as separate strings in the array."
+                        "description": "**OPTIONAL** - Section ID (string) or array of section IDs to delete (will also delete all tasks in these sections). CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string)."
                     },
                     "confirm": {
                         "type": "boolean",
-                        "description": "Must be true to confirm deletion of sections (required when deleting sections)"
+                        "description": "**OPTIONAL** - Must be true to confirm deletion of sections. Required when deleting sections."
                     }
                 },
-                "required": []
+                "required": [],
+                "additionalProperties": False
             }
         }
     })
@@ -716,16 +720,17 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "clear_all",
-            "description": "Clear all tasks and sections (creates completely empty state).",
+            "description": "Clear all tasks and sections (creates completely empty state). **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `confirm` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "confirm": {
                         "type": "boolean",
-                        "description": "Must be true to confirm clearing everything"
+                        "description": "**REQUIRED** - Must be true to confirm clearing everything."
                     }
                 },
-                "required": ["confirm"]
+                "required": ["confirm"],
+                "additionalProperties": False
             }
         }
     })

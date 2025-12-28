@@ -54,16 +54,17 @@ class ExpandMessageTool(Tool):
         "type": "function",
         "function": {
             "name": "expand_message",
-            "description": "Expand a message from the previous conversation with the user. Use this tool to expand a message that was truncated in the earlier conversation.",
+            "description": "Expand a message from the previous conversation with the user. Use this tool to expand a message that was truncated in the earlier conversation. **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `message_id` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "message_id": {
                         "type": "string",
-                        "description": "The ID of the message to expand. Must be a UUID."
+                        "description": "**REQUIRED** - The ID of the message to expand. Must be a UUID."
                     }
                 },
-                "required": ["message_id"]
+                "required": ["message_id"],
+                "additionalProperties": False
             }
         }
     })
@@ -96,16 +97,17 @@ class ExpandMessageTool(Tool):
         "type": "function", 
         "function": {
             "name": "discover_mcp_tools", 
-            "description": "Get schemas for external MCP tools (Gmail, Twitter, Slack, etc.). CRITICAL WORKFLOW: (1) Check conversation history FIRST - if tool schemas already exist, skip discovery! (2) If NOT in history: Discover ALL needed tools in ONE batch call. (3) Schemas are cached in conversation forever - NEVER discover same tools twice!",
+            "description": "Get schemas for external MCP tools (Gmail, Twitter, Slack, etc.). CRITICAL WORKFLOW: (1) Check conversation history FIRST - if tool schemas already exist, skip discovery! (2) If NOT in history: Discover ALL needed tools in ONE batch call. (3) Schemas are cached in conversation forever - NEVER discover same tools twice! **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `filter` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "filter": {
                         "type": "string",
-                        "description": "Comma-separated list of ALL tools needed (e.g., 'GMAIL_SEND_MESSAGE,TWITTER_CREATION_OF_A_POST,SLACK_SEND_MESSAGE') OR toolkit name (e.g., 'gmail'). CRITICAL: List ALL tools in ONE call, never call discover multiple times for the same task!"
+                        "description": "**REQUIRED** - Comma-separated list of ALL tools needed (e.g., 'GMAIL_SEND_MESSAGE,TWITTER_CREATION_OF_A_POST,SLACK_SEND_MESSAGE') OR toolkit name (e.g., 'gmail'). CRITICAL: List ALL tools in ONE call, never call discover multiple times for the same task!"
                     }
                 },
-                "required": ["filter"]
+                "required": ["filter"],
+                "additionalProperties": False
             }
         }
     }) 
@@ -116,20 +118,21 @@ class ExpandMessageTool(Tool):
         "type": "function", 
         "function": {
             "name": "execute_mcp_tool", 
-            "description": "Execute external MCP tool (Gmail, Twitter, Slack, etc.). PREREQUISITE: Tool schema MUST be in conversation history (use discover_mcp_tools first if needed). Use exact tool name and parameters from the discovered schema.",
+            "description": "Execute external MCP tool (Gmail, Twitter, Slack, etc.). PREREQUISITE: Tool schema MUST be in conversation history (use discover_mcp_tools first if needed). Use exact tool name and parameters from the discovered schema. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `tool_name` (REQUIRED), `args` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "tool_name": {
                         "type": "string",
-                        "description": "Exact tool name from discovered schema (e.g., 'GMAIL_SEND_MESSAGE', 'TWITTER_CREATION_OF_A_POST'). Must match schema in conversation history."
+                        "description": "**REQUIRED** - Exact tool name from discovered schema. Example: 'GMAIL_SEND_MESSAGE', 'TWITTER_CREATION_OF_A_POST'. Must match schema in conversation history."
                     },
                     "args": {
                         "type": "object", 
-                        "description": "Arguments matching discovered schema parameters. Use exact parameter names from schema in conversation history. If no parameters are required, provide an empty object."
+                        "description": "**REQUIRED** - Arguments matching discovered schema parameters. Use exact parameter names from schema in conversation history. If no parameters are required, provide an empty object {}."
                     }
                 },
-                "required": ["tool_name", "args"]
+                "required": ["tool_name", "args"],
+                "additionalProperties": False
             }
         }
     }) 
@@ -140,7 +143,7 @@ class ExpandMessageTool(Tool):
         "type": "function",
         "function": {
             "name": "initialize_tools",
-            "description": "Initialize tools needed for your task. Loads the detailed usage guides and activates the tools so they're ready to use. Call this at the start with ALL tools you'll need.",
+            "description": "Initialize tools needed for your task. Loads the detailed usage guides and activates the tools so they're ready to use. Call this at the start with ALL tools you'll need. **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `tool_names` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -148,18 +151,19 @@ class ExpandMessageTool(Tool):
                         "oneOf": [
                             {
                                 "type": "string",
-                                "description": "Single tool name to initialize (e.g., 'browser_tool', 'sb_files_tool')"
+                                "description": "**REQUIRED** - Single tool name to initialize. Example: 'browser_tool', 'sb_files_tool'"
                             },
                             {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "Multiple tool names to initialize in one batch call"
+                                "description": "**REQUIRED** - Multiple tool names to initialize in one batch call. Example: ['browser_tool', 'sb_files_tool', 'web_search_tool']"
                             }
                         ],
-                        "description": "Tool name(s) to initialize. Can be a single string or array of strings."
+                        "description": "**REQUIRED** - Tool name(s) to initialize. Can be a single string or array of strings."
                     }
                 },
-                "required": ["tool_names"]
+                "required": ["tool_names"],
+                "additionalProperties": False
             }
         }
     })

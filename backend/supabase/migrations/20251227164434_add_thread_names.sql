@@ -4,11 +4,6 @@
 -- Add name column to threads table
 ALTER TABLE threads ADD COLUMN IF NOT EXISTS name TEXT;
 
--- Backfill existing threads with a default name based on created_at
--- Format: "Chat from Dec 27, 2:30 PM"
-UPDATE threads
-SET name = 'Chat from ' || TO_CHAR(created_at AT TIME ZONE 'UTC', 'Mon DD, HH24:MI')
-WHERE name IS NULL;
 
 -- Set default for future inserts
 ALTER TABLE threads ALTER COLUMN name SET DEFAULT 'New Chat';

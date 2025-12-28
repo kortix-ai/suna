@@ -323,16 +323,17 @@ class SandboxVisionTool(SandboxToolsBase):
 
 ⚠️ HARD LIMIT: Maximum 3 images can be loaded in context at any time. Images consume 1000+ tokens each.
 
-Images remain in the sandbox and can be loaded again anytime. SVG files are automatically converted to PNG.""",
+Images remain in the sandbox and can be loaded again anytime. SVG files are automatically converted to PNG. **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `file_path` (REQUIRED).""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "Either a relative path to the image file within the /workspace directory (e.g., 'screenshots/image.png') or a URL to an image (e.g., 'https://example.com/image.jpg'). Supported formats: JPG, PNG, GIF, WEBP, SVG. Max size: 10MB."
+                        "description": "**REQUIRED** - Either a relative path to the image file within the /workspace directory (e.g., 'screenshots/image.png') or a URL to an image (e.g., 'https://example.com/image.jpg'). Supported formats: JPG, PNG, GIF, WEBP, SVG. Max size: 10MB."
                     }
                 },
-                "required": ["file_path"]
+                "required": ["file_path"],
+                "additionalProperties": False
             }
         }
     })

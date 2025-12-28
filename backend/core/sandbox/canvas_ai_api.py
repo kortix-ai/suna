@@ -209,7 +209,8 @@ async def process_with_gemini(
                 ]
             }
         ],
-        "modalities": ["image", "text"]
+        "modalities": ["image", "text"],
+        "app": "Kortix.com"
     }
     
     async with httpx.AsyncClient(timeout=120.0) as client:
@@ -525,7 +526,8 @@ The result should be a high-quality merged image."""
                     "content": content
                 }
             ],
-            "modalities": ["image", "text"]
+            "modalities": ["image", "text"],
+            "app": "Kortix.com"
         }
         
         async with httpx.AsyncClient(timeout=180.0) as client:  # Longer timeout for merge

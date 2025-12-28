@@ -49,9 +49,9 @@ class ModelRegistry:
         # Register Haiku Bedrock ARN pricing for fallback billing resolution
         self._litellm_id_to_pricing[HAIKU_BEDROCK_ARN] = HAIKU_PRICING
         
-        # Kortix Basic - TEMPORARILY using MiniMax M2 instead of Haiku 4.5
+        # Kortix Basic - using MiniMax M2.1
         # basic_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
-        basic_litellm_id = "openrouter/minimax/minimax-m2"  # 205K context $0.255/M input tokens $1.02/M output tokens
+        basic_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input tokens $1.20/M output tokens
         
         self.register(Model(
             id="kortix/basic",
@@ -67,10 +67,10 @@ class ModelRegistry:
                 ModelCapability.PROMPT_CACHING,
             ],
             pricing=ModelPricing(
-                input_cost_per_million_tokens=0.255,
-                output_cost_per_million_tokens=1.02,
-                cached_read_cost_per_million_tokens=0.0255,
-                cache_write_5m_cost_per_million_tokens=0.32,
+                input_cost_per_million_tokens=0.30,
+                output_cost_per_million_tokens=1.20,
+                cached_read_cost_per_million_tokens=0.03,
+                cache_write_5m_cost_per_million_tokens=0.375,
                 # OLD Haiku 4.5 pricing:
                 # input_cost_per_million_tokens=1.00,
                 # output_cost_per_million_tokens=5.00,
@@ -91,7 +91,7 @@ class ModelRegistry:
             )
         ))
         
-        # Kortix Power - TEMPORARILY using MiniMax M2.1 instead of Sonnet 4.5/Haiku 4.5
+        # Kortix Power - using MiniMax M2.1
         # power_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
         power_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input tokens $1.20/M output tokens
         
@@ -145,6 +145,8 @@ class ModelRegistry:
             # test_litellm_id = "openrouter/x-ai/grok-4.1-fast" #2M context $0.20/M input tokens $0.50/M output tokens
             # test_litellm_id = "openrouter/deepseek/deepseek-v3.2-speciale" 164K context $0.27/M input tokens $0.41/M output tokens
             # test_litellm_id = "openrouter/deepseek/deepseek-v3.2" 164K context $0.26/M input tokens $0.38/M output tokens
+
+            test_litellm_id ="groq/moonshotai/kimi-k2-instruct" 
 
             self.register(Model(
                 id="kortix/test",
@@ -274,15 +276,44 @@ class ModelRegistry:
         
         return fallbacks
     
+    def _normalize_model_id(self, model_id: str) -> str:
+        """Normalize model ID for consistent matching.
+        
+        LiteLLM/OpenRouter may return model IDs without provider prefix (e.g., 'minimax/minimax-m2.1')
+        but we store them with prefix (e.g., 'openrouter/minimax/minimax-m2.1').
+        """
+        if not model_id:
+            return model_id
+        
+        # Common provider prefixes that LiteLLM might strip
+        provider_prefixes = ['openrouter/', 'anthropic/', 'bedrock/', 'openai/']
+        
+        # If ID already has a known prefix, return as-is
+        for prefix in provider_prefixes:
+            if model_id.startswith(prefix):
+                return model_id
+        
+        # Try adding openrouter/ prefix (most common case for external models)
+        openrouter_variant = f"openrouter/{model_id}"
+        return openrouter_variant
+    
     def resolve_from_litellm_id(self, litellm_model_id: str) -> str:
         """Reverse lookup: resolve a LiteLLM model ID back to registry model ID.
         
         Used by cost calculator to find pricing. Returns input if not found.
+        Handles model ID variations (with/without provider prefix).
         """
         # Direct lookup in registered models
         for model in self._models.values():
             if model.litellm_model_id == litellm_model_id:
                 return model.id
+        
+        # Try normalized version (handles openrouter/ prefix)
+        normalized_id = self._normalize_model_id(litellm_model_id)
+        if normalized_id != litellm_model_id:
+            for model in self._models.values():
+                if model.litellm_model_id == normalized_id:
+                    return model.id
         
         # Check if this is already a registry ID
         if self.get(litellm_model_id):
@@ -295,7 +326,7 @@ class ModelRegistry:
         
         This is the primary method for billing to resolve pricing, as it handles:
         1. Registry model IDs (kortix/basic)
-        2. LiteLLM model IDs that map to registry models
+        2. LiteLLM model IDs that map to registry models (with/without provider prefix)
         3. Fallback model IDs (like Haiku Bedrock ARN) that have explicit pricing
         """
         # First, check if it's a registry model or maps to one
@@ -307,6 +338,11 @@ class ModelRegistry:
         # Check explicit litellm ID to pricing mapping (for fallback models)
         if litellm_model_id in self._litellm_id_to_pricing:
             return self._litellm_id_to_pricing[litellm_model_id]
+        
+        # Try with normalized ID in pricing mapping
+        normalized_id = self._normalize_model_id(litellm_model_id)
+        if normalized_id in self._litellm_id_to_pricing:
+            return self._litellm_id_to_pricing[normalized_id]
         
         # Handle Bedrock ARN patterns
         if "application-inference-profile" in litellm_model_id:

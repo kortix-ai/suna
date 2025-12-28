@@ -281,10 +281,24 @@ async def check_trigger_limit(client, account_id: str, agent_id: str = None, tri
             
             if not agents_result.data:
                 logger.debug(f"No agents found for account {account_id}")
+                # Even with no agents, we should still return the correct tier limits so the
+                # frontend can accurately reflect plan entitlements (limits apply once
+                # agents/triggers exist).
+                try:
+                    from core.billing import subscription_service
+                    tier_info = await subscription_service.get_user_subscription_tier(account_id)
+                    tier_name = tier_info['name']
+                    scheduled_limit = tier_info.get('scheduled_triggers_limit', 0)
+                    app_limit = tier_info.get('app_triggers_limit', 0)
+                except Exception as billing_error:
+                    logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, defaulting to free")
+                    tier_name = 'free'
+                    scheduled_limit = 0
+                    app_limit = 0
                 return {
-                    'scheduled': {'current_count': 0, 'limit': 1},
-                    'app': {'current_count': 0, 'limit': 2},
-                    'tier_name': 'free'
+                    'scheduled': {'current_count': 0, 'limit': scheduled_limit},
+                    'app': {'current_count': 0, 'limit': app_limit},
+                    'tier_name': tier_name
                 }
             
             agent_ids = [agent['agent_id'] for agent in agents_result.data]
