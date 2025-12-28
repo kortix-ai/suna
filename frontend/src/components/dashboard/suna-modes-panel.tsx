@@ -1573,31 +1573,48 @@ export function SunaModesPanel({
 
           {selectedMode === 'canvas' && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {currentMode.options.items.map((item) => (
-                <Card
-                  key={item.id}
-                  className="flex flex-col items-center gap-2 cursor-pointer group p-2 bg-transparent hover:bg-transparent transition-all duration-200 border border-border hover:border-border rounded-xl overflow-hidden shadow-none"
-                  onClick={() => handlePromptSelect(`${item.name}: ${item.description}`)}
-                >
-                  <div className="w-full aspect-square rounded-lg border border-transparent group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
-                    {item.image ? (
-                      <Image 
-                        src={item.image} 
-                        alt={item.name}
-                        fill
-                        sizes="(max-width: 640px) 50vw, 25vw"
-                        className="object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <Palette className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
-                    )}
-                  </div>
-                  <span className="text-xs text-center text-foreground/70 group-hover:text-foreground transition-colors duration-200 font-medium">
-                    {item.name}
-                  </span>
-                </Card>
-              ))}
+              {currentMode.options.items.map((item) => {
+                // Generate action-specific prompts
+                const getCanvasPrompt = (actionId: string) => {
+                  switch (actionId) {
+                    case 'create':
+                      return 'Create a new image for me: [describe what you want]';
+                    case 'edit':
+                      return 'Edit my image: [I will upload the image and describe what changes I want]';
+                    case 'upscale':
+                      return 'Upscale my image to higher resolution - I will upload the image';
+                    case 'remove-bg':
+                      return 'Remove the background from my image - I will upload the image';
+                    default:
+                      return `${item.name}: ${item.description}`;
+                  }
+                };
+                return (
+                  <Card
+                    key={item.id}
+                    className="flex flex-col items-center gap-2 cursor-pointer group p-2 bg-transparent hover:bg-transparent transition-all duration-200 border border-border hover:border-border rounded-xl overflow-hidden shadow-none"
+                    onClick={() => handlePromptSelect(getCanvasPrompt(item.id))}
+                  >
+                    <div className="w-full aspect-square rounded-lg border border-transparent group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
+                      {item.image ? (
+                        <Image 
+                          src={item.image} 
+                          alt={item.name}
+                          fill
+                          sizes="(max-width: 640px) 50vw, 25vw"
+                          className="object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <Palette className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                      )}
+                    </div>
+                    <span className="text-xs text-center text-foreground/70 group-hover:text-foreground transition-colors duration-200 font-medium">
+                      {item.name}
+                    </span>
+                  </Card>
+                );
+              })}
             </div>
           )}
 
