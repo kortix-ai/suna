@@ -1445,7 +1445,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         result[monthIdx].subscribers = totalSubs;
       }
       
-      // For MRR, ARR - take the last week's value as end-of-month value
+        // For MRR, ARR - take the last week's value as end-of-month value
       if (totalMRR > 0) {
         result[monthIdx].mrr = totalMRR;
       }
@@ -2226,7 +2226,45 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   // Platforms to render
                   const platforms: Platform[] = ['web', 'app'];
                   
-                  return platforms.map((platform, platformIdx) => {
+                  // Calculate totals for web + app
+                  const webData = getMonthlyActualData(month.monthIndex, 'web');
+                  const appData = getMonthlyActualData(month.monthIndex, 'app');
+                  const webOverrides = webData?.overrides || {};
+                  
+                  // Web effective values
+                  const webViews = webOverrides.views ? (webData?.views || 0) : (metricsByCalendarMonth.views[month.monthIndex] || 0);
+                  const webSignups = webOverrides.signups ? (webData?.signups || 0) : (metricsByCalendarMonth.signups[month.monthIndex] || 0);
+                  const webNewPaid = webOverrides.new_paid ? (webData?.newPaid || 0) : (metricsByCalendarMonth.newPaid[month.monthIndex] || 0);
+                  const webChurn = webOverrides.churn ? (webData?.churn || 0) : (metricsByCalendarMonth.churn[month.monthIndex] || 0);
+                  const webSubs = webOverrides.subscribers ? (webData?.subscribers || 0) : actual.subscribers;
+                  const webMRR = webOverrides.mrr ? (webData?.mrr || 0) : actual.mrr;
+                  const webARR = webOverrides.arr ? (webData?.arr || 0) : actual.arr;
+                  
+                  // App values (always manual)
+                  const appViews = appData?.views || 0;
+                  const appSignups = appData?.signups || 0;
+                  const appNewPaid = appData?.newPaid || 0;
+                  const appChurn = appData?.churn || 0;
+                  const appSubs = appData?.subscribers || 0;
+                  const appMRR = appData?.mrr || 0;
+                  const appARR = appData?.arr || 0;
+                  
+                  // Totals
+                  const totalViews = webViews + appViews;
+                  const totalSignups = webSignups + appSignups;
+                  const totalNewPaid = webNewPaid + appNewPaid;
+                  const totalChurn = webChurn + appChurn;
+                  const totalSubs = webSubs + appSubs;
+                  const totalMRR = webMRR + appMRR;
+                  const totalARR = webARR + appARR;
+                  
+                  // Total conversion rates
+                  const totalSignupConvRate = totalViews > 0 && totalSignups > 0 ? (totalSignups / totalViews) * 100 : null;
+                  const totalPaidConvRate = totalSignups > 0 && totalNewPaid > 0 ? (totalNewPaid / totalSignups) * 100 : null;
+                  const monthStartSubs = subsAtMonthStart[month.monthIndex] || 0;
+                  const totalChurnRate = monthStartSubs > 0 && totalChurn > 0 ? (totalChurn / monthStartSubs) * 100 : null;
+                  
+                  const platformRows = platforms.map((platform, platformIdx) => {
                   const monthlyOverride = getMonthlyActualData(month.monthIndex, platform);
                   
                   // Use calendar month aggregations (from daily data) - only for web
@@ -2297,7 +2335,6 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       return (
                         <td className="text-right p-1">
                           <div className="flex items-center justify-end gap-1">
-                            <span className="text-purple-500 text-[10px]" title="App data (manual entry from RevenueCat)">📱</span>
                             <Input
                               type="text"
                               value={getMonthlyInputValue(month.monthIndex, platform, field)}
@@ -2351,7 +2388,6 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     <tr key={`${month.month}-${platform}`} className={`border-b ${isLastMonth ? 'bg-primary/5 font-medium' : ''}`}>
                       <td className="p-3">
                         <div className="flex items-center gap-2">
-                          {platformIdx === 0 && <span>{month.month}</span>}
                           <span className={`text-xs px-1.5 py-0.5 rounded ${platform === 'web' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'}`}>
                             {platform}
                           </span>
@@ -2416,6 +2452,66 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     </tr>
                   );
                   });
+                  
+                  // Total row
+                  const totalRow = (
+                    <tr key={`${month.month}-total`} className={`border-b bg-muted/30 font-medium ${isLastMonth ? 'bg-primary/10' : ''}`}>
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+                            total
+                          </span>
+                          <span className="text-muted-foreground">{month.month}</span>
+                        </div>
+                      </td>
+                      {/* Visitors Goal - show goal */}
+                      <td className="text-right p-2 text-muted-foreground">{formatNumber(month.visitors)}</td>
+                      {/* Views Actual - total */}
+                      <td className="text-right p-2 font-semibold">{totalViews > 0 ? formatNumber(totalViews) : '—'}</td>
+                      {/* Growth - skip for total */}
+                      <td className="text-right p-2 text-muted-foreground">—</td>
+                      {/* Signups Goal */}
+                      <td className="text-right p-2 text-muted-foreground">{formatNumber(month.signups)}</td>
+                      {/* Signups Actual - total */}
+                      <td className="text-right p-2 font-semibold">{totalSignups > 0 ? formatNumber(totalSignups) : '—'}</td>
+                      {/* Signups Growth */}
+                      <td className="text-right p-2 text-muted-foreground">—</td>
+                      {/* Signup Conv Rate */}
+                      <td className="text-right p-2 font-medium">
+                        {totalSignupConvRate !== null ? `${totalSignupConvRate.toFixed(1)}%` : '—'}
+                      </td>
+                      {/* New Paid Goal */}
+                      <td className="text-right p-2 text-muted-foreground">{formatNumber(month.newPaid)}</td>
+                      {/* New Paid Actual - total */}
+                      <td className="text-right p-2 font-semibold">{totalNewPaid > 0 ? formatNumber(totalNewPaid) : '—'}</td>
+                      {/* New Paid Growth */}
+                      <td className="text-right p-2 text-muted-foreground">—</td>
+                      {/* Paid Conv Rate */}
+                      <td className="text-right p-2 font-medium">
+                        {totalPaidConvRate !== null ? `${totalPaidConvRate.toFixed(1)}%` : '—'}
+                      </td>
+                      {/* Churn - total */}
+                      <td className="text-right p-2 font-semibold">{totalChurn > 0 ? formatNumber(totalChurn) : '—'}</td>
+                      {/* Churn Rate */}
+                      <td className={`text-right p-2 font-medium ${totalChurnRate !== null && totalChurnRate > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {totalChurnRate !== null ? `${totalChurnRate.toFixed(1)}%` : '—'}
+                      </td>
+                      {/* Total Subs Goal */}
+                      <td className="text-right p-2 text-muted-foreground">{formatNumber(month.totalSubs)}</td>
+                      {/* Total Subs Actual - total */}
+                      <td className="text-right p-2 font-semibold">{totalSubs > 0 ? formatNumber(totalSubs) : '—'}</td>
+                      {/* MRR Goal */}
+                      <td className="text-right p-2 text-muted-foreground">{formatCurrency(month.mrr)}</td>
+                      {/* MRR Actual - total */}
+                      <td className="text-right p-2 font-semibold">{totalMRR > 0 ? formatCurrency(totalMRR) : '—'}</td>
+                      {/* ARR Goal */}
+                      <td className="text-right p-2 text-muted-foreground">{formatCurrency(month.arr)}</td>
+                      {/* ARR Actual - total */}
+                      <td className="text-right p-2 font-semibold">{totalARR > 0 ? formatCurrency(totalARR) : '—'}</td>
+                    </tr>
+                  );
+                  
+                  return [...platformRows, totalRow];
                 })}
               </tbody>
             </table>
@@ -2582,7 +2678,48 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     // Platforms to render
                     const platforms: Platform[] = ['web', 'app'];
                     
-                    return platforms.map((platform, platformIdx) => {
+                    // Calculate totals for web + app
+                    const webActual = getActualData(week.week, 'web');
+                    const appActual = getActualData(week.week, 'app');
+                    const webOverrides = webActual?.overrides || {};
+                    
+                    // Web effective values
+                    const webViews = webOverrides.views ? (webActual?.views || 0) : (viewsByWeek[week.week] ?? 0);
+                    const webSignups = webOverrides.signups ? (webActual?.signups || 0) : (signupsByWeek[week.week] ?? 0);
+                    const webNewPaid = webOverrides.new_paid ? (webActual?.newPaid || 0) : (newPaidByWeek[week.week] ?? webActual?.newPaid ?? 0);
+                    const webChurn = webOverrides.churn ? (webActual?.churn || 0) : (churnByWeek[week.week] || 0);
+                    const webSubs = webOverrides.subscribers ? (webActual?.subscribers || 0) : (actualSubsByWeek[week.week] ?? 0);
+                    const webMRR = webActual?.mrr || 0;
+                    const webARR = webActual?.arr || 0;
+                    
+                    // App values (always manual)
+                    const appViews = appActual?.views || 0;
+                    const appSignups = appActual?.signups || 0;
+                    const appNewPaid = appActual?.newPaid || 0;
+                    const appChurn = appActual?.churn || 0;
+                    const appSubs = appActual?.subscribers || 0;
+                    const appMRR = appActual?.mrr || 0;
+                    const appARR = appActual?.arr || 0;
+                    
+                    // Totals
+                    const totalViews = webViews + appViews;
+                    const totalSignups = webSignups + appSignups;
+                    const totalNewPaid = webNewPaid + appNewPaid;
+                    const totalChurn = webChurn + appChurn;
+                    const totalSubs = webSubs + appSubs;
+                    const totalMRR = webMRR + appMRR;
+                    const totalARR = webARR + appARR;
+                    
+                    // Total conversion rates
+                    const totalSignupConvRate = totalViews > 0 && totalSignups > 0 ? (totalSignups / totalViews) * 100 : null;
+                    const totalPaidConvRate = totalSignups > 0 && totalNewPaid > 0 ? (totalNewPaid / totalSignups) * 100 : null;
+                    
+                    // Total variances
+                    const totalSubsVar = getVariance(totalSubs, week.subscribers);
+                    const totalMrrVar = getVariance(totalMRR, week.mrr);
+                    const totalArrVar = getVariance(totalARR, week.arr);
+                    
+                    const platformRows = platforms.map((platform, platformIdx) => {
                     const actual = getActualData(week.week, platform);
                     
                     // Get auto-fetched data (only for web platform)
@@ -2659,7 +2796,6 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${platform === 'web' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'}`}>
                             {platform === 'web' ? '🌐 Web' : '📱 App'}
                           </span>
-                          {platformIdx === 0 && <span className="ml-2 text-[10px]">{week.dateRange}</span>}
                         </td>
                         {/* Views */}
                         <td className="text-right p-1">{platformIdx === 0 ? formatNumber(week.visitors) : ''}</td>
@@ -2948,6 +3084,77 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       </tr>
                     );
                     }); // end platforms.map
+                    
+                    // Total row
+                    const totalRow = (
+                      <tr key={`${week.week}_total`} className={`border-b bg-muted/30 font-medium ${week.week === weeklyProjections.length ? 'bg-primary/10' : ''}`}>
+                        <td className="p-2"></td>
+                        <td className="p-2 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+                            total
+                          </span>
+                          <span className="ml-2 text-[10px] text-muted-foreground">{week.dateRange}</span>
+                        </td>
+                        {/* Views Goal */}
+                        <td className="text-right p-1 text-muted-foreground">{formatNumber(week.visitors)}</td>
+                        {/* Views Actual - total */}
+                        <td className="text-right p-1 font-semibold text-[10px]">{totalViews > 0 ? formatNumber(totalViews) : '—'}</td>
+                        {/* Growth - skip */}
+                        <td className="text-right p-1 text-muted-foreground text-[10px]">—</td>
+                        {/* Signups Goal */}
+                        <td className="text-right p-1">{formatNumber(week.signups)}</td>
+                        {/* Signups Actual - total */}
+                        <td className="text-right p-1 font-semibold text-[10px]">{totalSignups > 0 ? formatNumber(totalSignups) : '—'}</td>
+                        {/* Growth - skip */}
+                        <td className="text-right p-1 text-muted-foreground text-[10px]">—</td>
+                        {/* Signup Conv Rate */}
+                        <td className="text-right p-1 text-[10px] font-medium">
+                          {totalSignupConvRate !== null ? `${totalSignupConvRate.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* New Paid Goal */}
+                        <td className="text-right p-1">{formatNumber(week.newPaid)}</td>
+                        {/* New Paid Actual - total */}
+                        <td className="text-right p-1 font-semibold text-[10px]">{totalNewPaid > 0 ? formatNumber(totalNewPaid) : '—'}</td>
+                        {/* Growth - skip */}
+                        <td className="text-right p-1 text-muted-foreground text-[10px]">—</td>
+                        {/* Paid Conv Rate */}
+                        <td className="text-right p-1 text-[10px] font-medium">
+                          {totalPaidConvRate !== null ? `${totalPaidConvRate.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* Churn - total */}
+                        <td className="text-right p-1 font-semibold text-[10px]">{totalChurn > 0 ? formatNumber(totalChurn) : '—'}</td>
+                        {/* Churn Rate - skip */}
+                        <td className="text-right p-1 text-muted-foreground text-[10px]">—</td>
+                        {/* Subscribers Goal */}
+                        <td className="text-right p-1 font-medium">{formatNumber(week.subscribers)}</td>
+                        {/* Subscribers Actual - total */}
+                        <td className="text-right p-1 font-semibold text-[10px]">{totalSubs > 0 ? formatNumber(totalSubs) : '—'}</td>
+                        {/* Subs Var */}
+                        <td className={`text-right p-1 text-[10px] ${totalSubsVar.color}`}>
+                          {totalSubs > 0 ? `${totalSubsVar.value >= 0 ? '+' : ''}${totalSubsVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* MRR Goal */}
+                        <td className="text-right p-1">{formatCurrency(week.mrr)}</td>
+                        {/* MRR Actual - total */}
+                        <td className="text-right p-1 font-semibold text-[10px]">{totalMRR > 0 ? toShorthand(totalMRR) : '—'}</td>
+                        {/* MRR Var */}
+                        <td className={`text-right p-1 text-[10px] ${totalMrrVar.color}`}>
+                          {totalMRR > 0 ? `${totalMrrVar.value >= 0 ? '+' : ''}${totalMrrVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* ARR Goal */}
+                        <td className="text-right p-1 font-medium">{formatCurrency(week.arr)}</td>
+                        {/* ARR Actual - total */}
+                        <td className="text-right p-1 font-semibold text-[10px]">{totalARR > 0 ? toShorthand(totalARR) : '—'}</td>
+                        {/* ARR Var */}
+                        <td className={`text-right p-1 text-[10px] ${totalArrVar.color}`}>
+                          {totalARR > 0 ? `${totalArrVar.value >= 0 ? '+' : ''}${totalArrVar.value.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* Delete - empty */}
+                        <td className="p-1"></td>
+                      </tr>
+                    );
+                    
+                    return [...platformRows, totalRow];
                   })}
                 </tbody>
               </table>
