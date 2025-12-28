@@ -1,8 +1,8 @@
 'use client';
 import { siteConfig } from '@/lib/site-config';
-import { AnimatedBg } from '@/components/ui/animated-bg';
 import { Badge } from '@/components/ui/badge';
 import { useIsMobile } from '@/hooks/utils';
+import dynamic from 'next/dynamic';
 import { useHolidayPromoCountdown } from '@/hooks/utils/use-holiday-promo';
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import Link from 'next/link';
@@ -20,7 +20,24 @@ import {
 } from '@/components/ui/dialog';
 import { isLocalMode } from '@/lib/config';
 import { toast } from 'sonner';
-import { ChatInput, ChatInputHandles } from '@/components/thread/chat-input/chat-input';
+import type { ChatInputHandles } from '@/components/thread/chat-input/chat-input';
+
+// Use next/dynamic with ssr:false to prevent prefetching heavy chunks
+const AnimatedBg = dynamic(
+    () => import('@/components/ui/animated-bg').then(mod => mod.AnimatedBg),
+    { ssr: false }
+);
+
+// Use next/dynamic with ssr:false to PREVENT prefetching the 1.4MB chunk
+const ChatInput = dynamic(
+    () => import('@/components/thread/chat-input/chat-input').then(mod => mod.ChatInput),
+    { 
+        ssr: false,
+        loading: () => (
+            <div className="w-full h-[140px] rounded-2xl bg-card/50 border border-border/50 animate-pulse" />
+        )
+    }
+);
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { agentKeys } from '@/hooks/agents/keys';
@@ -389,8 +406,8 @@ export function HeroSection() {
                         </div>
                     )}
 
-                    <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-12 sm:pt-20 max-w-4xl mx-auto pb-6 sm:pb-7 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
-                        <DynamicGreeting className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium text-balance text-center px-4 sm:px-2" />
+                    <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-12 sm:pt-20 max-w-4xl mx-auto pb-6 sm:pb-7">
+                        <DynamicGreeting className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-medium text-balance text-center px-4 sm:px-2" />
                     </div>
 
                     <div className="flex flex-col items-center w-full max-w-3xl mx-auto gap-2 flex-wrap justify-center px-4 sm:px-0 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100 fill-mode-both">

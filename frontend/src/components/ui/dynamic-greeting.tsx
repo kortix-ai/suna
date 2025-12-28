@@ -91,9 +91,9 @@ export function DynamicGreeting({ className }: DynamicGreetingProps) {
     return 0;
   };
 
-  // Show placeholder during SSR
+  // Show visible static text during SSR so it can be the LCP element
   if (!mounted) {
-    return <p className={cn('tracking-tight opacity-0', className)}>&nbsp;</p>;
+    return <p className={cn('tracking-tight', className)}>Let&apos;s build something awesome</p>;
   }
 
   return (
