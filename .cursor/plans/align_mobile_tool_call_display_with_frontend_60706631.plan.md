@@ -41,10 +41,10 @@ The mobile app's parallel tool rendering fixes are implemented in `useAgentStrea
 - Show `CheckCircle2` icon when completed, `CircleDashed` spinner when streaming
 - Match the frontend's completion detection logic:
   ```typescript
-    const isCompleted = toolCall?.completed === true || 
-                       (toolCall?.tool_result !== undefined && 
-                        toolCall?.tool_result !== null &&
-                        (typeof toolCall.tool_result === 'object' || Boolean(toolCall.tool_result)));
+      const isCompleted = toolCall?.completed === true || 
+                         (toolCall?.tool_result !== undefined && 
+                          toolCall?.tool_result !== null &&
+                          (typeof toolCall.tool_result === 'object' || Boolean(toolCall.tool_result)));
   ```
 
 
@@ -103,4 +103,3 @@ The mobile app's parallel tool rendering fixes are implemented in `useAgentStrea
 - [ ] Each tool shows checkmark icon when completed
 - [ ] Completed tools remain visible while other tools are still streaming
 - [ ] No tools disappear when other tools complete
-- [ ] Tool call boxes match frontend visual style (checkmark color, spinner animation)
