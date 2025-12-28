@@ -146,6 +146,8 @@ class ModelRegistry:
             # test_litellm_id = "openrouter/deepseek/deepseek-v3.2-speciale" 164K context $0.27/M input tokens $0.41/M output tokens
             # test_litellm_id = "openrouter/deepseek/deepseek-v3.2" 164K context $0.26/M input tokens $0.38/M output tokens
 
+            test_litellm_id ="groq/moonshotai/kimi-k2-instruct" 
+
             self.register(Model(
                 id="kortix/test",
                 name="Kortix Test",
