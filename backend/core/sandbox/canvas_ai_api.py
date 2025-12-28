@@ -98,8 +98,8 @@ class OCRResponse(BaseModel):
 ACTION_MODELS = {
     "remove_bg": "replicate-remove-bg",   # Replicate 851-labs/background-remover
     "upscale": "replicate-upscale",       # Replicate recraft-ai/recraft-crisp-upscale
-    "edit_text": "gemini-flash",          # OpenRouter Gemini Flash (fast & reliable)
-    "mark_edit": "gemini-flash",          # OpenRouter Gemini Flash (fast & reliable)
+    "edit_text": "replicate-gpt",         # Replicate GPT Image 1.5 (quality: low)
+    "mark_edit": "replicate-gpt",         # Replicate GPT Image 1.5 (quality: low)
 }
 
 
@@ -135,22 +135,24 @@ def get_action_prompt(action: str, user_prompt: Optional[str] = None) -> str:
 
 
 async def process_with_replicate_gpt(image_bytes: bytes, mime_type: str, prompt: str) -> str:
-    """Process image using GPT Image via Replicate (openai/gpt-image-1.5)"""
+    """Process image using GPT Image via Replicate (openai/gpt-image-1.5) with quality: low"""
     _get_replicate_token()
     
     # Convert bytes to data URL
     image_b64 = base64.b64encode(image_bytes).decode('utf-8')
     image_data_url = f"data:{mime_type};base64,{image_b64}"
     
-    logger.info("Calling Replicate openai/gpt-image-1.5")
+    logger.info(f"Calling Replicate openai/gpt-image-1.5 for editing with quality: low (image size: {len(image_bytes)} bytes)")
     
     try:
         output = replicate.run(
             "openai/gpt-image-1.5",
             input={
-                "image": image_data_url,
                 "prompt": prompt,
-                "size": "1024x1024",
+                "input_images": [image_data_url],  # For editing, use input_images array
+                "aspect_ratio": "1:1",
+                "number_of_images": 1,
+                "quality": "low",  # Use low quality for cost efficiency ($0.02/image)
             }
         )
         
@@ -333,8 +335,8 @@ async def process_image(
     Actions:
     - upscale: Enhance image resolution (Replicate recraft-ai/recraft-crisp-upscale)
     - remove_bg: Remove background (Replicate 851-labs/background-remover)
-    - edit_text: Edit text content in the image (GPT)
-    - mark_edit: Apply AI edits based on prompt (Gemini Pro)
+    - edit_text: Edit text content in the image (Replicate GPT Image 1.5, quality: low)
+    - mark_edit: Apply AI edits based on prompt (Replicate GPT Image 1.5, quality: low)
     """
     # Backend decides which model to use per action
     model_key = ACTION_MODELS.get(request.action, DEFAULT_MODEL)
@@ -398,14 +400,19 @@ async def process_image(
         billing_model = MODELS.get(model_key, model_key)
         provider = "replicate" if model_key.startswith("replicate-") else "openrouter"
         
-        await media_billing.deduct_media_credits(
-            account_id=user_id,
-            provider=provider,
-            model=billing_model,
-            media_type="image",
-            count=1,
-            description=f"Canvas {request.action}",
-        )
+        # For GPT Image 1.5, specify quality variant for correct pricing
+        billing_kwargs = {
+            "account_id": user_id,
+            "provider": provider,
+            "model": billing_model,
+            "media_type": "image",
+            "count": 1,
+            "description": f"Canvas {request.action}",
+        }
+        if model_key == "replicate-gpt":
+            billing_kwargs["variant"] = "low"  # GPT Image quality: low ($0.02/image)
+        
+        await media_billing.deduct_media_credits(**billing_kwargs)
         
         return ImageEditResponse(
             success=True,
