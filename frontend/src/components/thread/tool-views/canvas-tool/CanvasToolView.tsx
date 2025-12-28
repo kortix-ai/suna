@@ -106,36 +106,86 @@ export function CanvasToolView({
   const toolName = toolCall?.function_name || '';
   const args = toolCall?.arguments || {};
 
-  // Check if this is a create canvas action
-  const isCreateCanvas = toolName.includes('create_canvas') || toolName.includes('create-canvas');
+  // Check if this is a create canvas action (explicit create_canvas tool)
+  const isExplicitCreateCanvas = toolName.includes('create_canvas') || toolName.includes('create-canvas');
+  // Check if this is image generation that adds to canvas
+  const isImageGenToCanvas = (toolName.includes('image_edit') || toolName.includes('image-edit')) && args.canvas_path;
+  // Any operation that involves a canvas path should auto-open
+  const hasCanvasPath = !!(args.canvas_path || canvasPath);
 
-  // Track if we've already auto-opened to prevent duplicate opens
+  // Track if we mounted WITH a result already (viewing history) - never auto-open in that case
+  // vs mounted WITHOUT result and later got one (live operation) - should auto-open
+  const mountedWithResultRef = useRef(!!toolResult);
   const hasAutoOpenedRef = useRef(false);
 
-  // Auto-open canvas editor when canvas is created successfully
+  // Debug logging on mount
   useEffect(() => {
+    console.log('[CanvasToolView] Mounted', {
+      toolName,
+      hasCanvasPath,
+      mountedWithResult: mountedWithResultRef.current,
+      toolResult: !!toolResult,
+      actualIsSuccess,
+      isStreaming,
+      canvasPath,
+      canvasName,
+      argsCanvasPath: args.canvas_path,
+      hasOnFileClick: !!onFileClick,
+    });
+  }, []);
+
+  // Auto-open canvas editor when tool completes (only for live operations, not history)
+  useEffect(() => {
+    const path = canvasPath || args.canvas_path || (canvasName ? `canvases/${canvasName}.kanvax` : null);
+
+    console.log('[CanvasToolView] Effect triggered', {
+      mountedWithResult: mountedWithResultRef.current,
+      hasToolResult: !!toolResult,
+      actualIsSuccess,
+      hasCanvasPath,
+      hasOnFileClick: !!onFileClick,
+      hasPath: !!path,
+      hasAutoOpened: hasAutoOpenedRef.current,
+      path,
+    });
+
+    // If we mounted with a result already, we're viewing history - don't auto-open
+    if (mountedWithResultRef.current) {
+      console.log('[CanvasToolView] Skipping auto-open: mounted with result (viewing history)');
+      return;
+    }
+
+    // If we now have a result, success, and a canvas path, auto-open
     if (
-      isCreateCanvas &&
+      toolResult &&
       actualIsSuccess &&
-      !isStreaming &&
+      hasCanvasPath &&
       onFileClick &&
-      (canvasPath || canvasName) &&
+      path &&
       !hasAutoOpenedRef.current
     ) {
+      console.log('[CanvasToolView] Auto-opening canvas:', path);
       hasAutoOpenedRef.current = true;
-      const path = canvasPath || (canvasName ? `canvases/${canvasName}.kanvax` : null);
-      if (path) {
-        // Small delay to ensure the file is written
-        setTimeout(() => {
-          onFileClick(path);
-        }, 100);
-      }
+      // Delay to let user see the success state briefly before opening canvas
+      setTimeout(() => {
+        console.log('[CanvasToolView] Executing onFileClick for:', path);
+        onFileClick(path);
+      }, 500);
+    } else if (!hasAutoOpenedRef.current) {
+      console.log('[CanvasToolView] Not auto-opening, missing conditions:', {
+        hasToolResult: !!toolResult,
+        actualIsSuccess,
+        hasCanvasPath,
+        hasOnFileClick: !!onFileClick,
+        hasPath: !!path,
+      });
     }
-  }, [isCreateCanvas, actualIsSuccess, isStreaming, onFileClick, canvasPath, canvasName]);
+  }, [toolResult, actualIsSuccess, hasCanvasPath, onFileClick, canvasPath, canvasName, args.canvas_path]);
 
   // Determine what action was taken
   const getActionInfo = () => {
-    if (isCreateCanvas) {
+    // Explicit create_canvas or image gen that creates/adds to canvas
+    if (isExplicitCreateCanvas || isImageGenToCanvas) {
       return {
         icon: Sparkles,
         title: 'Canvas Created',
