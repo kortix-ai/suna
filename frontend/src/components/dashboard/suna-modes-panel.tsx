@@ -1289,7 +1289,6 @@ export function SunaModesPanel({
         <div className="grid grid-cols-3 gap-2 sm:inline-flex sm:gap-2">
           {modes.map((mode) => {
             const isActive = selectedMode === mode.id;
-            const isVideoLocked = mode.id === 'video' && isFreeTier;
             return (
               <Button
                 key={mode.id}
@@ -1300,15 +1299,11 @@ export function SunaModesPanel({
                   "h-10 flex items-center justify-center sm:justify-start gap-2 shrink-0 transition-all duration-200 rounded-xl cursor-pointer relative",
                   isActive
                     ? "bg-primary/10 text-primary border-primary hover:bg-primary/15 hover:text-primary shadow-sm"
-                    : "bg-background hover:bg-accent text-muted-foreground hover:text-foreground border-border",
-                  isVideoLocked && !isActive && "opacity-75"
+                    : "bg-background hover:bg-accent text-muted-foreground hover:text-foreground border-border"
                 )}
               >
                 {mode.icon}
                 <span>{mode.label}</span>
-                {isVideoLocked && (
-                  <Lock className="w-3 h-3 text-muted-foreground" />
-                )}
               </Button>
             );
           })}
