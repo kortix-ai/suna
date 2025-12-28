@@ -2394,18 +2394,14 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                         </div>
                       </td>
                       {/* Visitors */}
-                      <td className="text-right p-2 text-muted-foreground">
-                        {platform === 'web' ? formatNumber(month.visitors) : '—'}
-                      </td>
+                      <td className="text-right p-2"></td>
                       {renderEditableMonthlyCell('views', autoViews, month.visitors)}
                       {/* % Growth */}
                       <td className={`text-right p-2 font-medium ${getGrowthColor(viewsGrowth)}`}>
                         {platform === 'web' ? formatGrowth(viewsGrowth) : '—'}
                       </td>
                       {/* Signups */}
-                      <td className="text-right p-2 text-muted-foreground">
-                        {platform === 'web' ? formatNumber(month.signups) : '—'}
-                      </td>
+                      <td className="text-right p-2"></td>
                       {renderEditableMonthlyCell('signups', autoSignups, month.signups)}
                       {/* Signups Growth */}
                       <td className={`text-right p-2 font-medium ${getGrowthColor(signupsGrowth)}`}>
@@ -2416,9 +2412,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                         {signupConvRate !== null ? `${signupConvRate.toFixed(1)}%` : '—'}
                       </td>
                       {/* New Paid */}
-                      <td className="text-right p-2 text-muted-foreground">
-                        {platform === 'web' ? formatNumber(month.newPaid) : '—'}
-                      </td>
+                      <td className="text-right p-2"></td>
                       {renderEditableMonthlyCell('newPaid', autoNewPaid, month.newPaid)}
                       {/* New Paid Growth */}
                       <td className={`text-right p-2 font-medium ${getGrowthColor(newPaidGrowth)}`}>
@@ -2435,19 +2429,13 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                         {churnRate !== null ? `${churnRate.toFixed(1)}%` : '—'}
                       </td>
                       {/* Total Subs */}
-                      <td className="text-right p-2 text-muted-foreground">
-                        {platform === 'web' ? formatNumber(month.totalSubs) : '—'}
-                      </td>
+                      <td className="text-right p-2"></td>
                       {renderEditableMonthlyCell('subscribers', effectiveSubs, month.totalSubs)}
                       {/* MRR */}
-                      <td className="text-right p-2 text-muted-foreground">
-                        {platform === 'web' ? formatCurrency(month.mrr) : '—'}
-                      </td>
+                      <td className="text-right p-2"></td>
                       {renderEditableMonthlyCell('mrr', effectiveMRR, month.mrr, true)}
                       {/* ARR */}
-                      <td className="text-right p-2 text-muted-foreground">
-                        {platform === 'web' ? formatCurrency(month.arr) : '—'}
-                      </td>
+                      <td className="text-right p-2"></td>
                       {renderEditableMonthlyCell('arr', effectiveARR, month.arr, true)}
                     </tr>
                   );
@@ -2798,7 +2786,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           </span>
                         </td>
                         {/* Views */}
-                        <td className="text-right p-1">{platformIdx === 0 ? formatNumber(week.visitors) : ''}</td>
+                        <td className="text-right p-1"></td>
                         <td className="text-right p-1">
                           <div className="flex items-center justify-end gap-1">
                             {(viewsOverridden || platform === 'app') && (
@@ -2835,7 +2823,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           {formatGrowth(viewsGrowth)}
                         </td>
                         {/* Signups */}
-                        <td className="text-right p-1">{platformIdx === 0 ? formatNumber(week.signups) : ''}</td>
+                        <td className="text-right p-1"></td>
                         <td className="text-right p-1">
                           <div className="flex items-center justify-end gap-1">
                             {(signupsOverridden || platform === 'app') && (
@@ -2876,7 +2864,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           {signupConvRate !== null ? `${signupConvRate.toFixed(1)}%` : '—'}
                         </td>
                         {/* New Paid */}
-                        <td className="text-right p-1">{platformIdx === 0 ? formatNumber(week.newPaid) : ''}</td>
+                        <td className="text-right p-1"></td>
                         <td className="text-right p-1">
                           <div className="flex items-center justify-end gap-1">
                             {(newPaidOverridden || platform === 'app') && (
@@ -2965,7 +2953,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           );
                         })()}
                         {/* Subscribers */}
-                        <td className="text-right p-1 font-medium">{formatNumber(week.subscribers)}</td>
+                        <td className="text-right p-1"></td>
                         <td className="text-right p-1">
                           <div className="flex items-center justify-end gap-1">
                             {(subscribersOverridden || platform === 'app') && (
@@ -3001,7 +2989,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           {effectiveSubs > 0 ? `${subsVar.value >= 0 ? '+' : ''}${subsVar.value.toFixed(1)}%` : '—'}
                         </td>
                         {/* MRR */}
-                        <td className="text-right p-1">{formatCurrency(week.mrr)}</td>
+                        <td className="text-right p-1"></td>
                         <td className="text-right p-1">
                           <div className="flex items-center justify-end gap-1">
                             {(isFieldOverridden(week.week, platform, 'mrr') || platform === 'app') && (
@@ -3036,7 +3024,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           {actual?.mrr ? `${mrrVar.value >= 0 ? '+' : ''}${mrrVar.value.toFixed(1)}%` : '—'}
                         </td>
                         {/* ARR */}
-                        <td className="text-right p-1 font-medium">{formatCurrency(week.arr)}</td>
+                        <td className="text-right p-1"></td>
                         <td className="text-right p-1">
                           <div className="flex items-center justify-end gap-1">
                             {(isFieldOverridden(week.week, platform, 'arr') || platform === 'app') && (
