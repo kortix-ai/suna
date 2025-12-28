@@ -6,6 +6,7 @@ import type { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/api/types'
 import { API_URL, getAuthToken } from '@/api/config';
 import { safeJsonParse } from '@/lib/utils/message-grouping';
 import { chatKeys } from '@/lib/chat';
+import { sseLogger } from '@/lib/utils/sse-logger';
 
 interface UseAgentStreamResult {
   status: string;
@@ -46,6 +47,12 @@ export function useAgentStream(
   
   // Throttled content update function for smoother streaming
   const flushPendingContent = useCallback(() => {
+    // Clear and release any pending throttle to avoid starving updates
+    if (throttleRef.current) {
+      clearTimeout(throttleRef.current);
+      throttleRef.current = null;
+    }
+
     if (pendingContentRef.current.length > 0) {
       // Sort chunks by sequence before adding to state
       const sortedContent = pendingContentRef.current.slice().sort((a, b) => {
@@ -71,13 +78,15 @@ export function useAgentStream(
   const addContentThrottled = useCallback((content: { content: string; sequence?: number }) => {
     pendingContentRef.current.push(content);
     
-    // Clear existing throttle
+    // True throttle: only schedule a flush if one isn't already pending
     if (throttleRef.current) {
-      clearTimeout(throttleRef.current);
+      return;
     }
     
-    // Set new throttle for smooth updates (16ms ≈ 60fps)
-    throttleRef.current = setTimeout(flushPendingContent, 16);
+    // Set throttle for smooth updates (16ms ≈ 60fps)
+    throttleRef.current = setTimeout(() => {
+      flushPendingContent();
+    }, 16);
   }, [flushPendingContent]);
   
   const [toolCall, setToolCall] = useState<UnifiedMessage | null>(null); // Changed from ParsedContent
@@ -247,6 +256,11 @@ export function useAgentStream(
         `[useAgentStream] Finalizing stream with status: ${finalStatus}, runId: ${runId}`,
       );
 
+      // Finalize SSE logging
+      sseLogger.finalize().catch(() => {
+        // Silently fail if logging fails
+      });
+
       const currentThreadId = threadIdRef.current;
       const currentSetMessages = setMessagesRef.current;
 
@@ -307,6 +321,15 @@ export function useAgentStream(
     (rawData: string) => {
       if (!isMountedRef.current) return;
 
+      // Log raw SSE message
+      const currentRunId = currentRunIdRef.current;
+      const currentThreadId = threadIdRef.current;
+      if (currentRunId && currentThreadId) {
+        sseLogger.logRawMessage(rawData, currentRunId, currentThreadId).catch(() => {
+          // Silently fail if logging fails
+        });
+      }
+
       let processedData = rawData;
       if (processedData.startsWith('data: ')) {
         processedData = processedData.substring(6).trim();
@@ -342,13 +365,48 @@ export function useAgentStream(
           callbacks.onError?.(errorMessage);
           return;
         }
-        // Handle ping messages (keep-alive) - ignore silently
+        // Handle ping messages (keep-alive) - only ignore if truly empty
         if (jsonData.type === 'ping') {
-          return;
+          // Only ignore ping if it has no content field or content is empty
+          if (!jsonData.content) {
+            return;
+          }
+          // If ping has content, log it and continue processing (shouldn't happen, but safer)
+          console.log('[useAgentStream] ⚠️ Ping message with content, continuing processing:', {
+            hasContent: !!jsonData.content,
+            contentLength: jsonData.content?.length,
+          });
+          // Continue to normal processing path below
         }
-        // Handle tool_output_stream messages - ignore for now (not used in mobile yet)
+        // Handle tool_output_stream messages - only ignore if truly empty
         if (jsonData.type === 'tool_output_stream') {
-          return;
+          // Log what we're receiving for debugging
+          console.log('[useAgentStream] 📦 Received tool_output_stream message:', {
+            tool_call_id: jsonData.tool_call_id,
+            tool_name: jsonData.tool_name,
+            hasOutput: !!jsonData.output,
+            outputLength: jsonData.output?.length,
+            is_final: jsonData.is_final,
+          });
+          
+          // Only ignore tool_output_stream if it has no output field or output is empty
+          if (!jsonData.output) {
+            console.log('[useAgentStream] Ignoring empty tool_output_stream');
+            return;
+          }
+          
+          // If tool_output_stream has output but shouldn't be processed as text, log it
+          // Note: tool_output_stream is for tool output streaming, not regular text chunks
+          // But we log it to help debug if text chunks are being mislabeled
+          const outputStr = typeof jsonData.output === 'string' ? jsonData.output : String(jsonData.output);
+          console.log('[useAgentStream] ⚠️ tool_output_stream with output (not processing as text):', {
+            outputPreview: outputStr.substring(0, 100),
+            outputLength: outputStr.length,
+            outputType: typeof jsonData.output,
+          });
+          // Continue to normal processing path below - this allows the message to be processed
+          // if it's actually a mislabeled text chunk, but typically tool_output_stream
+          // should be handled separately (not implemented in mobile yet)
         }
       } catch (jsonError) {
         // Not JSON or could not parse as JSON, continue processing
@@ -512,6 +570,25 @@ export function useAgentStream(
               console.log('[useAgentStream] Successfully connected, resetting retry counter');
               retryCountRef.current = 0;
             }
+            
+            // Log text chunk to file
+            const currentRunId = currentRunIdRef.current;
+            const currentThreadId = threadIdRef.current;
+            if (currentRunId && currentThreadId) {
+              sseLogger.logTextChunk({
+                timestamp: new Date().toISOString(),
+                runId: currentRunId,
+                threadId: currentThreadId,
+                sequence: message.sequence,
+                content: parsedContent.content,
+                contentLength: parsedContent.content.length,
+                messageType: 'assistant_chunk',
+                rawMessage: message,
+              }).catch(() => {
+                // Silently fail if logging fails
+              });
+            }
+            
             // Use throttled approach for smoother streaming
             addContentThrottled({
               sequence: message.sequence,
@@ -666,11 +743,11 @@ export function useAgentStream(
               // Optional: Handle finish reasons like 'xml_tool_limit_reached'
               // Don't finalize here, wait for thread_run_end or completion message
               break;
-            case 'thread_run_end':
-              // Thread run has ended - finalize the stream
-              console.log(`[useAgentStream] 🏁 Thread run ended - finalizing stream`);
-              finalizeStream('completed', currentRunIdRef.current);
-              break;
+            // case 'thread_run_end':
+            //   // Thread run has ended - finalize the stream
+            //   console.log(`[useAgentStream] 🏁 Thread run ended - finalizing stream`);
+            //   finalizeStream('completed', currentRunIdRef.current);
+            //   break;
             case 'error':
               setError(parsedContent.message || 'Worker run failed');
               finalizeStream('error', currentRunIdRef.current);
@@ -880,6 +957,11 @@ export function useAgentStream(
       }
       
       flushPendingContent();
+      
+      // Finalize SSE logging on unmount
+      sseLogger.finalize().catch(() => {
+        // Silently fail if logging fails
+      });
     };
   }, [flushPendingContent]);
 
@@ -914,6 +996,13 @@ export function useAgentStream(
         setError(null);
         updateStatus('connecting');
         setAgentRunId(runId);
+
+        // Initialize SSE logging
+        await sseLogger.initialize(runId, threadId);
+        const logFilePath = sseLogger.getLogFilePath();
+        if (logFilePath) {
+          console.log(`[SSE-LOG] 📝 Logging all text chunks to: ${logFilePath}`);
+        }
 
         // Get auth credentials (token for authenticated users)
         const token = await getAuthToken();
