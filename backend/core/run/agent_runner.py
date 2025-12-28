@@ -98,9 +98,24 @@ class AgentRunner:
             
             cached_project = await get_cached_project_metadata(self.config.project_id)
             if not cached_project:
-                project = await self.client.table('projects').select('project_id, sandbox').eq('project_id', self.config.project_id).execute()
+                project = await self.client.table('projects').select('project_id, sandbox_resource_id').eq('project_id', self.config.project_id).execute()
                 if project.data:
-                    await set_cached_project_metadata(self.config.project_id, project.data[0].get('sandbox', {}))
+                    project_data = project.data[0]
+                    sandbox_resource_id = project_data.get('sandbox_resource_id')
+                    
+                    # Get sandbox info from resource if it exists
+                    sandbox_info = {}
+                    if sandbox_resource_id:
+                        from core.resources import ResourceService
+                        resource_service = ResourceService(self.client)
+                        resource = await resource_service.get_resource_by_id(sandbox_resource_id)
+                        if resource:
+                            sandbox_info = {
+                                'id': resource.get('external_id'),
+                                **resource.get('config', {})
+                            }
+                    
+                    await set_cached_project_metadata(self.config.project_id, sandbox_info)
             
             if hasattr(self.thread_manager, 'mcp_loader') and self.thread_manager.mcp_loader:
                 if len(self.thread_manager.mcp_loader.tool_map) == 0:
@@ -193,16 +208,34 @@ class AgentRunner:
             cached_project = await get_cached_project_metadata(self.config.project_id)
             if cached_project:
                 project_data = cached_project
+                sandbox_info = cached_project  # Cache stores sandbox metadata directly
                 logger.debug(f"⏱️ [TIMING] ⚡ Project from cache: {(time.time() - q_start) * 1000:.1f}ms")
             else:
-                project = await self.client.table('projects').select('project_id, sandbox').eq('project_id', self.config.project_id).execute()
+                from core.resources import ResourceService
+                resource_service = ResourceService(self.client)
+                
+                # Lazy migration: Migrate sandbox JSONB to resources table if needed
+                await resource_service.migrate_project_sandbox_if_needed(self.config.project_id)
+                
+                project = await self.client.table('projects').select('project_id, sandbox_resource_id').eq('project_id', self.config.project_id).execute()
                 
                 if not project.data or len(project.data) == 0:
                     raise ValueError(f"Project {self.config.project_id} not found")
                 
                 project_data = project.data[0]
+                sandbox_resource_id = project_data.get('sandbox_resource_id')
                 
-                await set_cached_project_metadata(self.config.project_id, project_data.get('sandbox', {}))
+                # Get sandbox info from resource if it exists
+                sandbox_info = {}
+                if sandbox_resource_id:
+                    resource = await resource_service.get_resource_by_id(sandbox_resource_id)
+                    if resource:
+                        sandbox_info = {
+                            'id': resource.get('external_id'),
+                            **resource.get('config', {})
+                        }
+                
+                await set_cached_project_metadata(self.config.project_id, sandbox_info)
                 logger.debug(f"⏱️ [TIMING] Project query + cache set: {(time.time() - q_start) * 1000:.1f}ms")
         else:
             parallel_start = time.time()
@@ -210,7 +243,7 @@ class AgentRunner:
             from core.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
             
             thread_query = self.client.table('threads').select('account_id').eq('thread_id', self.config.thread_id).execute()
-            project_query = self.client.table('projects').select('project_id, sandbox').eq('project_id', self.config.project_id).execute()
+            project_query = self.client.table('projects').select('project_id, sandbox_resource_id').eq('project_id', self.config.project_id).execute()
             
             response, project = await asyncio.gather(thread_query, project_query)
             logger.debug(f"⏱️ [TIMING] Parallel DB queries (thread + project): {(time.time() - parallel_start) * 1000:.1f}ms")
@@ -227,10 +260,22 @@ class AgentRunner:
                 raise ValueError(f"Project {self.config.project_id} not found")
 
             project_data = project.data[0]
+            sandbox_resource_id = project_data.get('sandbox_resource_id')
             
-            await set_cached_project_metadata(self.config.project_id, project_data.get('sandbox', {}))
+            # Get sandbox info from resource if it exists
+            sandbox_info = {}
+            if sandbox_resource_id:
+                from core.resources import ResourceService
+                resource_service = ResourceService(self.client)
+                resource = await resource_service.get_resource_by_id(sandbox_resource_id)
+                if resource:
+                    sandbox_info = {
+                        'id': resource.get('external_id'),
+                        **resource.get('config', {})
+                    }
+            
+            await set_cached_project_metadata(self.config.project_id, sandbox_info)
         
-        sandbox_info = project_data.get('sandbox', {})
         if not sandbox_info.get('id'):
             logger.debug(f"No sandbox found for project {self.config.project_id}; will create lazily when needed")
         
@@ -340,7 +385,8 @@ class AgentRunner:
             'sb_shell_tool', 'sb_files_tool', 'sb_expose_tool',
             'web_search_tool', 'image_search_tool', 'sb_vision_tool', 'sb_presentation_tool', 'sb_image_edit_tool',
             'sb_kb_tool', 'sb_design_tool', 'sb_upload_file_tool',
-            'data_providers_tool', 'browser_tool', 'people_search_tool', 'company_search_tool', 
+            'browser_tool', 'people_search_tool', 'company_search_tool', 
+            'apify_tool', 'reality_defender_tool', 'vapi_voice_tool', 'paper_search_tool',
             'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool',
             'agent_creation_tool'
         ]
@@ -418,6 +464,8 @@ class AgentRunner:
             parallel_start = time.time()
             setup_tools_task = asyncio.create_task(self._setup_tools_async())
             await setup_tools_task
+
+            await self._restore_dynamic_tools()
             
             if (hasattr(self.thread_manager, 'mcp_loader') and 
                 self.config.agent_config and 
@@ -501,7 +549,7 @@ class AgentRunner:
                     yield {
                         "type": "status",
                         "status": "stopped",
-                        "message": "Agent execution cancelled"
+                        "message": "Worker execution cancelled"
                     }
                     break
 
@@ -731,3 +779,62 @@ class AgentRunner:
         if removed_count > 0:
             logger.info(f"⚡ [MCP JIT] Registry cleaned: {tools_before} → {tools_after} tools ({removed_count} legacy tools removed)")
 
+    async def _restore_dynamic_tools(self) -> None:
+        """Restore dynamically loaded tools from previous turns"""
+        try:
+            restore_start = time.time()
+            
+            result = await self.client.table('threads')\
+                .select('metadata')\
+                .eq('thread_id', self.config.thread_id)\
+                .single()\
+                .execute()
+            
+            if not result.data:
+                logger.debug("📦 [DYNAMIC TOOLS] No thread metadata found")
+                return
+            
+            metadata = result.data.get('metadata') or {}
+            dynamic_tools = metadata.get('dynamic_tools', [])
+            
+            if not dynamic_tools:
+                logger.debug("📦 [DYNAMIC TOOLS] No previously loaded tools to restore")
+                return
+            
+            logger.info(f"📦 [DYNAMIC TOOLS] Restoring {len(dynamic_tools)} previously loaded tools: {dynamic_tools}")
+            
+            from core.jit import JITLoader
+            jit_config = getattr(self.thread_manager, 'jit_config', None)
+            
+            activation_tasks = [
+                JITLoader.activate_tool(tool_name, self.thread_manager, self.config.project_id, jit_config=jit_config)
+                for tool_name in dynamic_tools
+            ]
+            
+            activation_results = await asyncio.gather(*activation_tasks, return_exceptions=True)
+            
+            from core.jit.result_types import ActivationSuccess, ActivationError
+            
+            restored = []
+            failed = []
+            
+            for tool_name, result in zip(dynamic_tools, activation_results):
+                if isinstance(result, ActivationSuccess):
+                    restored.append(tool_name)
+                else:
+                    failed.append(tool_name)
+                    if isinstance(result, Exception):
+                        logger.warning(f"⚠️  [DYNAMIC TOOLS] Failed to restore '{tool_name}': {result}")
+                    elif isinstance(result, ActivationError):
+                        logger.warning(f"⚠️  [DYNAMIC TOOLS] {result.to_user_message()}")
+            
+            elapsed_ms = (time.time() - restore_start) * 1000
+            
+            if restored:
+                logger.info(f"✅ [DYNAMIC TOOLS] Restored {len(restored)} tools in {elapsed_ms:.1f}ms: {restored}")
+            
+            if failed:
+                logger.warning(f"⚠️  [DYNAMIC TOOLS] Failed to restore {len(failed)} tools: {failed}")
+        
+        except Exception as e:
+            logger.error(f"❌ [DYNAMIC TOOLS] Failed to restore tools: {e}", exc_info=True)

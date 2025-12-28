@@ -8,8 +8,20 @@ export default getRequestConfig(async ({ requestLocale }) => {
   const cookieStore = await cookies();
   const headersList = await headers();
   
-  // Priority 1: Check user profile preference (if authenticated)
-  // This ALWAYS takes precedence - user explicitly set it in settings
+  // Priority 1: Check cookie FIRST (faster, no API call needed)
+  // This is set by middleware or user preference
+  const localeCookie = cookieStore.get('locale')?.value;
+  if (localeCookie && locales.includes(localeCookie as Locale)) {
+    locale = localeCookie as Locale;
+    return {
+      locale,
+      messages: (await import(`../../translations/${locale}.json`)).default
+    };
+  }
+  
+  // Priority 2: Check user profile preference (if authenticated)
+  // Only call getUser() if no cookie preference exists (optimization)
+  // This ALWAYS takes precedence over geo-detection - user explicitly set it in settings
   try {
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -36,16 +48,6 @@ export default getRequestConfig(async ({ requestLocale }) => {
     }
   } catch (error) {
     // User might not be authenticated, continue with other methods
-  }
-  
-  // Priority 2: Check cookie (explicit user preference)
-  const localeCookie = cookieStore.get('locale')?.value;
-  if (localeCookie && locales.includes(localeCookie as Locale)) {
-    locale = localeCookie as Locale;
-    return {
-      locale,
-      messages: (await import(`../../translations/${locale}.json`)).default
-    };
   }
   
   // Priority 3: If locale is provided in the URL path (e.g., /de, /it), use it for marketing pages

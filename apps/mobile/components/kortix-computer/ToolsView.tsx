@@ -152,6 +152,7 @@ export function ToolsView({
         currentIndex={currentIndex}
         totalCalls={totalCalls}
         project={project}
+        threadId={toolMessage?.thread_id || assistantMessage?.thread_id}
         onFileClick={onFileClick}
         onPromptFill={onPromptFill}
       />

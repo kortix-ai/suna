@@ -1,73 +1,84 @@
-# Kortix Mobile - Build Guide
+# Mobile Build Guide
 
-## Quick Start
+## Setup
+```bash
+npm install -g eas-cli
+eas login
+```
 
-### Prerequisites
-- Node.js
-- EAS CLI: `npm install -g eas-cli`
-- Expo account: `eas login`
+## Android Development Setup
 
-### Android Development
-
+**Default workflow (cloud build - recommended):**
 ```bash
 cd apps/mobile
 npm run android:setup
-npm run android:build
-npm run android:dev
+npm run android:build    
+npm run android:dev      
 ```
 
-## Build Commands
-
-### EAS Update (Expo Go)
+## IOS Development Setup
 ```bash
 cd apps/mobile
-eas update --branch main --message "Update" --platform ios
-eas update --branch main --message "Update" --platform android
+npx expo run:ios  
 ```
 
-### TestFlight Build (iOS)
-```bash
-cd apps/mobile
-eas build --profile testflight --platform ios --auto-submit
-```
+## Build & Submit
 
-### Production Build (iOS)
+**Production (iOS - App Store):**
 ```bash
 cd apps/mobile
 eas build --profile production --platform ios --auto-submit
 ```
 
-### Android Production Build
+**Production (Android - Play Store):**
 ```bash
-cd apps/mobile
 eas build --profile production --platform android --auto-submit
 ```
 
-### Submit Separately
+**TestFlight (iOS):**
 ```bash
-eas submit --profile testflight --platform ios
-eas submit --profile production --platform ios
-eas submit --profile production --platform android
+eas build --profile testflight --platform ios --auto-submit
+```
+
+**TestFlight (Android):**
+```bash
+eas build --profile testflight --platform android --auto-submit
 ```
 
 ## Version Management
 
-Edit `apps/mobile/app.json` line 5: `"version": "1.0.0"`
+**For new App Store release, update ALL 3 files:**
 
-Build numbers are auto-managed by EAS.
+```bash
+# 1. app.json (line 5)
+"version": "1.1.1"
 
-## CI/CD
+# 2. ios/Kortix/Info.plist (CFBundleShortVersionString - line 24)
+<string>1.1.1</string>
 
-**EAS Updates:** Auto-publishes on push to `main`, `PRODUCTION`  
-**TestFlight Builds:** Auto-builds on push to `main`, `PRODUCTION`
+# 3. android/app/build.gradle (versionName - line 96)
+versionName "1.1.1"
+```
 
-Setup: Add `EXPO_TOKEN` to GitHub Secrets.
+**Important:** All 3 files must match exactly, or the build will use the wrong version!
 
-## Build Profiles
+**Build numbers** → Auto-managed by EAS (remote)
 
-- **testflight**: TestFlight distribution
-- **production**: App Store release
-- **development**: Dev client builds
-- **preview**: Internal testing
+| What | How |
+|------|-----|
+| New App Store release | Bump version in all 3 files above |
+| Build numbers | Automatic (71, 72, 73...) |
+| Check current version | `eas build:version:get -p ios` |
 
-Config: `apps/mobile/eas.json`
+## OTA Updates
+
+**Auto-publishes** on push to `main`, `staging`, `production`
+- Only works for JS/TS changes
+- Users get updates instantly
+
+**Manual publish (if needed):**
+```bash
+cd apps/mobile
+eas update --branch main --message "Update" --platform ios
+eas update --branch main --message "Update" --platform android
+```

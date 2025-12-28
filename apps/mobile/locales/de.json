@@ -123,9 +123,50 @@
     }
   },
   "onboarding": {
+    "welcome": "Sehen Sie, was Kortix kann",
+    "welcomeSubtitle": "Ihr KI-Assistent, der handelt",
     "skip": "Überspringen",
     "next": "Weiter",
     "getStarted": "Los geht's",
+    "kortixComputer": "Kortix Computer",
+    "ready": "Bereit",
+    "examples": {
+      "presentations": {
+        "title": "Präsentationen",
+        "description": "Sehen Sie, wie es erstaunliche Präsentationen erstellt",
+        "userMessage": "Recherchiere und erstelle eine Präsentation über neuronale Netze",
+        "aiMessage": "Ich werde neuronale Netze recherchieren und eine Präsentation für Sie erstellen...",
+        "researching": "Recherchiere",
+        "creatingFile": "Erstelle Datei",
+        "creatingSlides": "Erstelle Folien"
+      },
+      "dataAnalysis": {
+        "title": "Datenanalyse",
+        "description": "Sehen Sie zu, wie es Daten analysiert und visuelle Berichte erstellt",
+        "userMessage": "Analysiere Q4-Verkaufsleistung von Google Drive",
+        "aiMessage": "Ich lade Ihre Verkaufsdaten und erstelle eine umfassende Analyse...",
+        "loadingFromDrive": "Lädt von Google Drive",
+        "creatingVisualization": "Erstelle Visualisierung",
+        "researchingMarket": "Recherchiere Markt",
+        "creatingReport": "Erstelle Bericht"
+      },
+      "image": {
+        "title": "Bild",
+        "description": "Erleben Sie KI-gestütztes Logo- und Markendesign",
+        "userMessage": "Erstelle ein Logo für unser Unternehmen",
+        "aiMessage": "Ich sehe, Sie haben LUXY bereits erwähnt. Ich erstelle ein professionelles Logo für Ihre Marke...",
+        "researchingBrand": "Recherchiere Marke",
+        "creatingLogo": "Erstelle Logo",
+        "creatingBrandBoard": "Erstelle Markenboard"
+      },
+      "imageEasterEgg": {
+        "title": "Bild",
+        "description": "Verwandeln Sie Ihre Fotos mit KI-Stilen",
+        "userMessage": "Wandle mein Bild in einen blockigen Pixel-Art-Stil um",
+        "aiMessage": "Klar! Ich verwandle Ihr Bild in einen stilisierten blockigen Look...",
+        "creatingImage": "Erstelle stilisiertes Bild"
+      }
+    },
     "slide1": {
       "title": "Chat mit KI",
       "description": "Führe natürliche Gespräche mit mächtigen KI-Assistenten, die den Kontext verstehen und hilfreiche Antworten geben"
@@ -561,7 +602,7 @@
   },
   "models": {
     "selectModel": "Modell wählen",
-    "chooseModelFor": "Wähle ein Modell für {{agent}}"
+    "chooseModelFor": "Wähle ein Modell für Worker {{agent}}"
   },
   "placeholders": {
     "default": "Gib Kortix eine Aufgabe...",
@@ -633,7 +674,7 @@
   },
   "integrations": {
     "title": "Integrationen",
-    "description": "Verbinde deine Lieblings-Apps und -Dienste, um Workflows zu automatisieren und die Fähigkeiten deines Agenten zu erweitern.",
+    "description": "Verbinde deine Lieblings-Apps und -Dienste, um Workflows zu automatisieren und die Fähigkeiten deines Workers zu erweitern.",
     "connectApps": "Verbinde deine Apps",
     "externalApps": "Externe Apps",
     "externalAppsDescription": "Beliebte Apps & Dienste verbinden",
@@ -746,6 +787,9 @@
     "upgradeRequired": "Upgrade Erforderlich",
     "upgradeRequiredMessage": "Thread-Freigabe ist nur in kostenpflichtigen Plänen verfügbar. Upgrade, um diese Funktion freizuschalten.",
     "upgrade": "Upgraden",
+    "share": "Teilen",
+    "files": "Dateien",
+    "delete": "Löschen",
     "shareThread": "Thread teilen",
     "shareThreadUpgrade": "Thread teilen (Upgrade)",
     "availableOnPaidPlans": "In kostenpflichtigen Plänen verfügbar",
@@ -753,6 +797,7 @@
     "manageFiles": "Dateien verwalten",
     "viewManageAttachments": "Anhänge anzeigen und verwalten",
     "deleteThread": "Thread löschen",
+    "deleteConfirm": "Möchten Sie diesen Thread wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
     "permanentlyDelete": "Diese Unterhaltung dauerhaft löschen"
   },
   "triggers": {
@@ -811,7 +856,7 @@
     "core": "Kern",
     "capabilitiesEnabled": "{{enabled}} / {{total}} Fähigkeiten aktiviert",
     "toolConfiguration": "Tool-Konfiguration",
-    "configureToolsDescription": "Konfigurieren Sie Tools und ihre einzelnen Fähigkeiten für Ihren Agenten",
+    "configureToolsDescription": "Konfigurieren Sie Tools und ihre einzelnen Fähigkeiten für Ihren Worker",
     "toolsEnabled": "{{enabled}} / {{total}} aktiviert",
     "loadingTools": "Tools werden geladen...",
     "noToolsAvailable": "Keine Tools verfügbar",

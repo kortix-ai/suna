@@ -8,16 +8,21 @@ import { KortixLoader } from '@/components/ui';
 import { useAuthContext } from '@/contexts';
 import { useAccountInitialization } from '@/hooks/useAccountInitialization';
 import { useBillingContext } from '@/contexts/BillingContext';
+import { useOnboarding } from '@/hooks/useOnboarding';
 import { useColorScheme } from 'nativewind';
 import LogomarkBlack from '@/assets/brand/Logomark-Black.svg';
 import LogomarkWhite from '@/assets/brand/Logomark-White.svg';
 import * as Haptics from 'expo-haptics';
+import { useQueryClient } from '@tanstack/react-query';
+import { agentKeys } from '@/lib/agents/hooks';
 
 export default function SettingUpScreen() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuthContext();
   const { colorScheme } = useColorScheme();
   const { refetchAll, hasActiveSubscription, subscriptionData, subscriptionLoading } = useBillingContext();
+  const { hasCompletedOnboarding, isLoading: onboardingLoading } = useOnboarding();
+  const queryClient = useQueryClient();
   const [status, setStatus] = React.useState<'checking' | 'initializing' | 'success' | 'error'>('checking');
   const initializeMutation = useAccountInitialization();
 
@@ -30,12 +35,27 @@ export default function SettingUpScreen() {
     }
   }, [isAuthenticated, router]);
 
+  // Safety check: If user has already completed onboarding, skip this screen entirely
+  // This prevents showing "Initializing Account" to returning users
+  React.useEffect(() => {
+    if (!onboardingLoading && hasCompletedOnboarding) {
+      console.log('✅ User already completed onboarding, skipping setup screen → /home');
+      router.replace('/home');
+    }
+  }, [onboardingLoading, hasCompletedOnboarding, router]);
+
   React.useEffect(() => {
     if (!user || status !== 'checking') return;
 
-    // Wait for billing data to load before checking
-    if (subscriptionLoading) {
-      console.log('⏳ Waiting for billing data to load...');
+    // Wait for billing and onboarding data to load before checking
+    if (subscriptionLoading || onboardingLoading) {
+      console.log('⏳ Waiting for billing/onboarding data to load...');
+      return;
+    }
+
+    // If onboarding is already completed, don't do anything - the other effect handles redirect
+    if (hasCompletedOnboarding) {
+      console.log('✅ Onboarding already completed, skipping initialization');
       return;
     }
 
@@ -62,6 +82,8 @@ export default function SettingUpScreen() {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         console.log('🔄 Refetching billing data...');
         refetchAll();
+        console.log('🔄 Refetching agents data...');
+        queryClient.invalidateQueries({ queryKey: agentKeys.all });
         setTimeout(() => {
           router.replace('/onboarding');
         }, 500);
@@ -80,6 +102,8 @@ export default function SettingUpScreen() {
           setStatus('success');
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           refetchAll();
+          console.log('🔄 Refetching agents data...');
+          queryClient.invalidateQueries({ queryKey: agentKeys.all });
           setTimeout(() => {
             router.replace('/onboarding');
           }, 500);
@@ -90,7 +114,7 @@ export default function SettingUpScreen() {
         }
       },
     });
-  }, [user, status, hasActiveSubscription, subscriptionLoading, initializeMutation, refetchAll, router]);
+  }, [user, status, hasActiveSubscription, subscriptionLoading, onboardingLoading, hasCompletedOnboarding, initializeMutation, refetchAll, router, queryClient]);
 
   const handleContinue = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

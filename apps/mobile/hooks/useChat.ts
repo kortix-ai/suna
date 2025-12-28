@@ -137,7 +137,7 @@ export function useChat(): UseChatReturn {
     initialIndex: number;
   } | null>(null);
   const [isAttachmentDrawerVisible, setIsAttachmentDrawerVisible] = useState(false);
-  const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>('image');
+  const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>('slides');
   const [selectedQuickActionOption, setSelectedQuickActionOption] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [modeViewState, setModeViewState] = useState<'thread-list' | 'thread'>('thread-list');
@@ -743,7 +743,26 @@ export function useChat(): UseChatReturn {
           console.error('[useChat] Error starting agent for new thread:', agentStartError);
           
           const errorMessage = agentStartError?.message || '';
-          if (errorMessage.includes('402') && errorMessage.includes('PROJECT_LIMIT_EXCEEDED')) {
+          const errorCode = agentStartError?.code || agentStartError?.detail?.error_code;
+          
+          // Handle concurrent agent run limit (AGENT_RUN_LIMIT_EXCEEDED)
+          if (errorCode === 'AGENT_RUN_LIMIT_EXCEEDED' || (agentStartError?.status === 402 && errorMessage.includes('concurrent'))) {
+            const detail = agentStartError?.detail || {};
+            const runningCount = detail.running_count || 0;
+            const limit = detail.limit || 1;
+            const message = detail.message || `Maximum of ${limit} concurrent agent run${limit > 1 ? 's' : ''} allowed. You currently have ${runningCount} running.`;
+            
+            console.log('⚠️ Concurrent agent run limit reached');
+            Alert.alert(
+              'Concurrent Runs Limit Reached',
+              `${message}\n\nPlease stop a running agent or wait for one to complete before starting a new one.`,
+              [{ text: 'OK' }]
+            );
+            return;
+          }
+          
+          // Handle project limit
+          if (agentStartError?.status === 402 && errorCode === 'PROJECT_LIMIT_EXCEEDED') {
             console.log('💳 Project limit exceeded - opening billing modal');
             router.push({
               pathname: '/plans',
@@ -874,7 +893,26 @@ export function useChat(): UseChatReturn {
           console.error('[useChat] Error sending message to existing thread:', sendMessageError);
           
           const errorMessage = sendMessageError?.message || '';
-          if (errorMessage.includes('402') && errorMessage.includes('PROJECT_LIMIT_EXCEEDED')) {
+          const errorCode = sendMessageError?.code || sendMessageError?.detail?.error_code;
+          
+          // Handle concurrent agent run limit (AGENT_RUN_LIMIT_EXCEEDED)
+          if (errorCode === 'AGENT_RUN_LIMIT_EXCEEDED' || (sendMessageError?.status === 402 && errorMessage.includes('concurrent'))) {
+            const detail = sendMessageError?.detail || {};
+            const runningCount = detail.running_count || 0;
+            const limit = detail.limit || 1;
+            const message = detail.message || `Maximum of ${limit} concurrent agent run${limit > 1 ? 's' : ''} allowed. You currently have ${runningCount} running.`;
+            
+            console.log('⚠️ Concurrent agent run limit reached');
+            Alert.alert(
+              'Concurrent Runs Limit Reached',
+              `${message}\n\nPlease stop a running agent or wait for one to complete before starting a new one.`,
+              [{ text: 'OK' }]
+            );
+            return;
+          }
+          
+          // Handle project limit
+          if (sendMessageError?.status === 402 && errorCode === 'PROJECT_LIMIT_EXCEEDED') {
             console.log('💳 Project limit exceeded - opening billing modal');
             router.push({
               pathname: '/plans',

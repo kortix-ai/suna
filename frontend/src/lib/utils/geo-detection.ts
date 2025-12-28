@@ -231,3 +231,145 @@ export function detectBestLocale(): Locale {
   return defaultLocale;
 }
 
+/**
+ * EU member states (27 countries)
+ */
+export const EU_COUNTRY_CODES = new Set([
+  'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR',
+  'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL',
+  'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE'
+]);
+
+/**
+ * Map of EU timezones (for detection)
+ */
+export const EU_TIMEZONES = new Set([
+  'Europe/Paris', 'Europe/Berlin', 'Europe/Rome', 'Europe/Madrid',
+  'Europe/Vienna', 'Europe/Brussels', 'Europe/Amsterdam',
+  'Europe/Copenhagen', 'Europe/Stockholm', 'Europe/Helsinki',
+  'Europe/Warsaw', 'Europe/Prague', 'Europe/Budapest',
+  'Europe/Bucharest', 'Europe/Athens', 'Europe/Lisbon',
+  'Europe/Dublin', 'Europe/Luxembourg', 'Europe/Zagreb',
+  'Europe/Sofia', 'Europe/Tallinn', 'Europe/Vilnius',
+  'Europe/Riga', 'Europe/Bratislava', 'Europe/Ljubljana',
+  'Europe/Malta', 'Europe/Nicosia', 'Europe/Valletta'
+]);
+
+/**
+ * Detect if user is in EU based on timezone
+ * This is a heuristic for display purposes only
+ */
+export function isEUTimezone(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return EU_TIMEZONES.has(timezone);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detect user's currency based on timezone
+ * Returns 'EUR' for EU timezones, 'USD' otherwise
+ */
+export function detectCurrencyFromTimezone(): 'USD' | 'EUR' {
+  return isEUTimezone() ? 'EUR' : 'USD';
+}
+
+/**
+ * Timezones for regions where cookie consent banners are required by law
+ * Includes: EU (GDPR), UK, Switzerland, Norway, Iceland, Liechtenstein, Brazil (LGPD)
+ */
+const GDPR_REGION_TIMEZONES = new Set([
+  // EU Member States
+  'Europe/Vienna',        // Austria
+  'Europe/Brussels',      // Belgium
+  'Europe/Sofia',         // Bulgaria
+  'Europe/Zagreb',        // Croatia
+  'Europe/Nicosia',       // Cyprus
+  'Europe/Prague',        // Czech Republic
+  'Europe/Copenhagen',    // Denmark
+  'Europe/Tallinn',       // Estonia
+  'Europe/Helsinki',      // Finland
+  'Europe/Paris',         // France
+  'Europe/Berlin',        // Germany
+  'Europe/Athens',        // Greece
+  'Europe/Budapest',      // Hungary
+  'Europe/Dublin',        // Ireland
+  'Europe/Rome',          // Italy
+  'Europe/Riga',          // Latvia
+  'Europe/Vilnius',       // Lithuania
+  'Europe/Luxembourg',    // Luxembourg
+  'Europe/Malta',         // Malta
+  'Europe/Amsterdam',     // Netherlands
+  'Europe/Warsaw',        // Poland
+  'Europe/Lisbon',        // Portugal
+  'Europe/Bucharest',     // Romania
+  'Europe/Bratislava',    // Slovakia
+  'Europe/Ljubljana',     // Slovenia
+  'Europe/Madrid',        // Spain
+  'Atlantic/Canary',      // Spain (Canary Islands)
+  'Europe/Stockholm',     // Sweden
+  
+  // EEA (non-EU but GDPR applies)
+  'Europe/Oslo',          // Norway
+  'Atlantic/Reykjavik',   // Iceland
+  'Europe/Vaduz',         // Liechtenstein
+  
+  // UK (UK GDPR)
+  'Europe/London',
+  
+  // Switzerland (similar privacy laws)
+  'Europe/Zurich',
+  
+  // Brazil (LGPD - similar cookie consent requirements)
+  'America/Sao_Paulo',
+  'America/Rio_Branco',
+  'America/Manaus',
+  'America/Cuiaba',
+  'America/Campo_Grande',
+  'America/Recife',
+  'America/Fortaleza',
+  'America/Belem',
+  'America/Araguaina',
+  'America/Maceio',
+  'America/Salvador',
+  'America/Bahia',
+  'America/Noronha',
+]);
+
+/**
+ * Detects if the user is likely in a region where cookie consent is required by law
+ * (GDPR in EU/EEA/UK, LGPD in Brazil, etc.)
+ * Uses timezone as a proxy for geographic location
+ */
+export function isInGDPRRegion(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    
+    // Direct match
+    if (GDPR_REGION_TIMEZONES.has(timezone)) {
+      return true;
+    }
+    
+    // Check if it starts with Europe/ (catches edge cases)
+    if (timezone.startsWith('Europe/')) {
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    // If we can't detect, default to showing the banner (safer for compliance)
+    console.warn('Failed to detect GDPR region:', error);
+    return true;
+  }
+}
+

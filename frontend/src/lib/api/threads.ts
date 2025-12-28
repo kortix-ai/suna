@@ -7,6 +7,7 @@ export type ThreadStatus = 'pending' | 'initializing' | 'ready' | 'error';
 export type Thread = {
   thread_id: string;
   project_id?: string | null;
+  name?: string;
   is_public?: boolean;
   created_at: string;
   updated_at: string;
@@ -99,27 +100,115 @@ export const getProject = async (projectId: string): Promise<Project> => {
   };
 };
 
-// Delete project (via thread deletion)
+// Get threads for a specific project
+export const getProjectThreads = async (projectId: string, page: number = 1, limit: number = 100): Promise<ThreadsResponse> => {
+  try {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+    });
+    
+    const response = await backendApi.get<{ threads: any[]; pagination: any }>(`/projects/${projectId}/threads?${params.toString()}`, {
+      showErrors: false,
+    });
+
+    if (response.error) {
+      console.error('Error getting project threads:', response.error);
+      handleApiError(response.error, { 
+        operation: 'load project threads', 
+        resource: `threads for project ${projectId}` 
+      });
+      return {
+        threads: [],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 0,
+          pages: 0,
+        }
+      };
+    }
+
+    if (!response.data?.threads) {
+      return {
+        threads: [],
+        pagination: response.data?.pagination || {
+          page: 1,
+          limit: 20,
+          total: 0,
+          pages: 0,
+        }
+      };
+    }
+
+    const threads = response.data.threads.map((thread: any) => ({
+      thread_id: thread.thread_id,
+      project_id: thread.project_id,
+      created_at: thread.created_at,
+      updated_at: thread.updated_at,
+      metadata: thread.metadata || {},
+    }));
+
+    return {
+      threads,
+      pagination: response.data.pagination || {
+        page,
+        limit,
+        total: threads.length,
+        pages: 1,
+      }
+    };
+  } catch (err) {
+    console.error('Error fetching project threads:', err);
+    handleApiError(err, { 
+      operation: 'load project threads', 
+      resource: `threads for project ${projectId}` 
+    });
+    return {
+      threads: [],
+      pagination: {
+        page: 1,
+        limit: 20,
+        total: 0,
+        pages: 0,
+      }
+    };
+  }
+};
+
+// Create a thread in an existing project
+export const createThreadInProject = async (projectId: string): Promise<{ thread_id: string; project_id: string }> => {
+  const supabase = createClient();
+
+  // If user is not logged in, redirect to login
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    throw new Error('You must be logged in to create a thread');
+  }
+
+  const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
+
+  const response = await fetch(`${API_URL}/projects/${projectId}/threads`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    handleApiError(new Error(errorText), { operation: 'create thread in project', resource: 'thread' });
+    throw new Error(errorText);
+  }
+
+  const data = await response.json();
+  return data;
+};
+
+// Delete project (now uses dedicated DELETE /projects/{project_id} endpoint)
 export const deleteProject = async (projectId: string): Promise<void> => {
-  // Projects are deleted via thread deletion
-  // First, find a thread with this project_id
-  const threadsResponse = await getThreadsPaginated(undefined, 1, 20);
-
-  if (!threadsResponse?.threads) {
-    handleApiError(new Error('Failed to fetch threads'), { operation: 'delete project', resource: `project ${projectId}` });
-    throw new Error('Failed to find thread for project');
-  }
-
-  const threadWithProject = threadsResponse.threads.find(
-    (thread: any) => thread.project_id === projectId
-  );
-
-  if (!threadWithProject) {
-    throw new Error(`No thread found for project ${projectId}`);
-  }
-
-  // Delete the thread (which also deletes the project)
-  const deleteResponse = await backendApi.delete(`/threads/${threadWithProject.thread_id}`, {
+  const deleteResponse = await backendApi.delete(`/projects/${projectId}`, {
     showErrors: true,
   });
 
@@ -331,7 +420,8 @@ export const getThread = async (threadId: string): Promise<Thread> => {
   }
 };
 
-export const createThread = async (projectId: string): Promise<Thread> => {
+// Create a new thread (creates both project and thread - legacy endpoint for backwards compatibility)
+export const createThread = async (projectId?: string): Promise<Thread> => {
   const supabase = createClient();
 
   // If user is not logged in, redirect to login
@@ -343,13 +433,24 @@ export const createThread = async (projectId: string): Promise<Thread> => {
   const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 
   // Use backend API endpoint - it handles project creation as well
+  // If projectId is provided, use the new endpoint to create thread in existing project
+  if (projectId) {
+    const result = await createThreadInProject(projectId);
+    return {
+      thread_id: result.thread_id,
+      project_id: result.project_id,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    } as Thread;
+  }
+
+  // Otherwise, create new project + thread (legacy behavior)
   const response = await fetch(`${API_URL}/threads`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${session.access_token}`,
     },
-    body: JSON.stringify({ project_id: projectId }),
   });
 
   if (!response.ok) {

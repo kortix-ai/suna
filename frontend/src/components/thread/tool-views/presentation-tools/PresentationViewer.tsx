@@ -140,6 +140,14 @@ export function PresentationViewer({
         extractedPresentationPath = output.presentation_path;
         currentSlideNumber = output.slide_number;
         presentationTitle = output.presentation_title || output.title;
+        
+        console.log('[PresentationViewer] Extracted presentation data:', {
+          presentationName: extractedPresentationName,
+          presentationPath: extractedPresentationPath,
+          slideNumber: currentSlideNumber,
+          presentationTitle,
+          rawOutput: output
+        });
       }
     } catch (e) {
       console.error('Failed to process tool output:', e);

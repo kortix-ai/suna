@@ -25,19 +25,14 @@
  */
 
 import React, { ReactNode } from 'react';
-import { Pressable, View, Platform, TouchableOpacity } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Check, ChevronRight } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { cn } from '@/lib';
-
-// NOTE: AnimatedPressable blocks touches on Android - use TouchableOpacity instead
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
-// Android hit slop for better touch targets
-const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 8, bottom: 8, left: 8, right: 8 } : undefined;
+// Use @gorhom/bottom-sheet touchable for proper Android gesture handling inside bottom sheets
+import { TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 
 export interface SelectableListItemProps {
   /** Avatar component (AgentAvatar, ModelAvatar, etc.) */
@@ -88,43 +83,19 @@ export function SelectableListItem({
   isActive = true,
   onPress,
   accessibilityLabel,
-  selectionBackground,
   rightIcon,
 }: SelectableListItemProps) {
   const { colorScheme } = useColorScheme();
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
 
   const handlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onPress?.();
   };
 
-  // Selection background (optional, from Figma: #e0e0e0 light, #232324 dark)
-  const defaultSelectionBg =
-    isSelected && !showChevron
-      ? colorScheme === 'dark'
-        ? 'rgba(248, 248, 248, 0.12)'
-        : 'rgba(18, 18, 21, 0.08)'
-      : 'transparent';
-
   return (
-    <TouchableOpacity
+    <BottomSheetTouchable
       onPress={handlePress}
       style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-      hitSlop={ANDROID_HIT_SLOP}
-      activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel || `Select ${title}`}>
       {/* Left: Avatar + Text */}
@@ -205,6 +176,6 @@ export function SelectableListItem({
           ) : null}
         </View>
       )}
-    </TouchableOpacity>
+    </BottomSheetTouchable>
   );
 }

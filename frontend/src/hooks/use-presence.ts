@@ -1,12 +1,27 @@
-import { useEffect } from 'react';
-import { usePresenceContext } from '@/providers/presence-provider';
+import { useEffect, useRef } from 'react';
+import { usePresenceContext } from '@/components/presence-provider';
 
 export function usePresence(threadId: string | null | undefined) {
   const { setActiveThreadId } = usePresenceContext();
+  const lastThreadIdRef = useRef<string | null | undefined>(undefined);
+  
   useEffect(() => {
-    setActiveThreadId(threadId || null);
+    const normalizedThreadId = threadId || null;
+    
+    // Only update if threadId has actually changed
+    if (lastThreadIdRef.current === normalizedThreadId) {
+      return;
+    }
+    
+    lastThreadIdRef.current = normalizedThreadId;
+    setActiveThreadId(normalizedThreadId);
+    
     return () => {
-      setActiveThreadId(null);
+      // Only clear if this was the last set value
+      if (lastThreadIdRef.current === normalizedThreadId) {
+        setActiveThreadId(null);
+        lastThreadIdRef.current = undefined;
+      }
     };
   }, [setActiveThreadId, threadId]);
 }

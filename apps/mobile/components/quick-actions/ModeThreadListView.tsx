@@ -184,6 +184,26 @@ function ThreadSection({
 }
 
 /**
+ * Mode Header Component
+ */
+function ModeHeader({ modeIcon: ModeIcon, modeLabel }: { modeIcon: React.ComponentType<any>; modeLabel: string }) {
+  const { colorScheme } = useColorScheme();
+  
+  // Get icon color based on theme
+  // Foreground: #121215 (light) / #F8F8F8 (dark)
+  const iconColor = React.useMemo(() => {
+    return colorScheme === 'dark' ? '#F8F8F8' : '#121215';
+  }, [colorScheme]);
+
+  return (
+    <View className="mb-6 flex-row items-center gap-3">
+      <ModeIcon size={28} strokeWidth={2} color={iconColor} />
+      <Text className="font-roobert-semibold text-3xl text-foreground">{modeLabel}</Text>
+    </View>
+  );
+}
+
+/**
  * Empty State Component
  */
 function EmptyState({ modeLabel }: { modeLabel: string }) {
@@ -257,10 +277,7 @@ export function ModeThreadListView({
         }}
         showsVerticalScrollIndicator={false}>
         {/* Mode Header */}
-        <View className="mb-6 flex-row items-center gap-3">
-          <ModeIcon size={28} strokeWidth={2} color="currentColor" className="text-foreground" />
-          <Text className="font-roobert-semibold text-3xl text-foreground">{modeLabel}</Text>
-        </View>
+        <ModeHeader modeIcon={ModeIcon} modeLabel={modeLabel} />
 
         {hasThreads ? (
           <View style={{ gap: 24 }}>

@@ -72,7 +72,7 @@ export function EntityList<T>({
   // Loading State
   if (isLoading) {
     return (
-      <View className="py-8 items-center">
+      <View className="flex-1 items-center justify-center" style={{ minHeight: 200 }}>
         <KortixLoader size="small" />
         <Text 
           style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}

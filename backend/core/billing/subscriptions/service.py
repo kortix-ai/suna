@@ -27,10 +27,11 @@ class SubscriptionService:
         price_id: str, 
         success_url: str, 
         cancel_url: str, 
-        commitment_type: Optional[str] = None
+        commitment_type: Optional[str] = None,
+        locale: Optional[str] = None
     ) -> Dict:
         return await SubscriptionCheckoutHandler.create_checkout_session(
-            account_id, price_id, success_url, cancel_url, commitment_type
+            account_id, price_id, success_url, cancel_url, commitment_type, locale
         )
     
     async def create_portal_session(self, account_id: str, return_url: str) -> Dict:

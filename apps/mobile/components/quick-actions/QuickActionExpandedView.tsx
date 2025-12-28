@@ -49,8 +49,8 @@ export function QuickActionExpandedView({
   const isSlideMode = actionId === 'slides';
   const showPromptExamples = actionId === 'people' || actionId === 'research';
   
-  // Collapsible state - collapsed by default
-  const [isExpanded, setIsExpanded] = React.useState(false);
+  // Collapsible state - expanded by default
+  const [isExpanded, setIsExpanded] = React.useState(true);
   
   // Fetch threads and filter by mode
   const { data: allThreads = [] } = useThreads();

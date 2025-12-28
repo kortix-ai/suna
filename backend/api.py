@@ -36,6 +36,7 @@ from core.billing.api import router as billing_router
 from core.setup import router as setup_router, webhook_router
 from core.admin.admin_api import router as admin_router
 from core.admin.billing_admin_api import router as billing_admin_router
+from core.admin.feedback_admin_api import router as feedback_admin_router
 from core.admin.notification_admin_api import router as notification_admin_router
 from core.admin.analytics_admin_api import router as analytics_admin_router
 from core.services import transcription as transcription_api
@@ -63,9 +64,13 @@ _queue_metrics_task = None
 _worker_metrics_task = None
 _memory_watchdog_task = None
 
+# Graceful shutdown flag for health checks
+# When True, health check will return unhealthy to stop receiving traffic
+_is_shutting_down = False
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _queue_metrics_task, _worker_metrics_task, _memory_watchdog_task
+    global _queue_metrics_task, _worker_metrics_task, _memory_watchdog_task, _is_shutting_down
     env_mode = config.ENV_MODE.value if config.ENV_MODE else "unknown"
     logger.debug(f"Starting up FastAPI application with instance ID: {instance_id} in {env_mode} mode")
     try:
@@ -117,6 +122,14 @@ async def lifespan(app: FastAPI):
         _memory_watchdog_task = asyncio.create_task(_memory_watchdog())
         
         yield
+
+        # Shutdown sequence: Set flag first so health checks fail
+        _is_shutting_down = True
+        logger.info(f"Starting graceful shutdown for instance {instance_id}")
+        
+        # Give K8s readiness probe time to detect unhealthy state
+        # This ensures no new traffic is routed to this pod
+        await asyncio.sleep(2)
         
         logger.debug("Cleaning up agent resources")
         await core_api.cleanup()
@@ -253,7 +266,7 @@ if config.ENV_MODE == EnvMode.STAGING:
     allowed_origins.append("https://staging.suna.so")
     allowed_origins.append("http://localhost:3000")
     # Allow Vercel preview deployments
-    allow_origin_regex = r"https://kortix-.*-prjcts\.vercel\.app"
+    allow_origin_regex = r"https://.*-kortixai\.vercel\.app"
 
 app.add_middleware(
     CORSMiddleware,
@@ -276,6 +289,7 @@ api_router.include_router(webhook_router)  # Webhooks at /api/webhooks/*
 api_router.include_router(api_keys_api.router)
 api_router.include_router(billing_admin_router)
 api_router.include_router(admin_router)
+api_router.include_router(feedback_admin_router)
 api_router.include_router(notification_admin_router)
 api_router.include_router(analytics_admin_router)
 
@@ -318,13 +332,36 @@ api_router.include_router(memory_router)
 from kortixpedia.main import router as kortixpedia_router
 api_router.include_router(kortixpedia_router)
 
+from core.test_harness.api import router as test_harness_router
+api_router.include_router(test_harness_router)
+
+from core.files import staged_files_router
+api_router.include_router(staged_files_router, prefix="/files")
+
+from core.sandbox.canvas_ai_api import router as canvas_ai_router
+api_router.include_router(canvas_ai_router)
+
 @api_router.get("/health", summary="Health Check", operation_id="health_check", tags=["system"])
 async def health_check():
     logger.debug("Health check endpoint called")
+
+    # During shutdown, return unhealthy status
+    # This causes K8s readinessProbe to fail and removes pod from service endpoints
+    if _is_shutting_down:
+        logger.debug(f"Health check returning unhealthy (shutting down) for instance {instance_id}")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "shutting_down",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "instance_id": instance_id
+            }
+        )
+    
     return {
-        "status": "ok", 
+        "status": "ok",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "instance_id": instance_id
+        "instance_id": instance_id,
     }
 
 @api_router.get("/metrics/queue", summary="Queue Metrics", operation_id="queue_metrics", tags=["system"])
@@ -432,5 +469,5 @@ if __name__ == "__main__":
         port=8000,
         workers=workers,
         loop="asyncio",
-        reload=True if is_dev_env else False
+        reload=False if is_dev_env else False
     )

@@ -27,4 +27,7 @@ export {
 // Export image content hook
 export { useImageContent } from './use-image-content';
 
+// Export external image hook
+export { useExternalImage } from './use-external-image';
+
 

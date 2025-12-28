@@ -219,7 +219,16 @@ export function useUpgradePaywall(): UpgradePaywallResult {
 
       return result;
     } catch (error: any) {
+      // Log detailed error information for debugging
       console.error('❌ Error presenting paywall:', error?.message || error);
+      if (error?.code === 'CONFIGURATION_ERROR' || error?.code === 'OFFERING_NOT_FOUND') {
+        console.error('📋 Configuration details:', {
+          paywallName: getPaywallForTier(tierKey),
+          currentTier: tierKey,
+          availableOfferings: error?.availableOfferings,
+          originalError: error?.originalError,
+        });
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return { purchased: false, cancelled: true };
     }

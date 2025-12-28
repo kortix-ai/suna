@@ -100,7 +100,7 @@ const CountrySelect = ({
         <Button
           type="button"
           variant="outline"
-          className={cn("flex gap-1 rounded-e-none rounded-s-lg px-3", {
+          className={cn("flex items-center gap-1 rounded-e-none rounded-s-lg px-3 h-11", {
             "opacity-50 cursor-not-allowed": disabled,
           })}
           disabled={disabled}

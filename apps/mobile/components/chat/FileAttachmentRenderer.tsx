@@ -22,6 +22,14 @@ import { FileText, File, Download, ExternalLink, Image as ImageIcon, Play, Prese
 import { useColorScheme } from 'nativewind';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { autoLinkUrls } from '@/lib/utils/url-autolink';
+import {
+  isImageExtension,
+  isDocumentExtension,
+  isPreviewableExtension,
+  isJsonExtension,
+  isMarkdownExtension,
+  isHtmlExtension,
+} from '@/lib/utils/file-types';
 import { WebView } from 'react-native-webview';
 import { getAuthToken } from '@/api/config';
 import Animated, {
@@ -105,24 +113,36 @@ interface FileAttachmentRendererProps {
 }
 
 /**
- * Parse file path and determine type
+ * Parse file path and determine type using centralized file-types utility
  */
 function parseFilePath(path: string): FileAttachment {
   const name = path.split('/').pop() || 'file';
-  const extension = name.split('.').pop()?.toLowerCase();
-
-  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
-  const documentExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'];
+  const extension = name.split('.').pop()?.toLowerCase() || '';
 
   let type: 'image' | 'document' | 'other' = 'other';
 
-  if (extension && imageExtensions.includes(extension)) {
+  if (isImageExtension(extension)) {
     type = 'image';
-  } else if (extension && documentExtensions.includes(extension)) {
+  } else if (isDocumentExtension(extension)) {
     type = 'document';
   }
 
   return { path, type, name, extension };
+}
+
+function normalizeSandboxWorkspacePath(inputPath: string): string {
+  const raw = (inputPath || '').trim();
+  if (!raw) return '/workspace/';
+  // If it already looks like a workspace path, just ensure leading slash.
+  if (raw.startsWith('/workspace/')) return raw;
+  if (raw.startsWith('workspace/')) return `/${raw}`;
+
+  // Ensure leading slash first.
+  const withLeadingSlash = raw.startsWith('/') ? raw : `/${raw}`;
+  // If it's not already under /workspace/, assume it's relative to the sandbox workspace.
+  return withLeadingSlash.startsWith('/workspace/')
+    ? withLeadingSlash
+    : `/workspace${withLeadingSlash}`;
 }
 
 /**
@@ -230,51 +250,164 @@ function ImageAttachment({
   const [blobUrl, setBlobUrl] = useState<string | undefined>();
 
   useEffect(() => {
-    if (sandboxId && file.path) {
-      let filePath = file.path;
-      if (!filePath.startsWith('/')) {
-        filePath = '/workspace/' + filePath;
+    let isCancelled = false;
+    const abortController = new AbortController();
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+
+    const run = async () => {
+      setHasError(false);
+      setIsLoading(true);
+
+      console.log('[ImageAttachment] Starting image load:', {
+        filePath: file.path,
+        fileType: file.type,
+        fileExtension: file.extension,
+        sandboxId,
+        showPreview,
+      });
+
+      // For uploaded files (in /workspace/uploads), we ALWAYS need sandboxId
+      // Don't try to render directly - wait for sandboxId
+      const isUploadedFile = file.path.includes('/uploads/') || file.path.includes('/workspace');
+      if (!sandboxId && isUploadedFile) {
+        console.log('[ImageAttachment] ⏳ Waiting for sandboxId for uploaded file...');
+        setIsLoading(true);
+        // Don't set error, just keep loading - sandboxId might come in next render
+        return;
       }
 
-      const fetchImage = async () => {
-        try {
-          const token = await getAuthToken();
-          const url = `${process.env.EXPO_PUBLIC_BACKEND_URL}/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(filePath)}`;
-          console.log('[ImageAttachment] Fetching image:', { url, filePath, sandboxId });
+      // Non-sandbox, non-uploaded images can render directly (e.g., external URLs)
+      if (!sandboxId && !isUploadedFile) {
+        console.log('[ImageAttachment] Non-sandbox image, using direct path');
+        setBlobUrl(file.path);
+        setIsLoading(false);
+        return;
+      }
 
-          const response = await fetch(url, {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-            },
-          });
+      // If we already have a blob URL for this sandboxId, don't refetch.
+      if (blobUrl && blobUrl.startsWith('data:')) {
+        console.log('[ImageAttachment] Already have blob URL, skipping fetch');
+        return;
+      }
 
-          if (!response.ok) {
-            console.error('[ImageAttachment] Fetch failed:', response.status, response.statusText);
-            throw new Error(`Failed to fetch image: ${response.status}`);
+      const apiUrl = process.env.EXPO_PUBLIC_BACKEND_URL;
+      const normalizedPath = normalizeSandboxWorkspacePath(file.path);
+      const url = `${apiUrl}/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(normalizedPath)}`;
+
+      console.log('[ImageAttachment] Fetching sandbox image:', {
+        file,
+        originalPath: file.path,
+        normalizedPath,
+        sandboxId,
+        apiUrl,
+        url,
+      });
+
+      try {
+        const token = await getAuthToken();
+
+        const response = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: abortController.signal,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'Unable to read error response');
+          const errorInfo = {
+            status: response.status,
+            statusText: response.statusText,
+            errorBody: errorText,
+            url,
+            normalizedPath,
+            sandboxId,
+            file,
+            retryCount,
+          };
+          console.error('[ImageAttachment] ❌ HTTP error fetching image:', errorInfo);
+
+          // Retry on 404, 500, 502, 503 (sandbox might be warming up or file not ready yet)
+          const shouldRetry = [404, 500, 502, 503].includes(response.status);
+          if (shouldRetry && retryCount < MAX_RETRIES && !isCancelled) {
+            retryCount++;
+            const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 5000); // Exponential backoff: 1s, 2s, 4s
+            console.log(`[ImageAttachment] 🔄 Retrying in ${delay}ms (attempt ${retryCount}/${MAX_RETRIES})...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            if (!isCancelled) {
+              return run(); // Retry
+            }
           }
 
-          const blob = await response.blob();
-          console.log('[ImageAttachment] Blob received:', blob.size, blob.type);
-
-          import('@/lib/files/hooks').then(({ blobToDataURL }) => {
-            blobToDataURL(blob).then((url) => {
-              console.log('[ImageAttachment] Blob URL created');
-              setBlobUrl(url);
-            }).catch((err) => {
-              console.error('[ImageAttachment] blobToDataURL failed:', err);
-            });
-          });
-        } catch (error) {
-          console.error('[ImageAttachment] Failed to fetch:', error);
-          setHasError(true);
+          if (!isCancelled) {
+            setHasError(true);
+            setIsLoading(false);
+          }
+          return;
         }
-      };
 
-      fetchImage();
-    } else {
-      setBlobUrl(file.path);
-    }
+        const blob = await response.blob();
+        console.log('[ImageAttachment] ✅ Blob received:', {
+          size: blob.size,
+          type: blob.type,
+          normalizedPath,
+        });
+
+        const { blobToDataURL } = await import('@/lib/files/hooks');
+        const dataUrl = await blobToDataURL(blob);
+        console.log('[ImageAttachment] ✅ Data URL created successfully');
+        if (!isCancelled) {
+          setBlobUrl(dataUrl);
+          setIsLoading(false);
+        }
+      } catch (error) {
+        // Abort is expected on unmount; don't treat as an error.
+        if ((error as any)?.name === 'AbortError') {
+          console.log('[ImageAttachment] Fetch aborted (component unmounted)');
+          return;
+        }
+
+        console.error('[ImageAttachment] ❌ Network error fetching image:', {
+          error,
+          errorMessage: (error as any)?.message,
+          url,
+          normalizedPath,
+          sandboxId,
+          file,
+          retryCount,
+        });
+
+        // Retry on network errors (timeout, connection failed, etc.)
+        if (retryCount < MAX_RETRIES && !isCancelled) {
+          retryCount++;
+          const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 5000); // Exponential backoff
+          console.log(`[ImageAttachment] 🔄 Retrying after network error in ${delay}ms (attempt ${retryCount}/${MAX_RETRIES})...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          if (!isCancelled) {
+            return run(); // Retry
+          }
+        }
+
+        if (!isCancelled) {
+          setHasError(true);
+          setIsLoading(false);
+        }
+      }
+    };
+
+    run();
+    return () => {
+      isCancelled = true;
+      abortController.abort();
+    };
   }, [sandboxId, file.path]);
+
+  // Reset blob URL when sandboxId changes (sandbox becomes available)
+  useEffect(() => {
+    if (sandboxId && blobUrl && !blobUrl.startsWith('data:')) {
+      console.log('[ImageAttachment] SandboxId changed, resetting blob URL to refetch');
+      setBlobUrl(undefined);
+    }
+  }, [sandboxId]);
 
   const imageUrl = blobUrl || file.path;
 
@@ -349,17 +482,27 @@ function ImageAttachment({
               </Text>
             </View>
           ) : (
-            <View className="flex-1 items-center justify-center bg-muted/30">
+            <Pressable
+              onPress={() => {
+                console.log('[ImageAttachment] Manual retry triggered');
+                setHasError(false);
+                setBlobUrl(undefined); // Reset to trigger refetch
+              }}
+              className="flex-1 items-center justify-center bg-muted/30"
+            >
               <Icon
                 as={ImageIcon}
                 size={32}
                 className="text-muted-foreground mb-2"
                 strokeWidth={1.5}
               />
-              <Text className="text-xs text-muted-foreground">
+              <Text className="text-xs text-muted-foreground mb-1">
                 Failed to load
               </Text>
-            </View>
+              <Text className="text-[10px] text-primary font-medium">
+                Tap to retry
+              </Text>
+            </Pressable>
           )}
         </View>
 
@@ -427,11 +570,10 @@ function DocumentAttachment({
     if (!showPreview || !file.extension) return false;
     const ext = file.extension.toLowerCase();
     // Don't preview presentation slides - they should use PresentationAttachment instead
-    if ((ext === 'html' || ext === 'htm') && isPresentationAttachment(file.path)) {
+    if (isHtmlExtension(ext) && isPresentationAttachment(file.path)) {
       return false;
     }
-    const result = ['md', 'markdown', 'html', 'htm', 'txt', 'json', 'csv'].includes(ext);
-    return result;
+    return isPreviewableExtension(ext);
   }, [showPreview, file.extension, file.path]);
 
   useEffect(() => {
@@ -476,9 +618,10 @@ function DocumentAttachment({
   }, [isPreviewable, sandboxId, file.path]);
 
   if (showPreview && isPreviewable) {
-    const ext = file.extension?.toLowerCase();
-    const isMarkdown = ext === 'md' || ext === 'markdown';
-    const isHtml = ext === 'html' || ext === 'htm';
+    const ext = file.extension?.toLowerCase() || '';
+    const isMarkdown = isMarkdownExtension(ext);
+    const isJson = isJsonExtension(ext);
+    const isHtml = isHtmlExtension(ext);
 
     console.log('[DocumentAttachment] Render state:', {
       isLoading,
@@ -535,6 +678,17 @@ function DocumentAttachment({
                   <SelectableMarkdownText isDark={colorScheme === 'dark'}>
                     {autoLinkUrls(fileContent)}
                   </SelectableMarkdownText>
+                ) : isJson ? (
+                  <Text className="text-xs font-mono text-foreground leading-5" selectable style={{ fontFamily: 'monospace' }}>
+                    {(() => {
+                      try {
+                        const parsed = JSON.parse(fileContent);
+                        return JSON.stringify(parsed, null, 2);
+                      } catch {
+                        return fileContent;
+                      }
+                    })()}
+                  </Text>
                 ) : (
                   <Text className="text-xs font-mono text-foreground leading-5" selectable style={{ fontFamily: 'monospace' }}>
                     {fileContent}

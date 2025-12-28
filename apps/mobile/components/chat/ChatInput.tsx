@@ -122,6 +122,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   const hasText = !!(value && value.trim());
   const hasAttachments = attachments.length > 0;
   const hasContent = hasText || hasAttachments;
+  const hasAgent = !!agent?.agent_id;
   // Allow input to be editable during streaming - only disable when sending or transcribing
   const isDisabled = isSendingMessage || isTranscribing;
 
@@ -252,9 +253,14 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
       return;
     }
 
+    if (!agent?.agent_id) {
+      console.warn('⚠️ No agent selected - cannot send message');
+      return;
+    }
+
     // Don't clear input here - let useChat handle it after successful send
     // Trim trailing spaces before sending
-    onSendMessage?.(value.trim(), agent?.agent_id || '', agent?.name || '');
+    onSendMessage?.(value.trim(), agent.agent_id, agent.name || '');
   }, [value, isAuthenticated, onSendMessage, agent]);
 
   // Handle sending audio
@@ -286,6 +292,10 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     } else if (isRecording) {
       handleSendAudioMessage();
     } else if (hasContent) {
+      if (!hasAgent) {
+        console.warn('⚠️ No agent selected - cannot send message');
+        return;
+      }
       handleSendMessage();
     } else {
       // Start audio recording
@@ -293,9 +303,13 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
         console.warn('⚠️ User not authenticated - cannot record audio');
         return;
       }
+      if (!hasAgent) {
+        console.warn('⚠️ No agent selected - cannot record audio');
+        return;
+      }
       onAudioRecord?.();
     }
-  }, [isAgentRunning, isRecording, hasContent, isAuthenticated, t, onStopAgentRun, handleSendAudioMessage, handleSendMessage, onAudioRecord]);
+  }, [isAgentRunning, isRecording, hasContent, hasAgent, isAuthenticated, onStopAgentRun, handleSendAudioMessage, handleSendMessage, onAudioRecord]);
 
   // Content size change handler - debounced via ref comparison
   const handleContentSizeChange = React.useCallback(
@@ -423,6 +437,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
             buttonIconSize={buttonIconSize}
             buttonIconClass={buttonIconClass}
             isAuthenticated={isAuthenticated}
+            hasAgent={hasAgent}
           />
         )}
       </View>
@@ -521,6 +536,7 @@ interface NormalModeProps {
   buttonIconSize: number;
   buttonIconClass: string;
   isAuthenticated: boolean;
+  hasAgent: boolean;
 }
 
 const NormalMode = React.memo(({
@@ -549,6 +565,7 @@ const NormalMode = React.memo(({
   buttonIconSize,
   buttonIconClass,
   isAuthenticated,
+  hasAgent,
 }: NormalModeProps) => (
   <>
     <View className="flex-1 mb-12">
@@ -612,8 +629,8 @@ const NormalMode = React.memo(({
           onPress={() => {
             onButtonPress();
           }}
-          disabled={isSendingMessage || isTranscribing}
-          style={{ width: 40, height: 40, borderRadius: 18, alignItems: 'center', justifyContent: 'center' }}
+          disabled={isSendingMessage || isTranscribing || !hasAgent}
+          style={{ width: 40, height: 40, borderRadius: 18, alignItems: 'center', justifyContent: 'center', opacity: (!hasAgent && !isAgentRunning) ? 0.4 : 1 }}
           className={isAgentRunning ? 'bg-foreground' : 'bg-primary'}
           hitSlop={ANDROID_HIT_SLOP}
           activeOpacity={0.7}

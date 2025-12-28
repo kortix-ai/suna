@@ -135,7 +135,7 @@ class ThreadManager:
     async def _handle_billing(self, thread_id: str, content: dict, saved_message: dict):
         try:
             llm_response_id = content.get("llm_response_id", "unknown")
-            logger.info(f"💰 Processing billing for LLM response: {llm_response_id}")
+            logger.debug(f"💰 Processing billing for LLM response: {llm_response_id}")
             
             usage = content.get("usage", {})
             
@@ -156,12 +156,12 @@ class ThreadManager:
             
             # Debug logging to verify cache_creation_tokens extraction
             if cache_creation_tokens > 0:
-                logger.info(f"💾 CACHE CREATION TOKENS DETECTED: {cache_creation_tokens} tokens will be charged at cache write rates")
+                logger.debug(f"💾 CACHE CREATION TOKENS DETECTED: {cache_creation_tokens} tokens will be charged at cache write rates")
             
             model = content.get("model")
             
             usage_type = "FALLBACK ESTIMATE" if is_fallback else ("ESTIMATED" if is_estimated else "EXACT")
-            logger.info(f"💰 Usage type: {usage_type} - prompt={prompt_tokens}, completion={completion_tokens}, cache_read={cache_read_tokens}, cache_creation={cache_creation_tokens}")
+            logger.debug(f"💰 Usage type: {usage_type} - prompt={prompt_tokens}, completion={completion_tokens}, cache_read={cache_read_tokens}, cache_creation={cache_creation_tokens}")
             
             client = await self.db.client
             thread_row = await client.table('threads').select('account_id').eq('thread_id', thread_id).limit(1).execute()
@@ -171,9 +171,9 @@ class ThreadManager:
 
                 if cache_read_tokens > 0:
                     cache_hit_percentage = (cache_read_tokens / prompt_tokens * 100) if prompt_tokens > 0 else 0
-                    logger.info(f"🎯 CACHE HIT: {cache_read_tokens}/{prompt_tokens} tokens ({cache_hit_percentage:.1f}%)")
+                    logger.debug(f"🎯 CACHE HIT: {cache_read_tokens}/{prompt_tokens} tokens ({cache_hit_percentage:.1f}%)")
                 elif cache_creation_tokens > 0:
-                    logger.info(f"💾 CACHE WRITE: {cache_creation_tokens} tokens stored for future use")
+                    logger.debug(f"💾 CACHE WRITE: {cache_creation_tokens} tokens stored for future use")
                 else:
                     logger.debug(f"❌ NO CACHE: All {prompt_tokens} tokens processed fresh")
 
@@ -189,7 +189,7 @@ class ThreadManager:
                 )
                 
                 if deduct_result.get('success'):
-                    logger.info(f"Successfully deducted ${deduct_result.get('cost', 0):.6f}")
+                    logger.debug(f"Successfully deducted ${deduct_result.get('cost', 0):.6f}")
                 else:
                     logger.error(f"Failed to deduct credits: {deduct_result}")
         except Exception as e:
@@ -400,7 +400,7 @@ class ThreadManager:
         # Simple run counter - increments with each call
         run_number = auto_continue_state['count'] + 1
         
-        logger.info(f"🔥 LLM API call iteration #{run_number} of run")
+        logger.debug(f"🔥 LLM API call iteration #{run_number} of run")
         
         # CRITICAL: Ensure config is always a ProcessorConfig object
         if not isinstance(config, ProcessorConfig):
@@ -437,7 +437,7 @@ class ThreadManager:
                         .maybe_single()\
                         .execute()
                     
-                    if last_usage_result.data:
+                    if last_usage_result and last_usage_result.data:
                         llm_end_content = last_usage_result.data.get('content', {})
                         if isinstance(llm_end_content, str):
                             llm_end_content = json.loads(llm_end_content)
@@ -463,9 +463,15 @@ class ThreadManager:
                             new_msg_tokens = 0
                             
                             if is_auto_continue:
-                                # Auto-continue: No new user message, last_total already includes everything
-                                new_msg_tokens = 0
-                                logger.debug(f"✅ Auto-continue detected (count={auto_continue_state['count']}), skipping new message token count")
+                                # Auto-continue: Get tool result tokens from auto_continue_state
+                                # These are tracked by _auto_continue_generator when tool chunks are yielded
+                                new_msg_tokens = auto_continue_state.get('tool_result_tokens', 0)
+                                if new_msg_tokens > 0:
+                                    logger.debug(f"🔧 Auto-continue: adding {new_msg_tokens} tool result tokens from state")
+                                else:
+                                    logger.debug(f"✅ Auto-continue: no tool result tokens in state")
+                                # Reset AFTER consuming - ready for next iteration
+                                auto_continue_state['tool_result_tokens'] = 0
                             elif latest_user_message_content:
                                 # First turn: Use passed content (avoids DB query)
                                 new_msg_tokens = token_counter(
@@ -484,7 +490,7 @@ class ThreadManager:
                                     .single()\
                                     .execute()
                                 
-                                if latest_msg_result.data:
+                                if latest_msg_result and latest_msg_result.data:
                                     # DB stores content as {"role": "user", "content": "actual text"}
                                     db_content = latest_msg_result.data.get('content', {})
                                     if isinstance(db_content, dict):
@@ -515,13 +521,13 @@ class ThreadManager:
                             else:
                                 max_tokens = int(context_window * 0.84)
                             
-                            logger.info(f"⚡ Fast check: {last_total_tokens} + {new_msg_tokens} = {estimated_total} tokens (threshold: {max_tokens})")
+                            logger.debug(f"⚡ Fast check: {last_total_tokens} + {new_msg_tokens} = {estimated_total} tokens (threshold: {max_tokens})")
                             
                             if estimated_total < max_tokens:
-                                logger.info(f"✅ Under threshold, skipping compression")
+                                logger.debug(f"✅ Under threshold, skipping compression")
                                 skip_fetch = True
                             else:
-                                logger.info(f"📊 Over threshold ({estimated_total} >= {max_tokens}), triggering compression")
+                                logger.debug(f"📊 Over threshold ({estimated_total} >= {max_tokens}), triggering compression")
                                 need_compression = True
                                 # Will fetch and compress below
                         else:
@@ -536,7 +542,7 @@ class ThreadManager:
             import time
             fetch_start = time.time()
             messages = await self.get_llm_messages(thread_id)
-            logger.info(f"⏱️ [TIMING] get_llm_messages(): {(time.time() - fetch_start) * 1000:.1f}ms ({len(messages)} messages)")
+            logger.debug(f"⏱️ [TIMING] get_llm_messages(): {(time.time() - fetch_start) * 1000:.1f}ms ({len(messages)} messages)")
             
             # Note: We no longer need to manually append partial assistant messages
             # because we now save complete assistant messages with tool calls before auto-continuing
@@ -552,7 +558,7 @@ class ThreadManager:
                 elif need_compression:
                     # We know we're over threshold, compress now
                     compress_start = time.time()
-                    logger.info(f"Applying context compression on {len(messages)} messages")
+                    logger.debug(f"Applying context compression on {len(messages)} messages")
                     context_manager = ContextManager()
                     compressed_messages = await context_manager.compress_messages(
                         messages, llm_model, max_tokens=llm_max_tokens, 
@@ -560,7 +566,7 @@ class ThreadManager:
                         system_prompt=system_prompt,
                         thread_id=thread_id
                     )
-                    logger.info(f"⏱️ [TIMING] Context compression: {(time.time() - compress_start) * 1000:.1f}ms ({len(messages)} -> {len(compressed_messages)} messages)")
+                    logger.debug(f"⏱️ [TIMING] Context compression: {(time.time() - compress_start) * 1000:.1f}ms ({len(messages)} -> {len(compressed_messages)} messages)")
                     messages = compressed_messages
                 else:
                     # First turn or no fast path data: Run compression check
@@ -582,7 +588,7 @@ class ThreadManager:
                 try:
                     client = await self.db.client
                     result = await client.table('threads').select('metadata').eq('thread_id', thread_id).single().execute()
-                    if result.data:
+                    if result and result.data:
                         metadata = result.data.get('metadata', {})
                         if metadata.get('cache_needs_rebuild'):
                             force_rebuild = True
@@ -665,13 +671,13 @@ class ThreadManager:
                 if not is_valid_after:
                     logger.error(f"🚨 CRITICAL: Could not repair message structure. Orphaned: {len(orphans_after)}, Unanswered: {len(unanswered_after)}")
                 else:
-                    logger.info(f"✅ Message structure repaired successfully")
+                    logger.debug(f"✅ Message structure repaired successfully")
             else:
                 logger.debug(f"✅ Pre-send validation passed: all tool calls properly paired")
             logger.debug(f"⏱️ [TIMING] Pre-send validation: {(time.time() - validation_start) * 1000:.1f}ms")
             
             llm_call_start = time.time()
-            logger.info(f"📤 Sending {len(prepared_messages)} prepared messages to LLM")
+            logger.debug(f"📤 Sending {len(prepared_messages)} prepared messages to LLM")
 
             # Make LLM call
             try:
@@ -693,9 +699,9 @@ class ThreadManager:
                 # For streaming, the call returns immediately with a generator
                 # For non-streaming, this is the full response time
                 if not stream:
-                    logger.info(f"⏱️ [TIMING] LLM API call (non-streaming): {(time.time() - llm_call_start) * 1000:.1f}ms")
+                    logger.debug(f"⏱️ [TIMING] LLM API call (non-streaming): {(time.time() - llm_call_start) * 1000:.1f}ms")
                 else:
-                    logger.info(f"⏱️ [TIMING] LLM API call initiated (streaming): {(time.time() - llm_call_start) * 1000:.1f}ms")
+                    logger.debug(f"⏱️ [TIMING] LLM API call initiated (streaming): {(time.time() - llm_call_start) * 1000:.1f}ms")
                 
             except LLMError as e:
                 logger.error(f"❌ LLMError: {e}")
@@ -750,6 +756,8 @@ class ThreadManager:
         
         while auto_continue_state['active'] and auto_continue_state['count'] < native_max_auto_continues:
             auto_continue_state['active'] = False  # Reset for this iteration
+            # NOTE: Don't reset tool_result_tokens here! It needs to be used by fast check first.
+            # It gets reset inside _execute_run AFTER the fast check consumes it.
             
             try:
                 # Check for cancellation before continuing
@@ -795,6 +803,25 @@ class ThreadManager:
                         if cancellation_event and cancellation_event.is_set():
                             logger.info(f"Cancellation signal received while processing stream in auto-continue for thread {thread_id}")
                             break
+                        
+                        # Track tool result tokens for fast check in next iteration
+                        if chunk.get('type') == 'tool':
+                            try:
+                                from litellm.utils import token_counter
+                                content = chunk.get('content', {})
+                                if isinstance(content, str):
+                                    content = json.loads(content)
+                                # Extract the actual content string for token counting
+                                content_str = content.get('content', '') if isinstance(content, dict) else str(content)
+                                if content_str:
+                                    tool_tokens = token_counter(
+                                        model=llm_model,
+                                        messages=[{"role": "tool", "content": content_str}]
+                                    )
+                                    auto_continue_state['tool_result_tokens'] = auto_continue_state.get('tool_result_tokens', 0) + tool_tokens
+                                    logger.debug(f"🔧 Tracked {tool_tokens} tool result tokens (total: {auto_continue_state['tool_result_tokens']})")
+                            except Exception as e:
+                                logger.debug(f"Failed to count tool result tokens: {e}")
                         
                         # Check for auto-continue triggers
                         should_continue = self._check_auto_continue_trigger(
@@ -856,7 +883,7 @@ class ThreadManager:
             logger.warning(f"Reached maximum auto-continue limit ({native_max_auto_continues})")
             yield {
                 "type": "content",
-                "content": f"\n[Agent reached maximum auto-continue limit of {native_max_auto_continues}]"
+                "content": f"\n[Worker reached maximum auto-continue limit of {native_max_auto_continues}]"
             }
 
     def _check_auto_continue_trigger(

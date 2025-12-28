@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, Suspense, lazy } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { accountStateKeys } from '@/hooks/billing';
@@ -33,12 +33,15 @@ import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { toast } from 'sonner';
 import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { Button } from '../ui/button';
-import { X, ChevronRight, HelpCircle } from 'lucide-react';
+import { X, ChevronRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { NotificationDropdown } from '../notifications/notification-dropdown';
 import { UsageLimitsPopover } from './usage-limits-popover';
 import { useSidebar } from '@/components/ui/sidebar';
+import { useWelcomeBannerStore } from '@/stores/welcome-banner-store';
+import { cn } from '@/lib/utils';
 import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
+import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 
 // Lazy load heavy components that aren't immediately visible
 const PlanSelectionModal = lazy(() => 
@@ -50,8 +53,8 @@ const UpgradeCelebration = lazy(() =>
 const SunaModesPanel = lazy(() => 
   import('./suna-modes-panel').then(mod => ({ default: mod.SunaModesPanel }))
 );
-const AgentRunLimitDialog = lazy(() => 
-  import('@/components/thread/agent-run-limit-dialog').then(mod => ({ default: mod.AgentRunLimitDialog }))
+const AgentRunLimitBanner = lazy(() => 
+  import('@/components/thread/agent-run-limit-banner').then(mod => ({ default: mod.AgentRunLimitBanner }))
 );
 const CustomAgentsSection = lazy(() => 
   import('./custom-agents-section').then(mod => ({ default: mod.CustomAgentsSection }))
@@ -98,11 +101,19 @@ export function DashboardContent() {
     getCurrentAgent
   } = useAgentSelection();
   const [initiatedThreadId, setInitiatedThreadId] = useState<string | null>(null);
-  const [showAgentLimitDialog, setShowAgentLimitDialog] = useState(false);
+  const [showAgentLimitBanner, setShowAgentLimitBanner] = useState(false);
   const [agentLimitData, setAgentLimitData] = useState<{
     runningCount: number;
     runningThreadIds: string[];
   } | null>(null);
+
+  // Ensure dialog opens when agentLimitData is set
+  useEffect(() => {
+    if (agentLimitData && !showAgentLimitBanner) {
+      console.log('agentLimitData set, opening dialog');
+      setShowAgentLimitBanner(true);
+    }
+  }, [agentLimitData, showAgentLimitBanner]);
   const [showUpgradeCelebration, setShowUpgradeCelebration] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -110,6 +121,7 @@ export function DashboardContent() {
   const isMobile = useIsMobile();
   const { user } = useAuth();
   const { setOpen: setSidebarOpen } = useSidebar();
+  const { isVisible: isWelcomeBannerVisible } = useWelcomeBannerStore();
   const chatInputRef = React.useRef<ChatInputHandles>(null);
   const initiateAgentMutation = useInitiateAgentWithInvalidation();
   const pricingModalStore = usePricingModalStore();
@@ -258,6 +270,8 @@ export function DashboardContent() {
     }
   }, [searchParams, router, tAuth]);
 
+  const addOptimisticFiles = useOptimisticFilesStore((state) => state.addFiles);
+
   const handleSubmit = async (
     message: string,
     options?: {
@@ -275,47 +289,48 @@ export function DashboardContent() {
     setIsSubmitting(true);
 
     try {
-      const files = chatInputRef.current?.getPendingFiles() || [];
+      const fileIds = chatInputRef.current?.getUploadedFileIds() || [];
+      const pendingFiles = chatInputRef.current?.getPendingFiles() || [];
       localStorage.removeItem(PENDING_PROMPT_KEY);
 
-      const formData = new FormData();
       const trimmedMessage = message.trim();
-      if (!trimmedMessage && files.length === 0) {
+      if (!trimmedMessage && fileIds.length === 0 && pendingFiles.length === 0) {
         setIsSubmitting(false);
         throw new Error('Prompt is required when starting a new Worker');
       }
-      formData.append('prompt', trimmedMessage || message);
-
-      if (selectedAgentId) {
-        formData.append('agent_id', selectedAgentId);
-      }
-
-      files.forEach((file, index) => {
-        const normalizedName = normalizeFilenameToNFC(file.name);
-        formData.append('files', file, normalizedName);
-      });
-
-      if (options?.model_name && options.model_name.trim()) {
-        formData.append('model_name', options.model_name.trim());
-      }
-      formData.append('stream', 'true');
-      formData.append('enable_context_manager', String(options?.enable_context_manager ?? false));
 
       console.log('[Dashboard] Starting agent with:', {
         prompt: message.substring(0, 100),
         promptLength: message.length,
         model_name: options?.model_name,
         agent_id: selectedAgentId,
-        filesCount: files.length,
+        fileIds: fileIds.length,
+        pendingFiles: pendingFiles.length,
       });
 
       const threadId = crypto.randomUUID();
       const projectId = crypto.randomUUID();
       
       chatInputRef.current?.clearPendingFiles();
+      chatInputRef.current?.clearUploadedFiles();
       setIsRedirecting(true);
       
-      sessionStorage.setItem('optimistic_prompt', trimmedMessage || message);
+      const normalizedPendingFiles = pendingFiles.map((file) => {
+        const normalizedName = normalizeFilenameToNFC(file.name);
+        return new File([file], normalizedName, { type: file.type });
+      });
+      
+      let promptWithFiles = trimmedMessage || message;
+      if (normalizedPendingFiles.length > 0 && fileIds.length === 0) {
+        addOptimisticFiles(threadId, projectId, normalizedPendingFiles);
+        sessionStorage.setItem('optimistic_files', 'true');
+        const fileRefs = normalizedPendingFiles.map((f) => 
+          `[Uploaded File: /workspace/uploads/${f.name}]`
+        ).join('\n');
+        promptWithFiles = `${trimmedMessage || message}\n\n${fileRefs}`;
+      }
+      
+      sessionStorage.setItem('optimistic_prompt', promptWithFiles);
       sessionStorage.setItem('optimistic_thread', threadId);
       
       router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
@@ -323,8 +338,8 @@ export function DashboardContent() {
       optimisticAgentStart({
         thread_id: threadId,
         project_id: projectId,
-        prompt: trimmedMessage || message,
-        files: files,
+        prompt: promptWithFiles,
+        file_ids: fileIds.length > 0 ? fileIds : undefined,
         model_name: options?.model_name,
         agent_id: selectedAgentId || undefined,
         memory_enabled: true,
@@ -333,6 +348,8 @@ export function DashboardContent() {
         queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });
       }).catch((error) => {
         console.error('Background agent start failed:', error);
+        console.error('Error type:', error?.constructor?.name);
+        console.error('Is AgentRunLimitError?', error instanceof AgentRunLimitError);
         
         if (error instanceof BillingError || error?.status === 402) {
           const message = error.detail?.message?.toLowerCase() || error.message?.toLowerCase() || '';
@@ -367,13 +384,33 @@ export function DashboardContent() {
         }
         
         if (error instanceof AgentRunLimitError) {
+          console.log('Caught AgentRunLimitError, showing dialog');
           const { running_thread_ids, running_count } = error.detail;
-          router.replace('/dashboard');
+          console.log('Running threads:', running_thread_ids, 'Count:', running_count);
+          // Set state BEFORE navigation to ensure it persists
           setAgentLimitData({
             runningCount: running_count,
             runningThreadIds: running_thread_ids,
           });
-          setShowAgentLimitDialog(true);
+          setShowAgentLimitBanner(true);
+          console.log('State set, navigating...');
+          router.replace('/dashboard');
+          return;
+        }
+        
+        // Also check for error code in case instanceof check fails
+        if (error?.detail?.error_code === 'AGENT_RUN_LIMIT_EXCEEDED' || 
+            error?.code === 'AGENT_RUN_LIMIT_EXCEEDED' ||
+            (error?.status === 402 && error?.detail?.running_count !== undefined)) {
+          console.log('Caught agent run limit error by code, showing dialog');
+          const running_thread_ids = error.detail?.running_thread_ids || [];
+          const running_count = error.detail?.running_count || 0;
+          setAgentLimitData({
+            runningCount: running_count,
+            runningThreadIds: running_thread_ids,
+          });
+          setShowAgentLimitBanner(true);
+          router.replace('/dashboard');
           return;
         }
         
@@ -444,7 +481,7 @@ export function DashboardContent() {
           runningCount: running_count,
           runningThreadIds: running_thread_ids,
         });
-        setShowAgentLimitDialog(true);
+        setShowAgentLimitBanner(true);
       } else {
         const errorMessage = error instanceof Error ? error.message : 'Operation failed';
         toast.error(errorMessage);
@@ -521,19 +558,15 @@ export function DashboardContent() {
       </Suspense>
 
       <div className="flex flex-col h-screen w-full overflow-hidden relative">
-        <div className="absolute flex items-center gap-2 top-4 right-4">
+        <div className={cn(
+          "absolute flex items-center gap-2 right-4 transition-[top] duration-200",
+          isWelcomeBannerVisible ? "top-14" : "top-4"
+        )}>
         <NotificationDropdown />
           <Suspense fallback={<div className="h-8 w-20 bg-muted/30 rounded animate-pulse" />}>
             <CreditsDisplay />
           </Suspense>
           <UsageLimitsPopover />
-          <a
-            href="mailto:support@kortix.com"
-            className="flex items-center justify-center h-[41px] w-[41px] border-[1.5px] border-border/60 dark:border-border rounded-full bg-background dark:bg-background hover:bg-accent/30 dark:hover:bg-accent/20 hover:border-border dark:hover:border-border/80 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            title="Contact Support"
-          >
-            <HelpCircle className="h-5 w-5 text-muted-foreground dark:text-muted-foreground/60" />
-          </a>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -699,12 +732,16 @@ export function DashboardContent() {
 
       {agentLimitData && (
         <Suspense fallback={null}>
-          <AgentRunLimitDialog
-            open={showAgentLimitDialog}
-            onOpenChange={setShowAgentLimitDialog}
+          <AgentRunLimitBanner
+            open={showAgentLimitBanner && !!agentLimitData}
+            onOpenChange={(open) => {
+              setShowAgentLimitBanner(open);
+              if (!open) {
+                setAgentLimitData(null);
+              }
+            }}
             runningCount={agentLimitData.runningCount}
             runningThreadIds={agentLimitData.runningThreadIds}
-            projectId={undefined}
           />
         </Suspense>
       )}

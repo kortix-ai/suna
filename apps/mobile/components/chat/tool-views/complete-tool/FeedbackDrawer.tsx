@@ -1,11 +1,11 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { View, Pressable, TextInput, Alert, Keyboard, GestureResponderEvent } from 'react-native';
+import { View, Alert, Keyboard, GestureResponderEvent } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Star, X } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView, BottomSheetTextInput, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 import { Button } from '@/components/ui/button';
@@ -47,12 +47,11 @@ function HalfStarRating({ rating, onRatingChange, size = 32, disabled = false }:
         const isEmpty = rating === null || rating < halfStarValue;
         
         return (
-          <Pressable
+          <BottomSheetTouchable
             key={value}
-            onPress={(e) => handleStarPress(value, e)}
+            onPress={(e: any) => handleStarPress(value, e)}
             disabled={disabled}
-            className="relative active:scale-110"
-            style={{ width: size, height: size }}
+            style={{ width: size, height: size, position: 'relative' }}
           >
             {/* Base star - outline for empty, filled for full stars */}
             <View className="absolute inset-0">
@@ -79,7 +78,7 @@ function HalfStarRating({ rating, onRatingChange, size = 32, disabled = false }:
                 />
               </View>
             )}
-          </Pressable>
+          </BottomSheetTouchable>
         );
       })}
     </View>
@@ -284,13 +283,12 @@ export function FeedbackDrawer() {
               {t('chat.feedbackHelpsImprove', { defaultValue: 'Your feedback helps improve Kortix' })}
             </Text>
           </View>
-          <Pressable
+          <BottomSheetTouchable
             onPress={handleClose}
-            className="w-8 h-8 items-center justify-center rounded-full active:bg-muted/50"
-            hitSlop={8}
+            style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16 }}
           >
             <Icon as={X} size={20} className="text-muted-foreground" />
-          </Pressable>
+          </BottomSheetTouchable>
         </View>
 
         {/* Star Rating with half-star support */}
@@ -340,10 +338,10 @@ export function FeedbackDrawer() {
         </View>
 
         {/* Help Improve Checkbox */}
-        <Pressable
+        <BottomSheetTouchable
           onPress={handleToggleHelpImprove}
           disabled={isSubmitting}
-          className="flex-row items-center gap-3 py-2 mb-6"
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, marginBottom: 24 }}
         >
           <View className={`w-5 h-5 rounded border-2 items-center justify-center ${
             helpImprove 
@@ -357,7 +355,7 @@ export function FeedbackDrawer() {
           <Text className="text-sm font-roobert text-foreground flex-1">
             {t('chat.helpKortixImprove', { defaultValue: 'Help Kortix improve with this feedback' })}
           </Text>
-        </Pressable>
+        </BottomSheetTouchable>
 
         {/* Action Buttons */}
         <View className="flex-row gap-3">

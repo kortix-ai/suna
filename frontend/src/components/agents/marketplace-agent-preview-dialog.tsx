@@ -165,7 +165,7 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className={`${hasUsageExamples ? 'max-w-6xl' : 'max-w-2xl'} h-[85vh] p-0 overflow-hidden flex flex-col`}>
         <DialogHeader className='sr-only'>
-          <DialogTitle>Agent Preview</DialogTitle>
+          <DialogTitle>Worker Preview</DialogTitle>
         </DialogHeader>
         <div className={`flex ${hasUsageExamples ? 'flex-row' : 'flex-col'} flex-1 min-h-0`}>
           <div className={`${hasUsageExamples ? 'w-1/2' : 'w-full'} flex flex-col min-h-0`}>
@@ -286,7 +286,7 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
                 <div className="rounded-lg border bg-muted/20 p-6 text-center">
                   <Sparkles className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
                   <p className="text-muted-foreground">
-                    This agent operates with core AI capabilities without external integrations
+                    This worker operates with core AI capabilities without external integrations
                   </p>
                 </div>
               )}
@@ -304,7 +304,7 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
                 ) : (
                   <>
                     <Download className="h-5 w-5" />
-                    Install Agent
+                    Install Worker
                   </>
                 )}
               </Button>

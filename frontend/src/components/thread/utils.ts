@@ -112,8 +112,10 @@ export const getToolIcon = (toolName: string): ElementType => {
 
     // Task operations
     case 'create-tasks':
+    case 'create_tasks':
       return List;
     case 'update-tasks':
+    case 'update_tasks':
       return ListTodo;
 
     // Shell commands
@@ -196,6 +198,21 @@ export const getToolIcon = (toolName: string): ElementType => {
     case 'complete':
       return CheckCircle2;
 
+    // Spreadsheet tools
+    case "spreadsheet-add-sheet":
+      return Table2;
+    case "spreadsheet_add_sheet":
+      return Table2;
+    case "spreadsheet-batch-update":
+      return Table2;
+    case "spreadsheet_batch_update":
+      return Table2;
+    case "spreadsheet-create":
+      return Table2;
+    case "spreadsheet_create":
+      return Table2;
+
+    
     default:
       if (toolName?.startsWith('mcp_')) {
         const parts = toolName.split('_');
@@ -228,10 +245,17 @@ export const extractPrimaryParam = (
   if (!content) return null;
 
   try {
-    // Try to parse as JSON first
     const parsed = JSON.parse(content);
     
-    // Handle browser tools
+    if (parsed.query) {
+      const query = Array.isArray(parsed.query) ? parsed.query[0] : parsed.query;
+      return query.length > 30 ? query.substring(0, 27) + '...' : query;
+    }
+    if (parsed.arguments?.query) {
+      const query = Array.isArray(parsed.arguments.query) ? parsed.arguments.query[0] : parsed.arguments.query;
+      return query.length > 30 ? query.substring(0, 27) + '...' : query;
+    }
+    
     if (toolName?.toLowerCase().startsWith('browser_')) {
       if (parsed.url) return parsed.url;
       if (parsed.arguments?.url) return parsed.arguments.url;
@@ -242,7 +266,6 @@ export const extractPrimaryParam = (
       return null;
     }
 
-    // Handle file operations
     if (parsed.file_path) {
       const path = parsed.file_path;
       return typeof path === 'string' ? path.split('/').pop() || path : null;
@@ -252,7 +275,6 @@ export const extractPrimaryParam = (
       return typeof path === 'string' ? path.split('/').pop() || path : null;
     }
 
-    // Handle execute-command
     if (toolName?.toLowerCase() === 'execute-command') {
       if (parsed.command) {
         const cmd = parsed.command;
@@ -264,7 +286,6 @@ export const extractPrimaryParam = (
       }
     }
   } catch (e) {
-    // Not JSON, continue with regex fallback
   }
 
   // Fallback: regex extraction for plain text content
@@ -383,7 +404,9 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['delete-document', 'Deleting Document'],
 
   ['create-tasks', 'Creating Tasks'],
+  ['create_tasks', 'Creating Tasks'],
   ['update-tasks', 'Updating Tasks'],
+  ['update_tasks', 'Updating Tasks'],
   
   ['browser_navigate_to', 'Navigating to Page'],
   ['browser_act', 'Performing Action'],
@@ -408,17 +431,27 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['clear-images-from-context', 'Clearing Images from context'],
   ['load-image', 'Loading Image'],
   ['image-search', 'Searching Image'],
+  ['image_edit_or_generate', 'Generate Media'],
+  ['image-edit-or-generate', 'Generate Media'],
 
-  ['create-sheet', 'Creating Sheet'],
+  ['spreadsheet-create', 'Creating Spreadsheet'],
+  ['spreadsheet_create', 'Creating Spreadsheet'],
   ['update-sheet', 'Updating Sheet'],
   ['view-sheet', 'Viewing Sheet'],
   ['analyze-sheet', 'Analyzing Sheet'],
   ['visualize-sheet', 'Visualizing Sheet'],
   ['format-sheet', 'Formatting Sheet'],
+
+  ['spreadsheet-create-sheet', 'Creating Spreadsheet'],
+  ['spreadsheet_create_sheet', 'Creating Spreadsheet'],
+  ['spreadsheet-add-sheet', 'Adding Sheet'],
+  ['spreadsheet_add_sheet', 'Adding Sheet'],
+  ['spreadsheet-batch-update', 'Updating Spreadsheet'],
+  ['spreadsheet_batch_update', 'Updating Spreadsheet'],
   
 
-  ['update-agent', 'Updating Agent'],
-  ['get-current-agent-config', 'Getting Agent Config'],
+  ['update-agent', 'Updating Worker'],
+  ['get-current-agent-config', 'Getting Worker Config'],
   ['search-mcp-servers', 'Searching MCP Servers'],
   ['get-mcp-server-tools', 'Getting MCP Server Tools'],
   ['configure-mcp-server', 'Configuring MCP Server'],
@@ -451,8 +484,6 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['browser_extract_content', 'Extracting Content'],
   ['browser_screenshot', 'Taking Screenshot'],
 
-  ['execute_data_provider_call', 'Calling data provider'],
-  ['get_data_provider_endpoints', 'Getting endpoints'],
   
   ['get-paper-details', 'Getting Paper Details'],
   ['search-authors', 'Searching Authors'],
@@ -470,24 +501,24 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['web_search', 'Searching Web'],
   ['load_image', 'Loading Image'],
   
-  ['update_agent', 'Updating Agent'],
-  ['get_current_agent_config', 'Getting Agent Config'],
+  ['update_agent', 'Updating Worker'],
+  ['get_current_agent_config', 'Getting Worker Config'],
   ['search_mcp_servers', 'Searching MCP Servers'],
   ['get_popular_mcp_servers', 'Getting Popular MCP Servers'],
   ['test_mcp_server_connection', 'Testing MCP Server Connection'],
   ['discover-user-mcp-servers', 'Discovering tools'],
   ['create-credential-profile', 'Creating profile'],
   ['get-credential-profiles', 'Getting profiles'],
-  ['configure-profile-for-agent', 'Adding tools to agent'],
+  ['configure-profile-for-agent', 'Adding tools to worker'],
 
 
   ['create-new-agent', 'Creating New Worker'],
   ['search-mcp-servers-for-agent', 'Searching MCP Servers'],
   ['create-credential-profile-for-agent', 'Creating Credential Profile'],
   ['discover-mcp-tools-for-agent', 'Discovering MCP Tools'],
-  ['configure-agent-integration', 'Configuring Agent Integration'],
+  ['configure-agent-integration', 'Configuring Worker Integration'],
   ['create-agent-scheduled-trigger', 'Creating Scheduled Trigger'],
-  ['list-agent-scheduled-triggers', 'Listing Agent Scheduled Triggers'],
+  ['list-agent-scheduled-triggers', 'Listing Worker Scheduled Triggers'],
 
   ['make-phone-call', 'Making Phone Call'],
   ['make_phone_call', 'Making Phone Call'],
@@ -586,6 +617,9 @@ export function getUserFriendlyToolName(toolName: string): string {
   return TOOL_DISPLAY_NAMES.get(toolName) || toolName;
 }
 
+// Feature flag to hide browser tab and use ToolView instead
+export const HIDE_BROWSER_TAB = true;
+
 export const HIDE_STREAMING_XML_TAGS = new Set([
   'create-tasks',
   'execute-command',
@@ -613,11 +647,6 @@ export const HIDE_STREAMING_XML_TAGS = new Set([
   'crawl-webpage',
   'web-search',
   'load-image',
-  'execute_data_provider_call',
-  'execute_data_provider_endpoint',
-
-  'execute-data-provider-call',
-  'execute-data-provider-endpoint',
 ]);
 
 export function extractAppSlugFromToolCall(toolCall: any): string | null {

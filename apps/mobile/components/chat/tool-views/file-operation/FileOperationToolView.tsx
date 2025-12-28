@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { View, ScrollView, Pressable } from 'react-native';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { View, ScrollView, Pressable, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -33,6 +33,7 @@ import {
   type LineDiff,
 } from './_utils';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { JsonRenderer } from './JsonRenderer';
 import { CsvRenderer } from './CsvRenderer';
 import { XlsxRenderer } from './XlsxRenderer';
 import { ToolViewCard, TabSwitcher, StatusBadge, LoadingState, CodeRenderer, FileDownloadButton } from '../shared';
@@ -100,6 +101,24 @@ export function FileOperationToolView({
   const previewScrollRef = useRef<ScrollView>(null);
   const lastLineCountRef = useRef<number>(0);
   const tabInitializedRef = useRef<boolean>(false);
+  const [isSourceScrolledUp, setIsSourceScrolledUp] = useState(false);
+  const [isPreviewScrolledUp, setIsPreviewScrolledUp] = useState(false);
+
+  // Track if user has scrolled away from bottom (for source tab)
+  const handleSourceScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    // Consider "at bottom" if within 50px of the bottom
+    setIsSourceScrolledUp(distanceFromBottom > 50);
+  }, []);
+
+  // Track if user has scrolled away from bottom (for preview tab)
+  const handlePreviewScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    // Consider "at bottom" if within 50px of the bottom
+    setIsPreviewScrolledUp(distanceFromBottom > 50);
+  }, []);
 
   if (!toolCall) {
     return null;
@@ -312,6 +331,7 @@ export function FileOperationToolView({
 
   const isHtml = isFileType.html(fileExtension);
   const isMarkdown = fileExtension === 'md' || fileExtension === 'markdown';
+  const isJson = fileExtension === 'json';
   const isCsv = fileExtension === 'csv' || fileExtension === 'tsv';
   const isXlsx = fileExtension === 'xlsx' || fileExtension === 'xls';
 
@@ -330,29 +350,32 @@ export function FileOperationToolView({
 
   const FileIcon = config.icon;
 
-  // Auto-scroll during streaming
+  // Auto-scroll during streaming - only if user hasn't scrolled up
   useEffect(() => {
-    if (!isStreaming || !fileContent || !sourceScrollRef.current) return;
+    if (!isStreaming || !fileContent || !sourceScrollRef.current || isSourceScrolledUp) return;
     const currentLineCount = contentLines.length;
     if (currentLineCount <= lastLineCountRef.current) return;
     lastLineCountRef.current = currentLineCount;
     setTimeout(() => {
       sourceScrollRef.current?.scrollToEnd({ animated: false });
     }, 100);
-  }, [isStreaming, contentLines.length, fileContent]);
+  }, [isStreaming, contentLines.length, fileContent, isSourceScrolledUp]);
 
   useEffect(() => {
     if (!isStreaming) {
       lastLineCountRef.current = 0;
+      // Reset scroll state when streaming ends
+      setIsSourceScrolledUp(false);
+      setIsPreviewScrolledUp(false);
     }
   }, [isStreaming]);
 
   useEffect(() => {
-    if (!isStreaming || !fileContent || !previewScrollRef.current) return;
+    if (!isStreaming || !fileContent || !previewScrollRef.current || isPreviewScrolledUp) return;
     setTimeout(() => {
       previewScrollRef.current?.scrollToEnd({ animated: false });
     }, 100);
-  }, [isStreaming, fileContent]);
+  }, [isStreaming, fileContent, isPreviewScrolledUp]);
 
   const handleCopyContent = async () => {
     if (!fileContent) return;
@@ -508,8 +531,25 @@ export function FileOperationToolView({
           className="flex-1"
           showsVerticalScrollIndicator={true}
           nestedScrollEnabled={true}
+          onScroll={handlePreviewScroll}
+          scrollEventThrottle={16}
         >
           <MarkdownRenderer content={fileContent} />
+        </ScrollView>
+      );
+    }
+
+    if (isJson) {
+      return (
+        <ScrollView
+          ref={previewScrollRef}
+          className="flex-1"
+          showsVerticalScrollIndicator={true}
+          nestedScrollEnabled={true}
+          onScroll={handlePreviewScroll}
+          scrollEventThrottle={16}
+        >
+          <JsonRenderer content={fileContent} />
         </ScrollView>
       );
     }
@@ -520,6 +560,8 @@ export function FileOperationToolView({
           className="flex-1"
           showsVerticalScrollIndicator={true}
           nestedScrollEnabled={true}
+          onScroll={handlePreviewScroll}
+          scrollEventThrottle={16}
         >
           <View className="p-4">
             <CsvRenderer content={fileContent} />
@@ -534,6 +576,8 @@ export function FileOperationToolView({
           className="flex-1"
           showsVerticalScrollIndicator={true}
           nestedScrollEnabled={true}
+          onScroll={handlePreviewScroll}
+          scrollEventThrottle={16}
         >
           <View className="p-4">
             <XlsxRenderer content={fileContent} fileName={fileName} />
@@ -549,6 +593,8 @@ export function FileOperationToolView({
         className="flex-1"
         showsVerticalScrollIndicator={true}
         nestedScrollEnabled={true}
+        onScroll={handlePreviewScroll}
+        scrollEventThrottle={16}
       >
         <View className="p-2">
           <CodeRenderer
@@ -587,6 +633,8 @@ export function FileOperationToolView({
         className="flex-1"
         showsVerticalScrollIndicator={true}
         nestedScrollEnabled={true}
+        onScroll={handleSourceScroll}
+        scrollEventThrottle={16}
       >
         <View className="p-2 bg-card">
           {contentLines.map((line, idx) => (
@@ -630,7 +678,7 @@ export function FileOperationToolView({
     if (!tabInitializedRef.current) {
       if (hasDiffData) {
         setActiveTab('changes');
-      } else if (isMarkdown || isHtml || isCsv || isXlsx || isPresentationSlide) {
+      } else if (isMarkdown || isJson || isHtml || isCsv || isXlsx || isPresentationSlide) {
         setActiveTab('preview');
       } else {
         setActiveTab('code');

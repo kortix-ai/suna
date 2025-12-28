@@ -323,7 +323,7 @@ export function TriggerConfigStep({
                 <TextInput
                   value={triggerName}
                   onChangeText={onTriggerNameChange}
-                  placeholder={`${app.name} → Agent`}
+                  placeholder={`${app.name} → Worker`}
                   placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
                   style={{
                     padding: 12,

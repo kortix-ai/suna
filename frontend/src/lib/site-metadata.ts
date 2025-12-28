@@ -9,5 +9,5 @@ export const siteMetadata = {
   title: 'Kortix: Your Autonomous AI Worker',
   description: 'Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects.',
   url: baseUrl,
-  keywords: 'Kortix, AI Agent, Agentic AI, Autonomous AI Agent, AI Automation, AI Workflow Automation, AI Assistant, AI Worker, Task Automation',
+  keywords: 'Kortix, AI Worker, Agentic AI, Autonomous AI Worker, AI Automation, AI Workflow Automation, AI Assistant, Task Automation',
 };

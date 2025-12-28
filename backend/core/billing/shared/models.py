@@ -7,6 +7,7 @@ class CreateCheckoutSessionRequest(BaseModel):
     success_url: str
     cancel_url: str
     commitment_type: Optional[str] = None
+    locale: Optional[str] = None  # Locale for Stripe adaptive pricing (e.g., 'en', 'de', 'fr', 'es', 'it')
 
 class CreatePortalSessionRequest(BaseModel):
     return_url: str

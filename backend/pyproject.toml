@@ -39,7 +39,7 @@ dependencies = [
   "pyjwt==2.10.1",
   "exa-py==1.9.1",
   "e2b-code-interpreter==1.2.0",
-  "certifi==2024.2.2",
+  "certifi>=2025.4.26",
   "python-ripgrep==0.0.6",
   "daytona-sdk>=0.115.0",
   "daytona-api-client>=0.115.0",
@@ -57,6 +57,8 @@ dependencies = [
   "prometheus-client==0.21.1",
   "langfuse==2.60.5",
   "Pillow>=10.4.0",
+  "vtracer>=0.6.0",
+  "replicate>=0.25.0",
   "mcp==1.9.4",
   "aiohttp==3.12.0",
   "email-validator==2.0.0",
@@ -92,6 +94,9 @@ dependencies = [
   "novu-py>=3.11.0",
   "psutil>=5.9.0",
   "google-analytics-data>=0.18.0",
+  "realitydefender>=0.1.10",
+  "apify-client==2.3.0",
+  "paramiko>=3.4.0",
 ]
 
 [project.urls]

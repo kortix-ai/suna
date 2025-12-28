@@ -33,7 +33,7 @@ export async function generateMetadata({ params }): Promise<Metadata> {
     const title = projectData.name || 'Shared Conversation | Kortix';
     const description =
       projectData.description ||
-      'Replay this Agent conversation on Kortix';
+      'Replay this Worker conversation on Kortix';
     const ogImage = isDevelopment
       ? `${process.env.NEXT_PUBLIC_URL}/share-page/og-fallback.png`
       : `${process.env.NEXT_PUBLIC_URL}/api/share-page/og-image?title=${projectData.name}`;

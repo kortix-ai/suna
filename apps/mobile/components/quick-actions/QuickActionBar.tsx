@@ -1,13 +1,7 @@
 import * as React from 'react';
 import { View, Dimensions, Pressable, Platform, ScrollView } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  interpolate,
-  Extrapolation,
-  withSpring,
-} from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { QUICK_ACTIONS } from './quickActions';
@@ -15,9 +9,8 @@ import { QuickAction } from '.';
 import { useLanguage } from '@/contexts';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const ITEM_WIDTH = 85;
-const ITEM_SPACING = 8;
-const TOTAL_ITEM_WIDTH = ITEM_WIDTH + ITEM_SPACING;
+const ITEM_SPACING = 8; // Consistent spacing between items (always the same)
+const CONTAINER_PADDING = 16; // Padding on sides
 
 // Android hit slop for better touch targets
 const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 12, bottom: 12, left: 12, right: 12 } : undefined;
@@ -36,32 +29,59 @@ interface ModeItemProps {
   index: number;
   isSelected: boolean;
   onPress: () => void;
+  isLast: boolean;
 }
 
-const ModeItem = React.memo(({ action, index, isSelected, onPress }: ModeItemProps) => {
+const ModeItem = React.memo(({ action, index, isSelected, onPress, isLast }: ModeItemProps) => {
   const { t } = useLanguage();
+  const { colorScheme } = useColorScheme();
   const translatedLabel = t(`quickActions.${action.id}`, { defaultValue: action.label });
 
+  // Get icon color based on theme and selection state
+  // Primary: #121215 (light) / #F8F8F8 (dark)
+  // Foreground: #121215 (light) / #F8F8F8 (dark)
+  const iconColor = React.useMemo(() => {
+    if (isSelected) {
+      return colorScheme === 'dark' ? '#F8F8F8' : '#121215'; // primary
+    }
+    return colorScheme === 'dark' ? '#F8F8F8' : '#121215'; // foreground
+  }, [isSelected, colorScheme]);
+
   return (
-    <Pressable onPress={onPress} hitSlop={ANDROID_HIT_SLOP}>
+    <Pressable 
+      onPress={onPress} 
+      hitSlop={ANDROID_HIT_SLOP}
+      style={{
+        marginRight: isLast ? 0 : ITEM_SPACING, // Consistent spacing between items, no margin on last
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
       <View
         style={{
-          width: ITEM_WIDTH,
-          marginHorizontal: ITEM_SPACING / 2,
           alignItems: 'center',
           justifyContent: 'center',
           opacity: isSelected ? 1 : 0.5,
           transform: [{ scale: isSelected ? 1 : 0.9 }],
         }}
       >
-        <View className="bg-muted/50 rounded-2xl px-3 py-2.5 flex-row items-center gap-2">
+        <View 
+          className="bg-muted/50 rounded-2xl py-2.5 flex-row items-center"
+          style={{
+            paddingHorizontal: 12,
+          }}
+        >
           <Icon 
             as={action.icon} 
             size={18} 
-            className="text-foreground"
+            color={iconColor}
+            className={isSelected ? 'text-primary' : 'text-foreground'}
             strokeWidth={2}
+            style={{ marginRight: 6, flexShrink: 0 }}
           />
-          <Text className="text-sm font-roobert-medium text-foreground">
+          <Text 
+            className={`text-sm font-roobert-medium ${isSelected ? 'text-primary' : 'text-foreground'}`}
+          >
             {translatedLabel}
           </Text>
         </View>
@@ -86,10 +106,26 @@ export function QuickActionBar({
     return index >= 0 ? index : 0;
   }, [actions, selectedActionId]);
 
+  // Store item positions for scrolling
+  const itemPositions = React.useRef<number[]>([]);
+  const itemWidths = React.useRef<number[]>([]);
+
+  // Measure items and calculate positions
+  // x is relative to the contentContainer (which includes padding)
+  const measureItem = React.useCallback((index: number, width: number, x: number) => {
+    itemWidths.current[index] = width;
+    itemPositions.current[index] = x;
+  }, []);
+
   // Scroll to selected item when it changes
   React.useEffect(() => {
-    const offset = (selectedIndex * TOTAL_ITEM_WIDTH) - (SCREEN_WIDTH / 2) + (TOTAL_ITEM_WIDTH / 2);
-    scrollViewRef.current?.scrollTo({ x: Math.max(0, offset), animated: true });
+    if (itemPositions.current[selectedIndex] !== undefined && itemWidths.current[selectedIndex] !== undefined) {
+      const itemX = itemPositions.current[selectedIndex];
+      const itemWidth = itemWidths.current[selectedIndex];
+      const itemCenter = itemX + (itemWidth / 2);
+      const offset = itemCenter - (SCREEN_WIDTH / 2);
+      scrollViewRef.current?.scrollTo({ x: Math.max(0, offset), animated: true });
+    }
   }, [selectedIndex]);
 
   // Handle mode change with haptic
@@ -118,20 +154,28 @@ export function QuickActionBar({
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{
-          paddingHorizontal: (SCREEN_WIDTH - TOTAL_ITEM_WIDTH) / 2,
+          paddingHorizontal: CONTAINER_PADDING,
+          flexDirection: 'row',
+          alignItems: 'center',
         }}
         decelerationRate="fast"
-        snapToInterval={TOTAL_ITEM_WIDTH}
-        snapToAlignment="center"
       >
         {actions.map((action, index) => (
-          <ModeItem
+          <View
             key={action.id}
-            action={action}
-            index={index}
-            isSelected={index === selectedIndex}
-            onPress={() => handleItemPress(index)}
-          />
+            onLayout={(event) => {
+              const { width, x } = event.nativeEvent.layout;
+              measureItem(index, width, x);
+            }}
+          >
+            <ModeItem
+              action={action}
+              index={index}
+              isSelected={index === selectedIndex}
+              onPress={() => handleItemPress(index)}
+              isLast={index === actions.length - 1}
+            />
+          </View>
         ))}
       </ScrollView>
     </View>

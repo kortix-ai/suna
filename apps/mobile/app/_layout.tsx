@@ -6,7 +6,7 @@ import { initializeI18n } from '@/lib/utils/i18n';
 import { usePresence } from '@/hooks/usePresence';
 import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, AdvancedFeaturesProvider, TrackingProvider, useAuthContext } from '@/contexts';
 import { PresenceProvider } from '@/contexts/PresenceContext';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ThemeProvider } from '@react-navigation/native';
 import { PortalHost } from '@rn-primitives/portal';
@@ -16,12 +16,14 @@ import { Stack, SplashScreen, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import * as Linking from 'expo-linking';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useColorScheme } from 'nativewind';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { Platform, LogBox } from 'react-native';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
+import { Platform, LogBox, AppState, AppStateStatus } from 'react-native';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import { supabase } from '@/api/supabase';
+import * as Updates from 'expo-updates';
 
 // Suppress known warning from react-native-markdown-display library
 LogBox.ignoreLogs([
@@ -53,6 +55,12 @@ export default function RootLayout() {
       },
     },
   }));
+  
+  // Store queryClient in ref for deep link handler
+  const queryClientRef = React.useRef(queryClient);
+  React.useEffect(() => {
+    queryClientRef.current = queryClient;
+  }, [queryClient]);
 
   const [fontsLoaded, fontError] = useFonts(ROOBERT_FONTS);
 
@@ -77,11 +85,130 @@ export default function RootLayout() {
     }
   }, [colorScheme]);
 
+
   useEffect(() => {
     if (fontsLoaded || fontError) {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
+
+  // ==========================================
+  // OTA UPDATE SYSTEM - Instant Updates
+  // ==========================================
+  // Uses expo-updates hook for reactive update detection + manual checks
+  // 
+  // How it works:
+  // 1. Native code checks for updates on launch (checkAutomatically: "ON_LOAD")
+  // 2. useUpdates() hook detects when update is downloaded
+  // 3. We immediately reload to apply the update
+  // 4. Also checks on foreground for updates published while app was open
+  // ==========================================
+
+  // Track if we've already applied an update this session (prevent reload loops)
+  const hasAppliedUpdate = useRef(false);
+  const isCheckingUpdate = useRef(false);
+
+  // Use the expo-updates hook to reactively detect when updates are ready
+  const {
+    isUpdatePending,
+    isUpdateAvailable,
+    isDownloading,
+    downloadedUpdate,
+    checkError,
+    downloadError,
+  } = Updates.useUpdates();
+
+  // Log update state for debugging
+  useEffect(() => {
+    if (__DEV__ || !Updates.isEnabled) return;
+    
+    console.log('📱 OTA State:', {
+      isUpdateAvailable,
+      isUpdatePending,
+      isDownloading,
+      hasDownloadedUpdate: !!downloadedUpdate,
+      checkError: checkError?.message,
+      downloadError: downloadError?.message,
+    });
+  }, [isUpdateAvailable, isUpdatePending, isDownloading, downloadedUpdate, checkError, downloadError]);
+
+  // Immediately reload when an update is downloaded and pending
+  useEffect(() => {
+    if (__DEV__ || !Updates.isEnabled) return;
+
+    if (isUpdatePending && !hasAppliedUpdate.current) {
+      hasAppliedUpdate.current = true;
+      console.log('🚀 OTA: Update pending! Reloading app immediately...');
+      
+      // Small delay to ensure any ongoing operations complete
+      setTimeout(async () => {
+        try {
+          await Updates.reloadAsync();
+        } catch (error) {
+          console.error('❌ OTA: Failed to reload:', error);
+          hasAppliedUpdate.current = false;
+        }
+      }, 100);
+    }
+  }, [isUpdatePending]);
+
+  // If update is available but not downloading, fetch it
+  useEffect(() => {
+    if (__DEV__ || !Updates.isEnabled) return;
+
+    if (isUpdateAvailable && !isDownloading && !isUpdatePending && !hasAppliedUpdate.current) {
+      console.log('✅ OTA: Update available, fetching...');
+      Updates.fetchUpdateAsync().catch((error) => {
+        console.error('❌ OTA: Failed to fetch update:', error);
+      });
+    }
+  }, [isUpdateAvailable, isDownloading, isUpdatePending]);
+
+  // Manual check function for foreground and fallback
+  const checkAndApplyUpdates = useCallback(async (source: string) => {
+    if (__DEV__ || !Updates.isEnabled) return;
+    if (isCheckingUpdate.current || hasAppliedUpdate.current) return;
+
+    isCheckingUpdate.current = true;
+    console.log(`🔄 OTA: Manual check [${source}]`);
+
+    try {
+      const update = await Updates.checkForUpdateAsync();
+      
+      if (update.isAvailable) {
+        console.log('✅ OTA: Update found, downloading...');
+        const fetchResult = await Updates.fetchUpdateAsync();
+        
+        if (fetchResult.isNew && !hasAppliedUpdate.current) {
+          hasAppliedUpdate.current = true;
+          console.log('🚀 OTA: Reloading with new update...');
+          await Updates.reloadAsync();
+        }
+      }
+    } catch (error) {
+      console.error('❌ OTA: Check failed:', error);
+    } finally {
+      isCheckingUpdate.current = false;
+    }
+  }, []);
+
+  // Check for updates when app comes to foreground
+  useEffect(() => {
+    if (__DEV__ || !Updates.isEnabled) return;
+
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'active') {
+        // Delay to let app settle after foregrounding
+        setTimeout(() => checkAndApplyUpdates('foreground'), 500);
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription.remove();
+  }, [checkAndApplyUpdates]);
+  // ==========================================
+  // END OTA UPDATE SYSTEM
+  // ==========================================
 
   useEffect(() => {
     let isHandlingDeepLink = false;
@@ -228,6 +355,10 @@ export default function RootLayout() {
             }
 
             console.log('✅ Session set! User logged in:', data.user?.email);
+            
+            // Immediately invalidate React Query cache to fetch fresh account state
+            console.log('🔄 Invalidating cache to fetch fresh account state');
+            queryClientRef.current.invalidateQueries({ queryKey: ['account-state'] });
 
             // Save terms acceptance date if terms were accepted and not already saved
             if (termsAccepted && data.user) {
@@ -306,55 +437,57 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <TrackingProvider>
-          <LanguageProvider>
-            <AuthProvider>
-              <BillingProvider>
-                <AgentProvider>
-                  <AdvancedFeaturesProvider>
-                    <PresenceProvider>
-                      <ToastProvider>
-                        <BottomSheetModalProvider>
-                          <ThemeProvider value={NAV_THEME[activeColorScheme]}>
-                            <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
-                            <AuthProtection>
-                              <Stack
-                                screenOptions={{
-                                  headerShown: false,
-                                  animation: 'fade',
-                                }}
-                              >
-                                <Stack.Screen name="index" options={{ animation: 'none' }} />
-                                <Stack.Screen name="setting-up" />
-                                <Stack.Screen name="onboarding" />
-                                <Stack.Screen
-                                  name="home"
-                                  options={{
-                                    gestureEnabled: false,
-                                  }}
-                                />
-                                <Stack.Screen
-                                  name="auth"
-                                  options={{
-                                    gestureEnabled: false,
-                                    animation: 'fade',
-                                  }}
-                                />
-                                <Stack.Screen name="trigger-detail" />
-                                <Stack.Screen name="worker-config" />
-                              </Stack>
-                            </AuthProtection>
-                            <PortalHost />
-                          </ThemeProvider>
-                        </BottomSheetModalProvider>
-                      </ToastProvider>
-                    </PresenceProvider>
-                  </AdvancedFeaturesProvider>
-                </AgentProvider>
-              </BillingProvider>
-            </AuthProvider>
-          </LanguageProvider>
-        </TrackingProvider>
+        <KeyboardProvider statusBarTranslucent navigationBarTranslucent enabled>
+          <TrackingProvider>
+            <LanguageProvider>
+              <AuthProvider>
+                <BillingProvider>
+                  <AgentProvider>
+                    <AdvancedFeaturesProvider>
+                      <PresenceProvider>
+                        <ToastProvider>
+                          <BottomSheetModalProvider>
+                            <ThemeProvider value={NAV_THEME[activeColorScheme]}>
+                              <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
+<AuthProtection>
+                                  <Stack
+                                    screenOptions={{
+                                      headerShown: false,
+                                      animation: 'fade',
+                                    }}
+                                  >
+                                    <Stack.Screen name="index" options={{ animation: 'none' }} />
+                                    <Stack.Screen name="setting-up" />
+                                    <Stack.Screen name="onboarding" />
+                                    <Stack.Screen
+                                      name="home"
+                                      options={{
+                                        gestureEnabled: false,
+                                      }}
+                                    />
+                                    <Stack.Screen
+                                      name="auth"
+                                      options={{
+                                        gestureEnabled: false,
+                                        animation: 'fade',
+                                      }}
+                                    />
+                                    <Stack.Screen name="trigger-detail" />
+                                    <Stack.Screen name="worker-config" />
+                                  </Stack>
+                                </AuthProtection>
+                              <PortalHost />
+                            </ThemeProvider>
+                          </BottomSheetModalProvider>
+                        </ToastProvider>
+                      </PresenceProvider>
+                    </AdvancedFeaturesProvider>
+                  </AgentProvider>
+                </BillingProvider>
+              </AuthProvider>
+            </LanguageProvider>
+          </TrackingProvider>
+        </KeyboardProvider>
       </GestureHandlerRootView>
     </QueryClientProvider>
   );
@@ -382,10 +515,19 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
     // Index/splash screen has no segment or empty segment
     const onSplashScreen = !currentSegment;
 
-    // Simple rule: Unauthenticated users can only be on auth or splash screens
+    // RULE 1: Unauthenticated users can only be on auth or splash screens
     if (!isAuthenticated && !inAuthGroup && !onSplashScreen) {
       console.log('🚫 Unauthenticated user on protected route, redirecting to /auth');
       router.replace('/auth');
+      return;
+    }
+
+    // RULE 2: Authenticated users should NEVER see auth screens
+    // This prevents back navigation/gestures from showing auth to logged-in users
+    if (isAuthenticated && inAuthGroup) {
+      console.log('🚫 Authenticated user on auth screen, redirecting to /home');
+      router.replace('/home');
+      return;
     }
   }, [isAuthenticated, authLoading, segments, router]);
 

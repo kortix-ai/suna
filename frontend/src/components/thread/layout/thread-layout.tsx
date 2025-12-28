@@ -139,26 +139,54 @@ export const ThreadLayout = memo(function ThreadLayout({
     }
   }, [shouldOpenPanel, isSidePanelOpen, onToggleSidePanel, clearShouldOpenPanel]);
 
+  // Get selected file path from store
+  const selectedFilePath = useKortixComputerStore((state) => state.selectedFilePath);
+  
+  const SUITE_MODE_FILE_EXTENSIONS = [
+    'kanvax', 
+    'pptx', 
+    'ppt', 
+    'xlsx', 
+    'xls', 
+    'csv'
+  ];
+
+  const isSuiteMode = useMemo(() => {
+    if (selectedFilePath) {
+      const ext = selectedFilePath.split('.').pop()?.toLowerCase();
+      if (SUITE_MODE_FILE_EXTENSIONS.includes(ext || '')) {
+        return true;
+      }
+    }
+    return false;
+  }, [selectedFilePath]);
+
   useEffect(() => {
     if (shouldShowPanel) {
+      // Auto-expand for suite mode with animation delay
+      if (isSuiteMode) {
+        const timer = setTimeout(() => {
+          sidePanelRef.current?.resize(70);
+          mainPanelRef.current?.resize(30);
+        }, 100);
+        return () => clearTimeout(timer);
+      } else {
       sidePanelRef.current?.resize(50);
       mainPanelRef.current?.resize(50);
+      }
     } else {
       sidePanelRef.current?.resize(0);
       mainPanelRef.current?.resize(100);
     }
-  }, [shouldShowPanel]);
+  }, [shouldShowPanel, isSuiteMode]);
 
   if (compact) {
     return (
       <>
         <div className="relative h-full">
-          {/* Main content - always full width */}
           <div className="flex flex-col h-full overflow-hidden">
             {children}
           </div>
-
-          {/* Kortix Computer - Full replacement overlay for compact */}
           {isSidePanelOpen && initialLoadCompleted && (
             <div className="absolute inset-0 bg-background z-40">
               <KortixComputer
@@ -256,7 +284,7 @@ export const ThreadLayout = memo(function ThreadLayout({
           ref={mainPanelRef}
           defaultSize={shouldShowPanel ? 50 : 100}
           minSize={shouldShowPanel ? 30 : 100}
-          maxSize={shouldShowPanel ? 95 : 100}
+          maxSize={shouldShowPanel ? 65 : 100}
           className="flex flex-col overflow-hidden relative bg-transparent"
         >
           <SiteHeader
@@ -283,17 +311,18 @@ export const ThreadLayout = memo(function ThreadLayout({
           )}
         </ResizablePanel>
 
-        {/* Resizable handle - always render */}
+        {/* Resizable handle - hidden in suite mode */}
         <ResizableHandle
-          withHandle={true}
-          className="z-20 w-0"
+          withHandle={!isSuiteMode}
+          disabled={isSuiteMode}
+          className={cn("z-20 w-0", isSuiteMode && "opacity-0 pointer-events-none")}
         />
 
         {/* Side panel - always render but control size */}
         <ResizablePanel
           ref={sidePanelRef}
           defaultSize={shouldShowPanel ? 50 : 0}
-          minSize={shouldShowPanel ? 20 : 0}
+          minSize={shouldShowPanel ? 35 : 0}
           maxSize={shouldShowPanel ? 70 : 0}
           collapsible={true}
           className={cn(
@@ -321,6 +350,7 @@ export const ThreadLayout = memo(function ThreadLayout({
             streamingText={streamingToolArgsJson}
             sandboxId={sandboxId || undefined}
             projectId={projectId}
+            sidePanelRef={sidePanelRef}
           />
         </ResizablePanel>
       </ResizablePanelGroup>

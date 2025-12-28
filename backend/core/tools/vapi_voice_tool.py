@@ -416,9 +416,10 @@ class VapiVoiceTool(Tool):
                 return self.fail_response(safety_message_normalized)
             
             thread_id, user_id, agent_id = await self._get_current_thread_and_user()
+            
             safety_guidelines = "\n\nETHICAL GUIDELINES (MANDATORY):\n- NEVER request sensitive personal information (SSN, passwords, credit card numbers, bank accounts, PINs)\n- NEVER discuss illegal activities, threats, or emergency services\n- NEVER impersonate government agencies, law enforcement, or financial institutions\n- NEVER create urgency to manipulate the recipient into taking immediate action\n- NEVER request payments, transfers, or financial transactions\n- Be respectful, honest, and transparent about being an AI assistant"
             
-            country_context = f"\n\nIMPORTANT: You are calling a phone number in {country_name} (country code +{country_code}). Please be aware of potential cultural differences, time zones, and language preferences."
+            country_context = f"\n\nIMPORTANT: You are calling a phone number in {country_name} (country code +{country_code}). Be aware of cultural differences and time zones. The system will automatically detect and adapt to the caller's language."
             
             if system_prompt:
                 enhanced_system_prompt = system_prompt + country_context + safety_guidelines
@@ -496,7 +497,7 @@ class VapiVoiceTool(Tool):
                     await self.thread_manager.add_message(
                         thread_id=thread_id,
                         type="assistant",
-                        content=f"📞 **Initiating call to {normalized_phone}**\n🌍 **Country: {country_name}**\n\nCall ID: `{call_id[:8]}...`\n\nThe conversation will appear here in real-time as it happens.",
+                        content=f"📞 **Initiating call to {normalized_phone}**\n🌍 **Country: {country_name}**\n🗣️ **Multilingual Support: Enabled**\n\nCall ID: `{call_id[:8]}...`\n\nThe AI agent will automatically detect and speak the caller's language. The conversation will appear here in real-time as it happens.",
                         is_llm_message=False,
                         metadata={
                             "call_id": call_id,
@@ -504,6 +505,7 @@ class VapiVoiceTool(Tool):
                             "phone_number": normalized_phone,
                             "country": country_name,
                             "country_code": f"+{country_code}",
+                            "multilingual": True,
                             "source": "vapi_voice_tool"
                         }
                     )
@@ -520,9 +522,10 @@ class VapiVoiceTool(Tool):
                 "original_number": phone_number,
                 "country": country_name,
                 "country_code": f"+{country_code}",
-                "message": f"Call initiated successfully to {normalized_phone} ({country_name}). Call ID: {call_id}",
+                "multilingual": True,
+                "message": f"Call initiated successfully to {normalized_phone} ({country_name}). The AI agent will automatically detect and speak the caller's language. Call ID: {call_id}",
                 "next_action": "MONITOR_CALL",
-                "instructions": f"The call has been initiated. Now use wait_for_call_completion with call_id: {call_id} to monitor the call until it ends and see the real-time conversation."
+                "instructions": f"The call has been initiated with automatic multilingual support. Now use wait_for_call_completion with call_id: {call_id} to monitor the call until it ends and see the real-time conversation."
             }
             
             return self.success_response(result)

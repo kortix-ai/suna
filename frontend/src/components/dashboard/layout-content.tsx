@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import { useApiHealth } from '@/hooks/usage/use-health';
 import { useAdminRole } from '@/hooks/admin';
 import { usePresence } from '@/hooks/use-presence';
+import { featureFlags } from '@/lib/feature-flags';
 
 import { useProjects } from '@/hooks/sidebar/use-sidebar';
 import { useIsMobile } from '@/hooks/utils';
@@ -39,6 +40,14 @@ const WelcomeBonusBanner = lazy(() =>
 
 const PresenceDebug = lazy(() => 
   import('@/components/debug/presence-debug').then(mod => ({ default: mod.PresenceDebug }))
+);
+
+const KortixAppBanners = lazy(() => 
+  import('@/components/announcements/kortix-app-banners').then(mod => ({ default: mod.KortixAppBanners }))
+);
+
+const MobileAppInterstitial = lazy(() => 
+  import('@/components/announcements/mobile-app-interstitial').then(mod => ({ default: mod.MobileAppInterstitial }))
 );
 
 // Skeleton shell that renders immediately for FCP
@@ -180,6 +189,16 @@ export default function DashboardLayoutContent({
         <Suspense fallback={null}>
           <PresentationViewerWrapper />
         </Suspense>
+        {/* Kortix App announcement banners */}
+        <Suspense fallback={null}>
+          <KortixAppBanners disableMobileAdvertising={featureFlags.disableMobileAdvertising} />
+        </Suspense>
+        {/* Mobile app install interstitial - shown on actual mobile devices */}
+        {!featureFlags.disableMobileAdvertising ? (
+          <Suspense fallback={null}>
+            <MobileAppInterstitial />
+          </Suspense>
+        ) : null}
       </div>
     </AppProviders>
   );

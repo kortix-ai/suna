@@ -2,18 +2,17 @@ import os
 import json
 import asyncio
 import datetime
-from typing import Optional
+from typing import Optional, Tuple
 from core.tools.mcp_tool_wrapper import MCPToolWrapper
 from core.agentpress.tool import SchemaType
 from core.prompts.agent_builder_prompt import get_agent_builder_prompt
 from core.prompts.prompt import get_system_prompt
-from core.prompts.core_prompt import get_dynamic_system_prompt
-from core.tools.tool_guide_registry import get_minimal_tool_index
+from core.tools.tool_guide_registry import get_minimal_tool_index, get_tool_guide
 from core.utils.logger import logger
 
 class PromptManager:
     @staticmethod
-    async def build_minimal_prompt(agent_config: Optional[dict], tool_registry=None, mcp_loader=None, user_id: Optional[str] = None, thread_id: Optional[str] = None, client=None) -> dict:
+    async def build_minimal_prompt(agent_config: Optional[dict], tool_registry=None, mcp_loader=None, user_id: Optional[str] = None, thread_id: Optional[str] = None, client=None) -> Tuple[dict, Optional[dict]]:
         if agent_config and agent_config.get('system_prompt'):
             content = agent_config['system_prompt'].strip()
         else:
@@ -36,22 +35,43 @@ You are currently in fast-start mode with all core tools preloaded and ready NOW
    • Communication: message_tool, task_list_tool, expand_msg_tool
 
 ⏳ Advanced tools available via initialize_tools():
-   • Content: sb_presentation_tool, sb_designer_tool
+   • Content: sb_presentation_tool, sb_canvas_tool
    • Research: people_search_tool, company_search_tool, paper_search_tool
-   • Data: data_providers_tool, sb_kb_tool
+   • Data: apify_tool, sb_kb_tool
 
 If you need specialized tools, use initialize_tools() to load them.
 If relevant context seems missing, ask a clarifying question.
 
 """
         
+        preloaded_guides = PromptManager._get_preloaded_tool_guides()
+        if preloaded_guides:
+            content += preloaded_guides
+        
         content = await PromptManager._append_jit_mcp_info(content, mcp_loader)
+        
+        # Fetch user context (locale, username), memory, and file context in parallel
+        user_context_task = PromptManager._fetch_user_context_data(user_id, client)
+        memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
+        file_task = PromptManager._fetch_file_context(thread_id)
+        
+        user_context_data, memory_data, file_data = await asyncio.gather(
+            user_context_task, memory_task, file_task
+        )
+        
+        if user_context_data:
+            content += user_context_data
         
         system_message = {"role": "system", "content": content}
         
-        memory_data = await PromptManager._fetch_user_memories(user_id, thread_id, client)
+        context_parts = []
         if memory_data:
-            return system_message, {"role": "user", "content": f"[CONTEXT - User Memory]\n{memory_data}\n[END CONTEXT]"}
+            context_parts.append(f"[CONTEXT - User Memory]\n{memory_data}\n[END CONTEXT]")
+        if file_data:
+            context_parts.append(f"[CONTEXT - Attached Files]\n{file_data}\n[END CONTEXT]")
+        
+        if context_parts:
+            return system_message, {"role": "user", "content": "\n\n".join(context_parts)}
         
         return system_message, None
     
@@ -64,22 +84,28 @@ If relevant context seems missing, ask a clarifying question.
                                   xml_tool_calling: bool = False,
                                   user_id: Optional[str] = None,
                                   use_dynamic_tools: bool = True,
-                                  mcp_loader=None) -> dict:
+                                  mcp_loader=None) -> Tuple[dict, Optional[dict]]:
         
-        system_content = PromptManager._build_base_prompt(use_dynamic_tools)
-        system_content = PromptManager._append_agent_system_prompt(system_content, agent_config, use_dynamic_tools)
+        if agent_config and agent_config.get('system_prompt'):
+            system_content = agent_config['system_prompt'].strip()
+        else:
+            from core.prompts.core_prompt import get_core_system_prompt
+            system_content = get_core_system_prompt()
+        
+        system_content = PromptManager._build_base_prompt(system_content, use_dynamic_tools)
         system_content = await PromptManager._append_builder_tools_prompt(system_content, agent_config)
         
         kb_task = PromptManager._fetch_knowledge_base(agent_config, client)
         user_context_task = PromptManager._fetch_user_context_data(user_id, client)
         memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
+        file_task = PromptManager._fetch_file_context(thread_id)
         
         system_content = PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance)
         system_content = await PromptManager._append_jit_mcp_info(system_content, mcp_loader)
         system_content = PromptManager._append_xml_tool_calling_instructions(system_content, xml_tool_calling, tool_registry)
         system_content = PromptManager._append_datetime_info(system_content)
         
-        kb_data, user_context_data, memory_data = await asyncio.gather(kb_task, user_context_task, memory_task)
+        kb_data, user_context_data, memory_data, file_data = await asyncio.gather(kb_task, user_context_task, memory_task, file_task)
         
         if kb_data:
             system_content += kb_data
@@ -91,24 +117,57 @@ If relevant context seems missing, ask a clarifying question.
         
         system_message = {"role": "system", "content": system_content}
         
+        context_parts = []
         if memory_data:
-            return system_message, {"role": "user", "content": f"[CONTEXT - User Memory]\n{memory_data}\n[END CONTEXT]"}
+            context_parts.append(f"[CONTEXT - User Memory]\n{memory_data}\n[END CONTEXT]")
+        if file_data:
+            context_parts.append(f"[CONTEXT - Attached Files]\n{file_data}\n[END CONTEXT]")
+        
+        if context_parts:
+            return system_message, {"role": "user", "content": "\n\n".join(context_parts)}
         
         return system_message, None
     
     @staticmethod
-    def _build_base_prompt(use_dynamic_tools: bool) -> str:
+    def _build_base_prompt(system_content: str, use_dynamic_tools: bool) -> str:
         if use_dynamic_tools:
             logger.info("🚀 [DYNAMIC TOOLS] Using dynamic tool loading system (minimal index only)")
             minimal_index = get_minimal_tool_index()
-            default_system_content = get_dynamic_system_prompt(minimal_index)
-            logger.info(f"📊 [DYNAMIC TOOLS] Core prompt + minimal index: {len(default_system_content):,} chars")
+            system_content += "\n\n" + minimal_index
+            logger.info(f"📊 [DYNAMIC TOOLS] Core prompt + minimal index: {len(system_content):,} chars")
+            
+            preloaded_guides = PromptManager._get_preloaded_tool_guides()
+            if preloaded_guides:
+                system_content += preloaded_guides
+                logger.info(f"📖 [DYNAMIC TOOLS] Added preloaded tool guides: {len(preloaded_guides):,} chars")
         else:
             logger.info("⚠️  [LEGACY MODE] Using full embedded prompt (all tool documentation included)")
-            default_system_content = get_system_prompt()
-            logger.info(f"📊 [LEGACY MODE] Full prompt size: {len(default_system_content):,} chars")
+            system_content = get_system_prompt()
+            logger.info(f"📊 [LEGACY MODE] Full prompt size: {len(system_content):,} chars")
         
-        return default_system_content
+        return system_content
+    
+    @staticmethod
+    def _get_preloaded_tool_guides() -> str:
+        from core.jit.loader import JITLoader
+        
+        core_tools = JITLoader.get_core_tools()
+        guides = []
+        
+        for tool_name in core_tools:
+            guide = get_tool_guide(tool_name)
+            if guide:
+                guides.append(guide)
+        
+        if not guides:
+            return ""
+        
+        guides_content = "\n\n# PRELOADED TOOL USAGE GUIDES\n"
+        guides_content += "The following tools are preloaded and ready to use immediately (no initialize_tools needed):\n\n"
+        guides_content += "\n\n".join(guides)
+        
+        logger.info(f"📖 [PRELOADED GUIDES] Loaded {len(guides)} guides for core tools")
+        return guides_content
     
     @staticmethod
     def _append_agent_system_prompt(system_content: str, agent_config: Optional[dict], use_dynamic_tools: bool) -> str:
@@ -175,13 +234,6 @@ If relevant context seems missing, ask a clarifying question.
             return None
     
     @staticmethod
-    async def _append_knowledge_base(system_content: str, agent_config: Optional[dict], client) -> str:
-        kb_data = await PromptManager._fetch_knowledge_base(agent_config, client)
-        if kb_data:
-            system_content += kb_data
-        return system_content
-    
-    @staticmethod
     def _append_mcp_tools_info(system_content: str, agent_config: Optional[dict], mcp_wrapper_instance: Optional[MCPToolWrapper]) -> str:
         if not (agent_config and (agent_config.get('configured_mcps') or agent_config.get('custom_mcps')) and mcp_wrapper_instance and mcp_wrapper_instance._initialized):
             return system_content
@@ -233,33 +285,52 @@ If relevant context seems missing, ask a clarifying question.
     @staticmethod
     async def _append_jit_mcp_info(system_content: str, mcp_loader) -> str:
         if not mcp_loader:
+            logger.debug("⚡ [MCP PROMPT] No mcp_loader provided, skipping JIT MCP info")
             return system_content
         
         try:
             available_tools = await mcp_loader.get_available_tools()
             toolkits = await mcp_loader.get_toolkits()
             
+            logger.debug(f"⚡ [MCP PROMPT] Available tools: {len(available_tools)}, Toolkits: {toolkits}")
+            
             if not available_tools:
+                logger.debug("⚡ [MCP PROMPT] No available tools, skipping JIT MCP info")
                 return system_content
             
             mcp_jit_info = "\n\n--- EXTERNAL MCP TOOLS ---\n"
             mcp_jit_info += f"🔥 You have {len(available_tools)} external MCP tools from {len(toolkits)} connected services.\n"
-            mcp_jit_info += "⚡ TWO-STEP WORKFLOW: (1) discover_mcp_tools() → (2) execute_mcp_tool()\n"
-            mcp_jit_info += "🎯 DISCOVERY: discover_mcp_tools(filter=\"TOOL1,TOOL2,TOOL3\")\n"
-            mcp_jit_info += "🎯 EXECUTION: execute_mcp_tool(tool_name=\"TOOL_NAME\", args={...})\n\n"
+            mcp_jit_info += "⚡ TWO-STEP WORKFLOW: (1) discover_mcp_tools → (2) execute_mcp_tool\n"
+            mcp_jit_info += "🎯 DISCOVERY: use discover_mcp_tools with filter parameter \"TOOL1,TOOL2,TOOL3\"\n"
+            mcp_jit_info += "🎯 EXECUTION: use execute_mcp_tool with tool_name parameter and args parameter\n\n"
             
             toolkit_tools = {}
             for tool_name in available_tools:
                 tool_info = await mcp_loader.get_tool_info(tool_name)
                 if tool_info:
-                    toolkit = tool_info.toolkit_slug.upper()
+                    toolkit_slug = tool_info.toolkit_slug
+                    if toolkit_slug.startswith("custom_"):
+                        parts = toolkit_slug.split("_")
+                        if len(parts) >= 3:
+                            toolkit = "_".join(parts[2:]).upper()  # Everything after custom_type_
+                        else:
+                            toolkit = toolkit_slug.upper()
+                        api_name = tool_name
+                    else:
+                        toolkit = toolkit_slug.upper()
+                        api_name = tool_name
+                        if not api_name.startswith(toolkit + '_'):
+                            api_name = f"{toolkit}_{tool_name.upper()}"
+                    
                     if toolkit not in toolkit_tools:
                         toolkit_tools[toolkit] = []
-
-                    api_name = tool_name
-                    if not api_name.startswith(toolkit + '_'):
-                        api_name = f"{toolkit}_{tool_name.upper()}"
                     toolkit_tools[toolkit].append(api_name)
+                else:
+                    logger.warning(f"⚠️ [MCP PROMPT] No tool_info for tool: {tool_name}")
+            
+            logger.info(f"⚡ [MCP PROMPT] Collected {len(toolkit_tools)} toolkits: {list(toolkit_tools.keys())}")
+            for tk, tl in toolkit_tools.items():
+                logger.debug(f"⚡ [MCP PROMPT] Toolkit {tk}: {len(tl)} tools")
             
             for toolkit, tools in toolkit_tools.items():
                 if toolkit == "TWITTER":
@@ -274,24 +345,25 @@ If relevant context seems missing, ask a clarifying question.
             mcp_jit_info += "- Are the tool schemas already in this conversation? → Skip to execution!\n"
             mcp_jit_info += "- Not in history? → Discover ALL needed tools in ONE batch call\n\n"
             mcp_jit_info += "**✅ CORRECT - Batch Discovery:**\n"
-            mcp_jit_info += "`discover_mcp_tools(filter=\"NOTION_CREATE_PAGE,NOTION_APPEND_BLOCK,NOTION_SEARCH\")`\n"
+            mcp_jit_info += "use discover_mcp_tools with filter parameter \"NOTION_CREATE_PAGE,NOTION_APPEND_BLOCK,NOTION_SEARCH\"\n"
             mcp_jit_info += "→ Returns: All 3 schemas in ONE call\n"
             mcp_jit_info += "→ Schemas cached in conversation forever\n"
             mcp_jit_info += "→ NEVER discover these tools again!\n\n"
             mcp_jit_info += "**❌ WRONG - Multiple Discoveries:**\n"
             mcp_jit_info += "Never call discover 3 times for 3 tools - batch them!\n\n"
             mcp_jit_info += "**STEP 2: Execute tools with schemas:**\n"
-            mcp_jit_info += "`execute_mcp_tool(tool_name=\"NOTION_CREATE_PAGE\", args={\"title\": \"My Page\", ...})`\n"
-            mcp_jit_info += "`execute_mcp_tool(tool_name=\"NOTION_APPEND_BLOCK\", args={\"page_id\": \"...\", ...})`\n\n"
+            mcp_jit_info += "use execute_mcp_tool with tool_name \"NOTION_CREATE_PAGE\" and args parameter\n"
+            mcp_jit_info += "use execute_mcp_tool with tool_name \"NOTION_APPEND_BLOCK\" and args parameter\n\n"
             mcp_jit_info += "⛔ **CRITICAL RULES**:\n"
             mcp_jit_info += "1. Analyze task → Identify ALL tools → Discover ALL in ONE call\n"
             mcp_jit_info += "2. NEVER discover one-by-one (always batch!)\n"
             mcp_jit_info += "3. NEVER re-discover tools already in conversation history\n"
             mcp_jit_info += "4. Check history first - if schemas exist, skip directly to execute_mcp_tool!\n\n"
             
+            logger.info(f"⚡ [MCP PROMPT] Appended MCP info ({len(mcp_jit_info)} chars) for {len(toolkit_tools)} toolkits")
             return system_content + mcp_jit_info
         except Exception as e:
-            logger.warning(f"⚠️  [MCP JIT] Failed to load dynamic tools for prompt: {e}")
+            logger.warning(f"⚠️  [MCP JIT] Failed to load dynamic tools for prompt: {e}", exc_info=True)
             return system_content
     
     @staticmethod
@@ -391,10 +463,35 @@ Example of correct tool call format (multiple invokes in one block):
         if not (user_id and client):
             return None
         
-        locale_task = PromptManager._fetch_user_locale(user_id, client)
-        username_task = PromptManager._fetch_username(user_id, client)
+        # Fetch locale and username in parallel
+        async def fetch_locale():
+            try:
+                from core.utils.user_locale import get_user_locale
+                return await get_user_locale(user_id, client)
+            except Exception as e:
+                logger.warning(f"Failed to fetch locale for user {user_id}: {e}")
+                return None
         
-        locale, username = await asyncio.gather(locale_task, username_task)
+        async def fetch_username():
+            try:
+                user = await client.auth.admin.get_user_by_id(user_id)
+                if user and user.user:
+                    user_metadata = user.user.user_metadata or {}
+                    email = user.user.email
+                    
+                    username = (
+                        user_metadata.get('full_name') or
+                        user_metadata.get('name') or
+                        user_metadata.get('display_name') or
+                        (email.split('@')[0] if email else None)
+                    )
+                    return username
+                return None
+            except Exception as e:
+                logger.warning(f"Failed to fetch username for user {user_id}: {e}")
+                return None
+        
+        locale, username = await asyncio.gather(fetch_locale(), fetch_username())
         
         context_parts = []
         
@@ -412,42 +509,6 @@ Example of correct tool call format (multiple invokes in one block):
             logger.debug(f"Added username ({username}) to system prompt for user {user_id}")
         
         return ''.join(context_parts) if context_parts else None
-    
-    @staticmethod
-    async def _append_user_context(system_content: str, user_id: Optional[str], client) -> str:
-        user_context_data = await PromptManager._fetch_user_context_data(user_id, client)
-        if user_context_data:
-            system_content += user_context_data
-        return system_content
-    
-    @staticmethod
-    async def _fetch_user_locale(user_id: str, client):
-        try:
-            from core.utils.user_locale import get_user_locale
-            return await get_user_locale(user_id, client)
-        except Exception as e:
-            logger.warning(f"Failed to fetch locale for user {user_id}: {e}")
-            return None
-    
-    @staticmethod
-    async def _fetch_username(user_id: str, client):
-        try:
-            user = await client.auth.admin.get_user_by_id(user_id)
-            if user and user.user:
-                user_metadata = user.user.user_metadata or {}
-                email = user.user.email
-                
-                username = (
-                    user_metadata.get('full_name') or
-                    user_metadata.get('name') or
-                    user_metadata.get('display_name') or
-                    (email.split('@')[0] if email else None)
-                )
-                return username
-            return None
-        except Exception as e:
-            logger.warning(f"Failed to fetch username for user {user_id}: {e}")
-            return None
     
     @staticmethod
     async def _fetch_user_memories(user_id: Optional[str], thread_id: str, client) -> Optional[str]:
@@ -522,6 +583,24 @@ Example of correct tool call format (multiple invokes in one block):
         except Exception as e:
             logger.warning(f"Failed to fetch user memories for {user_id}: {e}")
             return None
+    
+    @staticmethod
+    async def _fetch_file_context(thread_id: Optional[str]) -> Optional[str]:
+        if not thread_id:
+            return None
+        
+        try:
+            from core.agent_runs import get_cached_file_context, format_file_context_for_agent
+            
+            files = await get_cached_file_context(thread_id)
+            if files:
+                formatted = format_file_context_for_agent(files)
+                logger.info(f"Retrieved {len(files)} cached file(s) for thread {thread_id}")
+                return formatted
+        except Exception as e:
+            logger.warning(f"Failed to fetch file context for {thread_id}: {e}")
+        
+        return None
     
     @staticmethod
     def _log_prompt_stats(system_content: str, use_dynamic_tools: bool):

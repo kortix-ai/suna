@@ -11,6 +11,7 @@ import BottomSheet, {
   BottomSheetView,
   BottomSheetModal,
   BottomSheetFlatList,
+  TouchableOpacity as BottomSheetTouchable,
 } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
@@ -36,7 +37,7 @@ import {
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Pressable, View, ScrollView, Keyboard, Alert, TouchableOpacity, Platform } from 'react-native';
+import { Pressable, View, ScrollView, Keyboard, Alert, Platform } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   withTiming,
@@ -94,9 +95,9 @@ function BackButton({ onPress }: { onPress: () => void }) {
   const { colorScheme } = useColorScheme();
 
   return (
-    <Pressable onPress={onPress} className="flex-row items-center active:opacity-70">
+    <BottomSheetTouchable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', opacity: 1 }}>
       <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-    </Pressable>
+    </BottomSheetTouchable>
   );
 }
 
@@ -121,6 +122,7 @@ export function AgentDrawer({
     selectAgent,
     selectModel,
     isLoading,
+    hasInitialized,
     loadAgents,
   } = agentContext;
 
@@ -295,8 +297,8 @@ export function AgentDrawer({
 
     if (!selectedAgent) {
       Alert.alert(
-        'No Agent Selected',
-        'Please select an agent first before configuring integrations.',
+        'No Worker Selected',
+        'Please select a worker first before configuring integrations.',
         [{ text: 'OK' }]
       );
       return;
@@ -338,7 +340,7 @@ export function AgentDrawer({
             {t('agents.myWorkers')}
           </Text>
           {onCreateAgent && (
-            <Pressable
+            <BottomSheetTouchable
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 if (hasFreeTier) {
@@ -346,8 +348,7 @@ export function AgentDrawer({
                 } else {
                   onCreateAgent();
                 }
-              }}
-              className="active:opacity-70">
+              }}>
               {hasFreeTier ? (
                 <Sparkles size={18} color={colorScheme === 'dark' ? '#22c55e' : '#16a34a'} />
               ) : (
@@ -358,7 +359,7 @@ export function AgentDrawer({
                   }
                 />
               )}
-            </Pressable>
+            </BottomSheetTouchable>
           )}
         </View>
 
@@ -379,7 +380,7 @@ export function AgentDrawer({
                   colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
               }}
               className="font-roobert text-sm">
-              {isLoading ? t('loading.threads') : 'No worker selected'}
+              {isLoading || !hasInitialized ? t('loading.threads') : 'No worker selected'}
             </Text>
           </View>
         )}
@@ -426,9 +427,56 @@ export function AgentDrawer({
         )}
       </View>
 
+      {/* Integrations Button - Always visible */}
+      <AnimatedPressable
+        style={[
+          integrationsAnimatedStyle,
+          {
+            borderColor: hasFreeTier
+              ? colorScheme === 'dark'
+                ? '#22c55e'
+                : '#16a34a'
+              : colorScheme === 'dark'
+                ? '#454444'
+                : '#c2c2c2',
+            borderWidth: hasFreeTier ? 1.5 : 1,
+            backgroundColor: hasFreeTier
+              ? colorScheme === 'dark'
+                ? 'rgba(34, 197, 94, 0.1)'
+                : 'rgba(22, 163, 74, 0.1)'
+              : 'transparent',
+          },
+        ]}
+        className="mt-4 h-16 flex-1 flex-row items-center justify-center gap-2 rounded-2xl"
+        onPress={handleIntegrationsPress}
+        onPressIn={handleIntegrationsPressIn}
+        onPressOut={handleIntegrationsPressOut}>
+        {hasFreeTier ? (
+          <Lock size={18} color={colorScheme === 'dark' ? '#22c55e' : '#16a34a'} />
+        ) : (
+          <AppBubble />
+        )}
+        <Text
+          className="font-roobert-medium"
+          style={{
+            color: hasFreeTier
+              ? colorScheme === 'dark'
+                ? '#22c55e'
+                : '#16a34a'
+              : colorScheme === 'dark'
+                ? '#f8f8f8'
+                : '#121215',
+          }}>
+          {t('integrations.connectApps')}
+        </Text>
+      </AnimatedPressable>
+      <View
+        style={{ backgroundColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0' }}
+        className="my-3 h-px w-full"
+      />
       {advancedFeaturesEnabled && (
         <>
-          <TouchableOpacity
+          <BottomSheetTouchable
             style={{
               marginTop: 16,
               height: 64,
@@ -452,8 +500,7 @@ export function AgentDrawer({
                   : 'rgba(22, 163, 74, 0.1)'
                 : 'transparent',
             }}
-            onPress={handleIntegrationsPress}
-            activeOpacity={0.7}>
+            onPress={handleIntegrationsPress}>
             {hasFreeTier ? (
               <Lock size={18} color={colorScheme === 'dark' ? '#22c55e' : '#16a34a'} />
             ) : (
@@ -472,7 +519,7 @@ export function AgentDrawer({
               }}>
               {t('integrations.connectApps')}
             </Text>
-          </TouchableOpacity>
+          </BottomSheetTouchable>
           <View
             style={{ backgroundColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0' }}
             className="my-3 h-px w-full"
@@ -493,74 +540,82 @@ export function AgentDrawer({
               </Text>
             </View>
             <View className="flex-row gap-2">
-              <Pressable
+              <BottomSheetTouchable
                 style={{
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
                   borderWidth: 1.5,
                   minHeight: 56,
+                  flex: 1,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 16,
                 }}
-                className="flex-1 items-center justify-center rounded-2xl active:opacity-70"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
                     onOpenWorkerConfig(selectedAgentId, 'instructions');
                     onClose?.();
                   }
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                }}>
                 <Brain size={18} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-              </Pressable>
-              <Pressable
+              </BottomSheetTouchable>
+              <BottomSheetTouchable
                 style={{
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
                   borderWidth: 1.5,
                   minHeight: 56,
+                  flex: 1,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 16,
                 }}
-                className="flex-1 items-center justify-center rounded-2xl active:opacity-70"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
                     onOpenWorkerConfig(selectedAgentId, 'tools');
                     onClose?.();
                   }
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                }}>
                 <Wrench size={18} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-              </Pressable>
-              <Pressable
+              </BottomSheetTouchable>
+              <BottomSheetTouchable
                 style={{
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
                   borderWidth: 1.5,
                   minHeight: 56,
+                  flex: 1,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 16,
                 }}
-                className="flex-1 items-center justify-center rounded-2xl active:opacity-70"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
                     onOpenWorkerConfig(selectedAgentId, 'integrations');
                     onClose?.();
                   }
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                }}>
                 <Server size={18} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-              </Pressable>
-              <Pressable
+              </BottomSheetTouchable>
+              <BottomSheetTouchable
                 style={{
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
                   borderWidth: 1.5,
                   minHeight: 56,
+                  flex: 1,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 16,
                 }}
-                className="flex-1 items-center justify-center rounded-2xl active:opacity-70"
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
                     onOpenWorkerConfig(selectedAgentId, 'triggers');
                     onClose?.();
                   }
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                }}>
                 <Zap size={18} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-              </Pressable>
+              </BottomSheetTouchable>
             </View>
           </View>
         </>
@@ -608,7 +663,7 @@ export function AgentDrawer({
           {t('agents.myWorkers')}
         </Text>
         {onCreateAgent && (
-          <Pressable
+          <BottomSheetTouchable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               if (hasFreeTier) {
@@ -616,8 +671,7 @@ export function AgentDrawer({
               } else {
                 onCreateAgent();
               }
-            }}
-            className="active:opacity-70">
+            }}>
             {hasFreeTier ? (
               <Sparkles size={18} color={colorScheme === 'dark' ? '#22c55e' : '#16a34a'} />
             ) : (
@@ -628,7 +682,7 @@ export function AgentDrawer({
                 }
               />
             )}
-          </Pressable>
+          </BottomSheetTouchable>
         )}
       </View>
 
@@ -674,8 +728,8 @@ export function AgentDrawer({
         borderRadius: 3,
       }}
       style={{
-        zIndex: 9999,
-        elevation: Platform.OS === 'android' ? 9999 : undefined,
+        zIndex: 50,
+        elevation: Platform.OS === 'android' ? 10 : undefined,
       }}>
       {/* Use BottomSheetFlatList directly for composio, composio-detail, and composio-connector views */}
       {['composio', 'composio-detail', 'composio-connector'].includes(currentView) ? (

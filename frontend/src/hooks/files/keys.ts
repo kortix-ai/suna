@@ -5,9 +5,10 @@ export const sandboxKeys = {
   all: sandboxKeysBase,
   files: (sandboxId: string, path: string) => [...sandboxKeysBase, sandboxId, 'files', path] as const,
   fileContent: (sandboxId: string, path: string) => [...sandboxKeysBase, sandboxId, 'content', path] as const,
+  details: (projectId: string) => [...sandboxKeysBase, 'details', projectId] as const,
 } as const;
 
 export const healthKeys = {
   all: healthKeysBase,
   api: () => [...healthKeysBase, 'api'] as const,
-} as const; 
+} as const;

@@ -368,11 +368,8 @@ const IntegrationsDropdown = memo(function IntegrationsDropdown({
             className="h-10 w-10 p-0 bg-transparent border-[1.5px] border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
             disabled={loading || (disabled && !isAgentRunning)}
             onClick={() => {
-              if (!isFreeTier || isLocalMode()) {
-                onOpenRegistry(null);
-              } else {
-                onOpenPlanModal();
-              }
+              // Always open registry - free tier users will see "Upgrade" buttons instead of "Connect"
+              onOpenRegistry(null);
             }}
           >
             <IntegrationLogosCarousel enabled={isLoggedIn && !loading && !(disabled && !isAgentRunning)} />
@@ -624,7 +621,9 @@ export type SubscriptionStatus = 'no_subscription' | 'active';
 
 export interface ChatInputHandles {
   getPendingFiles: () => File[];
+  getUploadedFileIds: () => string[];
   clearPendingFiles: () => void;
+  clearUploadedFiles: () => void;
   setValue: (value: string) => void;
   getValue: () => string;
 }
@@ -635,6 +634,7 @@ export interface ChatInputProps {
     options?: {
       model_name?: string;
       agent_id?: string;
+      file_ids?: string[];
     },
   ) => void;
   placeholder?: string;
@@ -683,8 +683,9 @@ export interface UploadedFile {
   size: number;
   type: string;
   localUrl?: string;
+  fileId?: string;
+  status?: 'pending' | 'uploading' | 'ready' | 'error';
 }
-
 
 
 export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
@@ -752,7 +753,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const [isUploading, setIsUploading] = useState(false);
     const [isDraggingOver, setIsDraggingOver] = useState(false);
     const [hasSubmitted, setHasSubmitted] = useState(false);
-    const [isSendingFiles, setIsSendingFiles] = useState(false);
 
     // Derived values
     const hasFiles = uploadedFiles.length > 0;
@@ -911,20 +911,22 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const { initializeFromAgents } = useAgentSelection();
     useImperativeHandle(ref, () => ({
       getPendingFiles: () => pendingFiles,
+      getUploadedFileIds: () => uploadedFiles
+        .filter((f) => f.fileId && f.status === 'ready')
+        .map((f) => f.fileId!),
       clearPendingFiles: () => setPendingFiles([]),
+      clearUploadedFiles: () => setUploadedFiles([]),
       setValue: (newValue: string) => {
-        // Use the textarea's custom method if available
         const textarea = textareaRef.current as any;
         if (textarea?.clearValue) {
           textarea.clearValue();
           if (newValue) textarea.appendValue(newValue);
         }
         valueRef.current = newValue;
-        // Keep hasContent state in sync with the actual value
         setHasContent(newValue.trim().length > 0);
       },
       getValue: () => valueRef.current,
-    }), [pendingFiles]);
+    }), [pendingFiles, uploadedFiles]);
 
     useEffect(() => {
       if (agents.length > 0 && !onAgentSelect) {
@@ -935,6 +937,18 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     useEffect(() => {
       setMounted(true);
     }, []);
+
+    useEffect(() => {
+      if (controlledValue !== undefined && controlledValue !== valueRef.current) {
+        const textarea = textareaRef.current as any;
+        if (textarea?.clearValue) {
+          textarea.clearValue();
+          if (controlledValue) textarea.appendValue(controlledValue);
+        }
+        valueRef.current = controlledValue;
+        setHasContent(controlledValue.trim().length > 0);
+      }
+    }, [controlledValue]);
 
     // Typewriter effect for placeholder
     useEffect(() => {
@@ -1024,21 +1038,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       
       // Only clear files when agent actually starts (false → true transition)
       if (isAgentRunning && !wasRunning) {
-        // Clear files when agent starts running
         setUploadedFiles([]);
-        setIsSendingFiles(false);
         setHasSubmitted(false);
       }
     }, [isAgentRunning]);
-
-    // Reset sending state if loading becomes false without agent starting (submission failure)
-    useEffect(() => {
-      if (!loading && !isAgentRunning && isSendingFiles) {
-        // If loading stopped but agent didn't start, reset sending state
-        // This allows user to retry or remove files
-        setIsSendingFiles(false);
-      }
-    }, [loading, isAgentRunning, isSendingFiles]);
 
     const handleSubmit = useCallback(async (e: React.FormEvent) => {
       e.preventDefault();
@@ -1061,13 +1064,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         return;
       }
 
-      // Mark as submitted to disable input immediately
       setHasSubmitted(true);
-
-      // Mark files as being sent (show loading spinner)
-      if (currentUploadedFiles.length > 0) {
-        setIsSendingFiles(true);
-      }
 
       let message = currentValue;
 
@@ -1091,12 +1088,17 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       }
 
       const baseModelName = selectedModel ? getActualModelId(selectedModel) : undefined;
+      
+      const fileIds = currentUploadedFiles
+        .filter((f) => f.fileId && f.status === 'ready')
+        .map((f) => f.fileId!);
 
       posthog.capture("task_prompt_submitted", { message });
 
       onSubmit(message, {
         agent_id: selectedAgentId,
         model_name: baseModelName && baseModelName.trim() ? baseModelName.trim() : undefined,
+        file_ids: fileIds.length > 0 ? fileIds : undefined,
       });
 
       // Keep files visible with loading spinner - they'll be cleared when agent starts running
@@ -1303,11 +1305,13 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         />
 
         {onModeDeselect && (
-          <ModeButton
-            selectedMode={selectedMode}
-            isModeDismissing={isModeDismissing}
-            onDeselect={handleModeDeselect}
-          />
+          <div className="hidden sm:block">
+            <ModeButton
+              selectedMode={selectedMode}
+              isModeDismissing={isModeDismissing}
+              onDeselect={handleModeDeselect}
+            />
+          </div>
         )}
       </div>
     ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, projectId, messages, isLoggedIn, isFreeTier, quickIntegrations, integrationIcons, handleOpenRegistry, handleOpenPlanModal, threadId, memoryEnabled, onMemoryToggle, isSunaAgent, sunaAgentModes, onModeDeselect, selectedMode, isModeDismissing, handleModeDeselect]);
@@ -1478,27 +1482,11 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                     <AttachmentGroup
                       files={uploadedFiles || []}
                       sandboxId={sandboxId}
-                      onRemove={isSendingFiles ? undefined : removeUploadedFile}
+                      onRemove={loading ? undefined : removeUploadedFile}
                       layout="inline"
                       maxHeight="216px"
                       showPreviews={true}
                     />
-                    {(isUploading && pendingFiles.length > 0) && (
-                      <div className="absolute inset-0 bg-background/50 backdrop-blur-sm rounded-xl flex items-center justify-center z-10">
-                        <div className="flex items-center gap-2 bg-background/90 px-3 py-2 rounded-lg border border-border">
-                          <KortixLoader size="small" customSize={16} variant="auto" />
-                          <span className="text-sm">Uploading {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''}...</span>
-                        </div>
-                      </div>
-                    )}
-                    {isSendingFiles && !isUploading && (
-                      <div className="absolute inset-0 bg-background/50 backdrop-blur-sm rounded-xl flex items-center justify-center z-10">
-                        <div className="flex items-center gap-2 bg-background/90 px-3 py-2 rounded-lg border border-border">
-                          <KortixLoader size="small" customSize={16} variant="auto" />
-                          <span className="text-sm">Sending {uploadedFiles.length} file{uploadedFiles.length !== 1 ? 's' : ''}...</span>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
                 <div className="relative flex flex-col w-full h-full gap-2 justify-between">

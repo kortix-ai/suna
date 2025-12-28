@@ -1,5 +1,5 @@
 import React, { useMemo, useCallback } from 'react';
-import { View, Pressable, Linking, Text as RNText, TextInput, Platform } from 'react-native';
+import { View, Pressable, Linking, Text as RNText, TextInput, Platform, ScrollView } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 
 // Only import ContextMenu on native platforms (iOS/Android)
@@ -63,15 +63,17 @@ function renderStandaloneAttachments(
   if (validAttachments.length === 0) return null;
 
   return (
-    <View className={`my-4 w-full ${alignRight ? 'items-end' : 'items-start'}`}>
-      <FileAttachmentsGrid
-        filePaths={validAttachments}
-        sandboxId={sandboxId}
-        sandboxUrl={sandboxUrl}
-        compact={false}
-        showPreviews={true}
-        onFilePress={onFilePress}
-      />
+    <View className={`my-4 ${alignRight ? 'items-end' : 'items-start'}`} style={{ width: '100%' }}>
+      <View style={{ width: alignRight ? '85%' : '100%' }}>
+        <FileAttachmentsGrid
+          filePaths={validAttachments}
+          sandboxId={sandboxId}
+          sandboxUrl={sandboxUrl}
+          compact={false}
+          showPreviews={true}
+          onFilePress={onFilePress}
+        />
+      </View>
     </View>
   );
 }
@@ -139,7 +141,7 @@ function preprocessTextOnlyToolsLocal(content: string): string {
 
 interface MarkdownContentProps {
   content: string;
-  handleToolClick?: (assistantMessageId: string | null, toolName: string) => void;
+  handleToolClick?: (assistantMessageId: string | null, toolName: string, toolCallId?: string) => void;
   messageId?: string | null;
   threadId?: string;
   onFilePress?: (filePath: string) => void;
@@ -514,39 +516,128 @@ const ToolCard = React.memo(function ToolCard({
   );
 });
 
+// Define streamable tools for mobile (matching frontend)
+const MOBILE_STREAMABLE_TOOLS = {
+  FILE_OPERATIONS: new Set([
+    'Creating File', 'Rewriting File', 'AI File Edit', 'Editing Text', 'Editing File', 'Deleting File',
+  ]),
+  COMMAND_TOOLS: new Set([
+    'Executing Command', 'Checking Command Output', 'Terminating Command', 'Listing Commands',
+  ]),
+  OTHER_STREAMABLE: new Set([
+    'Creating Presentation', 'Creating Presentation Outline', 'Searching Web', 'Crawling Website',
+  ]),
+};
+
+const isStreamableToolMobile = (toolName: string): boolean => {
+  return Object.values(MOBILE_STREAMABLE_TOOLS).some(toolSet => toolSet.has(toolName));
+};
+
 const StreamingToolCallIndicator = React.memo(function StreamingToolCallIndicator({
   toolCall,
   toolName,
+  showExpanded = false,
 }: {
   toolCall: { function_name?: string; arguments?: Record<string, any> | string } | null;
   toolName: string;
+  showExpanded?: boolean;
 }) {
-  // Extract display parameter using the exact same logic as getToolCallDisplayParam
-  const paramDisplay = useMemo(() => {
-    if (!toolCall?.arguments) return '';
+  const scrollViewRef = React.useRef<any>(null);
+  
+  // Extract display parameter and streaming content
+  const { paramDisplay, streamingContent } = useMemo(() => {
+    if (!toolCall?.arguments) return { paramDisplay: '', streamingContent: '' };
     let args: Record<string, any> = {};
     if (typeof toolCall.arguments === 'string') {
       try {
         args = JSON.parse(toolCall.arguments);
       } catch {
-        args = {};
+        // For partial JSON, just use the raw string as content
+        return { 
+          paramDisplay: '', 
+          streamingContent: toolCall.arguments 
+        };
       }
     } else {
       args = toolCall.arguments;
     }
-    return args.file_path || args.path || args.command || args.query || args.url || '';
-  }, [toolCall]);
+    
+    const param = args.file_path || args.path || args.command || args.query || args.url || args.slide_number?.toString() || '';
+    
+    // Extract streamable content based on tool type
+    let content = '';
+    const displayName = getUserFriendlyToolName(toolName);
+    
+    if (MOBILE_STREAMABLE_TOOLS.FILE_OPERATIONS.has(displayName)) {
+      content = args.file_contents || args.code_edit || args.content || '';
+    } else if (MOBILE_STREAMABLE_TOOLS.COMMAND_TOOLS.has(displayName)) {
+      content = args.command || '';
+    } else if (displayName === 'Creating Presentation' || displayName === 'Creating Presentation Outline') {
+      // For presentations, show slide content
+      content = args.content || args.title || args.slide_content || JSON.stringify(args, null, 2);
+    } else {
+      // For other tools, show JSON representation
+      content = Object.keys(args).length > 0 ? JSON.stringify(args, null, 2) : '';
+    }
+    
+    return { paramDisplay: param, streamingContent: content };
+  }, [toolCall, toolName]);
 
   const displayName = toolName ? getUserFriendlyToolName(toolName) : 'Using Tool';
   const IconComponent = toolName ? getToolIcon(toolName) : CircleDashed;
+  const shouldShowContent = showExpanded && isStreamableToolMobile(displayName) && streamingContent.length > 0;
 
-  // Use the exact same style as ToolCard when isLoading=true
+  // Auto-scroll to bottom when content changes
+  React.useEffect(() => {
+    if (scrollViewRef.current && shouldShowContent) {
+      scrollViewRef.current.scrollToEnd?.({ animated: false });
+    }
+  }, [streamingContent, shouldShowContent]);
+
+  // Expanded card with streaming content
+  if (shouldShowContent) {
+    return (
+      <View className="rounded-3xl border border-border bg-card overflow-hidden">
+        {/* Header */}
+        <View className="flex-row items-center gap-3 p-3 border-b border-border">
+          <View className="h-8 w-8 items-center justify-center rounded-xl border border-border bg-background">
+            <Icon as={IconComponent} size={16} className="text-primary" />
+          </View>
+          <View className="flex-1">
+            <Text className="mb-0.5 font-roobert-medium text-sm text-foreground">{displayName}</Text>
+            {paramDisplay && (
+              <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                {paramDisplay}
+              </Text>
+            )}
+          </View>
+          <Icon as={CircleDashed} size={16} className="animate-spin text-primary" />
+        </View>
+        
+        {/* Streaming content */}
+        <ScrollView
+          ref={scrollViewRef}
+          style={{ maxHeight: 200 }}
+          showsVerticalScrollIndicator={true}
+        >
+          <View className="p-3">
+            <Text
+              className="text-xs text-foreground font-roobert-mono"
+              style={{ fontFamily: 'monospace' }}
+            >
+              {streamingContent}
+            </Text>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // Simple indicator - matches finished ToolCard style exactly
   return (
-    <Pressable
-      disabled
-      className="flex-row items-center gap-3 rounded-3xl border border-border bg-card p-3">
+    <View className="flex-row items-center gap-3 rounded-3xl border border-border bg-card p-3">
       <View className="h-8 w-8 items-center justify-center rounded-xl border border-border bg-background">
-        <Icon as={CircleDashed} size={16} className="animate-spin text-primary" />
+        <Icon as={IconComponent} size={16} className="text-primary" />
       </View>
       <View className="flex-1">
         <Text className="mb-0.5 font-roobert-medium text-sm text-foreground">{displayName}</Text>
@@ -556,7 +647,8 @@ const StreamingToolCallIndicator = React.memo(function StreamingToolCallIndicato
           </Text>
         )}
       </View>
-    </Pressable>
+      <Icon as={CircleDashed} size={16} className="animate-spin text-primary" />
+    </View>
   );
 });
 
@@ -565,7 +657,7 @@ interface ThreadContentProps {
   streamingTextContent?: string;
   streamingToolCall?: UnifiedMessage | null;
   agentStatus: 'idle' | 'running' | 'connecting' | 'error';
-  handleToolClick?: (assistantMessageId: string | null, toolName: string) => void;
+  handleToolClick?: (assistantMessageId: string | null, toolName: string, toolCallId?: string) => void;
   onFilePress?: (filePath: string) => void;
   onToolPress?: (toolMessages: ToolMessagePair[], initialIndex: number) => void;
   streamHookStatus?: string;
@@ -862,7 +954,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
     );
 
     return (
-      <View className="flex-1 pt-4">
+      <View className="flex-1 pt-4" pointerEvents="box-none">
         {groupedMessages.map((group, groupIndex) => {
           if (group.type === 'user') {
             const message = group.messages[0];
@@ -1180,41 +1272,49 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                         return null;
                       }
 
-                      // For other tools, render tool call indicator with spinning icon
-                      // Only hide if we can confirm the completed tool call is already rendered
+                      // For other tools, render tool call indicators with spinning icon
+                      // Render ALL tool calls, not just the first one
                       if (toolCalls.length > 0) {
-                        const firstToolCall = toolCalls[0];
-                        const toolName = firstToolCall.function_name?.replace(/_/g, '-') || '';
-                        const toolCallId = firstToolCall.tool_call_id;
-
-                        // Check if this tool call has already been completed and rendered
-                        // Look for a tool message in the current group with matching tool_call_id
+                        // Check which tool calls have already been completed and rendered
                         const currentGroupToolMessages = group.messages.filter(
                           (m) => m.type === 'tool'
                         );
 
-                        // Check if any tool message in this group matches the streaming tool call
-                        const matchingCompletedTool = currentGroupToolMessages.some(
-                          (toolMsg: UnifiedMessage) => {
-                            const toolMetadata = safeJsonParse<ParsedMetadata>(
-                              toolMsg.metadata,
-                              {}
-                            );
-                            return toolMetadata.tool_call_id === toolCallId;
-                          }
-                        );
+                        // Filter to only show tool calls that haven't been completed yet
+                        const pendingToolCalls = toolCalls.filter((tc: any) => {
+                          const toolCallId = tc.tool_call_id;
+                          const matchingCompletedTool = currentGroupToolMessages.some(
+                            (toolMsg: UnifiedMessage) => {
+                              const toolMetadata = safeJsonParse<ParsedMetadata>(
+                                toolMsg.metadata,
+                                {}
+                              );
+                              return toolMetadata.tool_call_id === toolCallId;
+                            }
+                          );
+                          return !matchingCompletedTool;
+                        });
 
-                        // Only show streaming indicator if no matching completed tool is found
-                        if (!matchingCompletedTool) {
+                        // Render all pending tool calls as vertical stacked cards
+                        if (pendingToolCalls.length > 0) {
                           return (
-                            <StreamingToolCallIndicator
-                              toolCall={firstToolCall}
-                              toolName={toolName}
-                            />
+                            <View className="flex-col gap-2">
+                              {pendingToolCalls.map((tc: any, tcIndex: number) => {
+                                const toolName = tc.function_name?.replace(/_/g, '-') || '';
+                                return (
+                                  <StreamingToolCallIndicator
+                                    key={tc.tool_call_id || `streaming-tool-${tcIndex}`}
+                                    toolCall={tc}
+                                    toolName={toolName}
+                                    showExpanded={false}
+                                  />
+                                );
+                              })}
+                            </View>
                           );
                         }
 
-                        // If matching completed tool exists, don't render streaming indicator
+                        // If all tool calls have been completed, don't render anything
                         return null;
                       }
 
@@ -1227,7 +1327,21 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                     (agentStatus === 'running' || agentStatus === 'connecting') &&
                     !streamingTextContent &&
                     !streamingToolCall &&
-                    (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
+                    (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') &&
+                    (() => {
+                      // Check if any message in this group already has ASK or COMPLETE
+                      const hasAskOrComplete = group.messages.some((msg) => {
+                        if (msg.type !== 'assistant') return false;
+                        try {
+                          const metadata = safeJsonParse<ParsedMetadata>(msg.metadata, {});
+                          const toolCalls = metadata.tool_calls || [];
+                          return toolCalls.some((tc) => isAskOrCompleteTool(tc.function_name));
+                        } catch {
+                          return false;
+                        }
+                      });
+                      return !hasAskOrComplete;
+                    })() && (
                       <View className="mt-2">
                         <AgentLoader />
                       </View>

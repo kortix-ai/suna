@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useEffect } from 'react';
-import { View, ScrollView } from 'react-native';
+import React, { useMemo, useRef, useEffect, useState, useCallback } from 'react';
+import { View, ScrollView, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { CircleDashed } from 'lucide-react-native';
@@ -40,7 +40,7 @@ const STREAMABLE_TOOLS = {
     'Creating Presentation Outline',
     'Creating Presentation',
     'Exposing Port',
-    'Getting Agent Config',
+    'Getting Worker Config',
     'Searching MCP Servers',
   ])
 };
@@ -156,6 +156,9 @@ interface StreamingToolCardProps {
 
 export const StreamingToolCard = React.memo(function StreamingToolCard({ content }: StreamingToolCardProps) {
   const scrollViewRef = useRef<ScrollView>(null);
+  const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
+  const contentHeightRef = useRef(0);
+  const scrollViewHeightRef = useRef(0);
 
   const toolInfo = useMemo(() => {
     const rawToolName = extractToolNameFromStream(content);
@@ -177,23 +180,33 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
     };
   }, [content]);
 
+  // Track if user has scrolled away from bottom
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    // Consider "at bottom" if within 50px of the bottom
+    setIsUserScrolledUp(distanceFromBottom > 50);
+  }, []);
+
+  // Only auto-scroll if user hasn't scrolled up
   useEffect(() => {
-    if (scrollViewRef.current && toolInfo?.streamingContent) {
-      scrollViewRef.current.scrollToEnd({ animated: true });
+    if (scrollViewRef.current && toolInfo?.streamingContent && !isUserScrolledUp) {
+      scrollViewRef.current.scrollToEnd({ animated: false });
     }
-  }, [toolInfo?.streamingContent]);
+  }, [toolInfo?.streamingContent, isUserScrolledUp]);
 
   if (!toolInfo) {
     return (
       <View className="flex-row items-center gap-3 p-3 rounded-3xl border border-border bg-card">
         <View className="h-8 w-8 rounded-xl border border-border bg-background items-center justify-center">
-          <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
+          <Icon as={CircleDashed} size={16} className="text-primary" />
         </View>
         <View className="flex-1">
-          <Text className="text-sm font-roobert-medium text-foreground">
+          <Text className="text-sm font-roobert-medium text-foreground mb-0.5">
             Loading...
           </Text>
         </View>
+        <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
       </View>
     );
   }
@@ -204,7 +217,7 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
     return (
       <View className="flex-row items-center gap-3 p-3 rounded-3xl border border-border bg-card">
         <View className="h-8 w-8 rounded-xl border border-border bg-background items-center justify-center">
-          <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
+          <Icon as={IconComponent} size={16} className="text-primary" />
         </View>
         <View className="flex-1">
           <Text className="text-sm font-roobert-medium text-foreground mb-0.5">
@@ -216,6 +229,7 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
             </Text>
           )}
         </View>
+        <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
       </View>
     );
   }
@@ -224,7 +238,7 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
     <View className="rounded-3xl border border-border bg-card overflow-hidden">
       <View className="flex-row items-center gap-3 p-3 border-b border-border">
         <View className="h-8 w-8 rounded-xl border border-border bg-background items-center justify-center">
-          <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
+          <Icon as={IconComponent} size={16} className="text-primary" />
         </View>
         <View className="flex-1">
           <Text className="text-sm font-roobert-medium text-foreground mb-0.5">
@@ -236,12 +250,15 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
             </Text>
           )}
         </View>
+        <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
       </View>
 
       <ScrollView
         ref={scrollViewRef}
         className="max-h-[300px] bg-card"
         showsVerticalScrollIndicator={true}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
       >
         <View className="p-3">
           <Text

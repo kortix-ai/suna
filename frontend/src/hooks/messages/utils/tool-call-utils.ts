@@ -12,6 +12,7 @@ export interface ToolResultData {
   success: boolean;
   output: any;
   error?: string | null;
+  timestamp?: string;
 }
 
 /**

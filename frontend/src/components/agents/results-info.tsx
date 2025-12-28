@@ -22,9 +22,9 @@ export const ResultsInfo = ({
 
   const showingText = () => {
     if (currentPage && totalPages && totalPages > 1) {
-      return `Showing page ${currentPage} of ${totalPages} (${totalAgents} total agents)`;
+      return `Showing page ${currentPage} of ${totalPages} (${totalAgents} total workers)`;
     }
-    return `Showing ${filteredCount} of ${totalAgents} agents`;
+    return `Showing ${filteredCount} of ${totalAgents} workers`;
   };
 
   return (

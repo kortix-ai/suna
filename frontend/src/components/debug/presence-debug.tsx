@@ -1,6 +1,6 @@
 'use client';
 
-import { usePresenceContext } from '@/providers/presence-provider';
+import { usePresenceContext } from '@/components/presence-provider';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

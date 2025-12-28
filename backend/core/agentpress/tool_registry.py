@@ -95,11 +95,11 @@ class ToolRegistry:
                                     ('MCPToolWrapper' in str(tool_instance.__class__.__name__) or
                                      'MCP' in str(tool_instance.__class__.__name__)))
                 
-                mcp_patterns = ['TWITTER_', 'GMAIL_', 'SLACK_', 'GITHUB_', 'LINEAR_', 
-                               'NOTION_', 'GOOGLESHEETS_', 'COMPOSIO_']
-                is_mcp_by_name = any(pattern in tool_name for pattern in mcp_patterns)
+                from core.agentpress.mcp_registry import get_mcp_registry
+                mcp_registry = get_mcp_registry()
+                is_mcp_by_registry = mcp_registry.is_tool_available(tool_name)
                 
-                is_mcp_tool = is_mcp_by_instance or is_mcp_by_name
+                is_mcp_tool = is_mcp_by_instance or is_mcp_by_registry
                 
                 if not is_mcp_tool:
                     schemas.append(tool_info['schema'].schema)

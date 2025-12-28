@@ -371,7 +371,7 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
 
     useEffect(() => {
         if (selectedTrigger) {
-            setName(`${selectedApp?.name || selectedTrigger.toolkit.name} → Agent`);
+            setName(`${selectedApp?.name || selectedTrigger.toolkit.name} → Worker`);
         }
     }, [selectedTrigger, selectedApp]);
 
@@ -484,7 +484,7 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
 
                 await updateTrigger.mutateAsync({
                     triggerId: existingTrigger.trigger_id,
-                    name: name || `${selectedTrigger.toolkit.name} → Agent`,
+                    name: name || `${selectedTrigger.toolkit.name} → Worker`,
                     description: existingTrigger.description || `Event trigger for ${selectedTrigger.toolkit.name}`,
                     config: updatedConfig,
                     is_active: true,
@@ -501,7 +501,7 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                     profile_id: profileId,
                     slug: selectedTrigger.slug,
                     trigger_config: config,
-                    name: name || `${selectedTrigger.toolkit.name} → Agent`,
+                    name: name || `${selectedTrigger.toolkit.name} → Worker`,
                     connected_account_id: selectedProfile?.connected_account_id,
                     toolkit_slug: selectedApp?.slug,
                     model: model,
@@ -800,11 +800,11 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
 
                                                             <div className="space-y-2">
                                                                 <Label className="text-sm">Trigger Name</Label>
-                                                                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Gmail → Agent" />
+                                                                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Gmail → Worker" />
                                                             </div>
 
                                                             <div className="space-y-2">
-                                                                <Label className="text-sm">Agent Instructions</Label>
+                                                                <Label className="text-sm">Worker Instructions</Label>
                                                                 <Textarea
                                                                     rows={3}
                                                                     value={prompt}

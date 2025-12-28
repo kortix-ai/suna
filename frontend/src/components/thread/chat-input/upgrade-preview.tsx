@@ -1,10 +1,12 @@
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { isLocalMode } from '@/lib/config';
 import { Button } from '@/components/ui/button';
 import { TierBadge } from '@/components/billing/tier-badge';
+
+const BADGE_ORDER = ['Ultra', 'Plus', 'Pro'] as const;
 
 export interface UpgradePreviewProps {
     subscriptionData?: any;
@@ -27,21 +29,33 @@ export const UpgradePreview: React.FC<UpgradePreviewProps> = ({
     totalCount = 1,
     onIndicatorClick,
 }) => {
+    const [currentBadge, setCurrentBadge] = useState(0);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setCurrentBadge((prev) => (prev + 1) % 3);
+        }, 1200);
+        return () => clearInterval(interval);
+    }, []);
+
     if (isLocalMode()) return null;
 
     return (
         <div className="flex items-center gap-3">
-            {/* Stacked Tier Badges - vertical stack with Ultra on top */}
-            <div className="flex-shrink-0 flex flex-col items-center justify-center">
-            <div className="mb-[-6px] z-30">
-        <TierBadge planName="Ultra" size="xxs" />
-    </div>
-    <div className="mb-[-6px] z-20">
-        <TierBadge planName="Plus" size="xxs" />
-    </div>
-    <div className=" z-10">
-        <TierBadge planName="Pro" size="xxs" />
-    </div>
+            {/* Single Tier Badge - cycling through plans */}
+            <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center relative ml-2">
+                <AnimatePresence mode="wait">
+                    <motion.div
+                        key={BADGE_ORDER[currentBadge]}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.2 }}
+                        className="absolute"
+                    >
+                        <TierBadge planName={BADGE_ORDER[currentBadge]} size="xxs" />
+                    </motion.div>
+                </AnimatePresence>
             </div>
 
             {/* Content */}

@@ -17,6 +17,7 @@ import {
   Alert,
   LogBox,
   Keyboard,
+  Platform,
 } from 'react-native';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
 import {
@@ -29,6 +30,46 @@ import * as Clipboard from 'expo-clipboard';
 
 // Suppress known warning from react-native-markdown-display library
 LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
+
+/**
+ * LINE HEIGHT CONFIGURATION
+ * Adjust these values to tune text spacing and eliminate extra bottom space
+ */
+const MARKDOWN_LINE_HEIGHT = 26; // Main line height for readability (increased from 20)
+const MARKDOWN_FONT_SIZE = 16;
+
+/**
+ * HEIGHT BUFFER ADJUSTMENT
+ * Controls how much extra space to add when calculating maxHeight for clipping
+ * Lower values = more aggressive clipping of bottom space
+ * Adjust with: global.setMarkdownHeightBuffer(n)
+ */
+let HEIGHT_BUFFER = Platform.select({
+  ios: 8,      // iOS - enough to not clip text but still reduce phantom space
+  android: 24,  // Android needs more buffer to prevent top clipping
+  default: 8,
+});
+
+export function setMarkdownHeightBuffer(buffer: number) {
+  HEIGHT_BUFFER = buffer;
+  console.log(
+    `[SelectableMarkdown] Height buffer set to ${buffer}px. ` +
+    `Press 'r' in Metro to reload and see changes.`
+  );
+}
+
+export function getMarkdownHeightBuffer() {
+  return HEIGHT_BUFFER;
+}
+
+// Expose to global for easy console access
+if (__DEV__) {
+  (global as any).setMarkdownHeightBuffer = setMarkdownHeightBuffer;
+  (global as any).getMarkdownHeightBuffer = getMarkdownHeightBuffer;
+  console.log('[SelectableMarkdown] Dev helpers available:');
+  console.log('  - global.setMarkdownHeightBuffer(n) // Set height buffer (try 0-10)');
+  console.log('  - global.getMarkdownHeightBuffer() // Check current buffer');
+}
 
 export interface SelectableMarkdownTextProps {
   /** The markdown text content to render */
@@ -219,10 +260,26 @@ function Separator({ isDark }: { isDark: boolean }) {
       style={{
         height: 1,
         backgroundColor: isDark ? '#3f3f46' : '#e4e4e7',
-        marginVertical: 16,
+        marginVertical: 12, // Consistent with code blocks and tables
       }}
     />
   );
+}
+
+/**
+ * Calculate approximate height for text content to clip extra spacing
+ * Uses HEIGHT_BUFFER which can be adjusted at runtime
+ */
+function calculateTextHeight(text: string): number {
+  // Count actual newlines
+  const lines = text.split('\n');
+  const lineCount = lines.length;
+
+  // Calculate height: lineCount * lineHeight + configurable buffer
+  // Lower buffer = more aggressive clipping of phantom bottom space
+  const estimatedHeight = lineCount * MARKDOWN_LINE_HEIGHT + HEIGHT_BUFFER;
+
+  return estimatedHeight;
 }
 
 /**
@@ -246,22 +303,30 @@ function MarkdownWithLinkHandling({
   const hasAnySeparators = blocks.some((b) => b.type === 'separator');
 
   if (!hasAnySeparators) {
+    const maxHeight = calculateTextHeight(text);
+
     return (
-      <View style={needsSpacing && styles.partSpacing} pointerEvents="box-none">
-        <MarkdownTextInput
-          value={text.trimEnd()}
-          onChangeText={() => { }}
-          parser={markdownParser}
-          markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
-          style={[styles.base, isDark ? styles.darkText : styles.lightText, style]}
-          editable={false}
-          multiline
-          scrollEnabled={false}
-          caretHidden={true}
-          showSoftInputOnFocus={false}
-          selectTextOnFocus={false}
-          onFocus={() => Keyboard.dismiss()}
-        />
+      <View style={[needsSpacing && styles.partSpacing, styles.textWrapper]} pointerEvents="box-none">
+        <View 
+          style={[styles.textWrapperInner, { maxHeight }]} 
+          pointerEvents={Platform.OS === 'android' ? 'none' : 'box-none'}
+        >
+          <MarkdownTextInput
+            value={text.trimEnd()}
+            onChangeText={() => { }}
+            parser={markdownParser}
+            markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
+            style={[styles.base, isDark ? styles.darkText : styles.lightText, style]}
+            editable={false}
+            multiline
+            scrollEnabled={false}
+            caretHidden={true}
+            showSoftInputOnFocus={false}
+            selectTextOnFocus={false}
+            contextMenuHidden={Platform.OS === 'android'}
+            onFocus={() => Keyboard.dismiss()}
+          />
+        </View>
       </View>
     );
   }
@@ -275,22 +340,30 @@ function MarkdownWithLinkHandling({
         if (block.type === 'separator') {
           return <Separator key={`sep-${idx}`} isDark={isDark} />;
         } else {
+          const maxHeight = calculateTextHeight(block.content);
+
           return (
-            <View key={`txt-${idx}`} pointerEvents="box-none">
-              <MarkdownTextInput
-                value={block.content.trimEnd()}
-                onChangeText={() => { }}
-                parser={markdownParser}
-                markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
-                style={[styles.base, isDark ? styles.darkText : styles.lightText, style]}
-                editable={false}
-                multiline
-                scrollEnabled={false}
-                caretHidden={true}
-                showSoftInputOnFocus={false}
-                selectTextOnFocus={false}
-                onFocus={() => Keyboard.dismiss()}
-              />
+            <View key={`txt-${idx}`} style={styles.textWrapper} pointerEvents="box-none">
+              <View 
+                style={[styles.textWrapperInner, { maxHeight }]} 
+                pointerEvents={Platform.OS === 'android' ? 'none' : 'box-none'}
+              >
+                <MarkdownTextInput
+                  value={block.content.trimEnd()}
+                  onChangeText={() => { }}
+                  parser={markdownParser}
+                  markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
+                  style={[styles.base, isDark ? styles.darkText : styles.lightText, style]}
+                  editable={false}
+                  multiline
+                  scrollEnabled={false}
+                  caretHidden={true}
+                  showSoftInputOnFocus={false}
+                  selectTextOnFocus={false}
+                  contextMenuHidden={Platform.OS === 'android'}
+                  onFocus={() => Keyboard.dismiss()}
+                />
+              </View>
             </View>
           );
         }
@@ -336,10 +409,10 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
     let match;
 
     while ((match = codeBlockRegex.exec(text)) !== null) {
-      // Add text before code block
+      // Add text before code block (trim to remove leading/trailing newlines)
       if (match.index > lastIndex) {
-        const beforeText = text.substring(lastIndex, match.index);
-        if (beforeText.trim()) {
+        const beforeText = text.substring(lastIndex, match.index).trim();
+        if (beforeText) {
           parts.push({ type: 'markdown', content: beforeText });
         }
       }
@@ -354,10 +427,10 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
       lastIndex = match.index + match[0].length;
     }
 
-    // Add remaining text
+    // Add remaining text (trim to remove leading/trailing newlines)
     if (lastIndex < text.length) {
-      const afterText = text.substring(lastIndex);
-      if (afterText.trim()) {
+      const afterText = text.substring(lastIndex).trim();
+      if (afterText) {
         parts.push({ type: 'markdown', content: afterText });
       }
     }
@@ -393,7 +466,10 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
 
         if (isTableStart && !inTable) {
           if (currentMarkdown.length > 0) {
-            finalParts.push({ type: 'markdown', content: currentMarkdown.join('\n') });
+            const markdownContent = currentMarkdown.join('\n').trim();
+            if (markdownContent) {
+              finalParts.push({ type: 'markdown', content: markdownContent });
+            }
             currentMarkdown = [];
           }
           inTable = true;
@@ -414,7 +490,10 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
         finalParts.push({ type: 'table', content: currentTable.join('\n') });
       }
       if (currentMarkdown.length > 0) {
-        finalParts.push({ type: 'markdown', content: currentMarkdown.join('\n') });
+        const markdownContent = currentMarkdown.join('\n').trim();
+        if (markdownContent) {
+          finalParts.push({ type: 'markdown', content: markdownContent });
+        }
       }
     }
 
@@ -433,22 +512,17 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
           const needsSpacing = idx > 0 && part.content.trim().length > 0;
 
           if (part.type === 'table') {
-            return (
-              <View key={idx} style={needsSpacing && styles.partSpacing}>
-                <SimpleTable text={part.content} isDark={isDark} />
-              </View>
-            );
+            return <SimpleTable key={idx} text={part.content} isDark={isDark} />;
           }
 
           if (part.type === 'code') {
             return (
-              <View key={idx} style={needsSpacing && styles.partSpacing}>
-                <CodeBlock
-                  code={part.content}
-                  language={'language' in part ? part.language : undefined}
-                  isDark={isDark}
-                />
-              </View>
+              <CodeBlock
+                key={idx}
+                code={part.content}
+                language={'language' in part ? part.language : undefined}
+                isDark={isDark}
+              />
             );
           }
 
@@ -479,22 +553,31 @@ const styles = StyleSheet.create({
   partSpacing: {
     marginTop: 8, // Fixed 8px spacing between all parts
   },
+  textWrapper: {
+    // Wrapper to clip extra TextInput spacing
+    overflow: Platform.OS === 'android' ? 'visible' : 'hidden',
+  },
+  textWrapperInner: {
+    // Inner wrapper to clip bottom space without cutting content
+    // Android: no negative margin to prevent top clipping
+    marginBottom: Platform.OS === 'android' ? 0 : -4,
+  },
   base: {
-    fontSize: 16,
-    lineHeight: 20, // Reduced from 24 to minimize extra bottom spacing on iOS
+    fontSize: MARKDOWN_FONT_SIZE,
+    lineHeight: MARKDOWN_LINE_HEIGHT,
     fontFamily: 'System',
     padding: 0,
     margin: 0,
     paddingLeft: 0,
     paddingRight: 0,
-    paddingTop: 2,
-    paddingBottom: 2,
+    paddingTop: 0,
+    paddingBottom: 0,
     marginLeft: 0,
     marginRight: 0,
     marginTop: 0,
     marginBottom: 0,
     textAlignVertical: 'top',
-  },
+  } as any, // Cast to any because getters aren't in StyleSheet types
   lightText: {
     color: '#18181b', // zinc-900
   },
@@ -505,7 +588,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 24, // 2xl
     overflow: 'hidden',
-    // No marginBottom - spacing handled by partSpacing
+    marginVertical: 12, // Consistent vertical spacing with code blocks and separators
   },
   tableLight: {
     borderColor: '#e4e4e7', // zinc-200
@@ -557,7 +640,7 @@ const styles = StyleSheet.create({
     borderRadius: 24, // 2xl
     borderWidth: 1,
     overflow: 'hidden',
-    // No marginBottom - spacing handled by partSpacing
+    marginVertical: 12, // Consistent vertical spacing with tables and separators
   },
   codeBlockLight: {
     borderColor: '#DCDDDE',

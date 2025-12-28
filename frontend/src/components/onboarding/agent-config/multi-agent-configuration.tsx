@@ -23,8 +23,8 @@ export const MultiAgentConfigurationStep = () => {
       <StepWrapper>
         <div className="text-center py-12">
           <Settings className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <h3 className="text-xl font-semibold mb-2">No Agents Selected</h3>
-          <p className="text-muted-foreground">Please go back and select some agents to configure.</p>
+          <h3 className="text-xl font-semibold mb-2">No Workers Selected</h3>
+          <p className="text-muted-foreground">Please go back and select some workers to configure.</p>
         </div>
       </StepWrapper>
     );

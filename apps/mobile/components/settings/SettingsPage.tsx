@@ -26,6 +26,7 @@ import {
   Loader2,
   Wallet,
   BarChart3,
+  Plug,
 } from 'lucide-react-native';
 import type { UserProfile } from '../menu/types';
 import { LanguagePage } from './LanguagePage';
@@ -34,10 +35,10 @@ import { ThemePage } from './ThemePage';
 import { BetaPage } from './BetaPage';
 import { BillingPage } from './BillingPage';
 import { PlanPage } from './PlanPage';
-import { CreditsPurchasePage } from './CreditsPurchasePage';
 import { UsagePage } from './UsagePage';
 import { AccountDeletionPage } from './AccountDeletionPage';
 import { SettingsHeader } from './SettingsHeader';
+import { IntegrationsPage } from './IntegrationsPage';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import * as Haptics from 'expo-haptics';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
@@ -62,7 +63,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const [isBetaPageVisible, setIsBetaPageVisible] = React.useState(false);
   const [isPlanPageVisible, setIsPlanPageVisible] = React.useState(false);
   const [isBillingPageVisible, setIsBillingPageVisible] = React.useState(false);
-  const [isCreditsPurchasePageVisible, setIsCreditsPurchasePageVisible] = React.useState(false);
   const [isUsagePageVisible, setIsUsagePageVisible] = React.useState(false);
   const [isAccountDeletionPageVisible, setIsAccountDeletionPageVisible] = React.useState(false);
   const [isIntegrationsPageVisible, setIsIntegrationsPageVisible] = React.useState(false);
@@ -233,6 +233,12 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
             />
 
             <SettingsItem
+              icon={Plug}
+              label={t('integrations.title', 'Integrations')}
+              onPress={handleIntegrations}
+            />
+
+            <SettingsItem
               icon={colorScheme === 'dark' ? Sun : Moon}
               label={t('settings.themeTitle') || 'Theme'}
               onPress={handleTheme}
@@ -246,8 +252,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
               onPress={handleBeta}
             />
 
-            {!isGuest && <View className="my-2 h-px bg-border" />}
-
             {!isGuest && (
               <SettingsItem
                 icon={Trash2}
@@ -258,7 +262,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
                 }
                 onPress={handleAccountDeletion}
                 showBadge={deletionStatus?.has_pending_deletion}
-                destructive
               />
             )}
             {!isGuest && (
@@ -267,7 +270,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
                 label={t('settings.signOut')}
                 onPress={handleSignOut}
                 isLoading={isSigningOut}
-                destructive
               />
             )}
           </View>
@@ -336,12 +338,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
       </AnimatedPageWrapper>
 
       <AnimatedPageWrapper
-        visible={isCreditsPurchasePageVisible}
-        onClose={() => setIsCreditsPurchasePageVisible(false)}>
-        <CreditsPurchasePage visible onClose={() => setIsCreditsPurchasePageVisible(false)} />
-      </AnimatedPageWrapper>
-
-      <AnimatedPageWrapper
         visible={isUsagePageVisible}
         onClose={() => setIsUsagePageVisible(false)}>
         <UsagePage visible onClose={() => setIsUsagePageVisible(false)} />
@@ -351,6 +347,12 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
         visible={isAccountDeletionPageVisible}
         onClose={() => setIsAccountDeletionPageVisible(false)}>
         <AccountDeletionPage visible onClose={() => setIsAccountDeletionPageVisible(false)} />
+      </AnimatedPageWrapper>
+
+      <AnimatedPageWrapper
+        visible={isIntegrationsPageVisible}
+        onClose={() => setIsIntegrationsPageVisible(false)}>
+        <IntegrationsPage visible onClose={() => setIsIntegrationsPageVisible(false)} />
       </AnimatedPageWrapper>
     </View>
   );

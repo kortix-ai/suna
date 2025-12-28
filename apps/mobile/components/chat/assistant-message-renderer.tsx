@@ -25,7 +25,7 @@ import { parseXmlToolCalls, preprocessTextOnlyTools } from '@/lib/utils/tool-par
 
 export interface AssistantMessageRendererProps {
   message: UnifiedMessage;
-  onToolClick: (assistantMessageId: string | null, toolName: string) => void;
+  onToolClick: (assistantMessageId: string | null, toolName: string, toolCallId?: string) => void;
   onFileClick?: (filePath: string) => void;
   sandboxId?: string;
   /** Sandbox URL for direct file access (used for presentations and HTML previews) */
@@ -221,7 +221,7 @@ function renderCompleteToolCall(
  * Renders a regular tool call as a clickable button
  */
 function renderRegularToolCall(
-  toolCall: { function_name: string; arguments?: Record<string, any> | string },
+  toolCall: { function_name: string; arguments?: Record<string, any> | string; tool_call_id?: string },
   index: number,
   toolName: string,
   props: AssistantMessageRendererProps
@@ -233,10 +233,10 @@ function renderRegularToolCall(
   return (
     <View key={`tool-${index}`} className="my-1">
       <Pressable
-        onPress={() => onToolClick(message.message_id, toolName)}
-        className="inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs text-muted-foreground bg-muted rounded-lg border border-neutral-200 dark:border-neutral-700/50 active:bg-muted/80"
+        onPress={() => onToolClick(message.message_id, toolName, toolCall.tool_call_id)}
+        className="flex-row items-center gap-1.5 py-1 px-1 pr-1.5 bg-muted rounded-lg border border-neutral-200 dark:border-neutral-700/50 active:bg-muted/80"
       >
-        <View className='border-2 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center p-0.5 rounded-sm border-neutral-400/20 dark:border-neutral-600'>
+        <View className="flex items-center justify-center">
           <Icon as={IconComponent} size={14} className="text-muted-foreground" />
         </View>
         <Text className="font-mono text-xs text-foreground">{getUserFriendlyToolName(toolName)}</Text>

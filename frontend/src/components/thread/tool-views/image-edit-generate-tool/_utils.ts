@@ -9,11 +9,13 @@ export interface BatchImageResult {
 }
 
 export interface ImageEditGenerateData {
-  mode: 'generate' | 'edit' | null;
+  mode: 'generate' | 'edit' | 'video' | null;
   prompt: string | null;
   prompts: string[];  // All prompts for batch
   inputImagePaths: string[];  // For edit mode - source images
   generatedImagePaths: string[];  // Output images
+  generatedVideoPaths: string[];  // Output videos
+  isVideoMode: boolean;
   status: string | null;
   error?: string | null;
   isBatch: boolean;
@@ -65,23 +67,23 @@ function extractGeneratedImages(output: unknown): string[] {
   if (!output) return images;
   
   if (typeof output === 'string') {
-    // Pattern 1: "Image saved as: filename.png"
-    const singleMatch = output.match(/Image saved as:\s*([^\s\n.]+\.(?:png|jpg|jpeg|webp|gif))/i);
+    // Pattern 1: "Image saved as: /workspace/filename.png" or "Image saved as: filename.png"
+    const singleMatch = output.match(/Image saved as:\s*(?:\/workspace\/)?([^\s\n]+\.(?:png|jpg|jpeg|webp|gif))/i);
     if (singleMatch?.[1]) {
       images.push(singleMatch[1].trim());
     }
     
     // Pattern 2: "- filename.png" (batch mode list)
-    const batchMatches = output.matchAll(/^- ([^\n]+\.(?:png|jpg|jpeg|webp|gif))/gim);
+    const batchMatches = output.matchAll(/^- (?:\/workspace\/)?([^\n]+\.(?:png|jpg|jpeg|webp|gif))/gim);
     for (const match of batchMatches) {
       if (match[1] && !images.includes(match[1].trim())) {
         images.push(match[1].trim());
       }
     }
     
-    // Pattern 3: Direct generated_image_xxx.png pattern
+    // Pattern 3: Direct generated_image_xxx.png pattern (with or without /workspace/)
     if (images.length === 0) {
-      const directMatches = output.matchAll(/(generated_image_[a-z0-9]+\.(?:png|jpg|jpeg|webp|gif))/gi);
+      const directMatches = output.matchAll(/(?:\/workspace\/)?(generated_image_[a-z0-9]+\.(?:png|jpg|jpeg|webp|gif))/gi);
       for (const match of directMatches) {
         if (match[1] && !images.includes(match[1].trim())) {
           images.push(match[1].trim());
@@ -113,6 +115,48 @@ function extractGeneratedImages(output: unknown): string[] {
   }
   
   return images;
+}
+
+/**
+ * Extract generated video filenames from tool output
+ */
+function extractGeneratedVideos(output: unknown): string[] {
+  const videos: string[] = [];
+  
+  if (!output) return videos;
+  
+  if (typeof output === 'string') {
+    // Pattern 1: "Video saved as: /workspace/filename.mp4" or "Video saved as: filename.mp4"
+    const singleMatch = output.match(/Video saved as:\s*(?:\/workspace\/)?([^\s\n]+\.(?:mp4|webm|mov))/i);
+    if (singleMatch?.[1]) {
+      videos.push(singleMatch[1].trim());
+    }
+    
+    // Pattern 2: Direct generated_video_xxx.mp4 pattern (with or without /workspace/)
+    if (videos.length === 0) {
+      const directMatches = output.matchAll(/(?:\/workspace\/)?(generated_video_[a-z0-9]+\.(?:mp4|webm|mov))/gi);
+      for (const match of directMatches) {
+        if (match[1] && !videos.includes(match[1].trim())) {
+          videos.push(match[1].trim());
+        }
+      }
+    }
+  } else if (typeof output === 'object' && output !== null) {
+    const obj = output as Record<string, unknown>;
+    
+    // Check for video path fields
+    const pathFields = ['video_path', 'output_path', 'generated_video_path'];
+    for (const field of pathFields) {
+      const value = obj[field];
+      if (typeof value === 'string' && value.match(/\.(?:mp4|webm|mov)$/i) && !videos.includes(value)) {
+        // Strip /workspace/ prefix if present
+        const cleanPath = value.replace(/^\/workspace\//, '');
+        videos.push(cleanPath);
+      }
+    }
+  }
+  
+  return videos;
 }
 
 /**
@@ -148,6 +192,19 @@ export function extractImageEditGenerateData(
   const args = toolCall.arguments || {};
   const output = toolResult?.output;
   
+  // Auto-detect mode based on parameters (same logic as backend)
+  // video_options → video, image_path → edit, neither → generate
+  let detectedMode: 'generate' | 'edit' | 'video' | null = args.mode || null;
+  if (!detectedMode) {
+    if (args.video_options) {
+      detectedMode = 'video';
+    } else if (args.image_path) {
+      detectedMode = 'edit';
+    } else {
+      detectedMode = 'generate';
+    }
+  }
+  
   // Extract prompts - handle array (batch) or string (single)
   const promptArg = args.prompt;
   let prompts: string[] = [];
@@ -166,8 +223,10 @@ export function extractImageEditGenerateData(
   // Extract input image paths for edit mode
   const inputImagePaths = parseImagePaths(args.image_path);
   
-  // Extract generated image paths from output
+  // Extract generated image and video paths from output
   const generatedImagePaths = extractGeneratedImages(output);
+  const generatedVideoPaths = extractGeneratedVideos(output);
+  const isVideoMode = detectedMode === 'video' || generatedVideoPaths.length > 0;
   
   // Extract error message
   let errorMessage: string | null = null;
@@ -219,11 +278,13 @@ export function extractImageEditGenerateData(
   }
 
   return {
-    mode: args.mode || null,
+    mode: detectedMode,
     prompt,
     prompts,
     inputImagePaths,
     generatedImagePaths,
+    generatedVideoPaths,
+    isVideoMode,
     status,
     error: toolResult?.error || errorMessage || null,
     isBatch,

@@ -24,8 +24,12 @@ export function ViewToggle({ currentView, onViewChange, showFilesTab = true }: V
     : ['tools', 'browser'] as const;
 
   const getViewIndex = (view: ViewType) => {
-    if (!showFilesTab && view === 'files') return 0;
-    return viewOptions.indexOf(view as any);
+    // If files tab is hidden and current view is files, default to tools
+    if (!showFilesTab && view === 'files') {
+      return 0; // tools
+    }
+    const index = viewOptions.indexOf(view as any);
+    return index >= 0 ? index : 0;
   };
 
   const tabWidth = 28; // w-7 = 28px
@@ -38,7 +42,7 @@ export function ViewToggle({ currentView, onViewChange, showFilesTab = true }: V
       damping: 30,
       stiffness: 300,
     });
-  }, [currentView, indicatorPosition]);
+  }, [currentView, indicatorPosition, showFilesTab]);
 
   const indicatorStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: indicatorPosition.value }],
@@ -63,7 +67,7 @@ export function ViewToggle({ currentView, onViewChange, showFilesTab = true }: V
         <Icon
           as={Zap}
           size={14}
-          className={currentView === 'tools' ? 'text-background' : 'text-primary'}
+          className={currentView === 'tools' ? 'text-primary-foreground' : 'text-primary'}
           strokeWidth={2}
         />
       </Pressable>
@@ -76,7 +80,7 @@ export function ViewToggle({ currentView, onViewChange, showFilesTab = true }: V
           <Icon
             as={FolderOpen}
             size={14}
-            className={currentView === 'files' ? 'text-background' : 'text-primary'}
+            className={currentView === 'files' ? 'text-primary-foreground' : 'text-primary'}
             strokeWidth={2}
           />
         </Pressable>
@@ -89,7 +93,7 @@ export function ViewToggle({ currentView, onViewChange, showFilesTab = true }: V
         <Icon
           as={Globe}
           size={14}
-          className={currentView === 'browser' ? 'text-background' : 'text-primary'}
+          className={currentView === 'browser' ? 'text-primary-foreground' : 'text-primary'}
           strokeWidth={2}
         />
       </Pressable>

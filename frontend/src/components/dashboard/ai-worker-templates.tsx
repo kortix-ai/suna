@@ -64,7 +64,7 @@ const workerTemplates: WorkerTemplate[] = [
   },
   {
     id: 'call-agent',
-    name: 'Outbound Phone Call Agent',
+    name: 'Outbound Phone Call Worker',
     description: 'Make calls and qualify leads instantly',
     icon: <Phone className="w-5 h-5" />,
     category: 'sales',
@@ -111,7 +111,7 @@ const workerTemplates: WorkerTemplate[] = [
   // Most Popular
   {
     id: 'recruiting-agent',
-    name: 'Recruiting Agent',
+    name: 'Recruiting Worker',
     description: 'Find and organize sales leads instantly',
     icon: <Users className="w-5 h-5" />,
     category: 'popular',

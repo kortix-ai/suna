@@ -3,14 +3,15 @@ import shlex
 import asyncio
 import urllib.parse
 import uuid
+import json
 from typing import Optional, TypeVar, Callable, Awaitable
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, APIRouter, Form, Depends, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, APIRouter, Form, Depends, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from pydantic import BaseModel
 from daytona_sdk import AsyncSandbox, SessionExecuteRequest
 
-from core.sandbox.sandbox import get_or_start_sandbox, delete_sandbox, create_sandbox
+from core.sandbox.sandbox import get_or_start_sandbox, delete_sandbox, create_sandbox, daytona
 from core.utils.logger import logger
 from core.utils.auth_utils import get_optional_user_id, verify_and_get_user_id_from_jwt, verify_sandbox_access, verify_sandbox_access_optional
 from core.services.supabase import DBConnection
@@ -149,11 +150,11 @@ def normalize_path(path: str) -> str:
 
 async def get_sandbox_by_id_safely(client, sandbox_id: str) -> AsyncSandbox:
     """
-    Safely retrieve a sandbox object by its ID, using the project that owns it.
+    Safely retrieve a sandbox object by its ID, using the resource that owns it.
     
     Args:
         client: The Supabase client
-        sandbox_id: The sandbox ID to retrieve
+        sandbox_id: The sandbox ID (external_id) to retrieve
     
     Returns:
         AsyncSandbox: The sandbox object
@@ -161,12 +162,15 @@ async def get_sandbox_by_id_safely(client, sandbox_id: str) -> AsyncSandbox:
     Raises:
         HTTPException: If the sandbox doesn't exist or can't be retrieved
     """
-    # Find the project that owns this sandbox
-    project_result = await client.table('projects').select('project_id').filter('sandbox->>id', 'eq', sandbox_id).execute()
+    from core.resources import ResourceService, ResourceType
     
-    if not project_result.data or len(project_result.data) == 0:
-        logger.error(f"No project found for sandbox ID: {sandbox_id}")
-        raise HTTPException(status_code=404, detail="Sandbox not found - no project owns this sandbox ID")
+    # Find the resource that owns this sandbox
+    resource_service = ResourceService(client)
+    resource = await resource_service.get_resource_by_external_id(sandbox_id, ResourceType.SANDBOX)
+    
+    if not resource:
+        logger.error(f"No resource found for sandbox ID: {sandbox_id}")
+        raise HTTPException(status_code=404, detail="Sandbox not found - no resource exists for this sandbox ID")
     
     # project_id = project_result.data[0]['project_id']
     # logger.debug(f"Found project {project_id} for sandbox {sandbox_id}")
@@ -236,6 +240,38 @@ async def create_file(
         logger.error(f"Error creating file in sandbox {sandbox_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.put("/sandboxes/{sandbox_id}/files/binary")
+async def update_file_binary(
+    sandbox_id: str, 
+    path: str = Form(...),
+    file: UploadFile = File(...),
+    request: Request = None,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    path = normalize_path(path)
+    
+    logger.debug(f"Received binary file update request for sandbox {sandbox_id}, path: {path}, user_id: {user_id}")
+    client = await db.client
+    
+    await verify_sandbox_access(client, sandbox_id, user_id)
+    
+    try:
+        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        
+        content = await file.read()
+        
+        await sandbox.fs.upload_file(content, path)
+        logger.info(f"Binary file updated successfully: {path} in sandbox {sandbox_id}")
+        
+        return {
+            "status": "success", 
+            "updated": True, 
+            "path": path
+        }
+    except Exception as e:
+        logger.error(f"Error updating binary file in sandbox {sandbox_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.put("/sandboxes/{sandbox_id}/files")
 async def update_file(
     sandbox_id: str,
@@ -275,23 +311,65 @@ async def list_files(
     request: Request = None,
     user_id: Optional[str] = Depends(get_optional_user_id)
 ):
+    """List files in a sandbox directory"""
+    # Validate sandbox_id
+    if not sandbox_id or not sandbox_id.strip():
+        logger.error("Sandbox ID is required")
+        raise HTTPException(status_code=400, detail="Sandbox ID is required")
     path = normalize_path(path)
     
     logger.debug(f"Received list files request for sandbox {sandbox_id}, path: {path}, user_id: {user_id}")
     client = await db.client
     
-    # Verify the user has access to this sandbox
-    await verify_sandbox_access_optional(client, sandbox_id, user_id)
+    try:
+        # Verify the user has access to this sandbox
+        await verify_sandbox_access_optional(client, sandbox_id, user_id)
+    except HTTPException as http_err:
+        # Re-raise HTTP exceptions as-is (they already have proper status codes)
+        raise
+    except Exception as access_err:
+        error_str = str(access_err).lower()
+        logger.error(f"Error verifying sandbox access for {sandbox_id}: {str(access_err)}", exc_info=True)
+        
+        # Distinguish between different error types
+        if 'not found' in error_str or '404' in error_str or 'no project owns' in error_str:
+            raise HTTPException(status_code=404, detail=f"Sandbox not found: {sandbox_id}")
+        elif 'authentication required' in error_str or '401' in error_str:
+            raise HTTPException(status_code=401, detail="Authentication required for this private project")
+        elif 'not authorized' in error_str or 'forbidden' in error_str or '403' in error_str:
+            raise HTTPException(status_code=403, detail=f"Access denied: Not authorized to access this sandbox")
+        else:
+            # For other errors, return 500 but with a clear message
+            raise HTTPException(status_code=500, detail=f"Error verifying sandbox access: {str(access_err)}")
     
     try:
         # Get sandbox using the safer method
-        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        try:
+            sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        except HTTPException:
+            raise
+        except Exception as sandbox_err:
+            logger.error(f"Error retrieving sandbox {sandbox_id}: {str(sandbox_err)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Failed to retrieve sandbox: {str(sandbox_err)}")
         
         # List files with retry logic for transient errors
-        files = await retry_with_backoff(
-            operation=lambda: sandbox.fs.list_files(path),
-            operation_name=f"list_files({path}) in sandbox {sandbox_id}"
-        )
+        try:
+            files = await retry_with_backoff(
+                operation=lambda: sandbox.fs.list_files(path),
+                operation_name=f"list_files({path}) in sandbox {sandbox_id}"
+            )
+        except Exception as list_err:
+            error_msg = str(list_err)
+            logger.error(f"Error listing files {path} in sandbox {sandbox_id}: {error_msg}")
+            # Check if it's a file not found error
+            if 'not found' in error_msg.lower() or '404' in error_msg.lower():
+                raise HTTPException(status_code=404, detail=f"Directory not found: {path}")
+            # Check if it's a permission error
+            if 'permission' in error_msg.lower() or '403' in error_msg.lower():
+                raise HTTPException(status_code=403, detail=f"Permission denied: {path}")
+            # For other errors, return 500
+            raise HTTPException(status_code=500, detail=f"Failed to list files: {error_msg}")
+        
         result = []
         
         for file in files:
@@ -310,9 +388,12 @@ async def list_files(
         
         logger.debug(f"Successfully listed {len(result)} files in sandbox {sandbox_id}")
         return {"files": [file.dict() for file in result]}
+    except HTTPException:
+        # Re-raise HTTP exceptions without wrapping
+        raise
     except Exception as e:
-        logger.error(f"Error listing files in sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error listing files in sandbox {sandbox_id}, path {path}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.get("/sandboxes/{sandbox_id}/files/content")
 async def read_file(
@@ -330,14 +411,51 @@ async def read_file(
     if original_path != path:
         logger.debug(f"Normalized path from '{original_path}' to '{path}'")
     
+    if not sandbox_id:
+        logger.error("Sandbox ID is required")
+        raise HTTPException(status_code=400, detail="Sandbox ID is required")
+    
+    if not path:
+        logger.error("Path is required")
+        raise HTTPException(status_code=400, detail="Path is required")
+    
+    # Validate sandbox_id format (basic validation - should be non-empty string)
+    if not sandbox_id.strip():
+        logger.error("Sandbox ID cannot be empty")
+        raise HTTPException(status_code=400, detail="Sandbox ID cannot be empty")
+    
     client = await db.client
     
-    # Verify the user has access to this sandbox
-    await verify_sandbox_access_optional(client, sandbox_id, user_id)
+    try:
+        # Verify the user has access to this sandbox
+        await verify_sandbox_access_optional(client, sandbox_id, user_id)
+    except HTTPException as http_err:
+        # Re-raise HTTP exceptions as-is (they already have proper status codes)
+        raise
+    except Exception as access_err:
+        error_str = str(access_err).lower()
+        logger.error(f"Error verifying sandbox access for {sandbox_id}: {str(access_err)}", exc_info=True)
+        
+        # Distinguish between different error types
+        if 'not found' in error_str or '404' in error_str or 'no project owns' in error_str:
+            raise HTTPException(status_code=404, detail=f"Sandbox not found: {sandbox_id}")
+        elif 'authentication required' in error_str or '401' in error_str:
+            raise HTTPException(status_code=401, detail="Authentication required for this private project")
+        elif 'not authorized' in error_str or 'forbidden' in error_str or '403' in error_str:
+            raise HTTPException(status_code=403, detail=f"Access denied: Not authorized to access this sandbox")
+        else:
+            # For other errors, return 500 but with a clear message
+            raise HTTPException(status_code=500, detail=f"Error verifying sandbox access: {str(access_err)}")
     
     try:
         # Get sandbox using the safer method
-        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        try:
+            sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        except HTTPException:
+            raise
+        except Exception as sandbox_err:
+            logger.error(f"Error retrieving sandbox {sandbox_id}: {str(sandbox_err)}")
+            raise HTTPException(status_code=500, detail=f"Failed to retrieve sandbox: {str(sandbox_err)}")
         
         # Read file with retry logic for transient errors (502, 503, 504)
         try:
@@ -346,10 +464,24 @@ async def read_file(
                 operation_name=f"download_file({path}) from sandbox {sandbox_id}"
             )
         except Exception as download_err:
-            logger.error(f"Error downloading file {path} from sandbox {sandbox_id}: {str(download_err)}")
+            error_msg = str(download_err)
+            logger.error(f"Error downloading file {path} from sandbox {sandbox_id}: {error_msg}")
+            # Check if it's a file not found error
+            if 'not found' in error_msg.lower() or '404' in error_msg.lower():
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"File not found: {path}"
+                )
+            # Check if it's a permission error
+            if 'permission' in error_msg.lower() or '403' in error_msg.lower():
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Permission denied: {path}"
+                )
+            # For other errors, return 500
             raise HTTPException(
-                status_code=404, 
-                detail=f"Failed to download file: {str(download_err)}"
+                status_code=500, 
+                detail=f"Failed to download file: {error_msg}"
             )
         
         # Return a Response object with the content directly
@@ -371,8 +503,8 @@ async def read_file(
         # Re-raise HTTP exceptions without wrapping
         raise
     except Exception as e:
-        logger.error(f"Error reading file in sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error reading file in sandbox {sandbox_id}, path {path}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.delete("/sandboxes/{sandbox_id}/files")
 async def delete_file(
@@ -440,7 +572,6 @@ async def ensure_project_sandbox_active(
     logger.debug(f"Received ensure sandbox active request for project {project_id}, user_id: {user_id}")
     client = await db.client
     
-    # Find the project and sandbox information
     project_result = await client.table('projects').select('*').eq('project_id', project_id).execute()
     
     if not project_result.data or len(project_result.data) == 0:
@@ -449,16 +580,13 @@ async def ensure_project_sandbox_active(
     
     project_data = project_result.data[0]
     
-    # For public projects, no authentication is needed
     if not project_data.get('is_public'):
-        # For private projects, we must have a user_id
         if not user_id:
             logger.error(f"Authentication required for private project {project_id}")
             raise HTTPException(status_code=401, detail="Authentication required for this resource")
             
         account_id = project_data.get('account_id')
         
-        # Verify account membership
         if account_id:
             account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', account_id).execute()
             if not (account_user_result.data and len(account_user_result.data) > 0):
@@ -466,16 +594,24 @@ async def ensure_project_sandbox_active(
                 raise HTTPException(status_code=403, detail="Not authorized to access this project")
     
     try:
-        # Get sandbox ID from project data
-        sandbox_info = project_data.get('sandbox', {})
-        if not sandbox_info.get('id'):
+        from core.resources import ResourceService, ResourceType
+        
+        resource_service = ResourceService(client)
+        sandbox_resource = await resource_service.get_project_sandbox_resource(project_id)
+        
+        if not sandbox_resource:
             raise HTTPException(status_code=404, detail="No sandbox found for this project")
             
-        sandbox_id = sandbox_info['id']
+        sandbox_id = sandbox_resource.get('external_id')
         
-        # Get or start the sandbox
         logger.debug(f"Ensuring sandbox is active for project {project_id}")
         sandbox = await get_or_start_sandbox(sandbox_id)
+        
+        # Update last_used_at
+        try:
+            await resource_service.update_last_used(sandbox_resource['id'])
+        except Exception:
+            logger.warning(f"Failed to update last_used_at for resource {sandbox_resource['id']}")
         
         logger.debug(f"Successfully ensured sandbox {sandbox_id} is active for project {project_id}")
         
@@ -484,8 +620,94 @@ async def ensure_project_sandbox_active(
             "sandbox_id": sandbox_id,
             "message": "Sandbox is active"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error ensuring sandbox is active for project {project_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/project/{project_id}/sandbox")
+async def get_project_sandbox_details(
+    project_id: str,
+    request: Request = None,
+    user_id: Optional[str] = Depends(get_optional_user_id)
+):
+    """
+    Get sandbox details for a project using the project ID.
+    Retrieves the sandbox ID from the project and fetches sandbox details from Daytona.
+    """
+    logger.debug(f"Received get sandbox details request for project {project_id}, user_id: {user_id}")
+    client = await db.client
+    
+    project_result = await client.table('projects').select('*').eq('project_id', project_id).execute()
+    
+    if not project_result.data or len(project_result.data) == 0:
+        logger.error(f"Project not found: {project_id}")
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    project_data = project_result.data[0]
+    
+    if not project_data.get('is_public'):
+        if not user_id:
+            logger.error(f"Authentication required for private project {project_id}")
+            raise HTTPException(status_code=401, detail="Authentication required for this resource")
+            
+        account_id = project_data.get('account_id')
+        
+        if account_id:
+            account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', account_id).execute()
+            if not (account_user_result.data and len(account_user_result.data) > 0):
+                logger.error(f"User {user_id} not authorized to access project {project_id}")
+                raise HTTPException(status_code=403, detail="Not authorized to access this project")
+    
+    try:
+        from core.resources import ResourceService, ResourceType
+        
+        resource_service = ResourceService(client)
+        sandbox_resource = await resource_service.get_project_sandbox_resource(project_id)
+        
+        if not sandbox_resource:
+            raise HTTPException(status_code=404, detail="No sandbox found for this project")
+            
+        sandbox_id = sandbox_resource.get('external_id')
+        config = sandbox_resource.get('config', {})
+        
+        logger.debug(f"Fetching sandbox details for sandbox {sandbox_id} (project {project_id})")
+        sandbox = await daytona.get(sandbox_id)
+        
+        sandbox_details = {
+            "sandbox_id": sandbox.id,
+            "state": sandbox.state.value if hasattr(sandbox.state, 'value') else str(sandbox.state),
+            "project_id": project_id,
+            "vnc_preview": config.get('vnc_preview'),
+            "sandbox_url": config.get('sandbox_url'),
+        }
+        
+        if hasattr(sandbox, 'created_at') and sandbox.created_at:
+            sandbox_details["created_at"] = str(sandbox.created_at)
+        if hasattr(sandbox, 'updated_at') and sandbox.updated_at:
+            sandbox_details["updated_at"] = str(sandbox.updated_at)
+        if hasattr(sandbox, 'target') and sandbox.target:
+            sandbox_details["target"] = sandbox.target
+        if hasattr(sandbox, 'cpu') and sandbox.cpu:
+            sandbox_details["cpu"] = sandbox.cpu
+        if hasattr(sandbox, 'memory') and sandbox.memory:
+            sandbox_details["memory"] = sandbox.memory
+        if hasattr(sandbox, 'disk') and sandbox.disk:
+            sandbox_details["disk"] = sandbox.disk
+        if hasattr(sandbox, 'labels') and sandbox.labels:
+            sandbox_details["labels"] = sandbox.labels
+        
+        logger.debug(f"Successfully fetched sandbox details for project {project_id}")
+        
+        return {
+            "status": "success",
+            "sandbox": sandbox_details
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching sandbox details for project {project_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/project/{project_id}/files")
@@ -527,7 +749,10 @@ async def create_file_in_project(
         from core.agent_runs import _ensure_sandbox_for_thread
         
         # Check if sandbox existed before
-        existing_sandbox_id = project_data.get('sandbox', {}).get('id')
+        from core.resources import ResourceService
+        resource_service = ResourceService(client)
+        sandbox_resource = await resource_service.get_project_sandbox_resource(project_id)
+        existing_sandbox_id = sandbox_resource.get('external_id') if sandbox_resource else None
         
         # Ensure sandbox exists (creates if needed)
         sandbox, sandbox_id = await _ensure_sandbox_for_thread(client, project_id, [file])
@@ -574,6 +799,56 @@ async def create_file_in_project(
         logger.error(f"Error uploading file to project {project_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+class FileUploadStateRequest(BaseModel):
+    file_count: int
+
+
+@router.post("/project/{project_id}/files/upload-started")
+async def file_upload_started(
+    project_id: str,
+    request: FileUploadStateRequest,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    from core.services import redis
+    
+    key = f"file_upload_pending:{project_id}"
+    await redis.set(key, str(request.file_count), ex=300)
+    logger.info(f"File upload started for project {project_id}: {request.file_count} files")
+    
+    return {"status": "ok", "pending_files": request.file_count}
+
+
+@router.post("/project/{project_id}/files/upload-completed")
+async def file_upload_completed(
+    project_id: str,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    from core.services import redis
+    
+    key = f"file_upload_pending:{project_id}"
+    await redis.delete(key)
+    logger.info(f"File upload completed for project {project_id}")
+    
+    return {"status": "ok"}
+
+
+@router.get("/project/{project_id}/files/upload-status")
+async def get_file_upload_status(
+    project_id: str,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    from core.services import redis
+    
+    key = f"file_upload_pending:{project_id}"
+    pending = await redis.get(key)
+    
+    return {
+        "uploading": pending is not None,
+        "pending_files": int(pending) if pending else 0
+    }
+
+
 @router.get("/sandboxes/{sandbox_id}/files/content-by-hash")
 async def read_file_by_hash(
     sandbox_id: str,
@@ -582,7 +857,6 @@ async def read_file_by_hash(
     request: Request = None,
     user_id: Optional[str] = Depends(get_optional_user_id)
 ):
-    """Read a file from the sandbox at a specific git commit, without changing HEAD"""
     import shlex
 
     original_path = path
@@ -1347,3 +1621,302 @@ async def revert_commit_or_files(
             f"Error handling snapshot revert in sandbox {sandbox_id}: {str(e)}"
         )
         raise HTTPException(status_code=500, detail=str(e))
+
+class TerminalCommandRequest(BaseModel):
+    command: str
+    cwd: Optional[str] = "/workspace"
+
+class TerminalCommandResponse(BaseModel):
+    output: str
+    exit_code: int
+    success: bool
+
+@router.post("/sandboxes/{sandbox_id}/terminal/execute")
+async def execute_terminal_command(
+    sandbox_id: str,
+    request_body: TerminalCommandRequest,
+    request: Request = None,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    logger.debug(f"Received terminal command request for sandbox {sandbox_id}, user_id: {user_id}")
+    client = await db.client
+    
+    await verify_sandbox_access(client, sandbox_id, user_id)
+    
+    try:
+        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        
+        session_id = f"terminal_{uuid.uuid4().hex}"
+        command = request_body.command
+        cwd = request_body.cwd or "/workspace"
+        
+        wrapped_command = f"cd {shlex.quote(cwd)} && {command}"
+        
+        try:
+            await sandbox.process.create_session(session_id)
+            result = await sandbox.process.execute_session_command(
+                session_id,
+                SessionExecuteRequest(
+                    command=f"bash -lc {shlex.quote(wrapped_command)}",
+                    var_async=False
+                )
+            )
+            
+            output = ""
+            exit_code = 0
+            
+            if hasattr(result, 'output'):
+                output = result.output or ""
+            elif hasattr(result, 'result'):
+                output = result.result or ""
+            elif isinstance(result, dict):
+                output = result.get('output', result.get('result', ''))
+            else:
+                output = str(result) if result else ""
+            
+            if hasattr(result, 'exit_code'):
+                exit_code = result.exit_code
+            elif isinstance(result, dict):
+                exit_code = result.get('exit_code', 0)
+            
+            return {
+                "output": output,
+                "exit_code": exit_code,
+                "success": exit_code == 0
+            }
+            
+        except Exception as exec_err:
+            logger.error(f"Error executing command in sandbox {sandbox_id}: {str(exec_err)}")
+            return {
+                "output": str(exec_err),
+                "exit_code": 1,
+                "success": False
+            }
+        finally:
+            try:
+                if hasattr(sandbox.process, 'delete_session'):
+                    await sandbox.process.delete_session(session_id)
+            except Exception:
+                pass
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in terminal command for sandbox {sandbox_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class SSHAccessRequest(BaseModel):
+    expires_in_minutes: int = 60
+
+
+class SSHAccessResponse(BaseModel):
+    token: str
+    ssh_command: str
+    expires_in_minutes: int
+
+
+@router.post("/sandboxes/{sandbox_id}/ssh/token", response_model=SSHAccessResponse)
+async def create_ssh_access_token(
+    sandbox_id: str,
+    request_body: SSHAccessRequest = SSHAccessRequest(),
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    logger.debug(f"Creating SSH access token for sandbox {sandbox_id}, user_id: {user_id}")
+    client = await db.client
+    
+    await verify_sandbox_access(client, sandbox_id, user_id)
+    
+    try:
+        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        
+        ssh_access = await sandbox.create_ssh_access(expires_in_minutes=request_body.expires_in_minutes)
+        
+        ssh_command = f"ssh {ssh_access.token}@ssh.app.daytona.io"
+        
+        logger.info(f"SSH access token created for sandbox {sandbox_id}")
+        return SSHAccessResponse(
+            token=ssh_access.token,
+            ssh_command=ssh_command,
+            expires_in_minutes=request_body.expires_in_minutes
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating SSH access token for sandbox {sandbox_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/sandboxes/{sandbox_id}/ssh/token")
+async def revoke_ssh_access_token(
+    sandbox_id: str,
+    token: Optional[str] = None,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    logger.debug(f"Revoking SSH access for sandbox {sandbox_id}, user_id: {user_id}")
+    client = await db.client
+    
+    await verify_sandbox_access(client, sandbox_id, user_id)
+    
+    try:
+        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        
+        if token:
+            await sandbox.revoke_ssh_access(token=token)
+            logger.info(f"SSH access token revoked for sandbox {sandbox_id}")
+        else:
+            await sandbox.revoke_ssh_access()
+            logger.info(f"All SSH access tokens revoked for sandbox {sandbox_id}")
+        
+        return {"success": True, "message": "SSH access revoked"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error revoking SSH access for sandbox {sandbox_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.websocket("/sandboxes/{sandbox_id}/terminal/ws")
+async def websocket_pty_terminal(
+    websocket: WebSocket,
+    sandbox_id: str,
+):
+    """WebSocket endpoint for interactive PTY terminal using Daytona's built-in PTY API."""
+    await websocket.accept()
+    
+    pty_handle = None
+    
+    try:
+        logger.info(f"[PTY WS] Waiting for auth message from sandbox {sandbox_id}")
+        
+        try:
+            message = await asyncio.wait_for(websocket.receive(), timeout=30.0)
+            
+            if message.get("type") == "websocket.receive":
+                if "text" in message:
+                    auth_message = json.loads(message["text"])
+                elif "bytes" in message:
+                    auth_message = json.loads(message["bytes"].decode())
+                else:
+                    await websocket.send_json({"type": "error", "message": "Unknown message format"})
+                    await websocket.close()
+                    return
+            elif message.get("type") == "websocket.disconnect":
+                return
+            else:
+                await websocket.send_json({"type": "error", "message": f"Unexpected message type"})
+                await websocket.close()
+                return
+                
+        except asyncio.TimeoutError:
+            logger.error(f"[PTY WS] Auth timeout for sandbox {sandbox_id}")
+            await websocket.send_json({"type": "error", "message": "Authentication timeout"})
+            await websocket.close()
+            return
+        except Exception as recv_err:
+            logger.error(f"[PTY WS] Error receiving auth: {recv_err}")
+            await websocket.send_json({"type": "error", "message": f"Error: {str(recv_err)}"})
+            await websocket.close()
+            return
+        
+        if auth_message.get("type") != "auth":
+            await websocket.send_json({"type": "error", "message": "Expected auth message"})
+            await websocket.close()
+            return
+        
+        access_token = auth_message.get("access_token")
+        if not access_token:
+            await websocket.send_json({"type": "error", "message": "No access token provided"})
+            await websocket.close()
+            return
+        
+        from core.utils.auth_utils import _decode_jwt_with_verification
+        try:
+            decoded = _decode_jwt_with_verification(access_token)
+            user_id = decoded.get("sub")
+            if not user_id:
+                raise ValueError("No user ID in token")
+        except Exception:
+            await websocket.send_json({"type": "error", "message": "Invalid access token"})
+            await websocket.close()
+            return
+        
+        client = await db.client
+        try:
+            await verify_sandbox_access(client, sandbox_id, user_id)
+        except HTTPException as e:
+            await websocket.send_json({"type": "error", "message": str(e.detail)})
+            await websocket.close()
+            return
+        
+        logger.info(f"[PTY WS] Auth successful, creating PTY session for sandbox {sandbox_id}")
+        await websocket.send_json({"type": "status", "message": "Creating terminal session..."})
+        
+        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        
+        from daytona_sdk.common.pty import PtySize
+        import uuid
+        
+        session_id = f"terminal-{uuid.uuid4().hex[:8]}"
+        
+        async def on_pty_data(data: bytes):
+            try:
+                text = data.decode("utf-8", errors="replace")
+                await websocket.send_json({"type": "output", "data": text})
+            except Exception as e:
+                logger.error(f"[PTY WS] Error sending PTY data: {e}")
+        
+        try:
+            pty_handle = await sandbox.process.create_pty_session(
+                id=session_id,
+                on_data=on_pty_data,
+                pty_size=PtySize(cols=120, rows=40)
+            )
+            logger.info(f"[PTY WS] PTY session created: {session_id}")
+        except Exception as e:
+            logger.error(f"[PTY WS] Failed to create PTY session: {e}")
+            await websocket.send_json({"type": "error", "message": f"Failed to create terminal: {str(e)}"})
+            await websocket.close()
+            return
+        
+        await websocket.send_json({"type": "connected", "message": "Terminal session established"})
+        
+        try:
+            while True:
+                message = await websocket.receive_json()
+                msg_type = message.get("type")
+                
+                if msg_type == "input":
+                    data = message.get("data", "")
+                    if data and pty_handle:
+                        await pty_handle.send_input(data)
+                elif msg_type == "resize":
+                    cols = message.get("cols", 120)
+                    rows = message.get("rows", 40)
+                    if pty_handle:
+                        await pty_handle.resize(PtySize(cols=cols, rows=rows))
+                elif msg_type == "ping":
+                    await websocket.send_json({"type": "pong"})
+                    
+        except WebSocketDisconnect:
+            logger.info(f"[PTY WS] WebSocket disconnected for sandbox {sandbox_id}")
+            
+    except Exception as e:
+        logger.error(f"[PTY WS] Error for sandbox {sandbox_id}: {str(e)}")
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except:
+            pass
+    finally:
+        if pty_handle:
+            try:
+                await pty_handle.kill()
+                logger.info(f"[PTY WS] PTY session killed for sandbox {sandbox_id}")
+            except Exception as e:
+                logger.warning(f"[PTY WS] Error killing PTY session: {e}")
+        try:
+            await websocket.close()
+        except:
+            pass

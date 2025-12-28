@@ -79,7 +79,7 @@ export const MarketplaceTab = ({
               <SelectValue placeholder="Filter agents" />
             </SelectTrigger>
             <SelectContent className='rounded-xl'>
-              <SelectItem className='rounded-xl' value="all">All Agents</SelectItem>
+              <SelectItem className='rounded-xl' value="all">All Workers</SelectItem>
               <SelectItem className='rounded-xl' value="mine">Mine</SelectItem>
               <SelectItem className='rounded-xl' value="kortix">Kortix Verified</SelectItem>
               <SelectItem className='rounded-xl' value="community">Community</SelectItem>
@@ -118,7 +118,7 @@ export const MarketplaceTab = ({
             {marketplaceFilter === 'all' ? (
               <div className="space-y-6">
                 {/* <MarketplaceSectionHeader
-                  title="Popular Agents"
+                  title="Popular Workers"
                   subtitle="Sorted by popularity - most downloads first"
                 /> */}
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

@@ -117,8 +117,7 @@ async def _get_user_id_from_account_cached(account_id: str) -> Optional[str]:
     cache_key = f"account_user:{account_id}"
     
     try:
-        redis_client = await redis.get_client()
-        cached_user_id = await redis_client.get(cache_key)
+        cached_user_id = await redis.get(cache_key)
         if cached_user_id:
             return cached_user_id.decode('utf-8') if isinstance(cached_user_id, bytes) else cached_user_id
     except Exception as e:
@@ -137,7 +136,7 @@ async def _get_user_id_from_account_cached(account_id: str) -> Optional[str]:
             user_id = user_result.data[0]['primary_owner_user_id']
             
             try:
-                await redis_client.setex(cache_key, 300, user_id)
+                await redis.setex(cache_key, 300, user_id)
             except Exception as e:
                 structlog.get_logger().warning(f"Failed to cache user lookup: {e}")
                 
@@ -337,7 +336,7 @@ async def verify_and_get_agent_authorization(client, agent_id: str, user_id: str
         agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', user_id).execute()
         
         if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Agent not found or access denied")
+            raise HTTPException(status_code=404, detail="Worker not found or access denied")
         
         return agent_result.data[0]
         
@@ -551,15 +550,17 @@ async def require_agent_access(
 
 async def verify_sandbox_access(client, sandbox_id: str, user_id: str):
     """
-    Verify that a user has access to a specific sandbox by checking project ownership and permissions.
+    Verify that a user has access to a specific sandbox by checking resource ownership and project permissions.
     
-    This function implements project-based access control:
+    This function implements account-based resource access control:
+    - Find the resource by external_id (sandbox_id)
+    - Check if user has access to the resource's account
     - Public projects: Allow access to anyone
     - Private projects: Only allow access to account members
     
     Args:
         client: The Supabase client
-        sandbox_id: The sandbox ID to check access for
+        sandbox_id: The sandbox ID (external_id) to check access for
         user_id: The user ID to check permissions for (required for all operations)
         
     Returns:
@@ -568,22 +569,52 @@ async def verify_sandbox_access(client, sandbox_id: str, user_id: str):
     Raises:
         HTTPException: If the user doesn't have access to the project/sandbox or sandbox doesn't exist
     """
-    # Find the project that owns this sandbox
-    project_result = await client.table('projects').select('*').filter('sandbox->>id', 'eq', sandbox_id).execute()
+    from core.resources import ResourceService, ResourceType
+    
+    resource_service = ResourceService(client)
+    
+    # Find the resource by external_id
+    resource = await resource_service.get_resource_by_external_id(sandbox_id, ResourceType.SANDBOX)
+    
+    if not resource:
+        raise HTTPException(status_code=404, detail="Sandbox not found - no resource exists for this sandbox")
+    
+    resource_account_id = resource.get('account_id')
+    
+    # Find the project that uses this resource
+    project_result = await client.table('projects').select('*').eq('sandbox_resource_id', resource['id']).execute()
     
     if not project_result.data or len(project_result.data) == 0:
-        raise HTTPException(status_code=404, detail="Sandbox not found - no project owns this sandbox")
+        # Resource exists but no project uses it - check account access directly
+        # Check if user is a member of the resource's account
+        account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', resource_account_id).execute()
+        
+        if account_user_result.data and len(account_user_result.data) > 0:
+            structlog.get_logger().debug("User has access to resource via account membership", sandbox_id=sandbox_id, account_id=resource_account_id)
+            # Return resource data in project-like format for compatibility
+            return {
+                'project_id': None,
+                'account_id': resource_account_id,
+                'is_public': False,
+                'sandbox': {
+                    'id': sandbox_id,
+                    **resource.get('config', {})
+                }
+            }
+        
+        raise HTTPException(status_code=404, detail="Sandbox not found - no project uses this sandbox")
     
     project_data = project_result.data[0]
     project_id = project_data.get('project_id')
     is_public = project_data.get('is_public', False)
     
     structlog.get_logger().debug(
-        "Checking sandbox access via project ownership",
+        "Checking sandbox access via resource ownership",
         sandbox_id=sandbox_id,
         project_id=project_id,
         is_public=is_public,
-        user_id=user_id
+        user_id=user_id,
+        resource_account_id=resource_account_id
     )
 
     # Public projects: Allow access regardless of authentication
@@ -627,16 +658,16 @@ async def verify_sandbox_access(client, sandbox_id: str, user_id: str):
 
 async def verify_sandbox_access_optional(client, sandbox_id: str, user_id: Optional[str] = None):
     """
-    Verify that a user has access to a specific sandbox by checking project ownership and permissions.
+    Verify that a user has access to a specific sandbox by checking resource ownership and project permissions.
     This function supports optional authentication for read-only operations.
     
-    This function implements project-based access control:
+    This function implements account-based resource access control:
     - Public projects: Allow access to anyone (no authentication required)
     - Private projects: Require authentication and account membership
     
     Args:
         client: The Supabase client
-        sandbox_id: The sandbox ID to check access for
+        sandbox_id: The sandbox ID (external_id) to check access for
         user_id: The user ID to check permissions for. Can be None for public project access.
         
     Returns:
@@ -645,18 +676,45 @@ async def verify_sandbox_access_optional(client, sandbox_id: str, user_id: Optio
     Raises:
         HTTPException: If the user doesn't have access to the project/sandbox or sandbox doesn't exist
     """
-    # Find the project that owns this sandbox
-    project_result = await client.table('projects').select('*').filter('sandbox->>id', 'eq', sandbox_id).execute()
+    from core.resources import ResourceService, ResourceType
+    
+    resource_service = ResourceService(client)
+    
+    # Find the resource by external_id
+    resource = await resource_service.get_resource_by_external_id(sandbox_id, ResourceType.SANDBOX)
+    
+    if not resource:
+        raise HTTPException(status_code=404, detail="Sandbox not found - no resource exists for this sandbox")
+    
+    # Find the project that uses this resource
+    project_result = await client.table('projects').select('*').eq('sandbox_resource_id', resource['id']).execute()
     
     if not project_result.data or len(project_result.data) == 0:
-        raise HTTPException(status_code=404, detail="Sandbox not found - no project owns this sandbox")
+        # Resource exists but no project uses it - check account access directly if user_id provided
+        if user_id:
+            resource_account_id = resource.get('account_id')
+            account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', resource_account_id).execute()
+            
+            if account_user_result.data and len(account_user_result.data) > 0:
+                structlog.get_logger().debug("User has access to resource via account membership", sandbox_id=sandbox_id, account_id=resource_account_id)
+                return {
+                    'project_id': None,
+                    'account_id': resource_account_id,
+                    'is_public': False,
+                    'sandbox': {
+                        'id': sandbox_id,
+                        **resource.get('config', {})
+                    }
+                }
+        
+        raise HTTPException(status_code=404, detail="Sandbox not found - no project uses this sandbox")
     
     project_data = project_result.data[0]
     project_id = project_data.get('project_id')
     is_public = project_data.get('is_public', False)
     
     structlog.get_logger().debug(
-        "Checking optional sandbox access via project ownership",
+        "Checking optional sandbox access via resource ownership",
         sandbox_id=sandbox_id,
         project_id=project_id,
         is_public=is_public,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   CheckCircle,
   AlertTriangle,
@@ -25,7 +25,7 @@ import {
   getFileTypeFromExtension,
 } from '@/components/file-editors';
 import { UnifiedMarkdown } from '@/components/markdown';
-import { CsvRenderer, XlsxRenderer } from '@/components/file-renderers';
+import { SpreadsheetViewer, HtmlRenderer, JsonRenderer } from '@/components/file-renderers';
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
@@ -40,6 +40,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { FileDownloadButton } from '../shared/FileDownloadButton';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 import {
   getLanguageFromFileName,
@@ -52,7 +53,6 @@ import {
   isFileType,
   hasLanguageHighlighting,
   splitContentIntoLines,
-  generateEmptyLines,
   generateLineDiff,
   calculateDiffStats,
   type FileOperation,
@@ -260,10 +260,12 @@ export function FileOperationToolView({
   }
 
   // STREAMING: Extract content from live streaming JSON arguments
-  if (isStreaming && streamingText) {
+  // Use toolCall.rawArguments (per-tool-call) instead of shared streamingText
+  const streamingSource = toolCall.rawArguments || streamingText;
+  if (isStreaming && streamingSource) {
     try {
       // Try parsing as complete JSON first
-      const parsed = JSON.parse(streamingText);
+      const parsed = JSON.parse(streamingSource);
 
       // Extract based on operation type
       if (operation === 'create' || operation === 'rewrite') {
@@ -291,11 +293,11 @@ export function FileOperationToolView({
       // JSON incomplete - extract partial content
       if (operation === 'create' || operation === 'rewrite') {
         // Find the start of file_contents value
-        const startMatch = streamingText.match(/"file_contents"\s*:\s*"/);
+        const startMatch = streamingSource.match(/"file_contents"\s*:\s*"/);
         if (startMatch) {
           const startIndex = startMatch.index! + startMatch[0].length;
           // Extract everything after "file_contents": " until we hit the end or a closing quote
-          let rawContent = streamingText.substring(startIndex);
+          let rawContent = streamingSource.substring(startIndex);
 
           // Try to find the end quote (but it might not exist yet during streaming)
           const endQuoteMatch = rawContent.match(/(?<!\\)"/);
@@ -317,10 +319,10 @@ export function FileOperationToolView({
           }
         }
       } else if (operation === 'edit') {
-        const startMatch = streamingText.match(/"code_edit"\s*:\s*"/);
+        const startMatch = streamingSource.match(/"code_edit"\s*:\s*"/);
         if (startMatch) {
           const startIndex = startMatch.index! + startMatch[0].length;
-          let rawContent = streamingText.substring(startIndex);
+          let rawContent = streamingSource.substring(startIndex);
 
           const endQuoteMatch = rawContent.match(/(?<!\\)"/);
           if (endQuoteMatch) {
@@ -340,10 +342,10 @@ export function FileOperationToolView({
         }
       } else if (isStrReplace) {
         // Extract old_str
-        const oldStrMatch = streamingText.match(/"(?:old_str|old_string)"\s*:\s*"/);
+        const oldStrMatch = streamingSource.match(/"(?:old_str|old_string)"\s*:\s*"/);
         if (oldStrMatch) {
           const startIndex = oldStrMatch.index! + oldStrMatch[0].length;
-          let rawContent = streamingText.substring(startIndex);
+          let rawContent = streamingSource.substring(startIndex);
           const endQuoteMatch = rawContent.match(/(?<!\\)"/);
           if (endQuoteMatch) {
             rawContent = rawContent.substring(0, endQuoteMatch.index);
@@ -355,10 +357,10 @@ export function FileOperationToolView({
           }
         }
         // Extract new_str
-        const newStrMatch = streamingText.match(/"(?:new_str|new_string)"\s*:\s*"/);
+        const newStrMatch = streamingSource.match(/"(?:new_str|new_string)"\s*:\s*"/);
         if (newStrMatch) {
           const startIndex = newStrMatch.index! + newStrMatch[0].length;
-          let rawContent = streamingText.substring(startIndex);
+          let rawContent = streamingSource.substring(startIndex);
           const endQuoteMatch = rawContent.match(/(?<!\\)"/);
           if (endQuoteMatch) {
             rawContent = rawContent.substring(0, endQuoteMatch.index);
@@ -373,7 +375,7 @@ export function FileOperationToolView({
 
       // Extract file_path from partial JSON
       if (!filePath) {
-        const pathMatch = streamingText.match(/"file_path"\s*:\s*"([^"]+)"/);
+        const pathMatch = streamingSource.match(/"file_path"\s*:\s*"([^"]+)"/);
         if (pathMatch) {
           filePath = pathMatch[1];
         }
@@ -457,7 +459,9 @@ export function FileOperationToolView({
 
   const language = getLanguageFromFileName(fileName);
   const hasHighlighting = hasLanguageHighlighting(language);
-  const contentLines = React.useMemo(() => splitContentIntoLines(fileContent), [fileContent]);
+  
+  // Only calculate content lines for non-streaming or when actually needed
+  const contentLines = useMemo(() => splitContentIntoLines(fileContent), [fileContent]);
 
   const htmlPreviewUrl =
     isHtml && project?.sandbox?.sandbox_url && processedFilePath
@@ -467,13 +471,11 @@ export function FileOperationToolView({
   const FileIcon = getFileIcon(fileName);
 
   // Auto-scroll refs for streaming
-  const sourceScrollRef = React.useRef<HTMLDivElement>(null);
-  const previewScrollRef = React.useRef<HTMLDivElement>(null);
-  const lastLineCountRef = React.useRef<number>(0);
-  const isUserScrollingSourceRef = React.useRef<boolean>(false);
+  const sourceScrollRef = useRef<HTMLDivElement>(null);
+  const previewScrollRef = useRef<HTMLDivElement>(null);
+  const lastLineCountRef = useRef<number>(0);
+  const isUserScrollingSourceRef = useRef<boolean>(false);
   const isUserScrollingPreviewRef = React.useRef<boolean>(false);
-  const scrollTimeoutSourceRef = React.useRef<NodeJS.Timeout | null>(null);
-  const scrollTimeoutPreviewRef = React.useRef<NodeJS.Timeout | null>(null);
 
   const isNearBottom = (element: HTMLElement, threshold: number = 100): boolean => {
     return element.scrollHeight - element.scrollTop - element.clientHeight < threshold;
@@ -484,23 +486,14 @@ export function FileOperationToolView({
     if (!viewport) return;
 
     const handleScroll = () => {
-      if (scrollTimeoutSourceRef.current) {
-        clearTimeout(scrollTimeoutSourceRef.current);
-      }
-
+      // Only allow auto-scroll when user is near the bottom
+      // Don't use timeout - respect user's scroll position continuously
       isUserScrollingSourceRef.current = !isNearBottom(viewport);
-
-      scrollTimeoutSourceRef.current = setTimeout(() => {
-        isUserScrollingSourceRef.current = false;
-      }, 1000);
     };
 
     viewport.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       viewport.removeEventListener('scroll', handleScroll);
-      if (scrollTimeoutSourceRef.current) {
-        clearTimeout(scrollTimeoutSourceRef.current);
-      }
     };
   }, []);
 
@@ -509,23 +502,14 @@ export function FileOperationToolView({
     if (!viewport) return;
 
     const handleScroll = () => {
-      if (scrollTimeoutPreviewRef.current) {
-        clearTimeout(scrollTimeoutPreviewRef.current);
-      }
-
+      // Only allow auto-scroll when user is near the bottom
+      // Don't use timeout - respect user's scroll position continuously
       isUserScrollingPreviewRef.current = !isNearBottom(viewport);
-
-      scrollTimeoutPreviewRef.current = setTimeout(() => {
-        isUserScrollingPreviewRef.current = false;
-      }, 1000);
     };
 
     viewport.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       viewport.removeEventListener('scroll', handleScroll);
-      if (scrollTimeoutPreviewRef.current) {
-        clearTimeout(scrollTimeoutPreviewRef.current);
-      }
     };
   }, []);
 
@@ -696,18 +680,19 @@ export function FileOperationToolView({
     // Determine file type for rendering
     const fileType = getFileTypeFromExtension(fileName);
     const isMarkdown = fileExtension === 'md' || fileExtension === 'markdown';
+    const isJson = fileExtension === 'json';
     const isCsv = fileExtension === 'csv' || fileExtension === 'tsv';
     const isXlsx = fileExtension === 'xlsx' || fileExtension === 'xls';
     
-    // For HTML files with preview URL, use iframe directly (but show CodeMirror during streaming)
-    if (isHtml && htmlPreviewUrl && !isStreaming) {
+    // For HTML files, use HtmlRenderer with Preview/Code/Open buttons (but show CodeMirror during streaming)
+    if (isHtml && !isStreaming) {
       return (
         <div className="w-full max-w-full h-full overflow-hidden min-w-0">
-          <iframe
-            src={htmlPreviewUrl}
-            title={`HTML Preview of ${fileName}`}
-            className="w-full h-full border-0 max-w-full"
-            sandbox="allow-same-origin allow-scripts"
+          <HtmlRenderer
+            content={fileContent || ''}
+            previewUrl={htmlPreviewUrl || ''}
+            className="w-full h-full"
+            project={project}
           />
         </div>
       );
@@ -722,26 +707,22 @@ export function FileOperationToolView({
       );
     }
 
-    // For CSV files
-    if (isCsv) {
+    // For JSON files
+    if (isJson) {
       return (
-        <div className="p-6 flex flex-col">
-          <div className="flex-1 min-h-[400px] w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden">
-            <CsvRenderer content={processUnicodeContent(fileContent)} />
-          </div>
-        </div>
+        <JsonRenderer content={fileContent} />
       );
     }
 
-    // For XLSX files
-    if (isXlsx) {
+    // For CSV and XLSX files
+    if (isCsv || isXlsx) {
       return (
         <div className="p-6 flex flex-col">
           <div className="flex-1 min-h-[400px] w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden">
-            <XlsxRenderer
-              content={fileContent}
-              filePath={processedFilePath}
+            <SpreadsheetViewer
+              filePath={filePath}
               fileName={fileName}
+              sandboxId={project?.sandbox?.id}
               project={project}
             />
           </div>
@@ -793,26 +774,18 @@ export function FileOperationToolView({
       );
     }
 
-    // Always use file-lines rendering for consistency
-    // Add empty lines to fill viewport
-    const emptyLines = generateEmptyLines(50); // Add 50 empty lines for natural scrolling
-    const allLines = [...contentLines, ...emptyLines];
-
+    // PERFORMANCE FIX: Use CodeEditor (which uses virtualized CodeMirror) instead of
+    // creating individual DOM elements for each line. This prevents browser hangs
+    // when streaming large files.
     return (
-      <div className="w-full max-w-full table bg-white dark:bg-zinc-900 overflow-x-auto">
-        {allLines.map((line, idx) => (
-          <div
-            key={idx}
-            className={cn("table-row transition-colors", config.hoverColor)}
-          >
-            <div className="table-cell text-right pr-4 pl-4 py-0.5 text-xs text-zinc-400 dark:text-zinc-600 select-none w-14 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 flex-shrink-0">
-              {idx + 1}
-            </div>
-            <div className="table-cell pl-4 py-0.5 pr-4 text-[15px] leading-relaxed whitespace-pre-wrap break-words text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-900 max-w-full min-w-0">
-              {line ? processUnicodeContent(line, true) : ' '}
-            </div>
-          </div>
-        ))}
+      <div className="w-full max-w-full bg-white dark:bg-zinc-900 min-w-0">
+        <CodeEditor
+          content={processUnicodeContent(fileContent)}
+          fileName={fileName}
+          readOnly={true}
+          className="w-full max-w-full"
+          showLineNumbers={true}
+        />
       </div>
     );
   };
@@ -869,60 +842,91 @@ export function FileOperationToolView({
                 </TabsTrigger>
               </TabsList>
             </div>
-            <div className='flex items-center gap-1.5 flex-shrink-0'>
-              {fileContent && !isStreaming && !isPresentationSlide && operation !== 'delete' && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCopyContent}
-                  disabled={isCopyingContent}
-                  className="h-8 w-8 p-0"
-                  title="Copy file content"
-                >
-                  {isCopyingContent ? (
-                    <Check className="h-4 w-4" />
-                  ) : (
-                    <Copy className="h-4 w-4" />
-                  )}
-                </Button>
-              )}
-              {fileContent && !isStreaming && !isPresentationSlide && operation !== 'delete' && (
-                <FileDownloadButton
-                  content={fileContent}
-                  fileName={fileName}
-                  disabled={isStreaming}
-                />
-              )}
-              {processedFilePath && !isStreaming && !isPresentationSlide && operation !== 'delete' && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => openFileInComputer(processedFilePath)}
-                  className="h-8 gap-1.5 px-2"
-                  title="Edit in Files Manager"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  <span className="text-xs hidden sm:inline">Edit</span>
-                </Button>
-              )}
-              {isPresentationSlide && presentationName && project?.sandbox?.sandbox_url && !isStreaming && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    openPresentation(
-                      presentationName,
-                      project.sandbox.sandbox_url,
-                      slideNumber || 1
-                    );
-                  }}
-                  className="h-8 w-8 p-0"
-                  title="Open presentation fullscreen"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
+            <TooltipProvider delayDuration={0}>
+              <div className='flex items-center gap-1.5 flex-shrink-0'>
+                {!isPresentationSlide && operation !== 'delete' && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCopyContent}
+                        disabled={isCopyingContent || isStreaming || !fileContent}
+                        className="h-8 w-8 p-0"
+                      >
+                        {isCopyingContent ? (
+                          <Check className="h-4 w-4" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {isStreaming ? 'Available when complete' : 'Copy file content'}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {!isPresentationSlide && operation !== 'delete' && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span>
+                        <FileDownloadButton
+                          content={fileContent || ''}
+                          fileName={fileName}
+                          disabled={isStreaming || !fileContent}
+                        />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {isStreaming ? 'Available when complete' : 'Download file'}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {processedFilePath && !isPresentationSlide && operation !== 'delete' && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openFileInComputer(processedFilePath)}
+                        disabled={isStreaming}
+                        className="h-8 gap-1.5 px-2"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        <span className="text-xs hidden sm:inline">Edit</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {isStreaming ? 'Available when complete' : 'Edit in Files Manager'}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {isPresentationSlide && presentationName && project?.sandbox?.sandbox_url && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          openPresentation(
+                            presentationName,
+                            project.sandbox.sandbox_url,
+                            slideNumber || 1
+                          );
+                        }}
+                        disabled={isStreaming}
+                        className="h-8 w-8 p-0"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {isStreaming ? 'Available when complete' : 'Open presentation fullscreen'}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            </TooltipProvider>
           </div>
         </CardHeader>
 

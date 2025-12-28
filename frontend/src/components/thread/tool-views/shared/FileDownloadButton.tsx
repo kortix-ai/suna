@@ -130,9 +130,9 @@ export function FileDownloadButton({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className={className || "h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50"}
+            className={className || "h-8 w-8 p-0"}
             disabled={disabled || isExporting || !content}
             title="Export file"
           >
@@ -168,11 +168,11 @@ export function FileDownloadButton({
   // For non-markdown files, show simple download button
   return (
     <Button
-      variant="outline"
+      variant="ghost"
       size="sm"
       onClick={handleDirectDownload}
       disabled={disabled || isExporting || !content}
-      className={className || "h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50"}
+      className={className || "h-8 w-8 p-0"}
       title="Download file"
     >
       {isExporting ? (

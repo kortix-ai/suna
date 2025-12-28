@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, Pressable, TextInput, Alert, Image, ScrollView } from 'react-native';
+import { View, Pressable, TextInput, Alert, Image, ScrollView, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
@@ -41,7 +41,7 @@ import {
 import type { TriggerConfiguration } from '@/api/types';
 import { useComposioProfiles } from '@/hooks/useComposio';
 import type { ComposioApp, ComposioProfile } from '@/hooks/useComposio';
-import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Loading } from '../loading/loading';
@@ -98,24 +98,21 @@ interface TypeCardProps {
 
 function TypeCard({ icon: IconComponent, title, subtitle, onPress }: TypeCardProps) {
   const { colorScheme } = useColorScheme();
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
 
   return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={() => {
-        scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
+    <BottomSheetTouchable
+      onPress={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress();
       }}
-      onPressOut={() => {
-        scale.value = withSpring(1);
-      }}
-      style={animatedStyle}
-      className="mb-3 rounded-2xl border border-border bg-card p-4 active:opacity-80">
+      style={{
+        marginBottom: 12,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: colorScheme === 'dark' ? '#3f3f46' : '#e4e4e7',
+        backgroundColor: colorScheme === 'dark' ? '#27272a' : '#ffffff',
+        padding: 16,
+      }}>
       <View className="flex-row items-center gap-3">
         <View className="h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
           <Icon as={IconComponent} size={24} className="text-primary" />
@@ -126,7 +123,7 @@ function TypeCard({ icon: IconComponent, title, subtitle, onPress }: TypeCardPro
         </View>
         <Icon as={ChevronRight} size={20} className="text-muted-foreground" />
       </View>
-    </AnimatedPressable>
+    </BottomSheetTouchable>
   );
 }
 
@@ -1309,7 +1306,7 @@ export function TriggerCreationDrawer({
                     onTriggerSelect={(trigger) => {
                       setSelectedTrigger(trigger);
                       setEventConfig({});
-                      setTriggerName(`${selectedApp.name} → Agent`);
+                      setTriggerName(`${selectedApp.name} → Worker`);
                       setEventStep('config');
                     }}
                   />

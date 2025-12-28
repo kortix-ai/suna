@@ -231,7 +231,7 @@ export const useDeleteAgent = () => {
     onSuccess: (_, agentId) => {
       // Remove the individual agent query
       queryClient.removeQueries({ queryKey: agentKeys.detail(agentId) });
-      toast.success('Agent deleted successfully');
+      toast.success('Worker deleted successfully');
     },
     onSettled: () => {
       // Always invalidate to ensure consistency

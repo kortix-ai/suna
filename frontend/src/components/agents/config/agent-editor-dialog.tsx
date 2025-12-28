@@ -148,7 +148,7 @@ export function AgentEditorDialog({
                     const generatedHue = hexToHue(result.icon_background);
                     setHue(generatedHue);
 
-                    toast.success('Agent icon auto-generated!');
+                    toast.success('Worker icon auto-generated!');
                 },
                 onError: (error) => {
                     console.error('Auto-generation failed:', error);

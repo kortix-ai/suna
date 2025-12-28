@@ -26,6 +26,7 @@ class JITLoader:
             'task_list_tool', 
             'sb_shell_tool',
             'sb_files_tool',
+            'sb_file_reader_tool',
             'web_search_tool',
             'image_search_tool',
             'sb_vision_tool',

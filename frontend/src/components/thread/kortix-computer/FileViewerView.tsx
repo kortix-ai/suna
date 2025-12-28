@@ -768,7 +768,7 @@ export function FileViewerView({
       : '';
 
     return (
-      <div className="h-full flex flex-col overflow-hidden">
+      <div className="h-full flex flex-col overflow-hidden bg-background">
         {/* Header */}
         <KortixComputerHeader
           icon={Home}
@@ -863,7 +863,7 @@ export function FileViewerView({
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    <div className="h-full flex flex-col overflow-hidden bg-background">
       {/* Header */}
       <KortixComputerHeader
         icon={Home}

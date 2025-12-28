@@ -14,7 +14,7 @@ export const allAgents: AIAgent[] = [
   },
   {
     id: 'daily-recap',
-    name: 'Daily Recap Agent',
+    name: 'Daily Recap Worker',
     role: 'Morning Briefing Specialist',
     icon: 'Sun',
     description: 'Send a comprehensive daily recap email every morning to start your day informed',
@@ -24,7 +24,7 @@ export const allAgents: AIAgent[] = [
   },
   {
     id: 'weekly-recap',
-    name: 'Weekly Recap Agent',
+    name: 'Weekly Recap Worker',
     role: 'Weekly Summary Specialist',
     icon: 'Calendar',
     description: 'Send a detailed weekly recap email at the start of each week with insights and planning',
@@ -34,7 +34,7 @@ export const allAgents: AIAgent[] = [
   },
   {
     id: 'lead-generator',
-    name: 'Lead Generation Agent',
+    name: 'Lead Generation Worker',
     role: 'Lead Generation Specialist',
     icon: 'Target',
     description: 'Continuously grow your list of qualified leads through automated prospecting and research',
@@ -44,7 +44,7 @@ export const allAgents: AIAgent[] = [
   },
   {
     id: 'meeting-researcher',
-    name: 'Meeting Research Agent',
+    name: 'Meeting Research Worker',
     role: 'People Research Specialist',
     icon: 'Users',
     description: 'Provide in-depth research reports about people before meetings to help you prepare',
@@ -54,7 +54,7 @@ export const allAgents: AIAgent[] = [
   },
   {
     id: 'presentation-creator',
-    name: 'Presentation Agent',
+    name: 'Presentation Worker',
     role: 'Presentation Creation Specialist',
     icon: 'Monitor',
     description: 'Create professional presentations and slide decks tailored to your content and audience',

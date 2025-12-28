@@ -10,5 +10,5 @@ export {
 export type { ChatInputRef } from './ChatInput';
 export { StreamingToolCard } from './StreamingToolCard';
 
-export { ChatInputSection, ChatDrawers } from './shared';
+export { ChatInputSection, ChatDrawers, CHAT_INPUT_SECTION_HEIGHT } from './shared';
 export type { ChatInputSectionProps, ChatInputSectionRef, ChatDrawersProps } from './shared';

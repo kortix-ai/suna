@@ -1,4 +1,5 @@
 export { Avatar } from './Avatar';
+export { Badge } from './badge';
 export { Button } from './button';
 export { Icon } from './icon';
 export { Input } from './input';

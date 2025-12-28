@@ -26,6 +26,7 @@ from core.agentpress.xml_tool_parser import (
     extract_xml_chunks,
     parse_xml_tool_calls_with_ids
 )
+from core.tool_output_streaming_context import set_current_tool_call_id
 from core.agentpress.native_tool_parser import (
     extract_tool_call_chunk_data,
     is_tool_call_complete,
@@ -448,7 +449,7 @@ class ResponseProcessor:
         Yields:
             Complete message objects matching the DB schema, except for content chunks.
         """
-        logger.info(f"Starting streaming response processing for thread {thread_id}")
+        logger.debug(f"Starting streaming response processing for thread {thread_id}")
         
         # Initialize cancellation event if not provided
         if cancellation_event is None:
@@ -477,6 +478,10 @@ class ResponseProcessor:
         xml_tool_calls_with_ids = [] # Track XML tool calls with their IDs for metadata storage
         content_chunk_buffer = {} # Buffer to reorder content chunks: sequence -> chunk_data
         next_expected_sequence = 0 # Track the next expected sequence number for ordering
+        
+        # DELTA STREAMING: Track how much has been sent for each tool call to avoid duplication
+        tool_call_sent_lengths = {}  # Maps tool_call_index -> length of arguments already sent
+        xml_tool_calls_sent_count = 0  # Track how many XML tool calls have been sent
 
         # Store the complete LiteLLM response object as received
         final_llm_response = None
@@ -493,7 +498,7 @@ class ResponseProcessor:
         
         # CRITICAL: Generate unique ID for THIS specific LLM call (not per thread run)
         llm_response_id = str(uuid.uuid4())
-        logger.info(f"🔵 LLM CALL #{auto_continue_count + 1} starting - llm_response_id: {llm_response_id}")
+        logger.debug(f"🔵 LLM CALL #{auto_continue_count + 1} starting - llm_response_id: {llm_response_id}")
 
         # Track background DB tasks for cleanup
         background_db_tasks = []
@@ -641,9 +646,9 @@ class ResponseProcessor:
                     if finish_reason == "stop":
                         # Check if stop token appeared in content
                         if "|||STOP_AGENT|||" in accumulated_content:
-                            logger.info(f"🛑 Stop sequence triggered - |||STOP_AGENT||| detected in content")
+                            logger.debug(f"🛑 Stop sequence triggered - |||STOP_AGENT||| detected in content")
                         elif "<function_calls>" in accumulated_content:
-                            logger.info(f"🛑 Stop sequence triggered after function call")
+                            logger.debug(f"🛑 Stop sequence triggered after function call")
                         else:
                             logger.debug(f"Natural completion at chunk #{chunk_count}")
                         
@@ -803,17 +808,28 @@ class ResponseProcessor:
                             if config.native_tool_calling:
                                 native_unified = convert_buffer_to_metadata_tool_calls(
                                     tool_calls_buffer,
-                                    include_partial=True  # Include partial tool calls for streaming
+                                    include_partial=True,  # Include partial tool calls for streaming
+                                    delta_mode=True,  # CRITICAL: Only send deltas, not full accumulated content
+                                    sent_lengths=tool_call_sent_lengths  # Track what's been sent
                                 )
                                 unified_tool_calls.extend(native_unified)
                             
-                            # Add XML tool calls
+                            # Add XML tool calls - ONLY NEW ONES (delta streaming)
                             if config.xml_tool_calling:
-                                unified_tool_calls.extend(xml_tool_calls_with_ids)
+                                # Only send XML tool calls that haven't been sent yet
+                                new_xml_tool_calls = xml_tool_calls_with_ids[xml_tool_calls_sent_count:]
+                                if new_xml_tool_calls:
+                                    unified_tool_calls.extend(new_xml_tool_calls)
+                                    xml_tool_calls_sent_count = len(xml_tool_calls_with_ids)
                             
                             # Yield single unified streaming chunk if we have any tool calls
                             if unified_tool_calls:
-                                # CRITICAL FIX: Transform execute_tool calls for frontend display during streaming
+                                # Log delta streaming efficiency
+                                for tc in unified_tool_calls:
+                                    if tc.get('is_delta'):
+                                        delta_size = len(tc.get('arguments_delta', ''))
+                                        # logger.debug(f"[DELTA STREAM] Tool {tc.get('function_name')}: sending {delta_size} byte delta")
+                                
                                 transformed_unified_tool_calls = []
                                 for tc in unified_tool_calls:
                                     transformed_tc = self._transform_streaming_execute_tool_call(tc)
@@ -841,10 +857,10 @@ class ResponseProcessor:
 
             # Log when stream naturally ends
             if finish_reason == "stop":
-                logger.info(f"✅ Stream naturally ended after stop sequence. Total chunks: {chunk_count}, finish_reason: {finish_reason}")
+                logger.debug(f"✅ Stream naturally ended after stop sequence. Total chunks: {chunk_count}, finish_reason: {finish_reason}")
             else:
-                logger.info(f"Stream complete. Total chunks: {chunk_count}, finish_reason: {finish_reason}")
-            logger.info(f"📝 Accumulated content length: {len(accumulated_content)} chars")
+                logger.debug(f"Stream complete. Total chunks: {chunk_count}, finish_reason: {finish_reason}")
+            logger.debug(f"📝 Accumulated content length: {len(accumulated_content)} chars")
             
             # Save summary to debug file
             # Save debug summary and accumulated content (if enabled)
@@ -915,7 +931,7 @@ class ResponseProcessor:
 
             tool_results_buffer = []
             if pending_tool_executions:
-                logger.info(f"Waiting for {len(pending_tool_executions)} pending streamed tool executions")
+                logger.debug(f"Waiting for {len(pending_tool_executions)} pending streamed tool executions")
                 self.trace.event(name="waiting_for_pending_streamed_tool_executions", level="DEFAULT", status_message=(f"Waiting for {len(pending_tool_executions)} pending streamed tool executions"))
                 pending_tasks = [execution["task"] for execution in pending_tool_executions]
                 done, _ = await asyncio.wait(pending_tasks)
@@ -1130,14 +1146,14 @@ class ResponseProcessor:
 
                 # Populate from buffer if executed on stream
                 if config.execute_on_stream and tool_results_buffer:
-                    logger.info(f"Processing {len(tool_results_buffer)} buffered tool results")
+                    logger.debug(f"Processing {len(tool_results_buffer)} buffered tool results")
                     self.trace.event(name="processing_buffered_tool_results", level="DEFAULT", status_message=(f"Processing {len(tool_results_buffer)} buffered tool results"))
                     for tool_call, result, tool_idx, context in tool_results_buffer:
                         if last_assistant_message_object: context.assistant_message_id = last_assistant_message_object['message_id']
                         tool_results_map[tool_idx] = (tool_call, result, context)
                 # Or execute now if not streamed (or if streamed but no buffered results)
                 elif final_tool_calls_to_process:
-                    logger.info(f"🔄 STREAMING: Executing {len(final_tool_calls_to_process)} tools ({config.tool_execution_strategy}) after stream")
+                    logger.debug(f"🔄 STREAMING: Executing {len(final_tool_calls_to_process)} tools ({config.tool_execution_strategy}) after stream")
                     logger.debug(f"📋 Final tool calls to process: {final_tool_calls_to_process}")
                     logger.debug(f"⚙️ Config: execute_on_stream={config.execute_on_stream}, strategy={config.tool_execution_strategy}")
                     self.trace.event(name="executing_tools_after_stream", level="DEFAULT", status_message=(f"Executing {len(final_tool_calls_to_process)} tools ({config.tool_execution_strategy}) after stream"))
@@ -1247,7 +1263,7 @@ class ResponseProcessor:
                     try:
                         # Use the complete LiteLLM response object as received
                         if final_llm_response:
-                            logger.info("✅ Using complete LiteLLM response for llm_response_end (before termination)")
+                            logger.debug("✅ Using complete LiteLLM response for llm_response_end (before termination)")
                             # Serialize the complete response object as-is
                             llm_end_content = self._serialize_model_response(final_llm_response)
                             
@@ -1289,7 +1305,7 @@ class ResponseProcessor:
                             llm_response_end_saved = True
                             # Yield to stream for real-time context usage updates
                             if llm_end_msg_obj: yield format_for_yield(llm_end_msg_obj)
-                        logger.info(f"✅ llm_response_end saved for call #{auto_continue_count + 1} (before termination)")
+                        logger.debug(f"✅ llm_response_end saved for call #{auto_continue_count + 1} (before termination)")
                     except Exception as e:
                         logger.error(f"Error saving llm_response_end (before termination): {str(e)}")
                         self.trace.event(name="error_saving_llm_response_end_before_termination", level="ERROR", status_message=(f"Error saving llm_response_end (before termination): {str(e)}"))
@@ -1304,7 +1320,7 @@ class ResponseProcessor:
                     try:
                         # Use the complete LiteLLM response object as received
                         if final_llm_response:
-                            logger.info("✅ Using complete LiteLLM response for llm_response_end (normal completion)")
+                            logger.debug("✅ Using complete LiteLLM response for llm_response_end (normal completion)")
                             
                             # Log the complete response object for debugging
                             logger.info(f"🔍 COMPLETE RESPONSE OBJECT: {final_llm_response}")
@@ -1349,7 +1365,7 @@ class ResponseProcessor:
                             llm_response_end_saved = True
                             # Yield to stream for real-time context usage updates
                             if llm_end_msg_obj: yield format_for_yield(llm_end_msg_obj)
-                            logger.info(f"✅ llm_response_end saved for call #{auto_continue_count + 1}")
+                            logger.debug(f"✅ llm_response_end saved for call #{auto_continue_count + 1}")
                         else:
                             logger.warning("⚠️ No complete LiteLLM response available, skipping llm_response_end")
                     except Exception as e:
@@ -1386,7 +1402,7 @@ class ResponseProcessor:
                 
                 # Cancel all pending tool execution tasks when stopping
                 if pending_tool_executions:
-                    logger.info(f"Cancelling {len(pending_tool_executions)} pending tool executions due to stop/cancellation")
+                    logger.debug(f"Cancelling {len(pending_tool_executions)} pending tool executions due to stop/cancellation")
                     for execution in pending_tool_executions:
                         task = execution.get("task")
                         if task and not task.done():
@@ -1414,9 +1430,9 @@ class ResponseProcessor:
             
             if not llm_response_end_saved and last_assistant_message_object:
                 try:
-                    logger.info(f"💰 BULLETPROOF BILLING: Saving llm_response_end in finally block for call #{auto_continue_count + 1}")
+                    logger.debug(f"💰 BULLETPROOF BILLING: Saving llm_response_end in finally block for call #{auto_continue_count + 1}")
                     if final_llm_response:
-                        logger.info("💰 Using exact usage from LLM response")
+                        logger.debug("💰 Using exact usage from LLM response")
                         llm_end_content = self._serialize_model_response(final_llm_response)
                     else:
                         logger.warning("💰 No LLM response with usage - ESTIMATING token usage for billing")
@@ -1450,7 +1466,7 @@ class ResponseProcessor:
                     
                     usage_info = llm_end_content.get('usage', {})
                     is_estimated = usage_info.get('estimated', False)
-                    logger.info(f"💰 BILLING RECOVERY - Usage ({'ESTIMATED' if is_estimated else 'EXACT'}): {usage_info}")
+                    logger.debug(f"💰 BILLING RECOVERY - Usage ({'ESTIMATED' if is_estimated else 'EXACT'}): {usage_info}")
                     
                     llm_end_msg_obj = await self.add_message(
                         thread_id=thread_id,
@@ -1465,7 +1481,7 @@ class ResponseProcessor:
                     llm_response_end_saved = True
                     # Don't yield in finally block - stream may be closed (GeneratorExit)
                     # Frontend already stopped consuming, no point in yielding
-                    logger.info(f"✅ BILLING SUCCESS: Saved llm_response_end in finally for call #{auto_continue_count + 1} ({'estimated' if is_estimated else 'exact'} usage)")
+                    logger.debug(f"✅ BILLING SUCCESS: Saved llm_response_end in finally for call #{auto_continue_count + 1} ({'estimated' if is_estimated else 'exact'} usage)")
                     
                 except Exception as billing_e:
                     logger.error(f"❌ CRITICAL BILLING FAILURE: Could not save llm_response_end: {str(billing_e)}", exc_info=True)
@@ -1545,7 +1561,7 @@ class ResponseProcessor:
                                 self.total_tokens = total
                         
                         usage = EstimatedUsage(estimated_total_tokens)
-                        logger.info(f"⚡ Using fast check estimate: {estimated_total_tokens} tokens (stream stopped, no recalculation)")
+                        logger.debug(f"⚡ Using fast check estimate: {estimated_total_tokens} tokens (stream stopped, no recalculation)")
                     
                     end_content = {"status_type": "thread_run_end"}
                     end_msg_obj = await self.add_message(
@@ -1827,6 +1843,11 @@ class ResponseProcessor:
         span = self.trace.span(name=f"execute_tool.{tool_call['function_name']}", input=tool_call["arguments"])
         function_name = "unknown"
         try:
+            # Set the tool_call_id for streaming context (used by shell tool for real-time output)
+            tool_call_id = tool_call.get("tool_call_id", tool_call.get("id", ""))
+            if tool_call_id:
+                set_current_tool_call_id(tool_call_id)
+            
             function_name = tool_call["function_name"]
             arguments = tool_call["arguments"]
 
@@ -1841,10 +1862,29 @@ class ResponseProcessor:
 
             tool_fn = available_functions.get(function_name)
             if not tool_fn:
-                mcp_patterns = ['TWITTER_', 'GMAIL_', 'SLACK_', 'GITHUB_', 'LINEAR_', 
-                               'NOTION_', 'GOOGLESHEETS_', 'COMPOSIO_']
-                is_mcp_tool = any(pattern in function_name for pattern in mcp_patterns)
+                is_mcp_tool = False
                 
+                if self.thread_manager and hasattr(self.thread_manager, 'mcp_loader'):
+                    mcp_loader = self.thread_manager.mcp_loader
+                    if mcp_loader and mcp_loader.tool_map and function_name in mcp_loader.tool_map:
+                        logger.debug(f"✅ [MCP DISCOVERY] Found '{function_name}' in thread-local MCP loader")
+                        is_mcp_tool = True
+                
+                if not is_mcp_tool:
+                    from core.agentpress.mcp_registry import get_mcp_registry, init_mcp_registry_from_loader
+                    mcp_registry = get_mcp_registry()
+                    
+                    if self.thread_manager and hasattr(self.thread_manager, 'mcp_loader'):
+                         mcp_loader = self.thread_manager.mcp_loader
+                         if mcp_loader:
+                             if not mcp_registry._initialized or (len(mcp_loader.tool_map) if mcp_loader.tool_map else 0) > len(mcp_registry._tools):
+                                 init_mcp_registry_from_loader(mcp_loader)
+                                 mcp_registry._initialized = True
+                    
+                    if mcp_registry.is_tool_available(function_name):
+                        logger.debug(f"✅ [MCP DISCOVERY] Found '{function_name}' in global MCP registry")
+                        is_mcp_tool = True
+
                 if is_mcp_tool:
                     logger.info(f"🔀 [AUTO REDIRECT] Redirecting MCP tool '{function_name}' through execute_mcp_tool wrapper")
                     execute_mcp_tool_fn = available_functions.get('execute_mcp_tool')
@@ -2017,12 +2057,20 @@ class ResponseProcessor:
             else:
                 logger.error(f"❌ [JIT AUTO] Regular tool activation failed: {result.to_user_message()}")
 
-        # CRITICAL: MCP tools should NOT be auto-activated into main registry
-        # They must use the isolated MCP registry via execute_tool wrapper
-        mcp_patterns = ['TWITTER_', 'GMAIL_', 'SLACK_', 'GITHUB_', 'LINEAR_', 
-                       'NOTION_', 'GOOGLESHEETS_', 'COMPOSIO_']
-        is_mcp_tool = any(pattern in function_name for pattern in mcp_patterns)
+        is_mcp_tool = False
         
+        if thread_manager and hasattr(thread_manager, 'mcp_loader'):
+             mcp_loader = thread_manager.mcp_loader
+             if mcp_loader and mcp_loader.tool_map and function_name in mcp_loader.tool_map:
+                 is_mcp_tool = True
+        
+
+        if not is_mcp_tool:
+            from core.agentpress.mcp_registry import get_mcp_registry
+            mcp_registry = get_mcp_registry()
+            if mcp_registry.is_tool_available(function_name):
+                is_mcp_tool = True
+
         if is_mcp_tool:
             logger.info(f"🔒 [ARCH PROTECTION] Blocked MCP tool '{function_name}' from main registry - must use execute_tool wrapper")
             return False

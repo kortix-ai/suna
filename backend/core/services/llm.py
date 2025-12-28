@@ -8,7 +8,6 @@ using LiteLLM with simplified error handling and clean parameter management.
 from typing import Union, Dict, Any, Optional, AsyncGenerator, List
 import os
 import json
-import asyncio
 import litellm
 from litellm.router import Router
 from litellm.files.main import ModelResponse
@@ -19,188 +18,99 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 # Configure LiteLLM
-# os.environ['LITELLM_LOG'] = 'DEBUG'
-# litellm.set_verbose = True  # Enable verbose logging
 litellm.modify_params = True
 litellm.drop_params = True
-
-# Configure LiteLLM retries for transient errors (rate limits, server errors)
-# Note: 400 Bad Request errors are handled separately and should not retry
 litellm.num_retries = 3
 
-# Enable additional debug logging
-# import logging
-# litellm_logger = logging.getLogger("LiteLLM")
-# litellm_logger.setLevel(logging.DEBUG)
 provider_router = None
-
-
 class LLMError(Exception):
     """Exception for LLM-related errors."""
     pass
 
+
 def setup_api_keys() -> None:
-    """Set up API keys from environment variables."""
+    """Set up provider-specific API configurations."""
     if not config:
-        logger.warning("Config not loaded - skipping API key setup")
         return
-        
-    providers = [
-        "OPENAI",
-        "ANTHROPIC",
-        "GROQ",
-        "OPENROUTER",
-        "XAI",
-        "MORPH",
-        "GEMINI",
-        "OPENAI_COMPATIBLE",
-    ]
     
-    for provider in providers:
-        try:
-            key = getattr(config, f"{provider}_API_KEY", None)
-            if key:
-                # logger.debug(f"API key set for provider: {provider}")
-                pass
-            else:
-                logger.debug(f"No API key found for provider: {provider} (this is normal if not using this provider)")
-        except AttributeError as e:
-            logger.debug(f"Could not access {provider}_API_KEY: {e}")
-
-    # Set up OpenRouter API base if not already set
-    if hasattr(config, 'OPENROUTER_API_KEY') and hasattr(config, 'OPENROUTER_API_BASE'):
-        if config.OPENROUTER_API_KEY and config.OPENROUTER_API_BASE:
-            os.environ["OPENROUTER_API_BASE"] = config.OPENROUTER_API_BASE
-            # logger.debug(f"Set OPENROUTER_API_BASE to {config.OPENROUTER_API_BASE}")
-
-    # Set up AWS Bedrock bearer token authentication
-    if hasattr(config, 'AWS_BEARER_TOKEN_BEDROCK'):
-        bedrock_token = config.AWS_BEARER_TOKEN_BEDROCK
-        if bedrock_token:
-            os.environ["AWS_BEARER_TOKEN_BEDROCK"] = bedrock_token
-            logger.debug("AWS Bedrock bearer token configured")
-        else:
-            logger.debug("AWS_BEARER_TOKEN_BEDROCK not configured - Bedrock models will not be available")
+    # OpenRouter API base
+    if getattr(config, 'OPENROUTER_API_KEY', None) and getattr(config, 'OPENROUTER_API_BASE', None):
+        os.environ["OPENROUTER_API_BASE"] = config.OPENROUTER_API_BASE
+    
+    # OpenRouter app name and site URL (per LiteLLM docs: https://docs.litellm.ai/docs/providers/openrouter)
+    if getattr(config, 'OR_APP_NAME', None):
+        os.environ["OR_APP_NAME"] = config.OR_APP_NAME
+    if getattr(config, 'OR_SITE_URL', None):
+        os.environ["OR_SITE_URL"] = config.OR_SITE_URL
+    
+    # AWS Bedrock bearer token
+    if getattr(config, 'AWS_BEARER_TOKEN_BEDROCK', None):
+        os.environ["AWS_BEARER_TOKEN_BEDROCK"] = config.AWS_BEARER_TOKEN_BEDROCK
 
 def setup_provider_router(openai_compatible_api_key: str = None, openai_compatible_api_base: str = None):
+    """Configure LiteLLM Router with fallback chains from model registry."""
     global provider_router
     
-    # Get config values safely
-    config_openai_key = getattr(config, 'OPENAI_COMPATIBLE_API_KEY', None) if config else None
-    config_openai_base = getattr(config, 'OPENAI_COMPATIBLE_API_BASE', None) if config else None
+    from core.ai_models.registry import registry
     
+    # Model list for router
     model_list = [
         {
-            "model_name": "openai-compatible/*", # support OpenAI-Compatible LLM provider
+            "model_name": "openai-compatible/*",
             "litellm_params": {
                 "model": "openai/*",
-                "api_key": openai_compatible_api_key or config_openai_key,
-                "api_base": openai_compatible_api_base or config_openai_base,
+                "api_key": openai_compatible_api_key or getattr(config, 'OPENAI_COMPATIBLE_API_KEY', None),
+                "api_base": openai_compatible_api_base or getattr(config, 'OPENAI_COMPATIBLE_API_BASE', None),
             },
         },
-        {
-            "model_name": "*", # supported LLM provider by LiteLLM
-            "litellm_params": {
-                "model": "*",
-            },
-        },
+        {"model_name": "*", "litellm_params": {"model": "*"}},
     ]
     
-    fallbacks = [
-        # MAP-tagged Haiku 4.5 (default) -> Sonnet 4 -> Sonnet 4.5
-        {
-            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48": [
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf",
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh",
-            ]
-        },
-        # MAP-tagged Sonnet 4.5 -> Sonnet 4 -> Haiku 4.5
-        {
-            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh": [
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf",
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48",
-            ]
-        },
-        # MAP-tagged Sonnet 4 -> Haiku 4.5
-        {
-            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf": [
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48",
-            ]
-        }
-    ]
+    # Get fallback chains from registry (single source of truth)
+    fallbacks = registry.get_fallback_chains()
     
-    # Context window fallbacks: When context window is exceeded, fallback to models with larger context windows
-    # Order: Smaller context models -> Larger context models
-    # Note: All Bedrock models here have 1M context, but this allows LiteLLM to handle the error gracefully
-    context_window_fallbacks = [
-        # Haiku 4.5 (200k) -> Sonnet 4 (1M) -> Sonnet 4.5 (1M)
-        {
-            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48": [
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf",
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh",
-            ]
-        },
-        # Sonnet 4.5 (1M) -> Sonnet 4 (1M) - both have same context, but allows retry
-        {
-            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh": [
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf",
-            ]
-        },
-        # Sonnet 4 (1M) -> Sonnet 4.5 (1M) - both have same context, but allows retry
-        {
-            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf": [
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh",
-            ]
-        }
-    ]
-    
-    # Configure Router with specific retry settings:
-    # - num_retries=0: Disable router-level retries - we handle errors at our layer
-    # - fallbacks: ONLY for rate limits and overloaded errors, NOT for 400 errors
-    # - context_window_fallbacks: Automatically fallback to models with larger context windows when context is exceeded
-    # CRITICAL: 400 Bad Request errors must NOT retry or fallback - they're permanent failures
-    # EXCEPTION: ContextWindowExceededError is a special case where fallback to larger context models is appropriate
     provider_router = Router(
         model_list=model_list,
-        num_retries=3,  # Retry transient errors (rate limits, server errors)
+        num_retries=3,
         fallbacks=fallbacks,
-        context_window_fallbacks=context_window_fallbacks,  # Handle context window exceeded errors
-        # Only use fallbacks for rate limits (429) and server errors (5xx), NOT client errors (4xx)
-        # context_window_fallbacks are separate and only triggered by context length issues
     )
     
-    logger.info(f"Configured LiteLLM Router with {len(fallbacks)} Bedrock-only fallback rules")
+    logger.info(f"LiteLLM Router configured with {len(fallbacks)} fallback rules")
 
-def _configure_openai_compatible(params: Dict[str, Any], model_name: str, api_key: Optional[str], api_base: Optional[str]) -> None:
-    """Configure OpenAI-compatible provider setup."""
+def _configure_openai_compatible(model_name: str, api_key: Optional[str], api_base: Optional[str]) -> None:
+    """Configure OpenAI-compatible provider if needed."""
     if not model_name.startswith("openai-compatible/"):
         return
     
-    # Get config values safely
-    config_openai_key = getattr(config, 'OPENAI_COMPATIBLE_API_KEY', None) if config else None
-    config_openai_base = getattr(config, 'OPENAI_COMPATIBLE_API_BASE', None) if config else None
+    key = api_key or getattr(config, 'OPENAI_COMPATIBLE_API_KEY', None)
+    base = api_base or getattr(config, 'OPENAI_COMPATIBLE_API_BASE', None)
     
-    # Check if have required config either from parameters or environment
-    if (not api_key and not config_openai_key) or (
-        not api_base and not config_openai_base
-    ):
-        raise LLMError(
-            "OPENAI_COMPATIBLE_API_KEY and OPENAI_COMPATIBLE_API_BASE is required for openai-compatible models. If just updated the environment variables, wait a few minutes or restart the service to ensure they are loaded."
-        )
+    if not key or not base:
+        raise LLMError("OPENAI_COMPATIBLE_API_KEY and OPENAI_COMPATIBLE_API_BASE required for openai-compatible models")
     
     setup_provider_router(api_key, api_base)
-    logger.debug(f"Configured OpenAI-compatible provider with custom API base")
 
-def _add_tools_config(params: Dict[str, Any], tools: Optional[List[Dict[str, Any]]], tool_choice: str) -> None:
-    """Add tools configuration to parameters."""
-    if tools is None:
+def _save_debug_input(params: Dict[str, Any]) -> None:
+    """Save LLM input to debug file if enabled."""
+    if not (config and getattr(config, 'DEBUG_SAVE_LLM_IO', False)):
         return
     
-    params.update({
-        "tools": tools,
-        "tool_choice": tool_choice
-    })
-    # logger.debug(f"Added {len(tools)} tools to API parameters")
+    try:
+        debug_dir = Path("debug_streams")
+        debug_dir.mkdir(exist_ok=True)
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+        debug_file = debug_dir / f"input_{timestamp}.json"
+        
+        debug_data = {k: params.get(k) for k in 
+            ["model", "messages", "temperature", "max_tokens", "stop", "stream", "tools", "tool_choice"]}
+        debug_data["timestamp"] = timestamp
+        
+        with open(debug_file, 'w', encoding='utf-8') as f:
+            json.dump(debug_data, f, indent=2, ensure_ascii=False)
+        logger.info(f"📁 Saved LLM input to: {debug_file}")
+    except Exception as e:
+        logger.warning(f"⚠️ Error saving debug input: {e}")
+
 
 async def make_llm_api_call(
     messages: List[Dict[str, Any]],
@@ -212,18 +122,19 @@ async def make_llm_api_call(
     tool_choice: str = "auto",
     api_key: Optional[str] = None,
     api_base: Optional[str] = None,
-    stream: bool = True,  # Always stream for better UX
+    stream: bool = True,
     top_p: Optional[float] = None,
     model_id: Optional[str] = None,
     headers: Optional[Dict[str, str]] = None,
     extra_headers: Optional[Dict[str, str]] = None,
     stop: Optional[List[str]] = None,
 ) -> Union[Dict[str, Any], AsyncGenerator, ModelResponse]:
-    """Make an API call to a language model using LiteLLM.
+    """
+    Make an API call to a language model using LiteLLM.
     
     Args:
         messages: List of message dictionaries
-        model_name: Name of the model to use
+        model_name: Name of the model to use (or "mock-ai" for testing)
         response_format: Optional response format specification
         temperature: Temperature for sampling (0-1)
         max_tokens: Maximum tokens to generate
@@ -238,92 +149,78 @@ async def make_llm_api_call(
         extra_headers: Optional extra headers to send with request
         stop: Optional list of stop sequences
     """
-    logger.info(f"Making LLM API call to model: {model_name} with {len(messages)} messages")
+    logger.info(f"LLM API call: {model_name} ({len(messages)} messages)")
+    # Handle mock AI for stress testing
+    if model_name == "mock-ai":
+        logger.info(f"🎭 Using mock LLM provider for testing")
+        from core.test_harness.mock_llm import get_mock_provider
+        mock_provider = get_mock_provider(delay_ms=20)
+        # Return generator directly (don't await it!)
+        return mock_provider.acompletion(
+            messages=messages,
+            model=model_name,
+            stream=stream,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
     
-    # Prepare parameters using centralized model configuration
+    logger.info(f"Making LLM API call to model: {model_name} with {len(messages)} messages")
+    # Configure OpenAI-compatible if needed
+    _configure_openai_compatible(model_name, api_key, api_base)
+    
+    # Build params using model manager
     from core.ai_models import model_manager
     resolved_model_name = model_manager.resolve_model_id(model_name) or model_name
     
-    # Only pass headers/extra_headers if they are not None to avoid overriding model config
+    # Build override params (only include non-None values)
     override_params = {
         "messages": messages,
         "temperature": temperature,
-        "response_format": response_format,
-        "top_p": top_p,
         "stream": stream,
-        "api_key": api_key,
-        "api_base": api_base,
-        "stop": stop
     }
     
-    # Only add headers if they are provided (not None)
-    if headers is not None:
-        override_params["headers"] = headers
-    if extra_headers is not None:
-        override_params["extra_headers"] = extra_headers
+    # Add optional params only if provided
+    if response_format is not None: override_params["response_format"] = response_format
+    if top_p is not None: override_params["top_p"] = top_p
+    if api_key is not None: override_params["api_key"] = api_key
+    if api_base is not None: override_params["api_base"] = api_base
+    if stop is not None: override_params["stop"] = stop
+    if headers is not None: override_params["headers"] = headers
+    if extra_headers is not None: override_params["extra_headers"] = extra_headers
     
     params = model_manager.get_litellm_params(resolved_model_name, **override_params)
     
-    # Ensure stop sequences are in final params
-    if stop is not None:
-        params["stop"] = stop
-        logger.info(f"🛑 Stop sequences configured: {stop}")
-    else:
-        params.pop("stop", None)
+    # Add OpenRouter app parameter if using OpenRouter
+    # Check if the actual LiteLLM model ID is an OpenRouter model
+    actual_litellm_model_id = params.get("model", resolved_model_name)
+    if isinstance(actual_litellm_model_id, str) and actual_litellm_model_id.startswith("openrouter/"):
+        # OpenRouter requires the "app" parameter in extra_body
+        if "extra_body" not in params:
+            params["extra_body"] = {}
+        params["extra_body"]["app"] = "Kortix.com"
+        logger.debug(f"Added OpenRouter app parameter: Kortix.com for model {actual_litellm_model_id}")
     
+    # Add tools if provided
+    if tools:
+        params["tools"] = tools
+        params["tool_choice"] = tool_choice
+    
+    # Add tracking and streaming options
     if model_id:
         params["model_id"] = model_id
-    
     if stream:
         params["stream_options"] = {"include_usage": True}
     
-    # Apply additional configurations
-    _configure_openai_compatible(params, model_name, api_key, api_base)
-    _add_tools_config(params, tools, tool_choice)
-    
-    # Final safeguard: Re-apply stop sequences
-    if stop is not None:
-        params["stop"] = stop
-    
     try:
-        # Save debug input if enabled via config
-        if config and config.DEBUG_SAVE_LLM_IO:
-            try:
-                debug_dir = Path("debug_streams")
-                debug_dir.mkdir(exist_ok=True)
-                timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
-                debug_file = debug_dir / f"input_{timestamp}.json"
-        
-                # Save the exact params going to LiteLLM
-                debug_data = {
-                    "timestamp": timestamp,
-                    "model": params.get("model"),
-                    "messages": params.get("messages"),
-                    "temperature": params.get("temperature"),
-                    "max_tokens": params.get("max_tokens"),
-                    "stop": params.get("stop"),
-                    "stream": params.get("stream"),
-                    "tools": params.get("tools"),
-                    "tool_choice": params.get("tool_choice"),
-                }
-                
-                with open(debug_file, 'w', encoding='utf-8') as f:
-                    json.dump(debug_data, f, indent=2, ensure_ascii=False)
-                    
-                logger.info(f"📁 Saved LLM input to: {debug_file}")
-            except Exception as e:
-                logger.warning(f"⚠️ Error saving debug input: {e}")
-        
+        _save_debug_input(params)
         response = await provider_router.acompletion(**params)
         
-        # For streaming responses, we need to handle errors that occur during iteration
-        if hasattr(response, '__aiter__') and stream:
+        if stream and hasattr(response, '__aiter__'):
             return _wrap_streaming_response(response)
-        
         return response
         
     except Exception as e:
-        # Use ErrorProcessor to handle the error consistently
         processed_error = ErrorProcessor.process_llm_error(e, context={"model": model_name})
         ErrorProcessor.log_error(processed_error)
         raise LLMError(processed_error.message)

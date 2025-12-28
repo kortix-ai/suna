@@ -93,7 +93,7 @@ class AgentConfigTool(AgentBuilderBaseTool):
             
             agent_result = await client.table('agents').select('*').eq('agent_id', self.agent_id).execute()
             if not agent_result.data:
-                return self.fail_response("Agent not found")
+                return self.fail_response("Worker not found")
             
             current_agent = agent_result.data[0]
 
@@ -237,7 +237,7 @@ class AgentConfigTool(AgentBuilderBaseTool):
                 updated_fields.append("version_created")
             
             return self.success_response({
-                "message": "Agent updated successfully",
+                "message": "Worker updated successfully",
                 "updated_fields": updated_fields,
                 "agent": updated_agent,
                 "version_created": version_created
@@ -264,7 +264,7 @@ class AgentConfigTool(AgentBuilderBaseTool):
             agent_data = await self._get_agent_data()
             
             if not agent_data:
-                return self.fail_response("Agent not found")
+                return self.fail_response("Worker not found")
             
             version_data = None
             if agent_data.get('current_version_id'):

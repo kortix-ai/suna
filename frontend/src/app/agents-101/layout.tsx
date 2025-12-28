@@ -1,11 +1,11 @@
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Agents 101 | Kortix',
-  description: 'An introduction to AI Agents. Learn what AI agents are, how they work, and how to build them.',
+  title: 'Workers 101 | Kortix',
+  description: 'An introduction to AI Workers. Learn what AI workers are, how they work, and how to build them.',
   openGraph: {
-    title: 'Agents 101 | Kortix',
-    description: 'An introduction to AI Agents.',
+    title: 'Workers 101 | Kortix',
+    description: 'An introduction to AI Workers.',
     url: 'https://www.kortix.com/agents-101',
     siteName: 'Kortix',
     images: [{ url: '/banner.png', width: 1200, height: 630 }],
@@ -13,8 +13,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Agents 101 | Kortix',
-    description: 'An introduction to AI Agents.',
+    title: 'Workers 101 | Kortix',
+    description: 'An introduction to AI Workers.',
     images: ['/banner.png'],
   },
 };

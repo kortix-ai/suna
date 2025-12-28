@@ -16,6 +16,7 @@ import { agentKeys } from '@/hooks/agents/keys';
 import { composioKeys } from '@/hooks/composio/keys';
 import { knowledgeBaseKeys } from '@/hooks/knowledge-base/keys';
 import { fileQueryKeys } from '@/hooks/files/use-file-queries';
+import { threadKeys } from '@/hooks/threads/keys';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { accountStateKeys } from '@/hooks/billing';
 
@@ -30,6 +31,13 @@ export interface UseAgentStreamResult {
   stopStreaming: () => Promise<void>;
 }
 
+export interface ToolOutputStreamData {
+  tool_call_id: string;
+  tool_name: string;
+  output: string;
+  is_final: boolean;
+}
+
 // Define the callbacks the hook consumer can provide
 export interface AgentStreamCallbacks {
   onMessage: (message: UnifiedMessage) => void;
@@ -39,6 +47,7 @@ export interface AgentStreamCallbacks {
   onAssistantStart?: () => void;
   onAssistantChunk?: (chunk: { content: string }) => void;
   onToolCallChunk?: (message: UnifiedMessage) => void;
+  onToolOutputStream?: (data: ToolOutputStreamData) => void;
 }
 
 export function useAgentStream(
@@ -113,6 +122,19 @@ export function useAgentStream(
   const currentRunIdRef = useRef<string | null>(null);
   const threadIdRef = useRef(threadId);
   const setMessagesRef = useRef(setMessages);
+  
+  // DELTA STREAMING: Track accumulated tool call arguments with sequence numbers
+  // Structure: Map<toolCallId, { metadata: ToolCallMetadata, chunks: Array<{sequence: number, delta: string}> }>
+  interface AccumulatedToolCall {
+    metadata: {
+      tool_call_id: string;
+      function_name: string;
+      index?: number;
+      [key: string]: any;
+    };
+    chunks: Array<{sequence: number, delta: string}>;
+  }
+  const accumulatedToolCallsRef = useRef<Map<string, AccumulatedToolCall>>(new Map());
   
   // Store callbacks in ref to prevent handler recreation on every parent render
   const callbacksRef = useRef(callbacks);
@@ -282,6 +304,10 @@ export function useAgentStream(
         queryKey: accountStateKeys.all,
       });
 
+      queryClient.invalidateQueries({
+        queryKey: threadKeys.messages(currentThreadId),
+      });
+
       if (agentId) {
         // Core agent data
         queryClient.invalidateQueries({ queryKey: agentKeys.all });
@@ -353,7 +379,7 @@ export function useAgentStream(
       // Early exit for non-JSON completion messages
       if (
         processedData ===
-        '{"type": "status", "status": "completed", "message": "Agent run completed successfully"}'
+        '{"type": "status", "status": "completed", "message": "Worker run completed successfully"}'
       ) {
         finalizeStream('completed', currentRunIdRef.current);
         return;
@@ -479,6 +505,16 @@ export function useAgentStream(
             return;
           }
         }
+        // Handle tool_output_stream messages for real-time shell output
+        if (jsonData.type === 'tool_output_stream') {
+          callbacksRef.current.onToolOutputStream?.({
+            tool_call_id: jsonData.tool_call_id,
+            tool_name: jsonData.tool_name,
+            output: jsonData.output,
+            is_final: jsonData.is_final,
+          });
+          return;
+        }
       } catch (jsonError) {
         // Not JSON or could not parse as JSON, continue processing
       }
@@ -515,12 +551,89 @@ export function useAgentStream(
             // Handle tool call chunks - extract from metadata.tool_calls
             const toolCalls = parsedMetadata.tool_calls || [];
             if (toolCalls.length > 0) {
-              // Set toolCall state with the UnifiedMessage (non-urgent update)
+              // DELTA STREAMING: Accumulate deltas into full tool calls with sequence ordering
+              // First, update the accumulator with new deltas from this chunk
+              for (const tc of toolCalls as any[]) {
+                const toolCallId = tc.tool_call_id || 'unknown';
+                const sequence = message.sequence ?? 0;
+                
+                // Get or create the accumulated entry for this tool call
+                let accumulated = accumulatedToolCallsRef.current.get(toolCallId);
+                if (!accumulated) {
+                  accumulated = {
+                    metadata: {
+                      tool_call_id: tc.tool_call_id,
+                      function_name: tc.function_name,
+                      index: tc.index,
+                    },
+                    chunks: [],
+                  };
+                  accumulatedToolCallsRef.current.set(toolCallId, accumulated);
+                }
+                
+                // Update metadata if we have newer info (function_name might come later)
+                if (tc.function_name) {
+                  accumulated.metadata.function_name = tc.function_name;
+                }
+                if (tc.index !== undefined) {
+                  accumulated.metadata.index = tc.index;
+                }
+                
+                if (tc.is_delta && tc.arguments_delta) {
+                  // This is a delta update - store it with sequence number
+                  const existingIndex = accumulated.chunks.findIndex(c => c.sequence === sequence);
+                  if (existingIndex >= 0) {
+                    accumulated.chunks[existingIndex].delta = tc.arguments_delta;
+                  } else {
+                    accumulated.chunks.push({ sequence, delta: tc.arguments_delta });
+                  }
+                  // Sort chunks by sequence number
+                  accumulated.chunks.sort((a, b) => a.sequence - b.sequence);
+                } else if (tc.arguments) {
+                  // Full arguments (non-delta) - replace all chunks with single full argument
+                  const argsStr = typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments);
+                  accumulated.chunks = [{ sequence, delta: argsStr }];
+                }
+              }
+              
+              // Now reconstruct ALL accumulated tool calls (not just from this message)
+              const allReconstructedToolCalls = Array.from(accumulatedToolCallsRef.current.values())
+                .sort((a, b) => (a.metadata.index ?? 0) - (b.metadata.index ?? 0))
+                .map(accumulated => {
+                  // Merge all chunks for this tool call
+                  let mergedArgs = '';
+                  for (const chunk of accumulated.chunks) {
+                    mergedArgs += chunk.delta;
+                  }
+                  
+                  return {
+                    tool_call_id: accumulated.metadata.tool_call_id,
+                    function_name: accumulated.metadata.function_name,
+                    index: accumulated.metadata.index,
+                    arguments: mergedArgs,
+                    is_delta: false, // Mark as assembled
+                  };
+                });
+              
+              // Create updated message with ALL reconstructed tool calls
+              const updatedMessage = {
+                ...message,
+                metadata: JSON.stringify({
+                  ...parsedMetadata,
+                  tool_calls: allReconstructedToolCalls,
+                }),
+              };
+              
+              // Debug log to track multiple tool calls accumulation
+              console.log(`[useAgentStream] Accumulated ${allReconstructedToolCalls.length} tool calls:`, 
+                allReconstructedToolCalls.map(tc => ({ id: tc.tool_call_id, fn: tc.function_name, argsLen: tc.arguments.length })));
+              
+              // Set toolCall state with ALL reconstructed tool calls (non-urgent update)
               React.startTransition(() => {
-                setToolCall(message);
+                setToolCall(updatedMessage);
               });
-              // Call the callback with the full message (includes all tool calls in metadata)
-              callbacksRef.current.onToolCallChunk?.(message);
+              // Call the callback with the reconstructed message
+              callbacksRef.current.onToolCallChunk?.(updatedMessage);
             }
           } else if (
             parsedMetadata.stream_status === 'chunk' &&
@@ -540,6 +653,8 @@ export function useAgentStream(
               setTextContent([]);
               setToolCall(null);
             });
+            // Clear accumulated tool call deltas
+            accumulatedToolCallsRef.current.clear();
             if (message.message_id) callbacksRef.current.onMessage(message);
           } else if (!parsedMetadata.stream_status) {
             // Handle non-chunked assistant messages if needed
@@ -551,6 +666,8 @@ export function useAgentStream(
           React.startTransition(() => {
             setToolCall(null); // Clear any streaming tool call
           });
+          // Clear accumulated tool call deltas when tool execution completes
+          accumulatedToolCallsRef.current.clear();
           if (message.message_id) callbacksRef.current.onMessage(message);
           break;
         case 'status':
@@ -569,7 +686,7 @@ export function useAgentStream(
               break;
             case 'error':
               React.startTransition(() => {
-                setError(parsedContent.message || 'Agent run failed');
+                setError(parsedContent.message || 'Worker run failed');
               });
               finalizeStream('error', currentRunIdRef.current);
               break;
@@ -667,7 +784,7 @@ export function useAgentStream(
         if (agentStatus.status === 'running') {
           setError('Stream closed unexpectedly while agent was running.');
           finalizeStream('error', runId);
-          toast.warning('Stream disconnected. Agent might still be running.');
+          toast.warning('Stream disconnected. Worker might still be running.');
         } else if (agentStatus.status === 'stopped') {
           // Check if agent stopped due to billing error
           const errorMessage = agentStatus.error || '';
@@ -901,7 +1018,7 @@ export function useAgentStream(
 
     try {
       await stopAgent(runIdToStop);
-      toast.success('Agent stopped.');
+      toast.success('Worker stopped.');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.error(

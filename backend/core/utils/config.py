@@ -1,6 +1,5 @@
 import os
 from enum import Enum
-from re import S
 from typing import Dict, Any, Optional, get_type_hints, Union
 from dotenv import load_dotenv
 import logging
@@ -280,6 +279,9 @@ class Configuration:
     # Google Analytics (GA4) - for visitor tracking in admin dashboard
     GA_PROPERTY_ID: Optional[str] = None  # GA4 Property ID (numeric, e.g., "516492562")
     GA_CREDENTIALS_JSON: Optional[str] = None  # Service account JSON credentials (as string or file path)
+    
+    # Vercel Analytics (via drains) - primary source of truth for visitor tracking
+    VERCEL_DRAIN_SECRET: Optional[str] = None  # Secret for authenticating Vercel drain webhooks
 
     # LLM API keys
     ANTHROPIC_API_KEY: Optional[str] = None
@@ -298,7 +300,7 @@ class Configuration:
     OPENAI_COMPATIBLE_API_KEY: Optional[str] = None
     OPENAI_COMPATIBLE_API_BASE: Optional[str] = None
     OR_SITE_URL: Optional[str] = "https://www.kortix.com"
-    OR_APP_NAME: Optional[str] = "Kortix AI"
+    OR_APP_NAME: Optional[str] = "Kortix.com"
     
     # Frontend URL configuration
     FRONTEND_URL_ENV: Optional[str] = None
@@ -336,6 +338,15 @@ class Configuration:
     EXA_API_KEY: Optional[str] = None
     SEMANTIC_SCHOLAR_API_KEY: Optional[str] = None
     
+    # Reality Defender deepfake detection
+    REALITY_DEFENDER_API_KEY: Optional[str] = None
+    
+    # Apify integration
+    APIFY_API_TOKEN: Optional[str] = None
+    
+    # Replicate API for image models
+    REPLICATE_API_TOKEN: Optional[str] = None
+    
     VAPI_PRIVATE_KEY: Optional[str] = None
     VAPI_PHONE_NUMBER_ID: Optional[str] = None
     VAPI_SERVER_URL: Optional[str] = None
@@ -351,6 +362,7 @@ class Configuration:
     
     # RevenueCat configuration
     REVENUECAT_WEBHOOK_SECRET: Optional[str] = None
+    REVENUECAT_API_KEY: Optional[str] = None
     
     # Stripe Product IDs
     STRIPE_PRODUCT_ID_PROD: Optional[str] = 'prod_SCl7AQ2C8kK1CD'
@@ -364,7 +376,7 @@ class Configuration:
     # Debug configuration
     # Set to True to save LLM API call inputs and stream outputs to debug_streams/ directory
     # Always False in production, regardless of environment variable
-    _DEBUG_SAVE_LLM_IO: Optional[bool] = True
+    _DEBUG_SAVE_LLM_IO: Optional[bool] = False
     
     @property
     def DEBUG_SAVE_LLM_IO(self) -> bool:

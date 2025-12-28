@@ -175,7 +175,7 @@ class TriggerTool(AgentBuilderBaseTool):
                 result_message = f"Scheduled trigger '{name}' created successfully!\n\n"
                 result_message += f"**Schedule**: {cron_expression}\n"
                 result_message += f"**Model**: {trigger_config['model']}\n"
-                result_message += f"**Type**: Agent execution\n"
+                result_message += f"**Type**: Worker execution\n"
                 result_message += f"**Prompt**: {agent_prompt}\n"
                 if variables:
                     result_message += f"**Template Variables Detected**: {', '.join(['{{' + v + '}}' for v in variables])}\n"
@@ -233,7 +233,7 @@ class TriggerTool(AgentBuilderBaseTool):
             
             if not schedule_triggers:
                 return self.success_response({
-                    "message": "No scheduled triggers found for this agent.",
+                    "message": "No scheduled triggers found for this worker.",
                     "triggers": []
                 })
             
@@ -623,7 +623,7 @@ class TriggerTool(AgentBuilderBaseTool):
 
             message = f"Event trigger '{trigger.name}' created successfully.\n"
             message += f"**Model**: {suna_config['model']}\n"
-            message += "Agent execution configured."
+            message += "Worker execution configured."
             if variables:
                 message += f"\n**Template Variables Detected**: {', '.join(['{{' + v + '}}' for v in variables])}\n"
                 message += f"*Note: Users will be prompted to provide values for these variables when installing this agent as a template.*"

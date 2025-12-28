@@ -25,7 +25,7 @@ interface AgentSelectorProps {
 }
 
 export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
-  const { getCurrentAgent, isLoading, agents } = useAgent();
+  const { getCurrentAgent, isLoading, agents, hasInitialized, error } = useAgent();
   const agent = getCurrentAgent();
   const scale = useSharedValue(1);
   const { colorScheme } = useColorScheme();
@@ -35,7 +35,9 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
     transform: [{ scale: scale.value }],
   }));
 
-  if (isLoading || agents.length === 0) {
+  // Show loading until initialization is complete
+  // Don't wait for agents.length > 0 in case of errors
+  if (isLoading || !hasInitialized) {
     return (
       <View className="flex-row items-center gap-1.5 rounded-full px-3.5 py-2 ">
         <View className="w-6 h-6 bg-muted rounded-full animate-pulse" />
@@ -44,6 +46,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
     );
   }
 
+  // If initialization is complete but no agent (error or no agents), show select UI
   if (!agent) {
     return (
       <TouchableOpacity
@@ -55,7 +58,9 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
         <View className="w-6 h-6 bg-muted rounded-full items-center justify-center">
           <Text className="text-muted-foreground text-xs font-roobert-bold">?</Text>
         </View>
-        <Text className="text-muted-foreground text-sm font-roobert-medium">Select Agent</Text>
+        <Text className="text-muted-foreground text-sm font-roobert-medium">
+          {error ? 'Error loading' : 'Select Worker'}
+        </Text>
         <Icon
           as={ChevronDown}
           size={13}

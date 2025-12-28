@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -43,6 +44,7 @@ export function OtpVerification({
   showExistingOptions = false,
   challengeId,
 }: OtpVerificationProps) {
+  const t = useTranslations('auth.phoneVerification');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [localError, setLocalError] = useState<string | null>(null);
   const [canResend, setCanResend] = useState(false);
@@ -119,7 +121,7 @@ export function OtpVerification({
     const otpCode = otp.join('');
 
     if (otpCode.length !== 6) {
-      setLocalError('Please enter a 6-digit code');
+      setLocalError(t('pleaseEnterSixDigitCode'));
       return;
     }
 
@@ -134,7 +136,6 @@ export function OtpVerification({
 
     await onResend();
 
-    // Restart countdown
     const timer = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
@@ -158,31 +159,30 @@ export function OtpVerification({
   };
 
   return (
-    <Card className="w-full max-w-md mx-auto">
-      <CardHeader>
-        <CardTitle>
-          {showExistingOptions
-            ? 'Verify Phone Number'
-            : 'Enter Verification Code'}
-        </CardTitle>
-        <CardDescription>
-          {challengeId
-            ? "We've sent a 6-digit code to your phone"
-            : showExistingOptions
-              ? 'Phone already registered. Verify it by OTP.'
-              : 'Enter the 6-digit code sent to your phone'}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <Card className="w-full border-border">
+      <CardContent className="pt-6">
         {(error || localError) && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertDescription>{error || localError}</AlertDescription>
+          <Alert variant="destructive" className="mb-6 py-2">
+            <AlertDescription className="text-sm">
+              {error || localError}
+            </AlertDescription>
           </Alert>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="otp">Verification Code</Label>
+        {phoneNumber && (
+          <div className="mb-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              {t('codeSentTo')}
+            </p>
+            <p className="text-sm font-medium mt-1">{phoneNumber}</p>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-4">
+            <Label htmlFor="otp" className="text-sm font-medium text-center block">
+              {t('enterSixDigitCode')}
+            </Label>
             <div className="flex gap-2 justify-center">
               {otp.map((digit, index) => (
                 <Input
@@ -197,31 +197,29 @@ export function OtpVerification({
                   onChange={(e) => handleOtpChange(index, e.target.value)}
                   onKeyDown={(e) => handleKeyDown(index, e)}
                   onPaste={handlePaste}
-                  className="w-12 h-12 text-center text-lg font-medium"
+                  className="w-12 h-14 text-center text-lg font-semibold border-border/70 focus:border-primary transition-colors"
                   disabled={isLoading || !challengeId}
                 />
               ))}
             </div>
           </div>
 
-          {/* Action buttons - different layout based on whether code has been sent */}
           {challengeId ? (
-            // Code has been sent - show verify and resend
             <>
               <Button
                 type="submit"
-                className="w-full"
+                className="w-full h-11"
                 disabled={isLoading || otp.join('').length !== 6}
               >
                 {isLoading ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Verifying...
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {t('verifying')}
                   </>
                 ) : (
                   <>
-                    <Shield className="mr-2 h-4 w-4" />
-                    Verify Code
+                    <Shield className="h-4 w-4" />
+                    {t('verifyCode')}
                   </>
                 )}
               </Button>
@@ -232,32 +230,31 @@ export function OtpVerification({
                   variant="link"
                   onClick={handleResend}
                   disabled={!canResend || isLoading}
-                  className="text-sm"
+                  className="text-sm text-muted-foreground hover:text-foreground"
                 >
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                  {canResend ? 'Resend code' : `Resend in ${countdown}s`}
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  {canResend ? t('resendCode') : t('resendInSeconds', { seconds: countdown })}
                 </Button>
               </div>
             </>
           ) : (
-            // No code sent yet - show send and remove options
             <div className="space-y-3">
               {onSendCode && (
                 <Button
                   type="button"
                   onClick={handleSendCode}
                   disabled={isLoading}
-                  className="w-full"
+                  className="w-full h-11"
                 >
                   {isLoading ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Sending...
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      {t('sending')}
                     </>
                   ) : (
                     <>
-                      <MessageSquare className="mr-2 h-4 w-4" />
-                      Send Verification Code
+                      <MessageSquare className="h-4 w-4" />
+                      {t('sendVerificationCode')}
                     </>
                   )}
                 </Button>
@@ -269,11 +266,10 @@ export function OtpVerification({
                   onClick={onRemovePhone}
                   disabled={isLoading}
                   variant="outline"
-                  size="sm"
-                  className="w-full"
+                  className="w-full h-10 text-sm"
                 >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Remove Phone Number
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {t('removePhoneNumber')}
                 </Button>
               )}
             </div>

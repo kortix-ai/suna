@@ -63,7 +63,7 @@ export interface ThreadContentProps {
     streamingTextContent?: string;
     streamingToolCall?: any;
     agentStatus: 'idle' | 'running' | 'connecting' | 'error';
-    handleToolClick: (assistantMessageId: string | null, toolName: string) => void;
+    handleToolClick: (assistantMessageId: string | null, toolName: string, toolCallId?: string) => void;
     handleOpenFileViewer: (filePath?: string, filePathList?: string[]) => void;
     readOnly?: boolean;
     visibleMessages?: UnifiedMessage[]; // For playback mode
@@ -129,7 +129,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
         // First check thread metadata for is_agent_builder flag
         if (threadMetadata?.is_agent_builder) {
             return {
-                name: 'Agent Builder',
+                name: 'Worker Builder',
                 avatar: (
                     <div className="h-5 w-5 flex items-center justify-center rounded text-xs">
                         <span className="text-lg">🤖</span>
@@ -143,9 +143,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
             msg.type === 'assistant' && msg.agents?.name
         );
 
-        if (recentAssistantWithAgent?.agents?.name === 'Agent Builder') {
+        if (recentAssistantWithAgent?.agents?.name === 'Worker Builder') {
             return {
-                name: 'Agent Builder',
+                name: 'Worker Builder',
                 avatar: (
                     <div className="h-5 w-5 flex items-center justify-center rounded text-xs">
                         <span className="text-lg">🤖</span>
@@ -524,9 +524,13 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                         // Check if this is the latest message (last assistant message in the last group)
                                                                         const isLatestMessage = isLastGroup && message.message_id === lastAssistantMessageId;
 
+                                                                        // Get tool results for this assistant message
+                                                                        const toolResults = toolResultsMap.get(message.message_id) || [];
+
                                                                         // Use ONLY metadata for rendering
                                                                         const renderedContent = renderAssistantMessage({
                                                                             message,
+                                                                            toolResults,
                                                                             onToolClick: handleToolClick,
                                                                             onFileClick: handleOpenFileViewer,
                                                                             sandboxId,
@@ -630,7 +634,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                                         content={textToRender.substring(tagStartIndex)}
                                                                                         messageId={visibleMessages && visibleMessages.length > 0 ? visibleMessages[visibleMessages.length - 1].message_id : "playback-streaming"}
                                                                                         onToolClick={handleToolClick}
-                                                                                        showExpanded={true}
+                                                                                        showExpanded={false}
                                                                                         startTime={Date.now()}
                                                                                     />
                                                                                 ) : null}
@@ -718,7 +722,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                                                 content={textToRender.substring(tagStartIndex)}
                                                                                                 messageId="streamingTextContent"
                                                                                                 onToolClick={handleToolClick}
-                                                                                                showExpanded={true}
+                                                                                                showExpanded={false}
                                                                                                 startTime={Date.now()} // Tool just started now
                                                                                             />
                                                                                         ) : null}
@@ -805,41 +809,36 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                     
                                                                     return (
                                                                         <div className="mt-1.5">
-                                                                            <div className="my-1.5">
+                                                                            <div className="my-1.5 flex flex-col gap-2">
                                                                                 {(() => {
                                                                                     // Extract tool call info from streamingToolCall metadata
+                                                                                    // Render ALL tool calls as cards, not just the first one
+                                                                                    console.log(`[ThreadContent] Rendering ${toolCalls.length} streaming tool calls:`, 
+                                                                                        toolCalls.map((tc: any) => ({ id: tc.tool_call_id, fn: tc.function_name })));
                                                                                     if (toolCalls.length > 0) {
-                                                                                        const firstToolCall = toolCalls[0];
-                                                                                        const toolName = firstToolCall.function_name?.replace(/_/g, '-') || '';
-                                                                                        const IconComponent = getToolIcon(toolName);
-                                                                                        
-                                                                                        console.log('ThreadContent - firstToolCall:', firstToolCall);
-                                                                                        
-                                                                                        let paramDisplay = '';
-                                                                                        if (firstToolCall.arguments) {
-                                                                                            const args = typeof firstToolCall.arguments === 'string' 
-                                                                                                ? safeJsonParse<Record<string, any>>(firstToolCall.arguments, {})
-                                                                                                : firstToolCall.arguments;
-                                                                                            paramDisplay = (args as any)?.file_path || (args as any)?.command || (args as any)?.query || (args as any)?.url || '';
-                                                                                        }
-                                                                                        
-                                                                                        return (
-                                                                                            <button
-                                                                                                onClick={() => handleToolClick(streamingToolCall.message_id || null, toolName)}
-                                                                                                className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
-                                                                                            >
-                                                                                                <AppIcon toolCall={firstToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fallbackIcon={IconComponent} />
-                                                                                                <span className="font-mono text-xs text-foreground">
-                                                                                                    {getUserFriendlyToolName(toolName)}
-                                                                                                </span>
-                                                                                                {paramDisplay && (
-                                                                                                    <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>
-                                                                                                        {paramDisplay}
-                                                                                                    </span>
-                                                                                                )}
-                                                                                                <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-1" />
-                                                                                            </button>
-                                                                                        );
+                                                                                        return toolCalls.map((tc: any, tcIndex: number) => {
+                                                                                            const toolName = tc.function_name?.replace(/_/g, '-') || '';
+                                                                                            
+                                                                                            // Convert tool call to JSON content for ShowToolStream
+                                                                                            const toolCallContent = JSON.stringify({
+                                                                                                function: {
+                                                                                                    name: toolName,
+                                                                                                },
+                                                                                                tool_name: toolName,
+                                                                                                arguments: tc.arguments || {},
+                                                                                            });
+                                                                                            
+                                                                                            return (
+                                                                                                <ShowToolStream
+                                                                                                    key={tc.tool_call_id || `streaming-tool-${tcIndex}`}
+                                                                                                    content={toolCallContent}
+                                                                                                    messageId={streamingToolCall.message_id || null}
+                                                                                                    onToolClick={handleToolClick}
+                                                                                                    showExpanded={false}
+                                                                                                    toolCall={tc}
+                                                                                                />
+                                                                                            );
+                                                                                        });
                                                                                     }
                                                                                     
                                                                                     // Fallback if no tool calls found
@@ -864,7 +863,24 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                 (agentStatus === 'running' || agentStatus === 'connecting') && 
                                                                 !streamingTextContent && 
                                                                 !streamingToolCall &&
-                                                                (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
+                                                                (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') &&
+                                                                (() => {
+                                                                    // Check if any message in this group already has ASK or COMPLETE
+                                                                    const hasAskOrComplete = group.messages.some(msg => {
+                                                                        if (msg.type !== 'assistant') return false;
+                                                                        try {
+                                                                            const metadata = safeJsonParse<ParsedMetadata>(msg.metadata, {});
+                                                                            const toolCalls = metadata.tool_calls || [];
+                                                                            return toolCalls.some(tc => {
+                                                                                const toolName = tc.function_name?.replace(/_/g, '-').toLowerCase() || '';
+                                                                                return toolName === 'ask' || toolName === 'complete';
+                                                                            });
+                                                                        } catch {
+                                                                            return false;
+                                                                        }
+                                                                    });
+                                                                    return !hasAskOrComplete;
+                                                                })() && (
                                                                 <div className="mt-1.5">
                                                                     <AgentLoader />
                                                                 </div>
@@ -880,7 +896,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                             })()}
 
                             {/* Show loader as new assistant group only when there's no assistant group (last message is user or no messages) and agent is running */}
-                            {((agentStatus === 'running' || agentStatus === 'connecting') && !streamingTextContent && !streamingToolCall &&
+                            {((agentStatus === 'running' || agentStatus === 'connecting') && 
+                                !streamingTextContent && 
+                                !streamingToolCall &&
                                 !readOnly &&
                                 (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') &&
                                 (displayMessages.length === 0 || displayMessages[displayMessages.length - 1].type === 'user')) && (

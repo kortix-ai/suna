@@ -18,7 +18,6 @@ import {
   TrendingUp,
   Activity,
   Calendar as CalendarIcon,
-  RefreshCw,
   ExternalLink,
   Languages,
   Eye,
@@ -29,6 +28,9 @@ import {
   ArrowDownRight,
   ChevronLeft,
   ChevronRight,
+  CreditCard,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -56,20 +58,59 @@ import {
   useConversionFunnel,
   useRetentionData,
   useTranslate,
-  useRefreshAnalytics,
   useARRWeeklyActuals,
   useUpdateARRWeeklyActual,
   useDeleteARRWeeklyActual,
+  useToggleFieldOverride,
+  useARRMonthlyActuals,
+  useUpdateARRMonthlyActual,
+  useToggleMonthlyFieldOverride,
   useARRSimulatorConfig,
   useUpdateARRSimulatorConfig,
   useSignupsByDate,
   useViewsByDate,
+  useNewPaidByDate,
+  useChurnByDate,
   type SimulatorConfigData,
   type ThreadAnalytics,
   type RetentionData,
   type ThreadBrowseParams,
   type WeeklyActualData,
+  type MonthlyActualData,
+  type FieldOverrides,
+  type AnalyticsSource,
 } from '@/hooks/admin/use-admin-analytics';
+import { AdminUserTable } from '@/components/admin/admin-user-table';
+import { AdminUserDetailsDialog } from '@/components/admin/admin-user-details-dialog';
+import { useAdminUserList, useRefreshUserData, type UserSummary } from '@/hooks/admin/use-admin-users';
+
+// ============================================================================
+// CLICKABLE USER EMAIL COMPONENT
+// ============================================================================
+
+interface UserEmailLinkProps {
+  email: string | null | undefined;
+  onUserClick: (email: string) => void;
+  className?: string;
+}
+
+function UserEmailLink({ email, onUserClick, className = '' }: UserEmailLinkProps) {
+  if (!email) {
+    return <span className="text-muted-foreground">Unknown user</span>;
+  }
+  
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onUserClick(email);
+      }}
+      className={`text-primary hover:underline hover:text-primary/80 transition-colors text-left ${className}`}
+    >
+      {email}
+    </button>
+  );
+}
 
 // ============================================================================
 // STAT CARD COMPONENT
@@ -120,9 +161,10 @@ interface ThreadBrowserProps {
   categoryFilter?: string | null;
   filterDate?: string | null;  // Date string in YYYY-MM-DD format for filtering when category is selected
   onClearCategory?: () => void;
+  onUserClick: (email: string) => void;
 }
 
-function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBrowserProps) {
+function ThreadBrowser({ categoryFilter, filterDate, onClearCategory, onUserClick }: ThreadBrowserProps) {
   const [params, setParams] = useState<ThreadBrowseParams>({
     page: 1,
     page_size: 15,
@@ -223,9 +265,9 @@ function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBr
               <Badge variant="outline" className="text-xs">Public</Badge>
             )}
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {thread.user_email || 'Unknown user'}
-          </p>
+          <div className="text-xs mt-1">
+            <UserEmailLink email={thread.user_email} onUserClick={onUserClick} />
+          </div>
           <p className="text-xs text-muted-foreground font-mono">
             {thread.thread_id.slice(0, 8)}...
           </p>
@@ -314,7 +356,7 @@ function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBr
       ),
       width: 'w-24',
     },
-  ], [translations, translateMutation.isPending]);
+  ], [translations, translateMutation.isPending, onUserClick]);
 
   return (
     <div className="space-y-4">
@@ -412,7 +454,11 @@ function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBr
 // RETENTION TAB COMPONENT
 // ============================================================================
 
-function RetentionTab() {
+interface RetentionTabProps {
+  onUserClick: (email: string) => void;
+}
+
+function RetentionTab({ onUserClick }: RetentionTabProps) {
   const [params, setParams] = useState({
     page: 1,
     page_size: 15,
@@ -436,7 +482,7 @@ function RetentionTab() {
       header: 'User',
       cell: (user) => (
         <div>
-          <p className="font-medium">{user.email || 'Unknown'}</p>
+          <UserEmailLink email={user.email} onUserClick={onUserClick} className="font-medium" />
           <p className="text-xs text-muted-foreground font-mono">{user.user_id.slice(0, 8)}...</p>
         </div>
       ),
@@ -481,7 +527,7 @@ function RetentionTab() {
       ),
       width: 'w-32',
     },
-  ], []);
+  ], [onUserClick]);
 
   return (
     <div className="space-y-4">
@@ -601,12 +647,18 @@ interface WeeklyActual {
   views: number;
   signups: number;
   newPaid: number;
+  churn: number;
   subscribers: number;
   mrr: number;
   arr: number;
+  overrides?: FieldOverrides;  // Tracks which fields are locked/manually overridden
 }
 
-function ARRSimulator() {
+interface ARRSimulatorProps {
+  analyticsSource: AnalyticsSource;
+}
+
+function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   // Fetch config from database
   const { data: configData, isLoading: configLoading } = useARRSimulatorConfig();
   const updateConfigMutation = useUpdateARRSimulatorConfig();
@@ -701,7 +753,7 @@ function ARRSimulator() {
   const gapToTarget = targetARR - (finalMonth?.arr || 0);
   const progressPercent = Math.min(100, ((finalMonth?.arr || 0) / targetARR) * 100);
 
-  // Prepare chart data with negative churned for bar chart
+  // Prepare chart data with negative churned for bar chart (goal data)
   const chartData = projections.map(p => ({
     ...p,
     negativeChurned: -p.churned,
@@ -711,11 +763,40 @@ function ARRSimulator() {
   const signupsDateFrom = '2025-12-15';
   const signupsDateTo = '2026-06-15';
   
+  // Calculate current week number and month index for filtering chart data
+  const { currentWeekNumber, currentMonthIndex } = useMemo(() => {
+    const startDate = new Date(2025, 11, 15); // Dec 15, 2025
+    const today = new Date();
+    const daysSinceStart = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const weekNum = Math.max(1, Math.floor(daysSinceStart / 7) + 1);
+    
+    // Month index: Dec 2025 = 0, Jan 2026 = 1, Feb 2026 = 2, etc.
+    const monthIdx = today.getFullYear() === 2025 && today.getMonth() === 11 ? 0 
+      : today.getFullYear() === 2026 ? today.getMonth() + 1 
+      : 0;
+    
+    return { currentWeekNumber: weekNum, currentMonthIndex: monthIdx };
+  }, []);
+  
+  // Week 0 (Dec 8-14) baseline data for Week 1 growth calculation
+  // From spreadsheet: used only for % Growth, not displayed
+  const week0Baseline = {
+    views: 44592,    // 4506+4851+7504+8722+7941+6263+4805
+    signups: 10056,  // 1171+1191+1046+2058+2101+1289+1200
+    newPaid: 120,    // 9+14+15+17+26+22+17
+  };
+  
   // Fetch signups grouped by date
   const { data: signupsByDateData } = useSignupsByDate(signupsDateFrom, signupsDateTo);
   
-  // Fetch views (newUsers) from Google Analytics
-  const { data: viewsByDateData } = useViewsByDate(signupsDateFrom, signupsDateTo);
+  // Fetch views (unique visitors) from analytics source
+  const { data: viewsByDateData } = useViewsByDate(signupsDateFrom, signupsDateTo, analyticsSource);
+  
+  // Fetch new paid subscriptions from Stripe (excludes free tier)
+  const { data: newPaidByDateData } = useNewPaidByDate(signupsDateFrom, signupsDateTo);
+  
+  // Fetch churn data from Stripe Events
+  const { data: churnByDateData } = useChurnByDate(signupsDateFrom, signupsDateTo);
   
   // Group signups by week number (frontend owns week logic)
   const signupsByWeek = useMemo((): Record<number, number> => {
@@ -755,6 +836,71 @@ function ARRSimulator() {
     return result;
   }, [viewsByDateData]);
 
+  // Group new paid subscriptions by week number (from Stripe, excludes free tier)
+  const newPaidByWeek = useMemo((): Record<number, number> => {
+    if (!newPaidByDateData?.new_paid_by_date) return {};
+    
+    const startDate = new Date(2025, 11, 15); // Dec 15, 2025
+    const result: Record<number, number> = {};
+    
+    Object.entries(newPaidByDateData.new_paid_by_date).forEach(([dateStr, count]) => {
+      const date = new Date(dateStr);
+      const daysSinceStart = Math.floor((date.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      const weekNum = Math.floor(daysSinceStart / 7) + 1;
+      if (weekNum >= 1) {
+        result[weekNum] = (result[weekNum] || 0) + count;
+      }
+    });
+    
+    return result;
+  }, [newPaidByDateData]);
+
+  // Group churn by week number (from Stripe Events)
+  const churnByWeek = useMemo((): Record<number, number> => {
+    if (!churnByDateData?.churn_by_date) return {};
+    
+    const startDate = new Date(2025, 11, 15); // Dec 15, 2025
+    const result: Record<number, number> = {};
+    
+    Object.entries(churnByDateData.churn_by_date).forEach(([dateStr, count]) => {
+      const date = new Date(dateStr);
+      const daysSinceStart = Math.floor((date.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      const weekNum = Math.floor(daysSinceStart / 7) + 1;
+      if (weekNum >= 1) {
+        result[weekNum] = (result[weekNum] || 0) + count;
+      }
+    });
+    
+    return result;
+  }, [churnByDateData]);
+
+  // Calculate actual subscribers by week progressively
+  // Starting point: 709 subscribers as of Dec 14, 2025
+  const actualSubsByWeek = useMemo((): Record<number, number> => {
+    const DEC_14_SUBSCRIBERS = 709;
+    const result: Record<number, number> = {};
+    
+    // Get max week from either newPaid or churn data
+    const maxWeek = Math.max(
+      ...Object.keys(newPaidByWeek).map(Number),
+      ...Object.keys(churnByWeek).map(Number),
+      0
+    );
+    
+    if (maxWeek === 0) return result;
+    
+    let currentSubs = DEC_14_SUBSCRIBERS;
+    
+    for (let week = 1; week <= maxWeek; week++) {
+      const weekNewPaid = newPaidByWeek[week] || 0;
+      const weekChurn = churnByWeek[week] || 0;
+      currentSubs = currentSubs + weekNewPaid - weekChurn;
+      result[week] = currentSubs;
+    }
+    
+    return result;
+  }, [newPaidByWeek, churnByWeek]);
+
   // Weekly projections derived from monthly (matching HTML dashboard logic exactly)
   const weeklyProjections = useMemo((): SimulationWeek[] => {
     const weeks: SimulationWeek[] = [];
@@ -779,6 +925,16 @@ function ARRSimulator() {
         const weekEnd = new Date(currentDate);
         weekEnd.setDate(weekEnd.getDate() + 6);
         
+        // Determine actual calendar month index based on week END date (with 1-day buffer)
+        // A week belongs to the month where it ends (last complete week logic)
+        // Buffer of 1 day: if week ends on 1st of month, count it as previous month
+        // Dec 2025 = 0, Jan 2026 = 1, Feb 2026 = 2, etc.
+        const weekEndWithBuffer = new Date(weekEnd);
+        weekEndWithBuffer.setDate(weekEndWithBuffer.getDate() - 1);
+        const calendarMonthIndex = weekEndWithBuffer.getMonth() === 11 
+          ? 0  // December 2025
+          : weekEndWithBuffer.getMonth() + 1;  // Jan=1, Feb=2, etc.
+        
         // Update running subscriber count (matching HTML logic)
         totalSubs = Math.max(0, totalSubs + weeklyNewPaid - weeklyChurned);
         const weeklyMRR = totalSubs * arpu;
@@ -787,7 +943,7 @@ function ARRSimulator() {
         weeks.push({
           week: weekNum,
           dateRange: `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
-          monthIndex: monthIdx,
+          monthIndex: calendarMonthIndex,
           visitors: weeklyViews,
           signups: weeklySignups,
           newPaid: weeklyNewPaid,
@@ -808,6 +964,12 @@ function ARRSimulator() {
   const { data: arrActualsData, isLoading: actualsLoading } = useARRWeeklyActuals();
   const updateActualMutation = useUpdateARRWeeklyActual();
   const deleteActualMutation = useDeleteARRWeeklyActual();
+  const toggleOverrideMutation = useToggleFieldOverride();
+  
+  // Actual monthly data (persisted to database - direct monthly overrides)
+  const { data: arrMonthlyActualsData } = useARRMonthlyActuals();
+  const updateMonthlyActualMutation = useUpdateARRMonthlyActual();
+  const toggleMonthlyOverrideMutation = useToggleMonthlyFieldOverride();
 
   // Convert API data to local format
   const actualData: Record<number, WeeklyActual> = useMemo(() => {
@@ -818,9 +980,11 @@ function ARRSimulator() {
         views: data.views || 0,
         signups: data.signups || 0,
         newPaid: data.new_paid || 0,
+        churn: data.churn || 0,
         subscribers: data.subscribers || 0,
         mrr: data.mrr || 0,
         arr: data.arr || 0,
+        overrides: data.overrides,  // Include overrides from API
       };
     });
     return result;
@@ -828,13 +992,25 @@ function ARRSimulator() {
 
   // Local state for pending edits (so we don't call API on every keystroke)
   const [pendingEdits, setPendingEdits] = useState<Record<string, string>>({});
+  
+  // Local state for optimistic override updates (shows input immediately without waiting for API)
+  const [pendingOverrides, setPendingOverrides] = useState<Record<string, boolean>>({});
+  
+  // Clear pending overrides when actual data updates (API call completed)
+  useEffect(() => {
+    if (arrActualsData) {
+      setPendingOverrides({});
+    }
+  }, [arrActualsData]);
 
-  // Get display value for an input (pending edit or saved value)
+  // Get display value for an input (pending edit or saved value in shorthand)
   const getInputValue = (week: number, field: keyof WeeklyActual): string => {
     const key = `${week}-${field}`;
+    // If user is actively typing, show their raw input
     if (key in pendingEdits) return pendingEdits[key];
+    // Otherwise show saved value in shorthand format (25500 → "25.5k")
     const saved = actualData[week]?.[field];
-    return saved ? String(saved) : '';
+    return saved ? toShorthand(Number(saved)) : '';
   };
 
   // Handle input change (local state only)
@@ -843,7 +1019,50 @@ function ARRSimulator() {
     setPendingEdits(prev => ({ ...prev, [key]: value }));
   };
 
-  // Save to API on blur
+  // Map local field names to API field names (for overrides)
+  const fieldToOverrideKey = (field: keyof WeeklyActual): keyof FieldOverrides => {
+    if (field === 'newPaid') return 'new_paid';
+    return field as keyof FieldOverrides;
+  };
+
+  // Parse shorthand input: "25.5k" → 25500, "1.5M" → 1500000, "1000" → 1000
+  const parseShorthand = (input: string): number => {
+    if (!input || input.trim() === '') return 0;
+    const cleaned = input.trim().toLowerCase();
+    
+    // Check for million suffix (M or m)
+    if (cleaned.endsWith('m')) {
+      const num = parseFloat(cleaned.slice(0, -1));
+      return isNaN(num) ? 0 : Math.round(num * 1_000_000);
+    }
+    
+    // Check for thousand suffix (K or k)
+    if (cleaned.endsWith('k')) {
+      const num = parseFloat(cleaned.slice(0, -1));
+      return isNaN(num) ? 0 : Math.round(num * 1_000);
+    }
+    
+    // Plain number
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : Math.round(num);
+  };
+
+  // Format number to shorthand for display: 25500 → "25.5k", 1500000 → "1.5M"
+  const toShorthand = (value: number): string => {
+    if (value === 0) return '';
+    if (value >= 1_000_000) {
+      const m = value / 1_000_000;
+      // Show decimal only if needed, max 2 decimal places
+      return m % 1 === 0 ? `${m}M` : `${parseFloat(m.toFixed(2))}M`;
+    }
+    if (value >= 1_000) {
+      const k = value / 1_000;
+      return k % 1 === 0 ? `${k}k` : `${parseFloat(k.toFixed(2))}k`;
+    }
+    return String(value);
+  };
+
+  // Save to API on blur - also marks the field as overridden (locked)
   const handleInputBlur = (week: number, field: keyof WeeklyActual) => {
     const key = `${week}-${field}`;
     const pendingValue = pendingEdits[key];
@@ -854,9 +1073,19 @@ function ARRSimulator() {
     const weekProjection = weeklyProjections.find(w => w.week === week);
     if (!weekProjection) return;
     
-    const value = Number(pendingValue) || 0;
-    const currentData = actualData[week] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+    // Parse shorthand: "25.5k" → 25500, "1M" → 1000000
+    const value = parseShorthand(pendingValue);
+    const currentData = actualData[week] || { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0, overrides: {} };
     const updatedData = { ...currentData, [field]: value };
+    
+    // Build overrides - mark this field as overridden since it was manually edited
+    // Map field name to override key (newPaid -> new_paid)
+    const currentOverrides = currentData.overrides || {};
+    const overrideKey = fieldToOverrideKey(field);
+    const updatedOverrides: FieldOverrides = {
+      ...currentOverrides,
+      [overrideKey]: true,  // Mark this field as locked/overridden
+    };
     
     // Map field names for API
     const apiData: WeeklyActualData = {
@@ -865,12 +1094,56 @@ function ARRSimulator() {
       views: updatedData.views,
       signups: updatedData.signups,
       new_paid: updatedData.newPaid,
+      churn: updatedData.churn,
       subscribers: updatedData.subscribers,
       mrr: updatedData.mrr,
       arr: updatedData.arr,
+      overrides: updatedOverrides,
     };
     
     updateActualMutation.mutate(apiData);
+  };
+
+  // Toggle override for a specific field (with optimistic update)
+  const handleToggleOverride = (week: number, field: keyof FieldOverrides) => {
+    const pendingKey = `${week}-${field}`;
+    const currentOverride = isFieldOverridden(week, field);
+    const newOverrideState = !currentOverride;
+    
+    // Optimistic update for instant UI feedback
+    setPendingOverrides(prev => ({ ...prev, [pendingKey]: newOverrideState }));
+    
+    // Call API in background
+    toggleOverrideMutation.mutate({
+      weekNumber: week,
+      field,
+      override: newOverrideState,
+    });
+  };
+
+  // Check if a field is overridden (locked) - includes optimistic updates for instant UI
+  const isFieldOverridden = (week: number, field: keyof FieldOverrides): boolean => {
+    const pendingKey = `${week}-${field}`;
+    // Check pending overrides first (optimistic), then actual data
+    if (pendingKey in pendingOverrides) {
+      return pendingOverrides[pendingKey];
+    }
+    return actualData[week]?.overrides?.[field] || false;
+  };
+
+  // Instantly enable override mode (optimistic update) and save to API
+  const enableOverrideInstantly = (week: number, field: keyof WeeklyActual, currentValue: number) => {
+    const overrideKey = fieldToOverrideKey(field);
+    const pendingKey = `${week}-${overrideKey}`;
+    
+    // 1. Set pending override immediately for instant UI update
+    setPendingOverrides(prev => ({ ...prev, [pendingKey]: true }));
+    
+    // 2. Set the value in pending edits
+    handleInputChange(week, field, String(currentValue));
+    
+    // 3. Save to API in background
+    handleInputBlur(week, field);
   };
 
   const deleteWeekActual = (weekNumber: number) => {
@@ -886,6 +1159,152 @@ function ARRSimulator() {
     deleteActualMutation.mutate(weekNumber);
   };
 
+  // ============================================================================
+  // MONTHLY EDITING (Direct monthly overrides)
+  // ============================================================================
+  
+  // Convert monthly API data to local format
+  interface MonthlyActual {
+    views: number;
+    signups: number;
+    newPaid: number;
+    churn: number;
+    subscribers: number;
+    mrr: number;
+    arr: number;
+    overrides?: FieldOverrides;
+  }
+  
+  const monthlyActualData: Record<number, MonthlyActual> = useMemo(() => {
+    if (!arrMonthlyActualsData?.actuals) return {};
+    const result: Record<number, MonthlyActual> = {};
+    Object.entries(arrMonthlyActualsData.actuals).forEach(([monthIdx, data]) => {
+      result[Number(monthIdx)] = {
+        views: data.views || 0,
+        signups: data.signups || 0,
+        newPaid: data.new_paid || 0,
+        churn: data.churn || 0,
+        subscribers: data.subscribers || 0,
+        mrr: data.mrr || 0,
+        arr: data.arr || 0,
+        overrides: data.overrides,
+      };
+    });
+    return result;
+  }, [arrMonthlyActualsData]);
+  
+  // Local state for pending monthly edits
+  const [pendingMonthlyEdits, setPendingMonthlyEdits] = useState<Record<string, string>>({});
+  const [pendingMonthlyOverrides, setPendingMonthlyOverrides] = useState<Record<string, boolean>>({});
+  
+  // Clear pending monthly overrides when data updates
+  useEffect(() => {
+    if (arrMonthlyActualsData) {
+      setPendingMonthlyOverrides({});
+    }
+  }, [arrMonthlyActualsData]);
+  
+  // Get display value for monthly input
+  // Get display value for monthly input (shorthand format)
+  const getMonthlyInputValue = (monthIndex: number, field: keyof MonthlyActual): string => {
+    const key = `${monthIndex}-${field}`;
+    // If user is actively typing, show their raw input
+    if (key in pendingMonthlyEdits) return pendingMonthlyEdits[key];
+    // Otherwise show saved value in shorthand format
+    const saved = monthlyActualData[monthIndex]?.[field];
+    return saved ? toShorthand(Number(saved)) : '';
+  };
+  
+  // Handle monthly input change
+  const handleMonthlyInputChange = (monthIndex: number, field: keyof MonthlyActual, value: string) => {
+    const key = `${monthIndex}-${field}`;
+    setPendingMonthlyEdits(prev => ({ ...prev, [key]: value }));
+  };
+  
+  // Save monthly to API on blur
+  // Save monthly to API on blur (with shorthand parsing)
+  const handleMonthlyInputBlur = (monthIndex: number, monthName: string, field: keyof MonthlyActual) => {
+    const key = `${monthIndex}-${field}`;
+    const pendingValue = pendingMonthlyEdits[key];
+    
+    if (pendingValue === undefined) return;
+    
+    // Parse shorthand: "25.5k" → 25500, "1M" → 1000000
+    const value = parseShorthand(pendingValue);
+    const currentData = monthlyActualData[monthIndex] || { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0, overrides: {} };
+    const updatedData = { ...currentData, [field]: value };
+    
+    const currentOverrides = currentData.overrides || {};
+    const overrideKey = fieldToOverrideKey(field as keyof WeeklyActual);
+    const updatedOverrides: FieldOverrides = {
+      ...currentOverrides,
+      [overrideKey]: true,
+    };
+    
+    const apiData: MonthlyActualData = {
+      month_index: monthIndex,
+      month_name: monthName,
+      views: updatedData.views,
+      signups: updatedData.signups,
+      new_paid: updatedData.newPaid,
+      churn: updatedData.churn,
+      subscribers: updatedData.subscribers,
+      mrr: updatedData.mrr,
+      arr: updatedData.arr,
+      overrides: updatedOverrides,
+    };
+    
+    updateMonthlyActualMutation.mutate(apiData, {
+      onSuccess: () => {
+        setPendingMonthlyEdits(prev => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+        toast.success(`${monthName} ${field} updated`);
+      },
+      onError: (error) => {
+        toast.error(`Failed to update: ${error.message}`);
+      },
+    });
+  };
+  
+  // Toggle monthly override
+  const handleToggleMonthlyOverride = (monthIndex: number, field: keyof MonthlyActual) => {
+    const overrideKey = fieldToOverrideKey(field as keyof WeeklyActual);
+    const currentOverride = monthlyActualData[monthIndex]?.overrides?.[overrideKey] || false;
+    
+    toggleMonthlyOverrideMutation.mutate({
+      monthIndex,
+      field: overrideKey,
+      override: !currentOverride,
+    }, {
+      onSuccess: () => {
+        toast.success(`Field ${!currentOverride ? 'locked' : 'unlocked'}`);
+      },
+    });
+  };
+  
+  // Check if monthly field is overridden
+  const isMonthlyFieldOverridden = (monthIndex: number, field: keyof MonthlyActual): boolean => {
+    const overrideKey = fieldToOverrideKey(field as keyof WeeklyActual);
+    const pendingKey = `${monthIndex}-${overrideKey}`;
+    if (pendingKey in pendingMonthlyOverrides) {
+      return pendingMonthlyOverrides[pendingKey];
+    }
+    return monthlyActualData[monthIndex]?.overrides?.[overrideKey] || false;
+  };
+  
+  // Enable monthly override instantly (for clicking on auto-fetched value)
+  const enableMonthlyOverrideInstantly = (monthIndex: number, monthName: string, field: keyof MonthlyActual, currentValue: number) => {
+    const overrideKey = fieldToOverrideKey(field as keyof WeeklyActual);
+    const pendingKey = `${monthIndex}-${overrideKey}`;
+    
+    setPendingMonthlyOverrides(prev => ({ ...prev, [pendingKey]: true }));
+    handleMonthlyInputChange(monthIndex, field, String(currentValue));
+    handleMonthlyInputBlur(monthIndex, monthName, field);
+  };
+
   // Calculate variance percentage
   const getVariance = (actual: number | undefined, goal: number): { value: number; color: string } => {
     if (!actual || actual === 0) return { value: 0, color: 'text-muted-foreground' };
@@ -896,52 +1315,317 @@ function ARRSimulator() {
   };
 
   // Prepare weekly chart data for actual vs goal comparison
-  const weeklyChartData = weeklyProjections.map(w => ({
-    week: `W${w.week}`,
-    goalViews: w.visitors,
-    actualViews: viewsByWeek[w.week] || 0,
-    goalSignups: w.signups,
-    actualSignups: signupsByWeek[w.week] || 0,
-    goalNewPaid: w.newPaid,
-    actualNewPaid: actualData[w.week]?.newPaid || 0,
-    goalSubs: w.subscribers,
-    actualSubs: actualData[w.week]?.subscribers || 0,
-    goalMRR: w.mrr,
-    actualMRR: actualData[w.week]?.mrr || 0,
-    goalARR: w.arr,
-    actualARR: actualData[w.week]?.arr || 0,
-  }));
+  // Respects overridden values when calculating actuals
+  // Only show actual data for current and past weeks (future weeks show null so Recharts won't plot them)
+  const weeklyChartData = weeklyProjections.map(w => {
+    const isFutureWeek = w.week > currentWeekNumber;
+    const weekData = actualData[w.week];
+    const overrides = weekData?.overrides || {};
+    
+    // Use overridden value if locked, otherwise use auto-fetched data
+    const effectiveViews = overrides.views ? (weekData?.views || 0) : (viewsByWeek[w.week] || 0);
+    const effectiveSignups = overrides.signups ? (weekData?.signups || 0) : (signupsByWeek[w.week] || 0);
+    const effectiveNewPaid = overrides.new_paid ? (weekData?.newPaid || 0) : (newPaidByWeek[w.week] || weekData?.newPaid || 0);
+    // Subscribers: use override if locked, otherwise calculated value
+    const effectiveSubs = overrides.subscribers ? (weekData?.subscribers || 0) : (actualSubsByWeek[w.week] || 0);
+    
+    return {
+      week: `W${w.week}`,
+      goalViews: w.visitors,
+      actualViews: isFutureWeek ? null : effectiveViews,
+      goalSignups: w.signups,
+      actualSignups: isFutureWeek ? null : effectiveSignups,
+      goalNewPaid: w.newPaid,
+      actualNewPaid: isFutureWeek ? null : effectiveNewPaid,
+      goalSubs: w.subscribers,
+      actualSubs: isFutureWeek ? null : effectiveSubs,
+      goalMRR: w.mrr,
+      actualMRR: isFutureWeek ? null : (weekData?.mrr || 0),
+      goalARR: w.arr,
+      actualARR: isFutureWeek ? null : (weekData?.arr || 0),
+    };
+  });
 
   // Aggregate weekly actuals into monthly actuals for comparison
+  // Respects overridden values when aggregating
   const monthlyActuals = useMemo(() => {
-    const result: Record<number, { views: number; signups: number; newPaid: number; subscribers: number; mrr: number; arr: number }> = {};
+    const result: Record<number, { views: number; signups: number; newPaid: number; churn: number; subscribers: number; mrr: number; arr: number }> = {};
     
     weeklyProjections.forEach((week) => {
       const monthIdx = week.monthIndex;
       const weekActual = actualData[week.week];
-      const autoSignups = signupsByWeek[week.week] || 0;
-      const autoViews = viewsByWeek[week.week] || 0;
+      const overrides = weekActual?.overrides || {};
+      
+      // Use overridden value if locked, otherwise use auto-fetched data
+      const effectiveViews = overrides.views ? (weekActual?.views || 0) : (viewsByWeek[week.week] || 0);
+      const effectiveSignups = overrides.signups ? (weekActual?.signups || 0) : (signupsByWeek[week.week] || 0);
+      const effectiveNewPaid = overrides.new_paid ? (weekActual?.newPaid || 0) : (newPaidByWeek[week.week] || weekActual?.newPaid || 0);
+      const autoChurn = churnByWeek[week.week] || 0;
       
       if (!result[monthIdx]) {
-        result[monthIdx] = { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
+        result[monthIdx] = { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0 };
       }
       
-      // Use auto-fetched signups from database
-      result[monthIdx].signups += autoSignups;
-      // Use auto-fetched views from Google Analytics
-      result[monthIdx].views += autoViews;
+      // Use effective values (respecting overrides)
+      result[monthIdx].signups += effectiveSignups;
+      result[monthIdx].views += effectiveViews;
+      result[monthIdx].newPaid += effectiveNewPaid;
+      // Churn doesn't have override yet, use auto-fetched
+      result[monthIdx].churn += autoChurn;
+      
+      // Use overridden weekly subscribers if locked, otherwise calculated
+      // This ensures weekly edits flow to monthly
+      const weeklySubsOverride = weekActual?.overrides?.subscribers;
+      const effectiveWeeklySubs = weeklySubsOverride 
+        ? (weekActual?.subscribers || 0) 
+        : (actualSubsByWeek[week.week] || 0);
+      
+      // Take last week's value as end-of-month subscribers
+      if (effectiveWeeklySubs > 0 || weeklySubsOverride) {
+        result[monthIdx].subscribers = effectiveWeeklySubs;
+      }
       
       if (weekActual) {
-        result[monthIdx].newPaid += weekActual.newPaid || 0;
-        // For subscribers, MRR, ARR - take the last week's value as end-of-month value
-        result[monthIdx].subscribers = weekActual.subscribers || result[monthIdx].subscribers;
+        // For MRR, ARR - take the last week's value as end-of-month value
         result[monthIdx].mrr = weekActual.mrr || result[monthIdx].mrr;
         result[monthIdx].arr = weekActual.arr || result[monthIdx].arr;
       }
     });
     
     return result;
-  }, [weeklyProjections, actualData, signupsByWeek, viewsByWeek]);
+  }, [weeklyProjections, actualData, signupsByWeek, viewsByWeek, newPaidByWeek, churnByWeek, actualSubsByWeek]);
+
+  // Calculate subscribers at 1st of each month for churn rate calculation
+  // Formula: Jan 1 subs = Dec 31 subs + Jan 1 new paid - Jan 1 churn
+  // Dec 1 = 548 (hardcoded baseline for December's churn rate)
+  const subsAtMonthStart = useMemo((): Record<number, number> => {
+    const DEC_1_SUBSCRIBERS = 548;
+    const result: Record<number, number> = { 0: DEC_1_SUBSCRIBERS }; // monthIndex 0 = December
+    
+    // Build daily new paid and churn maps
+    const dailyNewPaid: Record<string, number> = {};
+    const dailyChurn: Record<string, number> = {};
+    
+    if (newPaidByDateData?.new_paid_by_date) {
+      Object.entries(newPaidByDateData.new_paid_by_date).forEach(([dateStr, count]) => {
+        dailyNewPaid[dateStr] = count;
+      });
+    }
+    
+    if (churnByDateData?.churn_by_date) {
+      Object.entries(churnByDateData.churn_by_date).forEach(([dateStr, count]) => {
+        dailyChurn[dateStr] = count;
+      });
+    }
+    
+    // Calculate subs at 1st of each month by iterating through days
+    // Start from Dec 1, 2025 (use Dec 1 subs as starting point)
+    let currentSubs = DEC_1_SUBSCRIBERS;
+    
+    // Iterate from Dec 1 to Jun 30
+    const startDate = new Date(2025, 11, 1); // Dec 1, 2025
+    const endDate = new Date(2026, 5, 30); // Jun 30, 2026
+    
+    // Dec 1-14 daily averages (233 new paid, 98 churn over 14 days)
+    const DEC_1_14_DAILY_NEW_PAID = 233 / 14;
+    const DEC_1_14_DAILY_CHURN = 98 / 14;
+    
+    const currentDate = new Date(startDate);
+    while (currentDate <= endDate) {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      
+      // For Dec 1-14, use hardcoded daily averages; for Dec 15+, use API data
+      let dayNewPaid: number;
+      let dayChurn: number;
+      
+      if (currentDate.getFullYear() === 2025 && currentDate.getMonth() === 11 && currentDate.getDate() <= 14) {
+        // Dec 1-14: use hardcoded daily averages
+        dayNewPaid = DEC_1_14_DAILY_NEW_PAID;
+        dayChurn = DEC_1_14_DAILY_CHURN;
+      } else {
+        // Dec 15 onwards: use API data
+        dayNewPaid = dailyNewPaid[dateStr] || 0;
+        dayChurn = dailyChurn[dateStr] || 0;
+      }
+      
+      // Update running subs count
+      currentSubs = currentSubs + dayNewPaid - dayChurn;
+      
+      // Check if this is the 1st of a month (after applying that day's activity)
+      if (currentDate.getDate() === 1 && !(currentDate.getMonth() === 11 && currentDate.getFullYear() === 2025)) {
+        // Determine monthIndex: Jan = 1, Feb = 2, etc.
+        const monthIdx = currentDate.getMonth() + 1; // Jan=1, Feb=2, Mar=3, Apr=4, May=5, Jun=6
+        result[monthIdx] = Math.round(currentSubs);
+      }
+      
+      // Move to next day
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    return result;
+  }, [newPaidByDateData, churnByDateData]);
+
+  // Helper to determine monthIndex from date: Dec 2025 = 0, Jan 2026 = 1, etc.
+  const getMonthIndex = (date: Date): number => {
+    return date.getFullYear() === 2025 && date.getMonth() === 11 ? 0 : date.getMonth() + 1;
+  };
+
+  // Aggregate all metrics by actual calendar month (using daily data)
+  // Dec 29-31 data goes to December, Jan 1-4 data goes to January
+  const metricsByCalendarMonth = useMemo(() => {
+    const views: Record<number, number> = {};
+    const signups: Record<number, number> = {};
+    const newPaid: Record<number, number> = {};
+    const churn: Record<number, number> = {};
+    
+    // Add Dec 1-14 adjustments to December
+    views[0] = 78313;
+    signups[0] = 18699;
+    newPaid[0] = 233;
+    churn[0] = 98;
+    
+    // Aggregate daily views by calendar month
+    if (viewsByDateData?.views_by_date) {
+      Object.entries(viewsByDateData.views_by_date).forEach(([dateStr, count]) => {
+        const monthIdx = getMonthIndex(new Date(dateStr));
+        views[monthIdx] = (views[monthIdx] || 0) + count;
+      });
+    }
+    
+    // Aggregate daily signups by calendar month
+    if (signupsByDateData?.signups_by_date) {
+      Object.entries(signupsByDateData.signups_by_date).forEach(([dateStr, count]) => {
+        const monthIdx = getMonthIndex(new Date(dateStr));
+        signups[monthIdx] = (signups[monthIdx] || 0) + count;
+      });
+    }
+    
+    // Aggregate daily new paid by calendar month
+    if (newPaidByDateData?.new_paid_by_date) {
+      Object.entries(newPaidByDateData.new_paid_by_date).forEach(([dateStr, count]) => {
+        const monthIdx = getMonthIndex(new Date(dateStr));
+        newPaid[monthIdx] = (newPaid[monthIdx] || 0) + count;
+      });
+    }
+    
+    // Aggregate daily churn by calendar month
+    if (churnByDateData?.churn_by_date) {
+      Object.entries(churnByDateData.churn_by_date).forEach(([dateStr, count]) => {
+        const monthIdx = getMonthIndex(new Date(dateStr));
+        churn[monthIdx] = (churn[monthIdx] || 0) + count;
+      });
+    }
+    
+    return { views, signups, newPaid, churn };
+  }, [viewsByDateData, signupsByDateData, newPaidByDateData, churnByDateData]);
+
+  // Derive monthly goals from weekly projections (grouped by actual calendar month)
+  // This ensures the monthly table shows all months that have weeks, including June
+  const monthlyFromWeekly = useMemo(() => {
+    const monthNames = ['Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026', 'Jun 2026'];
+    const result: Record<number, { 
+      month: string;
+      monthIndex: number;
+      visitors: number; 
+      signups: number; 
+      newPaid: number;
+      churned: number;
+      totalSubs: number; 
+      mrr: number; 
+      arr: number;
+    }> = {};
+    
+    // Also calculate churned per month from projections
+    const churnedByMonth: Record<number, number> = {};
+    projections.forEach((proj, projIdx) => {
+      // projections are indexed 0-5 for Dec-May
+      // We need to map this to monthIndex based on the month name
+      churnedByMonth[projIdx] = proj.churned;
+    });
+    
+    weeklyProjections.forEach((week) => {
+      const idx = week.monthIndex;
+      if (!result[idx]) {
+        result[idx] = {
+          month: monthNames[idx] || `Month ${idx}`,
+          monthIndex: idx,
+          visitors: 0,
+          signups: 0,
+          newPaid: 0,
+          churned: 0,
+          totalSubs: 0,
+          mrr: 0,
+          arr: 0,
+        };
+      }
+      // Sum these values across weeks
+      result[idx].visitors += week.visitors;
+      result[idx].signups += week.signups;
+      result[idx].newPaid += week.newPaid;
+      // Take last week's values for these (end-of-month snapshot)
+      result[idx].totalSubs = week.subscribers;
+      result[idx].mrr = week.mrr;
+      result[idx].arr = week.arr;
+    });
+    
+    // Add churned data from projections (mapped by monthIndex)
+    Object.keys(result).forEach((key) => {
+      const idx = Number(key);
+      // projections[0] = Dec (monthIndex 0), projections[1] = Jan (monthIndex 1), etc.
+      result[idx].churned = churnedByMonth[idx] || 0;
+    });
+    
+    // Convert to sorted array
+    return Object.values(result).sort((a, b) => a.monthIndex - b.monthIndex);
+  }, [weeklyProjections, projections]);
+
+  // Monthly chart data - uses monthlyFromWeekly for goals (same as table)
+  // Only show actual data for current and past months (future months show null so Recharts won't plot them)
+  const monthlyChartData = useMemo(() => {
+    // Build a lookup by monthIndex for easy access
+    const goalsByMonth: Record<number, typeof monthlyFromWeekly[0]> = {};
+    monthlyFromWeekly.forEach((m) => {
+      goalsByMonth[m.monthIndex] = m;
+    });
+    
+    const monthNames = ['Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026', 'Jun 2026'];
+    return monthNames.map((month, idx) => {
+      const isFutureMonth = idx > currentMonthIndex;
+      const goal = goalsByMonth[idx];
+      const monthlyOverride = monthlyActualData[idx];
+      const overrides = monthlyOverride?.overrides || {};
+      
+      // Use overridden value if locked, otherwise auto-fetched
+      const effectiveViews = overrides.views ? (monthlyOverride?.views || 0) : (metricsByCalendarMonth.views[idx] || 0);
+      const effectiveSignups = overrides.signups ? (monthlyOverride?.signups || 0) : (metricsByCalendarMonth.signups[idx] || 0);
+      const effectiveNewPaid = overrides.new_paid ? (monthlyOverride?.newPaid || 0) : (metricsByCalendarMonth.newPaid[idx] || 0);
+      const effectiveChurn = overrides.churn ? (monthlyOverride?.churn || 0) : (metricsByCalendarMonth.churn[idx] || 0);
+      const effectiveSubs = overrides.subscribers ? (monthlyOverride?.subscribers || 0) : (monthlyActuals[idx]?.subscribers || 0);
+      const effectiveMrr = overrides.mrr ? (monthlyOverride?.mrr || 0) : (monthlyActuals[idx]?.mrr || 0);
+      const effectiveArr = overrides.arr ? (monthlyOverride?.arr || 0) : (monthlyActuals[idx]?.arr || 0);
+      
+      return {
+        month,
+        monthIndex: idx,
+        // Actual data (respects overrides) - null for future months so Recharts won't plot them
+        actualNewPaid: isFutureMonth ? null : effectiveNewPaid,
+        actualChurned: isFutureMonth ? null : effectiveChurn,
+        negativeActualChurned: isFutureMonth ? null : -effectiveChurn,
+        signups: isFutureMonth ? null : effectiveSignups,
+        views: isFutureMonth ? null : effectiveViews,
+        actualSubs: isFutureMonth ? null : effectiveSubs,
+        actualMrr: isFutureMonth ? null : effectiveMrr,
+        actualArr: isFutureMonth ? null : effectiveArr,
+        // Goal data from monthlyFromWeekly (same source as table)
+        goalNewPaid: goal?.newPaid || 0,
+        goalChurned: 0,
+        negativeGoalChurned: 0,
+        goalSubs: goal?.totalSubs || 0,
+        goalMrr: goal?.mrr || 0,
+        goalArr: goal?.arr || 0,
+      };
+    });
+  }, [metricsByCalendarMonth, monthlyActuals, monthlyActualData, monthlyFromWeekly, currentMonthIndex]);
 
   // View state
   const [simulatorView, setSimulatorView] = useState<'monthly' | 'weekly'>('monthly');
@@ -1171,17 +1855,17 @@ function ARRSimulator() {
       <>
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* ARR Growth Trajectory */}
+        {/* ARR Growth (Goal vs Actual) */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              📈 ARR Growth Trajectory
+              📈 ARR: Goal vs Actual
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={projections}>
+                <LineChart data={monthlyChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis 
                     dataKey="month" 
@@ -1194,7 +1878,7 @@ function ARRSimulator() {
                     domain={[0, Math.max(targetARR * 1.1, (finalMonth?.arr || 0) * 1.2)]}
                   />
                   <Tooltip 
-                    formatter={(value: number) => [formatCurrency(value), 'ARR']}
+                    formatter={(value: number, name: string) => [formatCurrency(value), name]}
                     labelStyle={{ color: 'hsl(var(--foreground))' }}
                     contentStyle={{ 
                       backgroundColor: 'hsl(var(--background))', 
@@ -1211,8 +1895,17 @@ function ARRSimulator() {
                   />
                   <Line 
                     type="monotone" 
-                    dataKey="arr" 
-                    name="ARR"
+                    dataKey="goalArr" 
+                    name="Goal"
+                    stroke="#10b981" 
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    dot={false}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="actualArr" 
+                    name="Actual"
                     stroke="hsl(var(--primary))" 
                     strokeWidth={3}
                     dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2, r: 5 }}
@@ -1224,17 +1917,17 @@ function ARRSimulator() {
           </CardContent>
         </Card>
 
-        {/* Subscriber Growth */}
+        {/* Subscriber Growth (Goal vs Actual) */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              👥 Subscriber Growth
+              👥 Subscribers: Goal vs Actual
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={projections}>
+                <LineChart data={monthlyChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis 
                     dataKey="month" 
@@ -1246,7 +1939,7 @@ function ARRSimulator() {
                     tickFormatter={(value) => formatNumber(value)}
                   />
                   <Tooltip 
-                    formatter={(value: number) => [formatNumber(value), 'Subscribers']}
+                    formatter={(value: number, name: string) => [formatNumber(value), name]}
                     labelStyle={{ color: 'hsl(var(--foreground))' }}
                     contentStyle={{ 
                       backgroundColor: 'hsl(var(--background))', 
@@ -1255,33 +1948,40 @@ function ARRSimulator() {
                     }}
                   />
                   <Legend />
-                  <Area 
+                  <Line 
                     type="monotone" 
-                    dataKey="totalSubs" 
-                    name="Total Subscribers"
+                    dataKey="goalSubs" 
+                    name="Goal"
+                    stroke="#10b981" 
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    dot={false}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="actualSubs" 
+                    name="Actual"
                     stroke="#8b5cf6" 
-                    fill="#8b5cf6"
-                    fillOpacity={0.2}
                     strokeWidth={3}
                     dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 5 }}
                   />
-                </AreaChart>
+                </LineChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
 
-        {/* MRR Growth */}
+        {/* MRR Growth (Goal vs Actual) */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              💰 MRR Growth
+              💰 MRR: Goal vs Actual
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={projections}>
+                <LineChart data={monthlyChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis 
                     dataKey="month" 
@@ -1293,7 +1993,7 @@ function ARRSimulator() {
                     tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`}
                   />
                   <Tooltip 
-                    formatter={(value: number) => [formatCurrency(value), 'MRR']}
+                    formatter={(value: number, name: string) => [formatCurrency(value), name]}
                     labelStyle={{ color: 'hsl(var(--foreground))' }}
                     contentStyle={{ 
                       backgroundColor: 'hsl(var(--background))', 
@@ -1302,33 +2002,40 @@ function ARRSimulator() {
                     }}
                   />
                   <Legend />
-                  <Area 
+                  <Line 
                     type="monotone" 
-                    dataKey="mrr" 
-                    name="MRR"
+                    dataKey="goalMrr" 
+                    name="Goal"
+                    stroke="#10b981" 
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    dot={false}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="actualMrr" 
+                    name="Actual"
                     stroke="#f59e0b" 
-                    fill="#f59e0b"
-                    fillOpacity={0.2}
                     strokeWidth={3}
                     dot={{ fill: '#f59e0b', strokeWidth: 2, r: 5 }}
                   />
-                </AreaChart>
+                </LineChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
 
-        {/* New Signups vs Churn */}
+        {/* New Paid vs Churn (Goal vs Actual) */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              📊 New Signups vs Churn
+              📊 New Paid vs Churn: Goal vs Actual
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
+                <BarChart data={monthlyChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis 
                     dataKey="month" 
@@ -1353,14 +2060,21 @@ function ARRSimulator() {
                   />
                   <Legend />
                   <Bar 
-                    dataKey="newPaid" 
-                    name="New Paid Customers"
+                    dataKey="goalNewPaid" 
+                    name="New Paid (Goal)"
+                    fill="#10b981" 
+                    opacity={0.3}
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Bar 
+                    dataKey="actualNewPaid" 
+                    name="New Paid (Actual)"
                     fill="#10b981" 
                     radius={[4, 4, 0, 0]}
                   />
                   <Bar 
-                    dataKey="negativeChurned" 
-                    name="Churned Customers"
+                    dataKey="negativeActualChurned" 
+                    name="Churn (Actual)"
                     fill="#ef4444" 
                     radius={[0, 0, 4, 4]}
                   />
@@ -1384,8 +2098,15 @@ function ARRSimulator() {
                 <tr className="border-b bg-muted/50">
                   <th className="text-left p-3 font-medium">Month</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>Visitors</th>
+                  <th className="text-center p-3 font-medium">Growth</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>Signups</th>
+                  <th className="text-center p-3 font-medium">Growth</th>
+                  <th className="text-center p-3 font-medium">Conv</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>New Paid</th>
+                  <th className="text-center p-3 font-medium">Growth</th>
+                  <th className="text-center p-3 font-medium">Conv</th>
+                  <th className="text-center p-3 font-medium">Churn</th>
+                  <th className="text-center p-3 font-medium">Churn Rate</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>Total Subs</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>MRR</th>
                   <th className="text-center p-3 font-medium" colSpan={2}>ARR</th>
@@ -1394,10 +2115,17 @@ function ARRSimulator() {
                   <th></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal"></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal"></th>
+                  <th className="text-right p-2 text-muted-foreground font-normal"></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal"></th>
+                  <th className="text-right p-2 text-muted-foreground font-normal"></th>
+                  <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
+                  <th className="text-right p-2 text-muted-foreground font-normal"></th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Actual</th>
                   <th className="text-right p-2 text-muted-foreground font-normal">Goal</th>
@@ -1407,43 +2135,154 @@ function ARRSimulator() {
                 </tr>
               </thead>
               <tbody>
-                {projections.map((month, i) => {
-                  const actual = monthlyActuals[i] || { views: 0, signups: 0, newPaid: 0, subscribers: 0, mrr: 0, arr: 0 };
-                  const hasActual = actual.views > 0 || actual.signups > 0 || actual.subscribers > 0;
+                {monthlyFromWeekly.map((month, idx) => {
+                  const actual = monthlyActuals[month.monthIndex] || { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0 };
+                  const monthlyOverride = monthlyActualData[month.monthIndex];
+                  const isLastMonth = idx === monthlyFromWeekly.length - 1;
+                  
+                  // Use calendar month aggregations (from daily data) - unless overridden
+                  const autoViews = metricsByCalendarMonth.views[month.monthIndex] || 0;
+                  const autoSignups = metricsByCalendarMonth.signups[month.monthIndex] || 0;
+                  const autoNewPaid = metricsByCalendarMonth.newPaid[month.monthIndex] || 0;
+                  const autoChurn = metricsByCalendarMonth.churn[month.monthIndex] || 0;
+                  
+                  // Effective values: use override if locked, otherwise auto-fetched
+                  const effectiveViews = isMonthlyFieldOverridden(month.monthIndex, 'views') ? (monthlyOverride?.views || 0) : autoViews;
+                  const effectiveSignups = isMonthlyFieldOverridden(month.monthIndex, 'signups') ? (monthlyOverride?.signups || 0) : autoSignups;
+                  const effectiveNewPaid = isMonthlyFieldOverridden(month.monthIndex, 'newPaid') ? (monthlyOverride?.newPaid || 0) : autoNewPaid;
+                  const effectiveChurn = isMonthlyFieldOverridden(month.monthIndex, 'churn') ? (monthlyOverride?.churn || 0) : autoChurn;
+                  const effectiveSubs = isMonthlyFieldOverridden(month.monthIndex, 'subscribers') ? (monthlyOverride?.subscribers || 0) : actual.subscribers;
+                  const effectiveMRR = isMonthlyFieldOverridden(month.monthIndex, 'mrr') ? (monthlyOverride?.mrr || 0) : actual.mrr;
+                  const effectiveARR = isMonthlyFieldOverridden(month.monthIndex, 'arr') ? (monthlyOverride?.arr || 0) : actual.arr;
+                  
+                  // Previous month values for growth calculation
+                  const prevMonthIdx = idx > 0 ? monthlyFromWeekly[idx - 1].monthIndex : -1;
+                  const prevEffectiveViews = prevMonthIdx >= 0 ? (isMonthlyFieldOverridden(prevMonthIdx, 'views') ? (monthlyActualData[prevMonthIdx]?.views || 0) : (metricsByCalendarMonth.views[prevMonthIdx] || 0)) : 0;
+                  const prevEffectiveSignups = prevMonthIdx >= 0 ? (isMonthlyFieldOverridden(prevMonthIdx, 'signups') ? (monthlyActualData[prevMonthIdx]?.signups || 0) : (metricsByCalendarMonth.signups[prevMonthIdx] || 0)) : 0;
+                  const prevEffectiveNewPaid = prevMonthIdx >= 0 ? (isMonthlyFieldOverridden(prevMonthIdx, 'newPaid') ? (monthlyActualData[prevMonthIdx]?.newPaid || 0) : (metricsByCalendarMonth.newPaid[prevMonthIdx] || 0)) : 0;
+                  
+                  const hasActual = effectiveViews > 0 || effectiveSignups > 0 || effectiveSubs > 0;
+                  
+                  // Calculate growth rates (month-over-month)
+                  const viewsGrowth = prevEffectiveViews > 0 && effectiveViews > 0 ? ((effectiveViews / prevEffectiveViews) - 1) * 100 : null;
+                  const signupsGrowth = prevEffectiveSignups > 0 && effectiveSignups > 0 ? ((effectiveSignups / prevEffectiveSignups) - 1) * 100 : null;
+                  const newPaidGrowth = prevEffectiveNewPaid > 0 && effectiveNewPaid > 0 ? ((effectiveNewPaid / prevEffectiveNewPaid) - 1) * 100 : null;
+                  
+                  // Calculate signup conversion rate (signups / views)
+                  const signupConvRate = effectiveViews > 0 && effectiveSignups > 0 ? (effectiveSignups / effectiveViews) * 100 : null;
+                  
+                  // Calculate new paid conversion rate (new paid / signups)
+                  const paidConvRate = effectiveSignups > 0 && effectiveNewPaid > 0 ? (effectiveNewPaid / effectiveSignups) * 100 : null;
+                  
+                  // Churn rate
+                  const monthStartSubs = subsAtMonthStart[month.monthIndex] || 0;
+                  const churnRate = monthStartSubs > 0 && effectiveChurn > 0 ? (effectiveChurn / monthStartSubs) * 100 : null;
+                  
+                  // Helper to format growth
+                  const formatGrowth = (value: number | null) => {
+                    if (value === null) return '—';
+                    const sign = value >= 0 ? '+' : '';
+                    return `${sign}${value.toFixed(1)}%`;
+                  };
+                  
+                  const getGrowthColor = (value: number | null) => {
+                    if (value === null) return 'text-muted-foreground';
+                    return value >= 0 ? 'text-green-600' : 'text-red-500';
+                  };
+                  
+                  // Editable cell helper for monthly data
+                  const renderEditableMonthlyCell = (
+                    field: keyof MonthlyActual,
+                    autoValue: number,
+                    goalValue: number,
+                    isCurrency: boolean = false
+                  ) => {
+                    const isOverridden = isMonthlyFieldOverridden(month.monthIndex, field);
+                    const effectiveValue = isOverridden ? (monthlyOverride?.[field] || 0) : autoValue;
+                    const displayValue = isCurrency ? formatCurrency(effectiveValue as number) : formatNumber(effectiveValue as number);
+                    const meetsGoal = (effectiveValue as number) >= goalValue;
+                    
+                    return (
+                      <td className="text-right p-1">
+                        <div className="flex items-center justify-end gap-1">
+                          {isOverridden && (
+                            <button
+                              onClick={() => handleToggleMonthlyOverride(month.monthIndex, field)}
+                              className="text-amber-500 hover:text-amber-600"
+                              title="Click to unlock (use auto-fetched value)"
+                            >
+                              <Lock className="h-3 w-3" />
+                            </button>
+                          )}
+                          {isOverridden || `${month.monthIndex}-${fieldToOverrideKey(field as keyof WeeklyActual)}` in pendingMonthlyEdits ? (
+                            <Input
+                              type="text"
+                              value={getMonthlyInputValue(month.monthIndex, field)}
+                              onChange={(e) => handleMonthlyInputChange(month.monthIndex, field, e.target.value)}
+                              onBlur={() => handleMonthlyInputBlur(month.monthIndex, month.month, field)}
+                              className={`w-20 h-7 text-right text-xs ${isOverridden ? 'border-amber-400' : ''}`}
+                              placeholder="—"
+                            />
+                          ) : (
+                            <button
+                              onClick={() => enableMonthlyOverrideInstantly(month.monthIndex, month.month, field, autoValue)}
+                              className={`font-medium hover:underline cursor-pointer ${hasActual && meetsGoal ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}
+                            >
+                              {(effectiveValue as number) > 0 ? displayValue : '—'}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    );
+                  };
                   
                   return (
-                    <tr key={month.month} className={`border-b ${i === projections.length - 1 ? 'bg-primary/5 font-medium' : ''}`}>
+                    <tr key={month.month} className={`border-b ${isLastMonth ? 'bg-primary/5 font-medium' : ''}`}>
                       <td className="p-3">{month.month}</td>
                       {/* Visitors */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.visitors)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actual.views >= month.visitors ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.views > 0 ? formatNumber(actual.views) : '—'}
+                      {renderEditableMonthlyCell('views', autoViews, month.visitors)}
+                      {/* % Growth */}
+                      <td className={`text-right p-2 font-medium ${getGrowthColor(viewsGrowth)}`}>
+                        {formatGrowth(viewsGrowth)}
                       </td>
                       {/* Signups */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.signups)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actual.signups >= month.signups ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.signups > 0 ? formatNumber(actual.signups) : '—'}
+                      {renderEditableMonthlyCell('signups', autoSignups, month.signups)}
+                      {/* Signups Growth */}
+                      <td className={`text-right p-2 font-medium ${getGrowthColor(signupsGrowth)}`}>
+                        {formatGrowth(signupsGrowth)}
+                      </td>
+                      {/* Signup Conv */}
+                      <td className="text-right p-2 font-medium text-muted-foreground">
+                        {signupConvRate !== null ? `${signupConvRate.toFixed(1)}%` : '—'}
                       </td>
                       {/* New Paid */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.newPaid)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actual.newPaid >= month.newPaid ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.newPaid > 0 ? formatNumber(actual.newPaid) : '—'}
+                      {renderEditableMonthlyCell('newPaid', autoNewPaid, month.newPaid)}
+                      {/* New Paid Growth */}
+                      <td className={`text-right p-2 font-medium ${getGrowthColor(newPaidGrowth)}`}>
+                        {formatGrowth(newPaidGrowth)}
+                      </td>
+                      {/* Paid Conv */}
+                      <td className="text-right p-2 font-medium text-muted-foreground">
+                        {paidConvRate !== null ? `${paidConvRate.toFixed(1)}%` : '—'}
+                      </td>
+                      {/* Churn */}
+                      {renderEditableMonthlyCell('churn', autoChurn, 0)}
+                      {/* Churn Rate = Churn / Subs at 1st of month */}
+                      <td className={`text-right p-2 font-medium ${churnRate !== null && churnRate > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        {churnRate !== null ? `${churnRate.toFixed(1)}%` : '—'}
                       </td>
                       {/* Total Subs */}
                       <td className="text-right p-2 text-muted-foreground">{formatNumber(month.totalSubs)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actual.subscribers >= month.totalSubs ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.subscribers > 0 ? formatNumber(actual.subscribers) : '—'}
-                      </td>
+                      {renderEditableMonthlyCell('subscribers', actual.subscribers, month.totalSubs)}
                       {/* MRR */}
                       <td className="text-right p-2 text-muted-foreground">{formatCurrency(month.mrr)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actual.mrr >= month.mrr ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.mrr > 0 ? formatCurrency(actual.mrr) : '—'}
-                      </td>
+                      {renderEditableMonthlyCell('mrr', actual.mrr, month.mrr, true)}
                       {/* ARR */}
                       <td className="text-right p-2 text-muted-foreground">{formatCurrency(month.arr)}</td>
-                      <td className={`text-right p-2 font-medium ${hasActual && actual.arr >= month.arr ? 'text-green-600' : hasActual ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {actual.arr > 0 ? formatCurrency(actual.arr) : '—'}
-                      </td>
+                      {renderEditableMonthlyCell('arr', actual.arr, month.arr, true)}
                     </tr>
                   );
                 })}
@@ -1475,7 +2314,7 @@ function ARRSimulator() {
                     <Tooltip formatter={(v: number) => [`$${v.toLocaleString()}`, '']} />
                     <Legend />
                     <Line type="monotone" dataKey="goalARR" name="Goal" stroke="#10b981" strokeWidth={2} dot={false} strokeDasharray="5 5" />
-                    <Line type="monotone" dataKey="actualARR" name="Actual" stroke="hsl(var(--primary))" strokeWidth={3} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="actualARR" name="Actual" stroke="hsl(var(--primary))" strokeWidth={3} dot={{ r: 4, fill: '#fff', stroke: '#000', strokeWidth: 2 }} activeDot={{ r: 6, fill: '#fff', stroke: 'hsl(var(--primary))', strokeWidth: 2 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -1554,7 +2393,7 @@ function ARRSimulator() {
           <CardHeader>
             <CardTitle className="text-base">📊 Weekly Tracking (Dec 2025 - Jun 2026)</CardTitle>
             <CardDescription>
-              Enter actual weekly data to compare against goals. Click any Actual cell to edit.
+              Data is auto-synced from Stripe/Vercel. Edit any value to override it — once edited, it stays locked (🔒) and won't be overwritten by auto-sync. Click the lock icon to unlock and resume syncing.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
@@ -1564,9 +2403,16 @@ function ARRSimulator() {
                   <tr className="border-b bg-muted/50">
                     <th className="text-left p-2 font-medium">Week</th>
                     <th className="text-left p-2 font-medium">Date Range</th>
-                    <th className="text-center p-2 font-medium" colSpan={3}>Views</th>
-                    <th className="text-center p-2 font-medium" colSpan={3}>Signups</th>
-                    <th className="text-center p-2 font-medium" colSpan={3}>New Paid</th>
+                    <th className="text-center p-2 font-medium" colSpan={2}>Views</th>
+                    <th className="text-center p-2 font-medium">Growth</th>
+                    <th className="text-center p-2 font-medium" colSpan={2}>Signups</th>
+                    <th className="text-center p-2 font-medium">Growth</th>
+                    <th className="text-center p-2 font-medium">Conv</th>
+                    <th className="text-center p-2 font-medium" colSpan={2}>New Paid</th>
+                    <th className="text-center p-2 font-medium">Growth</th>
+                    <th className="text-center p-2 font-medium">Conv</th>
+                    <th className="text-center p-2 font-medium">Churn</th>
+                    <th className="text-center p-2 font-medium">Churn Rate</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>Subscribers</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>MRR</th>
                     <th className="text-center p-2 font-medium" colSpan={3}>ARR</th>
@@ -1577,13 +2423,17 @@ function ARRSimulator() {
                     <th></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
-                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
+                    <th className="text-right p-2 text-muted-foreground font-normal text-[10px]"></th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Goal</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Actual</th>
                     <th className="text-right p-2 text-muted-foreground font-normal text-[10px]">Var%</th>
@@ -1602,78 +2452,305 @@ function ARRSimulator() {
                     // Get auto-fetched data
                     const autoViews = viewsByWeek[week.week] ?? 0;
                     const autoSignups = signupsByWeek[week.week] ?? 0;
-                    const viewsVar = getVariance(autoViews, week.visitors);
-                    const signupsVar = getVariance(autoSignups, week.signups);
-                    const newPaidVar = getVariance(actual.newPaid, week.newPaid);
-                    const subsVar = getVariance(actual.subscribers, week.subscribers);
+                    const autoNewPaid = newPaidByWeek[week.week] ?? 0;
+                    const calcSubs = actualSubsByWeek[week.week] ?? 0;
+                    
+                    // Check if fields are overridden (locked) - use manual value instead of API
+                    const viewsOverridden = isFieldOverridden(week.week, 'views');
+                    const signupsOverridden = isFieldOverridden(week.week, 'signups');
+                    const newPaidOverridden = isFieldOverridden(week.week, 'new_paid');
+                    const subscribersOverridden = isFieldOverridden(week.week, 'subscribers');
+                    
+                    // Churn override check
+                    const churnOverridden = isFieldOverridden(week.week, 'churn');
+                    const autoChurn = churnByWeek[week.week] || 0;
+                    const effectiveChurn = churnOverridden ? (actual.churn || 0) : autoChurn;
+                    
+                    // Use overridden value if locked, otherwise use auto-fetched data
+                    const effectiveViews = viewsOverridden ? (actual.views || 0) : autoViews;
+                    const effectiveSignups = signupsOverridden ? (actual.signups || 0) : autoSignups;
+                    const effectiveNewPaid = newPaidOverridden ? (actual.newPaid || 0) : (autoNewPaid || actual.newPaid || 0);
+                    const effectiveSubs = subscribersOverridden ? (actual.subscribers || 0) : calcSubs;
+                    const subsVar = getVariance(effectiveSubs, week.subscribers);
                     const mrrVar = getVariance(actual.mrr, week.mrr);
                     const arrVar = getVariance(actual.arr, week.arr);
+                    
+                    // Get previous week's data for Growth calculations
+                    const prevWeekNum = week.week - 1;
+                    const prevActual: Partial<WeeklyActual> = actualData[prevWeekNum] || {};
+                    const prevViewsOverridden = prevActual.overrides?.views || false;
+                    const prevSignupsOverridden = prevActual.overrides?.signups || false;
+                    const prevNewPaidOverridden = prevActual.overrides?.new_paid || false;
+                    
+                    // For Week 1, use week0Baseline; otherwise use fetched data or overridden data
+                    const prevAutoViews = prevWeekNum === 0 ? week0Baseline.views : 
+                      (prevViewsOverridden ? (prevActual.views || 0) : (viewsByWeek[prevWeekNum] ?? 0));
+                    const prevAutoSignups = prevWeekNum === 0 ? week0Baseline.signups : 
+                      (prevSignupsOverridden ? (prevActual.signups || 0) : (signupsByWeek[prevWeekNum] ?? 0));
+                    const prevAutoNewPaid = prevWeekNum === 0 ? week0Baseline.newPaid : 
+                      (prevNewPaidOverridden ? (prevActual.newPaid || 0) : (newPaidByWeek[prevWeekNum] ?? 0));
+                    
+                    // Calculate growth rates (week-over-week) using effective values
+                    const viewsGrowth = prevAutoViews > 0 && effectiveViews > 0 ? ((effectiveViews / prevAutoViews) - 1) * 100 : null;
+                    const signupsGrowth = prevAutoSignups > 0 && effectiveSignups > 0 ? ((effectiveSignups / prevAutoSignups) - 1) * 100 : null;
+                    const newPaidGrowth = prevAutoNewPaid > 0 && effectiveNewPaid > 0 ? ((effectiveNewPaid / prevAutoNewPaid) - 1) * 100 : null;
+                    
+                    // Calculate signup conversion rate (signups / views) using effective values
+                    const signupConvRate = effectiveViews > 0 && effectiveSignups > 0 ? (effectiveSignups / effectiveViews) * 100 : null;
+                    
+                    // Calculate new paid conversion rate (new paid / signups) using effective values
+                    const paidConvRate = effectiveSignups > 0 && effectiveNewPaid > 0 ? (effectiveNewPaid / effectiveSignups) * 100 : null;
+                    
+                    // Helper to format growth
+                    const formatGrowth = (value: number | null) => {
+                      if (value === null) return '—';
+                      const sign = value >= 0 ? '+' : '';
+                      return `${sign}${value.toFixed(0)}%`;
+                    };
+                    
+                    const getGrowthColor = (value: number | null) => {
+                      if (value === null) return 'text-muted-foreground';
+                      return value >= 0 ? 'text-green-600' : 'text-red-500';
+                    };
                     
                     return (
                       <tr key={week.week} className={`border-b hover:bg-muted/30 ${week.week === weeklyProjections.length ? 'bg-primary/5 font-medium' : ''}`}>
                         <td className="p-2 font-medium">W{week.week}</td>
                         <td className="p-2 text-muted-foreground whitespace-nowrap">{week.dateRange}</td>
-                        {/* Views - Auto-fetched from Google Analytics */}
+                        {/* Views */}
                         <td className="text-right p-1">{formatNumber(week.visitors)}</td>
                         <td className="text-right p-1">
-                          <span className={`text-[10px] font-medium ${autoViews > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
-                            {autoViews > 0 ? formatNumber(autoViews) : '—'}
-                          </span>
+                          <div className="flex items-center justify-end gap-1">
+                            {viewsOverridden && (
+                              <button
+                                onClick={() => handleToggleOverride(week.week, 'views')}
+                                className="text-amber-500 hover:text-amber-600 transition-colors"
+                                title="Locked (manual override). Click to unlock and sync from Vercel."
+                              >
+                                <Lock className="h-3 w-3" />
+                              </button>
+                            )}
+                            {viewsOverridden ? (
+                              <Input
+                                type="text"
+                                value={getInputValue(week.week, 'views')}
+                                onChange={(e) => handleInputChange(week.week, 'views', e.target.value)}
+                                onBlur={() => handleInputBlur(week.week, 'views')}
+                                className="h-5 w-14 text-[10px] text-right border-amber-400"
+                                placeholder="—"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => enableOverrideInstantly(week.week, 'views', autoViews)}
+                                className={`text-[10px] font-medium hover:underline ${effectiveViews > 0 ? 'text-foreground' : 'text-muted-foreground'}`}
+                                title="Click to edit and override"
+                              >
+                                {effectiveViews > 0 ? formatNumber(effectiveViews) : '—'}
+                              </button>
+                            )}
+                          </div>
                         </td>
-                        <td className={`text-right p-1 text-[10px] ${viewsVar.color}`}>
-                          {autoViews > 0 ? `${viewsVar.value >= 0 ? '+' : ''}${viewsVar.value.toFixed(1)}%` : '—'}
+                        {/* % Growth */}
+                        <td className={`text-right p-1 text-[10px] font-medium ${getGrowthColor(viewsGrowth)}`}>
+                          {formatGrowth(viewsGrowth)}
                         </td>
-                        {/* Signups - Auto-fetched from database */}
+                        {/* Signups */}
                         <td className="text-right p-1">{formatNumber(week.signups)}</td>
                         <td className="text-right p-1">
-                          <span className={`text-[10px] font-medium ${autoSignups > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
-                            {autoSignups > 0 ? formatNumber(autoSignups) : '—'}
-                          </span>
+                          <div className="flex items-center justify-end gap-1">
+                            {signupsOverridden && (
+                              <button
+                                onClick={() => handleToggleOverride(week.week, 'signups')}
+                                className="text-amber-500 hover:text-amber-600 transition-colors"
+                                title="Locked (manual override). Click to unlock and sync from database."
+                              >
+                                <Lock className="h-3 w-3" />
+                              </button>
+                            )}
+                            {signupsOverridden ? (
+                              <Input
+                                type="text"
+                                value={getInputValue(week.week, 'signups')}
+                                onChange={(e) => handleInputChange(week.week, 'signups', e.target.value)}
+                                onBlur={() => handleInputBlur(week.week, 'signups')}
+                                className="h-5 w-14 text-[10px] text-right border-amber-400"
+                                placeholder="—"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => enableOverrideInstantly(week.week, 'signups', autoSignups)}
+                                className={`text-[10px] font-medium hover:underline ${effectiveSignups > 0 ? 'text-foreground' : 'text-muted-foreground'}`}
+                                title="Click to edit and override"
+                              >
+                                {effectiveSignups > 0 ? formatNumber(effectiveSignups) : '—'}
+                              </button>
+                            )}
+                          </div>
                         </td>
-                        <td className={`text-right p-1 text-[10px] ${signupsVar.color}`}>
-                          {autoSignups > 0 ? `${signupsVar.value >= 0 ? '+' : ''}${signupsVar.value.toFixed(1)}%` : '—'}
+                        {/* Signups Growth */}
+                        <td className={`text-right p-1 text-[10px] font-medium ${getGrowthColor(signupsGrowth)}`}>
+                          {formatGrowth(signupsGrowth)}
+                        </td>
+                        {/* Signup Conv */}
+                        <td className="text-right p-1 text-[10px] font-medium text-muted-foreground">
+                          {signupConvRate !== null ? `${signupConvRate.toFixed(1)}%` : '—'}
                         </td>
                         {/* New Paid */}
                         <td className="text-right p-1">{formatNumber(week.newPaid)}</td>
                         <td className="text-right p-1">
-                          <Input
-                            type="number"
-                            value={getInputValue(week.week, 'newPaid')}
-                            onChange={(e) => handleInputChange(week.week, 'newPaid', e.target.value)}
-                            onBlur={() => handleInputBlur(week.week, 'newPaid')}
-                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            placeholder="—"
-                          />
+                          <div className="flex items-center justify-end gap-1">
+                            {newPaidOverridden && (
+                              <button
+                                onClick={() => handleToggleOverride(week.week, 'new_paid')}
+                                className="text-amber-500 hover:text-amber-600 transition-colors"
+                                title="Locked (manual override). Click to unlock and sync from Stripe."
+                              >
+                                <Lock className="h-3 w-3" />
+                              </button>
+                            )}
+                            {newPaidOverridden ? (
+                              <Input
+                                type="text"
+                                value={getInputValue(week.week, 'newPaid')}
+                                onChange={(e) => handleInputChange(week.week, 'newPaid', e.target.value)}
+                                onBlur={() => handleInputBlur(week.week, 'newPaid')}
+                                className="h-5 w-12 text-[10px] text-right border-amber-400"
+                                placeholder="—"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => enableOverrideInstantly(week.week, 'newPaid', autoNewPaid || actual.newPaid || 0)}
+                                className={`text-[10px] font-medium hover:underline ${effectiveNewPaid > 0 ? 'text-foreground' : 'text-muted-foreground'}`}
+                                title="Click to edit and override"
+                              >
+                                {effectiveNewPaid > 0 ? formatNumber(effectiveNewPaid) : '—'}
+                              </button>
+                            )}
+                          </div>
                         </td>
-                        <td className={`text-right p-1 text-[10px] ${newPaidVar.color}`}>
-                          {actual.newPaid ? `${newPaidVar.value >= 0 ? '+' : ''}${newPaidVar.value.toFixed(1)}%` : '—'}
+                        {/* New Paid Growth */}
+                        <td className={`text-right p-1 text-[10px] font-medium ${getGrowthColor(newPaidGrowth)}`}>
+                          {formatGrowth(newPaidGrowth)}
                         </td>
+                        {/* Paid Conv */}
+                        <td className="text-right p-1 text-[10px] font-medium text-muted-foreground">
+                          {paidConvRate !== null ? `${paidConvRate.toFixed(1)}%` : '—'}
+                        </td>
+                        {/* Churn */}
+                        <td className="text-right p-1">
+                          <div className="flex items-center justify-end gap-1">
+                            {churnOverridden && (
+                              <button
+                                onClick={() => handleToggleOverride(week.week, 'churn')}
+                                className="text-amber-500 hover:text-amber-600 transition-colors"
+                                title="Locked (manual override). Click to unlock and sync from Stripe."
+                              >
+                                <Lock className="h-3 w-3" />
+                              </button>
+                            )}
+                            {churnOverridden ? (
+                              <Input
+                                type="text"
+                                value={getInputValue(week.week, 'churn')}
+                                onChange={(e) => handleInputChange(week.week, 'churn', e.target.value)}
+                                onBlur={() => handleInputBlur(week.week, 'churn')}
+                                className="h-5 w-12 text-[10px] text-right border-amber-400"
+                                placeholder="—"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => enableOverrideInstantly(week.week, 'churn', autoChurn)}
+                                className={`text-[10px] font-medium hover:underline ${effectiveChurn > 0 ? 'text-red-500' : 'text-muted-foreground'}`}
+                                title="Click to edit and override"
+                              >
+                                {effectiveChurn > 0 ? formatNumber(effectiveChurn) : '—'}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        {/* Churn Rate = week churn / subs at 1st of month (week starts in) */}
+                        {(() => {
+                          const weekChurn = effectiveChurn;
+                          // Determine which month the week STARTS in
+                          const weekStartDate = new Date(2025, 11, 15 + (week.week - 1) * 7);
+                          const monthIdx = weekStartDate.getMonth() === 11 ? 0 : weekStartDate.getMonth() + 1;
+                          const monthStartSubs = subsAtMonthStart[monthIdx] || 0;
+                          const churnRate = monthStartSubs > 0 && weekChurn > 0 
+                            ? (weekChurn / monthStartSubs) * 100 
+                            : null;
+                          return (
+                            <td className={`text-right p-1 text-[10px] font-medium ${churnRate !== null && churnRate > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                              {churnRate !== null ? `${churnRate.toFixed(1)}%` : '—'}
+                            </td>
+                          );
+                        })()}
                         {/* Subscribers */}
                         <td className="text-right p-1 font-medium">{formatNumber(week.subscribers)}</td>
                         <td className="text-right p-1">
-                          <Input
-                            type="number"
-                            value={getInputValue(week.week, 'subscribers')}
-                            onChange={(e) => handleInputChange(week.week, 'subscribers', e.target.value)}
-                            onBlur={() => handleInputBlur(week.week, 'subscribers')}
-                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            placeholder="—"
-                          />
+                          <div className="flex items-center justify-end gap-1">
+                            {subscribersOverridden && (
+                              <button
+                                onClick={() => handleToggleOverride(week.week, 'subscribers')}
+                                className="text-amber-500 hover:text-amber-600 transition-colors"
+                                title="Locked (manual override). Click to unlock and use calculated value."
+                              >
+                                <Lock className="h-3 w-3" />
+                              </button>
+                            )}
+                            {subscribersOverridden ? (
+                              <Input
+                                type="text"
+                                value={getInputValue(week.week, 'subscribers')}
+                                onChange={(e) => handleInputChange(week.week, 'subscribers', e.target.value)}
+                                onBlur={() => handleInputBlur(week.week, 'subscribers')}
+                                className="h-5 w-14 text-[10px] text-right border-amber-400"
+                                placeholder="—"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => enableOverrideInstantly(week.week, 'subscribers', calcSubs)}
+                                className={`text-[10px] font-medium hover:underline ${effectiveSubs > 0 ? 'text-foreground' : 'text-muted-foreground'}`}
+                                title="Click to edit and override"
+                              >
+                                {effectiveSubs > 0 ? formatNumber(effectiveSubs) : '—'}
+                              </button>
+                            )}
+                          </div>
                         </td>
                         <td className={`text-right p-1 text-[10px] ${subsVar.color}`}>
-                          {actual.subscribers ? `${subsVar.value >= 0 ? '+' : ''}${subsVar.value.toFixed(1)}%` : '—'}
+                          {effectiveSubs > 0 ? `${subsVar.value >= 0 ? '+' : ''}${subsVar.value.toFixed(1)}%` : '—'}
                         </td>
                         {/* MRR */}
                         <td className="text-right p-1">{formatCurrency(week.mrr)}</td>
                         <td className="text-right p-1">
-                          <Input
-                            type="number"
-                            value={getInputValue(week.week, 'mrr')}
-                            onChange={(e) => handleInputChange(week.week, 'mrr', e.target.value)}
-                            onBlur={() => handleInputBlur(week.week, 'mrr')}
-                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            placeholder="—"
-                          />
+                          <div className="flex items-center justify-end gap-1">
+                            {isFieldOverridden(week.week, 'mrr') && (
+                              <button
+                                onClick={() => handleToggleOverride(week.week, 'mrr')}
+                                className="text-amber-500 hover:text-amber-600 transition-colors"
+                                title="Locked (manual override). Click to unlock."
+                              >
+                                <Lock className="h-3 w-3" />
+                              </button>
+                            )}
+                            {isFieldOverridden(week.week, 'mrr') ? (
+                              <Input
+                                type="text"
+                                value={getInputValue(week.week, 'mrr')}
+                                onChange={(e) => handleInputChange(week.week, 'mrr', e.target.value)}
+                                onBlur={() => handleInputBlur(week.week, 'mrr')}
+                                className="h-5 w-16 text-[10px] text-right border-amber-400"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => enableOverrideInstantly(week.week, 'mrr', actual.mrr || 0)}
+                                className={`text-[10px] font-medium hover:underline ${actual.mrr > 0 ? 'text-foreground' : 'text-muted-foreground'}`}
+                                title="Click to edit and override"
+                              >
+                                {actual.mrr > 0 ? toShorthand(actual.mrr) : '—'}
+                              </button>
+                            )}
+                          </div>
                         </td>
                         <td className={`text-right p-1 text-[10px] ${mrrVar.color}`}>
                           {actual.mrr ? `${mrrVar.value >= 0 ? '+' : ''}${mrrVar.value.toFixed(1)}%` : '—'}
@@ -1681,20 +2758,40 @@ function ARRSimulator() {
                         {/* ARR */}
                         <td className="text-right p-1 font-medium">{formatCurrency(week.arr)}</td>
                         <td className="text-right p-1">
-                          <Input
-                            type="number"
-                            value={getInputValue(week.week, 'arr')}
-                            onChange={(e) => handleInputChange(week.week, 'arr', e.target.value)}
-                            onBlur={() => handleInputBlur(week.week, 'arr')}
-                            className="h-5 w-16 text-[10px] text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            placeholder="—"
-                          />
+                          <div className="flex items-center justify-end gap-1">
+                            {isFieldOverridden(week.week, 'arr') && (
+                              <button
+                                onClick={() => handleToggleOverride(week.week, 'arr')}
+                                className="text-amber-500 hover:text-amber-600 transition-colors"
+                                title="Locked (manual override). Click to unlock."
+                              >
+                                <Lock className="h-3 w-3" />
+                              </button>
+                            )}
+                            {isFieldOverridden(week.week, 'arr') ? (
+                              <Input
+                                type="text"
+                                value={getInputValue(week.week, 'arr')}
+                                onChange={(e) => handleInputChange(week.week, 'arr', e.target.value)}
+                                onBlur={() => handleInputBlur(week.week, 'arr')}
+                                className="h-5 w-16 text-[10px] text-right border-amber-400"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => enableOverrideInstantly(week.week, 'arr', actual.arr || 0)}
+                                className={`text-[10px] font-medium hover:underline ${actual.arr > 0 ? 'text-foreground' : 'text-muted-foreground'}`}
+                                title="Click to edit and override"
+                              >
+                                {actual.arr > 0 ? toShorthand(actual.arr) : '—'}
+                              </button>
+                            )}
+                          </div>
                         </td>
                         <td className={`text-right p-1 text-[10px] ${arrVar.color}`}>
                           {actual.arr ? `${arrVar.value >= 0 ? '+' : ''}${arrVar.value.toFixed(1)}%` : '—'}
                         </td>
                         <td className="p-1">
-                          {(actual.newPaid || actual.subscribers || actual.mrr || actual.arr) && (
+                          {(actual.newPaid || actual.mrr || actual.arr) && (
                             <button
                               onClick={() => deleteWeekActual(week.week)}
                               className="text-muted-foreground hover:text-red-500 transition-colors"
@@ -1733,15 +2830,70 @@ export default function AdminAnalyticsPage() {
   const [distributionDate, setDistributionDate] = useState<Date>(getUTCToday);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('vercel');
+  
+  // User details dialog state
+  const [selectedUser, setSelectedUser] = useState<UserSummary | null>(null);
+  const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
+  const [pendingUserEmail, setPendingUserEmail] = useState<string | null>(null);
+  
+  // Fetch user by email when clicked
+  const { data: userSearchResult, isLoading: isSearchingUser, isFetching: isUserFetching } = useAdminUserList({
+    page: 1,
+    page_size: 1,
+    search_email: pendingUserEmail || undefined,
+  });
+  
+  const { refreshUserList, refreshUserStats } = useRefreshUserData();
+  
+  // When user search completes, open the dialog
+  useEffect(() => {
+    // Only process results when we have a pending email and the query is done fetching
+    if (!pendingUserEmail || isSearchingUser || isUserFetching) {
+      return;
+    }
+    
+    if (userSearchResult?.data && userSearchResult.data.length > 0) {
+      setSelectedUser(userSearchResult.data[0]);
+      setIsUserDialogOpen(true);
+      setPendingUserEmail(null);
+    } else if (userSearchResult?.data && userSearchResult.data.length === 0) {
+      toast.error(`User not found: ${pendingUserEmail}`);
+      setPendingUserEmail(null);
+    }
+  }, [pendingUserEmail, userSearchResult, isSearchingUser, isUserFetching]);
+  
+  // Handle user email click from anywhere in the app
+  const handleUserEmailClick = (email: string) => {
+    setPendingUserEmail(email);
+  };
+  
+  // Handle user selection from the Users tab table
+  const handleUserSelect = (user: UserSummary) => {
+    setSelectedUser(user);
+    setIsUserDialogOpen(true);
+  };
+  
+  const handleCloseUserDialog = () => {
+    setIsUserDialogOpen(false);
+    setSelectedUser(null);
+  };
+  
+  const handleRefreshUserData = () => {
+    refreshUserList();
+    refreshUserStats();
+  };
   
   const utcToday = getUTCToday();
   const dateString = format(distributionDate, 'yyyy-MM-dd');
   
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
-  const { data: distribution } = useMessageDistribution(dateString);
-  const { data: categoryDistribution } = useCategoryDistribution(dateString);
-  const { data: conversionFunnel, isLoading: funnelLoading } = useConversionFunnel(dateString);
-  const { refreshAll } = useRefreshAnalytics();
+  const { data: distribution, isFetching: distributionFetching } = useMessageDistribution(dateString);
+  const { data: categoryDistribution, isFetching: categoryFetching } = useCategoryDistribution(dateString);
+  const { data: conversionFunnel, isLoading: funnelLoading, isFetching: funnelFetching } = useConversionFunnel(dateString, analyticsSource);
+  
+  // Combined fetching state for the Daily Analytics card
+  const isDailyAnalyticsFetching = distributionFetching || categoryFetching || funnelFetching;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
@@ -1756,10 +2908,18 @@ export default function AdminAnalyticsPage() {
               Understand retention, conversion, and user behavior
             </p>
           </div>
-          <Button onClick={refreshAll} variant="outline">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Visitor Source</span>
+            <Select value={analyticsSource} onValueChange={(v) => setAnalyticsSource(v as AnalyticsSource)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="vercel">Vercel</SelectItem>
+                <SelectItem value="ga">Google Analytics</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {/* Summary Stats */}
@@ -1860,7 +3020,7 @@ export default function AdminAnalyticsPage() {
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className={`space-y-6 transition-opacity duration-200 ${isDailyAnalyticsFetching ? 'opacity-60' : 'opacity-100'}`}>
             {/* Conversion Funnel Section */}
             <div>
               <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
@@ -1884,10 +3044,34 @@ export default function AdminAnalyticsPage() {
                       <div className="text-2xl font-bold">{conversionFunnel.signups.toLocaleString()}</div>
                       <p className="text-xs text-muted-foreground">Signups ({conversionFunnel.visitor_to_signup_rate}%)</p>
                     </div>
-                    <div className="text-center p-3 rounded-lg bg-muted/50">
-                      <div className="text-2xl font-bold">{conversionFunnel.subscriptions.toLocaleString()}</div>
-                      <p className="text-xs text-muted-foreground">Subs ({conversionFunnel.signup_to_subscription_rate}%)</p>
-                    </div>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <div className="text-center p-3 rounded-lg bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors">
+                          <div className="text-2xl font-bold">{conversionFunnel.subscriptions.toLocaleString()}</div>
+                          <p className="text-xs text-muted-foreground">Subs ({conversionFunnel.signup_to_subscription_rate}%)</p>
+                          {conversionFunnel.subscriptions > 0 && (
+                            <p className="text-[10px] text-primary mt-1">Click to view emails</p>
+                          )}
+                        </div>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-80 max-h-64 overflow-y-auto">
+                        <div className="space-y-2">
+                          <h4 className="font-medium text-sm">Subscriber Emails</h4>
+                          {conversionFunnel.subscriber_emails && conversionFunnel.subscriber_emails.length > 0 ? (
+                            <ul className="space-y-1">
+                              {conversionFunnel.subscriber_emails.map((email, idx) => (
+                                <li key={idx} className="text-sm flex items-center gap-2">
+                                  <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">{idx + 1}</span>
+                                  <UserEmailLink email={email} onUserClick={handleUserEmailClick} />
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">No subscriber emails for this date</p>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <p className="text-xs text-muted-foreground text-center">
                     Overall: <span className="font-medium text-foreground">{conversionFunnel.overall_conversion_rate}%</span> conversion
@@ -1986,6 +3170,10 @@ export default function AdminAnalyticsPage() {
               <MessageSquare className="h-4 w-4" />
               All Threads
             </TabsTrigger>
+            <TabsTrigger value="users" className="flex items-center gap-2">
+              <CreditCard className="h-4 w-4" />
+              Users & Billing
+            </TabsTrigger>
             <TabsTrigger value="retention" className="flex items-center gap-2">
               <UserCheck className="h-4 w-4" />
               Retention
@@ -2001,17 +3189,51 @@ export default function AdminAnalyticsPage() {
               categoryFilter={categoryFilter}
               filterDate={dateString}
               onClearCategory={() => setCategoryFilter(null)}
+              onUserClick={handleUserEmailClick}
             />
           </TabsContent>
 
+          <TabsContent value="users">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  User Management
+                </CardTitle>
+                <CardDescription>
+                  Search users, view billing details, and manage credits
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <AdminUserTable onUserSelect={handleUserSelect} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="retention">
-            <RetentionTab />
+            <RetentionTab onUserClick={handleUserEmailClick} />
           </TabsContent>
 
           <TabsContent value="simulator">
-            <ARRSimulator />
+            <ARRSimulator analyticsSource={analyticsSource} />
           </TabsContent>
         </Tabs>
+        
+        {/* User Details Dialog - accessible from anywhere */}
+        <AdminUserDetailsDialog
+          user={selectedUser}
+          isOpen={isUserDialogOpen}
+          onClose={handleCloseUserDialog}
+          onRefresh={handleRefreshUserData}
+        />
+        
+        {/* Loading indicator when searching for user */}
+        {isSearchingUser && pendingUserEmail && (
+          <div className="fixed bottom-4 right-4 bg-background border rounded-lg shadow-lg p-3 flex items-center gap-2">
+            <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm">Loading user: {pendingUserEmail}</span>
+          </div>
+        )}
       </div>
     </div>
   );

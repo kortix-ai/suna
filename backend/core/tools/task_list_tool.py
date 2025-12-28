@@ -29,40 +29,160 @@ class Task(BaseModel):
     color="bg-amber-100 dark:bg-amber-800/50",
     is_core=True,
     usage_guide="""
-### TASK MANAGEMENT SYSTEM
+### TASK MANAGEMENT SYSTEM - FOR LARGE, COMPLEX WORK ONLY
 
-**WHEN TO CREATE TASK LISTS:**
-- **ALWAYS create for:** Research requests, content creation, multi-step processes, projects requiring planning
-- **Skip for:** Simple questions, quick one-step tasks
+**WHEN TO CREATE TASK LISTS (ONLY FOR SIGNIFICANT TASKS):**
+- **ONLY create for LARGE, COMPLEX tasks:**
+  * Extensive multi-item research (10+ items, countries, companies, topics, products, etc.)
+  * Large-scale data gathering and analysis projects
+  * Complex content creation projects (presentations, reports, multi-file projects)
+  * Multi-phase processes requiring significant planning
+  * Projects with 5+ distinct steps that need tracking
+  * Comparative analysis across many items (10+)
+  * Tasks that will take substantial time and require progress tracking
+- **DO NOT create task lists for:**
+  * Simple questions or single-step tasks
+  * Small research requests (1-3 items)
+  * Quick content edits or small file changes
+  * Tasks that can be completed in one response
+  * Simple operations that don't require planning
+  * Trivial requests answerable immediately
 
-**TASK CREATION RULES:**
-1. Create sections in lifecycle order: Research & Setup → Planning → Implementation → Verification → Completion
-2. Each task should be specific, actionable, and have clear completion criteria
-3. **EXECUTION ORDER:** Tasks must be created in the exact order they will be executed
-4. **PHASE-LEVEL TASKS:** For workflows like presentations, create PHASE-level tasks, not step-level tasks
+**CRITICAL: GRANULAR TASK BREAKDOWN - GO DEEP**
+
+### 1. INDIVIDUAL ITEM RESEARCH TASKS
+When researching multiple items, create SEPARATE tasks for EACH item:
+- ❌ WRONG: "Research market strategies of 5 companies" (one task)
+- ✅ CORRECT: 5 individual tasks:
+  * "Research Company A: market strategy, recent initiatives, target markets, competitive positioning"
+  * "Research Company B: market strategy, recent initiatives, target markets, competitive positioning"
+  * ... (one comprehensive task per company/item)
+
+**Why?** Each item needs deep, thorough research with multiple queries and sources.
+
+### 2. RESEARCH DEPTH REQUIREMENTS
+Each research task must be COMPREHENSIVE:
+- Multiple search queries per item (use batch mode with multiple queries)
+- Search for: current status, planned projects, funding sources, official announcements
+- Cross-reference multiple authoritative sources
+- Verify information from government/official sources
+- Document all findings with sources
+- Don't stop at first result - dig deeper
+
+### 3. TASK CREATION STRUCTURE
+Create sections in logical phases:
+- **Section 1: Individual Research** - One task per item (country/company/topic)
+- **Section 2: Data Verification** - Cross-check findings, verify sources
+- **Section 3: Synthesis** - Compile findings into structured format
+- **Section 4: Output Creation** - Create deliverables (tables, reports, presentations)
+
+### 4. EXAMPLE: Multi-Item Research
+Request: "Compare the features and pricing of 8 competing products"
+✅ CORRECT TASK BREAKDOWN:
+```
+Section: "Individual Product Research"
+- Task 1: "Research Product A: features, specifications, pricing, target market, reviews"
+- Task 2: "Research Product B: features, specifications, pricing, target market, reviews"
+- ... (one task per product/item, 8 total)
+
+Section: "Data Verification & Cross-Reference"
+- Task: "Verify all findings from multiple authoritative sources, cross-reference official product pages"
+
+Section: "Compile Results"
+- Task: "Create comprehensive comparison table with all findings: product, features, pricing, market, sources - deliver as CSV and Markdown formats"
+
+Section: "Visualization"
+- Task: "Create interactive dashboard page that dynamically loads from CSV/JSON data file"
+
+Section: "Source Documentation"
+- Task: "Document all sources used for verification and citation"
+```
+
+### 5. TASK CREATION RULES:
+1. **GRANULARITY:** Break down into smallest meaningful units - one task per research item
+2. **SPECIFICITY:** Each task should be specific, actionable, with clear completion criteria
+3. **EXECUTION ORDER:** Tasks must be created in exact execution order
+4. **COMPREHENSIVE:** Each research task should cover all aspects (status, plans, funding, sources)
+5. **DEPTH:** Tasks should require multiple queries and sources, not single searches
 
 **CRITICAL EXECUTION ORDER RULES:**
 1. **SEQUENTIAL EXECUTION:** Execute tasks in exact order they appear
 2. **ONE TASK AT A TIME:** Never execute multiple tasks simultaneously
-3. **COMPLETE BEFORE MOVING:** Finish current task completely before starting next
+3. **COMPLETE BEFORE MOVING:** Finish current task completely (all research done) before starting next
 4. **NO SKIPPING:** Do not skip tasks or jump ahead
-5. **BATCH OPERATIONS WITHIN TASKS:** Use batch mode for searches within a single task
+5. **BATCH OPERATIONS WITHIN TASKS:** Use batch mode for searches WITHIN a single task with multiple queries (e.g., country status, country plans, country funding)
+
+**ACTIVE TASK LIST MANAGEMENT - CRUD OPERATIONS THROUGHOUT EXECUTION:**
+🚨 CRITICAL: The task list is a LIVING document - actively manage it with continuous CRUD operations during execution.
+
+**CREATE (Adding Tasks):**
+- Add new tasks when you discover additional work needed during execution
+- Use create_tasks to add tasks to existing sections
+- Example: After researching, you discover you need to verify a specific claim → add verification task immediately
+
+**READ (Viewing Tasks):**
+- Use view_tasks regularly (after every 2-3 task completions) to:
+  - Check current progress
+  - Identify the next task to execute
+  - Review completed work
+  - Ensure you're on track
+- Check progress before starting each new task
+
+**UPDATE (Modifying Tasks):**
+- **Mark complete IMMEDIATELY** after finishing each task - don't wait
+- Update task content if requirements change or you refine the scope
+- Batch multiple completions when efficient (e.g., completing 3 tasks at once)
+- Example workflow:
+  1. Finish research on Item A → use update_tasks with task_ids for item_a_task and status "completed"
+  2. Check progress → use view_tasks
+  3. Start Item B research
+  4. Finish Item B → use update_tasks with task_ids for item_b_task and status "completed"
+  5. Continue pattern...
+
+**DELETE (Removing Tasks):**
+- Remove tasks that become unnecessary or redundant
+- Delete tasks if requirements change and they're no longer needed
+- Use delete_tasks with task_ids when appropriate
+- Example: If a task becomes redundant after discovering information, remove it immediately
+
+**TASK MANAGEMENT RHYTHM:**
+- **After completing each task:** Mark it complete immediately via update_tasks
+- **Every 2-3 tasks:** Use view_tasks to check progress and identify next task
+- **When discovering new work:** Add new tasks immediately via create_tasks
+- **When requirements change:** Update or remove affected tasks via update_tasks or delete_tasks
+- **Before final output:** Verify all tasks are complete via view_tasks
 
 **MULTI-STEP TASK EXECUTION - NO INTERRUPTIONS:**
 - Once a multi-step task starts, it MUST run all steps to completion
 - NEVER ask "should I proceed?" or "do you want me to continue?" during execution
 - The user approved by starting the task - no permission needed between steps
 - Only pause if there's an actual blocking error
+- BUT: Continue actively managing the task list (marking complete, checking progress) throughout
 
 **TASK UPDATE EFFICIENCY:**
-- ALWAYS batch task status updates in a single call
-- Complete current task(s) AND start next task in SAME update call
-- Example: `update_tasks([{id: "task1", status: "completed"}, {id: "task2", status: "in_progress"}])`
+- ALWAYS batch task status updates in a single call when possible
+- Complete current task(s) immediately after finishing
+- Example: use update_tasks with task_ids for task1 and task2 and status "completed" when you've finished both
 
 **COMPLETION SIGNAL:**
-- Once ALL tasks are marked complete, MUST call either 'complete' or 'ask' tool immediately
+- Once ALL tasks are marked complete (verify via view_tasks), MUST call either complete or ask tool immediately
 - NO additional commands after completion
 - Failure to signal completion is a critical error
+
+**RESEARCH QUALITY STANDARDS:**
+- Each research task should use 3-5+ search queries (batch mode for efficiency)
+- Verify findings from multiple sources (government, official announcements, reputable news)
+- Document all sources for citation
+- Cross-reference information to ensure accuracy
+- Don't accept surface-level information - dig deeper for comprehensive understanding
+
+**VISUALIZATION & DASHBOARDS:**
+- After compiling data into CSV/JSON, automatically create interactive dashboard page
+- Dashboard page must dynamically load data from CSV/JSON file (never hardcode data)
+- CSV/JSON is the single source of truth - page references it, doesn't duplicate it
+- Use JavaScript fetch API to load data dynamically
+- Create clean, modern, responsive dashboards
+- Both data file and dashboard page should be delivered together
 """,
     weight=5,
     visible=True
@@ -195,11 +315,12 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "view_tasks",
-            "description": "View all tasks and sections. Use this to see current tasks, check progress, or review completed work. IMPORTANT: This tool helps you identify the next task to execute in the sequential workflow. Always execute tasks in the exact order they appear, completing one task fully before moving to the next. Use this to determine which task is currently pending and should be tackled next.",
+            "description": "View all tasks and sections. Use this REGULARLY throughout execution to see current tasks, check progress, or review completed work. IMPORTANT: Use this tool every 2-3 task completions to check progress and identify the next task to execute in the sequential workflow. Always execute tasks in the exact order they appear, completing one task fully (with comprehensive research using multiple queries and sources) before moving to the next. Use this to determine which task is currently pending and should be tackled next. For research tasks, ensure each task receives thorough, in-depth research before marking complete. Before final output, use this to verify all tasks are marked complete. **🚨 PARAMETER NAMES**: This function takes no parameters.",
             "parameters": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": False
             }
         }
     })
@@ -220,13 +341,13 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "create_tasks",
-            "description": "Create tasks organized by sections. Supports both single section and multi-section batch creation. Creates sections automatically if they don't exist. IMPORTANT: Create tasks in the exact order they will be executed. Each task should represent a single, specific operation that can be completed independently. Break down complex operations into individual, sequential tasks to maintain the one-task-at-a-time execution principle. You MUST specify either 'sections' array OR both 'task_contents' and ('section_title' OR 'section_id'). CRITICAL: The 'sections' parameter MUST be passed as an array of objects, NOT as a JSON string. Pass the actual array structure, not a stringified version.",
+            "description": "Create tasks organized by sections. Supports both single section and multi-section batch creation. Creates sections automatically if they don't exist. USE ONLY FOR LARGE, COMPLEX TASKS: Only create task lists for substantial projects (10+ items, multi-phase work, large-scale research, complex multi-file projects). For research tasks involving many items, create SEPARATE individual tasks for EACH item to ensure deep, thorough research. Each research task should be comprehensive, requiring multiple queries and sources. Break down complex operations into granular, sequential tasks. Create tasks in the exact order they will be executed. Each task should represent a single, specific operation that can be completed independently. IMPORTANT: You can also use this tool DURING execution to add new tasks when you discover additional work is needed. You MUST specify either 'sections' array OR both 'task_contents' and ('section_title' OR 'section_id'). CRITICAL: The 'sections' parameter MUST be passed as an array of objects, NOT as a JSON string. Pass the actual array structure, not a stringified version. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `sections` (optional, batch mode), `section_title` (optional, single section), `section_id` (optional, single section), `task_contents` (optional, single section).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "sections": {
                         "type": "array",
-                        "description": "List of sections with their tasks for batch creation. CRITICAL: This MUST be an array of objects (not a JSON string). Each element should be an object with 'title' (string) and 'tasks' (array of strings). Example: [{\"title\": \"Section 1\", \"tasks\": [\"task 1\", \"task 2\"]}, {\"title\": \"Section 2\", \"tasks\": [\"task 3\"]}]",
+                        "description": "**OPTIONAL** - List of sections with their tasks for batch creation. CRITICAL: This MUST be an array of objects (not a JSON string). Each element should be an object with title as a string and tasks as an array of strings.",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -246,28 +367,20 @@ class TaskListTool(SandboxToolsBase):
                     },
                     "section_title": {
                         "type": "string",
-                        "description": "Single section title (creates if doesn't exist - use this OR sections array)"
+                        "description": "**OPTIONAL** - Single section title (creates if doesn't exist). Use this OR sections array OR section_id."
                     },
                     "section_id": {
                         "type": "string",
-                        "description": "Existing section ID (use this OR sections array OR section_title)"
+                        "description": "**OPTIONAL** - Existing section ID. Use this OR sections array OR section_title."
                     },
                     "task_contents": {
                         "type": "array",
-                        "description": "Task contents for single section creation (use with section_title or section_id). CRITICAL: This MUST be an array of strings, not a JSON string. Example: [\"task 1\", \"task 2\", \"task 3\"]",
+                        "description": "**OPTIONAL** - Task contents for single section creation (use with section_title or section_id). CRITICAL: This MUST be an array of strings, not a JSON string.",
                         "items": {"type": "string"}
                     }
                 },
-                "anyOf": [
-                    {"required": ["sections"]},
-                    {
-                        "required": ["task_contents"],
-                        "anyOf": [
-                            {"required": ["section_title"]},
-                            {"required": ["section_id"]}
-                        ]
-                    }
-                ]
+                "required": [],
+                "additionalProperties": False
             }
         }
     })
@@ -394,7 +507,7 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "update_tasks",
-                "description": "Update one or more tasks. EFFICIENT BATCHING: Before calling this tool, think about what tasks you have completed and batch them into a single update call. This is more efficient than making multiple consecutive update calls. Always execute tasks in the exact sequence they appear, but batch your updates when possible. Update task status to 'completed' after finishing each task, and consider batching multiple completed tasks into one call rather than updating them individually.",
+            "description": "Update one or more tasks. CRITICAL: Mark tasks as 'completed' IMMEDIATELY after finishing each task - don't wait. This is essential for active task list management. EFFICIENT BATCHING: When you've completed multiple tasks, batch them into a single update call. Always execute tasks in the exact sequence they appear, but batch your updates when possible. You can also update task content if requirements change. Use this tool actively throughout execution to keep the task list current and accurate. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `task_ids` (REQUIRED), `content` (optional), `status` (optional), `section_id` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -403,23 +516,24 @@ class TaskListTool(SandboxToolsBase):
                             {"type": "string"},
                             {"type": "array", "items": {"type": "string"}, "minItems": 1}
                         ],
-                        "description": "Task ID (string) or array of task IDs to update. EFFICIENT APPROACH: Batch multiple completed tasks into a single call rather than making multiple consecutive update calls. Always maintain sequential execution order. CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string). Example: [\"id1\", \"id2\", \"id3\"]"
+                        "description": "**REQUIRED** - Task ID (string) or array of task IDs to update. EFFICIENT APPROACH: Batch multiple completed tasks into a single call. CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string)."
                     },
                     "content": {
                         "type": "string",
-                        "description": "New content for the task(s) (optional)"
+                        "description": "**OPTIONAL** - New content for the task(s)."
                     },
                     "status": {
                         "type": "string",
                         "enum": ["pending", "completed", "cancelled"],
-                        "description": "New status for the task(s) (optional). Set to 'completed' for finished tasks. Batch multiple completed tasks when possible."
+                        "description": "**OPTIONAL** - New status for the task(s). Set to 'completed' for finished tasks. Batch multiple completed tasks when possible."
                     },
                     "section_id": {
                         "type": "string",
-                        "description": "Section ID to move task(s) to (optional)"
+                        "description": "**OPTIONAL** - Section ID to move task(s) to."
                     }
                 },
-                "required": ["task_ids"]
+                "required": ["task_ids"],
+                "additionalProperties": False
             }
         }
     })
@@ -490,7 +604,7 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "delete_tasks",
-            "description": "Delete one or more tasks and/or sections. Can delete tasks by their IDs or sections by their IDs (which will also delete all tasks in those sections).",
+            "description": "Delete one or more tasks and/or sections. Can delete tasks by their IDs or sections by their IDs (which will also delete all tasks in those sections). IMPORTANT: Use this tool DURING execution when tasks become unnecessary, redundant, or if requirements change. Active task list management includes removing tasks that are no longer needed. This helps keep the task list clean and focused on actual work remaining. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `task_ids` (optional), `section_ids` (optional), `confirm` (optional, required when deleting sections).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -499,24 +613,22 @@ class TaskListTool(SandboxToolsBase):
                             {"type": "string"},
                             {"type": "array", "items": {"type": "string"}, "minItems": 1}
                         ],
-                        "description": "Task ID (string) or array of task IDs to delete (optional). CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string). Example: [\"id1\", \"id2\", \"id3\"]"
+                        "description": "**OPTIONAL** - Task ID (string) or array of task IDs to delete. CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string)."
                     },
                     "section_ids": {
                         "oneOf": [
                             {"type": "string"},
                             {"type": "array", "items": {"type": "string"}, "minItems": 1}
                         ],
-                        "description": "Section ID (string) or array of section IDs to delete (will also delete all tasks in these sections) (optional). CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string). Example: [\"id1\", \"id2\"]"
+                        "description": "**OPTIONAL** - Section ID (string) or array of section IDs to delete (will also delete all tasks in these sections). CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string)."
                     },
                     "confirm": {
                         "type": "boolean",
-                        "description": "Must be true to confirm deletion of sections (required when deleting sections)"
+                        "description": "**OPTIONAL** - Must be true to confirm deletion of sections. Required when deleting sections."
                     }
                 },
-                "anyOf": [
-                    {"required": ["task_ids"]},
-                    {"required": ["section_ids", "confirm"]}
-                ]
+                "required": [],
+                "additionalProperties": False
             }
         }
     })
@@ -608,16 +720,17 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "clear_all",
-            "description": "Clear all tasks and sections (creates completely empty state).",
+            "description": "Clear all tasks and sections (creates completely empty state). **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `confirm` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "confirm": {
                         "type": "boolean",
-                        "description": "Must be true to confirm clearing everything"
+                        "description": "**REQUIRED** - Must be true to confirm clearing everything."
                     }
                 },
-                "required": ["confirm"]
+                "required": ["confirm"],
+                "additionalProperties": False
             }
         }
     })

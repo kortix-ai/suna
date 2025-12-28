@@ -123,9 +123,50 @@
     }
   },
   "onboarding": {
+    "welcome": "Descubre lo que Kortix puede hacer",
+    "welcomeSubtitle": "Tu asistente IA que toma acción",
     "skip": "Saltar",
     "next": "Siguiente",
     "getStarted": "Comenzar",
+    "kortixComputer": "Kortix Computer",
+    "ready": "Listo",
+    "examples": {
+      "presentations": {
+        "title": "Presentaciones",
+        "description": "Mira cómo crea presentaciones increíbles",
+        "userMessage": "Investiga y crea una presentación sobre redes neuronales",
+        "aiMessage": "Investigaré las redes neuronales y crearé una presentación para ti...",
+        "researching": "Investigando",
+        "creatingFile": "Creando archivo",
+        "creatingSlides": "Creando diapositivas"
+      },
+      "dataAnalysis": {
+        "title": "Análisis de datos",
+        "description": "Observa cómo analiza datos y crea reportes visuales",
+        "userMessage": "Analiza el rendimiento de ventas Q4 desde Google Drive",
+        "aiMessage": "Cargaré tus datos de ventas y crearé un análisis completo...",
+        "loadingFromDrive": "Cargando desde Google Drive",
+        "creatingVisualization": "Creando visualización",
+        "researchingMarket": "Investigando mercado",
+        "creatingReport": "Creando reporte"
+      },
+      "image": {
+        "title": "Imagen",
+        "description": "Experimenta el diseño de logos y marcas con IA",
+        "userMessage": "Crea un logo para nuestra empresa",
+        "aiMessage": "Veo que mencionaste LUXY. Crearé un logo profesional para tu marca...",
+        "researchingBrand": "Investigando marca",
+        "creatingLogo": "Creando logo",
+        "creatingBrandBoard": "Creando tablero de marca"
+      },
+      "imageEasterEgg": {
+        "title": "Imagen",
+        "description": "Transforma tus fotos con estilos de IA",
+        "userMessage": "Convierte mi imagen a estilo pixel art blocky",
+        "aiMessage": "¡Claro! Transformaré tu imagen en un look estilizado blocky...",
+        "creatingImage": "Creando imagen estilizada"
+      }
+    },
     "slide1": {
       "title": "Chat con IA",
       "description": "Ten conversaciones naturales con asistentes IA poderosos que entienden el contexto y brindan respuestas útiles"
@@ -175,7 +216,7 @@
     "superworker": {
       "title": "Tu Super Worker IA",
       "description": "Combina todas las características para construir workers de IA personalizados para cualquier tarea que necesites.",
-      "example": "Crear un agente de soporte al cliente"
+      "example": "Crear un worker de soporte al cliente"
     }
   },
   "settings": {
@@ -552,7 +593,7 @@
     "actionCannotBeUndone": "Esta acción no se puede deshacer",
     "accountWillBeDeleted": "Tu cuenta será eliminada permanentemente",
     "whatWillBeDeleted": "Qué será Eliminado",
-    "allAgents": "Todos tus agentes y versiones de agentes",
+    "allAgents": "Todos tus workers y versiones de workers",
     "allThreads": "Todos tus hilos y conversaciones",
     "allCredentials": "Todas tus credenciales e integraciones",
     "subscriptionData": "Tu suscripción y datos de facturación",
@@ -575,7 +616,7 @@
   },
   "models": {
     "selectModel": "Elegir Modelo",
-    "chooseModelFor": "Elige un modelo para {{agent}}"
+    "chooseModelFor": "Elige un modelo para el worker {{agent}}"
   },
   "placeholders": {
     "default": "Dale a Kortix una tarea...",
@@ -647,7 +688,7 @@
   },
   "integrations": {
     "title": "Integraciones",
-    "description": "Conecta tus aplicaciones y servicios favoritos para automatizar flujos de trabajo y ampliar las capacidades de tu agente.",
+    "description": "Conecta tus aplicaciones y servicios favoritos para automatizar flujos de trabajo y ampliar las capacidades de tu worker.",
     "connectApps": "Conecta tus Apps",
     "externalApps": "Aplicaciones Externas",
     "externalAppsDescription": "Conecta aplicaciones y servicios populares",
@@ -656,7 +697,7 @@
     "composioApps": "Aplicaciones Composio",
     "composioAppsDescription": "Conéctate a cientos de aplicaciones empresariales y servicios",
     "connected": "Conectado",
-    "connectedToAgent": "Conectado a este agente",
+    "connectedToAgent": "Conectado a este worker",
     "available": "Aplicaciones Disponibles",
     "connect": "Conectar",
     "setup": "Configurar",
@@ -713,7 +754,7 @@
     },
     "toolsSelector": {
       "configureTools": "Configurar Herramientas de {{app}}",
-      "selectTools": "Selecciona herramientas para agregar a tu agente",
+      "selectTools": "Selecciona herramientas para agregar a tu worker",
       "readyToConfigureTools": "Listo para configurar herramientas",
       "selected": "{{count}} de {{total}} seleccionadas",
       "selectAll": "Seleccionar Todas",
@@ -728,7 +769,7 @@
       "addingTools": "Agregando Herramientas...",
       "addTool": "Agregar {{count}} Herramienta",
       "addTools": "Agregar {{count}} Herramientas",
-      "toolsAddedSuccess": "¡Agregadas {{count}} herramientas de {{app}} a tu agente!",
+      "toolsAddedSuccess": "¡Agregadas {{count}} herramientas de {{app}} a tu worker!",
       "failedToSaveTools": "Error al guardar herramientas. Revisa la consola para más detalles."
     },
     "customMcp": {
@@ -760,6 +801,9 @@
     "upgradeRequired": "Se Requiere Upgrade",
     "upgradeRequiredMessage": "Compartir hilos está disponible en planes pagos. Actualiza para desbloquear esta función.",
     "upgrade": "Actualizar",
+    "share": "Compartir",
+    "files": "Archivos",
+    "delete": "Eliminar",
     "shareThread": "Compartir Hilo",
     "shareThreadUpgrade": "Compartir Hilo (Upgrade)",
     "availableOnPaidPlans": "Disponible en planes pagos",
@@ -767,6 +811,7 @@
     "manageFiles": "Administrar Archivos",
     "viewManageAttachments": "Ver y administrar adjuntos",
     "deleteThread": "Eliminar Hilo",
+    "deleteConfirm": "¿Estás seguro de que deseas eliminar este hilo? Esta acción no se puede deshacer.",
     "permanentlyDelete": "Eliminar esta conversación permanentemente"
   },
   "triggers": {
@@ -825,7 +870,7 @@
     "core": "Principal",
     "capabilitiesEnabled": "{{enabled}} / {{total}} capacidades habilitadas",
     "toolConfiguration": "Configuración de herramientas",
-    "configureToolsDescription": "Configura las herramientas y sus capacidades individuales para tu agente",
+    "configureToolsDescription": "Configura las herramientas y sus capacidades individuales para tu worker",
     "toolsEnabled": "{{enabled}} / {{total}} habilitadas",
     "loadingTools": "Cargando herramientas...",
     "noToolsAvailable": "No hay herramientas disponibles",

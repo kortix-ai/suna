@@ -8,12 +8,17 @@ class ProductMapper:
     PRODUCT_MAPPING = {
         'kortix_plus_monthly': 'tier_2_20',
         'kortix_plus_yearly': 'tier_2_20',
+        'plus:plus-monthly' : 'tier_2_20',
+        'plus:plus-monthly' : 'tier_2_20',
 
         'kortix_pro_monthly': 'tier_6_50',
         'kortix_pro_yearly': 'tier_6_50',
+        'pro:pro-monthly' : 'tier_6_50',
+        'pro:pro-monthly' : 'tier_6_50',
         
         'kortix_ultra_monthly': 'tier_25_200',
         'kortix_ultra_yearly': 'tier_25_200',
+        'ultra:ultra-monthly' : 'tier_25_200',
     }
     
     VALID_PRODUCT_IDS = set(PRODUCT_MAPPING.keys())

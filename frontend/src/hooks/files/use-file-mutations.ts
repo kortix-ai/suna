@@ -26,6 +26,28 @@ function normalizePath(path: string): string {
   return path;
 }
 
+/**
+ * Normalize a file path to ensure it starts with /workspace
+ * Handles paths like "workspace", "workspace/foo", "/workspace", "/workspace/foo", "/foo", "foo"
+ */
+function normalizeWorkspacePath(path: string): string {
+  if (!path) return '/workspace';
+  
+  // Handle paths that start with "workspace" (without leading /)
+  // This prevents "/workspace/workspace" when someone passes "workspace" or "workspace/foo"
+  if (path === 'workspace' || path.startsWith('workspace/')) {
+    return '/' + path;
+  }
+  
+  // If already starts with /workspace, return as-is
+  if (path.startsWith('/workspace')) {
+    return path;
+  }
+  
+  // Otherwise, prepend /workspace/
+  return `/workspace/${path.replace(/^\//, '')}`;
+}
+
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
 /**
@@ -160,7 +182,7 @@ export function useFileDelete() {
       });
 
       // Clean up legacy FileCache entries for this file
-      const normalizedPath = normalizePath(variables.filePath);
+      const normalizedPath = normalizeWorkspacePath(variables.filePath);
       const legacyCacheKeys = [
         `${variables.sandboxId}:${normalizedPath}:blob`,
         `${variables.sandboxId}:${normalizedPath}:text`,

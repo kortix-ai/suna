@@ -346,7 +346,7 @@ async def check_trigger_limit(client, account_id: str, agent_id: str = None, tri
                 'current_count': 0,
                 'limit': 0,
                 'tier_name': 'free',
-                'error': 'Agent not found or access denied'
+                'error': 'Worker not found or access denied'
             }
         
         triggers_result = await client.table('agent_triggers').select('trigger_id, trigger_type').eq('agent_id', agent_id).execute()

@@ -21,7 +21,6 @@ class SandboxDesignerTool(SandboxToolsBase):
         super().__init__(project_id, thread_manager)
         self.thread_id = thread_id
         self.thread_manager = thread_manager
-        self.designs_dir = "/workspace/designs"
         
         self.social_media_sizes = {
             "instagram_square": (1080, 1080),
@@ -61,6 +60,11 @@ class SandboxDesignerTool(SandboxToolsBase):
             "flyer_a4": (2480, 3508),
             "poster_a3": (3508, 4961),
         }
+    
+    @property
+    def designs_dir(self) -> str:
+        """Get the designs directory path based on workspace_path."""
+        return f"{self.workspace_path}/designs"
         
     async def _ensure_designs_directory(self):
         await self._ensure_sandbox()
@@ -118,6 +122,10 @@ class SandboxDesignerTool(SandboxToolsBase):
                             "enum": ["low", "medium", "high", "auto"],
                             "description": "Output quality. 'high' for best quality, 'auto' to let model decide. Default: 'auto'",
                         },
+                        "add_to_canvas": {
+                            "type": "string",
+                            "description": "Optional: Canvas name to automatically add the generated image to (e.g., 'project-mockup'). The canvas must already exist.",
+                        },
                     },
                     "required": ["mode", "prompt", "platform_preset"],
                 },
@@ -134,6 +142,7 @@ class SandboxDesignerTool(SandboxToolsBase):
         design_style: Optional[str] = None,
         image_path: Optional[str] = None,
         quality: str = "auto",
+        add_to_canvas: Optional[str] = None,
     ) -> ToolResult:
         try:
             await self._ensure_designs_directory()
@@ -153,7 +162,7 @@ class SandboxDesignerTool(SandboxToolsBase):
 
             if mode == "create":
                 response = await aimage_generation(
-                    model="gpt-image-1",
+                    model="gpt-image-1.5",
                     prompt=enhanced_prompt,
                     n=1,
                     size=size_string,
@@ -173,7 +182,7 @@ class SandboxDesignerTool(SandboxToolsBase):
                 response = await aimage_edit(
                     image=[image_io],  
                     prompt=enhanced_prompt,
-                    model="gpt-image-1",
+                    model="gpt-image-1.5",
                     n=1,
                     size=size_string,
                 )
@@ -191,7 +200,7 @@ class SandboxDesignerTool(SandboxToolsBase):
             await self._ensure_sandbox()
             sandbox_file_url = f"/api/sandboxes/{self.sandbox_id}/files?path={design_path.lstrip('/')}"
             
-            return self.success_response({
+            response_data = {
                 "success": True,
                 "design_path": design_path,
                 "design_url": sandbox_file_url,
@@ -201,7 +210,40 @@ class SandboxDesignerTool(SandboxToolsBase):
                 "style": design_style,
                 "quality": quality,
                 "message": f"Successfully created professional design{platform_text} ({dimensions_text}){style_text}. Design saved at: {design_path}"
-            })
+            }
+
+            # If add_to_canvas is specified, add the image to the canvas
+            if add_to_canvas:
+                try:
+                    from core.tools.sb_canvas_tool import SandboxCanvasTool
+                    canvas_tool = SandboxCanvasTool(self.project_id, self.thread_manager)
+                    
+                    # Sanitize canvas name
+                    safe_canvas_name = "".join(c for c in add_to_canvas if c.isalnum() or c in "-_").lower()
+                    canvas_path = f"canvases/{safe_canvas_name}.kanvax"
+                    
+                    # Add image to canvas
+                    add_result = await canvas_tool.add_image_to_canvas(
+                        canvas_path=canvas_path,
+                        image_path=design_path,
+                        x=100,
+                        y=100,
+                        width=actual_width,
+                        height=actual_height
+                    )
+                    
+                    if add_result.success:
+                        response_data["canvas_path"] = canvas_path
+                        response_data["added_to_canvas"] = True
+                        response_data["message"] += f" Image added to canvas '{add_to_canvas}'."
+                    else:
+                        response_data["added_to_canvas"] = False
+                        response_data["canvas_error"] = add_result.output
+                except Exception as e:
+                    response_data["added_to_canvas"] = False
+                    response_data["canvas_error"] = str(e)
+            
+            return self.success_response(response_data)
 
         except Exception as e:
             return self.fail_response(

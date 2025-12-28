@@ -3,7 +3,7 @@ import { siteMetadata } from '@/lib/site-metadata';
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/components/AuthProvider';
-import { PresenceProvider } from '@/providers/presence-provider';
+import { PresenceProvider } from '@/components/presence-provider';
 import { ReactQueryProvider } from './react-query-provider';
 import { Toaster } from '@/components/ui/sonner';
 import Script from 'next/script';
@@ -12,14 +12,19 @@ import { roobert } from './fonts/roobert';
 import { roobertMono } from './fonts/roobert-mono';
 import { Suspense, lazy } from 'react';
 import { I18nProvider } from '@/components/i18n-provider';
+import { featureFlags } from '@/lib/feature-flags';
 
 // Lazy load non-critical analytics and global components
+// Note: Analytics scripts will be automatically blocked by cookie consent service until consent is given
 const Analytics = lazy(() => import('@vercel/analytics/react').then(mod => ({ default: mod.Analytics })));
 const SpeedInsights = lazy(() => import('@vercel/speed-insights/next').then(mod => ({ default: mod.SpeedInsights })));
 const GoogleAnalytics = lazy(() => import('@next/third-parties/google').then(mod => ({ default: mod.GoogleAnalytics })));
+const GoogleTagManager = lazy(() => import('@next/third-parties/google').then(mod => ({ default: mod.GoogleTagManager })));
 const PostHogIdentify = lazy(() => import('@/components/posthog-identify').then(mod => ({ default: mod.PostHogIdentify })));
 const PlanSelectionModal = lazy(() => import('@/components/billing/pricing/plan-selection-modal').then(mod => ({ default: mod.PlanSelectionModal })));
 const AnnouncementDialog = lazy(() => import('@/components/announcements/announcement-dialog').then(mod => ({ default: mod.AnnouncementDialog })));
+const ReactScan = lazy(() => import('@/components/react-scan').then(mod => ({ default: mod.ReactScan })));
+const CookieConsent = lazy(() => import('@/components/cookie-consent').then(mod => ({ default: mod.CookieConsent })));
 
 
 export const viewport: Viewport = {
@@ -113,13 +118,12 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://connect.facebook.net" />
         <link rel="dns-prefetch" href="https://eu.i.posthog.com" />
         
-        {/* React Scan removed - causing initialization errors */}
-        {/* rest of your scripts go under */}
+        {/* React Scan - development only */}
         
         {/* Static SEO meta tags - rendered in initial HTML */}
         <title>Kortix: Your Autonomous AI Worker</title>
         <meta name="description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
-        <meta name="keywords" content="Kortix, AI Agent, Agentic AI, Autonomous AI Agent, AI Automation, AI Workflow Automation, AI Assistant, AI Worker, Task Automation" />
+        <meta name="keywords" content="Kortix, AI Worker, Agentic AI, Autonomous AI Worker, AI Automation, AI Workflow Automation, AI Assistant, Task Automation" />
         <meta property="og:title" content="Kortix: Your Autonomous AI Worker" />
         <meta property="og:description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
         <meta property="og:image" content="https://kortix.com/banner.png" />
@@ -132,8 +136,14 @@ export default function RootLayout({
         <meta name="twitter:image" content="https://kortix.com/banner.png" />
         <meta name="twitter:site" content="@kortix" />
         <link rel="canonical" href="https://kortix.com" />
+        
+        {/* iOS Smart App Banner - shows native install banner in Safari */}
+        {!featureFlags.disableMobileAdvertising ? (
+          <meta name="apple-itunes-app" content="app-id=6754448524, app-argument=kortix://" />
+        ) : null}
 
-        <Script id="facebook-pixel" strategy="lazyOnload">
+        {/* Facebook Pixel - Will be blocked by cookie consent service until marketing consent is given */}
+        <Script id="facebook-pixel" strategy="lazyOnload" data-cookieconsent="marketing">
           {`
             !function(f,b,e,v,n,t,s)
             {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
@@ -208,35 +218,17 @@ export default function RootLayout({
             }),
           }}
         />
-
-        <Script id="google-tag-manager" strategy="lazyOnload">
-          {`(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-          new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-          j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-          'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-          })(window,document,'script','dataLayer','GTM-PCHSN4M2');`}
-        </Script>
       </head>
 
       <body className="antialiased font-sans bg-background">
-        <noscript>
-          <iframe
-            src="https://www.googletagmanager.com/ns.html?id=GTM-PCHSN4M2"
-            height="0"
-            width="0"
-            style={{ display: 'none', visibility: 'hidden' }}
-          />
-        </noscript>
-        {/* End Google Tag Manager (noscript) */}
-
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange
         >
-          <I18nProvider>
-            <AuthProvider>
+          <AuthProvider>
+            <I18nProvider>
               <PresenceProvider>
               <ReactQueryProvider>
                 {children}
@@ -246,8 +238,8 @@ export default function RootLayout({
                 </Suspense>
               </ReactQueryProvider>
               </PresenceProvider>
-            </AuthProvider>
-          </I18nProvider>
+            </I18nProvider>
+          </AuthProvider>
           {/* Analytics - lazy loaded to not block FCP */}
           <Suspense fallback={null}>
             <Analytics />
@@ -257,10 +249,20 @@ export default function RootLayout({
             <GoogleAnalytics gaId="G-6ETJFB3PT3" />
           </Suspense>
           <Suspense fallback={null}>
+            <GoogleTagManager gtmId="GTM-PKFG3JCX" />
+          </Suspense>
+          <Suspense fallback={null}>
             <SpeedInsights />
           </Suspense>
           <Suspense fallback={null}>
             <PostHogIdentify />
+          </Suspense>
+          {/* React Scan - only loads in development */}
+          <Suspense fallback={null}>
+            <ReactScan />
+          </Suspense>
+          <Suspense fallback={null}>
+            <CookieConsent />
           </Suspense>
         </ThemeProvider>
       </body>

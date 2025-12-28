@@ -47,7 +47,7 @@ import {
   useThreadAgent,
   useAgents,
 } from '@/hooks/agents/use-agents';
-import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
+import { AgentRunLimitBanner } from '@/components/thread/agent-run-limit-banner';
 import { 
   useSelectedAgentId, 
   useSetSelectedAgent, 
@@ -63,6 +63,10 @@ import { handleGoogleSlidesUpload } from './tool-views/utils/presentation-utils'
 import { useTranslations } from 'next-intl';
 import { backendApi } from '@/lib/api-client';
 import { useKortixComputerStore, useSetIsSidePanelOpen } from '@/stores/kortix-computer-store';
+import { useToolStreamStore } from '@/stores/tool-stream-store';
+import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
+import { useProcessStreamOperation } from '@/stores/spreadsheet-store';
+import { uploadPendingFilesToProject } from '@/components/thread/chat-input/file-upload-handler';
 
 interface ThreadComponentProps {
   projectId: string;
@@ -81,7 +85,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const { user } = useAuth();
   const isAuthenticated = !!user;
   
-  const isNewThread = searchParams.get('new') === 'true';
+  const isNewThread = searchParams?.get('new') === 'true';
 
   const [isSending, setIsSending] = useState(false);
   const [initialPanelOpenAttempted, setInitialPanelOpenAttempted] =
@@ -105,6 +109,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const [userInitiatedRun, setUserInitiatedRun] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [showAgentLimitDialog, setShowAgentLimitDialog] = useState(false);
+  const [showAgentLimitBanner, setShowAgentLimitBanner] = useState(false);
   const [agentLimitData, setAgentLimitData] = useState<{
     runningCount: number;
     runningThreadIds: string[];
@@ -116,6 +121,12 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const lastStreamStartedRef = useRef<string | null>(null);
   const pendingMessageRef = useRef<string | null>(null);
   const chatInputRef = useRef<ChatInputHandles>(null);
+
+  // Helper to check if user has active text selection - prevents scroll from disrupting copy
+  const hasActiveSelection = useCallback((): boolean => {
+    const selection = window.getSelection();
+    return selection !== null && selection.toString().trim().length > 0;
+  }, []);
 
   // Message queue for when agent is running - using Zustand store
   const queueMessage = useMessageQueueStore((state) => state.queueMessage);
@@ -140,6 +151,16 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const [showOptimisticUI, setShowOptimisticUI] = useState(false);
   const setStorePanelOpen = useSetIsSidePanelOpen();
   
+  const allOptimisticFiles = useOptimisticFilesStore((state) => state.files);
+  const updateFileStatus = useOptimisticFilesStore((state) => state.updateFileStatus);
+  const clearOptimisticFiles = useOptimisticFilesStore((state) => state.clearFilesForThread);
+  const optimisticFiles = useMemo(
+    () => allOptimisticFiles.filter((f) => f.threadId === threadId),
+    [allOptimisticFiles, threadId]
+  );
+  const [optimisticFilesUploading, setOptimisticFilesUploading] = useState(false);
+  const optimisticFilesUploadedRef = useRef(false);
+  
   const {
     messages,
     setMessages,
@@ -158,7 +179,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     projectQuery,
     agentRunsQuery,
   } = useThreadData(threadId, projectId, isShared, {
-    enablePolling: isNewThread && !hasDataLoaded.current,
+    // Only actively poll for agent when: new thread + haven't found agent yet
+    waitingForAgent: isNewThread && !hasDataLoaded.current,
   });
   
   const threadStatus = threadQuery.data?.status;
@@ -185,30 +207,51 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   } = useThreadToolCalls(messages, setLeftSidebarOpen, agentStatus, compact);
   
   if (isNewThread && !optimisticPrompt) {
-    const stored = sessionStorage.getItem('optimistic_prompt');
-    const storedThread = sessionStorage.getItem('optimistic_thread');
-    if (stored && storedThread === threadId) {
-      setOptimisticPrompt(stored);
-      setShowOptimisticUI(true);
-      if (!isMobile && !compact) {
-        setStorePanelOpen(true);
+    try {
+      const stored = sessionStorage.getItem('optimistic_prompt');
+      const storedThread = sessionStorage.getItem('optimistic_thread');
+      if (stored && storedThread === threadId) {
+        setOptimisticPrompt(stored);
+        setShowOptimisticUI(true);
+        if (!isMobile && !compact) {
+          setStorePanelOpen(true);
+        }
+        sessionStorage.removeItem('optimistic_prompt');
+        sessionStorage.removeItem('optimistic_thread');
       }
-      sessionStorage.removeItem('optimistic_prompt');
-      sessionStorage.removeItem('optimistic_thread');
+    } catch (e) {
+      // SessionStorage access error - silently fail
     }
   }
   
-  if (isNewThread && agentRunId && !hasDataLoaded.current) {
-    hasDataLoaded.current = true;
-  }
+  // Stop polling only when we have confirmed the agent is running (agentRunId exists)
+  // This prevents the race condition where polling stops before the agent is detected
+  useEffect(() => {
+    if (isNewThread && !hasDataLoaded.current && agentRunId) {
+      hasDataLoaded.current = true;
+      console.log('[ThreadComponent] Agent detected, stopping polling:', agentRunId);
+      // Clean up the ?new=true URL param to prevent future polling issues
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get('new') === 'true') {
+          url.searchParams.delete('new');
+          window.history.replaceState({}, '', url.pathname + url.search);
+        }
+      }
+    }
+  }, [isNewThread, agentRunId]);
   
+  // Hide optimistic UI only when we have both agentRunId AND initialLoadCompleted
+  // This ensures the stream is ready before transitioning
   const shouldHideOptimisticUI = isNewThread 
     ? (agentRunId && initialLoadCompleted)
     : ((agentRunId || messages.length > 0 || threadStatus === 'ready') && initialLoadCompleted);
   
-  if (shouldHideOptimisticUI && showOptimisticUI) {
-    setShowOptimisticUI(false);
-  }
+  useEffect(() => {
+    if (shouldHideOptimisticUI && showOptimisticUI) {
+      setShowOptimisticUI(false);
+    }
+  }, [shouldHideOptimisticUI, showOptimisticUI]);
   
   const effectivePanelOpen = isSidePanelOpen || (isNewThread && showOptimisticUI);
 
@@ -274,6 +317,32 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }, [threadId, queryClient, isShared, resetKortixComputerStore]);
 
+  // Fallback timeout for new thread polling
+  // If we haven't detected an agent after 30 seconds, stop polling and hide optimistic UI
+  // This prevents infinite polling if the agent fails to start
+  useEffect(() => {
+    if (!isNewThread || hasDataLoaded.current || !showOptimisticUI) return;
+    
+    const timeoutId = setTimeout(() => {
+      if (!hasDataLoaded.current && showOptimisticUI) {
+        console.warn('[ThreadComponent] Polling timeout reached, no agent detected after 30s');
+        hasDataLoaded.current = true;
+        setShowOptimisticUI(false);
+        // Clean up URL param
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href);
+          if (url.searchParams.get('new') === 'true') {
+            url.searchParams.delete('new');
+            window.history.replaceState({}, '', url.pathname + url.search);
+          }
+        }
+        toast.error('Failed to start the conversation. Please try again.');
+      }
+    }, 30000); // 30 second timeout
+    
+    return () => clearTimeout(timeoutId);
+  }, [isNewThread, showOptimisticUI]);
+
   useEffect(() => {
     const handleSandboxActive = (event: Event) => {
       const customEvent = event as CustomEvent<{ sandboxId: string; projectId: string }>;
@@ -288,6 +357,58 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     window.addEventListener('sandbox-active', handleSandboxActive);
     return () => window.removeEventListener('sandbox-active', handleSandboxActive);
   }, [projectId, queryClient]);
+
+  useEffect(() => {
+    if (
+      optimisticFilesUploadedRef.current ||
+      optimisticFilesUploading ||
+      optimisticFiles.length === 0
+    ) {
+      return;
+    }
+
+    const pendingFiles = optimisticFiles.filter((f) => f.status === 'pending');
+    if (pendingFiles.length === 0) {
+      return;
+    }
+
+    const uploadFiles = async () => {
+      setOptimisticFilesUploading(true);
+      optimisticFilesUploadedRef.current = true;
+
+      pendingFiles.forEach((f) => updateFileStatus(f.id, 'uploading'));
+
+      const files = pendingFiles.map((f) => f.file);
+      
+      try {
+        await uploadPendingFilesToProject(files, projectId, (fileIndex, status, error) => {
+          const file = pendingFiles[fileIndex];
+          if (file) {
+            updateFileStatus(file.id, status, error);
+          }
+        });
+        
+        setTimeout(() => {
+          clearOptimisticFiles(threadId);
+          sessionStorage.removeItem('optimistic_files');
+        }, 2000);
+      } catch (error) {
+        console.error('Failed to upload optimistic files:', error);
+        pendingFiles.forEach((f) => updateFileStatus(f.id, 'error', 'Upload failed'));
+      } finally {
+        setOptimisticFilesUploading(false);
+      }
+    };
+
+    uploadFiles();
+  }, [
+    optimisticFiles,
+    optimisticFilesUploading,
+    projectId,
+    threadId,
+    updateFileStatus,
+    clearOptimisticFiles,
+  ]);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -367,10 +488,12 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   }, [configuredAgentId, setSelectedAgent]);
 
   const scrollToBottom = useCallback(() => {
+    // Don't scroll if user has text selected - preserves copy ability during streaming
+    if (hasActiveSelection()) return;
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }, []);
+  }, [hasActiveSelection]);
 
   const handlePromptFill = useCallback((message: string) => {
     chatInputRef.current?.setValue(message);
@@ -420,12 +543,14 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       }
 
       setTimeout(() => {
+        // Don't scroll if user has text selected - preserves copy ability during streaming
+        if (hasActiveSelection()) return;
         if (scrollContainerRef.current) {
           scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
         }
       }, 100);
     },
-    [setMessages, setAutoOpenedPanel],
+    [setMessages, setAutoOpenedPanel, hasActiveSelection],
   );
 
   const handleStreamStatusChange = useCallback(
@@ -476,6 +601,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
             pendingMessageRef.current = null;
 
             setTimeout(() => {
+              // Don't scroll if user has text selected - preserves copy ability during streaming
+              if (hasActiveSelection()) return;
               if (scrollContainerRef.current) {
                 scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
               }
@@ -487,7 +614,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           break;
       }
     },
-    [setAgentStatus, setAgentRunId, setAutoOpenedPanel, threadId, setMessages, queuedMessages, removeQueuedMessage],
+    [setAgentStatus, setAgentRunId, setAutoOpenedPanel, threadId, setMessages, queuedMessages, removeQueuedMessage, hasActiveSelection],
   );
 
   const handleStreamError = useCallback((errorMessage: string) => {
@@ -524,13 +651,41 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   const handleStreamClose = useCallback(() => { }, []);
 
+  const { appendOutput, markComplete } = useToolStreamStore();
+  const processSpreadsheetOperation = useProcessStreamOperation();
+  
+  const handleToolOutputStream = useCallback((data: { 
+    tool_call_id: string; 
+    tool_name: string; 
+    output: string; 
+    is_final: boolean; 
+  }) => {
+    if (data.tool_name === 'spreadsheet' && data.output) {
+      try {
+        const operation = JSON.parse(data.output);
+        if (operation.type === 'spreadsheet_operation') {
+          processSpreadsheetOperation(operation);
+        }
+      } catch (e) {
+      }
+    }
+    
+    if (data.output) {
+      appendOutput(data.tool_call_id, data.output);
+    }
+    if (data.is_final) {
+      markComplete(data.tool_call_id);
+    }
+  }, [appendOutput, markComplete, processSpreadsheetOperation]);
+
   const streamCallbacks = useMemo(() => ({
     onMessage: handleNewMessageFromStream,
     onStatusChange: handleStreamStatusChange,
     onError: handleStreamError,
     onClose: handleStreamClose,
     onToolCallChunk: handleStreamingToolCall,
-  }), [handleNewMessageFromStream, handleStreamStatusChange, handleStreamError, handleStreamClose, handleStreamingToolCall]);
+    onToolOutputStream: handleToolOutputStream,
+  }), [handleNewMessageFromStream, handleStreamStatusChange, handleStreamError, handleStreamClose, handleStreamingToolCall, handleToolOutputStream]);
 
   const {
     status: streamHookStatus,
@@ -550,12 +705,15 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const handleSubmitMessage = useCallback(
     async (
       message: string,
-      options?: { model_name?: string },
+      options?: { model_name?: string; file_ids?: string[] },
     ) => {
       if (!message.trim() || isShared || !addUserMessageMutation || !startAgentMutation) return;
 
-      // Check if agent is running - if so, queue the message instead
-      if (agentStatus === 'running' || agentStatus === 'connecting') {
+      // Message queue feature flag - when disabled, don't queue messages while agent is running
+      const ENABLE_MESSAGE_QUEUE = false;
+      
+      // Check if agent is running - if so, queue the message instead (only if feature is enabled)
+      if (ENABLE_MESSAGE_QUEUE && (agentStatus === 'running' || agentStatus === 'connecting')) {
         console.log('[ThreadComponent] Agent is running, queueing message:', { message, options, agentStatus });
         const queuedId = queueMessage(threadId, message, {
           ...options,
@@ -565,6 +723,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         
         // Clear the input - the queue panel will show the message
         chatInputRef.current?.setValue('');
+        return;
+      }
+      
+      // If agent is running and queue is disabled, don't do anything (keep text in input)
+      if (agentStatus === 'running' || agentStatus === 'connecting') {
         return;
       }
 
@@ -583,6 +746,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           options: {
             ...options,
             agent_id: selectedAgentId,
+            file_ids: options?.file_ids,
           },
         });
 
@@ -617,7 +781,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
               runningCount: running_count,
               runningThreadIds: running_thread_ids,
             });
-            setShowAgentLimitDialog(true);
+            // Show inline banner for better UX context
+            setShowAgentLimitBanner(true);
             return;
           }
 
@@ -677,6 +842,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       }
     }
   }, [stopStreaming, agentRunId, stopAgentMutation, setAgentStatus, isShared]);
+
 
   const handleOpenFileViewer = useCallback(
     (filePath?: string, filePathList?: string[]) => {
@@ -903,11 +1069,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   }, [subscriptionData, subscriptionStatus, initialLoadCompleted, openBillingModal]);
 
 
-  useEffect(() => {
-    if (streamingToolCall) {
-      handleStreamingToolCall(streamingToolCall);
-    }
-  }, [streamingToolCall, handleStreamingToolCall]);
+  // Note: handleStreamingToolCall is called via the onToolCallChunk callback in useAgentStream
+  // No need for a separate useEffect here - it would cause duplicate processing
 
   useEffect(() => {
     setIsSidePanelAnimating(true);
@@ -966,19 +1129,36 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     };
   }, [messages, initialLoadCompleted]);
 
+  const prevMessagesLengthRef = useRef(0);
+
   useEffect(() => {
     if (initialLoadCompleted && scrollContainerRef.current && messages.length > 0) {
-      const timeoutId = setTimeout(() => {
-        if (scrollContainerRef.current) {
-          scrollContainerRef.current.scrollTo({ top: 0, behavior: 'auto' });
-        }
-      }, 200);
-      return () => clearTimeout(timeoutId);
+      const wasNewMessageAdded = messages.length > prevMessagesLengthRef.current;
+      prevMessagesLengthRef.current = messages.length;
+
+      if (!wasNewMessageAdded) return;
+
+      const scrollContainer = scrollContainerRef.current;
+      const scrollTop = scrollContainer.scrollTop;
+      const threshold = 100;
+      const isNearBottom = scrollTop > -threshold;
+
+      if (isNearBottom) {
+        const timeoutId = setTimeout(() => {
+          // Don't scroll if user has text selected - preserves copy ability during streaming
+          if (hasActiveSelection()) return;
+          if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTo({ top: 0, behavior: 'auto' });
+          }
+        }, 200);
+        return () => clearTimeout(timeoutId);
+      }
     }
-  }, [initialLoadCompleted, messages.length]);
+  }, [initialLoadCompleted, messages.length, hasActiveSelection]);
 
   const optimisticMessages: UnifiedMessage[] = useMemo(() => {
     if (!showOptimisticUI || !optimisticPrompt) return [];
+    
     return [{
       message_id: 'optimistic-user',
       thread_id: threadId,
@@ -1182,15 +1362,19 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           creditsExhausted={creditsExhausted}
         />
 
-        {agentLimitData && (
-          <AgentRunLimitDialog
-            open={showAgentLimitDialog}
-            onOpenChange={setShowAgentLimitDialog}
-            runningCount={agentLimitData.runningCount}
-            runningThreadIds={agentLimitData.runningThreadIds}
-            projectId={projectId}
-          />
-        )}
+      {agentLimitData && (
+        <AgentRunLimitBanner
+          open={showAgentLimitBanner}
+          onOpenChange={(open) => {
+            setShowAgentLimitBanner(open);
+            if (!open) {
+              setAgentLimitData(null);
+            }
+          }}
+          runningCount={agentLimitData.runningCount}
+          runningThreadIds={agentLimitData.runningThreadIds}
+        />
+      )}
       </>
     );
   }
@@ -1306,12 +1490,16 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       />
 
       {agentLimitData && (
-        <AgentRunLimitDialog
-          open={showAgentLimitDialog}
-          onOpenChange={setShowAgentLimitDialog}
+        <AgentRunLimitBanner
+          open={showAgentLimitBanner}
+          onOpenChange={(open) => {
+            setShowAgentLimitBanner(open);
+            if (!open) {
+              setAgentLimitData(null);
+            }
+          }}
           runningCount={agentLimitData.runningCount}
           runningThreadIds={agentLimitData.runningThreadIds}
-          projectId={projectId}
         />
       )}
     </>

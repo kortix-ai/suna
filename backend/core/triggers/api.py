@@ -98,7 +98,7 @@ async def verify_and_authorize_trigger_agent_access(agent_id: str, user_id: str)
     result = await client.table('agents').select('agent_id').eq('agent_id', agent_id).eq('account_id', user_id).execute()
     
     if not result.data:
-        raise HTTPException(status_code=404, detail="Agent not found or access denied")
+        raise HTTPException(status_code=404, detail="Worker not found or access denied")
 
 
 async def sync_triggers_to_version_config(agent_id: str):
@@ -678,7 +678,7 @@ async def trigger_webhook(
                 
                 return JSONResponse(content={
                     "success": True,
-                    "message": "Trigger processed and agent execution started",
+                    "message": "Trigger processed and worker execution started",
                     "execution": execution_result,
                     "trigger_result": {
                         "should_execute_agent": result.should_execute_agent,

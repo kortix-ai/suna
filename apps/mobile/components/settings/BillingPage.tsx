@@ -10,8 +10,8 @@ import * as WebBrowser from 'expo-web-browser';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { SettingsHeader } from './SettingsHeader';
-import { CreditPurchaseModal } from '@/components/billing/CreditPurchaseModal';
 import { PricingTierBadge } from '@/components/billing/PricingTierBadge';
+import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
 import {
   useAccountState,
   accountStateSelectors,
@@ -91,7 +91,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
     enabled: visible && isAuthenticated,
   });
 
-  const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
+  const { useNativePaywall, presentUpgradePaywall } = useUpgradePaywall();
 
   const handleClose = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -568,9 +568,15 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
               {/* Get Additional Credits */}
               {accountState?.subscription?.can_purchase_credits && (
                 <AnimatedPressable
-                  onPress={() => {
+                  onPress={async () => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setShowCreditPurchaseModal(true);
+                    // Use RevenueCat paywall for credit purchases
+                    if (useNativePaywall) {
+                      console.log('📱 Using RevenueCat paywall for additional credits');
+                      await presentUpgradePaywall();
+                    } else {
+                      console.warn('⚠️ RevenueCat not available, cannot purchase credits');
+                    }
                   }}
                   onPressIn={() => {
                     creditsButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
@@ -635,15 +641,6 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
           </AnimatedView>
         </ScrollView>
       </View>
-
-      {/* Credit Purchase Modal */}
-      <CreditPurchaseModal
-        open={showCreditPurchaseModal}
-        onOpenChange={setShowCreditPurchaseModal}
-        currentBalance={totalCredits}
-        canPurchase={accountState?.subscription?.can_purchase_credits || false}
-        onPurchaseComplete={handleSubscriptionUpdate}
-      />
     </View>
   );
 }

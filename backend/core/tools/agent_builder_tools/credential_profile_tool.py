@@ -29,7 +29,7 @@ from core.utils.logger import logger
 1. create_credential_profile() - Generates auth link
 2. **SEND LINK TO USER IMMEDIATELY** - Authentication is MANDATORY
 3. **WAIT FOR USER CONFIRMATION** - "Have you completed authentication?"
-4. discover_mcp_tools() - Get actual available tools after auth
+4. discover_mcp_tools - Get actual available tools after auth
 5. configure_profile_for_agent() - Add to agent
 
 **AUTHENTICATION IS NON-NEGOTIABLE:**
@@ -218,7 +218,7 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
 
             agent_result = await client.table('agents').select('current_version_id').eq('agent_id', self.agent_id).execute()
             if not agent_result.data or not agent_result.data[0].get('current_version_id'):
-                return self.fail_response("Agent configuration not found")
+                return self.fail_response("Worker configuration not found")
 
             version_result = await client.table('agent_versions')\
                 .select('config')\
@@ -227,7 +227,7 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
                 .execute()
             
             if not version_result.data or not version_result.data.get('config'):
-                return self.fail_response("Agent version configuration not found")
+                return self.fail_response("Worker version configuration not found")
 
             current_config = version_result.data['config']
             current_tools = current_config.get('tools', {})

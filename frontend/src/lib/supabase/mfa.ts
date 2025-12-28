@@ -15,7 +15,7 @@ import type {
 // Cutoff date for new user phone verification requirement
 // Users created after this date will be required to have phone verification
 // Users created before this date are grandfathered in and not required to verify
-const PHONE_VERIFICATION_CUTOFF_DATE = new Date('2025-07-25T00:09:30.000Z');
+const PHONE_VERIFICATION_CUTOFF_DATE = new Date('2025-12-24T00:09:30.000Z');
 
 function isPhoneVerificationMandatory(): boolean {
   const envVal = process.env.NEXT_PUBLIC_PHONE_NUMBER_MANDATORY;
