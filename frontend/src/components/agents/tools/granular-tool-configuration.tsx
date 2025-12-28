@@ -53,7 +53,13 @@ export const GranularToolConfiguration = ({
 
   const isToolGroupEnabled = (toolName: string): boolean => {
     const toolConfig = tools[toolName];
-    if (toolConfig === undefined) return false;
+    
+    // If tool is not in the tools object, check the default enabled state from tool group metadata
+    if (toolConfig === undefined) {
+      const toolGroup = getToolGroup(toolName, toolsData);
+      return toolGroup?.enabled ?? true; // Default to enabled if not specified
+    }
+    
     if (typeof toolConfig === 'boolean') return toolConfig;
     if (typeof toolConfig === 'object' && toolConfig !== null) {
       return toolConfig.enabled ?? true;
@@ -197,9 +203,20 @@ export const GranularToolConfiguration = ({
   };
 
   const getEnabledToolsCount = (): number => {
-    return Object.entries(tools).filter(([toolName, toolConfig]) => {
-      return isToolGroupEnabled(toolName);
-    }).length;
+    // Count all visible tools from TOOL_GROUPS, not just those in the tools object
+    return Object.values(TOOL_GROUPS)
+      .filter(toolGroup => toolGroup.visible !== false) // Only count visible tools
+      .filter(toolGroup => {
+        // Check if tool is enabled (either explicitly in tools, or default to enabled if not present)
+        return isToolGroupEnabled(toolGroup.name);
+      }).length;
+  };
+
+  const getTotalVisibleToolsCount = (): number => {
+    // Count all visible tools from TOOL_GROUPS
+    return Object.values(TOOL_GROUPS)
+      .filter(toolGroup => toolGroup.visible !== false)
+      .length;
   };
 
   const getEnabledMethodsCount = (toolName: string): number => {
@@ -234,7 +251,7 @@ export const GranularToolConfiguration = ({
           </p>
         </div>
         <Badge variant="default" className="text-xs">
-          {getEnabledToolsCount()} / {Object.keys(TOOL_GROUPS).length} tools enabled
+          {getEnabledToolsCount()} / {getTotalVisibleToolsCount()} tools enabled
         </Badge>
       </div>
 
