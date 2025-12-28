@@ -23,11 +23,13 @@ from core.utils.logger import logger
 - **MANDATORY** for waiting for user feedback or decisions
 - **MANDATORY** for conversational interaction
 - **MANDATORY** for sharing files, visualizations, or deliverables (attach them)
+- **🚨 CRITICAL:** When sharing any results, outputs, or deliverables, you MUST attach them - never just describe them
 
 **WHEN TO USE 'complete' TOOL:**
 - **MANDATORY** when ALL tasks are finished and no user response needed
 - **MANDATORY** when signaling final completion of work
 - **MANDATORY** when providing final results without requiring user input
+- **🚨 CRITICAL:** You MUST attach ALL deliverables, outputs, files, and results before calling complete - this is NOT optional
 
 **FORBIDDEN:**
 - ❌ NEVER send raw text responses without tool calls - information will be LOST
@@ -35,10 +37,14 @@ from core.utils.logger import logger
 - ❌ NEVER signal completion without 'complete' tool
 
 **ATTACHMENT PROTOCOL:**
+- **🚨 MANDATORY: ALL RESULTS MUST BE ATTACHED** when using 'ask' or 'complete' tools
 - **CRITICAL: ALL VISUALIZATIONS MUST BE ATTACHED** when using 'ask' tool
-- This includes: HTML files, PDFs, markdown, images, charts, reports, dashboards
+- **CRITICAL: ALL DELIVERABLES MUST BE ATTACHED** when using 'complete' tool
+- This includes: HTML files, PDFs, markdown, images, charts, reports, dashboards, CSV files, JSON files, presentations, spreadsheets, code files, or ANY work product
+- If you created it, generated it, or produced it during the task, you MUST attach it
 - If user should SEE it, you must ATTACH it
-- Verify ALL visual outputs attached before proceeding
+- Verify ALL outputs and deliverables are attached before calling ask or complete
+- **NEVER complete a task without attaching the results** - this breaks the user experience
 
 **CONSEQUENCES:**
 - Raw text responses are NOT displayed properly to users
@@ -54,7 +60,7 @@ class MessageTool(Tool):
         "type": "function",
         "function": {
             "name": "ask",
-            "description": "Ask user a question and wait for response. Use for: 1) Requesting clarification on ambiguous requirements (ONLY when truly blocked), 2) Seeking confirmation before proceeding with high-impact changes, 3) Gathering additional information needed to complete a task, 4) Offering options and requesting user preference, 5) Validating assumptions when critical to task success, 6) When encountering unclear or ambiguous results during task execution, 7) When tool results don't match expectations, 8) For natural conversation and follow-up questions, 9) When research reveals multiple entities with the same name, 10) When user requirements are unclear or could be interpreted differently. IMPORTANT: Use this tool when user input is essential to proceed. 🚨 CRITICAL: For clarification questions, ALWAYS provide follow_up_answers with 2-4 clickable options - users should click, not type. Keep questions CONCISE (1-2 sentences max) and scannable. Use natural, conversational language. Include relevant attachments when the question relates to specific files or resources. CRITICAL: When you discover ambiguity (like multiple people with the same name), immediately stop and ask for clarification with clickable options rather than making assumptions. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `text` (REQUIRED), `attachments` (optional), `follow_up_answers` (optional).",
+            "description": "Ask user a question and wait for response. Use for: 1) Requesting clarification on ambiguous requirements (ONLY when truly blocked), 2) Seeking confirmation before proceeding with high-impact changes, 3) Gathering additional information needed to complete a task, 4) Offering options and requesting user preference, 5) Validating assumptions when critical to task success, 6) When encountering unclear or ambiguous results during task execution, 7) When tool results don't match expectations, 8) For natural conversation and follow-up questions, 9) When research reveals multiple entities with the same name, 10) When user requirements are unclear or could be interpreted differently. IMPORTANT: Use this tool when user input is essential to proceed. 🚨 CRITICAL: For clarification questions, ALWAYS provide follow_up_answers with 2-4 clickable options - users should click, not type. Keep questions CONCISE (1-2 sentences max) and scannable. Use natural, conversational language. 🚨 MANDATORY: When sharing results, deliverables, files, visualizations, or any work product, you MUST attach them via the attachments parameter - never share information about results without attaching the actual files. Include relevant attachments when the question relates to specific files or resources. CRITICAL: When you discover ambiguity (like multiple people with the same name), immediately stop and ask for clarification with clickable options rather than making assumptions. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `text` (REQUIRED), `attachments` (REQUIRED when sharing results/deliverables), `follow_up_answers` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -67,7 +73,7 @@ class MessageTool(Tool):
                             {"type": "string"},
                             {"items": {"type": "string"}, "type": "array"}
                         ],
-                        "description": "**OPTIONAL** - List of files or URLs to attach to the question. Include when: 1) Question relates to specific files or configurations, 2) User needs to review content before answering, 3) Options or choices are documented in files, 4) Supporting evidence or context is needed. Always use relative paths to /workspace directory."
+                        "description": "**REQUIRED when sharing results/deliverables** - List of files or URLs to attach. 🚨 MANDATORY: If you created, generated, or produced any files, reports, dashboards, visualizations, or work products, you MUST attach them here. Include when: 1) Sharing results, deliverables, or outputs (MANDATORY), 2) Question relates to specific files or configurations, 3) User needs to review content before answering, 4) Options or choices are documented in files, 5) Supporting evidence or context is needed. Always use relative paths to /workspace directory. NEVER share information about results without attaching the actual files."
                     },
                     "follow_up_answers": {
                         "type": "array",
@@ -93,7 +99,7 @@ class MessageTool(Tool):
         "type": "function",
         "function": {
             "name": "complete",
-            "description": "A special tool to indicate you have completed all tasks and are about to enter complete state. Use ONLY when: 1) All tasks in todo.md are marked complete [x], 2) The user's original request has been fully addressed, 3) There are no pending actions or follow-ups required, 4) You've delivered all final outputs and results to the user. IMPORTANT: This is the ONLY way to properly terminate execution. Never use this tool unless ALL tasks are complete and verified. Always ensure you've provided all necessary outputs and references before using this tool. Include relevant attachments when the completion relates to specific files or resources. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `text` (optional), `attachments` (optional), `follow_up_prompts` (optional).",
+            "description": "A special tool to indicate you have completed all tasks and are about to enter complete state. Use ONLY when: 1) All tasks in todo.md are marked complete [x], 2) The user's original request has been fully addressed, 3) There are no pending actions or follow-ups required, 4) You've delivered all final outputs and results to the user. IMPORTANT: This is the ONLY way to properly terminate execution. Never use this tool unless ALL tasks are complete and verified. 🚨 MANDATORY: You MUST attach ALL deliverables, outputs, files, visualizations, reports, dashboards, or any work product you created via the attachments parameter - this is NOT optional. If you created files during the task, they MUST be attached. Always ensure you've provided all necessary outputs and references before using this tool. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `text` (optional), `attachments` (REQUIRED when results/deliverables exist), `follow_up_prompts` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -106,7 +112,7 @@ class MessageTool(Tool):
                             {"type": "string"},
                             {"items": {"type": "string"}, "type": "array"}
                         ],
-                        "description": "**OPTIONAL** - List of files or URLs to attach to the completion message. Include when: 1) Completion relates to specific files or configurations, 2) User needs to review final outputs, 3) Deliverables are documented in files, 4) Supporting evidence or context is needed. Always use relative paths to /workspace directory. **For presentations**: When attaching presentation files, only attach the first slide (e.g., `presentations/[name]/slide_01.html`) to keep the UI tidy - the presentation card will automatically show the full presentation."
+                        "description": "**REQUIRED when results/deliverables exist** - List of files or URLs to attach to the completion message. 🚨 MANDATORY: If you created, generated, or produced ANY files, reports, dashboards, visualizations, spreadsheets, presentations, code files, or work products during the task, you MUST attach them here. This includes: 1) All deliverables and outputs (MANDATORY), 2) Completion relates to specific files or configurations, 3) User needs to review final outputs, 4) Deliverables are documented in files, 5) Supporting evidence or context is needed. Always use relative paths to /workspace directory. **For presentations**: When attaching presentation files, only attach the first slide (e.g., `presentations/[name]/slide_01.html`) to keep the UI tidy - the presentation card will automatically show the full presentation. **VERIFICATION**: Before calling complete, verify you've attached all created files and outputs."
                     },
                     "follow_up_prompts": {
                         "type": "array",

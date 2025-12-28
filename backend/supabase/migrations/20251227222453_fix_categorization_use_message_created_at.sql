@@ -26,8 +26,11 @@ AS $$
     LIMIT max_count;
 $$;
 
--- Add index on messages for faster lookups
-CREATE INDEX IF NOT EXISTS idx_messages_thread_type_created 
-ON messages (thread_id, type, created_at DESC);
+-- Note: Index creation skipped from migration to avoid long-running operation
+-- Create the index manually later using CONCURRENTLY (non-blocking):
+-- CREATE INDEX CONCURRENTLY idx_messages_thread_type_created 
+-- ON messages (thread_id, type, created_at DESC);
+-- 
+-- This index is recommended for performance but the function will work without it (just slower)
 
 
