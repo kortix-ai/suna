@@ -944,7 +944,8 @@
       "slides": "Slides",
       "data": "Dados",
       "docs": "Documentos",
-      "people": "Pessoas",
+      "canvas": "Tela",
+      "video": "Vídeo",
       "research": "Pesquisa"
     },
     "styles": {
@@ -1153,17 +1154,29 @@
         "8": "Escrever um plano de resposta a incidentes de segurança com procedimentos de escalação",
         "9": "Criar um guia de estilo abrangente para marca e conteúdo"
       },
-      "people": {
-        "0": "Encontrar candidatos a VP de Engenharia em startups de IA/ML da Série B+ na área da baía de San Francisco com 10+ anos de experiência e histórico comprovado de escalar equipes de engenharia",
-        "1": "Construir lista de leads de CMOs em empresas B2B SaaS ($10M-$50M ARR) que recentemente levantaram financiamento da Série A/B - incluir padrões de email e stack tecnológico",
-        "2": "Pesquisar Engenheiros Sênior de Blockchain com experiência em Solidity/Rust em projetos cripto de topo, abertos a realocação para Dubai ou Singapura",
-        "3": "Gerar lista de prospects de fundadores técnicos em startups Seed-Série A em IA Empresarial que levantaram $2M-$15M nos últimos 6 meses",
-        "4": "Identificar Gerentes de Produto Sênior em empresas fintech com 5-10 anos de experiência da FAANG ou unicórnios, habilidosos em desenvolvimento de produto 0-1",
-        "5": "Encontrar CIOs e VP de Engenharia em empresas de TI de saúde de médio mercado (500-5000 funcionários) com orçamentos de TI de $500K+ planejando migração para nuvem",
-        "6": "Pesquisar VP de Vendas em empresas B2B SaaS mostrando crescimento de 100%+ YoY, com 7+ anos fechando negócios de $100K+ e experiência PLG",
-        "7": "Construir lista de CTOs em empresas empresariais implementando ativamente infraestrutura de IA com orçamentos multimilionários em 2024",
-        "8": "Encontrar Designers Sênior UX/UI com experiência em app de consumidor mobile-first e portfólios de 1M+ usuários, procurando ativamente ou abertos a oportunidades",
-        "9": "Identificar Engenheiros DevOps Sênior em startups cloud-native com expertise em Kubernetes/Terraform e 5-8 anos construindo infraestrutura para 10M+ usuários"
+      "canvas": {
+        "0": "Criar um banner de mídia social para minha startup de tecnologia apresentando um horizonte urbano futurista com acentos neon",
+        "1": "Desenhar um logo minimalista para uma marca de café chamada 'Morning Ritual' usando tons terrosos",
+        "2": "Editar esta foto de produto para remover o fundo e adicionar um gradiente suave",
+        "3": "Criar um infográfico mostrando os benefícios da energia renovável com design flat moderno",
+        "4": "Desenhar uma capa de livro para um romance de ficção científica sobre consciência de IA com estética cyberpunk",
+        "5": "Fazer uma miniatura do YouTube para um vídeo sobre dicas de produtividade com sobreposição de texto em negrito",
+        "6": "Criar um moodboard para uma marca de moda de luxo direcionada a millennials",
+        "7": "Desenhar um convite de casamento com padrões florais elegantes e acentos dourados",
+        "8": "Editar minha foto de retrato para ter um visual de filme vintage com grão e tons quentes",
+        "9": "Criar um design de pôster para um festival de música com vibrações psicodélicas dos anos 70"
+      },
+      "video": {
+        "0": "Quero criar um vídeo de apresentação de produto - vou enviar minha foto do produto e você anima girando suavemente",
+        "1": "Transforme meu retrato em uma cena de aventura épica - enviarei minha foto e você me faz caminhar por uma paisagem cinematográfica",
+        "2": "Gere um vídeo de natureza de pétalas de cerejeira caindo suavemente em um pacífico jardim japonês",
+        "3": "Crie um vídeo abstrato de partículas brilhantes girando juntas e explodindo para fora em câmera lenta",
+        "4": "Tenho uma imagem de produto - crie uma animação flutuante premium com sombras suaves e rotação sutil",
+        "5": "Pegue minha selfie e anime com brilhos mágicos e efeitos de iluminação cinematográfica ao meu redor",
+        "6": "Gere uma tomada cinematográfica dramática voando através de montanhas enevoadas na hora dourada",
+        "7": "Crie um vídeo em loop de metal líquido fluindo e se transformando em formas orgânicas",
+        "8": "Vou enviar minha foto - transforme o fundo em uma cena subaquática com raios de luz e bolhas",
+        "9": "Gere um vídeo de paisagem urbana futurista com carros voadores, luzes de neon e ruas molhadas pela chuva"
       },
       "research": {
         "0": "Analisar tendências emergentes em computação quântica e aplicações comerciais potenciais",

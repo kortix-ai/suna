@@ -947,7 +947,8 @@
       "slides": "Presentazioni",
       "data": "Dati",
       "docs": "Documenti",
-      "people": "Persone",
+      "canvas": "Tela",
+      "video": "Video",
       "research": "Ricerca"
     },
     "styles": {
@@ -1066,17 +1067,29 @@
         "8": "Scrivi un piano di risposta agli incidenti di sicurezza con procedure di escalation",
         "9": "Crea una guida di stile completa per brand e contenuti"
       },
-      "people": {
-        "0": "Trova candidati VP of Engineering presso startup AI/ML Series B+ nell'area di San Francisco Bay con 10+ anni di esperienza e comprovata esperienza nel ridimensionamento di team di ingegneria",
-        "1": "Costruisci una lista di lead di CMO presso aziende B2B SaaS (10-50M $ ARR) che hanno recentemente raccolto finanziamenti Series A/B - includi pattern email e tech stack",
-        "2": "Ricerca Senior Blockchain Engineers con esperienza Solidity/Rust presso progetti crypto di alto livello, aperti al trasferimento a Dubai o Singapore",
-        "3": "Genera una lista di prospect di fondatori tecnici presso startup Seed-Series A nel settore Enterprise AI che hanno raccolto 2-15M $ negli ultimi 6 mesi",
-        "4": "Identifica Senior Product Manager presso aziende fintech con 5-10 anni di esperienza da FAANG o unicorni, esperti nello sviluppo prodotto 0-1",
-        "5": "Trova CIO e VP Engineering presso aziende IT sanitarie mid-market (500-5000 dipendenti) con budget IT da 500K+ $ che pianificano la migrazione cloud",
-        "6": "Ricerca VP Sales presso aziende B2B SaaS che mostrano crescita YoY del 100%+, con 7+ anni di esperienza nella chiusura di deal da 100K+ $ ed esperienza PLG",
-        "7": "Costruisci una lista di CTO presso aziende enterprise che implementano attivamente infrastruttura AI con budget multi-milionari nel 2024",
-        "8": "Trova Senior UX/UI Designer con esperienza in app consumer mobile-first e portfolio con 1M+ utenti, attivamente in cerca o aperti a opportunità",
-        "9": "Identifica Senior DevOps Engineers presso startup cloud-native con competenze Kubernetes/Terraform e 5-8 anni di esperienza nella costruzione di infrastruttura per 10M+ utenti"
+      "canvas": {
+        "0": "Crea un banner per i social media per la mia startup tech con uno skyline cittadino futuristico e accenti neon",
+        "1": "Progetta un logo minimalista per un brand di caffè chiamato 'Morning Ritual' usando toni della terra",
+        "2": "Modifica questa foto prodotto per rimuovere lo sfondo e aggiungere un gradiente morbido",
+        "3": "Crea un'infografica che mostra i benefici dell'energia rinnovabile con design flat moderno",
+        "4": "Progetta una copertina per un romanzo di fantascienza sulla coscienza dell'IA con estetica cyberpunk",
+        "5": "Crea una miniatura YouTube per un video sui consigli di produttività con overlay di testo in grassetto",
+        "6": "Crea un moodboard per un brand di moda di lusso rivolto ai millennials",
+        "7": "Progetta un invito di matrimonio con eleganti motivi floreali e accenti dorati",
+        "8": "Modifica la mia foto ritratto per avere un aspetto film vintage con grana e toni caldi",
+        "9": "Crea un design poster per un festival musicale con vibrazioni psichedeliche anni '70"
+      },
+      "video": {
+        "0": "Voglio creare un video di presentazione prodotto - caricherò la mia foto del prodotto e tu la animi ruotando dolcemente",
+        "1": "Trasforma il mio ritratto in una scena di avventura epica - invierò la mia foto e tu mi fai camminare attraverso un paesaggio cinematico",
+        "2": "Genera un video naturale di petali di ciliegio che cadono dolcemente in un tranquillo giardino giapponese",
+        "3": "Crea un video astratto di particelle luminose che turbinano insieme ed esplodono verso l'esterno al rallentatore",
+        "4": "Ho un'immagine del prodotto - crea un'animazione fluttuante premium con ombre morbide e rotazione sottile",
+        "5": "Prendi il mio selfie e animalo con scintille magiche ed effetti di illuminazione cinematica intorno a me",
+        "6": "Genera una ripresa cinematica drammatica che vola attraverso montagne nebbiose all'ora dorata",
+        "7": "Crea un video in loop di metallo liquido che scorre e si trasforma in forme organiche",
+        "8": "Caricherò la mia foto - trasforma lo sfondo in una scena sottomarina con raggi di luce e bolle",
+        "9": "Genera un video di paesaggio urbano futuristico con auto volanti, luci al neon e strade bagnate dalla pioggia"
       },
       "research": {
         "0": "Analizza le tendenze emergenti nel quantum computing e le potenziali applicazioni aziendali",

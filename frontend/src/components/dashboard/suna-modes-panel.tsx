@@ -11,7 +11,8 @@ import {
   ArrowUpRight,
   FileText,
   Search,
-  Users,
+  Palette,
+  Video,
   RefreshCw,
   Check,
   Table,
@@ -42,7 +43,7 @@ interface SunaModesPanelProps {
   onTemplateChange?: (template: string | null) => void;
 }
 
-type ModeType = 'image' | 'slides' | 'data' | 'docs' | 'people' | 'research';
+type ModeType = 'image' | 'slides' | 'data' | 'docs' | 'canvas' | 'video' | 'research';
 
 interface Mode {
   id: ModeType;
@@ -180,21 +181,58 @@ const modes: Mode[] = [
     },
   },
   {
-    id: 'people',
-    label: 'People',
-    icon: <Users className="w-4 h-4" />,
+    id: 'canvas',
+    label: 'Canvas',
+    icon: <Palette className="w-4 h-4" />,
     samplePrompts: [
-      'Find VP of Engineering candidates at Series B+ AI/ML startups in San Francisco Bay Area with 10+ years experience and proven track record scaling engineering teams',
-      'Build lead list of CMOs at B2B SaaS companies ($10M-$50M ARR) who recently raised Series A/B funding - include email patterns and tech stack',
-      'Research Senior Blockchain Engineers with Solidity/Rust experience at top crypto projects, open to relocation to Dubai or Singapore',
-      'Generate prospect list of technical founders at Seed-Series A startups in Enterprise AI who raised $2M-$15M in last 6 months',
-      'Identify Senior Product Managers at fintech companies with 5-10 years experience from FAANG or unicorns, skilled in 0-1 product development',
-      'Find CIOs and VP Engineering at mid-market healthcare IT companies (500-5000 employees) with $500K+ IT budgets planning cloud migration',
-      'Research VP Sales at B2B SaaS companies showing 100%+ YoY growth, with 7+ years closing $100K+ deals and PLG experience',
-      'Build list of CTOs at enterprise companies actively implementing AI infrastructure with multi-million dollar budgets in 2024',
-      'Find Senior UX/UI Designers with mobile-first consumer app experience and 1M+ user portfolios, actively looking or open to opportunities',
-      'Identify Senior DevOps Engineers at cloud-native startups with Kubernetes/Terraform expertise and 5-8 years building infrastructure for 10M+ users',
+      'Create a social media banner for my tech startup featuring a futuristic city skyline with neon accents',
+      'Design a minimalist logo for a coffee brand called "Morning Ritual" using earthy tones',
+      'Edit this product photo to remove the background and add a soft gradient',
+      'Create an infographic showing the benefits of renewable energy with modern flat design',
+      'Design a book cover for a sci-fi novel about AI consciousness with cyberpunk aesthetics',
+      'Make a YouTube thumbnail for a video about productivity tips with bold text overlay',
+      'Create a mood board for a luxury fashion brand targeting millennials',
+      'Design a wedding invitation with elegant floral patterns and gold accents',
+      'Edit my portrait photo to have a vintage film look with grain and warm tones',
+      'Create a poster design for a music festival with psychedelic 70s vibes',
     ],
+    options: {
+      title: 'Choose canvas action',
+      items: [
+        { id: 'create', name: 'Create New', description: 'Generate from scratch', image: '/images/canvas/create.png' },
+        { id: 'edit', name: 'Edit Image', description: 'Modify existing images', image: '/images/canvas/edit.png' },
+        { id: 'upscale', name: 'Upscale', description: 'Enhance and improve', image: '/images/canvas/upscale.png' },
+        { id: 'remove-bg', name: 'Remove BG', description: 'Remove background', image: '/images/canvas/remove-bg.png' },
+      ],
+    },
+  },
+  {
+    id: 'video',
+    label: 'Video',
+    icon: <Video className="w-4 h-4" />,
+    samplePrompts: [
+      'I want to create a product showcase video - I\'ll upload my product photo and you animate it rotating smoothly',
+      'Transform my portrait into an epic adventure scene - I\'ll send my photo and you make me walk through a cinematic landscape',
+      'Generate a nature video of cherry blossoms gently falling in a peaceful Japanese garden',
+      'Create an abstract video of glowing particles swirling together and exploding outward in slow motion',
+      'I have a product image - create a premium floating animation with soft shadows and subtle rotation',
+      'Take my selfie and animate it with magical sparkles and cinematic lighting effects around me',
+      'Generate a dramatic cinematic shot flying through misty mountains at golden hour',
+      'Create a looping abstract video of liquid metal flowing and morphing into organic shapes',
+      'I\'ll upload my photo - transform the background into an underwater scene with light rays and bubbles',
+      'Generate a futuristic cityscape video with flying cars, neon lights, and rain-slicked streets',
+    ],
+    options: {
+      title: 'Choose video style',
+      items: [
+        { id: 'cinematic', name: 'Cinematic', description: 'Film-like quality', image: '/images/video-styles/cinematic.png' },
+        { id: 'product', name: 'Product', description: 'Clean product showcase', image: '/images/video-styles/product.png' },
+        { id: 'animation', name: 'Animation', description: 'Animated graphics', image: '/images/video-styles/animation.png' },
+        { id: 'nature', name: 'Nature', description: 'Natural scenes', image: '/images/video-styles/nature.png' },
+        { id: 'abstract', name: 'Abstract', description: 'Creative patterns', image: '/images/video-styles/abstract.png' },
+        { id: 'adventure', name: 'Adventure', description: 'Transform your world', image: '/images/video-styles/person.png' },
+      ],
+    },
   },
   {
     id: 'research',
@@ -1113,29 +1151,30 @@ export function SunaModesPanel({
   
   // Get translated prompts for a mode
   const getTranslatedPrompts = (modeId: string): string[] => {
-    const prompts: string[] = [];
-    let index = 0;
-    const maxPrompts = 20; // Safety limit
+    const mode = modes.find((m) => m.id === modeId);
+    if (!mode) return [];
     
-    while (index < maxPrompts) {
+    // Use the hardcoded prompts length as the limit to avoid accessing non-existent translations
+    const maxPrompts = mode.samplePrompts.length;
+    const prompts: string[] = [];
+    
+    for (let index = 0; index < maxPrompts; index++) {
       try {
-        const key = `prompts.${modeId}.${index}`;
+        const key = `prompts.${modeId}.${index}` as any;
         const prompt = t(key);
         // Check if translation exists (next-intl returns the key if missing)
-        if (!prompt || prompt === `suna.${key}` || prompt.startsWith('suna.prompts.')) {
-          break;
+        if (!prompt || prompt === `suna.${key}` || prompt.startsWith('suna.prompts.') || prompt.includes(modeId)) {
+          // If translation is missing, use the hardcoded prompt instead
+          prompts.push(mode.samplePrompts[index]);
+        } else {
+          prompts.push(prompt);
         }
-        prompts.push(prompt);
-        index++;
       } catch {
-        break;
+        // Fallback to hardcoded prompt on error
+        prompts.push(mode.samplePrompts[index]);
       }
     }
     
-    // Fallback to hardcoded prompts if no translations found
-    if (prompts.length === 0 && currentMode) {
-      return currentMode.samplePrompts;
-    }
     return prompts;
   };
   
@@ -1266,8 +1305,8 @@ export function SunaModesPanel({
         </div>
       </div>
 
-      {/* Sample Prompts - Google List Style (for research, people) */}
-      {selectedMode && displayedPrompts && ['research', 'people'].includes(selectedMode) && (
+      {/* Sample Prompts - Google List Style (for research only) */}
+      {selectedMode && displayedPrompts && ['research'].includes(selectedMode) && (
         <div className="animate-in fade-in-0 zoom-in-95 duration-300">
           <div className="flex items-center justify-between px-1 mb-2">
             <span></span>
@@ -1295,8 +1334,8 @@ export function SunaModesPanel({
         </div>
       )}
 
-      {/* Sample Prompts - Card Grid Style (for image, slides, data, docs) */}
-      {selectedMode && displayedPrompts && !['research', 'people'].includes(selectedMode) && (
+      {/* Sample Prompts - Card Grid Style (for image, slides, data, docs, canvas, video) */}
+      {selectedMode && displayedPrompts && !['research'].includes(selectedMode) && (
         <div className="animate-in fade-in-0 zoom-in-95 duration-300">
           <div className="flex items-center justify-between mb-3">
             <span></span>
@@ -1530,6 +1569,69 @@ export function SunaModesPanel({
                 );
               })}
             </div>
+          )}
+
+          {selectedMode === 'canvas' && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {currentMode.options.items.map((item) => (
+                <Card
+                  key={item.id}
+                  className="flex flex-col items-center gap-2 cursor-pointer group p-2 bg-transparent hover:bg-transparent transition-all duration-200 border border-border hover:border-border rounded-xl overflow-hidden shadow-none"
+                  onClick={() => handlePromptSelect(`${item.name}: ${item.description}`)}
+                >
+                  <div className="w-full aspect-square rounded-lg border border-transparent group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
+                    {item.image ? (
+                      <Image 
+                        src={item.image} 
+                        alt={item.name}
+                        fill
+                        sizes="(max-width: 640px) 50vw, 25vw"
+                        className="object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <Palette className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                    )}
+                  </div>
+                  <span className="text-xs text-center text-foreground/70 group-hover:text-foreground transition-colors duration-200 font-medium">
+                    {item.name}
+                  </span>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {selectedMode === 'video' && (
+            <ScrollArea className="w-full">
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 pb-2">
+                {currentMode.options.items.map((item) => (
+                  <Card
+                    key={item.id}
+                    className="flex flex-col items-center gap-2 cursor-pointer group p-2 bg-transparent hover:bg-transparent transition-all duration-200 border border-border hover:border-border rounded-xl overflow-hidden shadow-none"
+                    onClick={() => handlePromptSelect(`Generate a ${item.name.toLowerCase()} style video`)}
+                  >
+                    <div className="w-full aspect-square rounded-lg border border-transparent group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
+                      {item.image ? (
+                        <Image 
+                          src={item.image} 
+                          alt={item.name}
+                          fill
+                          sizes="(max-width: 640px) 33vw, (max-width: 768px) 25vw, 16vw"
+                          className="object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <Video className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                      )}
+                    </div>
+                    <span className="text-xs text-center text-foreground/70 group-hover:text-foreground transition-colors duration-200 font-medium">
+                      {item.name}
+                    </span>
+                  </Card>
+                ))}
+              </div>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
           )}
         </div>
       )}
