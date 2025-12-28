@@ -111,6 +111,28 @@ def _save_debug_input(params: Dict[str, Any]) -> None:
     except Exception as e:
         logger.warning(f"⚠️ Error saving debug input: {e}")
 
+# Internal message properties that should NOT be sent to LLMs
+# These are used for internal tracking (compression, expand-message tool, etc.)
+_INTERNAL_MESSAGE_PROPERTIES = {"message_id"}
+
+def _strip_internal_properties(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Strip internal properties from messages before sending to LLM.
+    
+    Some providers (e.g., Groq) reject messages with unknown properties.
+    We add properties like 'message_id' for internal tracking but must remove them before LLM calls.
+    """
+    cleaned_messages = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            cleaned_messages.append(msg)
+            continue
+        
+        # Create a copy without internal properties
+        cleaned_msg = {k: v for k, v in msg.items() if k not in _INTERNAL_MESSAGE_PROPERTIES}
+        cleaned_messages.append(cleaned_msg)
+    
+    return cleaned_messages
 
 async def make_llm_api_call(
     messages: List[Dict[str, Any]],
@@ -149,6 +171,9 @@ async def make_llm_api_call(
         extra_headers: Optional extra headers to send with request
         stop: Optional list of stop sequences
     """
+    # Strip internal properties (like message_id) that some providers reject
+    messages = _strip_internal_properties(messages)
+    
     logger.info(f"LLM API call: {model_name} ({len(messages)} messages)")
     # Handle mock AI for stress testing
     if model_name == "mock-ai":
@@ -191,9 +216,15 @@ async def make_llm_api_call(
     
     params = model_manager.get_litellm_params(resolved_model_name, **override_params)
     
-    # Note: OpenRouter app name is handled via OR_APP_NAME env var (set in setup_api_keys)
-    # We don't add extra_body here because it breaks fallback to non-OpenRouter models (e.g., Bedrock)
-    # LiteLLM automatically picks up OR_APP_NAME and OR_SITE_URL for OpenRouter calls
+    # Add OpenRouter app parameter if using OpenRouter
+    # Check if the actual LiteLLM model ID is an OpenRouter model
+    actual_litellm_model_id = params.get("model", resolved_model_name)
+    if isinstance(actual_litellm_model_id, str) and actual_litellm_model_id.startswith("openrouter/"):
+        # OpenRouter requires the "app" parameter in extra_body
+        if "extra_body" not in params:
+            params["extra_body"] = {}
+        params["extra_body"]["app"] = "Kortix.com"
+        logger.debug(f"Added OpenRouter app parameter: Kortix.com for model {actual_litellm_model_id}")
     
     # Add tools if provided
     if tools:
