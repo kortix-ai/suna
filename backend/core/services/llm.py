@@ -37,6 +37,12 @@ def setup_api_keys() -> None:
     if getattr(config, 'OPENROUTER_API_KEY', None) and getattr(config, 'OPENROUTER_API_BASE', None):
         os.environ["OPENROUTER_API_BASE"] = config.OPENROUTER_API_BASE
     
+    # OpenRouter app name and site URL (per LiteLLM docs: https://docs.litellm.ai/docs/providers/openrouter)
+    if getattr(config, 'OR_APP_NAME', None):
+        os.environ["OR_APP_NAME"] = config.OR_APP_NAME
+    if getattr(config, 'OR_SITE_URL', None):
+        os.environ["OR_SITE_URL"] = config.OR_SITE_URL
+    
     # AWS Bedrock bearer token
     if getattr(config, 'AWS_BEARER_TOKEN_BEDROCK', None):
         os.environ["AWS_BEARER_TOKEN_BEDROCK"] = config.AWS_BEARER_TOKEN_BEDROCK
@@ -184,6 +190,16 @@ async def make_llm_api_call(
     if extra_headers is not None: override_params["extra_headers"] = extra_headers
     
     params = model_manager.get_litellm_params(resolved_model_name, **override_params)
+    
+    # Add OpenRouter app parameter if using OpenRouter
+    # Check if the actual LiteLLM model ID is an OpenRouter model
+    actual_litellm_model_id = params.get("model", resolved_model_name)
+    if isinstance(actual_litellm_model_id, str) and actual_litellm_model_id.startswith("openrouter/"):
+        # OpenRouter requires the "app" parameter in extra_body
+        if "extra_body" not in params:
+            params["extra_body"] = {}
+        params["extra_body"]["app"] = "Kortix.com"
+        logger.debug(f"Added OpenRouter app parameter: Kortix.com for model {actual_litellm_model_id}")
     
     # Add tools if provided
     if tools:

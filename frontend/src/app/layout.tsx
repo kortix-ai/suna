@@ -261,7 +261,6 @@ export default function RootLayout({
           <Suspense fallback={null}>
             <ReactScan />
           </Suspense>
-          {/* Cookie Consent - only loads script on homepage, but always runs cleanup on all pages */}
           <Suspense fallback={null}>
             <CookieConsent />
           </Suspense>

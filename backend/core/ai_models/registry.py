@@ -49,9 +49,9 @@ class ModelRegistry:
         # Register Haiku Bedrock ARN pricing for fallback billing resolution
         self._litellm_id_to_pricing[HAIKU_BEDROCK_ARN] = HAIKU_PRICING
         
-        # Kortix Basic - TEMPORARILY using MiniMax M2 instead of Haiku 4.5
+        # Kortix Basic - using MiniMax M2.1
         # basic_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
-        basic_litellm_id = "openrouter/minimax/minimax-m2"  # 205K context $0.255/M input tokens $1.02/M output tokens
+        basic_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input tokens $1.20/M output tokens
         
         self.register(Model(
             id="kortix/basic",
@@ -67,10 +67,10 @@ class ModelRegistry:
                 ModelCapability.PROMPT_CACHING,
             ],
             pricing=ModelPricing(
-                input_cost_per_million_tokens=0.255,
-                output_cost_per_million_tokens=1.02,
-                cached_read_cost_per_million_tokens=0.0255,
-                cache_write_5m_cost_per_million_tokens=0.32,
+                input_cost_per_million_tokens=0.30,
+                output_cost_per_million_tokens=1.20,
+                cached_read_cost_per_million_tokens=0.03,
+                cache_write_5m_cost_per_million_tokens=0.375,
                 # OLD Haiku 4.5 pricing:
                 # input_cost_per_million_tokens=1.00,
                 # output_cost_per_million_tokens=5.00,
@@ -91,7 +91,7 @@ class ModelRegistry:
             )
         ))
         
-        # Kortix Power - TEMPORARILY using MiniMax M2.1 instead of Sonnet 4.5/Haiku 4.5
+        # Kortix Power - using MiniMax M2.1
         # power_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
         power_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input tokens $1.20/M output tokens
         

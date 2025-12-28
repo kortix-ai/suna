@@ -300,7 +300,7 @@ class Configuration:
     OPENAI_COMPATIBLE_API_KEY: Optional[str] = None
     OPENAI_COMPATIBLE_API_BASE: Optional[str] = None
     OR_SITE_URL: Optional[str] = "https://www.kortix.com"
-    OR_APP_NAME: Optional[str] = "Kortix AI"
+    OR_APP_NAME: Optional[str] = "Kortix.com"
     
     # Frontend URL configuration
     FRONTEND_URL_ENV: Optional[str] = None
