@@ -711,7 +711,7 @@ export function DashboardContent() {
                             selectedTemplate={selectedTemplate}
                             onTemplateChange={setSelectedTemplate}
                             isFreeTier={isFreeTier || false}
-                            onUpgradeClick={() => pricingModalStore.openPricingModal({ featureContext: 'Video generation requires a paid plan' })}
+                            onUpgradeClick={() => pricingModalStore.openPricingModal()}
                           />
                         </Suspense>
                       </div>
