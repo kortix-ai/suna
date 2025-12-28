@@ -191,15 +191,9 @@ async def make_llm_api_call(
     
     params = model_manager.get_litellm_params(resolved_model_name, **override_params)
     
-    # Add OpenRouter app parameter if using OpenRouter
-    # Check if the actual LiteLLM model ID is an OpenRouter model
-    actual_litellm_model_id = params.get("model", resolved_model_name)
-    if isinstance(actual_litellm_model_id, str) and actual_litellm_model_id.startswith("openrouter/"):
-        # OpenRouter requires the "app" parameter in extra_body
-        if "extra_body" not in params:
-            params["extra_body"] = {}
-        params["extra_body"]["app"] = "Kortix.com"
-        logger.debug(f"Added OpenRouter app parameter: Kortix.com for model {actual_litellm_model_id}")
+    # Note: OpenRouter app name is handled via OR_APP_NAME env var (set in setup_api_keys)
+    # We don't add extra_body here because it breaks fallback to non-OpenRouter models (e.g., Bedrock)
+    # LiteLLM automatically picks up OR_APP_NAME and OR_SITE_URL for OpenRouter calls
     
     # Add tools if provided
     if tools:
