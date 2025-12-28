@@ -228,8 +228,15 @@ class SandboxImageEditTool(SandboxToolsBase):
             # Determine quality based on user tier
             # Free users: 'low', Paid users: 'medium'
             quality_variant = "medium"  # Default
+            user_tier = "none"
             if account_id and not use_mock:
-                quality_variant = await self._get_quality_for_user(account_id)
+                user_tier = await self._get_user_tier(account_id)
+                quality_variant = select_image_quality(user_tier)
+            
+            # VIDEO RESTRICTION: Free users cannot generate videos
+            if mode == "video" and user_tier in FREE_TIERS:
+                logger.warning(f"[MEDIA_BILLING] Video generation blocked for free user {account_id}")
+                return ToolResult(success=True, output="Video generation requires a paid subscription. Please upgrade your plan to access video generation features.")
             
             if account_id and not use_mock:
                 has_credits, credit_msg, balance = await media_billing.check_credits(account_id)

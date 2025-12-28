@@ -21,6 +21,7 @@ import {
   X,
   Eye,
   Loader2,
+  Lock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
@@ -41,6 +42,8 @@ interface SunaModesPanelProps {
   onOutputFormatChange?: (format: string | null) => void;
   selectedTemplate?: string | null;
   onTemplateChange?: (template: string | null) => void;
+  isFreeTier?: boolean;
+  onUpgradeClick?: () => void;
 }
 
 type ModeType = 'image' | 'slides' | 'data' | 'docs' | 'canvas' | 'video' | 'research';
@@ -211,16 +214,16 @@ const modes: Mode[] = [
     label: 'Video',
     icon: <Video className="w-4 h-4" />,
     samplePrompts: [
-      'I want to create a product showcase video - I\'ll upload my product photo and you animate it rotating smoothly',
-      'Transform my portrait into an epic adventure scene - I\'ll send my photo and you make me walk through a cinematic landscape',
-      'Generate a nature video of cherry blossoms gently falling in a peaceful Japanese garden',
-      'Create an abstract video of glowing particles swirling together and exploding outward in slow motion',
-      'I have a product image - create a premium floating animation with soft shadows and subtle rotation',
-      'Take my selfie and animate it with magical sparkles and cinematic lighting effects around me',
-      'Generate a dramatic cinematic shot flying through misty mountains at golden hour',
-      'Create a looping abstract video of liquid metal flowing and morphing into organic shapes',
-      'I\'ll upload my photo - transform the background into an underwater scene with light rays and bubbles',
-      'Generate a futuristic cityscape video with flying cars, neon lights, and rain-slicked streets',
+      'Animate my product photo rotating smoothly with studio lighting',
+      'Transform my portrait into a cinematic scene with camera movement',
+      'Generate a peaceful nature video of cherry blossoms falling slowly',
+      'Create abstract glowing particles swirling together in slow motion',
+      'Make my product float and rotate with soft shadows and reflections',
+      'Add dramatic cinematic lighting and color grading to my portrait',
+      'Generate a smooth drone shot flying through foggy mountain peaks',
+      'Create a looping video of liquid metal flowing into organic shapes',
+      'Transform my photo background into an underwater scene with light rays',
+      'Generate a futuristic cityscape video with neon lights and reflections',
     ],
     options: {
       title: 'Choose video style',
@@ -1143,7 +1146,9 @@ export function SunaModesPanel({
   selectedOutputFormat: controlledSelectedOutputFormat,
   onOutputFormatChange,
   selectedTemplate: controlledSelectedTemplate,
-  onTemplateChange
+  onTemplateChange,
+  isFreeTier = false,
+  onUpgradeClick,
 }: SunaModesPanelProps) {
   const t = useTranslations('suna');
   const currentMode = selectedMode ? modes.find((m) => m.id === selectedMode) : null;
@@ -1284,6 +1289,7 @@ export function SunaModesPanel({
         <div className="grid grid-cols-3 gap-2 sm:inline-flex sm:gap-2">
           {modes.map((mode) => {
             const isActive = selectedMode === mode.id;
+            const isVideoLocked = mode.id === 'video' && isFreeTier;
             return (
               <Button
                 key={mode.id}
@@ -1291,14 +1297,18 @@ export function SunaModesPanel({
                 size="sm"
                 onClick={() => onModeSelect(isActive ? null : mode.id)}
                 className={cn(
-                  "h-10 flex items-center justify-center sm:justify-start gap-2 shrink-0 transition-all duration-200 rounded-xl cursor-pointer",
+                  "h-10 flex items-center justify-center sm:justify-start gap-2 shrink-0 transition-all duration-200 rounded-xl cursor-pointer relative",
                   isActive
                     ? "bg-primary/10 text-primary border-primary hover:bg-primary/15 hover:text-primary shadow-sm"
-                    : "bg-background hover:bg-accent text-muted-foreground hover:text-foreground border-border"
+                    : "bg-background hover:bg-accent text-muted-foreground hover:text-foreground border-border",
+                  isVideoLocked && !isActive && "opacity-75"
                 )}
               >
                 {mode.icon}
                 <span>{mode.label}</span>
+                {isVideoLocked && (
+                  <Lock className="w-3 h-3 text-muted-foreground" />
+                )}
               </Button>
             );
           })}
@@ -1337,30 +1347,58 @@ export function SunaModesPanel({
       {/* Sample Prompts - Card Grid Style (for image, slides, data, docs, canvas, video) */}
       {selectedMode && displayedPrompts && !['research'].includes(selectedMode) && (
         <div className="animate-in fade-in-0 zoom-in-95 duration-300">
-          <div className="flex items-center justify-between mb-3">
-            <span></span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleRefreshPrompts}
-              className="h-7 px-2 text-muted-foreground hover:text-foreground transition-colors duration-200"
-            >
-              <motion.div
-                animate={{ rotate: isRefreshing ? 360 : 0 }}
-                transition={{ duration: 0.3, ease: "easeInOut" }}
+          {/* Upgrade Banner for Video Mode - Free Users */}
+          {selectedMode === 'video' && isFreeTier && (
+            <div className="flex items-center justify-between gap-3 p-3 mb-4 rounded-xl bg-card border border-border">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                  <Lock className="w-4 h-4 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-foreground">Video Generation is a Pro Feature</p>
+                  <p className="text-xs text-muted-foreground">Upgrade your plan to create AI videos</p>
+                </div>
+              </div>
+              {onUpgradeClick && (
+                <Button 
+                  size="sm" 
+                  onClick={onUpgradeClick}
+                  className="shrink-0"
+                >
+                  Upgrade
+                </Button>
+              )}
+            </div>
+          )}
+          
+          <div className={cn(
+            selectedMode === 'video' && isFreeTier && "opacity-50 pointer-events-none"
+          )}>
+            <div className="flex items-center justify-between mb-3">
+              <span></span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRefreshPrompts}
+                className="h-7 px-2 text-muted-foreground hover:text-foreground transition-colors duration-200"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
-              </motion.div>
-            </Button>
+                <motion.div
+                  animate={{ rotate: isRefreshing ? 360 : 0 }}
+                  transition={{ duration: 0.3, ease: "easeInOut" }}
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </motion.div>
+              </Button>
+            </div>
+            <PromptExamples
+              prompts={displayedPrompts.map(p => ({ text: p }))}
+              onPromptClick={handlePromptSelect}
+              title={t('samplePrompts')}
+              variant="card"
+              columns={2}
+              showTitle={true}
+            />
           </div>
-          <PromptExamples
-            prompts={displayedPrompts.map(p => ({ text: p }))}
-            onPromptClick={handlePromptSelect}
-            title={t('samplePrompts')}
-            variant="card"
-            columns={2}
-            showTitle={true}
-          />
         </div>
       )}
 
@@ -1620,12 +1658,15 @@ export function SunaModesPanel({
 
           {selectedMode === 'video' && (
             <ScrollArea className="w-full">
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 pb-2">
+              <div className={cn(
+                "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 pb-2",
+                isFreeTier && "opacity-50 pointer-events-none"
+              )}>
                 {currentMode.options.items.map((item) => (
                   <Card
                     key={item.id}
-                    className="flex flex-col items-center gap-2 cursor-pointer group p-2 bg-transparent hover:bg-transparent transition-all duration-200 border border-border hover:border-border rounded-xl overflow-hidden shadow-none"
-                    onClick={() => handlePromptSelect(`Generate a ${item.name.toLowerCase()} style video`)}
+                    className="flex flex-col items-center gap-2 cursor-pointer group p-2 bg-transparent hover:bg-transparent transition-all duration-200 border border-border hover:border-border rounded-xl overflow-hidden shadow-none relative"
+                    onClick={() => !isFreeTier && handlePromptSelect(`Generate a ${item.name.toLowerCase()} style video`)}
                   >
                     <div className="w-full aspect-square rounded-lg border border-transparent group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
                       {item.image ? (
@@ -1639,6 +1680,12 @@ export function SunaModesPanel({
                         />
                       ) : (
                         <Video className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                      )}
+                      {/* Lock overlay for free users */}
+                      {isFreeTier && (
+                        <div className="absolute inset-0 bg-background/60 flex items-center justify-center">
+                          <Lock className="w-5 h-5 text-muted-foreground" />
+                        </div>
                       )}
                     </div>
                     <span className="text-xs text-center text-foreground/70 group-hover:text-foreground transition-colors duration-200 font-medium">
