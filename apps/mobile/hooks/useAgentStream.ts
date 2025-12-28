@@ -6,7 +6,6 @@ import type { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/api/types'
 import { API_URL, getAuthToken } from '@/api/config';
 import { safeJsonParse } from '@/lib/utils/message-grouping';
 import { chatKeys } from '@/lib/chat';
-import { sseLogger } from '@/lib/utils/sse-logger';
 
 interface UseAgentStreamResult {
   status: string;
@@ -256,11 +255,6 @@ export function useAgentStream(
         `[useAgentStream] Finalizing stream with status: ${finalStatus}, runId: ${runId}`,
       );
 
-      // Finalize SSE logging
-      sseLogger.finalize().catch(() => {
-        // Silently fail if logging fails
-      });
-
       const currentThreadId = threadIdRef.current;
       const currentSetMessages = setMessagesRef.current;
 
@@ -320,15 +314,6 @@ export function useAgentStream(
   const handleStreamMessage = useCallback(
     (rawData: string) => {
       if (!isMountedRef.current) return;
-
-      // Log raw SSE message
-      const currentRunId = currentRunIdRef.current;
-      const currentThreadId = threadIdRef.current;
-      if (currentRunId && currentThreadId) {
-        sseLogger.logRawMessage(rawData, currentRunId, currentThreadId).catch(() => {
-          // Silently fail if logging fails
-        });
-      }
 
       let processedData = rawData;
       if (processedData.startsWith('data: ')) {
@@ -571,23 +556,6 @@ export function useAgentStream(
               retryCountRef.current = 0;
             }
             
-            // Log text chunk to file
-            const currentRunId = currentRunIdRef.current;
-            const currentThreadId = threadIdRef.current;
-            if (currentRunId && currentThreadId) {
-              sseLogger.logTextChunk({
-                timestamp: new Date().toISOString(),
-                runId: currentRunId,
-                threadId: currentThreadId,
-                sequence: message.sequence,
-                content: parsedContent.content,
-                contentLength: parsedContent.content.length,
-                messageType: 'assistant_chunk',
-                rawMessage: message,
-              }).catch(() => {
-                // Silently fail if logging fails
-              });
-            }
             
             // Use throttled approach for smoother streaming
             addContentThrottled({
@@ -957,11 +925,6 @@ export function useAgentStream(
       }
       
       flushPendingContent();
-      
-      // Finalize SSE logging on unmount
-      sseLogger.finalize().catch(() => {
-        // Silently fail if logging fails
-      });
     };
   }, [flushPendingContent]);
 
@@ -996,13 +959,6 @@ export function useAgentStream(
         setError(null);
         updateStatus('connecting');
         setAgentRunId(runId);
-
-        // Initialize SSE logging
-        await sseLogger.initialize(runId, threadId);
-        const logFilePath = sseLogger.getLogFilePath();
-        if (logFilePath) {
-          console.log(`[SSE-LOG] 📝 Logging all text chunks to: ${logFilePath}`);
-        }
 
         // Get auth credentials (token for authenticated users)
         const token = await getAuthToken();
