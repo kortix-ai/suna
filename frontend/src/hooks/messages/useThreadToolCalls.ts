@@ -6,6 +6,7 @@ import { safeJsonParse } from '@/components/thread/utils';
 import { useIsMobile } from '@/hooks/utils';
 import { isAskOrCompleteTool } from './utils';
 import { useKortixComputerStore, useIsSidePanelOpen, useSetIsSidePanelOpen } from '@/stores/kortix-computer-store';
+import { getOrAssignToolNumber, getToolNumber } from './tool-tracking';
 
 interface UseThreadToolCallsReturn {
   toolCalls: ToolCallInput[];
@@ -117,6 +118,10 @@ export function useThreadToolCalls(
 
         const toolName = functionName.replace(/_/g, '-').toLowerCase();
         const isSuccess = toolResult?.success !== false;
+        
+        // Get or assign tool identifier for verbose logging
+        const existingNumber = getToolNumber(toolCallId);
+        const toolNumber = getOrAssignToolNumber(toolCallId);
 
         // Check if this tool should be filtered out
         if (shouldFilterTool(toolName)) {
@@ -335,8 +340,15 @@ export function useThreadToolCalls(
         
         // Update or add each tool call from metadata
         filteredToolCalls.forEach((metadataToolCall) => {
+        const toolCallId = metadataToolCall.tool_call_id;
+        const functionName = metadataToolCall.function_name;
+        
+        // Get or assign tool identifier for verbose logging
+        const existingNumber = getToolNumber(toolCallId);
+        const toolNumber = getOrAssignToolNumber(toolCallId);
+          
           const existingIndex = updated.findIndex(
-            tc => tc.toolCall.tool_call_id === metadataToolCall.tool_call_id
+            tc => tc.toolCall.tool_call_id === toolCallId
           );
 
           // Keep raw string for streaming partial JSON parsing, parse to object for completed
@@ -354,6 +366,10 @@ export function useThreadToolCalls(
             return {};
           })();
 
+          // Check if this tool call has a result (from useAgentStream merging)
+          const toolResult = (metadataToolCall as any).tool_result;
+          const isCompleted = (metadataToolCall as any).completed === true;
+          
           const newToolCall: ToolCallInput = {
             toolCall: {
               tool_call_id: metadataToolCall.tool_call_id,
@@ -363,7 +379,13 @@ export function useThreadToolCalls(
               rawArguments: typeof rawArgs === 'string' ? rawArgs : undefined,
               source: metadataToolCall.source || 'native',
             },
-            isSuccess: true,
+            // Merge tool result if available (real-time result from useAgentStream)
+            toolResult: toolResult ? {
+              success: toolResult.success !== false,
+              output: toolResult.output,
+              error: toolResult.error || null,
+            } : undefined,
+            isSuccess: toolResult ? (toolResult.success !== false) : true,
             assistantTimestamp: toolCall.created_at || new Date().toISOString(),
             messages: messages as any,
           };
@@ -384,6 +406,14 @@ export function useThreadToolCalls(
                 }
               }
             }
+            
+            // Merge tool result if available (real-time update)
+            const mergedToolResult = toolResult ? {
+              success: toolResult.success !== false,
+              output: toolResult.output,
+              error: toolResult.error || null,
+            } : updated[existingIndex].toolResult;
+            
             updated[existingIndex] = {
               ...updated[existingIndex],
               toolCall: {
@@ -391,6 +421,9 @@ export function useThreadToolCalls(
                 arguments: normalizedArgs,
                 rawArguments: rawArgsStr,
               },
+              // Update tool result if available (real-time merge)
+              toolResult: mergedToolResult,
+              isSuccess: mergedToolResult ? (mergedToolResult.success !== false) : updated[existingIndex].isSuccess,
               messages: messages as any,
             };
           } else {
@@ -444,4 +477,3 @@ export function useThreadToolCalls(
     userClosedPanelRef,
   };
 }
-

@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@calcom/embed-react": "^1.5.2",
@@ -128,6 +130,7 @@
     "comment-json": "^4.2.5",
     "date-fns": "^3.6.0",
     "diff": "^7.0.0",
+    "expo": "^54.0.30",
     "extract-colors": "^4.2.0",
     "file-saver": "^2.0.5",
     "flags": "^4.0.2",
@@ -199,7 +202,8 @@
     "y-indexeddb": "^9.0.12",
     "yjs": "^13.6.27",
     "zod": "^3.25.76",
-    "zustand": "^5.0.3"
+    "zustand": "^5.0.3",
+    "react-native": "0.81.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
