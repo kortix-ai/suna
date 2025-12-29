@@ -49,6 +49,7 @@ import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useAccountState } from '@/hooks/billing';
 import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
 import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
+import { EndOfYearBanner } from '@/components/home/end-of-year-banner';
 
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
 const AgentRunLimitBanner = lazy(() => 
@@ -395,6 +396,8 @@ export function HeroSection() {
                 />
 
                 <div className="relative z-10 pt-20 sm:pt-24 md:pt-32 mx-auto h-full w-full max-w-6xl flex flex-col items-center justify-center min-h-[60vh] sm:min-h-0">
+
+                    <EndOfYearBanner />
 
                     {holidayPromo.isActive && (
                         <div className="w-full max-w-4xl mx-auto px-4 sm:px-0 mb-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
