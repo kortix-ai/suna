@@ -29,6 +29,7 @@ interface GridCell {
   tokens: string;
   title: string;
   description: string;
+  image_query?: string;  // Optional image search query
 }
 
 interface PageLayout {
@@ -38,10 +39,19 @@ interface PageLayout {
   cells: GridCell[];
 }
 
+interface ImageMeta {
+  url: string;
+  width: number;
+  height: number;
+  aspect_ratio: number;
+  ocr_text?: string;  // Extracted text/context from image
+}
+
 interface ContentState {
   html: string;
   isStreaming: boolean;
   isComplete: boolean;
+  image?: ImageMeta;  // Image data with dimensions for this cell
 }
 
 // Parse XML
@@ -67,13 +77,14 @@ function parseLayoutXML(xml: string): { layout: Partial<PageLayout>; closedCells
     layout.toc = sections;
   }
 
-  // Parse cells
+  // Parse cells - with optional image_query attribute
   const gridMatch = xml.match(/<grid>([\s\S]*)/);
   if (gridMatch) {
-    const cellRegex = /<cell id="([^"]+)" cols="(\d+)" type="([^"]+)" tokens="(\d+)">([\s\S]*?)<\/cell>/g;
+    // Match cells with or without image_query attribute
+    const cellRegex = /<cell id="([^"]+)" cols="(\d+)" type="([^"]+)" tokens="(\d+)"(?:\s+image_query="([^"]*)")?>([\s\S]*?)<\/cell>/g;
     let match;
     while ((match = cellRegex.exec(gridMatch[1])) !== null) {
-      const cellContent = match[5];
+      const cellContent = match[6];
       const titleMatch = cellContent.match(/<title>([\s\S]*?)<\/title>/);
       const descMatch = cellContent.match(/<desc>([\s\S]*?)<\/desc>/);
       
@@ -82,6 +93,7 @@ function parseLayoutXML(xml: string): { layout: Partial<PageLayout>; closedCells
         cols: match[2],
         type: match[3],
         tokens: match[4],
+        image_query: match[5] || undefined,  // Extract image_query if present
         title: titleMatch ? titleMatch[1].trim() : '',
         description: descMatch ? descMatch[1].trim() : ''
       });
@@ -119,10 +131,51 @@ function ContentRenderer({ html, isDark }: { html: string; isDark: boolean }) {
       li{margin-bottom:0.3rem}
       strong{color:var(--kp-text);font-weight:600}
       a{color:var(--kp-primary)}
+      /* Image styles - full width, natural height */
+      .kp-cell-image,img.kp-cell-image{
+        display:block;width:100%;height:auto;object-fit:cover;border-radius:12px;
+        margin-bottom:1rem;box-shadow:0 2px 12px rgba(0,0,0,0.1);
+        transition:all 0.4s ease;background:rgba(128,128,128,0.03);
+      }
+      .kp-cell-image:hover{transform:scale(1.01);box-shadow:0 4px 20px rgba(0,0,0,0.15)}
+      img{display:block;width:100%;height:auto;border-radius:10px;object-fit:cover}
+      .kp-cell img{margin:0.75rem 0 1rem;max-height:none}
     </style>${html || ''}`;
   }, [html, isDark]);
 
   return <div ref={containerRef} className="w-full h-full" />;
+}
+
+// Cell Image component - full width, height adjusts to aspect ratio
+function CellImage({ image }: { image: ImageMeta }) {
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+  
+  if (error) return null;
+  
+  // Use actual aspect ratio for natural sizing, with sensible bounds
+  const aspectRatio = image.aspect_ratio || 1.5;
+  // Clamp aspect ratio: min 0.5 (2:1 tall), max 2.5 (wide but not too extreme)
+  const clampedRatio = Math.max(0.5, Math.min(aspectRatio, 2.5));
+  
+  return (
+    <div 
+      className="w-full rounded-xl mb-4 bg-muted/5 overflow-hidden"
+      style={{ aspectRatio: clampedRatio }}
+    >
+      <img
+        src={image.url}
+        alt=""
+        loading="lazy"
+        onLoad={() => setLoaded(true)}
+        onError={() => setError(true)}
+        className={cn(
+          "w-full h-full object-cover rounded-xl transition-all duration-500",
+          loaded ? "opacity-100 scale-100" : "opacity-0 scale-[0.98]"
+        )}
+      />
+    </div>
+  );
 }
 
 // Image Lightbox
@@ -206,6 +259,12 @@ export default function ExplorerResultPage() {
     const params = new URLSearchParams({
       title: cell.title, description: cell.description, type: cell.type, cols: cell.cols, tokens: cell.tokens, topic
     });
+    
+    // Add image_query if present
+    if (cell.image_query) {
+      params.append('image_query', cell.image_query);
+      console.log(`🖼️ Cell ${cell.id} has image_query: ${cell.image_query}`);
+    }
 
     setContentStates(prev => ({ ...prev, [cell.id]: { html: '', isStreaming: true, isComplete: false } }));
 
@@ -215,9 +274,24 @@ export default function ExplorerResultPage() {
     es.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'content') {
+        if (data.type === 'image') {
+          // Received image with dimensions + OCR context for this cell
+          const imageMeta: ImageMeta = {
+            url: data.url,
+            width: data.width || 400,
+            height: data.height || 300,
+            aspect_ratio: data.aspect_ratio || 1.33,
+            ocr_text: data.ocr_text || undefined
+          };
+          console.log(`🖼️ Cell ${cell.id} received image: ${imageMeta.url.slice(0, 50)}... (${imageMeta.width}x${imageMeta.height}, aspect: ${imageMeta.aspect_ratio})`);
+          if (imageMeta.ocr_text) {
+            console.log(`👁️ Cell ${cell.id} OCR context: ${imageMeta.ocr_text.slice(0, 100)}...`);
+          }
+          setContentStates(prev => ({ ...prev, [cell.id]: { ...prev[cell.id], image: imageMeta } }));
+        } else if (data.type === 'content') {
           setContentStates(prev => ({ ...prev, [cell.id]: { ...prev[cell.id], html: (prev[cell.id]?.html || '') + data.content } }));
         } else if (data.type === 'done') {
+          console.log(`✅ Cell ${cell.id} complete, has_image: ${data.has_image}`);
           setContentStates(prev => ({ ...prev, [cell.id]: { ...prev[cell.id], isStreaming: false, isComplete: true } }));
           es.close();
           contentSourcesRef.current.delete(cell.id);
@@ -247,9 +321,13 @@ export default function ExplorerResultPage() {
     es.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'images') {
+        console.log('📨 Explorer event:', data.type, data);
+        
+        if (data.type === 'hero_images' || data.type === 'images') {
+          // Handle both hero_images (new) and images (legacy) event types
           setImages(data.images || []);
           setImageCount(data.count || data.images?.length || 0);
+          console.log(`🖼️ Received ${data.images?.length || 0} hero images`);
         } else if (data.type === 'content') {
           accumulatedXML += data.content;
           const { layout: parsedLayout, closedCells } = parseLayoutXML(accumulatedXML);
@@ -258,6 +336,7 @@ export default function ExplorerResultPage() {
           closedCells.forEach(cell => {
             if (!processedIds.has(cell.id)) {
               processedIds.add(cell.id);
+              console.log(`🎯 Starting content for cell: ${cell.id}, image_query: ${cell.image_query || 'none'}`);
               startContentGeneration(cell, decodeURIComponent(result).replace(/-/g, ' '));
             }
           });
@@ -494,6 +573,10 @@ export default function ExplorerResultPage() {
                       "p-3 overflow-auto",
                       isLarge ? "min-h-[150px]" : "min-h-[80px]"
                     )}>
+                      {/* Show cell image if available and content doesn't already embed it */}
+                      {state?.image && !state?.html?.includes(state.image.url) && (
+                        <CellImage image={state.image} />
+                      )}
                       {state?.html ? (
                         <ContentRenderer html={state.html} isDark={isDark} />
                       ) : (
