@@ -33,7 +33,7 @@ const HEARTBEAT_INTERVAL = 60000;
 const DEBOUNCE_DELAY = 500;
 const SESSION_STORAGE_KEY = 'presence_session_id';
 
-const DISABLE_PRESENCE = process.env.EXPO_PUBLIC_DISABLE_PRESENCE === 'true';
+const DISABLE_PRESENCE = true;
 
 function generateSessionId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;

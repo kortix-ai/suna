@@ -29,10 +29,9 @@ type PresenceContextValue = {
 const PresenceContext = createContext<PresenceContextValue | undefined>(undefined);
 
 const HEARTBEAT_INTERVAL = 60000;
-const DEBOUNCE_DELAY = 500; // Debounce rapid thread changes
+const DEBOUNCE_DELAY = 500;
 
-// Check if presence is disabled via environment variable
-const DISABLE_PRESENCE = process.env.NEXT_PUBLIC_DISABLE_PRESENCE === 'true';
+const DISABLE_PRESENCE = true;
 
 function generateSessionId(): string {
   return crypto.randomUUID();
