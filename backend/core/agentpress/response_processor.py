@@ -783,19 +783,21 @@ class ResponseProcessor:
                     native_tool_calls_updated = False
                     native_tool_calls_updated = False
                     
-                    # Check for and log Anthropic thinking content
+                    # Check for and log Anthropic thinking content (MiniMax reasoning m2.1 with reasoning_split=True, we avoid yielding such chunks)
+                    # NOTE: With reasoning_split=True, reasoning comes separately and should NOT be included in content
                     if delta and hasattr(delta, 'reasoning_content') and delta.reasoning_content:
                         if not has_printed_thinking_prefix:
                             # print("[THINKING]: ", end='', flush=True)
                             has_printed_thinking_prefix = True
                         # print(delta.reasoning_content, end='', flush=True)
-                        # Append reasoning to main content to be saved in the final message
+                        # Track reasoning content for debugging but DO NOT add to accumulated_content
+                        # With reasoning_split=True, reasoning is separate from actual text content
                         reasoning_content = delta.reasoning_content
                         # logger.debug(f"Processing reasoning_content: type={type(reasoning_content)}, value={reasoning_content}")
                         if isinstance(reasoning_content, list):
                             reasoning_content = ''.join(str(item) for item in reasoning_content)
-                        # logger.debug(f"About to concatenate reasoning_content (type={type(reasoning_content)}) to accumulated_content (type={type(accumulated_content)})")
-                        accumulated_content += reasoning_content
+                        # logger.debug(f"Reasoning content received (not included in final message): {reasoning_content[:100]}...")
+                        # DO NOT add reasoning_content to accumulated_content - only actual text content should be saved
 
                     # Process content chunk - HOT PATH, optimized for minimum latency
                     if delta and hasattr(delta, 'content') and delta.content:

@@ -23,7 +23,6 @@ const GoogleTagManager = lazy(() => import('@next/third-parties/google').then(mo
 const PostHogIdentify = lazy(() => import('@/components/posthog-identify').then(mod => ({ default: mod.PostHogIdentify })));
 const PlanSelectionModal = lazy(() => import('@/components/billing/pricing/plan-selection-modal').then(mod => ({ default: mod.PlanSelectionModal })));
 const AnnouncementDialog = lazy(() => import('@/components/announcements/announcement-dialog').then(mod => ({ default: mod.AnnouncementDialog })));
-const ReactScan = lazy(() => import('@/components/react-scan').then(mod => ({ default: mod.ReactScan })));
 const CookieConsent = lazy(() => import('@/components/cookie-consent').then(mod => ({ default: mod.CookieConsent })));
 
 
@@ -117,8 +116,6 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://www.googletagmanager.com" />
         <link rel="dns-prefetch" href="https://connect.facebook.net" />
         <link rel="dns-prefetch" href="https://eu.i.posthog.com" />
-        
-        {/* React Scan - development only */}
         
         {/* Static SEO meta tags - rendered in initial HTML */}
         <title>Kortix: Your Autonomous AI Worker</title>
@@ -256,10 +253,6 @@ export default function RootLayout({
           </Suspense>
           <Suspense fallback={null}>
             <PostHogIdentify />
-          </Suspense>
-          {/* React Scan - only loads in development */}
-          <Suspense fallback={null}>
-            <ReactScan />
           </Suspense>
           <Suspense fallback={null}>
             <CookieConsent />

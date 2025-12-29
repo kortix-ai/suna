@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { CircleDashed, CheckCircle } from 'lucide-react';
+import { CircleDashed } from 'lucide-react';
 import { getToolIcon, getUserFriendlyToolName, extractPrimaryParam } from '@/components/thread/utils';
 import { AppIcon } from '../tool-views/shared/AppIcon';
 
@@ -318,7 +318,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
             (typeof effectiveToolCall?.arguments === 'string' && effectiveToolCall.arguments.includes('video_options'));
 
         return (
-            <div className="my-1.5 space-y-2">
+            <div className="space-y-2">
                 {/* Tool button - exactly like regular tools */}
                 <button
                     onClick={() => onToolClick?.(messageId ?? null, toolName, effectiveToolCall?.tool_call_id)}
@@ -326,9 +326,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 >
                     <AppIcon toolCall={effectiveToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground shrink-0" fallbackIcon={IconComponent} />
                     <span className="font-mono text-xs text-foreground">Generate Media</span>
-                    {isCompleted ? (
-                        <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0 ml-1" />
-                    ) : (
+                    {!isCompleted && (
                         <CircleDashed className="h-3.5 w-3.5 text-muted-foreground shrink-0 animate-spin ml-1" />
                     )}
                 </button>
@@ -371,7 +369,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     // Always show tool button, conditionally show content below for streamable tools
     if (showExpanded && isToolStreamable) {
         return (
-            <div className="my-1.5">
+            <div>
                 {/* Always render the container for smooth transitions */}
                 <div className={`border border-neutral-200 dark:border-neutral-700/50 rounded-2xl overflow-hidden transition-all duration-500 ease-in-out transform-gpu ${shouldShowContent ? 'bg-zinc-100 dark:bg-neutral-900' : 'bg-muted scale-95 opacity-80'
                     }`}>
@@ -386,9 +384,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                         </div>
                         <span className="font-mono text-xs text-foreground flex-1">{displayName}</span>
                         {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
-                        {isCompleted ? (
-                            <CheckCircle className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0 ml-auto" />
-                        ) : (
+                        {!isCompleted && (
                             <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-auto" />
                         )}
                     </button>
@@ -481,7 +477,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     }
 
     return (
-        <div className="my-1.5">
+        <div>
             <button
                 onClick={() => onToolClick?.(messageId ?? null, toolName, effectiveToolCall?.tool_call_id)}
                 className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
@@ -491,9 +487,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 </div>
                 <span className="font-mono text-xs text-foreground">{displayName}</span>
                 {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
-                {isCompleted ? (
-                    <CheckCircle className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0 ml-1" />
-                ) : (
+                {!isCompleted && (
                     <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-1" />
                 )}
             </button>

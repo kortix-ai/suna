@@ -230,7 +230,14 @@ async def make_llm_api_call(
         params["model_id"] = model_id
     if stream:
         params["stream_options"] = {"include_usage": True}
-    
+
+    # Add OpenRouter-specific reasoning parameter for MiniMax models (minimax-2.1)
+    actual_model_id = params.get("model", "")
+    if actual_model_id.startswith("openrouter/") and "minimax" in actual_model_id.lower():
+        params["reasoning"] = {"enabled": True}
+        params["reasoning_split"] = True
+        # avoid showing reasoning tokens in plain content
+        
     try:
         _save_debug_input(params)
         response = await provider_router.acompletion(**params)
