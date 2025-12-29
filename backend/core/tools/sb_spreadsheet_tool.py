@@ -172,6 +172,8 @@ Create interactive Excel (.xlsx) files that users can view, edit, and download. 
 - Creation: Just filename → Auto-saved to /workspace/spreadsheets/
 - Updates: Use full path → /workspace/spreadsheets/filename.xlsx
 
+**IMPORTANT:** DO NOT CREATE CORRUPT SPREADSHEETS. BE EXTRA CAREFUL WHEN USING FORMULAS AND REFERENCING CELLS.
+
 **⚠️ CRITICAL - AVOIDING CIRCULAR REFERENCES:**
 Headers are in ROW 1. Data rows start at ROW 2.
 - Row 0 in your rows array = Excel Row 2

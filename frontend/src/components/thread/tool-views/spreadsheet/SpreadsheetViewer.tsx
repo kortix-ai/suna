@@ -393,7 +393,6 @@ export function SpreadsheetViewer({
           openComplete={handlers.handleOpenComplete}
           openFailure={handlers.handleOpenFailure}
         />
-        
         {isLoading && (
           <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-sm">
             <SpreadsheetLoader mode="max" />
