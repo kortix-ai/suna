@@ -1744,7 +1744,55 @@ function FrameFloatingToolbar({
             </Tooltip>
             <PopoverContent className="w-auto p-3" align="center">
               <div className="space-y-3">
-                <div className="text-xs text-muted-foreground font-medium">Frame Size</div>
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-muted-foreground font-medium">Frame Size</div>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-muted-foreground">
+                        Presets
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-48 p-1 max-h-64 overflow-y-auto" align="end" side="right">
+                      {[
+                        { cat: 'SOCIAL', items: [
+                          { n: 'Instagram Post', w: 1080, h: 1080 },
+                          { n: 'Instagram Story', w: 1080, h: 1920 },
+                          { n: 'TikTok', w: 1080, h: 1920 },
+                          { n: 'Twitter Post', w: 1200, h: 675 },
+                          { n: 'Facebook Post', w: 1200, h: 630 },
+                          { n: 'YouTube Thumb', w: 1280, h: 720 },
+                        ]},
+                        { cat: 'DEVICES', items: [
+                          { n: 'iPhone 15 Pro', w: 1179, h: 2556 },
+                          { n: 'iPhone 15 Pro Max', w: 1290, h: 2796 },
+                          { n: 'iPad Pro 11"', w: 1668, h: 2388 },
+                        ]},
+                        { cat: 'DESIGN', items: [
+                          { n: 'Dribbble', w: 400, h: 300 },
+                          { n: 'Dribbble HD', w: 800, h: 600 },
+                          { n: 'Square', w: 1000, h: 1000 },
+                        ]},
+                      ].map(cat => (
+                        <div key={cat.cat}>
+                          <div className="px-2 py-1 text-[9px] text-muted-foreground uppercase tracking-wider">{cat.cat}</div>
+                          {cat.items.map(p => (
+                            <button
+                              key={p.n}
+                              className="w-full flex items-center justify-between px-2 py-1 text-xs hover:bg-accent rounded-lg text-left"
+                              onClick={() => {
+                                setTempWidth(String(p.w));
+                                setTempHeight(String(p.h));
+                              }}
+                            >
+                              <span>{p.n}</span>
+                              <span className="text-[9px] text-muted-foreground font-mono">{p.w}×{p.h}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </PopoverContent>
+                  </Popover>
+                </div>
                 <div className="flex items-center gap-2">
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] text-muted-foreground uppercase">Width</label>
@@ -1753,7 +1801,7 @@ function FrameFloatingToolbar({
                       value={tempWidth}
                       onChange={(e) => setTempWidth(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && applySize()}
-                      className="w-20 h-7 px-2 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      className="w-20 h-7 px-2 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                       min={100}
                     />
                   </div>
@@ -1765,7 +1813,7 @@ function FrameFloatingToolbar({
                       value={tempHeight}
                       onChange={(e) => setTempHeight(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && applySize()}
-                      className="w-20 h-7 px-2 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      className="w-20 h-7 px-2 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                       min={100}
                     />
                   </div>
