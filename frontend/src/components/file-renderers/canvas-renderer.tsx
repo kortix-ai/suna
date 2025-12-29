@@ -509,6 +509,8 @@ function CanvasFrameElement({
   onChange,
   scale,
   stagePosition,
+  allElements,
+  onMoveChildren,
 }: {
   element: FrameCanvasElement;
   isSelected: boolean;
@@ -516,6 +518,8 @@ function CanvasFrameElement({
   onChange: (newAttrs: Partial<FrameCanvasElement>) => void;
   scale: number;
   stagePosition: { x: number; y: number };
+  allElements?: CanvasElement[];
+  onMoveChildren?: (childStartPositions: { id: string; x: number; y: number }[], dx: number, dy: number) => void;
 }) {
   const [dragState, setDragState] = useState<{
     type: 'move' | 'resize';
@@ -526,6 +530,8 @@ function CanvasFrameElement({
     startElemY: number;
     startWidth: number;
     startHeight: number;
+    childIds?: string[]; // IDs of elements inside this frame at drag start
+    childStartPositions?: { id: string; x: number; y: number }[]; // Starting positions of children
   } | null>(null);
 
   const posX = element.x * scale + stagePosition.x;
@@ -538,6 +544,24 @@ function CanvasFrameElement({
     e.stopPropagation();
     e.preventDefault();
     onSelect(e);
+
+    // Find all elements inside this frame at drag start (only for move, not resize)
+    let childIds: string[] = [];
+    let childStartPositions: { id: string; x: number; y: number }[] = [];
+    if (type === 'move' && allElements) {
+      const frameRight = element.x + element.width;
+      const frameBottom = element.y + element.height;
+      const children = allElements.filter(el => {
+        if (el.id === element.id || el.type === 'frame') return false;
+        // Check if element overlaps with frame
+        const elRight = el.x + el.width;
+        const elBottom = el.y + el.height;
+        return el.x < frameRight && elRight > element.x && el.y < frameBottom && elBottom > element.y;
+      });
+      childIds = children.map(el => el.id);
+      childStartPositions = children.map(el => ({ id: el.id, x: el.x, y: el.y }));
+    }
+
     setDragState({
       type,
       handle,
@@ -547,6 +571,8 @@ function CanvasFrameElement({
       startElemY: element.y,
       startWidth: element.width,
       startHeight: element.height,
+      childIds,
+      childStartPositions,
     });
   };
 
@@ -559,6 +585,10 @@ function CanvasFrameElement({
 
       if (dragState.type === 'move') {
         onChange({ x: dragState.startElemX + dx, y: dragState.startElemY + dy });
+        // Also move children
+        if (onMoveChildren && dragState.childStartPositions && dragState.childStartPositions.length > 0) {
+          onMoveChildren(dragState.childStartPositions, dx, dy);
+        }
       } else if (dragState.type === 'resize' && dragState.handle) {
         let newX = dragState.startElemX;
         let newY = dragState.startElemY;
@@ -3237,6 +3267,17 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                   onChange={(newAttrs) => handleElementChange(frame.id, newAttrs)}
                   scale={scale}
                   stagePosition={stagePosition}
+                  allElements={elements}
+                  onMoveChildren={(childStartPositions, dx, dy) => {
+                    // Move all children by the delta from their starting positions
+                    setElements(prev => prev.map(el => {
+                      const startPos = childStartPositions.find(c => c.id === el.id);
+                      if (startPos) {
+                        return { ...el, x: startPos.x + dx, y: startPos.y + dy };
+                      }
+                      return el;
+                    }));
+                  }}
                 />
               ))}
             </>
