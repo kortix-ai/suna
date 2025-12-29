@@ -122,8 +122,10 @@ export function CanvasToolView({
 
   // Check if result is recent (within last 30 seconds) - to distinguish live ops from history
   // This is when the RESULT was received, not when the tool started, so even 60s tools work
+  // IMPORTANT: If toolTimestamp is undefined, assume it's a live operation (not old history)
   const toolTimestampMs = toolTimestamp ? new Date(toolTimestamp).getTime() : 0;
-  const isRecentResult = (Date.now() - toolTimestampMs) < 30000;
+  const hasValidTimestamp = !!toolTimestamp && toolTimestampMs > 0;
+  const isRecentResult = !hasValidTimestamp || (Date.now() - toolTimestampMs) < 30000;
 
   // Debug logging on mount
   useEffect(() => {
@@ -138,6 +140,7 @@ export function CanvasToolView({
       canvasName,
       argsCanvasPath: args.canvas_path,
       hasOnFileClick: !!onFileClick,
+      hasValidTimestamp,
       isRecentResult,
       toolTimestampMs,
       nowMs: Date.now(),
@@ -150,7 +153,8 @@ export function CanvasToolView({
   // Uses timestamp to distinguish live operations from viewing old history
   useEffect(() => {
     const path = canvasPath || args.canvas_path || (canvasName ? `canvases/${canvasName}.kanvax` : null);
-    const recentCheck = (Date.now() - toolTimestampMs) < 30000;
+    // If no valid timestamp, assume it's a live operation (not old history)
+    const recentCheck = !hasValidTimestamp || (Date.now() - toolTimestampMs) < 30000;
 
     console.log('[CanvasToolView] Effect triggered', {
       toolCallId,
@@ -159,6 +163,7 @@ export function CanvasToolView({
       hasCanvasPath,
       hasOnFileClick: !!onFileClick,
       hasPath: !!path,
+      hasValidTimestamp,
       isRecentResult: recentCheck,
       alreadyAutoOpened: toolCallId ? autoOpenedToolCalls.has(toolCallId) : false,
       path,
@@ -171,9 +176,11 @@ export function CanvasToolView({
     }
 
     // Skip if result is old (viewing history after page refresh)
+    // Note: If no timestamp is available, we assume it's live and don't skip
     if (!recentCheck) {
       console.log('[CanvasToolView] Skipping: result is old (viewing history)', {
         toolTimestampMs,
+        hasValidTimestamp,
         nowMs: Date.now(),
         diffMs: Date.now() - toolTimestampMs,
       });
@@ -206,7 +213,7 @@ export function CanvasToolView({
         hasPath: !!path,
       });
     }
-  }, [toolCallId, toolResult, actualIsSuccess, hasCanvasPath, onFileClick, canvasPath, canvasName, args.canvas_path, toolTimestampMs]);
+  }, [toolCallId, toolResult, actualIsSuccess, hasCanvasPath, onFileClick, canvasPath, canvasName, args.canvas_path, toolTimestampMs, hasValidTimestamp]);
 
   // Determine what action was taken
   const getActionInfo = () => {
