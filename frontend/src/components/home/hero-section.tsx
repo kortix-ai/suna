@@ -397,7 +397,7 @@ export function HeroSection() {
                     <PromoBanner />
 
                     <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-12 sm:pt-20 max-w-4xl mx-auto pb-6 sm:pb-7">
-                        <DynamicGreeting className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-medium text-balance text-center px-4 sm:px-2" />
+                        <DynamicGreeting className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium text-balance text-center px-4 sm:px-2" />
                     </div>
 
                     <div className="flex flex-col items-center w-full max-w-3xl mx-auto gap-2 flex-wrap justify-center px-4 sm:px-0 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100 fill-mode-both">
