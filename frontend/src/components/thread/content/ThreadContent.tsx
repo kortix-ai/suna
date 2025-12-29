@@ -517,7 +517,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
 
     return (
       <div className="mt-1.5">
-        <div className="my-1.5 flex flex-col gap-2">
+        <div className="flex flex-col gap-2">
           {toolCalls.length > 0 ? (
             toolCalls.map((tc: any, tcIndex: number) => {
               const toolName = tc.function_name?.replace(/_/g, "-") || "";

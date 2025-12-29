@@ -306,6 +306,7 @@ export function useChat(): UseChatReturn {
   const uploadFilesMutation = useUploadMultipleFiles();
 
   const lastStreamStartedRef = useRef<string | null>(null);
+  const lastCompletedRunIdRef = useRef<string | null>(null);
 
   const handleNewMessageFromStream = useCallback(
     (message: UnifiedMessage) => {
@@ -487,6 +488,11 @@ export function useChat(): UseChatReturn {
         streamHookStatus === 'agent_not_running' ||
         streamHookStatus === 'error')
     ) {
+      // Track the run ID that just completed to prevent immediate resume
+      if (agentRunId) {
+        lastCompletedRunIdRef.current = agentRunId;
+      }
+      
       setAgentRunId(null);
       lastStreamStartedRef.current = null;
       
@@ -497,13 +503,23 @@ export function useChat(): UseChatReturn {
         queryClient.invalidateQueries({ 
           queryKey: chatKeys.messages(activeThreadId),
         });
+        // Also invalidate activeRuns to get updated status
+        queryClient.invalidateQueries({ 
+          queryKey: ['activeRuns'],
+        });
       }
     }
-  }, [streamHookStatus, setAgentRunId, activeThreadId, queryClient]);
+  }, [streamHookStatus, setAgentRunId, activeThreadId, queryClient, agentRunId]);
 
   // Check for running agents when thread becomes active or app comes to foreground
   useEffect(() => {
     if (!activeThreadId || !activeRuns) {
+      return;
+    }
+
+    // Don't check for active runs immediately after stream completion
+    // Wait a bit for the activeRuns query to update
+    if (streamHookStatus === 'completed' || streamHookStatus === 'stopped') {
       return;
     }
 
@@ -512,11 +528,17 @@ export function useChat(): UseChatReturn {
       run => run.thread_id === activeThreadId && run.status === 'running'
     );
 
-    if (runningAgentForThread && !agentRunId && !lastStreamStartedRef.current) {
+    // Don't resume a run that we just completed
+    if (
+      runningAgentForThread && 
+      !agentRunId && 
+      !lastStreamStartedRef.current &&
+      runningAgentForThread.id !== lastCompletedRunIdRef.current
+    ) {
       console.log('🔄 [useChat] Detected active run for current thread, resuming:', runningAgentForThread.id);
       setAgentRunId(runningAgentForThread.id);
     }
-  }, [activeThreadId, activeRuns, agentRunId]);
+  }, [activeThreadId, activeRuns, agentRunId, streamHookStatus]);
 
   const refreshMessages = useCallback(async () => {
     if (!activeThreadId || isStreaming) {
