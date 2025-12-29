@@ -741,163 +741,167 @@ import React, {
         };
       }, [threadMetadata, displayMessages, agentName, agentAvatar]);
   
-      const groupedMessages = useMemo(() => {
-        const groups: MessageGroup[] = [];
-        let currentGroup: MessageGroup | null = null;
-        let assistantGroupCounter = 0;
-  
-        displayMessages.forEach((message, index) => {
-          const messageType = message.type;
-          const key = message.message_id || `msg-${index}`;
-  
-          if (messageType === "user") {
-            if (currentGroup) {
-              groups.push(currentGroup);
-              currentGroup = null;
-            }
-            groups.push({ type: "user", messages: [message], key });
-          } else if (
-            messageType === "assistant" ||
-            messageType === "tool" ||
-            messageType === "browser_state"
-          ) {
-            const canAddToExistingGroup =
-              currentGroup &&
-              currentGroup.type === "assistant_group" &&
-              (() => {
-                if (messageType === "assistant") {
-                  const lastAssistantMsg = currentGroup!.messages.findLast(
-                    (m) => m.type === "assistant",
-                  );
-                  if (!lastAssistantMsg) return true;
-                  return message.agent_id === lastAssistantMsg.agent_id;
-                }
-                return true;
-              })();
-  
-            if (canAddToExistingGroup) {
-              currentGroup?.messages.push(message);
-            } else {
-              if (currentGroup) {
-                groups.push(currentGroup);
-              }
-              assistantGroupCounter++;
-              currentGroup = {
-                type: "assistant_group",
-                messages: [message],
-                key: `assistant-group-${assistantGroupCounter}`,
-              };
-            }
-          } else if (messageType !== "status") {
-            if (currentGroup) {
-              groups.push(currentGroup);
-              currentGroup = null;
-            }
+    // Split grouping into two stages to prevent re-rendering historical messages during streaming
+    const baseGroups = useMemo(() => {
+      const groups: MessageGroup[] = [];
+      let currentGroup: MessageGroup | null = null;
+      let assistantGroupCounter = 0;
+
+      displayMessages.forEach((message, index) => {
+        const messageType = message.type;
+        const key = message.message_id || `msg-${index}`;
+
+        if (messageType === "user") {
+          if (currentGroup) {
+            groups.push(currentGroup);
+            currentGroup = null;
           }
-        });
-  
-        if (currentGroup) {
-          groups.push(currentGroup);
-        }
-  
-        const mergedGroups: MessageGroup[] = [];
-        let currentMergedGroup: MessageGroup | null = null;
-  
-        groups.forEach((group) => {
-          if (group.type === "assistant_group") {
-            if (
-              currentMergedGroup &&
-              currentMergedGroup.type === "assistant_group"
-            ) {
-              currentMergedGroup.messages.push(...group.messages);
-            } else {
-              if (currentMergedGroup) {
-                mergedGroups.push(currentMergedGroup);
+          groups.push({ type: "user", messages: [message], key });
+        } else if (
+          messageType === "assistant" ||
+          messageType === "tool" ||
+          messageType === "browser_state"
+        ) {
+          const canAddToExistingGroup =
+            currentGroup &&
+            currentGroup.type === "assistant_group" &&
+            (() => {
+              if (messageType === "assistant") {
+                const lastAssistantMsg = currentGroup!.messages.findLast(
+                  (m) => m.type === "assistant",
+                );
+                if (!lastAssistantMsg) return true;
+                return message.agent_id === lastAssistantMsg.agent_id;
               }
-              currentMergedGroup = { ...group };
+              return true;
+            })();
+
+          if (canAddToExistingGroup) {
+            currentGroup?.messages.push(message);
+          } else {
+            if (currentGroup) {
+              groups.push(currentGroup);
             }
+            assistantGroupCounter++;
+            currentGroup = {
+              type: "assistant_group",
+              messages: [message],
+              key: `assistant-group-${assistantGroupCounter}`,
+            };
+          }
+        } else if (messageType !== "status") {
+          if (currentGroup) {
+            groups.push(currentGroup);
+            currentGroup = null;
+          }
+        }
+      });
+
+      if (currentGroup) {
+        groups.push(currentGroup);
+      }
+
+      const mergedGroups: MessageGroup[] = [];
+      let currentMergedGroup: MessageGroup | null = null;
+
+      groups.forEach((group) => {
+        if (group.type === "assistant_group") {
+          if (
+            currentMergedGroup &&
+            currentMergedGroup.type === "assistant_group"
+          ) {
+            currentMergedGroup.messages.push(...group.messages);
           } else {
             if (currentMergedGroup) {
               mergedGroups.push(currentMergedGroup);
-              currentMergedGroup = null;
             }
-            mergedGroups.push(group);
+            currentMergedGroup = { ...group };
           }
-        });
-  
-        if (currentMergedGroup) {
-          mergedGroups.push(currentMergedGroup);
-        }
-  
-        if (streamingTextContent) {
-          const lastGroup = mergedGroups.at(-1);
-          if (!lastGroup || lastGroup.type === "user") {
-            assistantGroupCounter++;
-            mergedGroups.push({
-              type: "assistant_group",
-              messages: [
-                {
-                  content: streamingTextContent,
-                  type: "assistant",
-                  message_id: "streamingTextContent",
-                  metadata: "streamingTextContent",
-                  created_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString(),
-                  is_llm_message: true,
-                  thread_id: "streamingTextContent",
-                  sequence: Infinity,
-                },
-              ],
-              key: `assistant-group-${assistantGroupCounter}-streaming`,
-            });
+        } else {
+          if (currentMergedGroup) {
+            mergedGroups.push(currentMergedGroup);
+            currentMergedGroup = null;
           }
+          mergedGroups.push(group);
         }
-  
-        if (streamingToolCall && !streamingTextContent) {
-          const lastGroup = mergedGroups.at(-1);
-          if (!lastGroup || lastGroup.type === "user") {
-            assistantGroupCounter++;
-            mergedGroups.push({
-              type: "assistant_group",
-              messages: [],
-              key: `assistant-group-${assistantGroupCounter}-streaming-tool`,
-            });
-          }
+      });
+
+      if (currentMergedGroup) {
+        mergedGroups.push(currentMergedGroup);
+      }
+
+      return mergedGroups;
+    }, [displayMessages]);
+
+    const groupedMessages = useMemo(() => {
+      const mergedGroups = [...baseGroups];
+
+      if (streamingTextContent) {
+        const lastGroup = mergedGroups.at(-1);
+        if (!lastGroup || lastGroup.type === "user") {
+          mergedGroups.push({
+            type: "assistant_group",
+            messages: [
+              {
+                content: streamingTextContent,
+                type: "assistant",
+                message_id: "streamingTextContent",
+                metadata: "streamingTextContent",
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                is_llm_message: true,
+                thread_id: "streamingTextContent",
+                sequence: Infinity,
+              },
+            ],
+            key: `streaming-group-text`,
+          });
         }
-  
-        if (readOnly && streamingText && isStreamingText) {
-          const lastGroup = mergedGroups.at(-1);
-          if (!lastGroup || lastGroup.type === "user") {
-            assistantGroupCounter++;
-            mergedGroups.push({
-              type: "assistant_group",
-              messages: [
-                {
-                  content: streamingText,
-                  type: "assistant",
-                  message_id: "playbackStreamingText",
-                  metadata: "playbackStreamingText",
-                  created_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString(),
-                  is_llm_message: true,
-                  thread_id: "playbackStreamingText",
-                  sequence: Infinity,
-                },
-              ],
-              key: `assistant-group-${assistantGroupCounter}-playback-streaming`,
-            });
-          }
+      }
+
+      if (streamingToolCall && !streamingTextContent) {
+        const lastGroup = mergedGroups.at(-1);
+        if (!lastGroup || lastGroup.type === "user") {
+          mergedGroups.push({
+            type: "assistant_group",
+            messages: [],
+            key: `streaming-group-tool`,
+          });
         }
-  
-        return mergedGroups;
-      }, [
-        displayMessages,
-        streamingTextContent,
-        streamingToolCall,
-        readOnly,
-        streamingText,
-        isStreamingText,
-      ]);
+      }
+
+      if (readOnly && streamingText && isStreamingText) {
+        const lastGroup = mergedGroups.at(-1);
+        if (!lastGroup || lastGroup.type === "user") {
+          mergedGroups.push({
+            type: "assistant_group",
+            messages: [
+              {
+                content: streamingText,
+                type: "assistant",
+                message_id: "playbackStreamingText",
+                metadata: "playbackStreamingText",
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                is_llm_message: true,
+                thread_id: "playbackStreamingText",
+                sequence: Infinity,
+              },
+            ],
+            key: `streaming-group-playback`,
+          });
+        }
+      }
+
+      return mergedGroups;
+    }, [
+      baseGroups,
+      streamingTextContent,
+      streamingToolCall,
+      readOnly,
+      streamingText,
+      isStreamingText,
+    ]);
   
       const parentRef = scrollContainerRef || messagesContainerRef;
 
@@ -989,44 +993,54 @@ import React, {
   
       const renderMessageGroup = (group: MessageGroup, index: number) => {
         const isLastGroup = index === groupedMessages.length - 1;
-  
+
+        // CSS optimization for long lists: skip rendering layout for off-screen items
+        const style = !isLastGroup
+          ? ({
+              contentVisibility: "auto",
+              containIntrinsicSize: "100px",
+            } as React.CSSProperties)
+          : undefined;
+
         if (group.type === "user") {
           return (
-            <UserMessageRow
-              key={group.key}
-              message={group.messages[0]}
-              groupKey={group.key}
+            <div key={group.key} style={style}>
+              <UserMessageRow
+                message={group.messages[0]}
+                groupKey={group.key}
+                handleOpenFileViewer={handleOpenFileViewer}
+                sandboxId={sandboxId}
+                project={project}
+              />
+            </div>
+          );
+        }
+
+        return (
+          <div key={group.key} style={style}>
+            <AssistantGroupRow
+              group={group}
+              groupIndex={index}
+              isLastGroup={isLastGroup}
+              agentInfo={agentInfo}
+              handleToolClick={handleToolClick}
               handleOpenFileViewer={handleOpenFileViewer}
               sandboxId={sandboxId}
               project={project}
+              streamingTextContent={streamingTextContent}
+              streamingToolCall={streamingToolCall}
+              streamHookStatus={streamHookStatus}
+              agentStatus={agentStatus}
+              readOnly={readOnly}
+              visibleMessages={visibleMessages}
+              streamingText={streamingText}
+              isStreamingText={isStreamingText}
+              latestMessageRef={latestMessageRef}
+              t={t}
+              threadId={threadId}
+              onPromptFill={onPromptFill}
             />
-          );
-        }
-  
-        return (
-          <AssistantGroupRow
-            key={group.key}
-            group={group}
-            groupIndex={index}
-            isLastGroup={isLastGroup}
-            agentInfo={agentInfo}
-            handleToolClick={handleToolClick}
-            handleOpenFileViewer={handleOpenFileViewer}
-            sandboxId={sandboxId}
-            project={project}
-            streamingTextContent={streamingTextContent}
-            streamingToolCall={streamingToolCall}
-            streamHookStatus={streamHookStatus}
-            agentStatus={agentStatus}
-            readOnly={readOnly}
-            visibleMessages={visibleMessages}
-            streamingText={streamingText}
-            isStreamingText={isStreamingText}
-            latestMessageRef={latestMessageRef}
-            t={t}
-            threadId={threadId}
-            onPromptFill={onPromptFill}
-          />
+          </div>
         );
       };
   
