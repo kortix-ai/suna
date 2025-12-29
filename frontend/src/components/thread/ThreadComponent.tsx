@@ -254,7 +254,10 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     setAutoOpenedPanel(true);
   }, [setIsSidePanelOpen, setAutoOpenedPanel]);
 
-  const { openFileInComputer, openFileBrowser, reset: resetKortixComputerStore } = useKortixComputerStore();
+  // Use individual selectors to avoid subscribing to entire store (prevents unnecessary re-renders)
+  const openFileInComputer = useKortixComputerStore((state) => state.openFileInComputer);
+  const openFileBrowser = useKortixComputerStore((state) => state.openFileBrowser);
+  const resetKortixComputerStore = useKortixComputerStore((state) => state.reset);
 
   const billingModal = useBillingModal();
   const threadBilling = useThreadBilling(
@@ -708,7 +711,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   const handleStreamClose = useCallback(() => { }, []);
 
-  const { appendOutput, markComplete } = useToolStreamStore();
+  // Use individual selectors to avoid subscribing to entire store (prevents unnecessary re-renders)
+  const appendOutput = useToolStreamStore((state) => state.appendOutput);
+  const markComplete = useToolStreamStore((state) => state.markComplete);
   const processSpreadsheetOperation = useProcessStreamOperation();
   
   const handleToolOutputStream = useCallback((data: { 

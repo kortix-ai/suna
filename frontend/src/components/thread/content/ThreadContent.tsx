@@ -7,7 +7,6 @@ import React, {
   } from "react";
   import { CircleDashed } from "lucide-react";
   import { useTranslations } from "next-intl";
-  import { useVirtualizer } from "@tanstack/react-virtual";
   import {
     UnifiedMessage,
     ParsedContent,
@@ -901,17 +900,7 @@ import React, {
       ]);
   
       const parentRef = scrollContainerRef || messagesContainerRef;
-  
-      const virtualizer = useVirtualizer({
-        count: groupedMessages.length,
-        getScrollElement: () => parentRef.current,
-        estimateSize: () => 120,
-        overscan: 5,
-        getItemKey: (index) => groupedMessages[index].key,
-      });
-  
-      const shouldUseVirtualization = groupedMessages.length > 20;
-  
+
       useEffect(() => {
         const checkContentHeight = () => {
           const container = parentRef.current;
@@ -1050,42 +1039,11 @@ import React, {
             ref={contentRef}
             className="mx-auto max-w-3xl min-w-0 w-full pl-6 pr-6"
           >
-            {shouldUseVirtualization ? (
-              <div
-                style={{
-                  height: `${virtualizer.getTotalSize()}px`,
-                  width: "100%",
-                  position: "relative",
-                }}
-              >
-                {virtualizer.getVirtualItems().map((virtualItem) => {
-                  const group = groupedMessages[virtualItem.index];
-                  return (
-                    <div
-                      key={virtualItem.key}
-                      data-index={virtualItem.index}
-                      ref={virtualizer.measureElement}
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        transform: `translateY(${virtualItem.start}px)`,
-                      }}
-                      className="py-3"
-                    >
-                      {renderMessageGroup(group, virtualItem.index)}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="space-y-6 min-w-0">
-                {groupedMessages.map((group, index) =>
-                  renderMessageGroup(group, index),
-                )}
-              </div>
-            )}
+            <div className="space-y-6 min-w-0">
+              {groupedMessages.map((group, index) =>
+                renderMessageGroup(group, index),
+              )}
+            </div>
   
             {showNewGroupLoader && (
               <div ref={latestMessageRef} className="w-full h-22 rounded mt-6">
