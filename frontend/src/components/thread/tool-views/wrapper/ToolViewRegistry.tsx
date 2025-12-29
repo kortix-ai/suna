@@ -26,24 +26,41 @@ import { GetCredentialProfilesToolView } from '../get-credential-profiles/get-cr
 import { GetCurrentAgentConfigToolView } from '../get-current-agent-config/get-current-agent-config';
 import { TaskListToolView } from '../task-list/TaskListToolView';
 import { ListPresentationTemplatesToolView } from '../presentation-tools/ListPresentationTemplatesToolView';
-import { PresentationViewer } from '../presentation-tools/PresentationViewer';
 import { ListPresentationsToolView } from '../presentation-tools/ListPresentationsToolView';
 import { DeleteSlideToolView } from '../presentation-tools/DeleteSlideToolView';
 import { DeletePresentationToolView } from '../presentation-tools/DeletePresentationToolView';
 // import { PresentationStylesToolView } from '../presentation-tools/PresentationStylesToolView';
 import { ExportToolView } from '../presentation-tools/ExportToolView';
-import { SheetsToolView } from '../sheets-tools/sheets-tool-view';
 import { GetProjectStructureView } from '../web-dev/GetProjectStructureView';
 import { ImageEditGenerateToolView } from '../image-edit-generate-tool/ImageEditGenerateToolView';
 import { DesignerToolView } from '../designer-tool/DesignerToolView';
 import dynamic from 'next/dynamic';
 import { UploadFileToolView } from '../UploadFileToolView';
 
-// Dynamically import CanvasToolView to avoid SSR issues with react-konva
+// Dynamically import heavy tool views to reduce initial bundle size
 const CanvasToolView = dynamic(
   () => import('../canvas-tool/CanvasToolView').then((mod) => mod.CanvasToolView),
   { ssr: false }
 );
+
+// Syncfusion Spreadsheet is ~1-2 MB - must be lazy loaded
+const SpreadsheetToolView = dynamic(
+  () => import('../spreadsheet/SpreadsheetToolview').then((mod) => mod.SpreadsheetToolView),
+  { ssr: false, loading: () => <div className="p-4 text-muted-foreground">Loading spreadsheet...</div> }
+);
+
+// SheetsToolView also uses heavy charting/table libraries
+const SheetsToolView = dynamic(
+  () => import('../sheets-tools/sheets-tool-view').then((mod) => mod.SheetsToolView),
+  { ssr: false, loading: () => <div className="p-4 text-muted-foreground">Loading sheets...</div> }
+);
+
+// Presentation tools have heavy dependencies
+const PresentationViewer = dynamic(
+  () => import('../presentation-tools/PresentationViewer').then((mod) => mod.PresentationViewer),
+  { ssr: false, loading: () => <div className="p-4 text-muted-foreground">Loading presentation...</div> }
+);
+
 import { CreateNewAgentToolView } from '../create-new-agent/create-new-agent';
 import { UpdateAgentToolView } from '../update-agent/update-agent';
 import { SearchMcpServersForAgentToolView } from '../search-mcp-servers-for-agent/search-mcp-servers-for-agent';
@@ -67,7 +84,6 @@ import { ExpandMessageToolView } from '../expand-message-tool/ExpandMessageToolV
 import { RealityDefenderToolView } from '../reality-defender-tool/RealityDefenderToolView';
 import { ApifyToolView } from '../apify-tool/ToolView';
 import { FileReaderToolView } from '../file-reader-tool/FileReaderToolView';
-import { SpreadsheetToolView } from '../spreadsheet/SpreadsheetToolview';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;

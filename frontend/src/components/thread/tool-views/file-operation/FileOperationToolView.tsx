@@ -25,8 +25,15 @@ import {
   getFileTypeFromExtension,
 } from '@/components/file-editors';
 import { UnifiedMarkdown } from '@/components/markdown';
-import { SpreadsheetViewer, HtmlRenderer, JsonRenderer } from '@/components/file-renderers';
+import { HtmlRenderer, JsonRenderer } from '@/components/file-renderers';
+import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
+
+// Lazy load SpreadsheetViewer as it imports Syncfusion (~1-2 MB)
+const SpreadsheetViewer = dynamic(
+  () => import('../spreadsheet/SpreadsheetViewer').then((mod) => mod.SpreadsheetViewer),
+  { ssr: false, loading: () => <div className="p-4 text-muted-foreground">Loading spreadsheet...</div> }
+);
 import { useTheme } from 'next-themes';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import {

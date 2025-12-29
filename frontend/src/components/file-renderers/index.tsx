@@ -7,7 +7,8 @@ export { VideoRenderer, InlineVideoPlayer } from './video-renderer';
 export { BinaryRenderer } from './binary-renderer';
 export { CsvRenderer } from './csv-renderer';
 export { XlsxRenderer } from './xlsx-renderer';
-export { SpreadsheetViewer } from '../thread/tool-views/spreadsheet/SpreadsheetViewer';
+// SpreadsheetViewer removed from barrel - imports Syncfusion (~1-2 MB)
+// Import directly: import { SpreadsheetViewer } from '@/components/thread/tool-views/spreadsheet/SpreadsheetViewer'
 export { PptxRenderer } from './pptx-renderer';
 export { HtmlRenderer } from './html-renderer';
 export { JsonRenderer } from './JsonRenderer';

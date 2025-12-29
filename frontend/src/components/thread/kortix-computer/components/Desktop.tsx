@@ -26,8 +26,14 @@ import { EnhancedFileBrowser } from './EnhancedFileBrowser';
 import { getFileIconByName } from './Icons';
 import { SystemInfoContent } from './SystemInfoContent';
 import { FileInfoContent, FileInfo } from './FileInfoContent';
-import { SpreadsheetApp } from './SpreadsheetApp';
+import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
+
+// Lazy load SpreadsheetApp as it imports Syncfusion (~1-2 MB)
+const SpreadsheetApp = dynamic(
+  () => import('./SpreadsheetApp').then((mod) => mod.SpreadsheetApp),
+  { ssr: false, loading: () => <div className="flex items-center justify-center h-full text-muted-foreground">Loading spreadsheet...</div> }
+);
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
 

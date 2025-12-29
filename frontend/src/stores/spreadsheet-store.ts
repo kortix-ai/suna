@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import { SpreadsheetComponent } from '@syncfusion/ej2-react-spreadsheet';
+
+// Type-only import to avoid bundling the 1-2 MB Syncfusion library
+type SpreadsheetComponent = import('@syncfusion/ej2-react-spreadsheet').SpreadsheetComponent;
 
 export interface SpreadsheetCell {
   value?: string;
