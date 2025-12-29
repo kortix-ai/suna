@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   Plus,
   Minus,
@@ -22,6 +22,8 @@ import {
   ArrowLeftRight,
   Wand2,
   Scissors,
+  Frame,
+  Palette,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -62,22 +64,35 @@ interface TextRegion {
   confidence: number;
 }
 
-interface CanvasElement {
+// Base element properties shared by all element types
+interface BaseCanvasElement {
   id: string;
-  type: 'image';
-  src: string;
   x: number;
   y: number;
   width: number;
   height: number;
   rotation?: number;
-  scaleX?: number;
-  scaleY?: number;
   opacity?: number;
   locked?: boolean;
   name: string;
   visible?: boolean;
 }
+
+// Image element - has src for image data
+interface ImageCanvasElement extends BaseCanvasElement {
+  type: 'image';
+  src: string;
+  scaleX?: number;
+  scaleY?: number;
+}
+
+// Frame element - container/viewport for exporting, no src needed
+interface FrameCanvasElement extends BaseCanvasElement {
+  type: 'frame';
+  backgroundColor?: string; // Optional fill color, default transparent
+}
+
+type CanvasElement = ImageCanvasElement | FrameCanvasElement;
 
 interface CanvasData {
   name: string;
@@ -93,27 +108,39 @@ interface CanvasData {
 
 // Sanitize element to ensure all numeric fields are actually numbers
 // (AI sometimes passes strings like "700" instead of 700)
-function sanitizeElement(el: Partial<CanvasElement>): CanvasElement {
-  return {
-    ...el,
+function sanitizeElement(el: Partial<CanvasElement> & { type?: string }): CanvasElement {
+  const base = {
     id: el.id || '',
-    type: 'image',
-    src: el.src || '',
     name: el.name || '',
     x: Number(el.x) || 0,
     y: Number(el.y) || 0,
     width: Number(el.width) || 100,
     height: Number(el.height) || 100,
     rotation: Number(el.rotation) || 0,
-    scaleX: Number(el.scaleX) || 1,
-    scaleY: Number(el.scaleY) || 1,
     opacity: el.opacity !== undefined ? Number(el.opacity) : 1,
     locked: Boolean(el.locked),
     visible: el.visible !== false,
-  } as CanvasElement;
+  };
+
+  if (el.type === 'frame') {
+    return {
+      ...base,
+      type: 'frame',
+      backgroundColor: (el as Partial<FrameCanvasElement>).backgroundColor || undefined,
+    } as FrameCanvasElement;
+  }
+
+  // Default to image type
+  return {
+    ...base,
+    type: 'image',
+    src: (el as Partial<ImageCanvasElement>).src || '',
+    scaleX: Number((el as Partial<ImageCanvasElement>).scaleX) || 1,
+    scaleY: Number((el as Partial<ImageCanvasElement>).scaleY) || 1,
+  } as ImageCanvasElement;
 }
 
-function sanitizeElements(elements: Partial<CanvasElement>[]): CanvasElement[] {
+function sanitizeElements(elements: (Partial<CanvasElement> & { type?: string })[]): CanvasElement[] {
   return (elements || []).map(sanitizeElement);
 }
 
@@ -206,16 +233,18 @@ function CanvasImageElement({
   stagePosition,
   authToken,
   isProcessing = false,
+  clipPath,
 }: {
-  element: CanvasElement;
+  element: ImageCanvasElement;
   isSelected: boolean;
   onSelect: (e: React.MouseEvent) => void;
-  onChange: (newAttrs: Partial<CanvasElement>) => void;
+  onChange: (newAttrs: Partial<ImageCanvasElement>) => void;
   sandboxId?: string;
   scale: number;
   stagePosition: { x: number; y: number };
   authToken?: string;
   isProcessing?: boolean;
+  clipPath?: string; // CSS clip-path for frame clipping
 }) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -432,13 +461,28 @@ function CanvasImageElement({
         opacity: element.opacity || 1,
         transform: `rotate(${element.rotation || 0}deg)`,
         transformOrigin: 'center center',
+        zIndex: 2,
+        // NO clipPath here - selection UI must be fully visible
       }}
     >
-      <div className={cn("w-full h-full rounded overflow-hidden relative", isSelected && "ring-2 ring-blue-500")}>
+      {/* Image content - THIS gets clipped if inside frame */}
+      <div 
+        className="w-full h-full rounded overflow-hidden relative"
+        style={{ clipPath: clipPath || undefined }}
+      >
         <img src={imageSrc} alt={element.name} draggable={false} className="w-full h-full object-fill pointer-events-none" />
         <AIProcessingOverlay isVisible={isProcessing} />
       </div>
 
+      {/* Selection ring - OUTSIDE clipped area, always fully visible */}
+      {isSelected && (
+        <div 
+          className="absolute inset-0 rounded ring-2 ring-blue-500 pointer-events-none"
+          style={{ zIndex: 5 }}
+        />
+      )}
+
+      {/* Resize handles - OUTSIDE clipped area, always fully visible */}
       {isSelected && !element.locked && (
         <>
           {/* Corner handles - blue */}
@@ -451,6 +495,199 @@ function CanvasImageElement({
           <div className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ew-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'e')} />
           <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ns-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'n')} />
           <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ns-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 's')} />
+        </>
+      )}
+    </div>
+  );
+}
+
+// Frame element - a container/viewport that can be exported
+function CanvasFrameElement({
+  element,
+  isSelected,
+  onSelect,
+  onChange,
+  scale,
+  stagePosition,
+}: {
+  element: FrameCanvasElement;
+  isSelected: boolean;
+  onSelect: (e: React.MouseEvent) => void;
+  onChange: (newAttrs: Partial<FrameCanvasElement>) => void;
+  scale: number;
+  stagePosition: { x: number; y: number };
+}) {
+  const [dragState, setDragState] = useState<{
+    type: 'move' | 'resize';
+    handle?: string;
+    startX: number;
+    startY: number;
+    startElemX: number;
+    startElemY: number;
+    startWidth: number;
+    startHeight: number;
+  } | null>(null);
+
+  const posX = element.x * scale + stagePosition.x;
+  const posY = element.y * scale + stagePosition.y;
+  const width = element.width * scale;
+  const height = element.height * scale;
+
+  const handleMouseDown = (e: React.MouseEvent, type: 'move' | 'resize' = 'move', handle?: string) => {
+    if (element.locked && type === 'move') return;
+    e.stopPropagation();
+    e.preventDefault();
+    onSelect(e);
+    setDragState({
+      type,
+      handle,
+      startX: e.clientX,
+      startY: e.clientY,
+      startElemX: element.x,
+      startElemY: element.y,
+      startWidth: element.width,
+      startHeight: element.height,
+    });
+  };
+
+  useEffect(() => {
+    if (!dragState) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const dx = (e.clientX - dragState.startX) / scale;
+      const dy = (e.clientY - dragState.startY) / scale;
+
+      if (dragState.type === 'move') {
+        onChange({ x: dragState.startElemX + dx, y: dragState.startElemY + dy });
+      } else if (dragState.type === 'resize' && dragState.handle) {
+        let newX = dragState.startElemX;
+        let newY = dragState.startElemY;
+        let newW = dragState.startWidth;
+        let newH = dragState.startHeight;
+
+        // Frame resize - free aspect ratio (not locked like images)
+        switch (dragState.handle) {
+          case 'se':
+            newW = Math.max(100, dragState.startWidth + dx);
+            newH = Math.max(100, dragState.startHeight + dy);
+            break;
+          case 'sw':
+            newW = Math.max(100, dragState.startWidth - dx);
+            newH = Math.max(100, dragState.startHeight + dy);
+            newX = dragState.startElemX + (dragState.startWidth - newW);
+            break;
+          case 'ne':
+            newW = Math.max(100, dragState.startWidth + dx);
+            newH = Math.max(100, dragState.startHeight - dy);
+            newY = dragState.startElemY + (dragState.startHeight - newH);
+            break;
+          case 'nw':
+            newW = Math.max(100, dragState.startWidth - dx);
+            newH = Math.max(100, dragState.startHeight - dy);
+            newX = dragState.startElemX + (dragState.startWidth - newW);
+            newY = dragState.startElemY + (dragState.startHeight - newH);
+            break;
+          case 'e':
+            newW = Math.max(100, dragState.startWidth + dx);
+            break;
+          case 'w':
+            newW = Math.max(100, dragState.startWidth - dx);
+            newX = dragState.startElemX + (dragState.startWidth - newW);
+            break;
+          case 's':
+            newH = Math.max(100, dragState.startHeight + dy);
+            break;
+          case 'n':
+            newH = Math.max(100, dragState.startHeight - dy);
+            newY = dragState.startElemY + (dragState.startHeight - newH);
+            break;
+        }
+
+        onChange({ x: newX, y: newY, width: newW, height: newH });
+      }
+    };
+
+    const handleMouseUp = () => setDragState(null);
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [dragState, scale, onChange]);
+
+  const isDragging = dragState?.type === 'move';
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: posX,
+        top: posY,
+        width,
+        height,
+        opacity: element.opacity || 1,
+        transform: `rotate(${element.rotation || 0}deg)`,
+        transformOrigin: 'center center',
+        zIndex: 10, // Frames always on top
+        pointerEvents: 'none', // Frame area doesn't catch clicks - only label and handles do
+      }}
+    >
+      {/* Frame border only - background rendered separately */}
+      <div
+        className="w-full h-full relative"
+        style={{
+          border: isSelected ? '2px solid #3b82f6' : '2px dashed #404040',
+          borderRadius: '4px',
+        }}
+      >
+        {/* Frame label - top left outside frame - THIS is the click target for selection/move */}
+        <div 
+          className="absolute left-0 flex items-center gap-1 px-1.5 py-0.5 rounded-t-sm"
+          style={{
+            top: '-22px',
+            backgroundColor: isSelected ? '#3b82f6' : '#333333',
+            color: '#fff',
+            fontSize: '10px',
+            cursor: element.locked ? 'default' : isDragging ? 'grabbing' : 'grab',
+            pointerEvents: 'auto', // Label catches clicks
+          }}
+          onMouseDown={(e) => handleMouseDown(e, 'move')}
+        >
+          <Frame className="h-3 w-3" />
+          <span className="truncate max-w-[100px]">{element.name}</span>
+        </div>
+
+        {/* Dimension indicator - bottom center when selected */}
+        {isSelected && (
+          <div 
+            className="absolute left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-sm pointer-events-none"
+            style={{
+              bottom: '-24px',
+              backgroundColor: '#3b82f6',
+              color: '#fff',
+              fontSize: '11px',
+              fontFamily: 'monospace',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {Math.round(element.width)} × {Math.round(element.height)}
+          </div>
+        )}
+      </div>
+
+      {/* Resize handles - blue when selected, pointer-events:auto so they're clickable */}
+      {isSelected && !element.locked && (
+        <>
+          <div className="absolute -top-1.5 -left-1.5 w-3 h-3 rounded-sm cursor-nwse-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'nw')} />
+          <div className="absolute -top-1.5 -right-1.5 w-3 h-3 rounded-sm cursor-nesw-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'ne')} />
+          <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 rounded-sm cursor-nesw-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'sw')} />
+          <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 rounded-sm cursor-nwse-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'se')} />
+          <div className="absolute top-1/2 -left-1.5 -translate-y-1/2 w-3 h-3 rounded-sm cursor-ew-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'w')} />
+          <div className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 rounded-sm cursor-ew-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'e')} />
+          <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-sm cursor-ns-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'n')} />
+          <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-sm cursor-ns-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 's')} />
         </>
       )}
     </div>
@@ -652,10 +889,10 @@ function FloatingToolbar({
   authToken,
   sandboxId,
 }: {
-  element: CanvasElement;
+  element: ImageCanvasElement;
   scale: number;
   stagePosition: { x: number; y: number };
-  onChange: (newAttrs: Partial<CanvasElement>) => void;
+  onChange: (newAttrs: Partial<ImageCanvasElement>) => void;
   onDuplicate: () => void;
   onDelete: () => void;
   onDownloadPng: () => void;
@@ -1360,6 +1597,288 @@ function FloatingToolbar({
           </Tooltip>
 
           {/* Delete - icon only */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full text-destructive hover:text-destructive" onClick={onDelete}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Delete</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+    </div>
+  );
+}
+
+// Floating toolbar for Frame elements - simpler than image toolbar
+function FrameFloatingToolbar({
+  element,
+  elements,
+  scale,
+  stagePosition,
+  onChange,
+  onDuplicate,
+  onDelete,
+  onExportFrame,
+  sandboxId,
+  authToken,
+}: {
+  element: FrameCanvasElement;
+  elements: CanvasElement[]; // All elements for export
+  scale: number;
+  stagePosition: { x: number; y: number };
+  onChange: (newAttrs: Partial<FrameCanvasElement>) => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+  onExportFrame: () => void;
+  sandboxId?: string;
+  authToken?: string;
+}) {
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showSizePopover, setShowSizePopover] = useState(false);
+  const [showNamePopover, setShowNamePopover] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [tempWidth, setTempWidth] = useState(String(Math.round(element.width)));
+  const [tempHeight, setTempHeight] = useState(String(Math.round(element.height)));
+  const [tempName, setTempName] = useState(element.name);
+
+  // Sync temp values when element changes
+  useEffect(() => {
+    setTempWidth(String(Math.round(element.width)));
+    setTempHeight(String(Math.round(element.height)));
+    setTempName(element.name);
+  }, [element.width, element.height, element.name]);
+
+  // Common preset colors
+  const presetColors = [
+    'transparent', '#ffffff', '#000000', '#f5f5f5', '#1a1a1a',
+    '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6',
+  ];
+
+  // Apply size changes
+  const applySize = () => {
+    const newWidth = Math.max(100, parseInt(tempWidth) || 400);
+    const newHeight = Math.max(100, parseInt(tempHeight) || 300);
+    onChange({ width: newWidth, height: newHeight });
+    setShowSizePopover(false);
+  };
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: element.x * scale + stagePosition.x + (element.width * scale) / 2,
+        top: element.y * scale + stagePosition.y + element.height * scale + 8,
+        transform: 'translateX(-50%)',
+        zIndex: 100,
+      }}
+    >
+      {/* Frame toolbar */}
+      <div className="flex items-center gap-0.5 bg-card border border-border rounded-full px-1.5 py-1">
+        <TooltipProvider delayDuration={0}>
+          {/* Frame name - clickable to edit */}
+          <Popover open={showNamePopover} onOpenChange={setShowNamePopover}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 rounded-full gap-1 text-xs"
+                  >
+                    <Frame className="h-3 w-3" />
+                    <span className="truncate max-w-[80px]">{element.name}</span>
+                  </Button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent>Rename frame</TooltipContent>
+            </Tooltip>
+            <PopoverContent className="w-auto p-3" align="center">
+              <div className="space-y-2">
+                <div className="text-xs text-muted-foreground font-medium">Frame Name</div>
+                <input
+                  type="text"
+                  value={tempName}
+                  onChange={(e) => setTempName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      onChange({ name: tempName.trim() || 'Frame' });
+                      setShowNamePopover(false);
+                    }
+                  }}
+                  className="w-40 h-7 px-2 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  autoFocus
+                />
+                <Button 
+                  size="sm" 
+                  className="w-full h-7 text-xs" 
+                  onClick={() => {
+                    onChange({ name: tempName.trim() || 'Frame' });
+                    setShowNamePopover(false);
+                  }}
+                >
+                  Rename
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          <div className="w-px h-5 bg-border mx-0.5" />
+
+          {/* Size control */}
+          <Popover open={showSizePopover} onOpenChange={setShowSizePopover}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 rounded-full gap-1 text-xs font-mono"
+                  >
+                    {Math.round(element.width)}×{Math.round(element.height)}
+                  </Button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent>Set dimensions</TooltipContent>
+            </Tooltip>
+            <PopoverContent className="w-auto p-3" align="center">
+              <div className="space-y-3">
+                <div className="text-xs text-muted-foreground font-medium">Frame Size</div>
+                <div className="flex items-center gap-2">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] text-muted-foreground uppercase">Width</label>
+                    <input
+                      type="number"
+                      value={tempWidth}
+                      onChange={(e) => setTempWidth(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && applySize()}
+                      className="w-20 h-7 px-2 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      min={100}
+                    />
+                  </div>
+                  <X className="h-3 w-3 text-muted-foreground mt-4" />
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] text-muted-foreground uppercase">Height</label>
+                    <input
+                      type="number"
+                      value={tempHeight}
+                      onChange={(e) => setTempHeight(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && applySize()}
+                      className="w-20 h-7 px-2 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      min={100}
+                    />
+                  </div>
+                </div>
+                <Button size="sm" className="w-full h-7 text-xs" onClick={applySize}>
+                  Apply
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          <div className="w-px h-5 bg-border mx-0.5" />
+
+          {/* Background color */}
+          <Popover open={showColorPicker} onOpenChange={setShowColorPicker}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 rounded-full gap-1.5 text-xs"
+                  >
+                    <div
+                      className="w-3.5 h-3.5 rounded-sm border border-border"
+                      style={{
+                        backgroundColor: element.backgroundColor || 'transparent',
+                        backgroundImage: !element.backgroundColor || element.backgroundColor === 'transparent'
+                          ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)'
+                          : undefined,
+                        backgroundSize: '6px 6px',
+                        backgroundPosition: '0 0, 0 3px, 3px -3px, -3px 0px',
+                      }}
+                    />
+                    Fill
+                  </Button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent>Background color</TooltipContent>
+            </Tooltip>
+            <PopoverContent className="w-auto p-2" align="center">
+              <div className="grid grid-cols-6 gap-1">
+                {presetColors.map((color) => (
+                  <button
+                    key={color}
+                    className={cn(
+                      "w-6 h-6 rounded-sm border border-border hover:ring-2 hover:ring-blue-500 transition-all",
+                      element.backgroundColor === color && "ring-2 ring-blue-500"
+                    )}
+                    style={{
+                      backgroundColor: color === 'transparent' ? 'transparent' : color,
+                      backgroundImage: color === 'transparent'
+                        ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)'
+                        : undefined,
+                      backgroundSize: '8px 8px',
+                      backgroundPosition: '0 0, 0 4px, 4px -4px, -4px 0px',
+                    }}
+                    onClick={() => {
+                      onChange({ backgroundColor: color === 'transparent' ? undefined : color });
+                      setShowColorPicker(false);
+                    }}
+                  />
+                ))}
+                {/* Custom color picker */}
+                <label
+                  className="w-6 h-6 rounded-sm border border-dashed border-muted-foreground hover:border-blue-500 hover:ring-2 hover:ring-blue-500 transition-all cursor-pointer flex items-center justify-center overflow-hidden relative bg-background"
+                >
+                  <Plus className="h-3 w-3 text-muted-foreground" />
+                  <input
+                    type="color"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    value={element.backgroundColor || '#ffffff'}
+                    onChange={(e) => {
+                      onChange({ backgroundColor: e.target.value });
+                    }}
+                  />
+                </label>
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          <div className="w-px h-5 bg-border mx-0.5" />
+
+          {/* Export as PNG */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 rounded-full gap-1.5 text-xs"
+                onClick={onExportFrame}
+                disabled={isExporting}
+              >
+                {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                Export
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Export frame as PNG</TooltipContent>
+          </Tooltip>
+
+          <div className="w-px h-5 bg-border mx-0.5" />
+
+          {/* Duplicate */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" onClick={onDuplicate}>
+                <Copy className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Duplicate</TooltipContent>
+          </Tooltip>
+
+          {/* Delete */}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full text-destructive hover:text-destructive" onClick={onDelete}>
@@ -2212,6 +2731,73 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
   const handleUploadClick = () => fileInputRef.current?.click();
 
+  // Add a new frame to the canvas
+  // Frame presets organized by category
+  const framePresets = useMemo(() => [
+    { category: 'Social Media', items: [
+      { name: 'Instagram Post', width: 1080, height: 1080 },
+      { name: 'Instagram Story', width: 1080, height: 1920 },
+      { name: 'Instagram Reel', width: 1080, height: 1920 },
+      { name: 'TikTok', width: 1080, height: 1920 },
+      { name: 'Twitter Post', width: 1200, height: 675 },
+      { name: 'Twitter Header', width: 1500, height: 500 },
+      { name: 'Facebook Post', width: 1200, height: 630 },
+      { name: 'Facebook Cover', width: 820, height: 312 },
+      { name: 'LinkedIn Post', width: 1200, height: 627 },
+      { name: 'LinkedIn Cover', width: 1584, height: 396 },
+      { name: 'Pinterest Pin', width: 1000, height: 1500 },
+      { name: 'YouTube Thumbnail', width: 1280, height: 720 },
+      { name: 'YouTube Shorts', width: 1080, height: 1920 },
+    ]},
+    { category: 'Devices', items: [
+      { name: 'iPhone 15 Pro Max', width: 1290, height: 2796 },
+      { name: 'iPhone 15 Pro', width: 1179, height: 2556 },
+      { name: 'iPhone 15', width: 1179, height: 2556 },
+      { name: 'iPhone 14', width: 1170, height: 2532 },
+      { name: 'iPhone SE', width: 750, height: 1334 },
+      { name: 'iPad Pro 12.9"', width: 2048, height: 2732 },
+      { name: 'iPad Pro 11"', width: 1668, height: 2388 },
+      { name: 'Android Phone', width: 1080, height: 2400 },
+    ]},
+    { category: 'Design', items: [
+      { name: 'Dribbble Shot', width: 400, height: 300 },
+      { name: 'Dribbble Shot HD', width: 800, height: 600 },
+      { name: 'Behance Project', width: 1400, height: 788 },
+      { name: 'App Icon', width: 1024, height: 1024 },
+      { name: 'Favicon', width: 512, height: 512 },
+      { name: 'Open Graph', width: 1200, height: 630 },
+    ]},
+    { category: 'Print', items: [
+      { name: 'Business Card', width: 1050, height: 600 },
+      { name: 'Poster 18×24', width: 1800, height: 2400 },
+      { name: 'A4', width: 2480, height: 3508 },
+      { name: 'Square', width: 1000, height: 1000 },
+    ]},
+  ], []);
+
+  const handleAddFrame = useCallback((width: number = 400, height: number = 300, presetName?: string) => {
+    const { x, y } = getNextImagePosition(width, height);
+    const frameCount = elements.filter(e => e.type === 'frame').length + 1;
+
+    const newFrame: FrameCanvasElement = {
+      id: `frame-${Date.now()}`,
+      type: 'frame',
+      x,
+      y,
+      width,
+      height,
+      rotation: 0,
+      opacity: 1,
+      locked: false,
+      visible: true,
+      name: presetName || `Frame ${frameCount}`,
+      backgroundColor: undefined, // Transparent by default
+    };
+    setElements(prev => [...prev, newFrame]);
+    setSelectedIds([newFrame.id]);
+    toast.success('Frame added');
+  }, [elements, getNextImagePosition]);
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2370,6 +2956,46 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleResetView}><Maximize className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Reset View</TooltipContent></Tooltip>
             <Tooltip><TooltipTrigger asChild><Button id="canvas-save-btn" variant="ghost" size="icon" className={cn("h-8 w-8 relative", hasUnsavedChanges && "text-primary")} onClick={handleSave} disabled={isSaving || !onSave}>{isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{hasUnsavedChanges && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-primary rounded-full" />}</Button></TooltipTrigger><TooltipContent>{isSaving ? 'Saving...' : hasUnsavedChanges ? 'Save changes (⌘S)' : 'No changes'}</TooltipContent></Tooltip>
             <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleUploadClick}><ImagePlus className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Add Image</TooltipContent></Tooltip>
+            {/* Add Frame with presets */}
+            <Popover>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <Frame className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent>Add Frame</TooltipContent>
+              </Tooltip>
+              <PopoverContent className="w-56 p-1 max-h-96 overflow-y-auto" align="start">
+                {/* Custom frame at top */}
+                <button
+                  className="w-full flex items-center px-2 py-1.5 text-sm hover:bg-accent rounded-lg transition-colors text-left mb-1"
+                  onClick={() => handleAddFrame(400, 300)}
+                >
+                  Custom
+                </button>
+                
+                {framePresets.map((category) => (
+                  <div key={category.category}>
+                    <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wider">
+                      {category.category}
+                    </div>
+                    {category.items.map((preset) => (
+                      <button
+                        key={preset.name}
+                        className="w-full flex items-center justify-between px-2 py-1.5 text-sm hover:bg-accent rounded-lg transition-colors text-left"
+                        onClick={() => handleAddFrame(preset.width, preset.height, preset.name)}
+                      >
+                        <span>{preset.name}</span>
+                        <span className="text-[10px] text-muted-foreground font-mono">{preset.width}×{preset.height}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </PopoverContent>
+            </Popover>
 
             {/* AI Generate */}
             <Popover>
@@ -2467,20 +3093,107 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           </div>
         )}
 
-        {elements.map((element) => (
-          <CanvasImageElement
-            key={element.id}
-            element={element}
-            isSelected={selectedIds.includes(element.id)}
-            onSelect={(e) => handleElementSelect(element.id, e)}
-            onChange={(newAttrs) => handleElementChange(element.id, newAttrs)}
-            authToken={authToken}
-            sandboxId={sandboxId}
-            scale={scale}
-            stagePosition={stagePosition}
-            isProcessing={processingElementId === element.id}
-          />
-        ))}
+        {/* Render order: Frame backgrounds -> Images (clipped if inside frame) -> Frame borders on top */}
+        {(() => {
+          const frames = elements.filter(el => el.type === 'frame') as FrameCanvasElement[];
+          const images = elements.filter(el => el.type === 'image') as ImageCanvasElement[];
+
+          // Helper: check if image overlaps with frame (any percentage)
+          const getOverlappingFrame = (img: ImageCanvasElement): FrameCanvasElement | null => {
+            for (const frame of frames) {
+              const imgRight = img.x + img.width;
+              const imgBottom = img.y + img.height;
+              const frameRight = frame.x + frame.width;
+              const frameBottom = frame.y + frame.height;
+
+              // Check if any part overlaps
+              if (img.x < frameRight && imgRight > frame.x && img.y < frameBottom && imgBottom > frame.y) {
+                return frame;
+              }
+            }
+            return null;
+          };
+
+          // Calculate clip-path for image relative to frame (in screen coords)
+          const getClipPath = (img: ImageCanvasElement, frame: FrameCanvasElement): string => {
+            // Image position in screen coords
+            const imgScreenX = img.x * scale + stagePosition.x;
+            const imgScreenY = img.y * scale + stagePosition.y;
+            const imgScreenW = img.width * scale;
+            const imgScreenH = img.height * scale;
+
+            // Frame position in screen coords
+            const frameScreenX = frame.x * scale + stagePosition.x;
+            const frameScreenY = frame.y * scale + stagePosition.y;
+            const frameScreenW = frame.width * scale;
+            const frameScreenH = frame.height * scale;
+
+            // Calculate clip rect relative to image element (0-100%)
+            const clipLeft = Math.max(0, (frameScreenX - imgScreenX) / imgScreenW * 100);
+            const clipTop = Math.max(0, (frameScreenY - imgScreenY) / imgScreenH * 100);
+            const clipRight = Math.min(100, (frameScreenX + frameScreenW - imgScreenX) / imgScreenW * 100);
+            const clipBottom = Math.min(100, (frameScreenY + frameScreenH - imgScreenY) / imgScreenH * 100);
+
+            return `polygon(${clipLeft}% ${clipTop}%, ${clipRight}% ${clipTop}%, ${clipRight}% ${clipBottom}%, ${clipLeft}% ${clipBottom}%)`;
+          };
+
+          return (
+            <>
+              {/* 1. Frame backgrounds (z-index 1) */}
+              {frames.map((frame) => (
+                <div
+                  key={`frame-bg-${frame.id}`}
+                  style={{
+                    position: 'absolute',
+                    left: frame.x * scale + stagePosition.x,
+                    top: frame.y * scale + stagePosition.y,
+                    width: frame.width * scale,
+                    height: frame.height * scale,
+                    backgroundColor: frame.backgroundColor || 'transparent',
+                    borderRadius: '4px',
+                    zIndex: 1,
+                    pointerEvents: 'none',
+                  }}
+                />
+              ))}
+
+              {/* 2. Images (z-index 2) - clipped if overlapping with frame */}
+              {images.map((img) => {
+                const overlappingFrame = getOverlappingFrame(img);
+                const clipPath = overlappingFrame ? getClipPath(img, overlappingFrame) : undefined;
+
+                return (
+                  <CanvasImageElement
+                    key={img.id}
+                    element={img}
+                    isSelected={selectedIds.includes(img.id)}
+                    onSelect={(e) => handleElementSelect(img.id, e)}
+                    onChange={(newAttrs) => handleElementChange(img.id, newAttrs)}
+                    authToken={authToken}
+                    sandboxId={sandboxId}
+                    scale={scale}
+                    stagePosition={stagePosition}
+                    isProcessing={processingElementId === img.id}
+                    clipPath={clipPath}
+                  />
+                );
+              })}
+
+              {/* 3. Frame borders/controls (z-index 10) - always on top */}
+              {frames.map((frame) => (
+                <CanvasFrameElement
+                  key={frame.id}
+                  element={frame}
+                  isSelected={selectedIds.includes(frame.id)}
+                  onSelect={(e) => handleElementSelect(frame.id, e)}
+                  onChange={(newAttrs) => handleElementChange(frame.id, newAttrs)}
+                  scale={scale}
+                  stagePosition={stagePosition}
+                />
+              ))}
+            </>
+          );
+        })()}
 
         {/* Crop Overlay - rendered at canvas level for proper pan/zoom sync */}
         {cropState && selectedIds.length === 1 && (() => {
@@ -2595,10 +3308,10 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           />
         )}
 
-        {/* Floating AI toolbar - single selection */}
-        {selectedIds.length === 1 && selectedElement && (
+        {/* Floating AI toolbar - for selected IMAGE element */}
+        {selectedIds.length === 1 && selectedElement && selectedElement.type === 'image' && (
           <FloatingToolbar
-            element={selectedElement}
+            element={selectedElement as ImageCanvasElement}
             scale={scale}
             stagePosition={stagePosition}
             onChange={(newAttrs) => handleElementChange(selectedElement.id, newAttrs)}
@@ -2785,6 +3498,123 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             }}
             authToken={authToken}
             sandboxId={sandboxId}
+          />
+        )}
+
+        {/* Floating toolbar - for selected FRAME element */}
+        {selectedIds.length === 1 && selectedElement && selectedElement.type === 'frame' && (
+          <FrameFloatingToolbar
+            element={selectedElement as FrameCanvasElement}
+            elements={elements}
+            scale={scale}
+            stagePosition={stagePosition}
+            onChange={(newAttrs) => handleElementChange(selectedElement.id, newAttrs)}
+            onDuplicate={() => {
+              const newEl: FrameCanvasElement = {
+                ...(selectedElement as FrameCanvasElement),
+                id: `frame-${Date.now()}`,
+                x: selectedElement.x + selectedElement.width + 24,
+              };
+              setElements(prev => [...prev, newEl]);
+              setSelectedIds([newEl.id]);
+            }}
+            onDelete={() => {
+              setElements(prev => prev.filter(el => el.id !== selectedElement.id));
+              setSelectedIds([]);
+            }}
+            onExportFrame={async () => {
+              // Export frame as PNG - captures all images within frame bounds
+              try {
+                toast.info('Exporting frame...');
+                const frame = selectedElement as FrameCanvasElement;
+
+                // Create a canvas at frame dimensions
+                const exportCanvas = document.createElement('canvas');
+                exportCanvas.width = Math.round(frame.width);
+                exportCanvas.height = Math.round(frame.height);
+                const ctx = exportCanvas.getContext('2d');
+                if (!ctx) throw new Error('Failed to get canvas context');
+
+                // Fill background if set
+                if (frame.backgroundColor && frame.backgroundColor !== 'transparent') {
+                  ctx.fillStyle = frame.backgroundColor;
+                  ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+                }
+
+                // Find all images that intersect with this frame
+                const frameLeft = frame.x;
+                const frameTop = frame.y;
+                const frameRight = frame.x + frame.width;
+                const frameBottom = frame.y + frame.height;
+
+                const imageElements = elements.filter(el => {
+                  if (el.type !== 'image') return false;
+                  const img = el as ImageCanvasElement;
+                  // Check if image intersects with frame
+                  const imgRight = img.x + img.width;
+                  const imgBottom = img.y + img.height;
+                  return img.x < frameRight && imgRight > frameLeft &&
+                         img.y < frameBottom && imgBottom > frameTop;
+                }) as ImageCanvasElement[];
+
+                // Sort by z-index (order in array)
+                const sortedImages = imageElements.sort((a, b) => {
+                  return elements.indexOf(a) - elements.indexOf(b);
+                });
+
+                // Draw each image
+                for (const imgEl of sortedImages) {
+                  try {
+                    let imgSrc = imgEl.src;
+
+                    // Fetch image if it's a path
+                    if (!imgSrc.startsWith('data:')) {
+                      const url = sandboxId ? getSandboxFileUrl(sandboxId, imgSrc) : imgSrc;
+                      const headers: Record<string, string> = {};
+                      if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+                      const response = await fetch(url, { credentials: 'include', headers });
+                      if (!response.ok) continue;
+                      const blob = await response.blob();
+                      imgSrc = await new Promise<string>((resolve) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result as string);
+                        reader.readAsDataURL(blob);
+                      });
+                    }
+
+                    // Load and draw image
+                    const img = new Image();
+                    await new Promise<void>((resolve, reject) => {
+                      img.onload = () => resolve();
+                      img.onerror = reject;
+                      img.src = imgSrc;
+                    });
+
+                    // Calculate position relative to frame
+                    const drawX = imgEl.x - frame.x;
+                    const drawY = imgEl.y - frame.y;
+
+                    ctx.drawImage(img, drawX, drawY, imgEl.width, imgEl.height);
+                  } catch (err) {
+                    console.warn('Failed to draw image:', imgEl.name, err);
+                  }
+                }
+
+                // Download the canvas
+                const dataUrl = exportCanvas.toDataURL('image/png');
+                const link = document.createElement('a');
+                link.href = dataUrl;
+                link.download = `${frame.name.replace(/[^a-zA-Z0-9-_]/g, '_')}.png`;
+                link.click();
+
+                toast.success('Frame exported!');
+              } catch (err) {
+                console.error('Export error:', err);
+                toast.error('Failed to export frame: ' + (err instanceof Error ? err.message : 'Unknown error'));
+              }
+            }}
+            sandboxId={sandboxId}
+            authToken={authToken}
           />
         )}
 
