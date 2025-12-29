@@ -2985,9 +2985,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                             )}
                           </div>
                         </td>
-                        <td className={`text-right p-1 text-[10px] ${subsVar.color}`}>
-                          {effectiveSubs > 0 ? `${subsVar.value >= 0 ? '+' : ''}${subsVar.value.toFixed(1)}%` : '—'}
-                        </td>
+                        <td className="text-right p-1 text-[10px] text-muted-foreground">—</td>
                         {/* MRR */}
                         <td className="text-right p-1"></td>
                         <td className="text-right p-1">
@@ -3020,9 +3018,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                             )}
                           </div>
                         </td>
-                        <td className={`text-right p-1 text-[10px] ${mrrVar.color}`}>
-                          {actual?.mrr ? `${mrrVar.value >= 0 ? '+' : ''}${mrrVar.value.toFixed(1)}%` : '—'}
-                        </td>
+                        <td className="text-right p-1 text-[10px] text-muted-foreground">—</td>
                         {/* ARR */}
                         <td className="text-right p-1"></td>
                         <td className="text-right p-1">
@@ -3055,9 +3051,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                             )}
                           </div>
                         </td>
-                        <td className={`text-right p-1 text-[10px] ${arrVar.color}`}>
-                          {actual?.arr ? `${arrVar.value >= 0 ? '+' : ''}${arrVar.value.toFixed(1)}%` : '—'}
-                        </td>
+                        <td className="text-right p-1 text-[10px] text-muted-foreground">—</td>
                         <td className="p-1">
                           {(actual?.newPaid || actual?.mrr || actual?.arr) && (
                             <button
