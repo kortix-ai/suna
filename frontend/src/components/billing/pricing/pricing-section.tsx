@@ -1067,10 +1067,10 @@ export function PricingSection({
 
   // Find the index of the user's current tier to pre-select it
   const getCurrentTierIndex = () => {
-    if (!isAuthenticated || !currentSubscription) return 0;
+    if (!isAuthenticated || !currentSubscription) return 1; // Default to Pro plan (index 1)
     const currentTierKey = currentSubscription.subscription.tier_key || currentSubscription.tier?.name;
     const index = paidTiers.findIndex(tier => tier.tierKey === currentTierKey);
-    return index >= 0 ? index : 0;
+    return index >= 0 ? index : 1; // Default to Pro plan (index 1) if tier not found
   };
 
   const [selectedPaidTierIndex, setSelectedPaidTierIndex] = useState(getCurrentTierIndex);
