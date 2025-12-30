@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { Suspense, lazy } from 'react';
 import { useAccounts } from '@/hooks/account';
 import { useAuth } from '@/components/AuthProvider';
-import { useMaintenanceNoticeQuery } from '@/hooks/edge-flags';
+import { useMaintenanceNoticeQuery, useTechnicalIssueQuery } from '@/hooks/edge-flags';
 import { useRouter } from 'next/navigation';
 import { useApiHealth } from '@/hooks/usage/use-health';
 import { useAdminRole } from '@/hooks/admin';
@@ -48,6 +48,10 @@ const KortixAppBanners = lazy(() =>
 
 const MobileAppInterstitial = lazy(() => 
   import('@/components/announcements/mobile-app-interstitial').then(mod => ({ default: mod.MobileAppInterstitial }))
+);
+
+const TechnicalIssueBanner = lazy(() => 
+  import('@/components/announcements/technical-issue-banner').then(mod => ({ default: mod.TechnicalIssueBanner }))
 );
 
 // Skeleton shell that renders immediately for FCP
@@ -96,6 +100,7 @@ export default function DashboardLayoutContent({
   const router = useRouter();
   const isMobile = useIsMobile();
   const { data: maintenanceNotice, isLoading: maintenanceLoading } = useMaintenanceNoticeQuery();
+  const { data: technicalIssue } = useTechnicalIssueQuery();
   const {
     data: healthData,
     isLoading: isCheckingHealth,
@@ -172,6 +177,16 @@ export default function DashboardLayoutContent({
       }
     >
       <div className="relative h-full">
+        {/* Technical issue banner */}
+        {technicalIssue?.enabled && (
+          <Suspense fallback={null}>
+            <TechnicalIssueBanner 
+              message={technicalIssue.message}
+              statusUrl={technicalIssue.statusUrl}
+            />
+          </Suspense>
+        )}
+        
         {/* Site-wide promo banner for free tier users */}
         <Suspense fallback={null}>
           <DashboardPromoBanner />
