@@ -4,9 +4,19 @@ import {
   Table2, 
   FileText, 
   Users, 
-  Search 
+  Search,
+  Sparkles
 } from 'lucide-react-native';
-import type { QuickAction } from '../shared/types';
+import type { LucideIcon } from 'lucide-react-native';
+
+/**
+ * Quick Action Type Definition
+ */
+export interface QuickAction {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+}
 
 /**
  * Quick Actions Configuration
@@ -15,6 +25,11 @@ import type { QuickAction } from '../shared/types';
  * Each action represents a capability or tool the user can access.
  */
 export const QUICK_ACTIONS: QuickAction[] = [
+  {
+    id: 'general',
+    label: 'General',
+    icon: Sparkles,
+  },
   {
     id: 'slides',
     label: 'Slides',

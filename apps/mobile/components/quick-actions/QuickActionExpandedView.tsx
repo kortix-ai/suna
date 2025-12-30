@@ -115,7 +115,7 @@ export function QuickActionExpandedView({
       {/* Recent Threads for this mode - Always visible */}
       {modeThreads.length > 0 && (
         <View className="mb-4">
-          <View className="flex-row items-center justify-between mb-2 px-3">
+          <View className="flex-row items-center justify-between mb-2 px-4">
             <Text className="text-xs font-roobert-medium text-muted-foreground uppercase tracking-wide">
               {t('quickActions.recent', { defaultValue: 'Recent' })}
             </Text>
@@ -135,7 +135,7 @@ export function QuickActionExpandedView({
                   console.log('📂 Opening thread from mode history:', thread.thread_id);
                   onThreadPress?.(thread.thread_id);
                 }}
-                className="bg-card border border-border/50 rounded-xl px-3 py-2.5 active:bg-accent/50 flex-row items-center gap-2"
+                className="bg-card border border-border/50 rounded-xl px-4 py-2.5 active:bg-accent/50 flex-row items-center gap-2"
                 style={{ maxWidth: 200 }}
               >
                 <Icon as={MessageCircle} size={14} className="text-muted-foreground flex-shrink-0" />
@@ -155,7 +155,7 @@ export function QuickActionExpandedView({
       {/* Collapsible Header - Tap to expand/collapse templates/styles */}
       <Pressable 
         onPress={toggleExpanded}
-        className={`flex-row items-center justify-between px-3 py-1 active:opacity-70 ${isExpanded ? 'mb-3' : ''}`}
+        className={`flex-row items-center justify-between px-4 py-1 active:opacity-70 ${isExpanded ? 'mb-3' : ''}`}
       >
         <View className="flex-row items-center gap-2">
           <Text className="text-sm font-roobert-medium text-foreground">
@@ -181,7 +181,7 @@ export function QuickActionExpandedView({
         <>
           {/* Prompt Examples for People & Research */}
           {showPromptExamples ? (
-            <View className="px-3 gap-3">
+            <View className="px-4 gap-3">
               <View className="flex-row items-center justify-end mb-1">
                 <Pressable onPress={refreshPrompts} className="p-1.5">
                   <Icon as={RefreshCw} size={14} className="text-muted-foreground" />

@@ -48,7 +48,7 @@ export function AttachmentBar({ attachments, onRemove }: AttachmentBarProps) {
     <AnimatedView
       entering={FadeIn.duration(200)}
       exiting={FadeOut.duration(150)}
-      className="px-3 pb-2"
+      className="px-4 pb-2"
     >
       {/* Minimal status - only when uploading */}
       {uploadingCount > 0 && (

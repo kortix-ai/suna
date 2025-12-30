@@ -2,7 +2,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { ChevronDown } from 'lucide-react-native';
 import * as React from 'react';
-import { Pressable, View, Platform, TouchableOpacity } from 'react-native';
+import { Pressable, View, Platform, TouchableOpacity, Image } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -91,21 +91,29 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
     );
   }
 
+  // For non-compact mode, show as "Basic" or "Advanced" button with mode-specific image
+  // Basic mode = Suna default agent, Advanced mode = custom agent
+  const isBasicMode = agent.metadata?.is_suna_default || false;
+  const modeText = isBasicMode ? 'Basic' : 'Advanced';
+  const modeImage = isBasicMode 
+    ? require('@/assets/images/Basic-Agent.png')
+    : require('@/assets/images/Advanced-Agent.png');
+
   return (
     <TouchableOpacity
       onPress={onPress}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 8 }}
+      className="h-10 rounded-full bg-neutral-100 flex-row items-center gap-2 px-[10px]"
       hitSlop={ANDROID_HIT_SLOP}
       activeOpacity={0.7}
     >
-      <AgentAvatar agent={agent} size={19} />
-      <Text className="text-foreground text-sm font-roobert-medium">{agent.name}</Text>
-      <Icon
-        as={ChevronDown}
-        size={15}
-        className="text-foreground/60 pt-0.5"
-        strokeWidth={2}
-      />
+      <View className="w-5 h-5 rounded-full overflow-hidden">
+        <Image
+          source={modeImage}
+          style={{ width: 20, height: 20 }}
+          resizeMode="cover"
+        />
+      </View>
+      <Text className="text-foreground text-sm font-roobert-medium">{modeText}</Text>
     </TouchableOpacity>
   );
 }

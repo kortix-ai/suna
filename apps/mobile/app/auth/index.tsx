@@ -155,16 +155,19 @@ function AuthBackgroundLogo() {
     }).start();
   }, []);
 
-  const leftOffset = (SCREEN_WIDTH - 393) / 2;
   const SymbolComponent = colorScheme === 'dark' ? KortixSymbolWhite : KortixSymbolBlack;
+  
+  // Center the logo horizontally on any screen size
+  const logoWidth = 554;
+  const logoLeft = (SCREEN_WIDTH - logoWidth) / 2;
 
   return (
     <RNAnimated.View
       style={{
         position: 'absolute',
         top: 20,
-        left: -80 + leftOffset,
-        width: 554,
+        left: logoLeft,
+        width: logoWidth,
         height: 462,
         opacity: fadeAnim,
       }}

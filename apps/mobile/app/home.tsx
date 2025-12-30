@@ -129,7 +129,7 @@ export default function AppScreen() {
         overlayStyle={{
           backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.2)',
         }}
-        swipeEnabled={true}
+        swipeEnabled={false}
         swipeEdgeWidth={80}
         swipeMinDistance={30}
         swipeMinVelocity={300}

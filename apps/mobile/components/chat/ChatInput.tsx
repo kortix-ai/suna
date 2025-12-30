@@ -1,7 +1,7 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { useLanguage } from '@/contexts';
-import { AudioLines, CornerDownLeft, Paperclip, X, Loader2 } from 'lucide-react-native';
+import { AudioLines, CornerDownLeft, Paperclip, X, Loader2, ArrowUp } from 'lucide-react-native';
 import { StopIcon } from '@/components/ui/StopIcon';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
@@ -133,27 +133,37 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     [placeholder, t]
   );
 
-  // Memoized dynamic height
+  // Memoized dynamic height - adjusted for content-based sizing
   const dynamicHeight = React.useMemo(() => {
-    const baseHeight = 120;
-    const maxHeight = 200;
-    const calculatedHeight = contentHeight + 80;
-    return Math.max(baseHeight, Math.min(calculatedHeight, maxHeight));
+    const minTextHeight = 24; // Minimum single line text height
+    const buttonRowHeight = 40; // Height for the bottom button row (h-10)
+    const verticalPadding = 24; // py-3 = 12px top + 12px bottom
+    const textBottomPadding = 12; // Space between text and buttons
+    
+    // Calculate total height: padding + text content + spacing + buttons
+    const textHeight = Math.max(minTextHeight, contentHeight || minTextHeight);
+    const totalHeight = verticalPadding + textHeight + textBottomPadding + buttonRowHeight;
+    
+    // Ensure minimum height and cap maximum
+    const minHeight = verticalPadding + minTextHeight + textBottomPadding + buttonRowHeight; // ~100px minimum
+    const maxHeight = verticalPadding + 120 + textBottomPadding + buttonRowHeight; // Max text area of 120px
+    
+    return Math.max(minHeight, Math.min(totalHeight, maxHeight));
   }, [contentHeight]);
 
   // Recording status text
   const recordingStatusText = isTranscribing ? 'Transcribing...' : formatDuration(recordingDuration);
 
-  // Placeholder color based on color scheme
+  // Placeholder color - text-black/40
   const placeholderTextColor = React.useMemo(
-    () => colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.4)' : 'rgba(18, 18, 21, 0.4)',
+    () => colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.4)' : 'rgba(0, 0, 0, 0.4)',
     [colorScheme]
   );
 
   // Text input style - memoized
   const textInputStyle = React.useMemo(() => ({
-    fontFamily: 'Roobert-Regular',
-    minHeight: 52,
+    fontFamily: 'Roobert-Medium',
+    paddingVertical: 0, // Remove default padding
     opacity: isDisabled ? 0.5 : 1,
   }), [isDisabled]);
 
@@ -366,10 +376,10 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     [value, selection, onChangeText]
   );
 
-  // Memoized container style
+  // Memoized container style - no fixed height, grows with content
   const containerStyle = React.useMemo(
-    () => ({ height: dynamicHeight, ...(style as ViewStyle) }),
-    [dynamicHeight, style]
+    () => ({ ...(style as ViewStyle) }),
+    [style]
   );
 
   // Memoized attach button style
@@ -381,7 +391,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   // Determine button icon
   const ButtonIcon = React.useMemo(() => {
     if (isAgentRunning) return StopIcon;
-    if (hasContent) return CornerDownLeft;
+    if (hasContent) return ArrowUp;
     return AudioLines;
   }, [isAgentRunning, hasContent]);
 
@@ -390,13 +400,16 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   return (
     <View
-      className="relative rounded-[30px] overflow-hidden bg-card border border-border"
-      style={containerStyle}
+      className="relative rounded-[28px] overflow-hidden"
+      style={[
+        containerStyle,
+        { backgroundColor: '#EEEEEE', minHeight: 100 }
+      ]}
       collapsable={false}
       {...props}
     >
       <View className="absolute inset-0" />
-      <View className="p-4 flex-1" collapsable={false}>
+      <View className="px-2 pb-2 py-0 flex-col" collapsable={false}>
         {isRecording ? (
           <RecordingMode
             audioLevels={audioLevels}
@@ -438,6 +451,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
             buttonIconClass={buttonIconClass}
             isAuthenticated={isAuthenticated}
             hasAgent={hasAgent}
+            hasContent={hasContent}
           />
         )}
       </View>
@@ -474,15 +488,20 @@ const RecordingMode = React.memo(({
   onSendAudio,
 }: RecordingModeProps) => (
   <>
-    <View className="flex-1 items-center bottom-5 justify-center">
-      <AudioWaveform isRecording={true} audioLevels={audioLevels} />
+    {/* Waveform Area - Top (matching NormalMode padding) */}
+    <View style={{ paddingTop: 16, paddingBottom: 16, paddingLeft: 8, paddingRight: 8, minHeight: 56 }}>
+      <View className="items-center justify-center flex-1">
+        <AudioWaveform isRecording={true} audioLevels={audioLevels} />
+      </View>
+      <View className="items-center mt-2">
+        <Text className="text-xs font-roobert-medium text-foreground/50">
+          {recordingStatusText}
+        </Text>
+      </View>
     </View>
-    <View className="absolute bottom-6 right-16 items-center">
-      <Text className="text-xs font-roobert-medium text-foreground/50">
-        {recordingStatusText}
-      </Text>
-    </View>
-    <View className="absolute bottom-4 left-4 right-4 flex-row items-center justify-between">
+
+    {/* Buttons Row - Bottom (matching NormalMode layout) */}
+    <View className="flex-row items-center justify-between">
       <AnimatedPressable
         onPressIn={onCancelPressIn}
         onPressOut={onCancelPressOut}
@@ -491,7 +510,7 @@ const RecordingMode = React.memo(({
         style={[{ width: 40, height: 40 }, cancelAnimatedStyle]}
         hitSlop={ANDROID_HIT_SLOP}
       >
-        <Icon as={X} size={16} className="text-foreground" strokeWidth={2} />
+        <Icon as={X} size={18} className="text-foreground" strokeWidth={2} />
       </AnimatedPressable>
       <AnimatedPressable
         onPressIn={onStopPressIn}
@@ -501,7 +520,7 @@ const RecordingMode = React.memo(({
         style={[{ width: 40, height: 40 }, stopAnimatedStyle]}
         hitSlop={ANDROID_HIT_SLOP}
       >
-        <Icon as={CornerDownLeft} size={16} className="text-primary-foreground" strokeWidth={2} />
+        <Icon as={ArrowUp} size={18} className="text-primary-foreground" strokeWidth={2} />
       </AnimatedPressable>
     </View>
   </>
@@ -537,6 +556,7 @@ interface NormalModeProps {
   buttonIconClass: string;
   isAuthenticated: boolean;
   hasAgent: boolean;
+  hasContent: boolean;
 }
 
 const NormalMode = React.memo(({
@@ -566,13 +586,16 @@ const NormalMode = React.memo(({
   buttonIconClass,
   isAuthenticated,
   hasAgent,
+  hasContent,
 }: NormalModeProps) => (
   <>
-    <View className="flex-1 mb-12">
+    {/* Text Input - Top (full width) */}
+    <View style={{ paddingTop: 16, paddingBottom: 16, paddingLeft: 8, paddingRight: 8 }}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         nestedScrollEnabled={true}
+        style={{ maxHeight: 200 }}
       >
         <TextInput
           ref={textInputRef}
@@ -589,7 +612,7 @@ const NormalMode = React.memo(({
           scrollEnabled={false}
           editable={!isDisabled}
           onContentSizeChange={handleContentSizeChange}
-          className="text-foreground text-base"
+          className="text-base font-medium text-black"
           style={textInputStyle}
           textAlignVertical="top"
           underlineColorAndroid="transparent"
@@ -597,9 +620,10 @@ const NormalMode = React.memo(({
       </ScrollView>
     </View>
 
-    <View className="absolute bottom-4 left-4 right-4 flex-row items-center justify-between">
+    {/* Buttons Row - Bottom */}
+    <View className="flex-row items-center justify-between">
       <View className="flex-row items-center gap-2">
-        {/* Use TouchableOpacity on Android - AnimatedPressable blocks touches */}
+        {/* Attach Button */}
         <TouchableOpacity
           onPress={() => {
             if (!isAuthenticated) {
@@ -609,45 +633,46 @@ const NormalMode = React.memo(({
             onAttachPress?.();
           }}
           disabled={isDisabled}
-          style={{ width: 40, height: 40, borderWidth: 1, borderRadius: 18, alignItems: 'center', justifyContent: 'center', opacity: isDisabled ? 0.4 : 1 }}
-          className="border-border"
+          className="h-10 w-10 rounded-full bg-neutral-100 items-center justify-center"
+          style={{ opacity: isDisabled ? 0.4 : 1 }}
           hitSlop={ANDROID_HIT_SLOP}
           activeOpacity={0.7}
         >
-          <Icon as={Paperclip} size={16} className="text-foreground" />
+          <Icon as={Paperclip} size={18} className="text-foreground" />
         </TouchableOpacity>
-      </View>
 
-      <View className="flex-row items-center gap-2">
+        {/* Advanced Button (AgentSelector) */}
         <AgentSelector
           onPress={onAgentPress}
           compact={false}
         />
-
-        {/* Use TouchableOpacity on Android - AnimatedPressable blocks touches */}
-        <TouchableOpacity
-          onPress={() => {
-            onButtonPress();
-          }}
-          disabled={isSendingMessage || isTranscribing || !hasAgent}
-          style={{ width: 40, height: 40, borderRadius: 18, alignItems: 'center', justifyContent: 'center', opacity: (!hasAgent && !isAgentRunning) ? 0.4 : 1 }}
-          className={isAgentRunning ? 'bg-foreground' : 'bg-primary'}
-          hitSlop={ANDROID_HIT_SLOP}
-          activeOpacity={0.7}
-        >
-          {isSendingMessage || isTranscribing ? (
-            <AnimatedView style={rotationAnimatedStyle}>
-              <Icon as={Loader2} size={16} className="text-primary-foreground" strokeWidth={2} />
-            </AnimatedView>
-          ) : (
-            ButtonIcon === StopIcon ? (
-              <StopIcon size={buttonIconSize} className={buttonIconClass} />
-            ) : (
-              <Icon as={ButtonIcon as any} size={buttonIconSize} className={buttonIconClass} strokeWidth={2} />
-            )
-          )}
-        </TouchableOpacity>
       </View>
+
+      {/* Send/Audio Button - Right */}
+      <TouchableOpacity
+        onPress={() => {
+          onButtonPress();
+        }}
+        disabled={isSendingMessage || isTranscribing || !hasAgent}
+        className={`h-10 w-10 rounded-full items-center justify-center ${
+          isAgentRunning ? 'bg-foreground' : hasContent ? 'bg-neutral-900' : 'bg-neutral-100'
+        }`}
+        style={{ opacity: (!hasAgent && !isAgentRunning) ? 0.4 : 1 }}
+        hitSlop={ANDROID_HIT_SLOP}
+        activeOpacity={0.7}
+      >
+        {isSendingMessage || isTranscribing ? (
+          <AnimatedView style={rotationAnimatedStyle}>
+            <Icon as={Loader2} size={18} className={hasContent ? "text-white" : "text-foreground"} strokeWidth={2} />
+          </AnimatedView>
+        ) : (
+          ButtonIcon === StopIcon ? (
+            <StopIcon size={buttonIconSize} className={buttonIconClass} />
+          ) : (
+            <Icon as={ButtonIcon as any} size={18} className={hasContent ? "text-white" : "text-foreground"} strokeWidth={2} />
+          )
+        )}
+      </TouchableOpacity>
     </View>
   </>
 ));

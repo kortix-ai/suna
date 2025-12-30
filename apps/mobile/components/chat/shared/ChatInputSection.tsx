@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, Platform, ViewStyle } from 'react-native';
+import { View, Platform, ViewStyle, Pressable, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
@@ -7,10 +7,11 @@ import { KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native
 import Animated, { useAnimatedStyle, interpolate } from 'react-native-reanimated';
 import { ChatInput, type ChatInputRef } from '../ChatInput';
 import { AttachmentBar } from '@/components/attachments';
-import { QuickActionBar, QuickActionExpandedView, QUICK_ACTIONS } from '@/components/quick-actions';
+import { QuickActionBar, LibraryTemplateSelector, QUICK_ACTIONS } from '@/components/quick-actions';
 import { useLanguage } from '@/contexts';
 import type { Agent } from '@/api/types';
 import type { Attachment } from '@/hooks/useChat';
+import { Text } from '@/components/ui/text';
 
 export interface ChatInputSectionProps {
   // Chat input props
@@ -157,20 +158,22 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
   isAuthenticated,
   isSendingMessage,
   isTranscribing,
-  containerClassName = "mx-3 mb-4",
+  containerClassName = "mx-4 mb-3",
   showQuickActions = false,
 }, ref) => {
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const chatInputRef = React.useRef<ChatInputRef>(null);
-  
+
   // Get keyboard animation progress for smooth padding transitions
   // progress goes from 0 (closed) to 1 (open)
   const { progress } = useReanimatedKeyboardAnimation();
 
   // Calculate padding values
-  const quickActionsPaddingClosed = Math.max(insets.bottom, 24) + 16;
+  const quickActionsPaddingClosed = Platform.OS === 'ios' 
+  ? Math.max(insets.bottom, 0)  // iOS: 0px extra, use safe area
+  : Math.max(insets.bottom, 32);  // Android: 8px minimum
   const quickActionsPaddingOpened = 8;
   const nonQuickActionsPaddingClosed = Math.max(insets.bottom, 8);
   const nonQuickActionsPaddingOpened = 8;
@@ -200,17 +203,6 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
     [colorScheme]
   );
 
-  // Find selected action for expanded view
-  const selectedAction = React.useMemo(() => {
-    if (!selectedQuickAction) return null;
-    return QUICK_ACTIONS.find(a => a.id === selectedQuickAction) || null;
-  }, [selectedQuickAction]);
-
-  // Get translated label for the selected action
-  const selectedActionLabel = React.useMemo(() => {
-    if (!selectedAction) return '';
-    return t(`quickActions.${selectedAction.id}`, { defaultValue: selectedAction.label });
-  }, [selectedAction, t]);
 
   // Expose focus method via ref
   React.useImperativeHandle(ref, () => ({
@@ -255,18 +247,13 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
           onRemove={onRemoveAttachment}
         />
 
-        {/* Quick Action Expanded Content - Above Input (only on home) */}
-        {showQuickActions && selectedQuickAction && selectedAction && (
-          <View className="mb-3" collapsable={false}>
-            <QuickActionExpandedView
-              actionId={selectedQuickAction}
-              actionLabel={selectedActionLabel}
-              onSelectOption={(optionId) => onQuickActionSelectOption?.(optionId)}
-              selectedOptionId={selectedQuickActionOption}
-              onSelectPrompt={onQuickActionSelectPrompt}
-              onThreadPress={onQuickActionThreadPress}
-            />
-          </View>
+        {/* Library Template Selector - Above Input (hidden for 'general' action) */}
+        {showQuickActions && selectedQuickAction && selectedQuickAction !== 'general' && (
+          <LibraryTemplateSelector
+            actionId={selectedQuickAction}
+            selectedTemplateId={selectedQuickActionOption}
+            onSelectTemplate={onQuickActionSelectOption}
+          />
         )}
 
         {/* Chat Input */}
@@ -302,9 +289,9 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
 
         {/* Quick Action Bar - Below input (camera-style mode selector, only on home) */}
         {showQuickActions && onQuickActionPress && (
-          <Animated.View 
+          <Animated.View
             style={quickActionsAnimatedStyle}
-            pointerEvents="box-none" 
+            pointerEvents="box-none"
             collapsable={false}
           >
             <QuickActionBar

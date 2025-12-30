@@ -1,9 +1,9 @@
 import * as React from 'react';
-import { View, Dimensions, Pressable, Platform, ScrollView } from 'react-native';
+import { View, Dimensions, Pressable, Platform, ScrollView, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
-import { Icon } from '@/components/ui/icon';
 import { QUICK_ACTIONS } from './quickActions';
 import { QuickAction } from '.';
 import { useLanguage } from '@/contexts';
@@ -11,6 +11,8 @@ import { useLanguage } from '@/contexts';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const ITEM_SPACING = 8; // Consistent spacing between items (always the same)
 const CONTAINER_PADDING = 16; // Padding on sides
+const FADE_WIDTH = 120; // Width of fade gradient on each side
+const SPACER_WIDTH = SCREEN_WIDTH / 2; // Spacer width to allow centering
 
 // Android hit slop for better touch targets
 const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 12, bottom: 12, left: 12, right: 12 } : undefined;
@@ -34,57 +36,31 @@ interface ModeItemProps {
 
 const ModeItem = React.memo(({ action, index, isSelected, onPress, isLast }: ModeItemProps) => {
   const { t } = useLanguage();
-  const { colorScheme } = useColorScheme();
   const translatedLabel = t(`quickActions.${action.id}`, { defaultValue: action.label });
-
-  // Get icon color based on theme and selection state
-  // Primary: #121215 (light) / #F8F8F8 (dark)
-  // Foreground: #121215 (light) / #F8F8F8 (dark)
-  const iconColor = React.useMemo(() => {
-    if (isSelected) {
-      return colorScheme === 'dark' ? '#F8F8F8' : '#121215'; // primary
-    }
-    return colorScheme === 'dark' ? '#F8F8F8' : '#121215'; // foreground
-  }, [isSelected, colorScheme]);
 
   return (
     <Pressable 
       onPress={onPress} 
       hitSlop={ANDROID_HIT_SLOP}
       style={{
-        marginRight: isLast ? 0 : ITEM_SPACING, // Consistent spacing between items, no margin on last
-        alignItems: 'center',
-        justifyContent: 'center',
+        marginRight: 0,
+        marginLeft: 0,
+        padding: 0,
       }}
     >
       <View
+        className="py-2.5 px-3 flex-row items-center"
         style={{
-          alignItems: 'center',
-          justifyContent: 'center',
           opacity: isSelected ? 1 : 0.5,
-          transform: [{ scale: isSelected ? 1 : 0.9 }],
+          marginRight: 0,
+          marginLeft: 0,
         }}
       >
-        <View 
-          className="bg-muted/50 rounded-2xl py-2.5 flex-row items-center"
-          style={{
-            paddingHorizontal: 12,
-          }}
+        <Text 
+          className={`text-lg font-medium ${isSelected ? 'text-primary' : 'text-foreground'}`}
         >
-          <Icon 
-            as={action.icon} 
-            size={18} 
-            color={iconColor}
-            className={isSelected ? 'text-primary' : 'text-foreground'}
-            strokeWidth={2}
-            style={{ marginRight: 6, flexShrink: 0 }}
-          />
-          <Text 
-            className={`text-sm font-roobert-medium ${isSelected ? 'text-primary' : 'text-foreground'}`}
-          >
-            {translatedLabel}
-          </Text>
-        </View>
+          {translatedLabel}
+        </Text>
       </View>
     </Pressable>
   );
@@ -97,8 +73,11 @@ export function QuickActionBar({
   onActionPress,
   selectedActionId,
 }: QuickActionBarProps) {
+  const { colorScheme } = useColorScheme();
   const scrollViewRef = React.useRef<ScrollView>(null);
   const lastHapticIndex = React.useRef(-1);
+  const hasInitialized = React.useRef(false);
+  const isScrollingProgrammatically = React.useRef(false);
 
   // Find the index of the selected action
   const selectedIndex = React.useMemo(() => {
@@ -110,23 +89,81 @@ export function QuickActionBar({
   const itemPositions = React.useRef<number[]>([]);
   const itemWidths = React.useRef<number[]>([]);
 
+  // Find which item is currently centered based on scroll position
+  const getCenteredIndex = React.useCallback((scrollX: number): number => {
+    const screenCenter = SCREEN_WIDTH / 2;
+    const contentCenter = scrollX + screenCenter;
+    
+    let nearestIndex = 0;
+    let minDistance = Infinity;
+    
+    for (let i = 0; i < actions.length; i++) {
+      if (itemPositions.current[i] !== undefined && itemWidths.current[i] !== undefined) {
+        const itemX = itemPositions.current[i];
+        const itemWidth = itemWidths.current[i];
+        const itemCenter = itemX + (itemWidth / 2);
+        const distance = Math.abs(itemCenter - contentCenter);
+        
+        if (distance < minDistance) {
+          minDistance = distance;
+          nearestIndex = i;
+        }
+      }
+    }
+    
+    return nearestIndex;
+  }, [actions.length]);
+
+  // Scroll to center the selected item
+  const scrollToCenter = React.useCallback((index: number, animated = true) => {
+    if (
+      itemPositions.current[index] !== undefined && 
+      itemWidths.current[index] !== undefined &&
+      scrollViewRef.current
+    ) {
+      const itemX = itemPositions.current[index];
+      const itemWidth = itemWidths.current[index];
+      const itemCenter = itemX + (itemWidth / 2);
+      const screenCenter = SCREEN_WIDTH / 2;
+      const scrollOffset = itemCenter - screenCenter;
+      
+      // Ensure we don't scroll to negative values
+      const finalOffset = Math.max(0, scrollOffset);
+      
+      isScrollingProgrammatically.current = true;
+      scrollViewRef.current.scrollTo({ 
+        x: finalOffset, 
+        animated 
+      });
+      
+      // Reset flag after scroll completes
+      setTimeout(() => {
+        isScrollingProgrammatically.current = false;
+      }, animated ? 300 : 0);
+    }
+  }, []);
+
   // Measure items and calculate positions
-  // x is relative to the contentContainer (which includes padding)
   const measureItem = React.useCallback((index: number, width: number, x: number) => {
     itemWidths.current[index] = width;
     itemPositions.current[index] = x;
-  }, []);
-
-  // Scroll to selected item when it changes
-  React.useEffect(() => {
-    if (itemPositions.current[selectedIndex] !== undefined && itemWidths.current[selectedIndex] !== undefined) {
-      const itemX = itemPositions.current[selectedIndex];
-      const itemWidth = itemWidths.current[selectedIndex];
-      const itemCenter = itemX + (itemWidth / 2);
-      const offset = itemCenter - (SCREEN_WIDTH / 2);
-      scrollViewRef.current?.scrollTo({ x: Math.max(0, offset), animated: true });
+    
+    // Initial centering after first item is measured
+    if (!hasInitialized.current && index === selectedIndex) {
+      hasInitialized.current = true;
+      // Use a small delay to ensure layout is complete
+      setTimeout(() => {
+        scrollToCenter(selectedIndex, false);
+      }, 50);
     }
-  }, [selectedIndex]);
+  }, [selectedIndex, scrollToCenter]);
+
+  // Scroll to selected item when it changes (after initial load)
+  React.useEffect(() => {
+    if (hasInitialized.current) {
+      scrollToCenter(selectedIndex, true);
+    }
+  }, [selectedIndex, scrollToCenter]);
 
   // Handle mode change with haptic
   const handleModeChange = React.useCallback((newIndex: number) => {
@@ -144,25 +181,85 @@ export function QuickActionBar({
   // Handle direct tap on an item
   const handleItemPress = React.useCallback((index: number) => {
     console.log('🎯 Quick action item pressed:', index, actions[index]?.id);
+    
+    // Center the tapped item immediately
+    scrollToCenter(index, true);
+    
     handleModeChange(index);
-  }, [handleModeChange, actions]);
+  }, [handleModeChange, actions, scrollToCenter]);
+
+  // Handle scroll - update haptics as user scrolls
+  const handleScroll = React.useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    // Ignore programmatic scrolling
+    if (isScrollingProgrammatically.current) return;
+    
+    const scrollX = event.nativeEvent.contentOffset.x;
+    const centeredIndex = getCenteredIndex(scrollX);
+    
+    // Light haptic when centered item changes during scroll
+    if (centeredIndex !== lastHapticIndex.current) {
+      lastHapticIndex.current = centeredIndex;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, [getCenteredIndex]);
+
+  // Handle scroll end - snap to center and select
+  const handleScrollEnd = React.useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    // Ignore programmatic scrolling
+    if (isScrollingProgrammatically.current) return;
+    
+    const scrollX = event.nativeEvent.contentOffset.x;
+    const centeredIndex = getCenteredIndex(scrollX);
+    
+    // Snap to center
+    scrollToCenter(centeredIndex, true);
+    
+    // Select the centered item
+    const action = actions[centeredIndex];
+    if (action && action.id !== selectedActionId) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      onActionPress?.(action.id);
+    }
+  }, [getCenteredIndex, scrollToCenter, actions, selectedActionId, onActionPress]);
+
+  // Gradient colors for fade effect
+  const fadeGradientColors = React.useMemo(
+    () =>
+      colorScheme === 'dark'
+        ? (['rgba(18, 18, 21, 1)', 'rgba(18, 18, 21, 0)'] as const)
+        : (['rgba(246, 246, 246, 1)', 'rgba(246, 246, 246, 0)'] as const),
+    [colorScheme]
+  );
 
   return (
-    <View className="w-full overflow-hidden">
+    <View className="w-full overflow-hidden" style={{ position: 'relative' }}>
       <ScrollView
         ref={scrollViewRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{
-          paddingHorizontal: CONTAINER_PADDING,
+          paddingHorizontal: 0,
           flexDirection: 'row',
           alignItems: 'center',
+          gap: 0,
         }}
         decelerationRate="fast"
+        onScroll={handleScroll}
+        onMomentumScrollEnd={handleScrollEnd}
+        onScrollEndDrag={handleScrollEnd}
+        scrollEventThrottle={16}
       >
+        {/* Start spacer - allows first item to center */}
+        <View style={{ width: SPACER_WIDTH }} />
+        
         {actions.map((action, index) => (
           <View
             key={action.id}
+            style={{ 
+              marginRight: 0,
+              marginLeft: 0,
+              padding: 0,
+            }}
             onLayout={(event) => {
               const { width, x } = event.nativeEvent.layout;
               measureItem(index, width, x);
@@ -177,7 +274,40 @@ export function QuickActionBar({
             />
           </View>
         ))}
+        
+        {/* End spacer - allows last item to center */}
+        <View style={{ width: SPACER_WIDTH }} />
       </ScrollView>
+
+      {/* Left fade gradient */}
+      <LinearGradient
+        colors={fadeGradientColors}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: FADE_WIDTH,
+        }}
+        pointerEvents="none"
+      />
+
+      {/* Right fade gradient */}
+      <LinearGradient
+        colors={fadeGradientColors}
+        start={{ x: 1, y: 0 }}
+        end={{ x: 0, y: 0 }}
+        style={{
+          position: 'absolute',
+          right: 0,
+          top: 0,
+          bottom: 0,
+          width: FADE_WIDTH,
+        }}
+        pointerEvents="none"
+      />
     </View>
   );
 }
