@@ -29,8 +29,10 @@ _canvas_locks: Dict[str, asyncio.Lock] = {}
 
 **MANDATORY for Instagram, TikTok, YouTube, any sized design:**
 
-1. add_frame_to_canvas(canvas_path="...", width=1080, height=1920, background_color="#000000") → get element_id
-2. image_edit_or_generate(prompt="...", frame_id=element_id, aspect_ratio="2:3")
+1. add_frame_to_canvas(canvas_path="canvases/design.kanvax", width=1080, height=1920, background_color="#000000") → get element_id
+2. image_edit_or_generate(prompt="...", canvas_path="canvases/design.kanvax", frame_id=element_id, aspect_ratio="2:3")
+
+**⚠️ CRITICAL: BOTH canvas_path AND frame_id are REQUIRED in image_edit_or_generate!**
 
 **SIZES & ASPECT RATIOS:**
 - IG Story/Reel/TikTok: 1080x1920 → aspect_ratio="2:3" (portrait)
@@ -119,6 +121,37 @@ class SandboxCanvasTool(SandboxToolsBase):
         """Convert canvas name to safe filename"""
         return "".join(c for c in name if c.isalnum() or c in "-_").lower()
 
+    def _normalize_path(self, path: str) -> str:
+        """Normalize canvas/file paths to relative paths.
+        
+        Handles:
+        - Absolute paths like /workspace/canvases/foo.kanvax -> canvases/foo.kanvax
+        - Malformed paths with XML garbage
+        - Extra slashes
+        """
+        if not path:
+            return path
+        
+        # Strip any XML-like garbage that LLMs sometimes generate
+        if '</parameter>' in path or '<parameter' in path:
+            # Take only the part before any XML tags
+            path = path.split('</parameter>')[0].split('<parameter')[0].strip()
+        
+        # Remove /workspace/ prefix if present
+        if path.startswith('/workspace/'):
+            path = path[11:]  # len('/workspace/') = 11
+        elif path.startswith('workspace/'):
+            path = path[10:]  # len('workspace/') = 10
+        
+        # Remove leading slashes
+        path = path.lstrip('/')
+        
+        # Clean up any double slashes
+        while '//' in path:
+            path = path.replace('//', '/')
+        
+        return path
+
     def _create_canvas_data(
         self, 
         name: str, 
@@ -141,9 +174,14 @@ class SandboxCanvasTool(SandboxToolsBase):
         """Load canvas data from .kanvax file"""
         try:
             await self._ensure_sandbox()
-            content = await self.sandbox.fs.download_file(f"{self.workspace_path}/{canvas_path}")
+            # Normalize path to handle /workspace/ prefix and other issues
+            normalized_path = self._normalize_path(canvas_path)
+            full_path = f"{self.workspace_path}/{normalized_path}"
+            logger.debug(f"[Canvas] Loading canvas from: {full_path} (original: {canvas_path})")
+            content = await self.sandbox.fs.download_file(full_path)
             return json.loads(content.decode() if isinstance(content, bytes) else content)
         except Exception as e:
+            logger.warning(f"[Canvas] Failed to load canvas {canvas_path}: {e}")
             return None
 
     async def _save_canvas_data(self, canvas_path: str, canvas_data: Dict[str, Any]):
@@ -152,11 +190,13 @@ class SandboxCanvasTool(SandboxToolsBase):
             await self._ensure_sandbox()
             await self._ensure_canvases_dir()  # Ensure directory exists!
             
+            # Normalize path
+            normalized_path = self._normalize_path(canvas_path)
             canvas_data["updated_at"] = datetime.utcnow().isoformat() + "Z"
             content = json.dumps(canvas_data, indent=2)
-            full_path = f"{self.workspace_path}/{canvas_path}"
+            full_path = f"{self.workspace_path}/{normalized_path}"
             
-            logger.debug(f"[Canvas] Saving canvas to: {full_path} in sandbox {self._sandbox_id}")
+            logger.debug(f"[Canvas] Saving canvas to: {full_path} (original: {canvas_path})")
             await self.sandbox.fs.upload_file(content.encode(), full_path)
             
             # Verify file was saved
@@ -292,6 +332,9 @@ class SandboxCanvasTool(SandboxToolsBase):
         """
         Save canvas with updated elements.
         """
+        # Normalize path
+        canvas_path = self._normalize_path(canvas_path)
+        
         try:
             await self._ensure_sandbox()
             
@@ -382,6 +425,10 @@ class SandboxCanvasTool(SandboxToolsBase):
         frame_id: Optional[str] = None
     ) -> ToolResult:
         """Add an image element to the canvas"""
+        # Normalize paths to handle /workspace/ prefix and XML garbage
+        canvas_path = self._normalize_path(canvas_path)
+        image_path = self._normalize_path(image_path)
+        
         # Ensure x, y, width, height are numbers (AI sometimes passes strings)
         try:
             x = float(x) if x is not None else 100
@@ -653,6 +700,9 @@ class SandboxCanvasTool(SandboxToolsBase):
         background_color: str = "transparent"
     ) -> ToolResult:
         """Add a frame element to the canvas"""
+        # Normalize path to handle /workspace/ prefix and XML garbage
+        canvas_path = self._normalize_path(canvas_path)
+        
         # Ensure dimensions are valid numbers
         try:
             width = float(width) if width is not None else 400
@@ -773,6 +823,9 @@ class SandboxCanvasTool(SandboxToolsBase):
     })
     async def list_canvas_elements(self, canvas_path: str) -> ToolResult:
         """List all elements in a canvas"""
+        # Normalize path
+        canvas_path = self._normalize_path(canvas_path)
+        
         try:
             await self._ensure_sandbox()
             canvas_data = await self._load_canvas_data(canvas_path)
@@ -864,6 +917,9 @@ class SandboxCanvasTool(SandboxToolsBase):
         **updates
     ) -> ToolResult:
         """Update element properties"""
+        # Normalize path
+        canvas_path = self._normalize_path(canvas_path)
+        
         try:
             await self._ensure_sandbox()
             canvas_data = await self._load_canvas_data(canvas_path)
@@ -930,6 +986,9 @@ class SandboxCanvasTool(SandboxToolsBase):
     })
     async def remove_canvas_element(self, canvas_path: str, element_id: str) -> ToolResult:
         """Remove an element from the canvas"""
+        # Normalize path
+        canvas_path = self._normalize_path(canvas_path)
+        
         try:
             await self._ensure_sandbox()
             canvas_data = await self._load_canvas_data(canvas_path)
@@ -1010,6 +1069,9 @@ class SandboxCanvasTool(SandboxToolsBase):
         4. Saves result as new file
         5. Adds new element to canvas next to original
         """
+        # Normalize path
+        canvas_path = self._normalize_path(canvas_path)
+        
         try:
             await self._ensure_sandbox()
             

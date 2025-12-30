@@ -178,10 +178,10 @@ Generate, edit, upscale, or remove background from images. Video generation supp
                             "type": "object",
                             "description": "**OPTIONAL** - Include this to generate VIDEO instead of image. Provide an object with optional properties: duration (number, e.g., 5), aspect_ratio (string, e.g., \"16:9\"), fps (number, e.g., 24), generate_audio (boolean), camera_fixed (boolean), last_frame_image (string path)."
                         },
-                        "canvas_path": {"type": "string", "description": "Canvas path (with frame_id for social media designs). Example: 'canvases/instagram-promo.kanvax'"},
-                        "canvas_x": {"type": "number", "description": "X position on canvas in pixels."},
-                        "canvas_y": {"type": "number", "description": "Y position on canvas in pixels."},
-                        "frame_id": {"type": "string", "description": "⚠️ REQUIRED for social media! Get from add_frame_to_canvas. Image centers and fits inside frame."}
+                        "canvas_path": {"type": "string", "description": "⚠️ REQUIRED when using frame_id! Path to canvas file. Example: 'canvases/instagram-promo.kanvax'"},
+                        "canvas_x": {"type": "number", "description": "X position on canvas in pixels. Ignored when frame_id is provided."},
+                        "canvas_y": {"type": "number", "description": "Y position on canvas in pixels. Ignored when frame_id is provided."},
+                        "frame_id": {"type": "string", "description": "Frame ID from add_frame_to_canvas. Image auto-centers and fits inside frame. ⚠️ MUST include canvas_path too!"}
                     },
                     "required": [],
                     "additionalProperties": False
@@ -228,7 +228,11 @@ Generate, edit, upscale, or remove background from images. Video generation supp
             if mode in ("generate", "edit", "video") and not prompt:
                 return ToolResult(success=True, output=f"'{mode}' action requires 'prompt' parameter.")
             
-            logger.info(f"Mode: {mode} (action={action}, image_path={image_path is not None}, video_options={video_options is not None})")
+            # If frame_id is provided, canvas_path is REQUIRED
+            if frame_id and not canvas_path:
+                return ToolResult(success=True, output="ERROR: When using frame_id, canvas_path is REQUIRED! Example: canvas_path='canvases/my-design.kanvax'")
+            
+            logger.info(f"Mode: {mode} (action={action}, image_path={image_path is not None}, video_options={video_options is not None}, frame_id={frame_id})")
             
             # Check if mock mode is enabled (for development/testing)
             use_mock = os.getenv("MOCK_IMAGE_GENERATION", "false").lower() == "true"

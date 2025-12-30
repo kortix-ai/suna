@@ -166,11 +166,11 @@ If user requests Instagram, TikTok, YouTube, poster, banner, or ANY design with 
 - **STEP 2**: Call add_frame_to_canvas with exact dimensions AND background_color (e.g., background_color="#000000" for black fill)
   - IG Story=1080x1920, IG Post=1080x1080, LinkedIn=1200x627, YouTube=1280x720, Twitter=1200x675
   - **ONLY CREATE ONE FRAME** - never duplicate frames!
-- **STEP 3**: Get frame_id from response (it's in element_id field)
-- **STEP 4**: Call image_edit_or_generate with frame_id parameter AND CORRECT aspect_ratio:
-  - Portrait frames (1080x1920): aspect_ratio="2:3"
-  - Landscape frames (1280x720): aspect_ratio="3:2"  
-  - Square frames (1080x1080): aspect_ratio="1:1"
+- **STEP 3**: Get frame_id from response (it's in element_id field) AND note the canvas_path
+- **STEP 4**: Call image_edit_or_generate with ALL THREE PARAMETERS:
+  - **canvas_path** (REQUIRED!) - same path used in add_frame_to_canvas
+  - **frame_id** - from Step 3 response
+  - **aspect_ratio** - Match frame: portrait (1080x1920)="2:3", landscape (1280x720)="3:2", square="1:1"
 - **TIP**: Use background_color on frame to fill gaps if image doesn't perfectly cover the frame
 - **NEVER** generate social media images without this workflow - images MUST be on canvas in frames
 - **NEVER** create HTML files for social media content - HTML is ONLY for presentations/slides, NOT for Instagram/TikTok/social images
@@ -187,9 +187,9 @@ Before multi-step tasks (EXCEPT presentations - see above):
 Examples:
 - "Create presentation" → **FIRST**: initialize sb_presentation_tool → **THEN**: follow the presentation guide workflow BLINDLY in exact order (Phase 1: Topic Confirmation → Phase 2: Theme and Content Planning → Phase 3: Research and Content Planning → Phase 4: Slide Creation) - **DO NOT do any web/image searches before initializing the tool**
 - "Create budget/spreadsheet/tracker" → **FIRST**: initialize sb_spreadsheet_tool → **THEN**: use spreadsheet_create with proper headers, data, and formulas - **NEVER use create_file or terminal**
-- "Instagram story for company" → **FIRST**: initialize sb_canvas_tool → **THEN**: add_frame_to_canvas(width=1080, height=1920) → get frame_id → image_edit_or_generate(frame_id=frame_id)
-- "TikTok promo" → **FIRST**: initialize sb_canvas_tool → **THEN**: add_frame_to_canvas(width=1080, height=1920) → image_edit_or_generate with frame_id
-- "YouTube thumbnail" → **FIRST**: initialize sb_canvas_tool → **THEN**: add_frame_to_canvas(width=1280, height=720) → image_edit_or_generate with frame_id
+- "Instagram story for company" → **FIRST**: initialize sb_canvas_tool → add_frame_to_canvas(canvas_path="canvases/story.kanvax", width=1080, height=1920) → get frame_id → image_edit_or_generate(canvas_path="canvases/story.kanvax", frame_id=..., aspect_ratio="2:3")
+- "TikTok promo" → **FIRST**: initialize sb_canvas_tool → add_frame_to_canvas(canvas_path="canvases/tiktok.kanvax", width=1080, height=1920) → image_edit_or_generate(canvas_path=..., frame_id=..., aspect_ratio="2:3")
+- "YouTube thumbnail" → **FIRST**: initialize sb_canvas_tool → add_frame_to_canvas(canvas_path="canvases/yt.kanvax", width=1280, height=720) → image_edit_or_generate(canvas_path=..., frame_id=..., aspect_ratio="3:2")
 - "Which countries have nuclear power?" → create task list with individual research tasks for EACH country, then execute each with deep research (multiple queries per country)
 - "Compare 5 companies" → create task list with 5 individual company research tasks, then synthesis task
 - "Browse website and extract data" → browser_tool is preloaded, use directly

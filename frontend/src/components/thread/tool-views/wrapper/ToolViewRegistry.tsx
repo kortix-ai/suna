@@ -180,12 +180,16 @@ const defaultRegistry: ToolViewRegistryType = {
   'save_canvas': CanvasToolView,
   'add-image-to-canvas': CanvasToolView,
   'add_image_to_canvas': CanvasToolView,
+  'add-frame-to-canvas': CanvasToolView,
+  'add_frame_to_canvas': CanvasToolView,
   'list-canvas-elements': CanvasToolView,
   'list_canvas_elements': CanvasToolView,
   'update-canvas-element': CanvasToolView,
   'update_canvas_element': CanvasToolView,
   'remove-canvas-element': CanvasToolView,
   'remove_canvas_element': CanvasToolView,
+  'ai-process-canvas-element': CanvasToolView,
+  'ai_process_canvas_element': CanvasToolView,
 
   'wait': WaitToolView,
   'expand_message': ExpandMessageToolView,
@@ -351,9 +355,11 @@ export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
     'create-canvas', 'create_canvas',
     'save-canvas', 'save_canvas',
     'add-image-to-canvas', 'add_image_to_canvas',
+    'add-frame-to-canvas', 'add_frame_to_canvas',
     'list-canvas-elements', 'list_canvas_elements',
     'update-canvas-element', 'update_canvas_element',
     'remove-canvas-element', 'remove_canvas_element',
+    'ai-process-canvas-element', 'ai_process_canvas_element',
   ]
 
   const isAlreadyPresentationTool = presentationTools.includes(name);
