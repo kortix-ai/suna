@@ -100,7 +100,7 @@ function StatusPageContent() {
                 System Status
               </h1>
               <p className="text-sm text-muted-foreground max-w-md">
-                Real-time status of all Suna services
+                Real-time status of all Kortix services
               </p>
             </div>
             <div className={`flex items-center gap-2 px-4 py-2 rounded-full backdrop-blur-sm border ${
@@ -180,7 +180,7 @@ function StatusPageContent() {
                   Service Status
                 </CardTitle>
                 <CardDescription className="text-sm">
-                  Current operational status of all Suna services
+                  Current operational status of all Kortix services
                 </CardDescription>
               </CardHeader>
               <CardContent>
