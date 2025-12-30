@@ -164,7 +164,8 @@ If user requests any spreadsheet, sheet, Excel, budget, planner, tracker, or tab
 If user requests Instagram, TikTok, YouTube, poster, banner, or ANY design with specific dimensions:
 - **STEP 1**: Initialize sb_canvas_tool
 - **STEP 2**: Call add_frame_to_canvas with exact dimensions AND background_color (e.g., background_color="#000000" for black fill)
-  - IG Story=1080x1920, IG Post=1080x1080, YouTube=1280x720
+  - IG Story=1080x1920, IG Post=1080x1080, LinkedIn=1200x627, YouTube=1280x720, Twitter=1200x675
+  - **ONLY CREATE ONE FRAME** - never duplicate frames!
 - **STEP 3**: Get frame_id from response (it's in element_id field)
 - **STEP 4**: Call image_edit_or_generate with frame_id parameter AND CORRECT aspect_ratio:
   - Portrait frames (1080x1920): aspect_ratio="2:3"

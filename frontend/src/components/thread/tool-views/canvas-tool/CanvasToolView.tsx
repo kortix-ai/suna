@@ -5,6 +5,17 @@ import React, { useMemo, useEffect, useRef } from 'react';
 // Module-level Set to track which tool_call_ids we've already auto-opened
 // Persists across component mounts within the same session
 const autoOpenedToolCalls = new Set<string>();
+
+// Module-level Set to track which tool_call_ids we've already emitted refresh events for
+const refreshedToolCalls = new Set<string>();
+
+// Emit custom event to trigger canvas refresh when tool modifies canvas
+function emitCanvasRefresh(canvasPath: string) {
+  const event = new CustomEvent('canvas-tool-updated', { 
+    detail: { canvasPath, timestamp: Date.now() } 
+  });
+  window.dispatchEvent(event);
+}
 import {
   Layout,
   ImagePlus,
@@ -214,6 +225,24 @@ export function CanvasToolView({
       });
     }
   }, [toolCallId, toolResult, actualIsSuccess, hasCanvasPath, onFileClick, canvasPath, canvasName, args.canvas_path, toolTimestampMs, hasValidTimestamp]);
+
+  // Emit canvas refresh event when tool completes (for live updates during streaming)
+  useEffect(() => {
+    const path = canvasPath || args.canvas_path || (canvasName ? `canvases/${canvasName}.kanvax` : null);
+    
+    // Skip if already emitted for this tool call
+    if (toolCallId && refreshedToolCalls.has(toolCallId)) return;
+    
+    // Emit refresh when tool completes successfully with canvas changes
+    if (toolCallId && toolResult && actualIsSuccess && path) {
+      refreshedToolCalls.add(toolCallId);
+      // Small delay to ensure file is written
+      setTimeout(() => {
+        console.log('[CanvasToolView] Emitting canvas refresh for:', path);
+        emitCanvasRefresh(path);
+      }, 200);
+    }
+  }, [toolCallId, toolResult, actualIsSuccess, canvasPath, canvasName, args.canvas_path]);
 
   // Determine what action was taken
   const getActionInfo = () => {

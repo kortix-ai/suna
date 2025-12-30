@@ -2555,6 +2555,60 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     elementsRef.current = elements;
   }, [elements]);
 
+  // Force fetch function that can be triggered externally
+  const forceFetch = useCallback(async () => {
+    if (!sandboxId || !filePath || !authToken) return;
+    if (hasUnsavedChanges || isUserEditingRef.current) return;
+    
+    lastFetchTimeRef.current = Date.now();
+    
+    try {
+      const baseUrl = getSandboxFileUrl(sandboxId, filePath);
+      const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}_t=${Date.now()}`;
+      const response = await fetch(url, {
+        headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+        credentials: 'include',
+        cache: 'no-store',
+      });
+
+      if (!response.ok) return;
+
+      const newContent = await response.text();
+      if (!newContent) return;
+
+      try {
+        const parsed: CanvasData = JSON.parse(newContent);
+        const newElementIds = (parsed.elements || []).map(e => e.id).sort().join(',');
+        const currentElementIds = elementsRef.current.map(e => e.id).sort().join(',');
+
+        if (newElementIds !== currentElementIds) {
+          console.log('[CanvasRenderer] Force update: new elements detected');
+          setCanvasData(parsed);
+          setElements(sanitizeElements(parsed.elements || []));
+        }
+      } catch (parseErr) {
+        // Ignore parse errors
+      }
+    } catch (err) {
+      // Ignore network errors
+    }
+  }, [sandboxId, filePath, authToken, hasUnsavedChanges]);
+
+  // Listen for canvas-tool-updated events to trigger immediate refresh
+  useEffect(() => {
+    const handleCanvasUpdate = (event: CustomEvent<{ canvasPath: string; timestamp: number }>) => {
+      // Check if this event is for our canvas
+      const eventPath = event.detail.canvasPath;
+      if (filePath && (filePath.includes(eventPath) || eventPath.includes(filePath.replace('canvases/', '')))) {
+        console.log('[CanvasRenderer] Received canvas-tool-updated event, forcing refresh');
+        forceFetch();
+      }
+    };
+
+    window.addEventListener('canvas-tool-updated', handleCanvasUpdate as EventListener);
+    return () => window.removeEventListener('canvas-tool-updated', handleCanvasUpdate as EventListener);
+  }, [filePath, forceFetch]);
+
   useEffect(() => {
     if (!sandboxId || !filePath || !authToken) return;
 

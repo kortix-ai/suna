@@ -35,8 +35,11 @@ _canvas_locks: Dict[str, asyncio.Lock] = {}
 **SIZES & ASPECT RATIOS:**
 - IG Story/Reel/TikTok: 1080x1920 → aspect_ratio="2:3" (portrait)
 - IG Post: 1080x1080 → aspect_ratio="1:1" (square)
+- LinkedIn Post: 1200x627 → aspect_ratio="3:2" (landscape)
 - YouTube: 1280x720 → aspect_ratio="3:2" (landscape)
 - Twitter: 1200x675 → aspect_ratio="3:2" (landscape)
+
+**⚠️ CREATE ONLY ONE FRAME PER REQUEST!** Don't duplicate frames.
 
 **FRAME FILL:** Use background_color="#000000" (black) or other hex color to fill gaps when image doesn't fully cover frame!
 
