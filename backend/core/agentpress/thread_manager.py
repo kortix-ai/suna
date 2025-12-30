@@ -694,14 +694,49 @@ class ThreadManager:
                 estimated_total_tokens = actual_tokens
                 logger.info(f"📤 PRE-SEND: {len(prepared_messages)} messages, {actual_tokens} tokens (no fast check available)")
             
-            from core.ai_models.registry import registry as model_registry
-            model_info = model_registry.get(llm_model) or model_registry.get(model_registry.resolve_model_id(llm_model))
-            context_window = model_info.context_window if model_info else 200_000
-            safety_threshold = int(context_window * 0.84)
+            # Calculate threshold (same logic as fast check)
+            from core.ai_models import model_manager
+            context_window = model_manager.get_context_window(llm_model)
+            if context_window >= 1_000_000:
+                safety_threshold = context_window - 300_000
+            elif context_window >= 400_000:
+                safety_threshold = context_window - 64_000
+            elif context_window >= 200_000:
+                safety_threshold = context_window - 32_000
+            elif context_window >= 100_000:
+                safety_threshold = context_window - 16_000
+            else:
+                safety_threshold = int(context_window * 0.84)
             
-            if actual_tokens >= safety_threshold and (estimated_total_tokens is None or estimated_total_tokens < safety_threshold):
-                logger.warning(f"⚠️ FAST CHECK UNDERESTIMATED: actual={actual_tokens} >= threshold={safety_threshold}, but fast check={estimated_total_tokens} was under. Should have compressed!")
+            # Late compression: if actual exceeds threshold, compress now
+            if actual_tokens >= safety_threshold:
+                logger.warning(f"⚠️ PRE-SEND OVER THRESHOLD: actual={actual_tokens} >= threshold={safety_threshold}. Compressing now!")
+                # Compress messages (use raw messages, not prepared_messages which has cache markers)
+                if 'context_manager' not in locals():
+                    context_manager = ContextManager()
+                compressed_messages = await context_manager.compress_messages(
+                    messages, llm_model, max_tokens=llm_max_tokens,
+                    actual_total_tokens=actual_tokens,
+                    system_prompt=system_prompt,
+                    thread_id=thread_id
+                )
+                # Rebuild messages_with_context
+                messages_with_context = compressed_messages
+                if self._memory_context and len(compressed_messages) > 0:
+                    messages_with_context = [self._memory_context] + compressed_messages
+                # Rebuild prepared_messages with caching
+                if ENABLE_PROMPT_CACHING and len(messages_with_context) > 2:
+                    prepared_messages = await apply_anthropic_caching_strategy(
+                        system_prompt, messages_with_context, llm_model,
+                        thread_id=thread_id, force_recalc=True
+                    )
+                    prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
+                else:
+                    prepared_messages = [system_prompt] + messages_with_context
+                # Recount tokens
+                actual_tokens = token_counter(model=llm_model, messages=prepared_messages)
                 estimated_total_tokens = actual_tokens
+                logger.info(f"📤 POST-COMPRESSION: {len(prepared_messages)} messages, {actual_tokens} tokens")
             
             llm_call_start = time.time()
 
