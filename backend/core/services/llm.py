@@ -20,7 +20,9 @@ from datetime import datetime, timezone
 # Configure LiteLLM
 litellm.modify_params = True
 litellm.drop_params = True
-litellm.num_retries = 3
+# Set num_retries to 1 if not already set via environment variable
+if os.environ.get("LITELLM_NUM_RETRIES") is None:
+    litellm.num_retries = 1
 
 provider_router = None
 class LLMError(Exception):
@@ -48,10 +50,8 @@ def setup_api_keys() -> None:
         os.environ["AWS_BEARER_TOKEN_BEDROCK"] = config.AWS_BEARER_TOKEN_BEDROCK
 
 def setup_provider_router(openai_compatible_api_key: str = None, openai_compatible_api_base: str = None):
-    """Configure LiteLLM Router with fallback chains from model registry."""
+    """Configure LiteLLM Router."""
     global provider_router
-    
-    from core.ai_models.registry import registry
     
     # Model list for router
     model_list = [
@@ -63,19 +63,38 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
                 "api_base": openai_compatible_api_base or getattr(config, 'OPENAI_COMPATIBLE_API_BASE', None),
             },
         },
+        # Configure minimax-m2.1 model group with fallback to glm-4.6v
+        {
+            "model_name": "openrouter/minimax/minimax-m2.1",
+            "litellm_params": {
+                "model": "openrouter/minimax/minimax-m2.1",
+            },
+        },
+        {
+            "model_name": "openrouter/z-ai/glm-4.6v",
+            "litellm_params": {
+                "model": "openrouter/z-ai/glm-4.6v",
+            },
+        },
         {"model_name": "*", "litellm_params": {"model": "*"}},
     ]
     
-    # Get fallback chains from registry (single source of truth)
-    fallbacks = registry.get_fallback_chains()
+    # Configure fallbacks: minimax-m2.1 falls back to glm-4.6v
+    # This handles cases where minimax doesn't support image input
+    fallbacks = [
+        {"openrouter/minimax/minimax-m2.1": ["openrouter/z-ai/glm-4.6v"]}
+    ]
+    
+    # Use configured num_retries or default to 1
+    num_retries = getattr(litellm, 'num_retries', 1)
     
     provider_router = Router(
         model_list=model_list,
-        num_retries=3,
+        num_retries=num_retries,
         fallbacks=fallbacks,
     )
     
-    logger.info(f"LiteLLM Router configured with {len(fallbacks)} fallback rules")
+    logger.info("LiteLLM Router configured with fallbacks: minimax-m2.1 -> glm-4.6v")
 
 def _configure_openai_compatible(model_name: str, api_key: Optional[str], api_base: Optional[str]) -> None:
     """Configure OpenAI-compatible provider if needed."""
@@ -133,6 +152,34 @@ def _strip_internal_properties(messages: List[Dict[str, Any]]) -> List[Dict[str,
         cleaned_messages.append(cleaned_msg)
     
     return cleaned_messages
+
+def _has_image_content(messages: List[Dict[str, Any]]) -> bool:
+    """Check if messages contain image content."""
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        
+        content = msg.get("content", "")
+        
+        # Check for OpenAI-style image content (list with image_url)
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict):
+                    if item.get("type") == "image_url" or "image_url" in item:
+                        return True
+        
+        # Check for Anthropic-style image content
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "image":
+                    return True
+        
+        # Check for base64 image data in string content
+        if isinstance(content, str):
+            if "data:image" in content or "base64" in content.lower():
+                return True
+    
+    return False
 
 async def make_llm_api_call(
     messages: List[Dict[str, Any]],
@@ -238,54 +285,34 @@ async def make_llm_api_call(
     if stream:
         params["stream_options"] = {"include_usage": True}
 
-    # Add OpenRouter-specific reasoning parameter for MiniMax models (minimax-2.1)
     actual_model_id = params.get("model", "")
     if actual_model_id.startswith("openrouter/") and "minimax" in actual_model_id.lower():
         params["reasoning"] = {"enabled": True}
         params["reasoning_split"] = True
         # avoid showing reasoning tokens in plain content
+        
+        # Add fallback to glm-4.6v if minimax doesn't support image input
+        # This handles NotFoundError for image input specifically
+        if _has_image_content(messages):
+            if "fallbacks" not in params:
+                params["fallbacks"] = []
+            # Add glm-4.6v as fallback for image input
+            if "openrouter/z-ai/glm-4.6v" not in params["fallbacks"]:
+                params["fallbacks"].append("openrouter/z-ai/glm-4.6v")
+            logger.info(f"Added fallback to glm-4.6v for minimax model with image input")
     
-    # Attempt API call with retry logic for Bedrock fallback scenario
-    retry_attempted = False
-    while True:
-        try:
-            _save_debug_input(params)
-            response = await provider_router.acompletion(**params)
-            
-            if stream and hasattr(response, '__aiter__'):
-                return _wrap_streaming_response(response)
-            return response
-            
-        except Exception as e:
-            # Check if this is a Bedrock error about extra_body rejection during fallback
-            # This happens when OpenRouter fails (e.g., no image support) and Router falls back
-            # to Bedrock, but Bedrock rejects the extra_body param that was added for OpenRouter
-            error_str = str(e).lower()
-            should_retry_without_extra_body = (
-                not retry_attempted and
-                is_openrouter_model and
-                "extra_body" in params and
-                ("extra inputs are not permitted" in error_str or 
-                 "extra_body" in error_str or
-                 "extra inputs" in error_str) and
-                ("bedrock" in error_str or "bedrockexception" in error_str)
-            )
-            
-            if should_retry_without_extra_body:
-                logger.warning(
-                    f"Bedrock fallback rejected extra_body parameter (added for OpenRouter). "
-                    f"Retrying once without extra_body. Original model: {actual_litellm_model_id}"
-                )
-                # Remove extra_body and retry once
-                params = params.copy()
-                del params["extra_body"]
-                retry_attempted = True
-                continue  # Retry once
-            
-            # No retry or retry already attempted - process and raise error
-            processed_error = ErrorProcessor.process_llm_error(e, context={"model": model_name})
-            ErrorProcessor.log_error(processed_error)
-            raise LLMError(processed_error.message)
+    try:
+        _save_debug_input(params)
+        response = await provider_router.acompletion(**params)
+        
+        if stream and hasattr(response, '__aiter__'):
+            return _wrap_streaming_response(response)
+        return response
+        
+    except Exception as e:
+        processed_error = ErrorProcessor.process_llm_error(e, context={"model": model_name})
+        ErrorProcessor.log_error(processed_error)
+        raise LLMError(processed_error.message)
 
 async def _wrap_streaming_response(response) -> AsyncGenerator:
     """Wrap streaming response to handle errors during iteration."""

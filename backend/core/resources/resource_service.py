@@ -236,9 +236,9 @@ class ResourceService:
             Resource record if migration happened, None otherwise
         """
         try:
-            # Get project with both sandbox JSONB and sandbox_resource_id
+            # First, check if already migrated (query only columns that always exist)
             project_result = await self.client.table('projects').select(
-                'project_id, account_id, sandbox_resource_id, sandbox'
+                'project_id, account_id, sandbox_resource_id'
             ).eq('project_id', project_id).execute()
             
             if not project_result.data or len(project_result.data) == 0:
@@ -246,12 +246,24 @@ class ResourceService:
             
             project_data = project_result.data[0]
             sandbox_resource_id = project_data.get('sandbox_resource_id')
-            sandbox_jsonb = project_data.get('sandbox')
             account_id = project_data.get('account_id')
             
             # If already migrated, nothing to do
             if sandbox_resource_id:
                 return None
+            
+            # Try to get sandbox JSONB data (column only exists in production)
+            try:
+                sandbox_result = await self.client.table('projects').select(
+                    'sandbox'
+                ).eq('project_id', project_id).execute()
+                sandbox_jsonb = sandbox_result.data[0].get('sandbox') if sandbox_result.data else None
+            except Exception as col_error:
+                # Column doesn't exist in this environment (e.g., local/dev)
+                # This is expected - only production has the legacy sandbox column
+                if '42703' in str(col_error) or 'does not exist' in str(col_error):
+                    return None
+                raise  # Re-raise unexpected errors
             
             # If no sandbox data in JSONB, nothing to migrate
             if not sandbox_jsonb or not isinstance(sandbox_jsonb, dict):

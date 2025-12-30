@@ -318,8 +318,7 @@ export function DashboardContent() {
       const threadId = crypto.randomUUID();
       const projectId = crypto.randomUUID();
       
-      chatInputRef.current?.clearPendingFiles();
-      chatInputRef.current?.clearUploadedFiles();
+      // Note: No need to clear files here - navigation to new page will unmount this component
       setIsRedirecting(true);
       
       const normalizedPendingFiles = pendingFiles.map((file) => {
@@ -332,7 +331,7 @@ export function DashboardContent() {
         addOptimisticFiles(threadId, projectId, normalizedPendingFiles);
         sessionStorage.setItem('optimistic_files', 'true');
         const fileRefs = normalizedPendingFiles.map((f) => 
-          `[Uploaded File: /workspace/uploads/${f.name}]`
+          `[Uploaded File: uploads/${f.name}]`
         ).join('\n');
         promptWithFiles = `${trimmedMessage || message}\n\n${fileRefs}`;
       }

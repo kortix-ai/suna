@@ -847,7 +847,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           throw new Error(`Failed to start agent: ${error?.message || error}`);
         }
 
+        // Clear input text and uploaded files after successful submission
         chatInputRef.current?.setValue('');
+        chatInputRef.current?.clearUploadedFiles();
 
         const agentResult = results[1].value;
         setUserInitiatedRun(true);

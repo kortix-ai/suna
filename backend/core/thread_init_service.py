@@ -237,9 +237,9 @@ async def create_thread_optimistically(
                         "url": sf['image_url'],
                         "mime_type": sf['mime_type']
                     })
-                    file_refs.append(f"[Image: {filename} ({sf['file_size']:,} bytes) -> /workspace/uploads/{filename}]")
+                    file_refs.append(f"[Image: {filename} ({sf['file_size']:,} bytes) -> uploads/{filename}]")
                 else:
-                    file_refs.append(f"[Attached: {filename} ({sf['file_size']:,} bytes) -> /workspace/uploads/{filename}]")
+                    file_refs.append(f"[Attached: {filename} ({sf['file_size']:,} bytes) -> uploads/{filename}]")
                     if sf.get('parsed_content'):
                         parsed_contents.append({
                             "filename": filename,

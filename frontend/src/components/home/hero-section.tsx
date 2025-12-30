@@ -205,21 +205,8 @@ export function HeroSection() {
         options?: { model_name?: string; enable_thinking?: boolean }
     ) => {
         const pendingFiles = chatInputRef.current?.getPendingFiles() || [];
-        console.log('[HeroSection handleChatInputSubmit] Received:', {
-            message,
-            options,
-            pendingFilesCount: pendingFiles.length,
-            pendingFiles: pendingFiles.map(f => ({ name: f.name, type: f.type, size: f.size })),
-            isSubmitting,
-            user: !!user,
-        });
         
         if ((!message.trim() && !pendingFiles.length) || isSubmitting) {
-            console.log('[HeroSection handleChatInputSubmit] Blocked:', {
-                noMessage: !message.trim(),
-                noFiles: !pendingFiles.length,
-                isSubmitting,
-            });
             return;
         }
         if (!user && !isLoading) {
@@ -242,15 +229,14 @@ export function HeroSection() {
             const projectId = crypto.randomUUID();
             const trimmedMessage = message.trim();
             
-            chatInputRef.current?.clearPendingFiles();
-            setInputValue('');
+            // Note: No need to clear files/input here - navigation to new page will unmount this component
             
             let promptWithFiles = trimmedMessage;
             if (normalizedFiles.length > 0) {
                 addOptimisticFiles(threadId, projectId, normalizedFiles);
                 sessionStorage.setItem('optimistic_files', 'true');
                 const fileRefs = normalizedFiles.map((f) => 
-                    `[Uploaded File: /workspace/uploads/${f.name}]`
+                    `[Uploaded File: uploads/${f.name}]`
                 ).join('\n');
                 promptWithFiles = `${trimmedMessage}\n\n${fileRefs}`;
             }

@@ -95,15 +95,14 @@ export default function MilanoPage() {
       const projectId = crypto.randomUUID();
       const trimmedMessage = message.trim();
       
-      chatInputRef.current?.clearPendingFiles();
-      setInputValue('');
+      // Note: No need to clear files/input here - navigation to new page will unmount this component
       
       let promptWithFiles = trimmedMessage;
       if (normalizedFiles.length > 0) {
         addOptimisticFiles(threadId, projectId, normalizedFiles);
         sessionStorage.setItem('optimistic_files', 'true');
         const fileRefs = normalizedFiles.map((f) => 
-          `[Uploaded File: /workspace/uploads/${f.name}]`
+          `[Uploaded File: uploads/${f.name}]`
         ).join('\n');
         promptWithFiles = `${trimmedMessage}\n\n${fileRefs}`;
       }
