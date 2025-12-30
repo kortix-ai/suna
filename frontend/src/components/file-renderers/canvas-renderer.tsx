@@ -2557,23 +2557,40 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
   // Force fetch function that can be triggered externally
   const forceFetch = useCallback(async () => {
-    if (!sandboxId || !filePath || !authToken) return;
-    if (hasUnsavedChanges || isUserEditingRef.current) return;
+    console.log('[CANVAS_LIVE_DEBUG] forceFetch called:', { sandboxId, filePath, hasAuth: !!authToken, hasUnsavedChanges });
+    
+    if (!sandboxId || !filePath || !authToken) {
+      console.log('[CANVAS_LIVE_DEBUG] forceFetch skipped - missing required params');
+      return;
+    }
+    if (hasUnsavedChanges || isUserEditingRef.current) {
+      console.log('[CANVAS_LIVE_DEBUG] forceFetch skipped - user editing');
+      return;
+    }
     
     lastFetchTimeRef.current = Date.now();
     
     try {
       const baseUrl = getSandboxFileUrl(sandboxId, filePath);
       const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}_t=${Date.now()}`;
+      console.log('[CANVAS_LIVE_DEBUG] forceFetch fetching:', url);
+      
       const response = await fetch(url, {
         headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
         credentials: 'include',
         cache: 'no-store',
       });
 
-      if (!response.ok) return;
+      console.log('[CANVAS_LIVE_DEBUG] forceFetch response status:', response.status);
+      
+      if (!response.ok) {
+        console.log('[CANVAS_LIVE_DEBUG] forceFetch failed - bad response');
+        return;
+      }
 
       const newContent = await response.text();
+      console.log('[CANVAS_LIVE_DEBUG] forceFetch content length:', newContent?.length);
+      
       if (!newContent) return;
 
       try {
@@ -2581,32 +2598,53 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         const newElementIds = (parsed.elements || []).map(e => e.id).sort().join(',');
         const currentElementIds = elementsRef.current.map(e => e.id).sort().join(',');
 
+        console.log('[CANVAS_LIVE_DEBUG] forceFetch comparing elements:', {
+          newCount: parsed.elements?.length,
+          currentCount: elementsRef.current.length,
+          changed: newElementIds !== currentElementIds,
+        });
+
         if (newElementIds !== currentElementIds) {
-          console.log('[CanvasRenderer] Force update: new elements detected');
+          console.log('[CANVAS_LIVE_DEBUG] forceFetch updating elements - CHANGE DETECTED!');
           setCanvasData(parsed);
           setElements(sanitizeElements(parsed.elements || []));
+        } else {
+          console.log('[CANVAS_LIVE_DEBUG] forceFetch - no changes detected');
         }
       } catch (parseErr) {
-        // Ignore parse errors
+        console.log('[CANVAS_LIVE_DEBUG] forceFetch parse error:', parseErr);
       }
     } catch (err) {
-      // Ignore network errors
+      console.log('[CANVAS_LIVE_DEBUG] forceFetch network error:', err);
     }
   }, [sandboxId, filePath, authToken, hasUnsavedChanges]);
 
   // Listen for canvas-tool-updated events to trigger immediate refresh
   useEffect(() => {
+    console.log('[CANVAS_LIVE_DEBUG] Setting up canvas-tool-updated listener for filePath:', filePath);
+    
     const handleCanvasUpdate = (event: CustomEvent<{ canvasPath: string; timestamp: number }>) => {
-      // Check if this event is for our canvas
       const eventPath = event.detail.canvasPath;
+      console.log('[CANVAS_LIVE_DEBUG] Received canvas-tool-updated event:', {
+        eventPath,
+        filePath,
+        timestamp: event.detail.timestamp,
+      });
+      
+      // Check if this event is for our canvas
       if (filePath && (filePath.includes(eventPath) || eventPath.includes(filePath.replace('canvases/', '')))) {
-        console.log('[CanvasRenderer] Received canvas-tool-updated event, forcing refresh');
+        console.log('[CANVAS_LIVE_DEBUG] Event matches our canvas, calling forceFetch');
         forceFetch();
+      } else {
+        console.log('[CANVAS_LIVE_DEBUG] Event does NOT match our canvas, ignoring');
       }
     };
 
     window.addEventListener('canvas-tool-updated', handleCanvasUpdate as EventListener);
-    return () => window.removeEventListener('canvas-tool-updated', handleCanvasUpdate as EventListener);
+    return () => {
+      console.log('[CANVAS_LIVE_DEBUG] Removing canvas-tool-updated listener');
+      window.removeEventListener('canvas-tool-updated', handleCanvasUpdate as EventListener);
+    };
   }, [filePath, forceFetch]);
 
   useEffect(() => {
