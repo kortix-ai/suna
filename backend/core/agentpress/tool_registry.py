@@ -129,7 +129,7 @@ class ToolRegistry:
                         native_exposed += 1
                     else:
                         mcp_hidden += 1
-                    logger.debug(f"🔒 [HIDE] {tool_name} (MCP)")
+                        logger.debug(f"🔒 [HIDE] {tool_name} (MCP)")
             
             # Update cache while holding the lock
             self._cached_openapi_schemas = schemas
