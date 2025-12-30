@@ -707,7 +707,24 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       message: string,
       options?: { model_name?: string; file_ids?: string[] },
     ) => {
-      if (!message.trim() || isShared || !addUserMessageMutation || !startAgentMutation) return;
+      console.log('[ThreadComponent handleSubmitMessage] Received:', {
+        message,
+        options,
+        isShared,
+        hasAddUserMessageMutation: !!addUserMessageMutation,
+        hasStartAgentMutation: !!startAgentMutation,
+        agentStatus,
+      });
+      
+      if (!message.trim() || isShared || !addUserMessageMutation || !startAgentMutation) {
+        console.log('[ThreadComponent handleSubmitMessage] Blocked:', {
+          noMessage: !message.trim(),
+          isShared,
+          noAddMutation: !addUserMessageMutation,
+          noStartMutation: !startAgentMutation,
+        });
+        return;
+      }
 
       // Message queue feature flag - when disabled, don't queue messages while agent is running
       const ENABLE_MESSAGE_QUEUE = false;

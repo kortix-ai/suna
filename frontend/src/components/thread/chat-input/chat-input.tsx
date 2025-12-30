@@ -940,6 +940,11 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
 
     useEffect(() => {
       if (controlledValue !== undefined && controlledValue !== valueRef.current) {
+        console.log('[ChatInput] Controlled value sync triggered:', {
+          controlledValue,
+          valueRefCurrent: valueRef.current,
+          willClear: true,
+        });
         const textarea = textareaRef.current as any;
         if (textarea?.clearValue) {
           textarea.clearValue();
@@ -1049,13 +1054,30 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       const currentValue = valueRef.current;
       const currentUploadedFiles = uploadedFilesRef.current;
       
+      console.log('[ChatInput handleSubmit] Starting submission:', {
+        currentValue,
+        currentUploadedFilesCount: currentUploadedFiles.length,
+        currentUploadedFiles: currentUploadedFiles.map(f => ({ name: f.name, path: f.path, status: f.status })),
+        loading,
+        disabled,
+        isAgentRunning,
+        isUploading,
+      });
+      
       if (
         (!currentValue.trim() && currentUploadedFiles.length === 0) ||
         loading ||
         (disabled && !isAgentRunning) ||
         isUploading // Prevent submission while files are uploading
-      )
+      ) {
+        console.log('[ChatInput handleSubmit] Blocked submission:', {
+          noContent: !currentValue.trim() && currentUploadedFiles.length === 0,
+          loading,
+          disabled: disabled && !isAgentRunning,
+          isUploading,
+        });
         return;
+      }
 
       // Only stop agent if there's no content (empty input)
       // If there's content, onSubmit will queue the message (handled in ThreadComponent)
@@ -1093,6 +1115,13 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         .filter((f) => f.fileId && f.status === 'ready')
         .map((f) => f.fileId!);
 
+      console.log('[ChatInput handleSubmit] Sending message:', {
+        message,
+        fileIds,
+        selectedAgentId,
+        baseModelName,
+      });
+
       posthog.capture("task_prompt_submitted", { message });
 
       onSubmit(message, {
@@ -1109,14 +1138,26 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       if (!e.clipboardData) return;
       const items = Array.from(e.clipboardData.items);
       const imageFiles: File[] = [];
+      
+      // Check if there's any text content in the paste
+      const hasTextContent = items.some(item => item.kind === 'string' && item.type === 'text/plain');
+      
       for (const item of items) {
         if (item.kind === 'file' && item.type.startsWith('image/')) {
           const file = item.getAsFile();
           if (file) imageFiles.push(file);
         }
       }
+      
       if (imageFiles.length > 0) {
-        e.preventDefault();
+        console.log('[ChatInput handlePaste] Processing pasted images:', imageFiles.length, 'hasTextContent:', hasTextContent);
+        
+        // If there's also text content, don't prevent default - let the text be pasted normally
+        // and just add the images as attachments
+        if (!hasTextContent) {
+          e.preventDefault();
+        }
+        
         handleFiles(
           imageFiles,
           sandboxId,

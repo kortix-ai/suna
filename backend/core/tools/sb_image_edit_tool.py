@@ -59,10 +59,10 @@ def parse_image_paths(image_path: Optional[str | list[str]]) -> list[str]:
 **IMPORTANT:** If user uploaded an image, pass it as `image_path` to use it.
 
 ```python
-# User uploaded /workspace/uploads/image.png → include image_path
+# User uploaded uploads/image.png → include image_path
 image_edit_or_generate(
     prompt="Put this person on Mars with red landscape", 
-    image_path="/workspace/uploads/image.png"
+    image_path="uploads/image.png"
 )
 
 # No upload → just prompt
@@ -71,7 +71,7 @@ image_edit_or_generate(prompt="A futuristic city at sunset")
 # Video with uploaded image
 image_edit_or_generate(
     prompt="The person turns their head",
-    image_path="/workspace/uploads/image.png",
+    image_path="uploads/image.png",
     video_options={"duration": 5}
 )
 
@@ -670,13 +670,6 @@ class SandboxImageEditTool(SandboxToolsBase):
         """Read image from sandbox filesystem."""
         try:
             cleaned_path = self.clean_path(image_path)
-            
-            # If path already starts with /workspace/, strip it to avoid doubling
-            if cleaned_path.startswith("/workspace/"):
-                cleaned_path = cleaned_path[len("/workspace/"):]
-            elif cleaned_path.startswith("workspace/"):
-                cleaned_path = cleaned_path[len("workspace/"):]
-            
             full_path = f"{self.workspace_path}/{cleaned_path}"
 
             # Check if file exists and is not a directory

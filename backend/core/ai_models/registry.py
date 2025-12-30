@@ -264,8 +264,8 @@ class ModelRegistry:
         """
         fallbacks = []
         
-        # Add Sonnet -> Haiku fallback for Bedrock
-        fallbacks.append({SONNET_BEDROCK_ARN: [HAIKU_BEDROCK_ARN]})
+        # # Add Sonnet -> Haiku fallback for Bedrock
+        # fallbacks.append({SONNET_BEDROCK_ARN: [HAIKU_BEDROCK_ARN]})
         
         # Build fallback chains from model definitions
         for model in self._models.values():

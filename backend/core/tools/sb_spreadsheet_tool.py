@@ -107,7 +107,7 @@ Create interactive Excel (.xlsx) files that users can view, edit, and download. 
 2. **spreadsheet_add_sheet** - Add a NEW SHEET to EXISTING file (preserves other sheets)
    ```
    spreadsheet_add_sheet(
-       file_path="/workspace/spreadsheets/sales_report.xlsx",
+       file_path="spreadsheets/sales_report.xlsx",
        sheet_name="Q2 Sales",
        headers=["Product", "Revenue", "Profit"],
        rows=[
@@ -120,7 +120,7 @@ Create interactive Excel (.xlsx) files that users can view, edit, and download. 
 3. **spreadsheet_batch_update** - Update existing spreadsheet
    ```
    spreadsheet_batch_update(
-       file_path="/workspace/spreadsheets/sales_report.xlsx",
+       file_path="spreadsheets/sales_report.xlsx",
        sheet_name="Q1 Sales",  # Optional: target specific sheet
        requests=[
            {
@@ -169,8 +169,8 @@ Create interactive Excel (.xlsx) files that users can view, edit, and download. 
 - Ranges: "A1:B5" or single cells "A1"
 
 **FILE PATHS:**
-- Creation: Just filename → Auto-saved to /workspace/spreadsheets/
-- Updates: Use full path → /workspace/spreadsheets/filename.xlsx
+- Creation: Just filename → Auto-saved to spreadsheets/
+- Updates: Use relative path → spreadsheets/filename.xlsx
 
 **⚠️ CRITICAL - AVOIDING CIRCULAR REFERENCES:**
 Headers are in ROW 1. Data rows start at ROW 2.
