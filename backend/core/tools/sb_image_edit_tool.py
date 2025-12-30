@@ -138,7 +138,11 @@ class SandboxImageEditTool(SandboxToolsBase):
             "type": "function",
             "function": {
                 "name": "image_edit_or_generate",
-                "description": "Generate, edit, upscale, or remove background from images. Also supports video generation. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `prompt` (REQUIRED for generate/edit/video), `action` (optional - 'generate', 'edit', 'upscale', 'remove_bg', 'video'), `image_path` (REQUIRED for upscale/remove_bg/edit), `video_options` (optional), `canvas_path` (optional).",
+                "description": """Generate, edit, upscale, or remove background from images. Also supports video generation.
+
+**💡 TIP:** If generating for a real use case (social media, design, specific dimensions) → use canvas + frame instead of raw image gen.
+
+**ASPECT RATIOS:** 1:1 (default), 3:2 (landscape), 2:3 (portrait)""",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -161,13 +165,19 @@ class SandboxImageEditTool(SandboxToolsBase):
                             ],
                             "description": "**REQUIRED for upscale/remove_bg/edit** - Path to input image. Required for upscale, remove_bg, and edit actions."
                         },
+                        "aspect_ratio": {
+                            "type": "string",
+                            "enum": ["1:1", "3:2", "2:3"],
+                            "description": "**OPTIONAL** - Aspect ratio for generated images. Only 3 ratios supported: '1:1' (square, default), '3:2' (landscape), '2:3' (portrait for Stories/TikTok). Default: '1:1'."
+                        },
                         "video_options": {
                             "type": "object",
                             "description": "**OPTIONAL** - Include this to generate VIDEO instead of image. Provide an object with optional properties: duration (number, e.g., 5), aspect_ratio (string, e.g., \"16:9\"), fps (number, e.g., 24), generate_audio (boolean), camera_fixed (boolean), last_frame_image (string path)."
                         },
                         "canvas_path": {"type": "string", "description": "**OPTIONAL** - Canvas file path to auto-add result. Example: 'canvases/my-design.kanvax'."},
                         "canvas_x": {"type": "number", "description": "**OPTIONAL** - X position on canvas in pixels."},
-                        "canvas_y": {"type": "number", "description": "**OPTIONAL** - Y position on canvas in pixels."}
+                        "canvas_y": {"type": "number", "description": "**OPTIONAL** - Y position on canvas in pixels."},
+                        "frame_id": {"type": "string", "description": "**OPTIONAL** - Frame element ID to place image inside. Image will be positioned at center of frame and sized to fit."}
                     },
                     "required": [],
                     "additionalProperties": False
@@ -180,9 +190,11 @@ class SandboxImageEditTool(SandboxToolsBase):
         prompt: Optional[str | list[str]] = None,
         action: Optional[str] = None,
         image_path: Optional[str | list[str]] = None,
+        aspect_ratio: Optional[str] = None,
         video_options: Optional[dict] = None,
         canvas_path: Optional[str] = None,
         canvas_x: Optional[float] = None,
+        frame_id: Optional[str] = None,
         canvas_y: Optional[float] = None,
     ) -> ToolResult:
         """Generate/edit/upscale/remove_bg images or generate videos using AI via Replicate."""
@@ -277,13 +289,14 @@ class SandboxImageEditTool(SandboxToolsBase):
                 # If we have one image, use it for all prompts
                 start_time = time.time()
                 tasks = []
+                img_aspect_ratio = aspect_ratio or "1:1"
                 for i, p in enumerate(prompts):
                     if mode == "edit":
                         # Use corresponding image or fall back to first one
                         img_path = image_paths[i] if i < len(image_paths) else image_paths[0]
-                        tasks.append(self._execute_single_image_operation(mode, p, img_path, use_mock, quality_variant))
+                        tasks.append(self._execute_single_image_operation(mode, p, img_path, use_mock, quality_variant, img_aspect_ratio))
                     else:
-                        tasks.append(self._execute_single_image_operation(mode, p, None, use_mock, quality_variant))
+                        tasks.append(self._execute_single_image_operation(mode, p, None, use_mock, quality_variant, img_aspect_ratio))
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 elapsed_time = time.time() - start_time
                 logger.info(f"Batch image operation completed in {elapsed_time:.2f}s (concurrent execution)")
@@ -321,7 +334,7 @@ class SandboxImageEditTool(SandboxToolsBase):
                 canvas_info = None
                 if canvas_path and image_files:
                     canvas_info = await self._add_images_to_canvas(
-                        image_files, canvas_path, canvas_x, canvas_y
+                        image_files, canvas_path, canvas_x, canvas_y, frame_id
                     )
                 
                 # Build concise output
@@ -363,7 +376,7 @@ class SandboxImageEditTool(SandboxToolsBase):
                     # If canvas_path provided, add to canvas
                     if canvas_path:
                         canvas_info = await self._add_images_to_canvas(
-                            [result], canvas_path, canvas_x, canvas_y
+                            [result], canvas_path, canvas_x, canvas_y, frame_id
                         )
                         if canvas_info:
                             output_lines.append(f"Added to canvas: {canvas_path} ({canvas_info['total_elements']} total elements)")
@@ -393,7 +406,7 @@ class SandboxImageEditTool(SandboxToolsBase):
                     # If canvas_path provided, add to canvas
                     if canvas_path:
                         canvas_info = await self._add_images_to_canvas(
-                            [result], canvas_path, canvas_x, canvas_y
+                            [result], canvas_path, canvas_x, canvas_y, frame_id
                         )
                         if canvas_info:
                             output_lines.append(f"Added to canvas: {canvas_path} ({canvas_info['total_elements']} total elements)")
@@ -432,9 +445,10 @@ class SandboxImageEditTool(SandboxToolsBase):
                     return ToolResult(success=True, output=f"Video saved as: /workspace/{result}")
                 
                 # Image mode (generate/edit)
-                logger.info(f"Executing single image operation with mode '{mode}' for prompt: '{prompt[:50]}...' (quality={quality_variant})")
+                img_aspect_ratio = aspect_ratio or "1:1"
+                logger.info(f"Executing single image operation with mode '{mode}' for prompt: '{prompt[:50]}...' (quality={quality_variant}, aspect_ratio={img_aspect_ratio})")
                 
-                result = await self._execute_single_image_operation(mode, prompt, image_path, use_mock, quality_variant)
+                result = await self._execute_single_image_operation(mode, prompt, image_path, use_mock, quality_variant, img_aspect_ratio)
                 
                 if isinstance(result, ToolResult):
                     # Error - return gracefully with friendly message
@@ -457,7 +471,7 @@ class SandboxImageEditTool(SandboxToolsBase):
                 # If canvas_path provided, add to canvas
                 if canvas_path:
                     canvas_info = await self._add_images_to_canvas(
-                        [result], canvas_path, canvas_x, canvas_y
+                        [result], canvas_path, canvas_x, canvas_y, frame_id
                     )
                     if canvas_info:
                         output_lines.append(f"Added to canvas: {canvas_path} ({canvas_info['total_elements']} total elements)")
@@ -484,7 +498,8 @@ class SandboxImageEditTool(SandboxToolsBase):
         prompt: str,
         image_path: Optional[str],
         use_mock: bool,
-        quality: str = "medium"
+        quality: str = "medium",
+        aspect_ratio: str = "1:1"
     ) -> str | ToolResult:
         """
         Helper function to execute a single image generation or edit operation.
@@ -496,11 +511,17 @@ class SandboxImageEditTool(SandboxToolsBase):
         - image_path: Path to image (required for edit mode)
         - use_mock: Whether to use mock mode
         - quality: Quality variant ('low', 'medium', 'high') - affects output quality and cost
+        - aspect_ratio: Output aspect ratio ('1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3')
         
         Returns:
         - str: Filename of the generated/edited image on success
         - ToolResult: Error result on failure
         """
+        # Validate aspect_ratio - only 3 ratios supported by the API
+        valid_ratios = ["1:1", "3:2", "2:3"]
+        if aspect_ratio not in valid_ratios:
+            aspect_ratio = "1:1"  # Default to square if invalid
+        
         try:
             if use_mock:
                 logger.warning(f"🎨 Image generation running in MOCK mode for prompt: '{prompt[:50]}...'")
@@ -514,12 +535,12 @@ class SandboxImageEditTool(SandboxToolsBase):
             self._get_replicate_token()
 
             if mode == "generate":
-                logger.info(f"Calling Replicate openai/gpt-image-1.5 for generation (quality={quality})")
+                logger.info(f"Calling Replicate openai/gpt-image-1.5 for generation (quality={quality}, aspect_ratio={aspect_ratio})")
                 output = replicate.run(
                     "openai/gpt-image-1.5",
                     input={
                         "prompt": prompt,
-                        "aspect_ratio": "1:1",
+                        "aspect_ratio": aspect_ratio,
                         "number_of_images": 1,
                         "quality": quality,
                     }
@@ -536,13 +557,13 @@ class SandboxImageEditTool(SandboxToolsBase):
                 image_b64 = base64.b64encode(image_bytes).decode('utf-8')
                 image_data_url = f"data:image/png;base64,{image_b64}"
 
-                logger.info(f"Calling Replicate openai/gpt-image-1.5 for editing (quality={quality}) with image_path='{image_path}' (image size: {len(image_bytes)} bytes)")
+                logger.info(f"Calling Replicate openai/gpt-image-1.5 for editing (quality={quality}, aspect_ratio={aspect_ratio}) with image_path='{image_path}' (image size: {len(image_bytes)} bytes)")
                 output = replicate.run(
                     "openai/gpt-image-1.5",
                     input={
                         "prompt": prompt,
                         "input_images": [image_data_url],  # Note: input_images is an ARRAY
-                        "aspect_ratio": "1:1",
+                        "aspect_ratio": aspect_ratio,
                         "number_of_images": 1,
                         "quality": quality,
                     }
@@ -954,9 +975,11 @@ class SandboxImageEditTool(SandboxToolsBase):
         canvas_path: str,
         start_x: Optional[float] = None,
         start_y: Optional[float] = None,
+        frame_id: Optional[str] = None,
     ) -> Optional[dict]:
         """
         Add images to a canvas. Creates the canvas if it doesn't exist.
+        If frame_id is provided, images are placed centered inside the frame and sized to fit.
         Returns info about the canvas update or None on failure.
         """
         try:
@@ -990,18 +1013,33 @@ class SandboxImageEditTool(SandboxToolsBase):
                 }
                 logger.info(f"Created new canvas: {canvas_path}")
             
-            # Calculate starting position
-            current_x = start_x if start_x is not None else 50
-            current_y = start_y if start_y is not None else 50
+            # Find target frame if frame_id provided
+            target_frame = None
+            if frame_id:
+                for el in canvas_data.get("elements", []):
+                    if el.get("id") == frame_id and el.get("type") == "frame":
+                        target_frame = el
+                        break
+                if not target_frame:
+                    logger.warning(f"Frame {frame_id} not found in canvas")
             
-            # If no position specified and canvas has elements, calculate next position
-            if start_x is None and start_y is None and canvas_data["elements"]:
-                # Find max Y of existing elements to place new ones below
-                max_y = 0
-                for el in canvas_data["elements"]:
-                    el_bottom = float(el.get("y", 0)) + float(el.get("height", 400))
-                    max_y = max(max_y, el_bottom)
-                current_y = max_y + 50  # 50px gap
+            # Calculate starting position
+            if target_frame:
+                # Position inside frame - will calculate per image for centering
+                current_x = target_frame["x"]
+                current_y = target_frame["y"]
+            else:
+                current_x = start_x if start_x is not None else 50
+                current_y = start_y if start_y is not None else 50
+                
+                # If no position specified and canvas has elements, calculate next position
+                if start_x is None and start_y is None and canvas_data["elements"]:
+                    # Find max Y of existing elements to place new ones below
+                    max_y = 0
+                    for el in canvas_data["elements"]:
+                        el_bottom = float(el.get("y", 0)) + float(el.get("height", 400))
+                        max_y = max(max_y, el_bottom)
+                    current_y = max_y + 50  # 50px gap
             
             # Add each image to canvas
             for i, image_file in enumerate(image_files):
@@ -1018,19 +1056,31 @@ class SandboxImageEditTool(SandboxToolsBase):
                     except:
                         actual_width, actual_height = 1024, 1024
                     
-                    # Scale down if needed (max 600px)
-                    max_size = 600
-                    aspect_ratio = actual_width / actual_height if actual_height > 0 else 1
-                    if actual_width > max_size or actual_height > max_size:
-                        if actual_width > actual_height:
-                            elem_width = max_size
-                            elem_height = max_size / aspect_ratio
+                    # Calculate element size - use actual size (no cap, canvas is infinite)
+                    elem_width = actual_width
+                    elem_height = actual_height
+                    
+                    # If placing inside frame, scale to fit and center
+                    if target_frame:
+                        frame_w = target_frame["width"]
+                        frame_h = target_frame["height"]
+                        
+                        # Scale to fit within frame while maintaining aspect ratio
+                        img_aspect = actual_width / actual_height if actual_height > 0 else 1
+                        frame_aspect = frame_w / frame_h if frame_h > 0 else 1
+                        
+                        if img_aspect > frame_aspect:
+                            # Image is wider than frame - fit to width
+                            elem_width = frame_w
+                            elem_height = frame_w / img_aspect
                         else:
-                            elem_height = max_size
-                            elem_width = max_size * aspect_ratio
-                    else:
-                        elem_width = actual_width
-                        elem_height = actual_height
+                            # Image is taller than frame - fit to height
+                            elem_height = frame_h
+                            elem_width = frame_h * img_aspect
+                        
+                        # Center inside frame
+                        current_x = target_frame["x"] + (frame_w - elem_width) / 2
+                        current_y = target_frame["y"] + (frame_h - elem_height) / 2
                     
                     # Create element with PATH reference (NOT base64 - avoids LLM context bloat)
                     # Frontend canvas-renderer.tsx fetches images via sandbox API
@@ -1053,10 +1103,12 @@ class SandboxImageEditTool(SandboxToolsBase):
                     canvas_data["elements"].append(element)
                     
                     # Move position for next image (horizontal layout with wrapping)
-                    current_x += elem_width + 50
-                    if current_x > 1200:  # Wrap to next row
-                        current_x = 50
-                        current_y += elem_height + 50
+                    # Only applies if not targeting a frame
+                    if not target_frame:
+                        current_x += elem_width + 50
+                        if current_x > 2400:  # Wrap to next row (increased from 1200)
+                            current_x = 50
+                            current_y += elem_height + 50
                         
                 except Exception as e:
                     logger.warning(f"Failed to add {image_file} to canvas: {e}")

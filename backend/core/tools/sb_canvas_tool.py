@@ -337,7 +337,7 @@ class SandboxCanvasTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "add_image_to_canvas",
-            "description": "Add an image element to an existing canvas. Image can be from designs folder or any workspace path. **⚠️ IMPORTANT**: NEVER call this function in parallel - causes race conditions! Call ONE AT A TIME. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `canvas_path` (REQUIRED), `image_path` (REQUIRED), `x` (optional), `y` (optional), `width` (optional), `height` (optional), `name` (optional).",
+            "description": "Add an image element to an existing canvas. Image can be from designs folder or any workspace path. **⚠️ IMPORTANT**: NEVER call this function in parallel - causes race conditions! Call ONE AT A TIME. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `canvas_path` (REQUIRED), `image_path` (REQUIRED), `x` (optional), `y` (optional), `width` (optional), `height` (optional), `name` (optional), `frame_id` (optional for precise frame placement).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -351,12 +351,12 @@ class SandboxCanvasTool(SandboxToolsBase):
                     },
                     "x": {
                         "type": "number",
-                        "description": "**OPTIONAL** - X position on canvas in pixels. Default: 100.",
+                        "description": "**OPTIONAL** - X position on canvas in pixels. Default: 100. Ignored if frame_id is provided.",
                         "default": 100
                     },
                     "y": {
                         "type": "number",
-                        "description": "**OPTIONAL** - Y position on canvas in pixels. Default: 100.",
+                        "description": "**OPTIONAL** - Y position on canvas in pixels. Default: 100. Ignored if frame_id is provided.",
                         "default": 100
                     },
                     "width": {
@@ -372,6 +372,10 @@ class SandboxCanvasTool(SandboxToolsBase):
                     "name": {
                         "type": "string",
                         "description": "**OPTIONAL** - Name for the element. Defaults to image filename if not provided."
+                    },
+                    "frame_id": {
+                        "type": "string",
+                        "description": "**OPTIONAL** - Frame element ID to place image inside. Image will be centered and scaled to fit within the frame. Use list_canvas_elements to get frame IDs."
                     }
                 },
                 "required": ["canvas_path", "image_path"],
@@ -387,7 +391,8 @@ class SandboxCanvasTool(SandboxToolsBase):
         y: float = 100,
         width: Optional[float] = None,
         height: Optional[float] = None,
-        name: Optional[str] = None
+        name: Optional[str] = None,
+        frame_id: Optional[str] = None
     ) -> ToolResult:
         """Add an image element to the canvas"""
         # Ensure x, y, width, height are numbers (AI sometimes passes strings)
@@ -465,25 +470,48 @@ class SandboxCanvasTool(SandboxToolsBase):
                     elem_height = height
                     elem_width = height * aspect_ratio
                 else:
-                    # No size specified - use actual image size, capped
-                    max_size = 600
-                    if actual_img_width > max_size or actual_img_height > max_size:
-                        if actual_img_width > actual_img_height:
-                            elem_width = max_size
-                            elem_height = max_size / aspect_ratio
-                        else:
-                            elem_height = max_size
-                            elem_width = max_size * aspect_ratio
-                    else:
-                        elem_width = actual_img_width
-                        elem_height = actual_img_height
+                    # No size specified - use actual image size (no cap - canvas is infinite)
+                    elem_width = actual_img_width
+                    elem_height = actual_img_height
                 
-                # Auto-calculate position if not specified (x=100 and y=100 are defaults)
-                # Create a grid layout based on existing elements
+                # Handle frame_id placement - find frame and position/size to fit inside
+                target_frame = None
+                if frame_id:
+                    for el in canvas_data.get("elements", []):
+                        if el.get("id") == frame_id and el.get("type") == "frame":
+                            target_frame = el
+                            break
+                    if not target_frame:
+                        logger.warning(f"Frame {frame_id} not found in canvas, using default positioning")
+                
+                # Calculate position
                 actual_x = x
                 actual_y = y
-                if x == 100 and y == 100 and len(canvas_data["elements"]) > 0:
-                    # Calculate next position in grid
+                
+                if target_frame:
+                    # Place inside frame - scale to fit and center
+                    frame_w = target_frame["width"]
+                    frame_h = target_frame["height"]
+                    
+                    # Scale image to fit within frame while maintaining aspect ratio
+                    img_aspect = actual_img_width / actual_img_height if actual_img_height > 0 else 1
+                    frame_aspect = frame_w / frame_h if frame_h > 0 else 1
+                    
+                    if img_aspect > frame_aspect:
+                        # Image is wider than frame - fit to width
+                        elem_width = frame_w
+                        elem_height = frame_w / img_aspect
+                    else:
+                        # Image is taller than frame - fit to height
+                        elem_height = frame_h
+                        elem_width = frame_h * img_aspect
+                    
+                    # Center inside frame
+                    actual_x = target_frame["x"] + (frame_w - elem_width) / 2
+                    actual_y = target_frame["y"] + (frame_h - elem_height) / 2
+                    
+                elif x == 100 and y == 100 and len(canvas_data["elements"]) > 0:
+                    # Auto-calculate position in grid layout
                     existing = canvas_data["elements"]
                     cols = 3  # 3 columns
                     gap = 50  # Gap between elements
@@ -1113,19 +1141,9 @@ class SandboxCanvasTool(SandboxToolsBase):
             new_x = source_element.get("x", 100) + source_element.get("width", 400) + 50
             new_y = source_element.get("y", 100)
             
-            # Scale down if needed (max 600px)
-            max_size = 600
-            aspect_ratio = result_width / result_height if result_height > 0 else 1
-            if result_width > max_size or result_height > max_size:
-                if result_width > result_height:
-                    elem_width = max_size
-                    elem_height = max_size / aspect_ratio
-                else:
-                    elem_height = max_size
-                    elem_width = max_size * aspect_ratio
-            else:
-                elem_width = result_width
-                elem_height = result_height
+            # Use actual result size (no cap - canvas is infinite)
+            elem_width = result_width
+            elem_height = result_height
             
             # Create new element
             new_element_id = str(uuid.uuid4())
