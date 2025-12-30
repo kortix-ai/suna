@@ -405,48 +405,6 @@ class AgentRunner:
         mcp_manager = MCPManager(self.thread_manager, self.account_id)
         return await mcp_manager.register_mcp_tools(self.config.agent_config)
     
-    async def _load_mcp_config_from_version(self) -> dict | None:
-        if not self.config.agent_config:
-            return None
-        
-        agent_id = self.config.agent_config.get('agent_id')
-        current_version_id = self.config.agent_config.get('current_version_id')
-        
-        if not agent_id or not current_version_id:
-            logger.error(f"❌ [MCP JIT] Missing agent_id ({agent_id}) or version_id ({current_version_id})")
-            return None
-        
-        try:
-            from core.versioning.version_service import get_version_service
-            version_service = await get_version_service()
-            
-            version = await version_service.get_version(
-                agent_id=agent_id,
-                version_id=current_version_id,
-                user_id=self.account_id
-            )
-            
-            if not version:
-                logger.error(f"❌ [MCP JIT] Version {current_version_id} not found for agent {agent_id}")
-                return None
-            
-            version_dict = version.to_dict()
-            
-            config = version_dict.get('config', {})
-            tools = config.get('tools', {})
-            
-            mcp_config = {
-                'custom_mcp': tools.get('custom_mcp', []),
-                'configured_mcps': tools.get('mcp', [])
-            }
-            
-            logger.error(f"✅ [MCP JIT] Loaded version config: custom_mcp={len(mcp_config['custom_mcp'])}, configured_mcps={len(mcp_config['configured_mcps'])}")
-            return mcp_config
-            
-        except Exception as e:
-            logger.error(f"❌ [MCP JIT] Failed to load version data: {e}", exc_info=True)
-            return None
-    
     async def run(self, cancellation_event: Optional[asyncio.Event] = None) -> AsyncGenerator[Dict[str, Any], None]:
         from core.utils.config import config
         run_start = time.time()
@@ -721,6 +679,46 @@ class AgentRunner:
         if not self.config.agent_config:
             return
         
+        logger.info(f"🔍 [AGENT-MCP-DEBUG] Loading fresh MCP config from current version")
+        
+        try:
+            from core.versioning.version_service import get_version_service
+            version_service = await get_version_service()
+            fresh_config = await version_service.get_current_mcp_config(
+                self.config.agent_config.get('agent_id'),
+                self.account_id
+            )
+        except Exception as e:
+            logger.error(f"🔍 [AGENT-MCP-DEBUG] ❌ Failed to load fresh config via version service: {e}")
+            fresh_config = None
+        
+        if fresh_config:
+            logger.info(f"🔍 [AGENT-MCP-DEBUG] ✅ Got fresh config:")
+            logger.info(f"🔍 [AGENT-MCP-DEBUG]   custom_mcp: {len(fresh_config.get('custom_mcp', []))}")
+            logger.info(f"🔍 [AGENT-MCP-DEBUG]   configured_mcps: {len(fresh_config.get('configured_mcps', []))}")
+            
+            for i, mcp in enumerate(fresh_config.get('custom_mcp', [])):
+                logger.info(f"🔍 [AGENT-MCP-DEBUG] fresh custom_mcp[{i}]: name={mcp.get('name')}, toolkit_slug={mcp.get('toolkit_slug')}")
+            
+            for i, mcp in enumerate(fresh_config.get('configured_mcps', [])):
+                logger.info(f"🔍 [AGENT-MCP-DEBUG] fresh configured_mcp[{i}]: name={mcp.get('name')}, toolkit_slug={mcp.get('toolkit_slug')}")
+            
+            old_custom_mcps = len(self.config.agent_config.get("custom_mcps", []))
+            old_configured_mcps = len(self.config.agent_config.get("configured_mcps", []))
+            
+            agent_config_update = {
+                'custom_mcps': fresh_config.get('custom_mcp', []),
+                'configured_mcps': fresh_config.get('configured_mcps', [])
+            }
+            self.config.agent_config.update(agent_config_update)
+            
+            logger.info(f"🔍 [AGENT-MCP-DEBUG] Updated agent config: old custom={old_custom_mcps}, new custom={len(self.config.agent_config.get('custom_mcps', []))}")
+            logger.info(f"🔍 [AGENT-MCP-DEBUG] Updated agent config: old configured={old_configured_mcps}, new configured={len(self.config.agent_config.get('configured_mcps', []))}")
+            
+            self.thread_manager.tool_registry.invalidate_mcp_cache()
+        else:
+            logger.warning(f"🔍 [AGENT-MCP-DEBUG] ❌ No fresh config loaded")
+        
         custom_mcps = self.config.agent_config.get("custom_mcps", [])
         configured_mcps = self.config.agent_config.get("configured_mcps", [])
         
@@ -740,8 +738,16 @@ class AgentRunner:
                 
                 if not hasattr(self.thread_manager, 'mcp_loader') or self.thread_manager.mcp_loader is None:
                     self.thread_manager.mcp_loader = MCPJITLoader(mcp_config)
-                
-                await self.thread_manager.mcp_loader.build_tool_map(cache_only=cache_only)
+                    await self.thread_manager.mcp_loader.build_tool_map(cache_only=cache_only)
+                else:
+                    # Use fresh config directly - version service returns correct loader format
+                    loader_config = fresh_config or mcp_config
+                    
+                    logger.info(f"🔍 [AGENT-MCP-DEBUG] Using fresh config for loader rebuild: custom_mcp={len(loader_config.get('custom_mcp', []))}, configured_mcps={len(loader_config.get('configured_mcps', []))}")
+                    logger.debug("🔄 [MCP JIT] Refreshing existing loader with fresh config (no mapping needed)")
+                    await self.thread_manager.mcp_loader.rebuild_tool_map(loader_config)
+                    if cache_only:
+                        await self.thread_manager.mcp_loader.build_tool_map(cache_only=cache_only)
                 
                 stats = self.thread_manager.mcp_loader.get_activation_stats()
                 toolkits = await self.thread_manager.mcp_loader.get_toolkits()

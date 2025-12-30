@@ -48,7 +48,10 @@ If relevant context seems missing, ask a clarifying question.
         if preloaded_guides:
             content += preloaded_guides
         
-        content = await PromptManager._append_jit_mcp_info(content, mcp_loader)
+        # Get agent_id for fresh config loading
+        agent_id = agent_config.get('agent_id') if agent_config else None
+        
+        content = await PromptManager._append_jit_mcp_info(content, mcp_loader, agent_id, user_id)
         
         # Fetch user context (locale, username), memory, and file context in parallel
         user_context_task = PromptManager._fetch_user_context_data(user_id, client)
@@ -100,8 +103,11 @@ If relevant context seems missing, ask a clarifying question.
         memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
         file_task = PromptManager._fetch_file_context(thread_id)
         
-        system_content = PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance)
-        system_content = await PromptManager._append_jit_mcp_info(system_content, mcp_loader)
+        # Get agent_id for fresh config loading
+        agent_id = agent_config.get('agent_id') if agent_config else None
+        
+        system_content = await PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance, agent_id, user_id)
+        system_content = await PromptManager._append_jit_mcp_info(system_content, mcp_loader, agent_id, user_id)
         system_content = PromptManager._append_xml_tool_calling_instructions(system_content, xml_tool_calling, tool_registry)
         system_content = PromptManager._append_datetime_info(system_content)
         
@@ -234,7 +240,26 @@ If relevant context seems missing, ask a clarifying question.
             return None
     
     @staticmethod
-    def _append_mcp_tools_info(system_content: str, agent_config: Optional[dict], mcp_wrapper_instance: Optional[MCPToolWrapper]) -> str:
+    async def _append_mcp_tools_info(system_content: str, agent_config: Optional[dict], mcp_wrapper_instance: Optional[MCPToolWrapper], 
+                                     agent_id: Optional[str] = None, user_id: Optional[str] = None) -> str:
+        fresh_mcp_config = None
+        if agent_id and user_id:
+            try:
+                # Get standardized config directly from version service - no mapping needed
+                from core.versioning.version_service import get_version_service
+                version_service = await get_version_service()
+                fresh_mcp_config = await version_service.get_current_mcp_config(agent_id, user_id)
+                
+                if fresh_mcp_config:
+                    logger.debug(f"🔄 [MCP PROMPT] Using fresh MCP config from current version: {len(fresh_mcp_config.get('configured_mcps', []))} configured, {len(fresh_mcp_config.get('custom_mcp', []))} custom")
+                    # Map to the format this method expects (custom_mcps vs custom_mcp)
+                    agent_config = {
+                        'configured_mcps': fresh_mcp_config.get('configured_mcps', []),
+                        'custom_mcps': fresh_mcp_config.get('custom_mcp', [])  # Map custom_mcp to custom_mcps for this method
+                    }
+            except Exception as e:
+                logger.warning(f"Failed to load fresh MCP config, using provided config: {e}")
+        
         if not (agent_config and (agent_config.get('configured_mcps') or agent_config.get('custom_mcps')) and mcp_wrapper_instance and mcp_wrapper_instance._initialized):
             return system_content
         
@@ -283,7 +308,21 @@ If relevant context seems missing, ask a clarifying question.
         return system_content + mcp_info
     
     @staticmethod
-    async def _append_jit_mcp_info(system_content: str, mcp_loader) -> str:
+    async def _append_jit_mcp_info(system_content: str, mcp_loader, agent_id: Optional[str] = None, user_id: Optional[str] = None) -> str:
+        if agent_id and user_id and mcp_loader:
+            try:
+                from core.versioning.version_service import get_version_service
+                version_service = await get_version_service()
+                fresh_mcp_config = await version_service.get_current_mcp_config(agent_id, user_id)
+                
+                if fresh_mcp_config:
+                    logger.debug(f"🔄 [MCP JIT] Refreshing loader with current version config: {len(fresh_mcp_config.get('custom_mcp', []))} custom MCPs, {len(fresh_mcp_config.get('configured_mcps', []))} configured")
+                    await mcp_loader.rebuild_tool_map(fresh_mcp_config)
+                else:
+                    logger.warning(f"🔄 [MCP JIT] No fresh config returned from version service")
+            except Exception as e:
+                logger.warning(f"Failed to refresh MCP loader with current version: {e}")
+        
         if not mcp_loader:
             logger.debug("⚡ [MCP PROMPT] No mcp_loader provided, skipping JIT MCP info")
             return system_content
@@ -304,11 +343,17 @@ If relevant context seems missing, ask a clarifying question.
             mcp_jit_info += "🎯 DISCOVERY: use discover_mcp_tools with filter parameter \"TOOL1,TOOL2,TOOL3\"\n"
             mcp_jit_info += "🎯 EXECUTION: use execute_mcp_tool with tool_name parameter and args parameter\n\n"
             
+            logger.info(f"🔍 [MCP-PROMPT-DEBUG] Processing {len(available_tools)} available tools for system prompt")
+            
             toolkit_tools = {}
-            for tool_name in available_tools:
+            for i, tool_name in enumerate(available_tools):
+                logger.info(f"🔍 [MCP-PROMPT-DEBUG] Processing tool [{i+1}/{len(available_tools)}]: {tool_name}")
+                
                 tool_info = await mcp_loader.get_tool_info(tool_name)
                 if tool_info:
                     toolkit_slug = tool_info.toolkit_slug
+                    logger.info(f"🔍 [MCP-PROMPT-DEBUG]   tool_info.toolkit_slug: {toolkit_slug}")
+                    
                     if toolkit_slug.startswith("custom_"):
                         parts = toolkit_slug.split("_")
                         if len(parts) >= 3:
@@ -316,21 +361,24 @@ If relevant context seems missing, ask a clarifying question.
                         else:
                             toolkit = toolkit_slug.upper()
                         api_name = tool_name
+                        logger.info(f"🔍 [MCP-PROMPT-DEBUG]   custom toolkit: {toolkit}, api_name: {api_name}")
                     else:
                         toolkit = toolkit_slug.upper()
                         api_name = tool_name
                         if not api_name.startswith(toolkit + '_'):
                             api_name = f"{toolkit}_{tool_name.upper()}"
+                        logger.info(f"🔍 [MCP-PROMPT-DEBUG]   standard toolkit: {toolkit}, api_name: {api_name}")
                     
                     if toolkit not in toolkit_tools:
                         toolkit_tools[toolkit] = []
                     toolkit_tools[toolkit].append(api_name)
+                    logger.info(f"🔍 [MCP-PROMPT-DEBUG]   ✅ Added {api_name} to {toolkit} (total: {len(toolkit_tools[toolkit])})")
                 else:
-                    logger.warning(f"⚠️ [MCP PROMPT] No tool_info for tool: {tool_name}")
+                    logger.warning(f"🔍 [MCP-PROMPT-DEBUG] ❌ No tool_info for tool: {tool_name}")
             
-            logger.info(f"⚡ [MCP PROMPT] Collected {len(toolkit_tools)} toolkits: {list(toolkit_tools.keys())}")
+            logger.info(f"🔍 [MCP-PROMPT-DEBUG] Final toolkit breakdown:")
             for tk, tl in toolkit_tools.items():
-                logger.debug(f"⚡ [MCP PROMPT] Toolkit {tk}: {len(tl)} tools")
+                logger.info(f"🔍 [MCP-PROMPT-DEBUG]   {tk}: {len(tl)} tools - {tl[:5]}{'...' if len(tl) > 5 else ''}")
             
             for toolkit, tools in toolkit_tools.items():
                 if toolkit == "TWITTER":

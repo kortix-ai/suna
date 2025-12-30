@@ -35,31 +35,40 @@ class MCPRegistry:
         return f"{self.CACHE_KEY_PREFIX}{self.CACHE_VERSION}:{toolkit_slug}"
     
     async def get_toolkit_tools(self, toolkit_slug: str, account_id: Optional[str] = None, cache_only: bool = False) -> List[str]:
+        logger.info(f"🔍 [TOOLKIT-TOOLS-DEBUG] Getting tools for toolkit_slug: {toolkit_slug}")
+        logger.info(f"🔍 [TOOLKIT-TOOLS-DEBUG]   account_id: {account_id}")
+        logger.info(f"🔍 [TOOLKIT-TOOLS-DEBUG]   cache_only: {cache_only}")
+        
         cache_key = self._make_cache_key(toolkit_slug)
+        logger.info(f"🔍 [TOOLKIT-TOOLS-DEBUG]   cache_key: {cache_key}")
         
         redis_available = await self._ensure_redis()
-        logger.debug(f"⚡ [MCP DYNAMIC] Redis available: {redis_available} for {toolkit_slug}")
+        logger.info(f"🔍 [TOOLKIT-TOOLS-DEBUG]   redis_available: {redis_available}")
         
         if redis_available:
             try:
                 cached_data = await self._redis_client.get(cache_key)
                 if cached_data:
                     tools = json.loads(cached_data)
-                    logger.info(f"✅ [MCP DYNAMIC] Cache hit: {toolkit_slug} ({len(tools)} tools)")
+                    logger.info(f"🔍 [TOOLKIT-TOOLS-DEBUG] ✅ Cache hit: {toolkit_slug} ({len(tools)} tools)")
+                    logger.info(f"🔍 [TOOLKIT-TOOLS-DEBUG] Cached tools: {tools[:10]}{'...' if len(tools) > 10 else ''}")
                     return tools
                 else:
-                    logger.debug(f"⚡ [MCP DYNAMIC] No cached data for key: {cache_key}")
+                    logger.info(f"🔍 [TOOLKIT-TOOLS-DEBUG] No cached data for key: {cache_key}")
             except Exception as e:
-                logger.warning(f"⚠️  [MCP DYNAMIC] Cache read error for {toolkit_slug}: {e}")
+                logger.warning(f"🔍 [TOOLKIT-TOOLS-DEBUG] ❌ Cache read error for {toolkit_slug}: {e}")
         
         if cache_only:
-            logger.debug(f"⚡ [MCP DYNAMIC] Cache miss (cache_only mode): {toolkit_slug} - skipping API query")
+            logger.info(f"🔍 [TOOLKIT-TOOLS-DEBUG] Cache miss (cache_only mode): {toolkit_slug} - skipping API query")
             return []
         
-        logger.info(f"❌ [MCP DYNAMIC] Cache miss: {toolkit_slug} - querying Composio API")
+        logger.info(f"🔍 [TOOLKIT-TOOLS-DEBUG] Cache miss: {toolkit_slug} - querying Composio API")
         
         tools = await self._query_composio_toolkit(toolkit_slug, account_id=account_id)
+        logger.info(f"🔍 [TOOLKIT-TOOLS-DEBUG] API returned {len(tools)} tools: {tools[:10]}{'...' if len(tools) > 10 else ''}")
+        
         await self._cache_toolkit_tools(toolkit_slug, tools)
+        logger.info(f"🔍 [TOOLKIT-TOOLS-DEBUG] ✅ Cached tools for {toolkit_slug}")
         
         return tools
     
