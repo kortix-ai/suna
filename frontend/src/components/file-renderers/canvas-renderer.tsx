@@ -631,7 +631,7 @@ function CanvasImageElement({
       }}
     >
       {/* Image content - THIS gets clipped if inside frame */}
-      <div 
+      <div
         className="w-full h-full rounded overflow-hidden relative"
         style={{ clipPath: clipPath || undefined }}
       >
@@ -641,7 +641,7 @@ function CanvasImageElement({
 
       {/* Selection ring - OUTSIDE clipped area, always fully visible */}
       {isSelected && (
-        <div 
+        <div
           className="absolute inset-0 rounded ring-2 ring-blue-500 pointer-events-none"
           style={{ zIndex: 5 }}
         />
@@ -838,7 +838,7 @@ function CanvasFrameElement({
         }}
       >
         {/* Frame label - top left outside frame - THIS is the click target for selection/move */}
-        <div 
+        <div
           className="absolute left-0 flex items-center gap-1 px-1.5 py-0.5 rounded-t-sm"
           style={{
             top: '-22px',
@@ -856,7 +856,7 @@ function CanvasFrameElement({
 
         {/* Dimension indicator - bottom center when selected */}
         {isSelected && (
-          <div 
+          <div
             className="absolute left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-sm pointer-events-none"
             style={{
               bottom: '-24px',
@@ -1905,9 +1905,9 @@ function FrameFloatingToolbar({
                   className="w-40 h-7 px-2 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                   autoFocus
                 />
-                <Button 
-                  size="sm" 
-                  className="w-full h-7 text-xs" 
+                <Button
+                  size="sm"
+                  className="w-full h-7 text-xs"
                   onClick={() => {
                     onChange({ name: tempName.trim() || 'Frame' });
                     setShowNamePopover(false);
@@ -1949,24 +1949,30 @@ function FrameFloatingToolbar({
                     </PopoverTrigger>
                     <PopoverContent className="w-48 p-1 max-h-64 overflow-y-auto" align="end" side="right">
                       {[
-                        { cat: 'SOCIAL', items: [
-                          { n: 'Instagram Post', w: 1080, h: 1080 },
-                          { n: 'Instagram Story', w: 1080, h: 1920 },
-                          { n: 'TikTok', w: 1080, h: 1920 },
-                          { n: 'Twitter Post', w: 1200, h: 675 },
-                          { n: 'Facebook Post', w: 1200, h: 630 },
-                          { n: 'YouTube Thumb', w: 1280, h: 720 },
-                        ]},
-                        { cat: 'DEVICES', items: [
-                          { n: 'iPhone 15 Pro', w: 1179, h: 2556 },
-                          { n: 'iPhone 15 Pro Max', w: 1290, h: 2796 },
-                          { n: 'iPad Pro 11"', w: 1668, h: 2388 },
-                        ]},
-                        { cat: 'DESIGN', items: [
-                          { n: 'Dribbble', w: 400, h: 300 },
-                          { n: 'Dribbble HD', w: 800, h: 600 },
-                          { n: 'Square', w: 1000, h: 1000 },
-                        ]},
+                        {
+                          cat: 'SOCIAL', items: [
+                            { n: 'Instagram Post', w: 1080, h: 1080 },
+                            { n: 'Instagram Story', w: 1080, h: 1920 },
+                            { n: 'TikTok', w: 1080, h: 1920 },
+                            { n: 'Twitter Post', w: 1200, h: 675 },
+                            { n: 'Facebook Post', w: 1200, h: 630 },
+                            { n: 'YouTube Thumb', w: 1280, h: 720 },
+                          ]
+                        },
+                        {
+                          cat: 'DEVICES', items: [
+                            { n: 'iPhone 15 Pro', w: 1179, h: 2556 },
+                            { n: 'iPhone 15 Pro Max', w: 1290, h: 2796 },
+                            { n: 'iPad Pro 11"', w: 1668, h: 2388 },
+                          ]
+                        },
+                        {
+                          cat: 'DESIGN', items: [
+                            { n: 'Dribbble', w: 400, h: 300 },
+                            { n: 'Dribbble HD', w: 800, h: 600 },
+                            { n: 'Square', w: 1000, h: 1000 },
+                          ]
+                        },
                       ].map(cat => (
                         <div key={cat.cat}>
                           <div className="px-2 py-1 text-[9px] text-muted-foreground uppercase tracking-wider">{cat.cat}</div>
@@ -2171,8 +2177,10 @@ function MultiSelectToolbar({
     setShowMergeDialog(true);
   };
 
-  // Get ordered elements based on current order
-  const orderedElements = imageOrder.map(id => elements.find(el => el.id === id)).filter(Boolean) as CanvasElement[];
+  // Get ordered elements based on current order (only image elements for merging)
+  const orderedElements = imageOrder
+    .map(id => elements.find(el => el.id === id))
+    .filter((el): el is ImageCanvasElement => el !== undefined && el.type === 'image');
 
   // Swap two images in the order
   const swapImages = (idx1: number, idx2: number) => {
@@ -2439,10 +2447,10 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     elementId: string;
     cropRect: { x: number; y: number; width: number; height: number };
   } | null>(null);
-  
+
   // Snap guides state - for visual alignment feedback when dragging
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
-  
+
   const [canvasData, setCanvasData] = useState<CanvasData | null>(null);
   const [scale, setScale] = useState(1);
   const [stagePosition, setStagePosition] = useState({ x: 50, y: 50 });
@@ -2467,7 +2475,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   const authToken = session?.access_token;
 
   // Memoized frames for snapping - available to child components
-  const frames = useMemo(() => 
+  const frames = useMemo(() =>
     elements.filter(el => el.type === 'frame') as FrameCanvasElement[],
     [elements]
   );
@@ -2558,7 +2566,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   // Force fetch function that can be triggered externally
   const forceFetch = useCallback(async () => {
     console.log('[CANVAS_LIVE_DEBUG] forceFetch called:', { sandboxId, filePath, hasAuth: !!authToken, hasUnsavedChanges });
-    
+
     if (!sandboxId || !filePath || !authToken) {
       console.log('[CANVAS_LIVE_DEBUG] forceFetch skipped - missing required params');
       return;
@@ -2567,14 +2575,14 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       console.log('[CANVAS_LIVE_DEBUG] forceFetch skipped - user editing');
       return;
     }
-    
+
     lastFetchTimeRef.current = Date.now();
-    
+
     try {
       const baseUrl = getSandboxFileUrl(sandboxId, filePath);
       const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}_t=${Date.now()}`;
       console.log('[CANVAS_LIVE_DEBUG] forceFetch fetching:', url);
-      
+
       const response = await fetch(url, {
         headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
         credentials: 'include',
@@ -2582,7 +2590,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       });
 
       console.log('[CANVAS_LIVE_DEBUG] forceFetch response status:', response.status);
-      
+
       if (!response.ok) {
         console.log('[CANVAS_LIVE_DEBUG] forceFetch failed - bad response');
         return;
@@ -2590,7 +2598,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
       const newContent = await response.text();
       console.log('[CANVAS_LIVE_DEBUG] forceFetch content length:', newContent?.length);
-      
+
       if (!newContent) return;
 
       try {
@@ -2622,7 +2630,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   // Listen for canvas-tool-updated events to trigger immediate refresh
   useEffect(() => {
     console.log('[CANVAS_LIVE_DEBUG] Setting up canvas-tool-updated listener for filePath:', filePath);
-    
+
     const handleCanvasUpdate = (event: CustomEvent<{ canvasPath: string; timestamp: number }>) => {
       const eventPath = event.detail.canvasPath;
       console.log('[CANVAS_LIVE_DEBUG] Received canvas-tool-updated event:', {
@@ -2630,7 +2638,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         filePath,
         timestamp: event.detail.timestamp,
       });
-      
+
       // Check if this event is for our canvas
       if (filePath && (filePath.includes(eventPath) || eventPath.includes(filePath.replace('canvases/', '')))) {
         console.log('[CANVAS_LIVE_DEBUG] Event matches our canvas, calling forceFetch');
@@ -2641,7 +2649,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     };
 
     window.addEventListener('canvas-tool-updated', handleCanvasUpdate as EventListener);
-    
+
     // Check for any pending events that were dispatched before listener was set up
     const pendingEvents = (window as any).__pendingCanvasRefreshEvents as Map<string, number> | undefined;
     if (pendingEvents && filePath) {
@@ -2661,7 +2669,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         }
       }
     }
-    
+
     return () => {
       console.log('[CANVAS_LIVE_DEBUG] Removing canvas-tool-updated listener');
       window.removeEventListener('canvas-tool-updated', handleCanvasUpdate as EventListener);
@@ -2927,7 +2935,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   }, [isPanning, selectionRect, elements, scale, stagePosition]);
 
   const handleElementChange = (id: string, newAttrs: Partial<CanvasElement>) => {
-    setElements(prev => prev.map(el => el.id === id ? { ...el, ...newAttrs } : el));
+    setElements(prev => prev.map(el => el.id === id ? { ...el, ...newAttrs } as CanvasElement : el));
   };
 
   const handleElementSelect = (id: string, e?: React.MouseEvent) => {
@@ -2962,12 +2970,12 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       const currentElementsJson = JSON.stringify(elements);
       const originalElementsJson = JSON.stringify(sanitizeElements(canvasData.elements || []));
       const hasChanges = currentElementsJson !== originalElementsJson;
-      
+
       // Only log when there's a change to avoid spam
       if (hasChanges !== hasUnsavedChanges) {
         console.log('[CANVAS_LIVE_DEBUG] hasUnsavedChanges changed to:', hasChanges);
       }
-      
+
       setHasUnsavedChanges(hasChanges);
     }
   }, [elements, canvasData, hasUnsavedChanges]);
@@ -3132,45 +3140,53 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   // Add a new frame to the canvas
   // Frame presets organized by category
   const framePresets = useMemo(() => [
-    { category: 'Social Media', items: [
-      { name: 'Instagram Post', width: 1080, height: 1080 },
-      { name: 'Instagram Story', width: 1080, height: 1920 },
-      { name: 'Instagram Reel', width: 1080, height: 1920 },
-      { name: 'TikTok', width: 1080, height: 1920 },
-      { name: 'Twitter Post', width: 1200, height: 675 },
-      { name: 'Twitter Header', width: 1500, height: 500 },
-      { name: 'Facebook Post', width: 1200, height: 630 },
-      { name: 'Facebook Cover', width: 820, height: 312 },
-      { name: 'LinkedIn Post', width: 1200, height: 627 },
-      { name: 'LinkedIn Cover', width: 1584, height: 396 },
-      { name: 'Pinterest Pin', width: 1000, height: 1500 },
-      { name: 'YouTube Thumbnail', width: 1280, height: 720 },
-      { name: 'YouTube Shorts', width: 1080, height: 1920 },
-    ]},
-    { category: 'Devices', items: [
-      { name: 'iPhone 15 Pro Max', width: 1290, height: 2796 },
-      { name: 'iPhone 15 Pro', width: 1179, height: 2556 },
-      { name: 'iPhone 15', width: 1179, height: 2556 },
-      { name: 'iPhone 14', width: 1170, height: 2532 },
-      { name: 'iPhone SE', width: 750, height: 1334 },
-      { name: 'iPad Pro 12.9"', width: 2048, height: 2732 },
-      { name: 'iPad Pro 11"', width: 1668, height: 2388 },
-      { name: 'Android Phone', width: 1080, height: 2400 },
-    ]},
-    { category: 'Design', items: [
-      { name: 'Dribbble Shot', width: 400, height: 300 },
-      { name: 'Dribbble Shot HD', width: 800, height: 600 },
-      { name: 'Behance Project', width: 1400, height: 788 },
-      { name: 'App Icon', width: 1024, height: 1024 },
-      { name: 'Favicon', width: 512, height: 512 },
-      { name: 'Open Graph', width: 1200, height: 630 },
-    ]},
-    { category: 'Print', items: [
-      { name: 'Business Card', width: 1050, height: 600 },
-      { name: 'Poster 18×24', width: 1800, height: 2400 },
-      { name: 'A4', width: 2480, height: 3508 },
-      { name: 'Square', width: 1000, height: 1000 },
-    ]},
+    {
+      category: 'Social Media', items: [
+        { name: 'Instagram Post', width: 1080, height: 1080 },
+        { name: 'Instagram Story', width: 1080, height: 1920 },
+        { name: 'Instagram Reel', width: 1080, height: 1920 },
+        { name: 'TikTok', width: 1080, height: 1920 },
+        { name: 'Twitter Post', width: 1200, height: 675 },
+        { name: 'Twitter Header', width: 1500, height: 500 },
+        { name: 'Facebook Post', width: 1200, height: 630 },
+        { name: 'Facebook Cover', width: 820, height: 312 },
+        { name: 'LinkedIn Post', width: 1200, height: 627 },
+        { name: 'LinkedIn Cover', width: 1584, height: 396 },
+        { name: 'Pinterest Pin', width: 1000, height: 1500 },
+        { name: 'YouTube Thumbnail', width: 1280, height: 720 },
+        { name: 'YouTube Shorts', width: 1080, height: 1920 },
+      ]
+    },
+    {
+      category: 'Devices', items: [
+        { name: 'iPhone 15 Pro Max', width: 1290, height: 2796 },
+        { name: 'iPhone 15 Pro', width: 1179, height: 2556 },
+        { name: 'iPhone 15', width: 1179, height: 2556 },
+        { name: 'iPhone 14', width: 1170, height: 2532 },
+        { name: 'iPhone SE', width: 750, height: 1334 },
+        { name: 'iPad Pro 12.9"', width: 2048, height: 2732 },
+        { name: 'iPad Pro 11"', width: 1668, height: 2388 },
+        { name: 'Android Phone', width: 1080, height: 2400 },
+      ]
+    },
+    {
+      category: 'Design', items: [
+        { name: 'Dribbble Shot', width: 400, height: 300 },
+        { name: 'Dribbble Shot HD', width: 800, height: 600 },
+        { name: 'Behance Project', width: 1400, height: 788 },
+        { name: 'App Icon', width: 1024, height: 1024 },
+        { name: 'Favicon', width: 512, height: 512 },
+        { name: 'Open Graph', width: 1200, height: 630 },
+      ]
+    },
+    {
+      category: 'Print', items: [
+        { name: 'Business Card', width: 1050, height: 600 },
+        { name: 'Poster 18×24', width: 1800, height: 2400 },
+        { name: 'A4', width: 2480, height: 3508 },
+        { name: 'Square', width: 1000, height: 1000 },
+      ]
+    },
   ], []);
 
   const handleAddFrame = useCallback((width: number = 400, height: number = 300, presetName?: string) => {
@@ -3374,7 +3390,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                 >
                   Custom
                 </button>
-                
+
                 {framePresets.map((category) => (
                   <div key={category.category}>
                     <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wider">
@@ -3973,7 +3989,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                   const imgRight = img.x + img.width;
                   const imgBottom = img.y + img.height;
                   return img.x < frameRight && imgRight > frameLeft &&
-                         img.y < frameBottom && imgBottom > frameTop;
+                    img.y < frameBottom && imgBottom > frameTop;
                 }) as ImageCanvasElement[];
 
                 // Sort by z-index (order in array)
