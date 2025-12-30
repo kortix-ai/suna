@@ -32,7 +32,10 @@ _canvas_locks: Dict[str, asyncio.Lock] = {}
 1. add_frame_to_canvas(canvas_path="canvases/design.kanvax", width=1080, height=1920, background_color="#000000") → get element_id
 2. image_edit_or_generate(prompt="...", canvas_path="canvases/design.kanvax", frame_id=element_id, aspect_ratio="2:3")
 
-**⚠️ CRITICAL: BOTH canvas_path AND frame_id are REQUIRED in image_edit_or_generate!**
+**⚠️ CRITICAL RULES:**
+- BOTH canvas_path AND frame_id are REQUIRED in image_edit_or_generate!
+- Generate **ONE COMPREHENSIVE IMAGE** per post - include ALL text, logos, and design in ONE prompt!
+- Do NOT generate multiple images for text overlays!
 
 **SIZES & ASPECT RATIOS:**
 - IG Story/Reel/TikTok: 1080x1920 → aspect_ratio="2:3" (portrait)
@@ -41,9 +44,9 @@ _canvas_locks: Dict[str, asyncio.Lock] = {}
 - YouTube: 1280x720 → aspect_ratio="3:2" (landscape)
 - Twitter: 1200x675 → aspect_ratio="3:2" (landscape)
 
-**⚠️ CREATE ONLY ONE FRAME PER REQUEST!** Don't duplicate frames.
+**⚠️ CREATE ONLY ONE FRAME AND ONE IMAGE PER REQUEST!**
 
-**FRAME FILL:** Use background_color="#000000" (black) or other hex color to fill gaps when image doesn't fully cover frame!
+**FRAME FILL:** Use background_color="#000000" (black) to fill gaps!
 
 **NEVER create HTML for social media content!**
 

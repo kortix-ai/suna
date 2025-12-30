@@ -9,9 +9,29 @@ const autoOpenedToolCalls = new Set<string>();
 // Module-level Set to track which tool_call_ids we've already emitted refresh events for
 const refreshedToolCalls = new Set<string>();
 
+// Global pending canvas refresh events (for when event is dispatched before listener is ready)
+// This is stored on window so canvas-renderer can access it
+declare global {
+  interface Window {
+    __pendingCanvasRefreshEvents?: Map<string, number>;
+  }
+}
+
+// Initialize pending events map
+if (typeof window !== 'undefined' && !window.__pendingCanvasRefreshEvents) {
+  window.__pendingCanvasRefreshEvents = new Map();
+}
+
 // Emit custom event to trigger canvas refresh when tool modifies canvas
 function emitCanvasRefresh(canvasPath: string) {
   console.log('[CANVAS_LIVE_DEBUG] emitCanvasRefresh called with path:', canvasPath);
+  
+  // Store in pending events queue (canvas-renderer will check this when it mounts)
+  if (window.__pendingCanvasRefreshEvents) {
+    window.__pendingCanvasRefreshEvents.set(canvasPath, Date.now());
+    console.log('[CANVAS_LIVE_DEBUG] Added to pending events queue:', canvasPath);
+  }
+  
   const event = new CustomEvent('canvas-tool-updated', { 
     detail: { canvasPath, timestamp: Date.now() } 
   });

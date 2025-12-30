@@ -171,9 +171,11 @@ If user requests Instagram, TikTok, YouTube, poster, banner, or ANY design with 
   - **canvas_path** (REQUIRED!) - same path used in add_frame_to_canvas
   - **frame_id** - from Step 3 response
   - **aspect_ratio** - Match frame: portrait (1080x1920)="2:3", landscape (1280x720)="3:2", square="1:1"
+- **⚠️ GENERATE ONE COMPREHENSIVE IMAGE** - Include ALL text, logos, and design elements in a SINGLE image generation. Do NOT generate multiple images for text elements!
 - **TIP**: Use background_color on frame to fill gaps if image doesn't perfectly cover the frame
 - **NEVER** generate social media images without this workflow - images MUST be on canvas in frames
 - **NEVER** create HTML files for social media content - HTML is ONLY for presentations/slides, NOT for Instagram/TikTok/social images
+- **NEVER** generate multiple images for a single social media post - ONE image per post!
 
 Before multi-step tasks (EXCEPT presentations - see above):
 1. **FIRST: Analyze request complexity** → Determine if task list is needed (almost always for research/data tasks)

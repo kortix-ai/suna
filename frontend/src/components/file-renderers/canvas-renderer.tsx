@@ -2641,6 +2641,27 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     };
 
     window.addEventListener('canvas-tool-updated', handleCanvasUpdate as EventListener);
+    
+    // Check for any pending events that were dispatched before listener was set up
+    const pendingEvents = (window as any).__pendingCanvasRefreshEvents as Map<string, number> | undefined;
+    if (pendingEvents && filePath) {
+      // Check if any pending event matches our canvas
+      for (const [eventPath, timestamp] of pendingEvents.entries()) {
+        // Only process events from the last 10 seconds
+        if (Date.now() - timestamp < 10000) {
+          if (filePath.includes(eventPath) || eventPath.includes(filePath.replace('canvases/', '').replace('/workspace/', ''))) {
+            console.log('[CANVAS_LIVE_DEBUG] Found pending event for our canvas, forcing fetch:', eventPath);
+            pendingEvents.delete(eventPath); // Clear after processing
+            forceFetch();
+            break;
+          }
+        } else {
+          // Clean up old events
+          pendingEvents.delete(eventPath);
+        }
+      }
+    }
+    
     return () => {
       console.log('[CANVAS_LIVE_DEBUG] Removing canvas-tool-updated listener');
       window.removeEventListener('canvas-tool-updated', handleCanvasUpdate as EventListener);
@@ -2655,12 +2676,17 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
     const fetchLatestContent = async () => {
       // Skip if user is actively editing (has unsaved changes)
-      if (hasUnsavedChanges || isUserEditingRef.current) return;
+      if (hasUnsavedChanges || isUserEditingRef.current) {
+        console.log('[CANVAS_LIVE_DEBUG] Polling skipped - user editing');
+        return;
+      }
 
       // Skip if we just fetched (with small buffer)
       const now = Date.now();
       if (now - lastFetchTimeRef.current < POLL_INTERVAL - 200) return;
       lastFetchTimeRef.current = now;
+
+      console.log('[CANVAS_LIVE_DEBUG] Polling: fetching canvas content');
 
       try {
         // Add cache-busting to ensure fresh content from server
@@ -2672,7 +2698,10 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           cache: 'no-store', // Prevent browser caching
         });
 
-        if (!response.ok) return;
+        if (!response.ok) {
+          console.log('[CANVAS_LIVE_DEBUG] Polling: fetch failed with status', response.status);
+          return;
+        }
 
         const newContent = await response.text();
         if (!newContent) return;
@@ -2683,18 +2712,24 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           const newElementIds = (parsed.elements || []).map(e => e.id).sort().join(',');
           const currentElementIds = elementsRef.current.map(e => e.id).sort().join(',');
 
+          console.log('[CANVAS_LIVE_DEBUG] Polling: comparing elements', {
+            serverCount: parsed.elements?.length,
+            currentCount: elementsRef.current.length,
+            changed: newElementIds !== currentElementIds,
+          });
+
           // Only update if structure actually changed (new/removed elements)
           if (newElementIds !== currentElementIds) {
-            console.log('[CanvasRenderer] Live update: new elements detected', parsed.elements?.length, 'vs current', elementsRef.current.length);
+            console.log('[CANVAS_LIVE_DEBUG] Polling: UPDATING - new elements detected!');
             setCanvasData(parsed);
             setElements(sanitizeElements(parsed.elements || []));
             hasCenteredRef.current = false; // Re-center to show new content
           }
         } catch (parseErr) {
-          // Ignore parse errors during polling
+          console.log('[CANVAS_LIVE_DEBUG] Polling: parse error', parseErr);
         }
       } catch (err) {
-        // Ignore network errors during polling
+        console.log('[CANVAS_LIVE_DEBUG] Polling: network error', err);
       }
     };
 
@@ -2920,14 +2955,22 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     }
   };
 
-  // Track unsaved changes
+  // Track unsaved changes - compare sanitized versions to avoid false positives
   useEffect(() => {
     if (canvasData && elements.length > 0) {
+      // Sanitize both to ensure fair comparison (raw data might be missing defaults)
       const currentElementsJson = JSON.stringify(elements);
-      const originalElementsJson = JSON.stringify(canvasData.elements || []);
-      setHasUnsavedChanges(currentElementsJson !== originalElementsJson);
+      const originalElementsJson = JSON.stringify(sanitizeElements(canvasData.elements || []));
+      const hasChanges = currentElementsJson !== originalElementsJson;
+      
+      // Only log when there's a change to avoid spam
+      if (hasChanges !== hasUnsavedChanges) {
+        console.log('[CANVAS_LIVE_DEBUG] hasUnsavedChanges changed to:', hasChanges);
+      }
+      
+      setHasUnsavedChanges(hasChanges);
     }
-  }, [elements, canvasData]);
+  }, [elements, canvasData, hasUnsavedChanges]);
 
   // Calculate next image position based on existing elements
   const getNextImagePosition = useCallback((imgWidth: number, imgHeight: number) => {
