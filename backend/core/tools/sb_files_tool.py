@@ -32,9 +32,9 @@ from typing import Optional
 - AI-powered intelligent file editing with natural language instructions using `edit_file` tool exclusively
 
 **MANDATORY FILE EDITING TOOL:**
-- **MUST use `edit_file` for ALL file modifications**
+- **MUST use edit_file for ALL file modifications**
 - This is a powerful AI tool that handles everything from simple replacements to complex refactoring
-- NEVER use `echo` or `sed` to modify files - always use `edit_file`
+- NEVER use echo or sed to modify files - always use edit_file
 - Provide clear natural language instructions and the code changes
 
 **FILE MANAGEMENT BEST PRACTICES:**
@@ -132,25 +132,26 @@ class SandboxFilesTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "create_file",
-            "description": "Create a new file with the provided contents at a given path in the workspace. The path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py)",
+            "description": "Create a new file with the provided contents at a given path in the workspace. The path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `file_path` (REQUIRED), `file_contents` (REQUIRED), `permissions` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "Path to the file to be created, relative to /workspace (e.g., 'src/main.py')"
+                        "description": "**REQUIRED** - Path to the file to be created, relative to /workspace. Example: 'src/main.py' creates /workspace/src/main.py. Use forward slashes for path separators."
                     },
                     "file_contents": {
                         "type": "string",
-                        "description": "The content to write to the file"
+                        "description": "**REQUIRED** - The content to write to the file. Can be plain text, code, JSON, HTML, etc. If passing a dictionary/object, it will be automatically converted to JSON."
                     },
                     "permissions": {
                         "type": "string",
-                        "description": "File permissions in octal format (e.g., '644')",
+                        "description": "**OPTIONAL** - File permissions in octal format. Default: '644'. Example: '755' for executable files, '644' for regular files.",
                         "default": "644"
                     }
                 },
-                "required": ["file_path", "file_contents"]
+                "required": ["file_path", "file_contents"],
+                "additionalProperties": False
             }
         }
     })
@@ -198,24 +199,25 @@ class SandboxFilesTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "str_replace",
-            "description": "Replace specific text in a file. The file path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). IMPORTANT: Prefer using edit_file for faster, shorter edits to avoid repetition. Only use this tool when you need to replace a unique string that appears exactly once in the file and edit_file is not suitable.",
+            "description": "Replace specific text in a file. The file path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). IMPORTANT: Prefer using edit_file for faster, shorter edits to avoid repetition. Only use this tool when you need to replace a unique string that appears exactly once in the file and edit_file is not suitable. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `file_path` (REQUIRED), `old_str` (REQUIRED), `new_str` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "Path to the target file, relative to /workspace (e.g., 'src/main.py')"
+                        "description": "**REQUIRED** - Path to the target file, relative to /workspace. Example: 'src/main.py' for /workspace/src/main.py"
                     },
                     "old_str": {
                         "type": "string",
-                        "description": "Text to be replaced (must appear exactly once)"
+                        "description": "**REQUIRED** - The exact string to be replaced. Must match exactly (including whitespace and newlines). Must appear exactly once in the file."
                     },
                     "new_str": {
                         "type": "string",
-                        "description": "Replacement text"
+                        "description": "**REQUIRED** - Replacement text that will replace old_str."
                     }
                 },
-                "required": ["file_path", "old_str", "new_str"]
+                "required": ["file_path", "old_str", "new_str"],
+                "additionalProperties": False
             }
         }
     })
@@ -256,25 +258,26 @@ class SandboxFilesTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "full_file_rewrite",
-            "description": "Completely rewrite an existing file with new content. **FOR PRESENTATIONS**: This tool is MANDATORY for template-based presentations - use it to rewrite existing slide HTML files that came from the template. When rewriting template slides, you MUST preserve the original template structure, styling, and layout - only update the content with research data. Do NOT use `create_slide` for template-based presentations. **FOR OTHER FILES**: The file path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). Always prefer using edit_file for making changes to code. Only use this tool when edit_file fails or when you need to replace the entire file content.",
+            "description": "Completely rewrite an existing file with new content. **FOR PRESENTATIONS**: This tool is MANDATORY for template-based presentations - use it to rewrite existing slide HTML files that came from the template. When rewriting template slides, you MUST preserve the original template structure, styling, and layout - only update the content with research data. Do NOT use create_slide for template-based presentations. **FOR OTHER FILES**: The file path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). Always prefer using edit_file for making changes to code. Only use this tool when edit_file fails or when you need to replace the entire file content. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `file_path` (REQUIRED), `file_contents` (REQUIRED), `permissions` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "Path to the file to be rewritten, relative to /workspace (e.g., 'src/main.py')"
+                        "description": "**REQUIRED** - Path to the file to be rewritten, relative to /workspace. Example: 'src/main.py' for /workspace/src/main.py. File must already exist."
                     },
                     "file_contents": {
                         "type": "string",
-                        "description": "The new content to write to the file, replacing all existing content"
+                        "description": "**REQUIRED** - The new content to write to the file, replacing all existing content. This completely overwrites the file."
                     },
                     "permissions": {
                         "type": "string",
-                        "description": "File permissions in octal format (e.g., '644')",
+                        "description": "**OPTIONAL** - File permissions in octal format. Default: '644'. Example: '755' for executable files.",
                         "default": "644"
                     }
                 },
-                "required": ["file_path", "file_contents"]
+                "required": ["file_path", "file_contents"],
+                "additionalProperties": False
             }
         }
     })
@@ -346,21 +349,22 @@ class SandboxFilesTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "delete_file",
-            "description": "Delete a file at the given path. **IMPORTANT**: You MUST use the `ask` tool to get explicit user confirmation before calling this tool. Never delete files without user permission. The path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). Before using this tool: 1) Use `ask` to request confirmation with a clear message like 'Do you want me to delete [file_path]?'. 2) Only proceed with deletion if the user confirms.",
+            "description": "Delete a file at the given path. **IMPORTANT**: You MUST use the `ask` tool to get explicit user confirmation before calling this tool. Never delete files without user permission. The path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). Before using this tool: 1) Use `ask` to request confirmation with a clear message like 'Do you want me to delete [file_path]?'. 2) Only proceed with deletion if the user confirms. **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `file_path` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "Path to the file to be deleted, relative to /workspace (e.g., 'src/main.py')"
+                        "description": "**REQUIRED** - Path to the file to be deleted, relative to /workspace. Example: 'src/main.py' for /workspace/src/main.py."
                     },
                     "user_confirmed": {
                         "type": "boolean",
-                        "description": "Set to true only after receiving explicit user confirmation via the `ask` tool. Do not set to true without confirmation.",
+                        "description": "**OPTIONAL** - Set to true only after receiving explicit user confirmation via the `ask` tool. Do not set to true without confirmation. Default: false.",
                         "default": False
                     }
                 },
-                "required": ["file_path", "user_confirmed"]
+                "required": ["file_path"],
+                "additionalProperties": False
             }
         }
     })
@@ -420,7 +424,8 @@ class SandboxFilesTool(SandboxToolsBase):
                     api_key=openrouter_key,
                     api_base="https://openrouter.ai/api/v1",
                     temperature=0.0,
-                    timeout=30.0
+                    timeout=30.0,
+                    extra_body={"app": "Kortix.com"}
                 )
             else:
                 error_msg = "No Morph or OpenRouter API key found, cannot perform AI edit."
@@ -456,24 +461,25 @@ class SandboxFilesTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "edit_file",
-            "description": "Use this tool to make an edit to an existing file.\n\nThis will be read by a less intelligent model, which will quickly apply the edit. You should make it clear what the edit is, while also minimizing the unchanged code you write.\nWhen writing the edit, you should specify each edit in sequence, with the special comment // ... existing code ... to represent unchanged code in between edited lines.\n\nFor example:\n\n// ... existing code ...\nFIRST_EDIT\n// ... existing code ...\nSECOND_EDIT\n// ... existing code ...\nTHIRD_EDIT\n// ... existing code ...\n\nYou should still bias towards repeating as few lines of the original file as possible to convey the change.\nBut, each edit should contain sufficient context of unchanged lines around the code you're editing to resolve ambiguity.\nDO NOT omit spans of pre-existing code (or comments) without using the // ... existing code ... comment to indicate its absence. If you omit the existing code comment, the model may inadvertently delete these lines.\nIf you plan on deleting a section, you must provide context before and after to delete it. If the initial code is ```code \\n Block 1 \\n Block 2 \\n Block 3 \\n code```, and you want to remove Block 2, you would output ```// ... existing code ... \\n Block 1 \\n  Block 3 \\n // ... existing code ...```.\nMake sure it is clear what the edit should be, and where it should be applied.\nALWAYS make all edits to a file in a single edit_file instead of multiple edit_file calls to the same file. The apply model can handle many distinct edits at once.",
+            "description": "Use this tool to make an edit to an existing file.\n\nThis will be read by a less intelligent model, which will quickly apply the edit. You should make it clear what the edit is, while also minimizing the unchanged code you write.\nWhen writing the edit, you should specify each edit in sequence, with the special comment // ... existing code ... to represent unchanged code in between edited lines.\n\nFor example:\n\n// ... existing code ...\nFIRST_EDIT\n// ... existing code ...\nSECOND_EDIT\n// ... existing code ...\nTHIRD_EDIT\n// ... existing code ...\n\nYou should still bias towards repeating as few lines of the original file as possible to convey the change.\nBut, each edit should contain sufficient context of unchanged lines around the code you're editing to resolve ambiguity.\nDO NOT omit spans of pre-existing code (or comments) without using the // ... existing code ... comment to indicate its absence. If you omit the existing code comment, the model may inadvertently delete these lines.\nIf you plan on deleting a section, you must provide context before and after to delete it. If the initial code is ```code \\n Block 1 \\n Block 2 \\n Block 3 \\n code```, and you want to remove Block 2, you would output ```// ... existing code ... \\n Block 1 \\n  Block 3 \\n // ... existing code ...```.\nMake sure it is clear what the edit should be, and where it should be applied.\nALWAYS make all edits to a file in a single edit_file instead of multiple edit_file calls to the same file. The apply model can handle many distinct edits at once. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `target_file` (REQUIRED), `instructions` (REQUIRED), `code_edit` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "target_file": {
                         "type": "string",
-                        "description": "The target file to modify"
+                        "description": "**REQUIRED** - The target file to modify, relative to /workspace. Example: 'src/main.py' for /workspace/src/main.py."
                     },
                     "instructions": {
                         "type": "string", 
-                        "description": "A single sentence written in the first person describing what you're changing. Used to help disambiguate uncertainty in the edit."
+                        "description": "**REQUIRED** - A single sentence written in the first person describing what you're changing. Used to help disambiguate uncertainty in the edit. Example: 'I'm adding error handling to the login function'."
                     },
                     "code_edit": {
                         "type": "string",
-                        "description": "Specify ONLY the precise lines of code that you wish to edit. Use // ... existing code ... for unchanged sections."
+                        "description": "**REQUIRED** - Specify ONLY the precise lines of code that you wish to edit. Use // ... existing code ... for unchanged sections. Include sufficient context around edits."
                     }
                 },
-                "required": ["target_file", "instructions", "code_edit"]
+                "required": ["target_file", "instructions", "code_edit"],
+                "additionalProperties": False
             }
         }
     })

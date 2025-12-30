@@ -6,6 +6,7 @@ import { safeJsonParse } from '@/components/thread/utils';
 import { useIsMobile } from '@/hooks/utils';
 import { isAskOrCompleteTool } from './utils';
 import { useKortixComputerStore, useIsSidePanelOpen, useSetIsSidePanelOpen } from '@/stores/kortix-computer-store';
+import { getOrAssignToolNumber, getToolNumber } from './tool-tracking';
 
 interface UseThreadToolCallsReturn {
   toolCalls: ToolCallInput[];
@@ -117,6 +118,10 @@ export function useThreadToolCalls(
 
         const toolName = functionName.replace(/_/g, '-').toLowerCase();
         const isSuccess = toolResult?.success !== false;
+        
+        // Get or assign tool identifier for verbose logging
+        const existingNumber = getToolNumber(toolCallId);
+        const toolNumber = getOrAssignToolNumber(toolCallId);
 
         // Check if this tool should be filtered out
         if (shouldFilterTool(toolName)) {
@@ -173,8 +178,12 @@ export function useThreadToolCalls(
     if (historicalToolPairs.length !== prevToolCallsCountRef.current) {
       prevToolCallsCountRef.current = historicalToolPairs.length;
       setToolCalls(historicalToolPairs);
+      
+      // #region agent log - track toolCalls state update
+      fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useThreadToolCalls.ts:175',message:'toolCalls state updated',data:{toolCallsLength:historicalToolPairs.length,toolCalls:historicalToolPairs.map(tc=>({functionName:tc.toolCall?.function_name,hasResult:!!tc.toolResult})),messagesLength:messages.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'TOOL_CALLS_STATE'})}).catch(()=>{});
+      // #endregion
     }
-  }, [historicalToolPairs, messageIdAndToolNameToIndex]);
+  }, [historicalToolPairs, messageIdAndToolNameToIndex, messages.length]);
 
   // Separate effect for UI state management (side panel, current index)
   // This prevents recomputation of tool calls when UI state changes
@@ -190,7 +199,7 @@ export function useThreadToolCalls(
         setAutoOpenedPanel(true);
       }
     }
-  }, [historicalToolPairs.length, isSidePanelOpen, autoOpenedPanel, agentStatus, isMobile, compact]);
+  }, [historicalToolPairs.length, isSidePanelOpen, autoOpenedPanel, agentStatus, isMobile, compact, setIsSidePanelOpen]);
 
   // Reset user navigation flag when agent stops
   useEffect(() => {
@@ -206,11 +215,19 @@ export function useThreadToolCalls(
   }, [isSidePanelOpen]);
 
   const handleToolClick = useCallback((clickedAssistantMessageId: string | null, clickedToolName: string, toolCallId?: string) => {
+    // #region agent log - track tool click entry
+    fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useThreadToolCalls.ts:208',message:'handleToolClick called',data:{clickedAssistantMessageId,clickedToolName,toolCallId,toolCallsLength:toolCalls.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'TOOL_CLICK'})}).catch(()=>{});
+    // #endregion
+    
     userClosedPanelRef.current = false;
     userNavigatedRef.current = true;
 
     // Helper function to navigate to a tool index
     const navigateToIndex = (index: number) => {
+      // #region agent log - track navigation
+      fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useThreadToolCalls.ts:213',message:'navigateToIndex called',data:{index,toolCallsLength:toolCalls.length,hasToolCallAtIndex:!!toolCalls[index]},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'NAVIGATE'})}).catch(()=>{});
+      // #endregion
+      
       setExternalNavIndex(index);
       setCurrentToolIndex(index);
       setIsSidePanelOpen(true);
@@ -265,6 +282,19 @@ export function useThreadToolCalls(
     const compositeKey = `${clickedAssistantMessageId}:${normalizedToolName}`;
     const toolIndex = assistantMessageToToolIndex.current.get(compositeKey);
 
+    // #region debug - tool click debugging
+    console.log('[handleToolClick] Debug', {
+      clickedAssistantMessageId,
+      clickedToolName,
+      normalizedToolName,
+      compositeKey,
+      toolIndex,
+      toolCallsLength: toolCalls.length,
+      mapSize: assistantMessageToToolIndex.current.size,
+      mapKeys: Array.from(assistantMessageToToolIndex.current.keys()).slice(0, 10),
+    });
+    // #endregion
+
     if (toolIndex !== undefined) {
       navigateToIndex(toolIndex);
     } else {
@@ -304,7 +334,7 @@ export function useThreadToolCalls(
       
       toast.info('Could not find details for this tool call.');
     }
-  }, [messages, toolCalls, navigateToToolCall]);
+  }, [messages, toolCalls, navigateToToolCall, setIsSidePanelOpen]);
 
   const handleStreamingToolCall = useCallback(
     (toolCall: UnifiedMessage | null) => {
@@ -331,12 +361,19 @@ export function useThreadToolCalls(
 
       // Process each tool call from metadata
       setToolCalls((prev) => {
-        let updated = [...prev];
+        const updated = [...prev];
         
         // Update or add each tool call from metadata
         filteredToolCalls.forEach((metadataToolCall) => {
+        const toolCallId = metadataToolCall.tool_call_id;
+        const functionName = metadataToolCall.function_name;
+        
+        // Get or assign tool identifier for verbose logging
+        const existingNumber = getToolNumber(toolCallId);
+        const toolNumber = getOrAssignToolNumber(toolCallId);
+          
           const existingIndex = updated.findIndex(
-            tc => tc.toolCall.tool_call_id === metadataToolCall.tool_call_id
+            tc => tc.toolCall.tool_call_id === toolCallId
           );
 
           // Keep raw string for streaming partial JSON parsing, parse to object for completed
@@ -354,6 +391,10 @@ export function useThreadToolCalls(
             return {};
           })();
 
+          // Check if this tool call has a result (from useAgentStream merging)
+          const toolResult = (metadataToolCall as any).tool_result;
+          const isCompleted = (metadataToolCall as any).completed === true;
+          
           const newToolCall: ToolCallInput = {
             toolCall: {
               tool_call_id: metadataToolCall.tool_call_id,
@@ -363,7 +404,13 @@ export function useThreadToolCalls(
               rawArguments: typeof rawArgs === 'string' ? rawArgs : undefined,
               source: metadataToolCall.source || 'native',
             },
-            isSuccess: true,
+            // Merge tool result if available (real-time result from useAgentStream)
+            toolResult: toolResult ? {
+              success: toolResult.success !== false,
+              output: toolResult.output,
+              error: toolResult.error || null,
+            } : undefined,
+            isSuccess: toolResult ? (toolResult.success !== false) : true,
             assistantTimestamp: toolCall.created_at || new Date().toISOString(),
             messages: messages as any,
           };
@@ -384,6 +431,14 @@ export function useThreadToolCalls(
                 }
               }
             }
+            
+            // Merge tool result if available (real-time update)
+            const mergedToolResult = toolResult ? {
+              success: toolResult.success !== false,
+              output: toolResult.output,
+              error: toolResult.error || null,
+            } : updated[existingIndex].toolResult;
+            
             updated[existingIndex] = {
               ...updated[existingIndex],
               toolCall: {
@@ -391,6 +446,9 @@ export function useThreadToolCalls(
                 arguments: normalizedArgs,
                 rawArguments: rawArgsStr,
               },
+              // Update tool result if available (real-time merge)
+              toolResult: mergedToolResult,
+              isSuccess: mergedToolResult ? (mergedToolResult.success !== false) : updated[existingIndex].isSuccess,
               messages: messages as any,
             };
           } else {
@@ -416,7 +474,7 @@ export function useThreadToolCalls(
         }, 0);
       }
     },
-    [compact, navigateToToolCall],
+    [compact, navigateToToolCall, messages, setIsSidePanelOpen],
   );
   
   // Update current tool index when toolCalls changes (if user hasn't manually navigated)
@@ -444,4 +502,3 @@ export function useThreadToolCalls(
     userClosedPanelRef,
   };
 }
-

@@ -130,23 +130,19 @@ export function extractToolData(
   toolCall: ToolCallData | null;
   toolResult: ToolResultData | null;
 } {
-  const toolCall = extractToolCall(assistantMessage);
-  
-  // If tool call found, try to match tool result by tool_call_id
-  let toolResult: ToolResultData | null = null;
-  if (toolCall && toolMessage) {
+  // First, try to get tool_call_id from tool message to find the specific tool call
+  let toolCallId: string | undefined = undefined;
+  if (toolMessage) {
     const toolMetadata = safeJsonParse<ParsedMetadata>(toolMessage.metadata, {});
-    const toolCallId = toolMetadata.tool_call_id;
-    
-    // If tool_call_id matches, extract result
-    if (toolCallId === toolCall.tool_call_id && toolMetadata.result) {
-      toolResult = extractToolResult(toolMessage);
-    } else {
-      // Fallback: try to extract result anyway
-      toolResult = extractToolResult(toolMessage);
-    }
-  } else if (toolMessage) {
-    // No tool call but have tool message - extract result anyway
+    toolCallId = toolMetadata.tool_call_id;
+  }
+  
+  // Extract tool call - if we have toolCallId, use it to find the specific tool call
+  const toolCall = extractToolCall(assistantMessage, toolCallId);
+  
+  // Extract tool result
+  let toolResult: ToolResultData | null = null;
+  if (toolMessage) {
     toolResult = extractToolResult(toolMessage);
   }
   

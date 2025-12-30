@@ -1,0 +1,936 @@
+from typing import Optional, Dict, Any, List, Literal
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
+from core.sandbox.tool_base import SandboxToolsBase
+from core.agentpress.thread_manager import ThreadManager
+from core.utils.logger import logger
+from core.utils.image_processing import upscale_image_sync, remove_background_sync, UPSCALE_MODEL, REMOVE_BG_MODEL
+from core.billing.credits.media_integration import media_billing
+import json
+import uuid
+import asyncio
+import io
+import os
+from datetime import datetime
+from PIL import Image
+
+# Global lock for canvas file operations to prevent race conditions
+_canvas_locks: Dict[str, asyncio.Lock] = {}
+
+
+@tool_metadata(
+    display_name="Canvas Editor",
+    description="Create and manage interactive canvases for image composition and design. Includes AI processing (upscale, remove background) for canvas elements.",
+    icon="Layout",
+    color="bg-blue-100 dark:bg-blue-800/50",
+    weight=215,
+    visible=True,
+    usage_guide="""
+### CANVAS EDITOR
+
+**🚀 PREFERRED WORKFLOW: Use image_edit_or_generate with canvas_path**
+```python
+# BEST: Single call generates AND adds to canvas (auto-creates canvas if needed)
+image_edit_or_generate(
+    prompt=["logo design", "background pattern"],
+    canvas_path="canvases/my-design.kanvax"
+)
+```
+
+**🎨 AI PROCESSING ON CANVAS ELEMENTS:**
+```python
+# List elements to get IDs
+list_canvas_elements(canvas_path="canvases/my-design.kanvax")
+
+# Upscale an image on the canvas
+ai_process_canvas_element(
+    canvas_path="canvases/my-design.kanvax",
+    element_id="abc-123",
+    action="upscale"
+)
+
+# Remove background from an image on the canvas
+ai_process_canvas_element(
+    canvas_path="canvases/my-design.kanvax",
+    element_id="abc-123",
+    action="remove_bg"
+)
+```
+
+**⚠️ RULES:**
+- NEVER call add_image_to_canvas in PARALLEL - causes race conditions!
+- Use list_canvas_elements to get element IDs before processing
+"""
+)
+class SandboxCanvasTool(SandboxToolsBase):
+    """
+    Canvas tool for creating and managing interactive canvases with image elements.
+    Canvases are stored as .kanvax files (JSON format) with element metadata.
+    """
+    
+    def __init__(self, project_id: str, thread_manager: ThreadManager):
+        super().__init__(project_id, thread_manager)
+        self.canvases_dir = "canvases"
+        self.images_dir = f"{self.canvases_dir}/images"
+    
+    def _get_canvas_lock(self, canvas_path: str) -> asyncio.Lock:
+        """Get or create a lock for a specific canvas file to prevent race conditions"""
+        global _canvas_locks
+        lock_key = f"{self.project_id}:{canvas_path}"
+        if lock_key not in _canvas_locks:
+            _canvas_locks[lock_key] = asyncio.Lock()
+        return _canvas_locks[lock_key]
+
+    async def _ensure_canvases_dir(self):
+        """Ensure the canvases directory exists"""
+        await self._ensure_sandbox()
+        full_path = f"{self.workspace_path}/{self.canvases_dir}"
+        logger.debug(f"[Canvas] Creating directory: {full_path} in sandbox {self._sandbox_id}")
+        try:
+            result = await self.sandbox.process.exec(f"mkdir -p '{full_path}'")
+            # Verify directory was created
+            verify = await self.sandbox.process.exec(f"test -d '{full_path}' && echo 'EXISTS'")
+            if hasattr(verify, 'stdout') and 'EXISTS' in str(verify.stdout):
+                logger.debug(f"[Canvas] Directory verified: {full_path}")
+            else:
+                logger.warning(f"[Canvas] Directory may not exist: {full_path}")
+        except Exception as e:
+            logger.error(f"[Canvas] Failed to create directory {full_path}: {e}")
+
+    async def _ensure_images_dir(self):
+        """Ensure the images directory exists"""
+        await self._ensure_sandbox()
+        full_path = f"{self.workspace_path}/{self.images_dir}"
+        try:
+            await self.sandbox.process.exec(f"mkdir -p '{full_path}'")
+        except Exception as e:
+            logger.error(f"[Canvas] Failed to create images dir {full_path}: {e}")
+
+    def _sanitize_filename(self, name: str) -> str:
+        """Convert canvas name to safe filename"""
+        return "".join(c for c in name if c.isalnum() or c in "-_").lower()
+
+    def _create_canvas_data(
+        self, 
+        name: str, 
+        description: Optional[str] = None,
+        background: str = "#1a1a1a"  # Dark background by default
+    ) -> Dict[str, Any]:
+        """Create initial canvas data structure - infinite canvas, no fixed dimensions"""
+        now = datetime.utcnow().isoformat() + "Z"
+        return {
+            "name": name,
+            "version": "1.0",
+            "background": background,
+            "description": description or "",
+            "elements": [],
+            "created_at": now,
+            "updated_at": now
+        }
+
+    async def _load_canvas_data(self, canvas_path: str) -> Optional[Dict[str, Any]]:
+        """Load canvas data from .kanvax file"""
+        try:
+            await self._ensure_sandbox()
+            content = await self.sandbox.fs.download_file(f"{self.workspace_path}/{canvas_path}")
+            return json.loads(content.decode() if isinstance(content, bytes) else content)
+        except Exception as e:
+            return None
+
+    async def _save_canvas_data(self, canvas_path: str, canvas_data: Dict[str, Any]):
+        """Save canvas data to .kanvax file"""
+        try:
+            await self._ensure_sandbox()
+            await self._ensure_canvases_dir()  # Ensure directory exists!
+            
+            canvas_data["updated_at"] = datetime.utcnow().isoformat() + "Z"
+            content = json.dumps(canvas_data, indent=2)
+            full_path = f"{self.workspace_path}/{canvas_path}"
+            
+            logger.debug(f"[Canvas] Saving canvas to: {full_path} in sandbox {self._sandbox_id}")
+            await self.sandbox.fs.upload_file(content.encode(), full_path)
+            
+            # Verify file was saved
+            try:
+                verify = await self.sandbox.process.exec(f"test -f '{full_path}' && echo 'SAVED'")
+                if hasattr(verify, 'stdout') and 'SAVED' in str(verify.stdout):
+                    logger.debug(f"[Canvas] File verified: {full_path}")
+                else:
+                    logger.warning(f"[Canvas] File may not have been saved: {full_path}")
+            except:
+                pass
+        except Exception as e:
+            logger.error(f"[Canvas] Failed to save canvas {full_path}: {e}")
+            raise Exception(f"Failed to save canvas: {str(e)}")
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "create_canvas",
+            "description": "Create a new infinite canvas for image composition and design. Canvas is infinite - no fixed dimensions. Just add images at any position. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `name` (REQUIRED), `description` (optional), `background` (optional).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "**REQUIRED** - Name for the canvas (will be sanitized for filename). Use descriptive names like 'product-mockup' or 'social-media-banner'."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "**OPTIONAL** - Description of the canvas purpose or content."
+                    },
+                    "background": {
+                        "type": "string",
+                        "description": "**OPTIONAL** - Background color in hex format. Example: '#1a1a1a' for dark, '#ffffff' for white. Default: '#1a1a1a'.",
+                        "default": "#1a1a1a"
+                    }
+                },
+                "required": ["name"],
+                "additionalProperties": False
+            }
+        }
+    })
+    async def create_canvas(
+        self,
+        name: str,
+        description: Optional[str] = None,
+        background: str = "#1a1a1a"
+    ) -> ToolResult:
+        """Create a new infinite canvas"""
+        try:
+            await self._ensure_sandbox()
+            logger.info(f"[Canvas] Creating canvas '{name}' in sandbox {self._sandbox_id} for project {self.project_id}")
+            await self._ensure_canvases_dir()
+            await self._ensure_images_dir()
+
+            safe_name = self._sanitize_filename(name)
+            canvas_path = f"{self.canvases_dir}/{safe_name}.kanvax"
+            full_path = f"{self.workspace_path}/{canvas_path}"
+
+            # Check if canvas already exists
+            try:
+                await self.sandbox.fs.download_file(full_path)
+                return self.fail_response(f"Canvas '{name}' already exists at {canvas_path}")
+            except:
+                pass  # File doesn't exist, continue
+
+            # Create canvas data (infinite canvas - no dimensions)
+            canvas_data = self._create_canvas_data(name, description, background)
+
+            # Save canvas file
+            await self._save_canvas_data(canvas_path, canvas_data)
+
+            result = {
+                "canvas_name": name,
+                "canvas_path": canvas_path,
+                "background": background,
+                "description": description or "",
+                "sandbox_id": self.sandbox_id,
+                "message": f"Canvas '{name}' created successfully at {canvas_path}"
+            }
+
+            return self.success_response(result)
+
+        except Exception as e:
+            return self.fail_response(f"Failed to create canvas: {str(e)}")
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "save_canvas",
+            "description": "Save canvas data with all elements. Used to persist user changes from the canvas editor. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `canvas_path` (REQUIRED), `elements` (REQUIRED).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "canvas_path": {
+                        "type": "string",
+                        "description": "**REQUIRED** - Path to the canvas file. Example: 'canvases/project-mockup.kanvax'"
+                    },
+                    "elements": {
+                        "type": "array",
+                        "description": "**REQUIRED** - Array of canvas elements with their properties (id, type, src, x, y, width, height, rotation, scaleX, scaleY, opacity, locked, name).",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "type": {"type": "string"},
+                                "src": {"type": "string"},
+                                "x": {"type": "number"},
+                                "y": {"type": "number"},
+                                "width": {"type": "number"},
+                                "height": {"type": "number"},
+                                "rotation": {"type": "number"},
+                                "scaleX": {"type": "number"},
+                                "scaleY": {"type": "number"},
+                                "opacity": {"type": "number"},
+                                "locked": {"type": "boolean"},
+                                "name": {"type": "string"}
+                            }
+                        }
+                    }
+                },
+                "required": ["canvas_path", "elements"],
+                "additionalProperties": False
+            }
+        }
+    })
+    async def save_canvas(
+        self,
+        canvas_path: str,
+        elements: List[Dict[str, Any]]
+    ) -> ToolResult:
+        """
+        Save canvas with updated elements.
+        """
+        try:
+            await self._ensure_sandbox()
+            
+            # Load existing canvas
+            canvas_data = await self._load_canvas_data(canvas_path)
+            if not canvas_data:
+                return self.fail_response(f"Canvas not found: {canvas_path}")
+            
+            # Update elements
+            canvas_data["elements"] = elements
+            canvas_data["updated_at"] = datetime.now().isoformat()
+            
+            # Save back to file
+            await self._save_canvas_data(canvas_path, canvas_data)
+            
+            result = {
+                "canvas_path": canvas_path,
+                "canvas_name": canvas_data.get("name", ""),
+                "element_count": len(elements),
+                "sandbox_id": self.sandbox_id,
+                "message": f"Canvas saved with {len(elements)} element(s)"
+            }
+            
+            return self.success_response(result)
+        
+        except Exception as e:
+            return self.fail_response(f"Failed to save canvas: {str(e)}")
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "add_image_to_canvas",
+            "description": "Add an image element to an existing canvas. Image can be from designs folder or any workspace path. **⚠️ IMPORTANT**: NEVER call this function in parallel - causes race conditions! Call ONE AT A TIME. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `canvas_path` (REQUIRED), `image_path` (REQUIRED), `x` (optional), `y` (optional), `width` (optional), `height` (optional), `name` (optional).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "canvas_path": {
+                        "type": "string",
+                        "description": "**REQUIRED** - Path to the canvas file. Example: 'canvases/project-mockup.kanvax'"
+                    },
+                    "image_path": {
+                        "type": "string",
+                        "description": "**REQUIRED** - Path to the image file relative to workspace. Example: 'designs/logo.png'"
+                    },
+                    "x": {
+                        "type": "number",
+                        "description": "**OPTIONAL** - X position on canvas in pixels. Default: 100.",
+                        "default": 100
+                    },
+                    "y": {
+                        "type": "number",
+                        "description": "**OPTIONAL** - Y position on canvas in pixels. Default: 100.",
+                        "default": 100
+                    },
+                    "width": {
+                        "type": "number",
+                        "description": "**OPTIONAL** - Width of the image in pixels. Uses original size if not specified. Minimum: 1.",
+                        "minimum": 1
+                    },
+                    "height": {
+                        "type": "number",
+                        "description": "**OPTIONAL** - Height of the image in pixels. Uses original size if not specified. Minimum: 1.",
+                        "minimum": 1
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "**OPTIONAL** - Name for the element. Defaults to image filename if not provided."
+                    }
+                },
+                "required": ["canvas_path", "image_path"],
+                "additionalProperties": False
+            }
+        }
+    })
+    async def add_image_to_canvas(
+        self,
+        canvas_path: str,
+        image_path: str,
+        x: float = 100,
+        y: float = 100,
+        width: Optional[float] = None,
+        height: Optional[float] = None,
+        name: Optional[str] = None
+    ) -> ToolResult:
+        """Add an image element to the canvas"""
+        # Ensure x, y, width, height are numbers (AI sometimes passes strings)
+        try:
+            x = float(x) if x is not None else 100
+            y = float(y) if y is not None else 100
+            width = float(width) if width is not None else None
+            height = float(height) if height is not None else None
+        except (ValueError, TypeError):
+            x, y = 100, 100
+            width, height = None, None
+        
+        # Use lock to prevent race conditions when parallel calls try to add images
+        canvas_lock = self._get_canvas_lock(canvas_path)
+        
+        async with canvas_lock:
+            try:
+                await self._ensure_sandbox()
+                
+                # Load canvas data (inside lock to ensure atomic read-modify-write)
+                canvas_data = await self._load_canvas_data(canvas_path)
+                if not canvas_data:
+                    return self.fail_response(f"Canvas not found: {canvas_path}")
+
+                # Verify image exists and load it
+                image_full_path = f"{self.workspace_path}/{image_path}"
+                try:
+                    image_data = await self.sandbox.fs.download_file(image_full_path)
+                except:
+                    return self.fail_response(f"Image not found at {image_path}")
+                
+                # Get image bytes to read dimensions (not for embedding)
+                if isinstance(image_data, bytes):
+                    image_bytes = image_data
+                else:
+                    image_bytes = image_data.encode()
+                
+                # Get actual image dimensions using PIL
+                try:
+                    img = Image.open(io.BytesIO(image_bytes))
+                    actual_img_width, actual_img_height = img.size
+                    img.close()
+                except Exception as e:
+                    logger.warning(f"Could not read image dimensions: {e}")
+                    actual_img_width, actual_img_height = 400, 400
+                
+                # Create element - store PATH reference, NOT base64 (avoids LLM context bloat)
+                # Frontend canvas-renderer.tsx handles path-based src via getSandboxFileUrl()
+                element_id = str(uuid.uuid4())
+                element_name = name or image_path.split('/')[-1]
+                
+                # Calculate element size based on actual image dimensions
+                # If user provided both width and height, scale proportionally to fit
+                # If user provided only one, scale to maintain aspect ratio
+                # If user provided neither, use actual image size (capped at reasonable max)
+                aspect_ratio = actual_img_width / actual_img_height if actual_img_height > 0 else 1
+                
+                if width is not None and height is not None:
+                    # User specified both - scale to fit while maintaining aspect ratio
+                    target_aspect = width / height if height > 0 else 1
+                    if aspect_ratio > target_aspect:
+                        # Image is wider, fit to width
+                        elem_width = width
+                        elem_height = width / aspect_ratio
+                    else:
+                        # Image is taller, fit to height
+                        elem_height = height
+                        elem_width = height * aspect_ratio
+                elif width is not None:
+                    # User specified only width
+                    elem_width = width
+                    elem_height = width / aspect_ratio
+                elif height is not None:
+                    # User specified only height
+                    elem_height = height
+                    elem_width = height * aspect_ratio
+                else:
+                    # No size specified - use actual image size, capped
+                    max_size = 600
+                    if actual_img_width > max_size or actual_img_height > max_size:
+                        if actual_img_width > actual_img_height:
+                            elem_width = max_size
+                            elem_height = max_size / aspect_ratio
+                        else:
+                            elem_height = max_size
+                            elem_width = max_size * aspect_ratio
+                    else:
+                        elem_width = actual_img_width
+                        elem_height = actual_img_height
+                
+                # Auto-calculate position if not specified (x=100 and y=100 are defaults)
+                # Create a grid layout based on existing elements
+                actual_x = x
+                actual_y = y
+                if x == 100 and y == 100 and len(canvas_data["elements"]) > 0:
+                    # Calculate next position in grid
+                    existing = canvas_data["elements"]
+                    cols = 3  # 3 columns
+                    gap = 50  # Gap between elements
+                    
+                    index = len(existing)
+                    col = index % cols
+                    row = index // cols
+                    
+                    # Find max width/height in each row for better alignment
+                    actual_x = col * (elem_width + gap) + 100
+                    actual_y = row * (elem_height + gap) + 100
+
+                element = {
+                    "id": element_id,
+                    "type": "image",
+                    "src": image_path,  # Store path reference - frontend fetches via sandbox API
+                    "x": actual_x,
+                    "y": actual_y,
+                    "width": elem_width,
+                    "height": elem_height,
+                    "rotation": 0,
+                    "scaleX": 1,
+                    "scaleY": 1,
+                    "opacity": 1,
+                    "locked": False,
+                    "name": element_name
+                }
+
+                # Add to canvas
+                canvas_data["elements"].append(element)
+
+                # Save canvas
+                await self._save_canvas_data(canvas_path, canvas_data)
+
+                result = {
+                    "canvas_path": canvas_path,
+                    "element_id": element_id,
+                    "element_name": element_name,
+                    "image_path": image_path,
+                    "position": {"x": actual_x, "y": actual_y},
+                    "size": {"width": elem_width, "height": elem_height},
+                    "total_elements": len(canvas_data["elements"]),
+                    "sandbox_id": self.sandbox_id,
+                    "message": f"Added '{element_name}' to canvas at position ({actual_x}, {actual_y})"
+                }
+
+                return self.success_response(result)
+
+            except Exception as e:
+                return self.fail_response(f"Failed to add image to canvas: {str(e)}")
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "list_canvas_elements",
+            "description": "List all elements in a canvas with their properties. **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `canvas_path` (REQUIRED).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "canvas_path": {
+                        "type": "string",
+                        "description": "**REQUIRED** - Path to the canvas file. Example: 'canvases/project-mockup.kanvax'"
+                    }
+                },
+                "required": ["canvas_path"],
+                "additionalProperties": False
+            }
+        }
+    })
+    async def list_canvas_elements(self, canvas_path: str) -> ToolResult:
+        """List all elements in a canvas"""
+        try:
+            await self._ensure_sandbox()
+            canvas_data = await self._load_canvas_data(canvas_path)
+            
+            if not canvas_data:
+                return self.fail_response(f"Canvas not found: {canvas_path}")
+
+            elements_info = []
+            for element in canvas_data.get("elements", []):
+                # Get src info but NEVER include base64 data in tool results (LLM context bloat)
+                src = element.get("src", "")
+                if src.startswith("data:"):
+                    # Base64 embedded - just indicate it exists
+                    src_info = "(embedded image)"
+                else:
+                    # File path reference - safe to include
+                    src_info = src
+                
+                elements_info.append({
+                    "id": element["id"],
+                    "name": element["name"],
+                    "type": element["type"],
+                    "src": src_info,  # Path or indicator, NEVER base64 data
+                    "position": {"x": element["x"], "y": element["y"]},
+                    "size": {"width": element["width"], "height": element["height"]},
+                    "rotation": element.get("rotation", 0),
+                    "opacity": element.get("opacity", 1),
+                    "locked": element.get("locked", False)
+                })
+
+            result = {
+                "canvas_name": canvas_data["name"],
+                "canvas_path": canvas_path,
+                "background": canvas_data.get("background", "#1a1a1a"),
+                "total_elements": len(elements_info),
+                "elements": elements_info,
+                "sandbox_id": self.sandbox_id
+            }
+
+            return self.success_response(result)
+
+        except Exception as e:
+            return self.fail_response(f"Failed to list canvas elements: {str(e)}")
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "update_canvas_element",
+            "description": "Update properties of a canvas element (position, size, rotation, etc.). **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `canvas_path` (REQUIRED), `element_id` (REQUIRED), `x` (optional), `y` (optional), `width` (optional), `height` (optional), `rotation` (optional), `opacity` (optional), `locked` (optional), `name` (optional).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "canvas_path": {
+                        "type": "string",
+                        "description": "**REQUIRED** - Path to the canvas file. Example: 'canvases/project-mockup.kanvax'"
+                    },
+                    "element_id": {
+                        "type": "string",
+                        "description": "**REQUIRED** - ID of the element to update."
+                    },
+                    "x": {"type": "number", "description": "**OPTIONAL** - New X position in pixels."},
+                    "y": {"type": "number", "description": "**OPTIONAL** - New Y position in pixels."},
+                    "width": {"type": "number", "description": "**OPTIONAL** - New width in pixels."},
+                    "height": {"type": "number", "description": "**OPTIONAL** - New height in pixels."},
+                    "rotation": {"type": "number", "description": "**OPTIONAL** - Rotation in degrees."},
+                    "opacity": {"type": "number", "description": "**OPTIONAL** - Opacity value between 0 and 1. Minimum: 0, Maximum: 1.", "minimum": 0, "maximum": 1},
+                    "locked": {"type": "boolean", "description": "**OPTIONAL** - Lock element to prevent changes."},
+                    "name": {"type": "string", "description": "**OPTIONAL** - Element name."}
+                },
+                "required": ["canvas_path", "element_id"],
+                "additionalProperties": False
+            }
+        }
+    })
+    async def update_canvas_element(
+        self,
+        canvas_path: str,
+        element_id: str,
+        **updates
+    ) -> ToolResult:
+        """Update element properties"""
+        try:
+            await self._ensure_sandbox()
+            canvas_data = await self._load_canvas_data(canvas_path)
+            
+            if not canvas_data:
+                return self.fail_response(f"Canvas not found: {canvas_path}")
+
+            # Find element
+            element = None
+            for el in canvas_data.get("elements", []):
+                if el["id"] == element_id:
+                    element = el
+                    break
+
+            if not element:
+                return self.fail_response(f"Element '{element_id}' not found in canvas")
+
+            # Update properties
+            allowed_updates = ["x", "y", "width", "height", "rotation", "opacity", "locked", "name", "scaleX", "scaleY"]
+            updated_props = []
+            for key, value in updates.items():
+                if key in allowed_updates and value is not None:
+                    element[key] = value
+                    updated_props.append(key)
+
+            # Save canvas
+            await self._save_canvas_data(canvas_path, canvas_data)
+
+            result = {
+                "canvas_path": canvas_path,
+                "element_id": element_id,
+                "element_name": element["name"],
+                "updated_properties": updated_props,
+                "sandbox_id": self.sandbox_id,
+                "message": f"Updated element '{element['name']}' ({len(updated_props)} properties)"
+            }
+
+            return self.success_response(result)
+
+        except Exception as e:
+            return self.fail_response(f"Failed to update element: {str(e)}")
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "remove_canvas_element",
+            "description": "Remove an element from the canvas. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `canvas_path` (REQUIRED), `element_id` (REQUIRED).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "canvas_path": {
+                        "type": "string",
+                        "description": "**REQUIRED** - Path to the canvas file. Example: 'canvases/project-mockup.kanvax'"
+                    },
+                    "element_id": {
+                        "type": "string",
+                        "description": "**REQUIRED** - ID of the element to remove."
+                    }
+                },
+                "required": ["canvas_path", "element_id"],
+                "additionalProperties": False
+            }
+        }
+    })
+    async def remove_canvas_element(self, canvas_path: str, element_id: str) -> ToolResult:
+        """Remove an element from the canvas"""
+        try:
+            await self._ensure_sandbox()
+            canvas_data = await self._load_canvas_data(canvas_path)
+            
+            if not canvas_data:
+                return self.fail_response(f"Canvas not found: {canvas_path}")
+
+            # Find and remove element
+            element_name = None
+            new_elements = []
+            for el in canvas_data.get("elements", []):
+                if el["id"] == element_id:
+                    element_name = el["name"]
+                else:
+                    new_elements.append(el)
+
+            if element_name is None:
+                return self.fail_response(f"Element '{element_id}' not found in canvas")
+
+            canvas_data["elements"] = new_elements
+
+            # Save canvas
+            await self._save_canvas_data(canvas_path, canvas_data)
+
+            result = {
+                "canvas_path": canvas_path,
+                "removed_element_id": element_id,
+                "removed_element_name": element_name,
+                "remaining_elements": len(new_elements),
+                "sandbox_id": self.sandbox_id,
+                "message": f"Removed element '{element_name}' from canvas"
+            }
+
+            return self.success_response(result)
+
+        except Exception as e:
+            return self.fail_response(f"Failed to remove element: {str(e)}")
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "ai_process_canvas_element",
+            "description": "Apply AI processing (upscale or remove background) to an image element on the canvas. The processed result is added as a NEW element next to the original. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `canvas_path` (REQUIRED), `element_id` (REQUIRED), `action` (REQUIRED: 'upscale' or 'remove_bg').",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "canvas_path": {
+                        "type": "string",
+                        "description": "**REQUIRED** - Path to the canvas file. Example: 'canvases/project-mockup.kanvax'"
+                    },
+                    "element_id": {
+                        "type": "string",
+                        "description": "**REQUIRED** - ID of the image element to process. Get this from list_canvas_elements."
+                    },
+                    "action": {
+                        "type": "string",
+                        "enum": ["upscale", "remove_bg"],
+                        "description": "**REQUIRED** - Action to perform: 'upscale' (enhance resolution) or 'remove_bg' (remove background)."
+                    }
+                },
+                "required": ["canvas_path", "element_id", "action"],
+                "additionalProperties": False
+            }
+        }
+    })
+    async def ai_process_canvas_element(
+        self,
+        canvas_path: str,
+        element_id: str,
+        action: Literal["upscale", "remove_bg"]
+    ) -> ToolResult:
+        """
+        Apply AI processing to a canvas element.
+        
+        1. Finds the element in the canvas
+        2. Gets its image data
+        3. Processes with AI (upscale or remove_bg)
+        4. Saves result as new file
+        5. Adds new element to canvas next to original
+        """
+        try:
+            await self._ensure_sandbox()
+            
+            # Validate action
+            if action not in ("upscale", "remove_bg"):
+                return self.fail_response(f"Invalid action '{action}'. Use 'upscale' or 'remove_bg'.")
+            
+            # Load canvas
+            canvas_data = await self._load_canvas_data(canvas_path)
+            if not canvas_data:
+                return self.fail_response(f"Canvas not found: {canvas_path}")
+            
+            # Find the element
+            source_element = None
+            for el in canvas_data.get("elements", []):
+                if el["id"] == element_id:
+                    source_element = el
+                    break
+            
+            if not source_element:
+                return self.fail_response(f"Element '{element_id}' not found in canvas")
+            
+            if source_element.get("type") != "image":
+                return self.fail_response(f"Element '{element_id}' is not an image (type: {source_element.get('type')})")
+            
+            # Get the image source
+            src = source_element.get("src", "")
+            if not src:
+                return self.fail_response(f"Element '{element_id}' has no image source")
+            
+            # Get image bytes
+            if src.startswith("data:"):
+                # Base64 embedded image
+                import base64
+                try:
+                    # Parse data URL: data:image/png;base64,xxxxx
+                    header, data = src.split(',', 1)
+                    mime_type = header.split(':')[1].split(';')[0]
+                    image_bytes = base64.b64decode(data)
+                except Exception as e:
+                    return self.fail_response(f"Failed to decode embedded image: {str(e)}")
+            else:
+                # File path reference
+                image_full_path = f"{self.workspace_path}/{src}"
+                try:
+                    image_bytes = await self.sandbox.fs.download_file(image_full_path)
+                    # Determine mime type from extension
+                    if src.lower().endswith(".jpg") or src.lower().endswith(".jpeg"):
+                        mime_type = "image/jpeg"
+                    elif src.lower().endswith(".webp"):
+                        mime_type = "image/webp"
+                    else:
+                        mime_type = "image/png"
+                except Exception as e:
+                    return self.fail_response(f"Failed to read image from '{src}': {str(e)}")
+            
+            # BILLING: Check credits before processing
+            account_id = getattr(self, '_account_id', None) or getattr(self, 'account_id', None)
+            if not account_id:
+                account_id = getattr(self.thread_manager, 'account_id', None)
+            
+            use_mock = os.getenv("MOCK_IMAGE_GENERATION", "false").lower() == "true"
+            
+            if account_id and not use_mock:
+                has_credits, credit_msg, balance = await media_billing.check_credits(account_id)
+                if not has_credits:
+                    return self.fail_response(f"Insufficient credits: {credit_msg}")
+            
+            # Process the image
+            logger.info(f"[Canvas AI] Processing element '{source_element.get('name', element_id)}' with action '{action}'")
+            
+            try:
+                loop = asyncio.get_event_loop()
+                if action == "upscale":
+                    result_bytes, result_mime = await loop.run_in_executor(
+                        None, upscale_image_sync, image_bytes, mime_type
+                    )
+                    output_ext = "webp"
+                    billing_model = UPSCALE_MODEL
+                else:  # remove_bg
+                    result_bytes, result_mime = await loop.run_in_executor(
+                        None, remove_background_sync, image_bytes, mime_type
+                    )
+                    output_ext = "png"
+                    billing_model = REMOVE_BG_MODEL
+            except Exception as e:
+                return self.fail_response(f"AI processing failed: {str(e)}")
+            
+            # BILLING: Deduct credits for successful processing
+            if account_id and not use_mock:
+                await media_billing.deduct_replicate_image(
+                    account_id=account_id,
+                    model=billing_model,
+                    count=1,
+                    description=f"Canvas {action}",
+                )
+            
+            # Save result to images directory
+            await self._ensure_images_dir()
+            action_prefix = "upscaled" if action == "upscale" else "nobg"
+            result_filename = f"{action_prefix}_{uuid.uuid4().hex[:8]}.{output_ext}"
+            result_path = f"{self.images_dir}/{result_filename}"
+            full_result_path = f"{self.workspace_path}/{result_path}"
+            await self.sandbox.fs.upload_file(result_bytes, full_result_path)
+            
+            # Get dimensions of result image
+            try:
+                img = Image.open(io.BytesIO(result_bytes))
+                result_width, result_height = img.size
+                img.close()
+            except:
+                result_width = source_element.get("width", 400)
+                result_height = source_element.get("height", 400)
+            
+            # Calculate position for new element (to the right of original)
+            new_x = source_element.get("x", 100) + source_element.get("width", 400) + 50
+            new_y = source_element.get("y", 100)
+            
+            # Scale down if needed (max 600px)
+            max_size = 600
+            aspect_ratio = result_width / result_height if result_height > 0 else 1
+            if result_width > max_size or result_height > max_size:
+                if result_width > result_height:
+                    elem_width = max_size
+                    elem_height = max_size / aspect_ratio
+                else:
+                    elem_height = max_size
+                    elem_width = max_size * aspect_ratio
+            else:
+                elem_width = result_width
+                elem_height = result_height
+            
+            # Create new element
+            new_element_id = str(uuid.uuid4())
+            action_label = "Upscaled" if action == "upscale" else "No BG"
+            original_name = source_element.get("name", "image")
+            new_element = {
+                "id": new_element_id,
+                "type": "image",
+                "src": result_path,
+                "x": new_x,
+                "y": new_y,
+                "width": elem_width,
+                "height": elem_height,
+                "rotation": 0,
+                "scaleX": 1,
+                "scaleY": 1,
+                "opacity": 1,
+                "locked": False,
+                "name": f"{action_label} - {original_name}"
+            }
+            
+            # Add to canvas
+            canvas_data["elements"].append(new_element)
+            await self._save_canvas_data(canvas_path, canvas_data)
+            
+            result = {
+                "canvas_path": canvas_path,
+                "source_element_id": element_id,
+                "source_element_name": source_element.get("name", element_id),
+                "new_element_id": new_element_id,
+                "new_element_name": new_element["name"],
+                "action": action,
+                "result_path": result_path,
+                "position": {"x": new_x, "y": new_y},
+                "size": {"width": elem_width, "height": elem_height},
+                "total_elements": len(canvas_data["elements"]),
+                "sandbox_id": self.sandbox_id,
+                "message": f"Applied '{action}' to '{original_name}' and added result to canvas"
+            }
+            
+            return self.success_response(result)
+            
+        except Exception as e:
+            return self.fail_response(f"Failed to process canvas element: {str(e)}")
+

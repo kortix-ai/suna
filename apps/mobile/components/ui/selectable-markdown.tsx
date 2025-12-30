@@ -18,6 +18,7 @@ import {
   LogBox,
   Keyboard,
   Platform,
+  Dimensions,
 } from 'react-native';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
 import {
@@ -45,9 +46,9 @@ const MARKDOWN_FONT_SIZE = 16;
  * Adjust with: global.setMarkdownHeightBuffer(n)
  */
 let HEIGHT_BUFFER = Platform.select({
-  ios: 8,      // iOS - enough to not clip text but still reduce phantom space
-  android: 12,  // Android needs a bit more
-  default: 8,
+  ios: 4,
+  android: 12,
+  default: 4,
 });
 
 export function setMarkdownHeightBuffer(buffer: number) {
@@ -266,20 +267,37 @@ function Separator({ isDark }: { isDark: boolean }) {
   );
 }
 
-/**
- * Calculate approximate height for text content to clip extra spacing
- * Uses HEIGHT_BUFFER which can be adjusted at runtime
- */
-function calculateTextHeight(text: string): number {
-  // Count actual newlines
+function calculateTextHeight(text: string): { height: number; lineCount: number; wrappedLineEstimate: number; buffer: number; charCount: number } {
+  const screenWidth = Dimensions.get('window').width;
+  const horizontalPadding = 32;
+  const availableWidth = screenWidth - horizontalPadding;
+  const avgCharWidth = MARKDOWN_FONT_SIZE * 0.47;
+  const charsPerLine = Math.floor(availableWidth / avgCharWidth);
+  
   const lines = text.split('\n');
   const lineCount = lines.length;
+  let wrappedLineEstimate = 0;
+  let totalChars = 0;
+  
+  lines.forEach(line => {
+    totalChars += line.length;
+    if (line.length > 0) {
+      wrappedLineEstimate += Math.max(1, Math.round(line.length / charsPerLine + 0.3));
+    } else {
+      wrappedLineEstimate += 1;
+    }
+  });
 
-  // Calculate height: lineCount * lineHeight + configurable buffer
-  // Lower buffer = more aggressive clipping of phantom bottom space
-  const estimatedHeight = lineCount * MARKDOWN_LINE_HEIGHT + HEIGHT_BUFFER;
+  const visualLines = Math.max(lineCount, wrappedLineEstimate);
+  const estimatedHeight = Math.round(visualLines * MARKDOWN_LINE_HEIGHT * 0.88);
 
-  return estimatedHeight;
+  return { 
+    height: estimatedHeight, 
+    lineCount, 
+    wrappedLineEstimate,
+    buffer: 0,
+    charCount: totalChars
+  };
 }
 
 /**
@@ -303,11 +321,15 @@ function MarkdownWithLinkHandling({
   const hasAnySeparators = blocks.some((b) => b.type === 'separator');
 
   if (!hasAnySeparators) {
-    const maxHeight = calculateTextHeight(text);
+    const heightInfo = calculateTextHeight(text);
+    const maxHeight = heightInfo.height;
 
     return (
       <View style={[needsSpacing && styles.partSpacing, styles.textWrapper]} pointerEvents="box-none">
-        <View style={[styles.textWrapperInner, { maxHeight }]}>
+        <View 
+          style={[styles.textWrapperInner, { maxHeight }]} 
+          pointerEvents={Platform.OS === 'android' ? 'none' : 'box-none'}
+        >
           <MarkdownTextInput
             value={text.trimEnd()}
             onChangeText={() => { }}
@@ -320,6 +342,7 @@ function MarkdownWithLinkHandling({
             caretHidden={true}
             showSoftInputOnFocus={false}
             selectTextOnFocus={false}
+            contextMenuHidden={Platform.OS === 'android'}
             onFocus={() => Keyboard.dismiss()}
           />
         </View>
@@ -336,11 +359,15 @@ function MarkdownWithLinkHandling({
         if (block.type === 'separator') {
           return <Separator key={`sep-${idx}`} isDark={isDark} />;
         } else {
-          const maxHeight = calculateTextHeight(block.content);
+          const heightInfo = calculateTextHeight(block.content);
+          const maxHeight = heightInfo.height;
 
           return (
             <View key={`txt-${idx}`} style={styles.textWrapper} pointerEvents="box-none">
-              <View style={[styles.textWrapperInner, { maxHeight }]}>
+              <View 
+                style={[styles.textWrapperInner, { maxHeight }]} 
+                pointerEvents={Platform.OS === 'android' ? 'none' : 'box-none'}
+              >
                 <MarkdownTextInput
                   value={block.content.trimEnd()}
                   onChangeText={() => { }}
@@ -353,6 +380,7 @@ function MarkdownWithLinkHandling({
                   caretHidden={true}
                   showSoftInputOnFocus={false}
                   selectTextOnFocus={false}
+                  contextMenuHidden={Platform.OS === 'android'}
                   onFocus={() => Keyboard.dismiss()}
                 />
               </View>
@@ -547,11 +575,12 @@ const styles = StyleSheet.create({
   },
   textWrapper: {
     // Wrapper to clip extra TextInput spacing
-    overflow: 'hidden',
+    overflow: Platform.OS === 'android' ? 'visible' : 'hidden',
   },
   textWrapperInner: {
     // Inner wrapper to clip bottom space without cutting content
-    marginBottom: -4, // Moderate negative margin to reduce phantom space
+    // Android: no negative margin to prevent top clipping
+    marginBottom: Platform.OS === 'android' ? 0 : -4,
   },
   base: {
     fontSize: MARKDOWN_FONT_SIZE,

@@ -30,5 +30,17 @@
   "categories": ["productivity", "utilities", "business"],
   "scope": "/",
   "lang": "en-US",
-  "dir": "ltr"
+  "dir": "ltr",
+  "related_applications": [
+    {
+      "platform": "play",
+      "url": "https://play.google.com/store/apps/details?id=com.kortix.app",
+      "id": "com.kortix.app"
+    },
+    {
+      "platform": "itunes",
+      "url": "https://apps.apple.com/ie/app/kortix/id6754448524"
+    }
+  ],
+  "prefer_related_applications": true
 }

@@ -1,6 +1,8 @@
+from .models import Model, ModelProvider, ModelCapability, ModelPricing, ModelConfig
 from .registry import ModelRegistry, registry
-from .ai_models import Model, ModelProvider, ModelCapability
-from .manager import ModelManager, model_manager
+
+# Backwards compatibility alias
+model_manager = registry
 
 __all__ = [
     'ModelRegistry',
@@ -8,6 +10,7 @@ __all__ = [
     'Model',
     'ModelProvider',
     'ModelCapability',
-    'ModelManager',
-    'model_manager',
-] 
+    'ModelPricing',
+    'ModelConfig',
+    'model_manager',  # Backwards compatibility
+]

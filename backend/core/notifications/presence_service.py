@@ -3,6 +3,7 @@ from typing import Optional, Tuple, Any, Dict, List
 from core.utils.logger import logger
 from core.utils.config import config
 from core.services.supabase import DBConnection
+import uuid
 
 class PresenceService:
     def __init__(self):
@@ -10,11 +11,43 @@ class PresenceService:
         self.activity_threshold_minutes = 2
         self.stale_session_threshold_minutes = 5
     
+    async def _validate_account_id(self, account_id: str) -> bool:
+        """Validate that account_id exists and is a valid UUID."""
+        try:
+            # Validate UUID format
+            uuid.UUID(account_id)
+            
+            # Check if account exists in basejump.accounts
+            client = await self.db.client
+            result = await client.schema('basejump').from_('accounts').select('id').eq('id', account_id).limit(1).execute()
+            
+            if not result.data or len(result.data) == 0:
+                logger.warning(f"Account {account_id} does not exist in basejump.accounts")
+                return False
+            
+            return True
+        except ValueError:
+            logger.error(f"Invalid UUID format for account_id: {account_id}")
+            return False
+        except Exception as e:
+            logger.error(f"Error validating account_id {account_id}: {str(e)}")
+            return False
+    
     async def _fetch_session(self, session_id: str):
-        client = await self.db.client
-        return await client.table('user_presence_sessions').select('*').eq(
-            'session_id', session_id
-        ).maybe_single().execute()
+        """Fetch a presence session by session_id. Returns None if not found (handles 204 responses silently)."""
+        try:
+            client = await self.db.client
+            return await client.table('user_presence_sessions').select('*').eq(
+                'session_id', session_id
+            ).maybe_single().execute()
+        except Exception as e:
+            # Handle PostgREST 204 "Missing response" - this is a valid "not found" case, not an error
+            error_str = str(e).lower()
+            if '204' in error_str and 'missing response' in error_str:
+                # Session not found - return None silently (not an error)
+                return None
+            # Re-raise other exceptions
+            raise
 
     async def _upsert_session(
         self,
@@ -27,6 +60,21 @@ class PresenceService:
     ) -> Tuple[Any, str]:
         client = await self.db.client
         now = datetime.now(timezone.utc).isoformat()
+        
+        # Validate required fields
+        if not session_id:
+            raise ValueError("session_id is required")
+        if not account_id:
+            raise ValueError("account_id is required")
+        
+        # Validate account_id format and existence
+        if not await self._validate_account_id(account_id):
+            raise ValueError(f"Invalid or non-existent account_id: {account_id}")
+        
+        # Ensure platform has a default value
+        if not platform:
+            platform = "web"
+        
         payload = {
             'session_id': session_id,
             'account_id': account_id,
@@ -37,8 +85,26 @@ class PresenceService:
             'client_timestamp': client_timestamp or now,
             'updated_at': now
         }
-        result = await client.table('user_presence_sessions').upsert(payload).execute()
-        return result, now
+        
+        try:
+            # Attempt upsert - service role client should bypass RLS, but handle errors gracefully
+            result = await client.table('user_presence_sessions').upsert(payload).execute()
+            return result, now
+        except Exception as e:
+            error_str = str(e).lower()
+            # Check for RLS policy violations
+            if 'row-level security' in error_str or 'policy' in error_str or 'permission denied' in error_str:
+                logger.error(
+                    f"RLS policy violation when upserting presence session {session_id} for account {account_id}: {str(e)}"
+                )
+                logger.error(f"Payload: {payload}")
+                # Re-raise with clearer error message
+                raise ValueError(f"Permission denied: Unable to update presence for account {account_id}. This may indicate an account membership issue.")
+            else:
+                # Log the full error for debugging
+                logger.error(f"Error upserting presence session {session_id} for account {account_id}: {str(e)}")
+                logger.error(f"Payload: {payload}")
+                raise
 
     async def _delete_session(self, session_id: str):
         client = await self.db.client
@@ -71,7 +137,8 @@ class PresenceService:
         
         try:
             existing = await self._fetch_session(session_id)
-            existing_data = existing.data if existing and existing.data else None
+            # Handle None result (session not found) gracefully - 204 responses return None
+            existing_data = existing.data if existing and hasattr(existing, 'data') and existing.data else None
             
             is_new_session = not existing_data
 
@@ -101,8 +168,17 @@ class PresenceService:
 
             return True
             
+        except ValueError as e:
+            # Validation errors - log but don't fail silently
+            logger.error(f"Validation error updating presence for session {session_id}: {str(e)}")
+            return False
         except Exception as e:
-            logger.error(f"Error updating presence for session {session_id}: {str(e)}")
+            error_str = str(e).lower()
+            # Check for RLS or permission errors
+            if 'row-level security' in error_str or 'policy' in error_str or 'permission denied' in error_str or 'invalid or non-existent account_id' in error_str:
+                logger.error(f"Permission/validation error updating presence for session {session_id}, account {account_id}: {str(e)}")
+            else:
+                logger.error(f"Error updating presence for session {session_id}: {str(e)}", exc_info=True)
             return False
     
     async def clear_presence(self, session_id: str, account_id: str) -> bool:

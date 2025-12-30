@@ -37,23 +37,21 @@ def setup_api_keys() -> None:
     if getattr(config, 'OPENROUTER_API_KEY', None) and getattr(config, 'OPENROUTER_API_BASE', None):
         os.environ["OPENROUTER_API_BASE"] = config.OPENROUTER_API_BASE
     
+    # OpenRouter app name and site URL (per LiteLLM docs: https://docs.litellm.ai/docs/providers/openrouter)
+    if getattr(config, 'OR_APP_NAME', None):
+        os.environ["OR_APP_NAME"] = config.OR_APP_NAME
+    if getattr(config, 'OR_SITE_URL', None):
+        os.environ["OR_SITE_URL"] = config.OR_SITE_URL
+    
     # AWS Bedrock bearer token
     if getattr(config, 'AWS_BEARER_TOKEN_BEDROCK', None):
         os.environ["AWS_BEARER_TOKEN_BEDROCK"] = config.AWS_BEARER_TOKEN_BEDROCK
 
 def setup_provider_router(openai_compatible_api_key: str = None, openai_compatible_api_base: str = None):
-    """Configure LiteLLM Router with fallback chains for Bedrock models."""
+    """Configure LiteLLM Router with fallback chains from model registry."""
     global provider_router
     
-    from core.ai_models.registry import (
-        HAIKU_4_5_PROFILE_ID, SONNET_4_5_PROFILE_ID, build_bedrock_profile_arn
-    )
-    
-    # Build ARNs once
-    arns = {
-        "haiku": build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID),
-        "sonnet45": build_bedrock_profile_arn(SONNET_4_5_PROFILE_ID),
-    }
+    from core.ai_models.registry import registry
     
     # Model list for router
     model_list = [
@@ -68,22 +66,13 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
         {"model_name": "*", "litellm_params": {"model": "*"}},
     ]
     
-    # Fallback chains: primary -> [fallbacks]
-    fallbacks = [
-        # {arns["haiku"]: [arns["sonnet45"]]},
-        {arns["sonnet45"]: [arns["haiku"]]},
-    ]
-    
-    # Context window fallbacks: smaller context -> larger context
-    # context_window_fallbacks = [
-    #     {arns["haiku"]: [arns["sonnet45"]]},  # 200k -> 1M
-    # ]
+    # Get fallback chains from registry (single source of truth)
+    fallbacks = registry.get_fallback_chains()
     
     provider_router = Router(
         model_list=model_list,
         num_retries=3,
         fallbacks=fallbacks,
-        # context_window_fallbacks=context_window_fallbacks,
     )
     
     logger.info(f"LiteLLM Router configured with {len(fallbacks)} fallback rules")
@@ -122,6 +111,28 @@ def _save_debug_input(params: Dict[str, Any]) -> None:
     except Exception as e:
         logger.warning(f"⚠️ Error saving debug input: {e}")
 
+# Internal message properties that should NOT be sent to LLMs
+# These are used for internal tracking (compression, expand-message tool, etc.)
+_INTERNAL_MESSAGE_PROPERTIES = {"message_id"}
+
+def _strip_internal_properties(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Strip internal properties from messages before sending to LLM.
+    
+    Some providers (e.g., Groq) reject messages with unknown properties.
+    We add properties like 'message_id' for internal tracking but must remove them before LLM calls.
+    """
+    cleaned_messages = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            cleaned_messages.append(msg)
+            continue
+        
+        # Create a copy without internal properties
+        cleaned_msg = {k: v for k, v in msg.items() if k not in _INTERNAL_MESSAGE_PROPERTIES}
+        cleaned_messages.append(cleaned_msg)
+    
+    return cleaned_messages
 
 async def make_llm_api_call(
     messages: List[Dict[str, Any]],
@@ -160,6 +171,9 @@ async def make_llm_api_call(
         extra_headers: Optional extra headers to send with request
         stop: Optional list of stop sequences
     """
+    # Strip internal properties (like message_id) that some providers reject
+    messages = _strip_internal_properties(messages)
+    
     logger.info(f"LLM API call: {model_name} ({len(messages)} messages)")
     # Handle mock AI for stress testing
     if model_name == "mock-ai":
@@ -202,6 +216,10 @@ async def make_llm_api_call(
     
     params = model_manager.get_litellm_params(resolved_model_name, **override_params)
     
+    # NOTE: OpenRouter app params (OR_APP_NAME, OR_SITE_URL) are set via environment
+    # variables in setup_api_keys(). Do NOT use extra_body here as it breaks
+    # fallback to other providers (e.g. Bedrock rejects extra_body params).
+    
     # Add tools if provided
     if tools:
         params["tools"] = tools
@@ -212,7 +230,14 @@ async def make_llm_api_call(
         params["model_id"] = model_id
     if stream:
         params["stream_options"] = {"include_usage": True}
-    
+
+    # Add OpenRouter-specific reasoning parameter for MiniMax models (minimax-2.1)
+    actual_model_id = params.get("model", "")
+    if actual_model_id.startswith("openrouter/") and "minimax" in actual_model_id.lower():
+        params["reasoning"] = {"enabled": True}
+        params["reasoning_split"] = True
+        # avoid showing reasoning tokens in plain content
+        
     try:
         _save_debug_input(params)
         response = await provider_router.acompletion(**params)

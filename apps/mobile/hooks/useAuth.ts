@@ -216,6 +216,11 @@ export function useAuth() {
       }
 
       console.log('✅ Sign in successful:', data.user?.email);
+      
+      // Immediately invalidate React Query cache to fetch fresh account state
+      console.log('🔄 Invalidating cache to fetch fresh account state');
+      queryClient.invalidateQueries({ queryKey: ['account-state'] });
+      
       setAuthState((prev) => ({ ...prev, isLoading: false }));
       return { success: true, data };
     } catch (err: any) {
@@ -225,7 +230,7 @@ export function useAuth() {
       setAuthState((prev) => ({ ...prev, isLoading: false }));
       return { success: false, error };
     }
-  }, []);
+  }, [queryClient]);
 
   const signUp = useCallback(
     async ({ email, password, fullName }: SignUpCredentials) => {
@@ -253,6 +258,13 @@ export function useAuth() {
         }
 
         console.log('✅ Sign up successful:', data.user?.email);
+        
+        // If user is auto-logged in after signup, invalidate cache to fetch fresh account state
+        if (data.session) {
+          console.log('🔄 User auto-logged in after signup - invalidating cache to fetch fresh account state');
+          queryClient.invalidateQueries({ queryKey: ['account-state'] });
+        }
+        
         setAuthState((prev) => ({ ...prev, isLoading: false }));
         return { success: true, data };
       } catch (err: any) {
@@ -270,8 +282,9 @@ export function useAuth() {
    * Sign in with OAuth provider (Supabase standard implementation)
    * 
    * Uses Supabase's OAuth flow:
-   * - iOS: WebBrowser.openAuthSessionAsync (ASWebAuthenticationSession)
-   * - Android: Linking.openURL (external browser) + deep link callback
+   * - iOS Google: WebBrowser.openAuthSessionAsync (ASWebAuthenticationSession)
+   * - Android Google: Linking.openURL (external browser) + deep link callback
+   * - Android Other: Linking.openURL (external browser) + deep link callback
    * - Apple: Native Apple Authentication on iOS
    */
   const signInWithOAuth = useCallback(async (provider: OAuthProvider) => {
@@ -311,6 +324,11 @@ export function useAuth() {
           }
 
           console.log('✅ Apple sign in successful');
+          
+          // Immediately invalidate React Query cache to fetch fresh account state
+          console.log('🔄 Invalidating cache to fetch fresh account state');
+          queryClient.invalidateQueries({ queryKey: ['account-state'] });
+          
           setAuthState((prev) => ({ ...prev, isLoading: false }));
           return { success: true, data };
         } catch (appleErr: any) {
@@ -325,6 +343,10 @@ export function useAuth() {
 
       // ========================================
       // SUPABASE OAUTH FLOW (Google and other providers)
+      // Uses web-based OAuth for all providers:
+      // - iOS Google: WebBrowser.openAuthSessionAsync (ASWebAuthenticationSession)
+      // - Android Google: External browser via Linking.openURL (reliable callback handling)
+      // - Other providers: Platform-specific browser handling
       // ========================================
       
       // Create redirect URL using expo-auth-session
@@ -374,7 +396,7 @@ export function useAuth() {
         // ========================================
         // ANDROID: Use external browser via Linking.openURL
         // Chrome Custom Tabs don't properly handle custom URL scheme redirects
-        // The external browser (Chrome, Firefox, etc.) works correctly
+        // The external browser (Chrome, Firefox, etc.) works correctly for all OAuth providers
         // ========================================
         if (Platform.OS === 'android') {
           console.log('🤖 Android: Opening OAuth in external browser');
@@ -418,6 +440,11 @@ export function useAuth() {
                   clearTimeout(timeout);
                   appStateSubscription?.remove();
                   console.log('✅ Android: Session found - OAuth successful:', session.user?.email);
+                  
+                  // Immediately invalidate React Query cache to fetch fresh account state
+                  console.log('🔄 Invalidating cache to fetch fresh account state');
+                  queryClient.invalidateQueries({ queryKey: ['account-state'] });
+                  
                   setAuthState((prev) => ({ ...prev, isLoading: false }));
                   oauthSessionActiveRef.current = false;
                   resolve({ success: true, data: session });
@@ -432,6 +459,11 @@ export function useAuth() {
                     clearTimeout(timeout);
                     appStateSubscription?.remove();
                     console.log('✅ Android: Session found on retry - OAuth successful');
+                    
+                    // Immediately invalidate React Query cache to fetch fresh account state
+                    console.log('🔄 Invalidating cache to fetch fresh account state');
+                    queryClient.invalidateQueries({ queryKey: ['account-state'] });
+                    
                     setAuthState((prev) => ({ ...prev, isLoading: false }));
                     oauthSessionActiveRef.current = false;
                     resolve({ success: true, data: retrySession });
@@ -502,6 +534,11 @@ export function useAuth() {
               }
 
               console.log('✅ OAuth sign in successful');
+              
+              // Immediately invalidate React Query cache to fetch fresh account state
+              console.log('🔄 Invalidating cache to fetch fresh account state');
+              queryClient.invalidateQueries({ queryKey: ['account-state'] });
+              
               setAuthState((prev) => ({ ...prev, isLoading: false }));
               oauthSessionActiveRef.current = false;
               return { success: true, data: sessionData };
@@ -527,6 +564,11 @@ export function useAuth() {
             }
 
             console.log('✅ OAuth sign in successful');
+            
+            // Immediately invalidate React Query cache to fetch fresh account state
+            console.log('🔄 Invalidating cache to fetch fresh account state');
+            queryClient.invalidateQueries({ queryKey: ['account-state'] });
+            
             setAuthState((prev) => ({ ...prev, isLoading: false }));
             oauthSessionActiveRef.current = false;
             return { success: true, data: sessionData };

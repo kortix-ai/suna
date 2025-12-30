@@ -801,6 +801,9 @@
     "upgradeRequired": "Mise à Niveau Requise",
     "upgradeRequiredMessage": "Le partage de fils est disponible avec les plans payants. Mettez à niveau pour débloquer cette fonctionnalité.",
     "upgrade": "Mettre à niveau",
+    "share": "Partager",
+    "files": "Fichiers",
+    "delete": "Supprimer",
     "shareThread": "Partager le Fil",
     "shareThreadUpgrade": "Partager le Fil (Upgrade)",
     "availableOnPaidPlans": "Disponible avec les plans payants",
@@ -808,6 +811,7 @@
     "manageFiles": "Gérer les Fichiers",
     "viewManageAttachments": "Voir et gérer les pièces jointes",
     "deleteThread": "Supprimer le Fil",
+    "deleteConfirm": "Voulez-vous vraiment supprimer ce fil ? Cette action est irréversible.",
     "permanentlyDelete": "Supprimer définitivement cette conversation"
   },
   "triggers": {

@@ -18,6 +18,12 @@ export function UsageLimitsPopover() {
   const t = useTranslations('dashboard');
   const { data: accountState } = useAccountState();
   const limits = accountState?.limits;
+  const UNLIMITED_THRESHOLD = 100_000;
+
+  const formatMax = (max: number | undefined) => {
+    const value = max || 0;
+    return value >= UNLIMITED_THRESHOLD ? 'Unlimited' : value;
+  };
 
   return (
     <Popover>
@@ -36,7 +42,9 @@ export function UsageLimitsPopover() {
                   <TooltipTrigger asChild>
                     <div className="flex justify-between text-xs cursor-help">
                       <span className="text-muted-foreground">Chats</span>
-                      <span className="font-medium">{limits?.threads?.current || 0} / {limits?.threads?.max || 0}</span>
+                      <span className="font-medium">
+                        {limits?.threads?.current || 0} / {formatMax(limits?.threads?.max)}
+                      </span>
                     </div>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -45,7 +53,11 @@ export function UsageLimitsPopover() {
                 </Tooltip>
                 <Progress 
                   className='h-1'
-                  value={((limits?.threads?.current || 0) / (limits?.threads?.max || 1)) * 100} 
+                  value={
+                    (limits?.threads?.max || 0) >= UNLIMITED_THRESHOLD
+                      ? 0
+                      : ((limits?.threads?.current || 0) / (limits?.threads?.max || 1)) * 100
+                  }
                 />
               </div>
               <div className='space-y-2'>

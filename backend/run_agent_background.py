@@ -50,6 +50,7 @@ else:
 dramatiq.set_broker(redis_broker)
 
 from core.memory import background_jobs as memory_jobs
+from core.categorization import background_jobs as categorization_jobs
 
 warm_up_tools_cache()
 logger.info("✅ Worker process ready, tool cache warmed")
@@ -669,6 +670,16 @@ async def run_agent_background(
                     logger.debug(f"Queued memory extraction for thread {thread_id}")
             except Exception as mem_error:
                 logger.warning(f"Failed to queue memory extraction: {mem_error}")
+
+        # MEMORY CLEANUP: Explicitly release memory after agent run completes
+        try:
+            import gc
+            # Force garbage collection to free memory from completed agent run
+            collected = gc.collect()
+            if collected > 0:
+                logger.debug(f"Garbage collected {collected} objects after agent run {agent_run_id}")
+        except Exception as gc_error:
+            logger.debug(f"Garbage collection error (non-critical): {gc_error}")
 
         # All stream writes are synchronous now, no pending operations to await
 

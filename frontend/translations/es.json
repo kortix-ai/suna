@@ -944,7 +944,8 @@
       "slides": "Slides",
       "data": "Datos",
       "docs": "Documentos",
-      "people": "Gente",
+      "canvas": "Lienzo",
+      "video": "Video",
       "research": "Investigación"
     },
     "styles": {
@@ -1153,17 +1154,29 @@
         "8": "Escribir un plan de respuesta a incidentes de seguridad con procedimientos de escalación",
         "9": "Crear una guía de estilo completa para marca y contenido"
       },
-      "people": {
-        "0": "Encontrar candidatos a VP de Ingeniería en startups de IA/ML Serie B+ en el área de la bahía de San Francisco con 10+ años de experiencia y historial comprobado de escalar equipos de ingeniería",
-        "1": "Construir lista de leads de CMOs en empresas B2B SaaS ($10M-$50M ARR) que recientemente levantaron financiamiento Serie A/B - incluir patrones de email y stack tecnológico",
-        "2": "Investigar Ingenieros Blockchain Senior con experiencia en Solidity/Rust en proyectos cripto de primer nivel, abiertos a reubicación a Dubái o Singapur",
-        "3": "Generar lista de prospectos de fundadores técnicos en startups Seed-Serie A en IA Empresarial que levantaron $2M-$15M en los últimos 6 meses",
-        "4": "Identificar Gerentes de Producto Senior en empresas fintech con 5-10 años de experiencia de FAANG o unicornios, hábiles en desarrollo de producto 0-1",
-        "5": "Encontrar CIOs y VP de Ingeniería en empresas de TI de salud de mercado medio (500-5000 empleados) con presupuestos de TI de $500K+ planeando migración a la nube",
-        "6": "Investigar VP de Ventas en empresas B2B SaaS mostrando crecimiento de 100%+ interanual, con 7+ años cerrando tratos de $100K+ y experiencia PLG",
-        "7": "Construir lista de CTOs en empresas empresariales implementando activamente infraestructura de IA con presupuestos multimillonarios en 2024",
-        "8": "Encontrar Diseñadores UX/UI Senior con experiencia en apps de consumidor mobile-first y portafolios de 1M+ usuarios, buscando activamente o abiertos a oportunidades",
-        "9": "Identificar Ingenieros DevOps Senior en startups cloud-native con experiencia en Kubernetes/Terraform y 5-8 años construyendo infraestructura para 10M+ usuarios"
+      "canvas": {
+        "0": "Agregar un banner de startup tech al canvas con horizonte urbano futurista",
+        "1": "Crear un logo de marca de café en canvas con estilo minimalista terroso",
+        "2": "Agregar mi foto de producto al canvas y eliminar el fondo",
+        "3": "Diseñar una infografía de energía renovable en canvas con iconos planos",
+        "4": "Crear una portada de libro de ciencia ficción en canvas con estética cyberpunk",
+        "5": "Agregar una miniatura de YouTube al canvas para video de productividad",
+        "6": "Construir un moodboard de moda de lujo en canvas para millennials",
+        "7": "Diseñar una invitación de boda elegante en canvas con patrones florales",
+        "8": "Agregar mi retrato al canvas y aplicar efecto de película vintage",
+        "9": "Crear un póster de festival de música en canvas con vibras psicodélicas"
+      },
+      "video": {
+        "0": "Anima mi foto de producto rotando suavemente con iluminación de estudio",
+        "1": "Transforma mi retrato en una escena cinematográfica con movimiento de cámara",
+        "2": "Genera un video de naturaleza con pétalos de cerezo cayendo lentamente",
+        "3": "Crea partículas brillantes arremolinándose juntas en cámara lenta",
+        "4": "Haz flotar mi producto rotando con sombras suaves y reflejos",
+        "5": "Añade iluminación dramática y gradación de color a mi retrato",
+        "6": "Genera un vuelo de dron suave a través de picos montañosos brumosos",
+        "7": "Crea un video en bucle de metal líquido fluyendo en formas orgánicas",
+        "8": "Transforma el fondo de mi foto en una escena submarina con rayos de luz",
+        "9": "Genera un video de paisaje urbano futurista con luces neón y reflejos"
       },
       "research": {
         "0": "Analizar tendencias emergentes en computación cuántica y aplicaciones comerciales potenciales",

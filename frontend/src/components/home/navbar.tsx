@@ -1,16 +1,13 @@
 'use client';
 
-import { NavMenu } from '@/components/home/nav-menu';
 import { ThemeToggle } from '@/components/home/theme-toggle';
 import { LocaleSwitcher } from '@/components/home/locale-switcher';
 import { siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
-import { Menu, X, Github } from 'lucide-react';
-import { AnimatePresence, motion, useScroll } from 'framer-motion';
+import { X, Github } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
-import Image from 'next/image';
-import { useEffect, useState } from 'react';
-import { useTheme } from 'next-themes';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { useGitHubStars } from '@/hooks/utils';
 import { useRouter, usePathname } from 'next/navigation';
@@ -18,8 +15,9 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 
-const INITIAL_WIDTH = '70rem';
-const MAX_WIDTH = '1000px';
+// Scroll threshold with hysteresis to prevent flickering
+const SCROLL_THRESHOLD_DOWN = 50;
+const SCROLL_THRESHOLD_UP = 20;
 
 const overlayVariants = {
   hidden: { opacity: 0 },
@@ -57,87 +55,70 @@ const drawerMenuVariants = {
   visible: { opacity: 1 },
 };
 
-interface NavbarProps {
-  tabs?: string[];
-}
-
-export function Navbar({ tabs }: NavbarProps = {}) {
-  const { scrollY } = useScroll();
+export function Navbar() {
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('hero');
-  const { theme, resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
   const { user } = useAuth();
   const { formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'suna');
   const router = useRouter();
   const pathname = usePathname();
   const t = useTranslations('common');
+  const lastScrollY = useRef(0);
 
-  // Filter nav links based on tabs prop
-  const filteredNavLinks = tabs
-    ? siteConfig.nav.links.filter(link =>
-      tabs.includes(link.name.toLowerCase())
-    )
-    : siteConfig.nav.links;
+  const filteredNavLinks = siteConfig.nav.links;
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // Single unified scroll handler with hysteresis
+  const handleScroll = useCallback(() => {
+    const currentScrollY = window.scrollY;
+    
+    // Hysteresis: different thresholds for scrolling up vs down
+    if (!hasScrolled && currentScrollY > SCROLL_THRESHOLD_DOWN) {
+      setHasScrolled(true);
+    } else if (hasScrolled && currentScrollY < SCROLL_THRESHOLD_UP) {
+      setHasScrolled(false);
+    }
 
-  useEffect(() => {
-    const handleScroll = () => {
-      const sections = filteredNavLinks.map((item) =>
-        item.href.substring(1),
-      );
-
-      for (const section of sections) {
-        const element = document.getElementById(section);
-        if (element) {
-          const rect = element.getBoundingClientRect();
-          if (rect.top <= 150 && rect.bottom >= 150) {
-            setActiveSection(section);
-            break;
-          }
+    // Update active section
+    const sections = filteredNavLinks.map((item) => item.href.substring(1));
+    for (const section of sections) {
+      const element = document.getElementById(section);
+      if (element) {
+        const rect = element.getBoundingClientRect();
+        if (rect.top <= 150 && rect.bottom >= 150) {
+          setActiveSection(section);
+          break;
         }
       }
-    };
+    }
 
-    window.addEventListener('scroll', handleScroll);
-    handleScroll();
-
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [filteredNavLinks]);
+    lastScrollY.current = currentScrollY;
+  }, [hasScrolled, filteredNavLinks]);
 
   useEffect(() => {
-    const unsubscribe = scrollY.on('change', (latest) => {
-      setHasScrolled(latest > 10);
-    });
-    return unsubscribe;
-  }, [scrollY]);
+    // Use passive listener for better scroll performance
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll(); // Initial check
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [handleScroll]);
 
   const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
   const handleOverlayClick = () => setIsDrawerOpen(false);
 
   return (
-    <header
-      className={cn(
-        'sticky z-50 flex justify-center transition-all duration-300',
-        hasScrolled ? 'top-6 mx-4 md:mx-0' : 'top-4 mx-2 md:mx-0',
-      )}
-    >
-      <motion.div
-        className="w-full px-2 sm:px-3 md:px-0"
-        initial={false}
-        animate={{ maxWidth: hasScrolled ? MAX_WIDTH : INITIAL_WIDTH }}
-        transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+    <header className="sticky top-4 z-50 flex justify-center mx-2 md:mx-0">
+      <div
+        className={cn(
+          'w-full max-w-4xl px-2 sm:px-3 md:px-0 transition-all duration-300 ease-out',
+          hasScrolled ? 'scale-[0.98]' : 'scale-100'
+        )}
       >
         <div
           className={cn(
-            'mx-auto max-w-7xl rounded-2xl transition-all duration-300 xl:px-0',
+            'mx-auto rounded-2xl transition-all duration-300 ease-out',
             hasScrolled
-              ? 'px-2 md:px-2 border border-border backdrop-blur-lg bg-background/75'
-              : 'shadow-none px-3 md:px-7',
+              ? 'px-2 md:px-3 border border-border/60 backdrop-blur-xl bg-background/80 shadow-lg shadow-black/[0.03]'
+              : 'px-3 md:px-6 bg-transparent border border-transparent',
           )}
         >
           <div className="flex h-[56px] items-center p-2 md:p-4">
@@ -193,7 +174,7 @@ export function Navbar({ tabs }: NavbarProps = {}) {
             </div>
           </div>
         </div>
-      </motion.div>
+      </div>
 
       {/* Mobile Drawer */}
       <AnimatePresence>

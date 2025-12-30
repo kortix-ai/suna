@@ -947,7 +947,8 @@
       "slides": "Presentazioni",
       "data": "Dati",
       "docs": "Documenti",
-      "people": "Persone",
+      "canvas": "Tela",
+      "video": "Video",
       "research": "Ricerca"
     },
     "styles": {
@@ -1066,17 +1067,29 @@
         "8": "Scrivi un piano di risposta agli incidenti di sicurezza con procedure di escalation",
         "9": "Crea una guida di stile completa per brand e contenuti"
       },
-      "people": {
-        "0": "Trova candidati VP of Engineering presso startup AI/ML Series B+ nell'area di San Francisco Bay con 10+ anni di esperienza e comprovata esperienza nel ridimensionamento di team di ingegneria",
-        "1": "Costruisci una lista di lead di CMO presso aziende B2B SaaS (10-50M $ ARR) che hanno recentemente raccolto finanziamenti Series A/B - includi pattern email e tech stack",
-        "2": "Ricerca Senior Blockchain Engineers con esperienza Solidity/Rust presso progetti crypto di alto livello, aperti al trasferimento a Dubai o Singapore",
-        "3": "Genera una lista di prospect di fondatori tecnici presso startup Seed-Series A nel settore Enterprise AI che hanno raccolto 2-15M $ negli ultimi 6 mesi",
-        "4": "Identifica Senior Product Manager presso aziende fintech con 5-10 anni di esperienza da FAANG o unicorni, esperti nello sviluppo prodotto 0-1",
-        "5": "Trova CIO e VP Engineering presso aziende IT sanitarie mid-market (500-5000 dipendenti) con budget IT da 500K+ $ che pianificano la migrazione cloud",
-        "6": "Ricerca VP Sales presso aziende B2B SaaS che mostrano crescita YoY del 100%+, con 7+ anni di esperienza nella chiusura di deal da 100K+ $ ed esperienza PLG",
-        "7": "Costruisci una lista di CTO presso aziende enterprise che implementano attivamente infrastruttura AI con budget multi-milionari nel 2024",
-        "8": "Trova Senior UX/UI Designer con esperienza in app consumer mobile-first e portfolio con 1M+ utenti, attivamente in cerca o aperti a opportunità",
-        "9": "Identifica Senior DevOps Engineers presso startup cloud-native con competenze Kubernetes/Terraform e 5-8 anni di esperienza nella costruzione di infrastruttura per 10M+ utenti"
+      "canvas": {
+        "0": "Aggiungi un banner per startup tech al canvas con skyline cittadino futuristico",
+        "1": "Crea un logo per brand di caffè su canvas con stile minimalista terroso",
+        "2": "Aggiungi la mia foto prodotto al canvas e rimuovi lo sfondo",
+        "3": "Progetta un'infografica sull'energia rinnovabile su canvas con icone flat",
+        "4": "Crea una copertina per romanzo di fantascienza su canvas con estetica cyberpunk",
+        "5": "Aggiungi una miniatura YouTube al canvas per video su produttività",
+        "6": "Costruisci un moodboard di moda di lusso su canvas per millennials",
+        "7": "Progetta un invito di matrimonio elegante su canvas con motivi floreali",
+        "8": "Aggiungi il mio ritratto al canvas e applica effetto film vintage",
+        "9": "Crea un poster per festival musicale su canvas con vibrazioni psichedeliche"
+      },
+      "video": {
+        "0": "Anima la mia foto prodotto ruotando dolcemente con illuminazione da studio",
+        "1": "Trasforma il mio ritratto in una scena cinematica con movimento camera",
+        "2": "Genera un video naturale di petali di ciliegio che cadono lentamente",
+        "3": "Crea particelle luminose che turbinano insieme al rallentatore",
+        "4": "Fai fluttuare il mio prodotto ruotando con ombre morbide e riflessi",
+        "5": "Aggiungi illuminazione drammatica e correzione colore al mio ritratto",
+        "6": "Genera un volo drone fluido attraverso cime montuose nebbiose",
+        "7": "Crea un video loop di metallo liquido che scorre in forme organiche",
+        "8": "Trasforma lo sfondo della mia foto in scena sottomarina con raggi di luce",
+        "9": "Genera un video paesaggio urbano futuristico con luci neon e riflessi"
       },
       "research": {
         "0": "Analizza le tendenze emergenti nel quantum computing e le potenziali applicazioni aziendali",

@@ -17,9 +17,6 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
-    // "noUnusedLocals": true,
-    // "noUnusedParameters": true,
-    // "noImplicitAny": true,
     "ignoreDeprecations": "5.0",
     "plugins": [
       {
@@ -42,5 +39,5 @@
   ],
   "exclude": [
     "node_modules"
-  ]
+  ],
 }

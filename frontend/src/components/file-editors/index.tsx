@@ -1,19 +1,26 @@
 'use client';
 
 import React from 'react';
+import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
 import { MarkdownEditor, type MarkdownEditorControls } from './markdown-editor';
 import { UnifiedMarkdown } from '@/components/markdown';
 import { CodeEditor } from './code-editor';
 import { PdfRenderer } from '@/components/file-renderers/pdf-renderer';
 import { ImageRenderer } from '@/components/file-renderers/image-renderer';
+import { VideoRenderer } from '@/components/file-renderers/video-renderer';
 import { BinaryRenderer } from '@/components/file-renderers/binary-renderer';
-import { CsvRenderer } from '@/components/file-renderers/csv-renderer';
-import { XlsxRenderer } from '@/components/file-renderers/xlsx-renderer';
 import { PptxRenderer } from '@/components/file-renderers/pptx-renderer';
 import { HtmlRenderer } from '@/components/file-renderers/html-renderer';
+import { CanvasRenderer } from '@/components/file-renderers/canvas-renderer';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { processUnicodeContent, getFileTypeFromExtension, getLanguageFromExtension } from './utils';
+
+// Lazy load SpreadsheetViewer as it imports Syncfusion (~1-2 MB)
+const SpreadsheetViewer = dynamic(
+  () => import('@/components/thread/tool-views/spreadsheet/SpreadsheetViewer').then((mod) => mod.SpreadsheetViewer),
+  { ssr: false, loading: () => <div className="flex items-center justify-center h-full text-muted-foreground">Loading spreadsheet...</div> }
+);
 
 export type EditableFileType =
   | 'markdown'
@@ -22,10 +29,12 @@ export type EditableFileType =
   | 'html'
   | 'pdf'
   | 'image'
+  | 'video'
   | 'binary'
   | 'csv'
   | 'xlsx'
-  | 'pptx';
+  | 'pptx'
+  | 'canvas';
 
 export interface FileEditorProject {
   id?: string;
@@ -79,15 +88,18 @@ export function getEditableFileType(fileName: string): EditableFileType {
   ];
   const textExtensions = ['txt', 'log', 'env', 'ini', 'conf', 'cfg', 'gitignore', 'editorconfig'];
   const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'];
+  const videoExtensions = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v', 'ogg'];
   const pdfExtensions = ['pdf'];
   const csvExtensions = ['csv', 'tsv'];
   const xlsxExtensions = ['xlsx', 'xls'];
   const pptxExtensions = ['pptx', 'ppt'];
+  const canvasExtensions = ['kanvax'];
 
   if (markdownExtensions.includes(extension)) return 'markdown';
   if (htmlExtensions.includes(extension)) return 'html';
   if (codeExtensions.includes(extension)) return 'code';
   if (textExtensions.includes(extension)) return 'text';
+  if (canvasExtensions.includes(extension)) return 'canvas';
   
   // Check for common plain text file patterns (e.g., .env.example, .env.local, .gitignore, etc.)
   if (fileNameLower.includes('.env') || 
@@ -102,6 +114,7 @@ export function getEditableFileType(fileName: string): EditableFileType {
   }
   
   if (imageExtensions.includes(extension)) return 'image';
+  if (videoExtensions.includes(extension)) return 'video';
   if (pdfExtensions.includes(extension)) return 'pdf';
   if (csvExtensions.includes(extension)) return 'csv';
   if (xlsxExtensions.includes(extension)) return 'xlsx';
@@ -112,7 +125,7 @@ export function getEditableFileType(fileName: string): EditableFileType {
 
 // Check if file type supports editing
 export function isEditableFileType(fileType: EditableFileType): boolean {
-  return ['markdown', 'code', 'text', 'html'].includes(fileType);
+  return ['markdown', 'code', 'text', 'html', 'canvas'].includes(fileType);
 }
 
 export function EditableFileRenderer({
@@ -191,18 +204,17 @@ export function EditableFileRenderer({
         />
       ) : fileType === 'image' && binaryUrl ? (
         <ImageRenderer url={binaryUrl} />
+      ) : fileType === 'video' && binaryUrl ? (
+        <VideoRenderer url={binaryUrl} />
       ) : fileType === 'pdf' && binaryUrl ? (
         <PdfRenderer url={binaryUrl} />
-      ) : fileType === 'csv' ? (
-        <CsvRenderer content={content || ''} />
-      ) : fileType === 'xlsx' ? (
-        <XlsxRenderer
-          content={content}
+      ) : fileType === 'csv' || fileType === 'xlsx' ? (
+        <SpreadsheetViewer
           filePath={filePath}
           fileName={fileName}
+          sandboxId={project?.sandbox?.id}
           project={project}
-          onDownload={onDownload}
-          isDownloading={isDownloading}
+          allowEditing={!readOnly}
         />
       ) : fileType === 'pptx' ? (
         <PptxRenderer
@@ -214,6 +226,15 @@ export function EditableFileRenderer({
           onDownload={onDownload}
           isDownloading={isDownloading}
           onFullScreen={onFullScreen}
+        />
+      ) : fileType === 'canvas' ? (
+        <CanvasRenderer
+          content={content}
+          filePath={filePath}
+          fileName={fileName}
+          sandboxId={project?.sandbox?.id}
+          className="h-full w-full"
+          onSave={onSave}
         />
       ) : fileType === 'html' && htmlPreviewUrl ? (
         // HTML files - show preview (could add split view editor later)

@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useEffect, useState, useCallback } from 'react'
 import { View, ScrollView, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { CircleDashed } from 'lucide-react-native';
+import { CircleDashed, CheckCircle2 } from 'lucide-react-native';
 import { getToolIcon, getUserFriendlyToolName } from '@/lib/utils/tool-display';
 
 const STREAMABLE_TOOLS = {
@@ -152,9 +152,11 @@ function extractStreamingContent(content: string, toolName: string): string {
 
 interface StreamingToolCardProps {
   content: string;
+  isCompleted?: boolean;
+  toolCall?: { completed?: boolean; tool_result?: any } | null;
 }
 
-export const StreamingToolCard = React.memo(function StreamingToolCard({ content }: StreamingToolCardProps) {
+export const StreamingToolCard = React.memo(function StreamingToolCard({ content, isCompleted: propIsCompleted, toolCall }: StreamingToolCardProps) {
   const scrollViewRef = useRef<ScrollView>(null);
   const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
   const contentHeightRef = useRef(0);
@@ -196,27 +198,42 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
   }, [toolInfo?.streamingContent, isUserScrolledUp]);
 
   if (!toolInfo) {
+    const fallbackIsCompleted = propIsCompleted || 
+                                toolCall?.completed === true || 
+                                (toolCall?.tool_result !== undefined && toolCall?.tool_result !== null);
     return (
       <View className="flex-row items-center gap-3 p-3 rounded-3xl border border-border bg-card">
         <View className="h-8 w-8 rounded-xl border border-border bg-background items-center justify-center">
-          <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
+          <Icon as={CircleDashed} size={16} className="text-primary" />
         </View>
         <View className="flex-1">
-          <Text className="text-sm font-roobert-medium text-foreground">
+          <Text className="text-sm font-roobert-medium text-foreground mb-0.5">
             Loading...
           </Text>
         </View>
+        {fallbackIsCompleted ? (
+          <Icon as={CheckCircle2} size={16} className="text-emerald-500" />
+        ) : (
+          <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
+        )}
       </View>
     );
   }
 
   const { displayName, IconComponent, primaryParam, streamingContent, shouldShowContent } = toolInfo;
+  
+  // Check if tool is completed (from prop or toolCall)
+  const isCompleted = propIsCompleted || 
+                     toolCall?.completed === true || 
+                     (toolCall?.tool_result !== undefined && 
+                      toolCall?.tool_result !== null &&
+                      (typeof toolCall.tool_result === 'object' || Boolean(toolCall.tool_result)));
 
   if (!shouldShowContent) {
     return (
       <View className="flex-row items-center gap-3 p-3 rounded-3xl border border-border bg-card">
         <View className="h-8 w-8 rounded-xl border border-border bg-background items-center justify-center">
-          <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
+          <Icon as={IconComponent} size={16} className="text-primary" />
         </View>
         <View className="flex-1">
           <Text className="text-sm font-roobert-medium text-foreground mb-0.5">
@@ -228,6 +245,11 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
             </Text>
           )}
         </View>
+        {isCompleted ? (
+          <Icon as={CheckCircle2} size={16} className="text-emerald-500" />
+        ) : (
+          <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
+        )}
       </View>
     );
   }
@@ -236,7 +258,7 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
     <View className="rounded-3xl border border-border bg-card overflow-hidden">
       <View className="flex-row items-center gap-3 p-3 border-b border-border">
         <View className="h-8 w-8 rounded-xl border border-border bg-background items-center justify-center">
-          <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
+          <Icon as={IconComponent} size={16} className="text-primary" />
         </View>
         <View className="flex-1">
           <Text className="text-sm font-roobert-medium text-foreground mb-0.5">
@@ -248,6 +270,11 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
             </Text>
           )}
         </View>
+        {isCompleted ? (
+          <Icon as={CheckCircle2} size={16} className="text-emerald-500" />
+        ) : (
+          <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
+        )}
       </View>
 
       <ScrollView

@@ -36,47 +36,47 @@ from core.sandbox.tool_base import SandboxToolsBase
 - Any website with an existing Apify actor
 
 **FUNCTIONS:**
-1. `search_apify_actors(query, category?, limit?)` - Search Apify Store for actors
-   - Example: search_apify_actors("twitter scraper")
+1. search_apify_actors with query, category, limit parameters - Search Apify Store for actors
+   - Example: use search_apify_actors with query "twitter scraper"
    - Returns: List of actors with descriptions, pricing, run counts
 
-2. `get_actor_details(actor_id)` - Get actor info, input schema, pricing
-   - Example: get_actor_details("apify/twitter-scraper")
+2. get_actor_details with actor_id parameter - Get actor info, input schema, pricing
+   - Example: use get_actor_details with actor_id "apify/twitter-scraper"
    - Returns: Actor details, input schema, pricing model
 
-3. `request_apify_approval(actor_id, run_input, max_cost_usd?)` - Create approval request (REQUIRED FIRST STEP)
-   - Example: request_apify_approval("twitter", {"searchTerms": ["from:elonmusk"], "maxTweets": 100})
+3. request_apify_approval with actor_id, run_input, max_cost_usd parameters - Create approval request (REQUIRED FIRST STEP)
+   - Example: use request_apify_approval with actor_id "twitter" and run_input parameter
    - IMPORTANT: Always get actor details first to understand input schema
    - Estimates cost and creates pending approval request
    - Returns approval_id - **IMMEDIATELY after calling this, use ASK tool to communicate with user**
    - Default max_cost_usd: 1.0
-   - **CRITICAL: After calling request_apify_approval(), you MUST use the ASK tool with this message (customize based on context):**
+   - **CRITICAL: After using request_apify_approval, you MUST use the ASK tool with this message (customize based on context):**
      "I've created an approval request. Maximum cost: {X} credits (${Y.YY}). Please click the 'Approve' button in the approval card above to approve it. I cannot approve it for you - only you can approve by clicking the button in the UI. Once you click it, I'll immediately start [scraping/fetching/etc.] for you!"
    - **CRITICAL: Include follow-up responses in your ASK message so the user knows what to say:**
      - After approval: "I have approved", "you can start", "go ahead", "approved", "start"
      - To find cheaper: "find cheaper", "lower cost", "reduce cost", "cheaper option"
      - To cancel: "cancel", "don't run", "stop"
    - **CRITICAL: After user responds, proceed directly:**
-     - If user says "approved"/"start"/"go ahead" → directly call run_apify_actor() (it will return an error if not approved)
+     - If user says "approved"/"start"/"go ahead" → directly use run_apify_actor (it will return an error if not approved)
      - If user says "find cheaper" → search for cheaper actors or adjust parameters
      - If user says "cancel" → acknowledge and don't run
    - **CRITICAL: DO NOT ask if they want to approve or offer options - just tell them to click the approve button.**
    - **CRITICAL: NEVER mention any 'approve' tool - there is NO such tool.**
 
-4. `get_apify_approval_status(approval_id)` - Check approval request status (OPTIONAL)
+4. get_apify_approval_status with approval_id parameter - Check approval request status (OPTIONAL)
    - Optional: Use to check if approval is pending, approved, rejected, or expired
    - Returns full approval details including costs
-   - **NOTE: Not required before running - run_apify_actor() will return an error if approval is not approved**
+   - **NOTE: Not required before running - run_apify_actor will return an error if approval is not approved**
    - **CRITICAL: NEVER try to call any 'approve' tool - there is NO such tool. Only the user can approve by clicking the approve button in the UI.**
 
-6. `run_apify_actor(actor_id, run_input, max_cost_usd?, approval_id)` - Start actor run (REQUIRES APPROVAL)
-   - Example: run_apify_actor("twitter", {...input...}, approval_id="approval-123")
+6. run_apify_actor with actor_id, run_input, max_cost_usd, approval_id parameters - Start actor run (REQUIRES APPROVAL)
+   - Example: use run_apify_actor with actor_id "twitter" and approval_id "approval-123"
    - CRITICAL: approval_id is REQUIRED - must approve request first
-   - Returns immediately with run_id - use get_actor_run_status() to check progress and get logs
+   - Returns immediately with run_id - use get_actor_run_status to check progress and get logs
    - Credits are only deducted after approval and execution
-   - ⚠️ MANDATORY: After run completes, you MUST call get_actor_run_results() to fetch and display actual data
+   - ⚠️ MANDATORY: After run completes, you MUST use get_actor_run_results to fetch and display actual data
 
-7. `get_actor_run_results(run_id, limit?, offset?)` - Get ALL results from completed run (MANDATORY AFTER RUN)
+7. get_actor_run_results with run_id, limit, offset parameters - Get ALL results from completed run (MANDATORY AFTER RUN)
    - ⚠️ CRITICAL: You MUST call this function immediately after run_apify_actor completes successfully
    - ⚠️ CRITICAL: You MUST present the actual received data to the user - never just say "run completed"
    - This function fetches ALL results and saves them to disk
@@ -85,19 +85,19 @@ from core.sandbox.tool_base import SandboxToolsBase
    - ALWAYS call this after run completes - users need to see the actual data immediately
    - **CRITICAL: When presenting results, use 'complete' tool with the file_path as an attachment - NEVER show raw file paths in messages**
 
-8. `get_actor_run_status(run_id)` - Get run status, logs, and details
+8. get_actor_run_status with run_id parameter - Get run status, logs, and details
    - Use to check status of a running or completed actor
    - Returns: status, logs, error messages, cost info
-   - Poll this until status is SUCCEEDED or FAILED before calling get_actor_run_results()
+   - Poll this until status is SUCCEEDED or FAILED before using get_actor_run_results
 
-9. `stop_actor_run(run_id)` - Stop/cancel a running actor
+9. stop_actor_run with run_id parameter - Stop/cancel a running actor
    - Use to cancel a long-running actor that's taking too long
    - Returns: confirmation of stop request
 
 **WORKFLOW (APPROVAL REQUIRED - COMPLETE DATA DELIVERY MANDATORY):**
-1. Search for actors: search_apify_actors("platform scraper")
-2. Get details: get_actor_details("actor_id") to see input schema and pricing
-3. Request approval: request_apify_approval("actor_id", {...input...}) - creates pending approval
+1. Search for actors: use search_apify_actors with query "platform scraper"
+2. Get details: use get_actor_details with actor_id parameter to see input schema and pricing
+3. Request approval: use request_apify_approval with actor_id and run_input parameters - creates pending approval
 4. **IMMEDIATELY use ASK tool** to communicate with user:
    - Present the approval request details (actor, estimated cost, max cost in credits)
    - Say: "I've created an approval request. Maximum cost: {X} credits ({$Y.YY}). Please click the 'Approve' button in the approval card above to approve it. I cannot approve it for you - only you can approve by clicking the button in the UI. Once you click it, I'll immediately start [scraping/fetching/etc.] for you!"
@@ -107,15 +107,15 @@ from core.sandbox.tool_base import SandboxToolsBase
      - "To cancel, just say 'cancel' or 'don't run'."
    - **CRITICAL: NEVER mention any 'approve' tool - there is NO such tool. The user must click the approve button in the UI.**
 5. **Wait for user response, then proceed directly:**
-   - **If user says "approved"/"start"/"go ahead" → Directly call run_apify_actor() (step 6) - it will return an error if approval is not approved**
+   - **If user says "approved"/"start"/"go ahead" → Directly use run_apify_actor (step 6) - it will return an error if approval is not approved**
    - **If user says "find cheaper"/"lower cost" → Search for cheaper actors or adjust parameters, then create new approval**
    - **If user says "cancel"/"don't run" → Acknowledge and don't run**
    - **CRITICAL: NEVER try to call any 'approve_apify_request' or 'approve' tool - it does NOT exist. Only the user can approve via UI.**
-6. Start actor: run_apify_actor("actor_id", {...input...}, approval_id="approval_id") - REQUIRES approval_id
+6. Start actor: use run_apify_actor with actor_id, run_input, and approval_id parameters - REQUIRES approval_id
    - **NOTE: If approval is not approved, this will return an error automatically - no need to check status first**
-7. Monitor status: get_actor_run_status("run_id") to check progress/logs (poll until SUCCEEDED/FAILED)
-8. **MANDATORY: Get and display results** - get_actor_run_results("run_id") once status is SUCCEEDED
-   - ⚠️ CRITICAL: You MUST call get_actor_run_results() immediately after run completes
+7. Monitor status: use get_actor_run_status with run_id parameter to check progress/logs (poll until SUCCEEDED/FAILED)
+8. **MANDATORY: Get and display results** - use get_actor_run_results with run_id parameter once status is SUCCEEDED
+   - ⚠️ CRITICAL: You MUST use get_actor_run_results immediately after run completes
    - ⚠️ CRITICAL: You MUST present the ACTUAL received data to the user in your response
    - ⚠️ CRITICAL: Never just say "run completed" - always show the actual data
    - Reference specific items, counts, and key data points from the results
@@ -124,9 +124,9 @@ from core.sandbox.tool_base import SandboxToolsBase
 9. Stop if needed: stop_actor_run("run_id") to cancel a running actor
 
 **COMPLETE TOOL CALL REQUIREMENT:**
-- After run_apify_actor() completes successfully, you MUST make a COMPLETE tool call sequence:
-  1. Call get_actor_run_status("run_id") to confirm SUCCEEDED status
-  2. Call get_actor_run_results("run_id") to fetch ALL data
+- After run_apify_actor completes successfully, you MUST make a COMPLETE tool call sequence:
+  1. Use get_actor_run_status with run_id parameter to confirm SUCCEEDED status
+  2. Use get_actor_run_results with run_id parameter to fetch ALL data
   3. Present the actual data to the user using 'complete' tool with:
      - Total item count
      - Key data points/examples from the results
@@ -152,42 +152,42 @@ from core.sandbox.tool_base import SandboxToolsBase
 
 **EXAMPLES (COMPLETE WORKFLOW WITH DATA DELIVERY):**
 - "Scrape latest tweets from @elonmusk" → 
-  1. search_apify_actors("twitter")
-  2. get_actor_details("apify/twitter-scraper")
-  3. request_apify_approval("apify/twitter-scraper", {"searchTerms": ["from:elonmusk"]})
+  1. use search_apify_actors with query "twitter"
+  2. use get_actor_details with actor_id "apify/twitter-scraper"
+  3. use request_apify_approval with actor_id "apify/twitter-scraper" and run_input parameter
   4. **USE ASK TOOL:** "I've created an approval request for scraping tweets. Maximum cost: 120 credits ($1.00). Please click the 'Approve' button in the approval card above to approve it. I cannot approve it for you - only you can approve by clicking the button in the UI. Once you click it, I'll immediately start scraping the LinkedIn posts for you! After you approve, you can say 'I have approved', 'you can start', 'go ahead', or just 'approved' and I'll start immediately. If you want a cheaper option, say 'find cheaper'."
   5. **Wait for user response, then proceed directly:**
-     - **If user says "approved"/"start"/"go ahead" → Directly call run_apify_actor() (step 6) - it will return an error if not approved**
+     - **If user says "approved"/"start"/"go ahead" → Directly use run_apify_actor (step 6) - it will return an error if not approved**
      - **If user says "find cheaper": Search for cheaper actors and create new approval**
-  6. run_apify_actor("apify/twitter-scraper", {"searchTerms": ["from:elonmusk"]}, approval_id="approval_id")
-  7. get_actor_run_status("run_id") - poll until SUCCEEDED
-  8. **MANDATORY:** get_actor_run_results("run_id") - fetch and display actual tweets
+  6. use run_apify_actor with actor_id "apify/twitter-scraper" and approval_id parameter
+  7. use get_actor_run_status with run_id parameter - poll until SUCCEEDED
+  8. **MANDATORY:** use get_actor_run_results with run_id parameter - fetch and display actual tweets
   9. Present data: "I found 50 tweets from @elonmusk. Here are the latest ones: [show actual tweet data]"
 
 - "Get YouTube video details" → 
-  1. search_apify_actors("youtube")
-  2. get_actor_details("streamers/youtube-scraper")
-  3. request_apify_approval("streamers/youtube-scraper", {"videoUrls": ["https://youtube.com/watch?v=..."]})
+  1. use search_apify_actors with query "youtube"
+  2. use get_actor_details with actor_id "streamers/youtube-scraper"
+  3. use request_apify_approval with actor_id "streamers/youtube-scraper" and run_input parameter
   4. **USE ASK TOOL:** "Approval request created for YouTube video details. Max cost: 60 credits ($0.50). Please click the 'Approve' button in the approval card above to approve it. I cannot approve it for you - only you can approve via the UI. Once you approve, say 'I have approved' or 'you can start' and I'll fetch the video details immediately. If you want a cheaper option, say 'find cheaper'."
   5. **Wait for user response, then proceed directly:**
-     - **If user says "approved"/"start"/"go ahead" → Directly call run_apify_actor() (step 6) - it will return an error if not approved**
+     - **If user says "approved"/"start"/"go ahead" → Directly use run_apify_actor (step 6) - it will return an error if not approved**
      - **If user says "find cheaper": Search for cheaper actors and create new approval**
-  6. run_apify_actor("streamers/youtube-scraper", {"videoUrls": ["..."]}, approval_id="approval_id")
-  7. get_actor_run_status("run_id") - poll until SUCCEEDED
-  8. **MANDATORY:** get_actor_run_results("run_id") - fetch and display actual video details
+  6. use run_apify_actor with actor_id "streamers/youtube-scraper" and approval_id parameter
+  7. use get_actor_run_status with run_id parameter - poll until SUCCEEDED
+  8. **MANDATORY:** use get_actor_run_results with run_id parameter - fetch and display actual video details
   9. Present data: "Here are the video details: [show actual title, views, description, etc.]"
 
 - "Find restaurants on Google Maps" → 
-  1. search_apify_actors("google maps")
-  2. get_actor_details("compass/crawler-google-places")
-  3. request_apify_approval("compass/crawler-google-places", {"queries": "restaurants in NYC"})
+  1. use search_apify_actors with query "google maps"
+  2. use get_actor_details with actor_id "compass/crawler-google-places"
+  3. use request_apify_approval with actor_id "compass/crawler-google-places" and run_input parameter
   4. **USE ASK TOOL:** "Created approval for Google Maps search. Maximum cost: 100 credits ($1.00). Please click the 'Approve' button in the approval card above to approve it. I cannot approve it for you - only you can approve via the UI. Once you approve, say 'I have approved' or 'you can start' and I'll search for restaurants immediately. If you want a cheaper option, say 'find cheaper'."
   5. **Wait for user response, then proceed directly:**
-     - **If user says "approved"/"start"/"go ahead" → Directly call run_apify_actor() (step 6) - it will return an error if not approved**
+     - **If user says "approved"/"start"/"go ahead" → Directly use run_apify_actor (step 6) - it will return an error if not approved**
      - **If user says "find cheaper": Search for cheaper actors and create new approval**
-  6. run_apify_actor("compass/crawler-google-places", {"queries": "restaurants in NYC"}, approval_id="approval_id")
-  7. get_actor_run_status("run_id") - poll until SUCCEEDED
-  8. **MANDATORY:** get_actor_run_results("run_id") - fetch and display actual restaurant data
+  6. use run_apify_actor with actor_id "compass/crawler-google-places" and approval_id parameter
+  7. use get_actor_run_status with run_id parameter - poll until SUCCEEDED
+  8. **MANDATORY:** use get_actor_run_results with run_id parameter - fetch and display actual restaurant data
   9. Present data: "I found 25 restaurants in NYC: [show actual restaurant names, addresses, ratings]"
 """
 )
@@ -1084,7 +1084,7 @@ class ApifyTool(SandboxToolsBase):
             if self._is_rental_actor(None, actor_pricing_infos, None):
                 return self.fail_response(
                     f"❌ Actor '{resolved_id}' requires a rental subscription (FLAT_PRICE_PER_MONTH) and cannot be run programmatically.\n\n"
-                    f"💡 Tip: Use search_apify_actors() to find actors with programmatically purchasable pricing models:\n"
+                    f"💡 Tip: Use search_apify_actors to find actors with programmatically purchasable pricing models:\n"
                     f"- PRICE_PER_DATASET_ITEM (pay per result)\n"
                     f"- PRICE_PER_EVENT (pay per event)\n"
                     f"- Free actors (no pricing model)\n\n"
@@ -1370,13 +1370,13 @@ class ApifyTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "get_apify_approval_status",
-            "description": "Get the status of an Apify approval request (OPTIONAL). Use this to check if an approval is pending, approved, rejected, or expired. NOTE: Not required before running - run_apify_actor() will automatically return an error if approval is not approved, so you can directly call run_apify_actor() without checking status first.",
+            "description": "Get the status of an Apify approval request (OPTIONAL). Use this to check if an approval is pending, approved, rejected, or expired. NOTE: Not required before running - run_apify_actor will automatically return an error if approval is not approved, so you can directly use run_apify_actor without checking status first.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "approval_id": {
                         "type": "string",
-                        "description": "Approval ID from request_apify_approval()"
+                        "description": "Approval ID from request_apify_approval"
                     }
                 },
                 "required": ["approval_id"]
@@ -1431,11 +1431,11 @@ class ApifyTool(SandboxToolsBase):
             if status == 'pending':
                 message += ". **CRITICAL: The user must click the 'Approve' button in the UI to approve this request. Tell the user: 'Please click the Approve button in the approval card above. I cannot approve it for you - only you can approve via the UI.' DO NOT try to call any approve tool - it does NOT exist.**"
             elif status == 'approved':
-                message += ". You can now call run_apify_actor() with this approval_id."
+                message += ". You can now use run_apify_actor with this approval_id."
             elif status == 'rejected':
                 message += ". This approval was rejected by the user."
             elif status == 'expired':
-                message += ". **This approval has expired. Tell the user you'll create a new approval request, then call request_apify_approval() again.**"
+                message += ". **This approval has expired. Tell the user you'll create a new approval request, then use request_apify_approval again.**"
             elif status == 'executed':
                 message += ". This approval has been executed."
             
@@ -1467,7 +1467,7 @@ class ApifyTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "run_apify_actor",
-            "description": "Start an Apify actor run (non-blocking). REQUIRES APPROVAL FIRST - use request_apify_approval() before calling this. Returns immediately with run_id. Use get_actor_run_status() to check progress and get logs. ⚠️ CRITICAL: After run completes successfully, you MUST call get_actor_run_results() to fetch and display the actual data to the user. Never just confirm completion - always show the actual results. IMPORTANT: All runs require approval before execution. Credits are only deducted after approval.",
+            "description": "Start an Apify actor run (non-blocking). REQUIRES APPROVAL FIRST - use request_apify_approval before using this. Returns immediately with run_id. Use get_actor_run_status to check progress and get logs. ⚠️ CRITICAL: After run completes successfully, you MUST use get_actor_run_results to fetch and display the actual data to the user. Never just confirm completion - always show the actual results. IMPORTANT: All runs require approval before execution. Credits are only deducted after approval.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1486,7 +1486,7 @@ class ApifyTool(SandboxToolsBase):
                     },
                     "approval_id": {
                         "type": "string",
-                        "description": "Approval ID from request_apify_approval() - REQUIRED for execution"
+                        "description": "Approval ID from request_apify_approval - REQUIRED for execution"
                     }
                 },
                 "required": ["actor_id", "run_input", "approval_id"]
@@ -1542,9 +1542,9 @@ class ApifyTool(SandboxToolsBase):
                 return self.fail_response(
                     "❌ Approval required before running Apify actors.\n\n"
                     "📋 Workflow:\n"
-                    "1. Call request_apify_approval(actor_id, run_input, max_cost_usd) to create approval request\n"
+                    "1. Use request_apify_approval with actor_id, run_input, max_cost_usd parameters to create approval request\n"
                     "2. User approves the request\n"
-                    "3. Call run_apify_actor(actor_id, run_input, max_cost_usd, approval_id) with the approval_id\n\n"
+                    "3. Use run_apify_actor with actor_id, run_input, max_cost_usd, approval_id parameters\n\n"
                     "This ensures users control their spending and approve costs before execution."
                 )
             
@@ -1553,7 +1553,7 @@ class ApifyTool(SandboxToolsBase):
             if not approval:
                 return self.fail_response(
                     f"Approval request {approval_id} has expired or been removed. "
-                    f"Please create a new approval request using request_apify_approval()."
+                    f"Please create a new approval request using request_apify_approval."
                 )
             
             # Check if expired by timestamp (even if status isn't set to expired)
@@ -1564,7 +1564,7 @@ class ApifyTool(SandboxToolsBase):
                     if datetime.now(timezone.utc) > expires_at:
                         return self.fail_response(
                             f"Approval request {approval_id} has expired. "
-                            f"Please create a new approval request using request_apify_approval()."
+                            f"Please create a new approval request using request_apify_approval."
                         )
                 except Exception:
                     pass
@@ -1623,7 +1623,7 @@ class ApifyTool(SandboxToolsBase):
                 if self._is_rental_actor(pricing_model, pricing_infos, current_pricing_info):
                     return self.fail_response(
                         f"❌ Actor '{resolved_id}' requires a rental subscription (FLAT_PRICE_PER_MONTH) and cannot be run programmatically.\n\n"
-                        f"💡 Tip: Use search_apify_actors() to find actors with programmatically purchasable pricing models:\n"
+                        f"💡 Tip: Use search_apify_actors to find actors with programmatically purchasable pricing models:\n"
                         f"- PRICE_PER_DATASET_ITEM (pay per result)\n"
                         f"- PRICE_PER_EVENT (pay per event)\n"
                         f"- Free actors (no pricing model)\n\n"
@@ -1642,7 +1642,7 @@ class ApifyTool(SandboxToolsBase):
                     if self._is_rental_actor(None, pricing_infos, None):
                         return self.fail_response(
                             f"❌ Actor '{resolved_id}' requires a rental subscription (FLAT_PRICE_PER_MONTH) and cannot be run programmatically.\n\n"
-                            f"💡 Tip: Use search_apify_actors() to find actors with programmatically purchasable pricing models."
+                            f"💡 Tip: Use search_apify_actors to find actors with programmatically purchasable pricing models."
                         )
                 except Exception as e2:
                     # If we can't check either, log but continue (actor might be private/user-owned)
@@ -1663,7 +1663,7 @@ class ApifyTool(SandboxToolsBase):
                 if "rent" in error_message.lower() or "trial" in error_message.lower() or "subscription" in error_message.lower():
                     return self.fail_response(
                         f"❌ Actor '{resolved_id}' requires a rental subscription: {error_message}\n\n"
-                        f"💡 Tip: Use search_apify_actors() to find actors that don't require rentals. "
+                        f"💡 Tip: Use search_apify_actors to find actors that don't require rentals. "
                         f"Rental actors are automatically filtered out from search results."
                     )
                 
@@ -1671,7 +1671,7 @@ class ApifyTool(SandboxToolsBase):
                 if "input" in error_message.lower() and ("required" in error_message.lower() or "not allowed" in error_message.lower()):
                     helpful_message = (
                         f"❌ Invalid input for actor '{resolved_id}': {error_message}\n\n"
-                        f"💡 Tip: Use get_actor_details(actor_id='{resolved_id}') first to see the required input schema."
+                        f"💡 Tip: Use get_actor_details with actor_id '{resolved_id}' first to see the required input schema."
                     )
                     return self.fail_response(helpful_message)
                 
@@ -1837,9 +1837,9 @@ class ApifyTool(SandboxToolsBase):
             
             # Build response message
             if timed_out:
-                message = f"⏱️ Run timed out after 60 seconds (still RUNNING). Check logs below. Use get_actor_run_status(run_id='{run_id}') to check progress."
+                message = f"⏱️ Run timed out after 60 seconds (still RUNNING). Check logs below. Use get_actor_run_status with run_id '{run_id}' to check progress."
             elif status == "SUCCEEDED":
-                message = f"✅ Run completed successfully! ⚠️ MANDATORY: You MUST immediately call get_actor_run_results(run_id='{run_id}') to fetch and display the actual data to the user. Never just confirm completion - always show the results."
+                message = f"✅ Run completed successfully! ⚠️ MANDATORY: You MUST immediately use get_actor_run_results with run_id '{run_id}' to fetch and display the actual data to the user. Never just confirm completion - always show the results."
             elif status == "FAILED":
                 message = f"❌ Run failed. Check logs for details."
             elif status == "ABORTED":
@@ -1847,7 +1847,7 @@ class ApifyTool(SandboxToolsBase):
             elif status == "TIMED-OUT":
                 message = "⏰ Run timed out before completion."
             elif status == "RUNNING":
-                message = f"⏳ Run is still in progress. Use get_actor_run_status(run_id='{run_id}') to check progress."
+                message = f"⏳ Run is still in progress. Use get_actor_run_status with run_id '{run_id}' to check progress."
             else:
                 message = f"Run status: {status}"
             
@@ -1880,7 +1880,7 @@ class ApifyTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "get_actor_run_results",
-            "description": "⚠️ MANDATORY: Retrieve ALL results from a completed actor run and save them to disk. You MUST call this function immediately after run_apify_actor() completes successfully (status: SUCCEEDED). You MUST present the actual received data to the user in your response - never just say 'run completed'. Always show item counts, key data points, and examples from the results. Results are saved as JSON to /workspace/apify_results/. IMPORTANT: Use the 'absolute_file_path' returned (e.g., /workspace/apify_results/...) for all shell commands like cat, jq, python - do NOT use relative paths as your shell cwd may be /app, not /workspace. This is a COMPLETE tool call requirement - users expect to see the data immediately.",
+            "description": "⚠️ MANDATORY: Retrieve ALL results from a completed actor run and save them to disk. You MUST use this function immediately after run_apify_actor completes successfully (status: SUCCEEDED). You MUST present the actual received data to the user in your response - never just say 'run completed'. Always show item counts, key data points, and examples from the results. Results are saved as JSON to /workspace/apify_results/. IMPORTANT: Use the 'absolute_file_path' returned (e.g., /workspace/apify_results/...) for all shell commands like cat, jq, python - do NOT use relative paths as your shell cwd may be /app, not /workspace. This is a COMPLETE tool call requirement - users expect to see the data immediately.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2187,7 +2187,7 @@ class ApifyTool(SandboxToolsBase):
             
             # Build response message based on status
             if status == "SUCCEEDED":
-                message = f"✅ Run completed successfully! Retrieved {item_count} items. ⚠️ MANDATORY: You MUST immediately call get_actor_run_results(run_id='{run_id}') to fetch and display the actual data to the user."
+                message = f"✅ Run completed successfully! Retrieved {item_count} items. ⚠️ MANDATORY: You MUST immediately use get_actor_run_results with run_id '{run_id}' to fetch and display the actual data to the user."
             elif status == "RUNNING":
                 message = f"⏳ Run is still in progress. Check again in a few seconds."
             elif status == "FAILED":

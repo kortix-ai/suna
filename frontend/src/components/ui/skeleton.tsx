@@ -59,12 +59,12 @@ function Skeleton({
           animation: shimmerAnimation 1s infinite;
           position: absolute;
           top: 0;
-          left: -150%;
+          transform: translateX(-300%);
         }
 
         @keyframes shimmerAnimation {
           to {
-            left: 150%;
+            transform: translateX(300%);
           }
         }
       `}</style>

@@ -13,11 +13,11 @@ import json
     usage_guide="""
 ### INTERNAL UTILITIES
 
-**initialize_tools() - JIT Tool Activation:**
+**initialize_tools - JIT Tool Activation:**
 - INTERNAL operation - completely invisible to users
 - Activates tools on-demand using SPARK algorithm
 - Loads detailed usage documentation for YOU (not the user)
-- Supports batch loading: initialize_tools(["tool1", "tool2", "tool3"])
+- Supports batch loading multiple tools at once (e.g., tool1, tool2, tool3)
 
 **CRITICAL USAGE:**
 - Call silently at the start of every task
@@ -25,18 +25,18 @@ import json
 - Users NEVER see this operation or its output
 - DO NOT mention tool loading in your responses to users
 
-**discover_mcp_tools(filter) - MCP Schema Discovery:**
+**discover_mcp_tools - MCP Schema Discovery:**
 - Get schemas for external MCP tools (Gmail, Twitter, Slack, etc.)
 - ALWAYS check conversation history first - schemas persist forever
 - Batch discover ALL tools needed in ONE call
-- Example: discover_mcp_tools(filter="GMAIL_SEND_MESSAGE,TWITTER_CREATION_OF_A_POST")
+- Example: use discover_mcp_tools with filter parameter set to "GMAIL_SEND_MESSAGE,TWITTER_CREATION_OF_A_POST"
 
-**execute_mcp_tool(tool_name, args) - MCP Tool Execution:**
+**execute_mcp_tool - MCP Tool Execution:**
 - Execute external integration tools
 - Requires schema in conversation history (discover first if needed)
-- Example: execute_mcp_tool(tool_name="GMAIL_SEND_MESSAGE", args={"to": "user@example.com", ...})
+- Example: use execute_mcp_tool with tool_name parameter "GMAIL_SEND_MESSAGE" and args parameter containing the tool arguments
 
-**expand_message(message_id) - Message Expansion:**
+**expand_message - Message Expansion:**
 - View full content of truncated messages
 - Use when previous messages were shortened
 - Retrieve complete message history
@@ -54,16 +54,17 @@ class ExpandMessageTool(Tool):
         "type": "function",
         "function": {
             "name": "expand_message",
-            "description": "Expand a message from the previous conversation with the user. Use this tool to expand a message that was truncated in the earlier conversation.",
+            "description": "Expand a message from the previous conversation with the user. Use this tool to expand a message that was truncated in the earlier conversation. **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `message_id` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "message_id": {
                         "type": "string",
-                        "description": "The ID of the message to expand. Must be a UUID."
+                        "description": "**REQUIRED** - The ID of the message to expand. Must be a UUID."
                     }
                 },
-                "required": ["message_id"]
+                "required": ["message_id"],
+                "additionalProperties": False
             }
         }
     })
@@ -96,16 +97,17 @@ class ExpandMessageTool(Tool):
         "type": "function", 
         "function": {
             "name": "discover_mcp_tools", 
-            "description": "Get schemas for external MCP tools (Gmail, Twitter, Slack, etc.). CRITICAL WORKFLOW: (1) Check conversation history FIRST - if tool schemas already exist, skip discovery! (2) If NOT in history: Discover ALL needed tools in ONE batch call. (3) Schemas are cached in conversation forever - NEVER discover same tools twice!",
+            "description": "Get schemas for external MCP tools (Gmail, Twitter, Slack, etc.). CRITICAL WORKFLOW: (1) Check conversation history FIRST - if tool schemas already exist, skip discovery! (2) If NOT in history: Discover ALL needed tools in ONE batch call. (3) Schemas are cached in conversation forever - NEVER discover same tools twice! **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `filter` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "filter": {
                         "type": "string",
-                        "description": "Comma-separated list of ALL tools needed (e.g., 'GMAIL_SEND_MESSAGE,TWITTER_CREATION_OF_A_POST,SLACK_SEND_MESSAGE') OR toolkit name (e.g., 'gmail'). CRITICAL: List ALL tools in ONE call, never call discover multiple times for the same task!"
+                        "description": "**REQUIRED** - Comma-separated list of ALL tools needed (e.g., 'GMAIL_SEND_MESSAGE,TWITTER_CREATION_OF_A_POST,SLACK_SEND_MESSAGE') OR toolkit name (e.g., 'gmail'). CRITICAL: List ALL tools in ONE call, never call discover multiple times for the same task!"
                     }
                 },
-                "required": ["filter"]
+                "required": ["filter"],
+                "additionalProperties": False
             }
         }
     }) 
@@ -116,20 +118,21 @@ class ExpandMessageTool(Tool):
         "type": "function", 
         "function": {
             "name": "execute_mcp_tool", 
-            "description": "Execute external MCP tool (Gmail, Twitter, Slack, etc.). PREREQUISITE: Tool schema MUST be in conversation history (use discover_mcp_tools first if needed). Use exact tool name and parameters from the discovered schema.",
+            "description": "Execute external MCP tool (Gmail, Twitter, Slack, etc.). PREREQUISITE: Tool schema MUST be in conversation history (use discover_mcp_tools first if needed). Use exact tool name and parameters from the discovered schema. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `tool_name` (REQUIRED), `args` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "tool_name": {
                         "type": "string",
-                        "description": "Exact tool name from discovered schema (e.g., 'GMAIL_SEND_MESSAGE', 'TWITTER_CREATION_OF_A_POST'). Must match schema in conversation history."
+                        "description": "**REQUIRED** - Exact tool name from discovered schema. Example: 'GMAIL_SEND_MESSAGE', 'TWITTER_CREATION_OF_A_POST'. Must match schema in conversation history."
                     },
                     "args": {
                         "type": "object", 
-                        "description": "Arguments matching discovered schema parameters. Use exact parameter names from schema in conversation history. Use empty object {} if no parameters required."
+                        "description": "**REQUIRED** - Arguments matching discovered schema parameters. Use exact parameter names from schema in conversation history. If no parameters are required, provide an empty object {}."
                     }
                 },
-                "required": ["tool_name", "args"]
+                "required": ["tool_name", "args"],
+                "additionalProperties": False
             }
         }
     }) 
@@ -140,7 +143,7 @@ class ExpandMessageTool(Tool):
         "type": "function",
         "function": {
             "name": "initialize_tools",
-            "description": "Initialize tools needed for your task. Loads the detailed usage guides and activates the tools so they're ready to use. Call this at the start with ALL tools you'll need.",
+            "description": "Initialize tools needed for your task. Loads the detailed usage guides and activates the tools so they're ready to use. Call this at the start with ALL tools you'll need. **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `tool_names` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -148,18 +151,19 @@ class ExpandMessageTool(Tool):
                         "oneOf": [
                             {
                                 "type": "string",
-                                "description": "Single tool name to initialize (e.g., 'browser_tool', 'sb_files_tool')"
+                                "description": "**REQUIRED** - Single tool name to initialize. Example: 'browser_tool', 'sb_files_tool'"
                             },
                             {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "Multiple tool names to initialize in one batch call"
+                                "description": "**REQUIRED** - Multiple tool names to initialize in one batch call. Example: ['browser_tool', 'sb_files_tool', 'web_search_tool']"
                             }
                         ],
-                        "description": "Tool name(s) to initialize. Can be a single string or array of strings."
+                        "description": "**REQUIRED** - Tool name(s) to initialize. Can be a single string or array of strings."
                     }
                 },
-                "required": ["tool_names"]
+                "required": ["tool_names"],
+                "additionalProperties": False
             }
         }
     })
@@ -324,7 +328,7 @@ class ExpandMessageTool(Tool):
         
         native_tools = ['web_search', 'image_search', 'create_file', 'read_file', 'edit_file', 'create_slide', 'browser_navigate', 'shell_command', 'scrape_webpage']
         if tool_name in native_tools:
-            return self.fail_response(f"Tool '{tool_name}' is a native tool. Use initialize_tools(['{tool_name}_tool']) first, then call {tool_name}() directly.")
+            return self.fail_response(f"Tool '{tool_name}' is a native tool. Use initialize_tools to load {tool_name}_tool first, then use {tool_name} directly.")
 
         integration_labels = {
             'TWITTER_': 'Accessing Twitter',
@@ -337,10 +341,28 @@ class ExpandMessageTool(Tool):
         }
         
         friendly_status = f'Executing {tool_name}'
-        for prefix, label in integration_labels.items():
-            if tool_name.startswith(prefix):
-                friendly_status = label
-                break
+        
+        from core.agentpress.mcp_registry import get_mcp_registry
+        mcp_registry = get_mcp_registry()
+        tool_info = mcp_registry.get_tool_info(tool_name)
+        
+        if tool_info and tool_info.toolkit_slug:
+             toolkit_name = tool_info.toolkit_slug.replace('_', ' ').replace('-', ' ').title()
+             friendly_status = f"Accessing {toolkit_name}"
+        else:
+             integration_labels = {
+                'TWITTER_': 'Accessing Twitter',
+                'GMAIL_': 'Accessing Gmail',  
+                'SLACK_': 'Accessing Slack',
+                'GITHUB_': 'Accessing GitHub',
+                'GOOGLESHEETS_': 'Accessing Google Sheets',
+                'LINEAR_': 'Accessing Linear',
+                'NOTION_': 'Accessing Notion'
+             }
+             for prefix, label in integration_labels.items():
+                if tool_name.startswith(prefix):
+                    friendly_status = label
+                    break
         
         logger.info(f"🔧 [MCP_ACTION] {friendly_status}")
         from core.agentpress.mcp_registry import get_mcp_registry, MCPExecutionContext
@@ -348,7 +370,6 @@ class ExpandMessageTool(Tool):
         mcp_registry = get_mcp_registry()
         mcp_loader = getattr(self.thread_manager, 'mcp_loader', None)
         if mcp_loader:
-            # Always sync registry with current request's mcp_loader to avoid race conditions
             loader_tool_count = len(mcp_loader.tool_map) if mcp_loader.tool_map else 0
             registry_tool_count = len(mcp_registry._tools)
             
@@ -366,7 +387,6 @@ class ExpandMessageTool(Tool):
         return await mcp_registry.execute_tool(tool_name, args, execution_context)
 
     async def _save_dynamic_tools_to_metadata(self, new_tool_names: List[str]) -> None:
-        """Save dynamically loaded tools to thread metadata for persistence across runs"""
         from core.utils.logger import logger
         
         try:

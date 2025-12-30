@@ -57,6 +57,8 @@ dependencies = [
   "prometheus-client==0.21.1",
   "langfuse==2.60.5",
   "Pillow>=10.4.0",
+  "vtracer>=0.6.0",
+  "replicate>=0.25.0",
   "mcp==1.9.4",
   "aiohttp==3.12.0",
   "email-validator==2.0.0",

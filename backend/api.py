@@ -335,6 +335,9 @@ api_router.include_router(test_harness_router)
 from core.files import staged_files_router
 api_router.include_router(staged_files_router, prefix="/files")
 
+from core.sandbox.canvas_ai_api import router as canvas_ai_router
+api_router.include_router(canvas_ai_router)
+
 @api_router.get("/health", summary="Health Check", operation_id="health_check", tags=["system"])
 async def health_check():
     logger.debug("Health check endpoint called")
@@ -420,20 +423,47 @@ app.include_router(api_router, prefix="/v1")
 
 
 async def _memory_watchdog():
-    """Monitor worker memory usage and log warnings when thresholds are exceeded."""
+    """Monitor worker memory usage and log warnings when thresholds are exceeded.
+    
+    Memory thresholds (for 7.5GB limit):
+    - Critical (>6.5GB / 87%): Immediate action needed, risk of OOM kill
+    - Warning (>6GB / 80%): High memory usage, consider cleanup
+    - Info (>5GB / 67%): Elevated memory usage
+    """
     try:
         while True:
             try:
                 process = psutil.Process()
                 mem_info = process.memory_info()
                 mem_mb = mem_info.rss / 1024 / 1024  # Convert to MB
+                mem_percent = (mem_mb / 7680) * 100  # Percentage of 7.5GB limit
                 
-                # Log warning at 6GB (75% of 8GB hard limit)
-                if mem_mb > 6000:
-                    logger.warning(f"Worker memory high: {mem_mb:.0f}MB (instance: {instance_id})")
-                # Log info at 5GB (62.5% of 8GB hard limit) for visibility
+                # Critical threshold: >6.5GB (87% of 7.5GB limit) - risk of OOM kill
+                if mem_mb > 6500:
+                    logger.error(
+                        f"🚨 CRITICAL: Worker memory very high: {mem_mb:.0f}MB ({mem_percent:.1f}%) "
+                        f"(instance: {instance_id}) - Risk of OOM kill!"
+                    )
+                    # Try to force garbage collection when memory is critical
+                    try:
+                        import gc
+                        collected = gc.collect()
+                        if collected > 0:
+                            logger.info(f"Emergency GC collected {collected} objects")
+                    except Exception:
+                        pass
+                # Warning threshold: >6GB (80% of 7.5GB limit)
+                elif mem_mb > 6000:
+                    logger.warning(
+                        f"⚠️ Worker memory high: {mem_mb:.0f}MB ({mem_percent:.1f}%) "
+                        f"(instance: {instance_id}) - Approaching limit"
+                    )
+                # Info threshold: >5GB (67% of 7.5GB limit)
                 elif mem_mb > 5000:
-                    logger.info(f"Worker memory: {mem_mb:.0f}MB (instance: {instance_id})")
+                    logger.info(
+                        f"Worker memory: {mem_mb:.0f}MB ({mem_percent:.1f}%) "
+                        f"(instance: {instance_id})"
+                    )
                 
             except Exception as e:
                 logger.debug(f"Memory watchdog error: {e}")

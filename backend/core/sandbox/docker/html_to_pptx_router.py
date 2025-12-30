@@ -1547,11 +1547,23 @@ async def convert_presentation_to_pptx(request: ConvertRequest):
         )
         
     except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        error_msg = str(e)
+        print(f"❌ FileNotFoundError: {error_msg}")
+        raise HTTPException(status_code=404, detail=error_msg)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        error_msg = str(e)
+        print(f"❌ ValueError: {error_msg}")
+        raise HTTPException(status_code=400, detail=error_msg)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"PPTX conversion failed: {str(e)}")
+        import traceback
+        error_msg = str(e)
+        error_traceback = traceback.format_exc()
+        print(f"❌ PPTX conversion error: {error_msg}")
+        print(f"❌ Traceback:\n{error_traceback}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"PPTX conversion failed: {error_msg}"
+        )
 
 
 @router.get("/health")

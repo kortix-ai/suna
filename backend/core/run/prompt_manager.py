@@ -35,7 +35,7 @@ You are currently in fast-start mode with all core tools preloaded and ready NOW
    • Communication: message_tool, task_list_tool, expand_msg_tool
 
 ⏳ Advanced tools available via initialize_tools():
-   • Content: sb_presentation_tool, sb_designer_tool
+   • Content: sb_presentation_tool, sb_canvas_tool
    • Research: people_search_tool, company_search_tool, paper_search_tool
    • Data: apify_tool, sb_kb_tool
 
@@ -300,9 +300,9 @@ If relevant context seems missing, ask a clarifying question.
             
             mcp_jit_info = "\n\n--- EXTERNAL MCP TOOLS ---\n"
             mcp_jit_info += f"🔥 You have {len(available_tools)} external MCP tools from {len(toolkits)} connected services.\n"
-            mcp_jit_info += "⚡ TWO-STEP WORKFLOW: (1) discover_mcp_tools() → (2) execute_mcp_tool()\n"
-            mcp_jit_info += "🎯 DISCOVERY: discover_mcp_tools(filter=\"TOOL1,TOOL2,TOOL3\")\n"
-            mcp_jit_info += "🎯 EXECUTION: execute_mcp_tool(tool_name=\"TOOL_NAME\", args={...})\n\n"
+            mcp_jit_info += "⚡ TWO-STEP WORKFLOW: (1) discover_mcp_tools → (2) execute_mcp_tool\n"
+            mcp_jit_info += "🎯 DISCOVERY: use discover_mcp_tools with filter parameter \"TOOL1,TOOL2,TOOL3\"\n"
+            mcp_jit_info += "🎯 EXECUTION: use execute_mcp_tool with tool_name parameter and args parameter\n\n"
             
             toolkit_tools = {}
             for tool_name in available_tools:
@@ -345,15 +345,15 @@ If relevant context seems missing, ask a clarifying question.
             mcp_jit_info += "- Are the tool schemas already in this conversation? → Skip to execution!\n"
             mcp_jit_info += "- Not in history? → Discover ALL needed tools in ONE batch call\n\n"
             mcp_jit_info += "**✅ CORRECT - Batch Discovery:**\n"
-            mcp_jit_info += "`discover_mcp_tools(filter=\"NOTION_CREATE_PAGE,NOTION_APPEND_BLOCK,NOTION_SEARCH\")`\n"
+            mcp_jit_info += "use discover_mcp_tools with filter parameter \"NOTION_CREATE_PAGE,NOTION_APPEND_BLOCK,NOTION_SEARCH\"\n"
             mcp_jit_info += "→ Returns: All 3 schemas in ONE call\n"
             mcp_jit_info += "→ Schemas cached in conversation forever\n"
             mcp_jit_info += "→ NEVER discover these tools again!\n\n"
             mcp_jit_info += "**❌ WRONG - Multiple Discoveries:**\n"
             mcp_jit_info += "Never call discover 3 times for 3 tools - batch them!\n\n"
             mcp_jit_info += "**STEP 2: Execute tools with schemas:**\n"
-            mcp_jit_info += "`execute_mcp_tool(tool_name=\"NOTION_CREATE_PAGE\", args={\"title\": \"My Page\", ...})`\n"
-            mcp_jit_info += "`execute_mcp_tool(tool_name=\"NOTION_APPEND_BLOCK\", args={\"page_id\": \"...\", ...})`\n\n"
+            mcp_jit_info += "use execute_mcp_tool with tool_name \"NOTION_CREATE_PAGE\" and args parameter\n"
+            mcp_jit_info += "use execute_mcp_tool with tool_name \"NOTION_APPEND_BLOCK\" and args parameter\n\n"
             mcp_jit_info += "⛔ **CRITICAL RULES**:\n"
             mcp_jit_info += "1. Analyze task → Identify ALL tools → Discover ALL in ONE call\n"
             mcp_jit_info += "2. NEVER discover one-by-one (always batch!)\n"

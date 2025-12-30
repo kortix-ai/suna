@@ -108,7 +108,16 @@ export async function downloadPresentation(
   presentationName: string
 ): Promise<void> {
   try {
-    const response = await fetch(`${sandboxUrl}/presentation/convert-to-${format}`, {
+    const endpoint = `${sandboxUrl}/presentation/convert-to-${format}`;
+    console.log(`[downloadPresentation] Requesting download:`, {
+      endpoint,
+      format,
+      presentationPath,
+      presentationName,
+      sandboxUrl
+    });
+
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -119,22 +128,106 @@ export async function downloadPresentation(
       })
     });
     
+    console.log(`[downloadPresentation] Response status:`, {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok,
+      headers: Object.fromEntries(response.headers.entries())
+    });
+
     if (!response.ok) {
-      throw new Error(`Failed to download ${format}`);
+      // Try to get error details from response
+      let errorMessage = `Failed to download ${format}`;
+      let errorDetail = '';
+      
+      try {
+        const errorText = await response.text();
+        console.error(`[downloadPresentation] Error response body:`, errorText);
+        
+        // Try to parse as JSON
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorDetail = errorJson.detail || errorJson.message || errorText;
+        } catch {
+          errorDetail = errorText || response.statusText;
+        }
+      } catch (e) {
+        console.error(`[downloadPresentation] Failed to read error response:`, e);
+        errorDetail = response.statusText;
+      }
+      
+      errorMessage = errorDetail 
+        ? `${errorMessage}: ${errorDetail} (HTTP ${response.status})`
+        : `${errorMessage} (HTTP ${response.status})`;
+      
+      console.error(`[downloadPresentation] Error:`, {
+        status: response.status,
+        statusText: response.statusText,
+        errorDetail,
+        errorMessage
+      });
+      
+      toast.error(errorMessage, {
+        duration: 10000,
+      });
+      
+      throw new Error(errorMessage);
+    }
+    
+    // Check if response is actually a PDF/PPTX blob
+    const contentType = response.headers.get('content-type');
+    console.log(`[downloadPresentation] Response content type:`, contentType);
+    
+    if (!contentType || (!contentType.includes('pdf') && !contentType.includes('presentation'))) {
+      // If not a binary file, might be an error JSON response
+      const text = await response.text();
+      console.error(`[downloadPresentation] Unexpected content type, response:`, text);
+      
+      try {
+        const json = JSON.parse(text);
+        const errorMsg = json.detail || json.message || `Unexpected response format`;
+        toast.error(`Download failed: ${errorMsg}`, {
+          duration: 10000,
+        });
+        throw new Error(errorMsg);
+      } catch {
+        throw new Error(`Unexpected response format. Expected PDF/PPTX but got ${contentType}`);
+      }
     }
     
     const blob = await response.blob();
+    console.log(`[downloadPresentation] Blob created:`, {
+      size: blob.size,
+      type: blob.type
+    });
+    
+    if (blob.size === 0) {
+      throw new Error(`Downloaded file is empty`);
+    }
+    
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `${presentationName}.${format}`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
+    
+    console.log(`[downloadPresentation] Download completed successfully`);
     toast.success(`Downloaded ${presentationName} as ${format.toUpperCase()}`, {
       duration: 8000,
     });
   } catch (error) {
-    console.error(`Error downloading ${format}:`, error);
+    console.error(`[downloadPresentation] Error downloading ${format}:`, error);
+    
+    // Only show toast if it's not already shown (to avoid duplicate toasts)
+    if (error instanceof Error && !error.message.includes('Failed to download')) {
+      toast.error(`Failed to download ${format.toUpperCase()}: ${error.message}`, {
+        duration: 10000,
+      });
+    }
+    
     throw error; // Re-throw to allow calling code to handle
   }
 }

@@ -3,7 +3,6 @@ from core.agentpress.tool import Tool, SchemaType
 from core.utils.logger import logger
 import threading
 
-
 class ToolRegistry:
     def __init__(self):
         self.tools = {}
@@ -35,12 +34,14 @@ class ToolRegistry:
         
         registered_openapi = 0
         
-        # 🔒 Thread-safe registration: protect cache invalidation and tools modification
+        # 🔒 Acquire lock before modifying shared state
         with self._lock:
+            # Invalidate caches before modifying tools
             self._cached_openapi_schemas = None
             if hasattr(self, '_cached_functions'):
                 self._cached_functions = None
             
+            # Register tools
             for func_name, schema_list in schemas.items():
                 if function_names is None or func_name in function_names:
                     for schema in schema_list:
@@ -57,13 +58,12 @@ class ToolRegistry:
             logger.debug(f"⏱️ [TIMING] register_tool({tool_class.__name__}): {elapsed:.1f}ms {cache_info}")
 
     def get_available_functions(self) -> Dict[str, Callable]:
-        # Fast path: lock-free cache read (no synchronization needed for reads)
+        # 🔒 Double-checked locking pattern for thread-safe caching
         if hasattr(self, '_cached_functions') and self._cached_functions is not None:
             return self._cached_functions
         
-        # Slow path: acquire lock and compute cache (double-checked locking pattern)
         with self._lock:
-            # Double-check: another thread might have already computed the cache
+            # Check again inside lock (double-checked locking)
             if hasattr(self, '_cached_functions') and self._cached_functions is not None:
                 return self._cached_functions
             
@@ -79,13 +79,13 @@ class ToolRegistry:
             return available_functions
     
     def invalidate_function_cache(self):
-        # 🔒 Thread-safe cache invalidation
+        # 🔒 Acquire lock before modifying cache
         with self._lock:
             if hasattr(self, '_cached_functions'):
                 self._cached_functions = None
 
     def get_tool(self, tool_name: str) -> Dict[str, Any]:
-        # 🔒 Thread-safe tool lookup
+        # 🔒 Acquire lock for thread-safe read
         with self._lock:
             tool = self.tools.get(tool_name, {})
             if not tool:
@@ -93,16 +93,18 @@ class ToolRegistry:
             return tool
 
     def get_openapi_schemas(self) -> List[Dict[str, Any]]:
-        # Fast path: lock-free cache read
+        # 🔒 Double-checked locking pattern for thread-safe caching
+        # Fast path: check cache without lock (most common case)
         if self._cached_openapi_schemas is not None:
             return self._cached_openapi_schemas
 
-        # Slow path: acquire lock and compute cache (double-checked locking pattern)
+        # Slow path: acquire lock and check again
         with self._lock:
-            # Double-check: another thread might have already computed the cache
+            # Double-check: another thread might have computed it while we waited for lock
             if self._cached_openapi_schemas is not None:
                 return self._cached_openapi_schemas
 
+            # Compute schemas while holding the lock
             schemas = []
             native_exposed = 0
             mcp_hidden = 0
@@ -116,25 +118,26 @@ class ToolRegistry:
                                         ('MCPToolWrapper' in str(tool_instance.__class__.__name__) or
                                          'MCP' in str(tool_instance.__class__.__name__)))
                     
-                    mcp_patterns = ['TWITTER_', 'GMAIL_', 'SLACK_', 'GITHUB_', 'LINEAR_', 
-                                   'NOTION_', 'GOOGLESHEETS_', 'COMPOSIO_']
-                    is_mcp_by_name = any(pattern in tool_name for pattern in mcp_patterns)
+                    from core.agentpress.mcp_registry import get_mcp_registry
+                    mcp_registry = get_mcp_registry()
+                    is_mcp_by_registry = mcp_registry.is_tool_available(tool_name)
                     
-                    is_mcp_tool = is_mcp_by_instance or is_mcp_by_name
+                    is_mcp_tool = is_mcp_by_instance or is_mcp_by_registry
                     
                     if not is_mcp_tool:
                         schemas.append(tool_info['schema'].schema)
                         native_exposed += 1
                     else:
                         mcp_hidden += 1
-                        logger.debug(f"🔒 [HIDE] {tool_name} (MCP)")
+                    logger.debug(f"🔒 [HIDE] {tool_name} (MCP)")
             
+            # Update cache while holding the lock
             self._cached_openapi_schemas = schemas
             logger.info(f"🎯 [HYBRID CACHE] Exposing {native_exposed} native tools, hiding {mcp_hidden} MCP tools (smart separation)")
             return schemas
     
     def get_all_schemas(self) -> List[Dict[str, Any]]:
-        # 🔒 Thread-safe schema access
+        # 🔒 Acquire lock for thread-safe read
         with self._lock:
             return [
                 tool_info['schema'].schema 
@@ -143,6 +146,6 @@ class ToolRegistry:
             ]
     
     def invalidate_schema_cache(self):
-        # 🔒 Thread-safe cache invalidation
+        # 🔒 Acquire lock before modifying cache
         with self._lock:
             self._cached_openapi_schemas = None

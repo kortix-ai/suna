@@ -29,7 +29,7 @@ from core.utils.logger import logger
 1. create_credential_profile() - Generates auth link
 2. **SEND LINK TO USER IMMEDIATELY** - Authentication is MANDATORY
 3. **WAIT FOR USER CONFIRMATION** - "Have you completed authentication?"
-4. discover_mcp_tools() - Get actual available tools after auth
+4. discover_mcp_tools - Get actual available tools after auth
 5. configure_profile_for_agent() - Add to agent
 
 **AUTHENTICATION IS NON-NEGOTIABLE:**

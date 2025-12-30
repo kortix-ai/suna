@@ -8,8 +8,14 @@ import { CheckCircle, AlertTriangle, Download, FileSpreadsheet, Table, Grid, Tab
 import { cn } from '@/lib/utils';
 import { parseToolResult } from '../tool-result-parser';
 import { FileAttachment } from '../../file-attachment';
-import { XlsxRenderer } from '@/components/file-renderers';
+import dynamic from 'next/dynamic';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
+
+// Lazy load SpreadsheetViewer as it imports Syncfusion (~1-2 MB)
+const SpreadsheetViewer = dynamic(
+  () => import('../spreadsheet/SpreadsheetViewer').then((mod) => mod.SpreadsheetViewer),
+  { ssr: false, loading: () => <div className="p-4 text-muted-foreground">Loading spreadsheet...</div> }
+);
 import { useAuth } from '@/components/AuthProvider';
 import { fetchFileContent } from '@/hooks/files/use-file-queries';
 import { useDownloadRestriction } from '@/hooks/billing';
@@ -229,7 +235,7 @@ export function SheetsToolView({
               <div className="p-4 flex flex-col space-y-4">
                 {primaryXlsx ? (
                   <div className="space-y-3">
-                    <XlsxRenderer
+                    <SpreadsheetViewer
                       filePath={primaryXlsx}
                       fileName={(primaryXlsx.split('/').pop() || 'sheet.xlsx')}
                       project={project}

@@ -3,6 +3,15 @@ import { CircleDashed } from 'lucide-react';
 import { getToolIcon, getUserFriendlyToolName, extractPrimaryParam } from '@/components/thread/utils';
 import { AppIcon } from '../tool-views/shared/AppIcon';
 
+// Media generation tools that show shimmer preview
+const MEDIA_GENERATION_TOOLS = new Set([
+    'image-edit-or-generate',
+    'image_edit_or_generate',
+    'Generating Image',
+    'Editing Image', 
+    'Generate Media',
+]);
+
 // Define tool categories for different streaming behaviors
 const STREAMABLE_TOOLS = {
     // File operation tools - show full content streaming
@@ -36,6 +45,19 @@ const STREAMABLE_TOOLS = {
         'Searching Web',
         'Crawling Website',
         'Scraping Website',
+    ]),
+
+    SPREADSHEET_TOOLS: new Set([
+        'Spreadsheet Create',
+        'Spreadsheet Add Rows',
+        'Spreadsheet Update Cell',
+        'Spreadsheet Format Cells',
+        'Spreadsheet Read',
+        'Creating Spreadsheet',
+        'Adding Rows',
+        'Updating Cell',
+        'Formatting Cells',
+        'Reading Spreadsheet',
     ]),
 
     // Other tools that benefit from content streaming
@@ -121,6 +143,13 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     const isFullFileRewrite = toolName === 'Rewriting File';
     
     const effectiveToolCall = toolCall || parsedToolCall;
+    
+    // Check if tool is completed (has tool_result or completed flag)
+    // tool_result can be an object with success/output/error, or just a truthy value
+    const isCompleted = effectiveToolCall?.completed === true || 
+                       (effectiveToolCall?.tool_result !== undefined && 
+                        effectiveToolCall?.tool_result !== null &&
+                        (typeof effectiveToolCall.tool_result === 'object' || Boolean(effectiveToolCall.tool_result)));
 
     // Extract content from JSON or plain text
     const extractContent = (rawContent: string): { html: string; plainText: string } => {
@@ -257,8 +286,78 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     // Calculate paramDisplay before early return to satisfy Rules of Hooks
     const paramDisplay = useMemo(() => extractPrimaryParam(rawToolName || '', content), [rawToolName, content]);
 
+    // Check if this is a media generation tool - show shimmer card
+    const isMediaGenTool = MEDIA_GENERATION_TOOLS.has(rawToolName || '') || MEDIA_GENERATION_TOOLS.has(toolName || '');
+    
+    // Stable color ref for shimmer - placed before conditional return to satisfy Rules of Hooks
+    const shimmerColorRef = useRef(
+        ['from-purple-300/60 to-pink-300/60', 'from-blue-300/60 to-cyan-300/60', 
+         'from-emerald-300/60 to-teal-300/60', 'from-orange-300/60 to-amber-300/60',
+         'from-rose-300/60 to-red-300/60', 'from-indigo-300/60 to-violet-300/60']
+        [Math.floor(Math.random() * 6)]
+    );
+    const [showShimmerColor, setShowShimmerColor] = useState(false);
+    
+    // Fade in shimmer color after delay
+    useEffect(() => {
+        if (isMediaGenTool) {
+            const timer = setTimeout(() => setShowShimmerColor(true), 800);
+            return () => clearTimeout(timer);
+        }
+    }, [isMediaGenTool]);
+
     if (!toolName) {
         return null;
+    }
+    
+    if (isMediaGenTool) {
+        const IconComponent = getToolIcon(rawToolName || '');
+        
+        // Check if this is a video generation (has video_options in arguments)
+        const isVideoGeneration = effectiveToolCall?.arguments?.video_options !== undefined ||
+            (typeof effectiveToolCall?.arguments === 'string' && effectiveToolCall.arguments.includes('video_options'));
+
+        return (
+            <div className="space-y-2">
+                {/* Tool button - exactly like regular tools */}
+                <button
+                    onClick={() => onToolClick?.(messageId ?? null, toolName, effectiveToolCall?.tool_call_id)}
+                    className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
+                >
+                    <AppIcon toolCall={effectiveToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground shrink-0" fallbackIcon={IconComponent} />
+                    <span className="font-mono text-xs text-foreground">Generate Media</span>
+                    {!isCompleted && (
+                        <CircleDashed className="h-3.5 w-3.5 text-muted-foreground shrink-0 animate-spin ml-1" />
+                    )}
+                </button>
+
+                {/* Shimmer below - aspect-video for video, aspect-square for image */}
+                <div className={`relative w-80 ${isVideoGeneration ? 'aspect-video' : 'aspect-square'} rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-700/50`}>
+                    {/* Gray base layer - contained with rounded corners */}
+                    <div className="absolute inset-[-50%] bg-gradient-to-br from-zinc-300/60 to-zinc-400/60 dark:from-zinc-600/60 dark:to-zinc-700/60 blur-2xl" />
+                    {/* Color layer that fades in - contained with rounded corners */}
+                    <div 
+                        className={`absolute inset-[-50%] bg-gradient-to-br ${shimmerColorRef.current} blur-2xl transition-opacity duration-1000`}
+                        style={{ opacity: showShimmerColor ? 1 : 0 }}
+                    />
+                    <div className="absolute inset-0 bg-zinc-100/30 dark:bg-zinc-900/30 backdrop-blur-sm rounded-2xl" />
+                    <div
+                        className="absolute inset-0 rounded-2xl"
+                        style={{
+                            background: 'linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.4) 50%, transparent 70%)',
+                            backgroundSize: '200% 100%',
+                            animation: 'media-shimmer 1.8s ease-in-out infinite',
+                        }}
+                    />
+                    <style>{`
+                        @keyframes media-shimmer {
+                            0% { background-position: 200% 0; }
+                            100% { background-position: -200% 0; }
+                        }
+                    `}</style>
+                </div>
+            </div>
+        );
     }
 
     // Check if this is a streamable tool
@@ -270,7 +369,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     // Always show tool button, conditionally show content below for streamable tools
     if (showExpanded && isToolStreamable) {
         return (
-            <div className="my-1.5">
+            <div>
                 {/* Always render the container for smooth transitions */}
                 <div className={`border border-neutral-200 dark:border-neutral-700/50 rounded-2xl overflow-hidden transition-all duration-500 ease-in-out transform-gpu ${shouldShowContent ? 'bg-zinc-100 dark:bg-neutral-900' : 'bg-muted scale-95 opacity-80'
                     }`}>
@@ -285,7 +384,9 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                         </div>
                         <span className="font-mono text-xs text-foreground flex-1">{displayName}</span>
                         {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
-                        <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-auto" />
+                        {!isCompleted && (
+                            <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-auto" />
+                        )}
                     </button>
 
                     {/* Streaming content below - smooth height transition */}
@@ -340,6 +441,13 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                                         }
                                         return prefix + contentToDisplay;
                                     }
+                                    if (STREAMABLE_TOOLS.SPREADSHEET_TOOLS.has(toolName || '')) {
+                                        // For spreadsheet tools, show with table emoji prefix
+                                        if (htmlContent !== contentToDisplay) {
+                                            return <span dangerouslySetInnerHTML={{ __html: htmlContent }} />;
+                                        }
+                                        return contentToDisplay;
+                                    }
                                     if (STREAMABLE_TOOLS.OTHER_STREAMABLE.has(toolName || '')) {
                                         // For other tools, render HTML if available
                                         if (htmlContent !== contentToDisplay) {
@@ -369,7 +477,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     }
 
     return (
-        <div className="my-1.5">
+        <div>
             <button
                 onClick={() => onToolClick?.(messageId ?? null, toolName, effectiveToolCall?.tool_call_id)}
                 className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
@@ -379,7 +487,9 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 </div>
                 <span className="font-mono text-xs text-foreground">{displayName}</span>
                 {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
-                <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-1" />
+                {!isCompleted && (
+                    <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-1" />
+                )}
             </button>
         </div>
     );

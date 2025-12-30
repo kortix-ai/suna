@@ -56,7 +56,7 @@ class ThreadAnalytics(BaseModel):
     thread_id: str
     project_id: Optional[str] = None
     project_name: Optional[str] = None
-    project_category: Optional[str] = None
+    project_categories: Optional[List[str]] = None  # Changed to array
     account_id: Optional[str] = None
     user_email: Optional[str] = None
     message_count: int
@@ -750,7 +750,7 @@ async def _enrich_threads(client, threads: List[Dict]) -> List[ThreadAnalytics]:
         if not project_ids:
             return []
         result = await client.from_('projects').select(
-            'project_id, name, category'
+            'project_id, name, categories'
         ).in_('project_id', project_ids).execute()
         return result.data or []
     
@@ -779,7 +779,9 @@ async def _enrich_threads(client, threads: List[Dict]) -> List[ThreadAnalytics]:
     project_categories = {}
     for p in projects_data:
         project_names[p['project_id']] = p['name']
-        project_categories[p['project_id']] = p.get('category', 'Other')
+        # Use categories array, default to ['Uncategorized'] if empty
+        cats = p.get('categories') or []
+        project_categories[p['project_id']] = cats if cats else ['Uncategorized']
     
     # Build result
     result = []
@@ -790,7 +792,7 @@ async def _enrich_threads(client, threads: List[Dict]) -> List[ThreadAnalytics]:
             thread_id=tid,
             project_id=thread.get('project_id'),
             project_name=project_names.get(thread.get('project_id')),
-            project_category=project_categories.get(thread.get('project_id')),
+            project_categories=project_categories.get(thread.get('project_id')),
             account_id=thread.get('account_id'),
             user_email=account_emails.get(thread.get('account_id')),
             message_count=thread_total_counts.get(tid, 0),
@@ -1035,10 +1037,17 @@ async def get_category_distribution(
         end_of_day = selected_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
         
         # Use database function for efficient GROUP BY aggregation (bypasses row limits)
-        result = await client.rpc('get_project_category_distribution', {
-            'start_date': start_of_day,
-            'end_date': end_of_day
-        }).execute()
+        # Run both queries in parallel
+        result, count_result = await asyncio.gather(
+            client.rpc('get_project_category_distribution', {
+                'start_date': start_of_day,
+                'end_date': end_of_day
+            }).execute(),
+            # Get actual project count (not sum of categories which overcounts multi-category projects)
+            client.from_('projects').select('project_id', count='exact').gte(
+                'created_at', start_of_day
+            ).lte('created_at', end_of_day).limit(1).execute()
+        )
         
         if not result.data:
             return {
@@ -1049,12 +1058,13 @@ async def get_category_distribution(
         
         # Build distribution from aggregated results
         distribution = {}
-        total_projects = 0
         for row in result.data:
             category = row.get('category', 'Uncategorized')
             count = row.get('count', 0)
             distribution[category] = count
-            total_projects += count
+        
+        # Use actual distinct project count
+        total_projects = count_result.count or 0
         
         return {
             "distribution": distribution,
@@ -1209,6 +1219,7 @@ class FieldOverrides(BaseModel):
 class WeeklyActualData(BaseModel):
     week_number: int
     week_start_date: str  # YYYY-MM-DD
+    platform: str = 'web'  # 'web' (auto-sync) or 'app' (manual/RevenueCat)
     views: Optional[int] = 0
     signups: Optional[int] = 0
     new_paid: Optional[int] = 0
@@ -1220,7 +1231,8 @@ class WeeklyActualData(BaseModel):
 
 
 class WeeklyActualsResponse(BaseModel):
-    actuals: Dict[int, WeeklyActualData]
+    # Key is "{week_number}_{platform}" e.g. "1_web", "1_app"
+    actuals: Dict[str, WeeklyActualData]
 
 
 @router.get("/arr/signups")
@@ -1636,9 +1648,14 @@ async def get_arr_weekly_actuals(
                 arr=overrides_data.get('arr', False),
             )
             
-            actuals[row['week_number']] = WeeklyActualData(
+            # Use composite key: "{week_number}_{platform}"
+            platform = row.get('platform', 'web')
+            key = f"{row['week_number']}_{platform}"
+            
+            actuals[key] = WeeklyActualData(
                 week_number=row['week_number'],
                 week_start_date=row['week_start_date'],
+                platform=platform,
                 views=row.get('views', 0) or 0,
                 signups=row.get('signups', 0) or 0,
                 new_paid=row.get('new_paid', 0) or 0,
@@ -1660,19 +1677,23 @@ async def get_arr_weekly_actuals(
 async def update_arr_weekly_actual(
     week_number: int,
     data: WeeklyActualData,
+    platform: str = Query('web', description="Platform: 'web' or 'app'"),
     admin: dict = Depends(require_super_admin)
 ) -> WeeklyActualData:
-    """Update or create ARR weekly actual data for a specific week. Super admin only.
+    """Update or create ARR weekly actual data for a specific week and platform. Super admin only.
     
     When a value is explicitly provided (non-zero), it will be marked as overridden
     and will NOT be replaced by Stripe/API data on subsequent fetches.
     """
     try:
+        if platform not in ('web', 'app'):
+            raise HTTPException(status_code=400, detail="Platform must be 'web' or 'app'")
+        
         db = DBConnection()
         client = await db.client
         
         # Get existing overrides (if any) to merge with new ones
-        existing_result = await client.from_('arr_weekly_actuals').select('overrides').eq('week_number', week_number).execute()
+        existing_result = await client.from_('arr_weekly_actuals').select('overrides').eq('week_number', week_number).eq('platform', platform).execute()
         existing_overrides = {}
         if existing_result.data and len(existing_result.data) > 0:
             existing_overrides = existing_result.data[0].get('overrides') or {}
@@ -1700,6 +1721,7 @@ async def update_arr_weekly_actual(
         upsert_data = {
             'week_number': week_number,
             'week_start_date': data.week_start_date,
+            'platform': platform,
             'views': data.views or 0,
             'signups': data.signups or 0,
             'new_paid': data.new_paid or 0,
@@ -1712,10 +1734,11 @@ async def update_arr_weekly_actual(
         
         result = await client.from_('arr_weekly_actuals').upsert(
             upsert_data,
-            on_conflict='week_number'
+            on_conflict='week_number,platform'
         ).execute()
         
         # Return with updated overrides
+        data.platform = platform
         data.overrides = FieldOverrides(**new_overrides)
         return data
         
@@ -1727,16 +1750,20 @@ async def update_arr_weekly_actual(
 @router.delete("/arr/actuals/{week_number}")
 async def delete_arr_weekly_actual(
     week_number: int,
+    platform: str = Query('web', description="Platform: 'web' or 'app'"),
     admin: dict = Depends(require_super_admin)
 ) -> Dict[str, str]:
-    """Delete ARR weekly actual for a specific week. Super admin only."""
+    """Delete ARR weekly actual for a specific week and platform. Super admin only."""
     try:
+        if platform not in ('web', 'app'):
+            raise HTTPException(status_code=400, detail="Platform must be 'web' or 'app'")
+        
         db = DBConnection()
         client = await db.client
         
-        await client.from_('arr_weekly_actuals').delete().eq('week_number', week_number).execute()
+        await client.from_('arr_weekly_actuals').delete().eq('week_number', week_number).eq('platform', platform).execute()
         
-        return {"message": f"Week {week_number} actual data deleted"}
+        return {"message": f"Week {week_number} ({platform}) actual data deleted"}
         
     except Exception as e:
         logger.error(f"Failed to delete ARR weekly actual: {e}", exc_info=True)
@@ -1752,9 +1779,10 @@ class ToggleOverrideRequest(BaseModel):
 async def toggle_field_override(
     week_number: int,
     request: ToggleOverrideRequest,
+    platform: str = Query('web', description="Platform: 'web' or 'app'"),
     admin: dict = Depends(require_super_admin)
 ) -> Dict[str, Any]:
-    """Toggle the override status for a specific field in a week.
+    """Toggle the override status for a specific field in a week and platform.
     
     When override is True, the field value is 'locked' and won't be overwritten by Stripe data.
     When override is False, the field is 'unlocked' and will use Stripe data instead.
@@ -1768,14 +1796,17 @@ async def toggle_field_override(
                 detail=f"Invalid field. Must be one of: {', '.join(valid_fields)}"
             )
         
+        if platform not in ('web', 'app'):
+            raise HTTPException(status_code=400, detail="Platform must be 'web' or 'app'")
+        
         db = DBConnection()
         client = await db.client
         
         # Get existing record
-        existing_result = await client.from_('arr_weekly_actuals').select('overrides').eq('week_number', week_number).execute()
+        existing_result = await client.from_('arr_weekly_actuals').select('overrides').eq('week_number', week_number).eq('platform', platform).execute()
         
         if not existing_result.data or len(existing_result.data) == 0:
-            raise HTTPException(status_code=404, detail=f"Week {week_number} not found")
+            raise HTTPException(status_code=404, detail=f"Week {week_number} ({platform}) not found")
         
         # Update overrides
         overrides = existing_result.data[0].get('overrides') or {}
@@ -1783,13 +1814,14 @@ async def toggle_field_override(
         
         await client.from_('arr_weekly_actuals').update({
             'overrides': overrides
-        }).eq('week_number', week_number).execute()
+        }).eq('week_number', week_number).eq('platform', platform).execute()
         
         return {
             "week_number": week_number,
+            "platform": platform,
             "field": request.field,
             "override": request.override,
-            "message": f"Field '{request.field}' is now {'locked (manual)' if request.override else 'unlocked (sync from Stripe)'}"
+            "message": f"Field '{request.field}' ({platform}) is now {'locked (manual)' if request.override else 'unlocked (sync from Stripe)'}"
         }
         
     except HTTPException:
@@ -1894,6 +1926,7 @@ async def update_arr_simulator_config(
 class MonthlyActualData(BaseModel):
     month_index: int  # 0=Dec 2024, 1=Jan 2025, etc.
     month_name: str  # 'Dec 2024', 'Jan 2025', etc.
+    platform: str = 'web'  # 'web' (auto-sync) or 'app' (manual/RevenueCat)
     views: Optional[int] = 0
     signups: Optional[int] = 0
     new_paid: Optional[int] = 0
@@ -1905,7 +1938,8 @@ class MonthlyActualData(BaseModel):
 
 
 class MonthlyActualsResponse(BaseModel):
-    actuals: Dict[int, MonthlyActualData]
+    # Key is "{month_index}_{platform}" e.g. "0_web", "0_app"
+    actuals: Dict[str, MonthlyActualData]
 
 
 @router.get("/arr/monthly-actuals")
@@ -1933,9 +1967,14 @@ async def get_arr_monthly_actuals(
                 arr=overrides_data.get('arr', False),
             )
             
-            actuals[row['month_index']] = MonthlyActualData(
+            # Use composite key: "{month_index}_{platform}"
+            platform = row.get('platform', 'web')
+            key = f"{row['month_index']}_{platform}"
+            
+            actuals[key] = MonthlyActualData(
                 month_index=row['month_index'],
                 month_name=row.get('month_name', ''),
+                platform=platform,
                 views=row.get('views', 0) or 0,
                 signups=row.get('signups', 0) or 0,
                 new_paid=row.get('new_paid', 0) or 0,
@@ -1957,19 +1996,23 @@ async def get_arr_monthly_actuals(
 async def update_arr_monthly_actual(
     month_index: int,
     data: MonthlyActualData,
+    platform: str = Query('web', description="Platform: 'web' or 'app'"),
     admin: dict = Depends(require_super_admin)
 ) -> MonthlyActualData:
-    """Update or create ARR monthly actual data for a specific month. Super admin only.
+    """Update or create ARR monthly actual data for a specific month and platform. Super admin only.
     
     When a value is explicitly provided (non-zero), it will be marked as overridden
     and will NOT be replaced by auto-calculated data on subsequent fetches.
     """
     try:
+        if platform not in ('web', 'app'):
+            raise HTTPException(status_code=400, detail="Platform must be 'web' or 'app'")
+        
         db = DBConnection()
         client = await db.client
         
         # Get existing overrides (if any) to merge with new ones
-        existing_result = await client.from_('arr_monthly_actuals').select('overrides').eq('month_index', month_index).execute()
+        existing_result = await client.from_('arr_monthly_actuals').select('overrides').eq('month_index', month_index).eq('platform', platform).execute()
         existing_overrides = {}
         if existing_result.data and len(existing_result.data) > 0:
             existing_overrides = existing_result.data[0].get('overrides') or {}
@@ -1997,6 +2040,7 @@ async def update_arr_monthly_actual(
         upsert_data = {
             'month_index': month_index,
             'month_name': data.month_name,
+            'platform': platform,
             'views': data.views or 0,
             'signups': data.signups or 0,
             'new_paid': data.new_paid or 0,
@@ -2009,12 +2053,13 @@ async def update_arr_monthly_actual(
         
         await client.from_('arr_monthly_actuals').upsert(
             upsert_data, 
-            on_conflict='month_index'
+            on_conflict='month_index,platform'
         ).execute()
         
         return MonthlyActualData(
             month_index=month_index,
             month_name=data.month_name,
+            platform=platform,
             views=data.views or 0,
             signups=data.signups or 0,
             new_paid=data.new_paid or 0,
@@ -2033,16 +2078,20 @@ async def update_arr_monthly_actual(
 @router.delete("/arr/monthly-actuals/{month_index}")
 async def delete_arr_monthly_actual(
     month_index: int,
+    platform: str = Query('web', description="Platform: 'web' or 'app'"),
     admin: dict = Depends(require_super_admin)
 ) -> Dict[str, str]:
-    """Delete ARR monthly actual for a specific month. Super admin only."""
+    """Delete ARR monthly actual for a specific month and platform. Super admin only."""
     try:
+        if platform not in ('web', 'app'):
+            raise HTTPException(status_code=400, detail="Platform must be 'web' or 'app'")
+        
         db = DBConnection()
         client = await db.client
         
-        await client.from_('arr_monthly_actuals').delete().eq('month_index', month_index).execute()
+        await client.from_('arr_monthly_actuals').delete().eq('month_index', month_index).eq('platform', platform).execute()
         
-        return {"message": f"Month {month_index} actual data deleted"}
+        return {"message": f"Month {month_index} ({platform}) actual data deleted"}
         
     except Exception as e:
         logger.error(f"Failed to delete ARR monthly actual: {e}", exc_info=True)
@@ -2053,9 +2102,10 @@ async def delete_arr_monthly_actual(
 async def toggle_monthly_field_override(
     month_index: int,
     request: ToggleOverrideRequest,
+    platform: str = Query('web', description="Platform: 'web' or 'app'"),
     admin: dict = Depends(require_super_admin)
 ) -> Dict[str, Any]:
-    """Toggle the override status for a specific field in a month.
+    """Toggle the override status for a specific field in a month and platform.
     
     When override is True, the field value is 'locked' and won't be overwritten by calculated data.
     When override is False, the field is 'unlocked' and will use calculated data instead.
@@ -2069,14 +2119,17 @@ async def toggle_monthly_field_override(
                 detail=f"Invalid field. Must be one of: {', '.join(valid_fields)}"
             )
         
+        if platform not in ('web', 'app'):
+            raise HTTPException(status_code=400, detail="Platform must be 'web' or 'app'")
+        
         db = DBConnection()
         client = await db.client
         
         # Get existing record
-        existing_result = await client.from_('arr_monthly_actuals').select('overrides').eq('month_index', month_index).execute()
+        existing_result = await client.from_('arr_monthly_actuals').select('overrides').eq('month_index', month_index).eq('platform', platform).execute()
         
         if not existing_result.data or len(existing_result.data) == 0:
-            raise HTTPException(status_code=404, detail=f"Month {month_index} not found")
+            raise HTTPException(status_code=404, detail=f"Month {month_index} ({platform}) not found")
         
         # Update overrides
         overrides = existing_result.data[0].get('overrides') or {}
@@ -2084,13 +2137,14 @@ async def toggle_monthly_field_override(
         
         await client.from_('arr_monthly_actuals').update({
             'overrides': overrides
-        }).eq('month_index', month_index).execute()
+        }).eq('month_index', month_index).eq('platform', platform).execute()
         
         return {
             "month_index": month_index,
+            "platform": platform,
             "field": request.field,
             "override": request.override,
-            "message": f"Field '{request.field}' is now {'locked (manual)' if request.override else 'unlocked (auto-calculated)'}"
+            "message": f"Field '{request.field}' ({platform}) is now {'locked (manual)' if request.override else 'unlocked (auto-calculated)'}"
         }
         
     except HTTPException:

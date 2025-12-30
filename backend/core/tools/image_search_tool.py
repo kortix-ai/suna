@@ -25,7 +25,7 @@ from typing import Union, List
 - Get comprehensive image results with titles, URLs, and metadata
 
 **BATCH MODE FOR EFFICIENCY:**
-- Use `image_search(query=["query1", "query2", "query3"])` for multiple searches
+- Use image_search with multiple queries for multiple searches
 - All queries execute in parallel for faster results
 - Returns: `{"batch_results": [{"query": "...", "images": ["url1", "url2"]}, ...]}`
 
@@ -60,7 +60,7 @@ class SandboxImageSearchTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "image_search",
-            "description": "Search for images using SERPER API. Supports both single and batch searches. Returns image URLs for the given search query(s). Perfect for finding visual content, illustrations, photos, or any images related to your search terms.",
+            "description": "Search for images using SERPER API. Supports both single and batch searches. Returns image URLs for the given search query(s). Perfect for finding visual content, illustrations, photos, or any images related to your search terms. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `query` (REQUIRED), `num_results` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -68,25 +68,26 @@ class SandboxImageSearchTool(SandboxToolsBase):
                         "oneOf": [
                             {
                                 "type": "string",
-                                "description": "Single search query. Be specific about what kind of images you're looking for (e.g., 'cats playing', 'mountain landscape', 'modern architecture')"
+                                "description": "**REQUIRED** - Single search query. Be specific about what kind of images you're looking for. Example: 'cats playing', 'mountain landscape', 'modern architecture'"
                             },
                             {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "Multiple search queries for batch processing. More efficient for multiple searches (e.g., ['cats', 'dogs', 'birds'])"
+                                "description": "**REQUIRED** - Multiple search queries for batch processing. More efficient for multiple searches when you need to find images for several topics simultaneously. Example: ['cats', 'dogs', 'birds']"
                             }
                         ],
-                        "description": "Search query or queries. Single string for one search, array of strings for batch search."
+                        "description": "**REQUIRED** - Search query or queries. Single string for one search, array of strings for batch search."
                     },
                     "num_results": {
                         "type": "integer",
-                        "description": "The number of image results to return per query. Default is 12, maximum is 100.",
+                        "description": "**OPTIONAL** - The number of image results to return per query. Default: 12. Maximum: 100. Minimum: 1.",
                         "default": 12,
                         "minimum": 1,
                         "maximum": 100
                     }
                 },
-                "required": ["query"]
+                "required": ["query"],
+                "additionalProperties": False
             }
         }
     })
@@ -99,8 +100,6 @@ class SandboxImageSearchTool(SandboxToolsBase):
         Search for images using SERPER API and return image URLs.
         
         Supports both single and batch searches:
-        - Single: query="cats" returns {"images": [...]}  
-        - Batch: query=["cats", "dogs"] returns {"batch_results": [...]}
         """
         # Initialize variables for error handling
         is_batch = False

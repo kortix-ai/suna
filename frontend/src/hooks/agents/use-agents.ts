@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { agentKeys } from './keys';
-import { Agent, AgentUpdateRequest, AgentsParams, createAgent, deleteAgent, getAgent, getAgents, getThreadAgent, updateAgent, ThreadAgentResponse } from './utils';
+import { Agent, AgentUpdateRequest, AgentsParams, createAgent, deleteAgent, getAgent, getAgents, updateAgent } from './utils';
 import { useRef, useCallback, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -322,16 +322,6 @@ export const useAgentDeletionState = () => {
   };
 };
 
-export const useThreadAgent = (threadId: string, options?) => {
-  return useQuery<ThreadAgentResponse>({
-    queryKey: agentKeys.threadAgent(threadId),
-    queryFn: () => getThreadAgent(threadId),
-    enabled: !!threadId,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-    ...options,
-  });
-};
 
 /**
  * Hook to get an agent from the cache without fetching.

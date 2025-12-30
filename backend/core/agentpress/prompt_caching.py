@@ -111,7 +111,7 @@ def supports_prompt_caching(model_name: str) -> bool:
     """Check if model supports prompt caching via PROMPT_CACHING capability."""
     try:
         from core.ai_models.registry import registry
-        from core.ai_models.ai_models import ModelCapability
+        from core.ai_models.models import ModelCapability
         
         model = registry.get(model_name)
         if model and ModelCapability.PROMPT_CACHING in model.capabilities:
@@ -457,13 +457,11 @@ async def apply_anthropic_caching_strategy(
         blocks_used += chunks_created
         logger.debug(f"✅ Created {chunks_created} conversation cache blocks")
     else:
-        # Conversation too large - need summarization or truncation
-        logger.warning(f"Conversation ({total_conversation_tokens} tokens) exceeds cache limit ({max_cacheable_tokens})")
-        # For now, add recent messages only (could implement summarization here)
-        recent_token_limit = min(cache_threshold_tokens * 2, max_cacheable_tokens)
-        recent_messages = get_recent_messages_within_token_limit(conversation_messages, recent_token_limit, model_name)
-        prepared_messages.extend(recent_messages)
-        logger.debug(f"Added {len(recent_messages)} recent messages ({get_messages_token_count(recent_messages, model_name)} tokens)")
+        # Conversation too large for caching - add ALL messages without cache_control
+        # The compression system handles truncation, caching should not drop messages
+        logger.warning(f"Conversation ({total_conversation_tokens} tokens) exceeds cache limit ({max_cacheable_tokens}) - adding all messages without caching")
+        prepared_messages.extend(conversation_messages)
+        logger.debug(f"Added all {len(conversation_messages)} messages uncached (compression will handle if needed)")
     
     logger.debug(f"🎯 Total cache blocks used: {blocks_used}/4")
     

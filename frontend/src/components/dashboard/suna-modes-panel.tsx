@@ -11,7 +11,8 @@ import {
   ArrowUpRight,
   FileText,
   Search,
-  Users,
+  Palette,
+  Video,
   RefreshCw,
   Check,
   Table,
@@ -20,6 +21,7 @@ import {
   X,
   Eye,
   Loader2,
+  Lock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
@@ -40,9 +42,11 @@ interface SunaModesPanelProps {
   onOutputFormatChange?: (format: string | null) => void;
   selectedTemplate?: string | null;
   onTemplateChange?: (template: string | null) => void;
+  isFreeTier?: boolean;
+  onUpgradeClick?: () => void;
 }
 
-type ModeType = 'image' | 'slides' | 'data' | 'docs' | 'people' | 'research';
+type ModeType = 'image' | 'slides' | 'data' | 'docs' | 'canvas' | 'video' | 'research';
 
 interface Mode {
   id: ModeType;
@@ -180,21 +184,58 @@ const modes: Mode[] = [
     },
   },
   {
-    id: 'people',
-    label: 'People',
-    icon: <Users className="w-4 h-4" />,
+    id: 'canvas',
+    label: 'Canvas',
+    icon: <Palette className="w-4 h-4" />,
     samplePrompts: [
-      'Find VP of Engineering candidates at Series B+ AI/ML startups in San Francisco Bay Area with 10+ years experience and proven track record scaling engineering teams',
-      'Build lead list of CMOs at B2B SaaS companies ($10M-$50M ARR) who recently raised Series A/B funding - include email patterns and tech stack',
-      'Research Senior Blockchain Engineers with Solidity/Rust experience at top crypto projects, open to relocation to Dubai or Singapore',
-      'Generate prospect list of technical founders at Seed-Series A startups in Enterprise AI who raised $2M-$15M in last 6 months',
-      'Identify Senior Product Managers at fintech companies with 5-10 years experience from FAANG or unicorns, skilled in 0-1 product development',
-      'Find CIOs and VP Engineering at mid-market healthcare IT companies (500-5000 employees) with $500K+ IT budgets planning cloud migration',
-      'Research VP Sales at B2B SaaS companies showing 100%+ YoY growth, with 7+ years closing $100K+ deals and PLG experience',
-      'Build list of CTOs at enterprise companies actively implementing AI infrastructure with multi-million dollar budgets in 2024',
-      'Find Senior UX/UI Designers with mobile-first consumer app experience and 1M+ user portfolios, actively looking or open to opportunities',
-      'Identify Senior DevOps Engineers at cloud-native startups with Kubernetes/Terraform expertise and 5-8 years building infrastructure for 10M+ users',
+      'Add a tech startup banner to canvas with futuristic city skyline',
+      'Create a coffee brand logo on canvas using earthy minimalist style',
+      'Add my product photo to canvas and remove its background',
+      'Design a renewable energy infographic on canvas with flat icons',
+      'Create a sci-fi book cover on canvas with cyberpunk aesthetics',
+      'Add a YouTube thumbnail to canvas for productivity tips video',
+      'Build a luxury fashion mood board on canvas for millennials',
+      'Design an elegant wedding invitation on canvas with floral patterns',
+      'Add my portrait to canvas and apply vintage film effect',
+      'Create a music festival poster on canvas with psychedelic vibes',
     ],
+    options: {
+      title: 'Choose canvas action',
+      items: [
+        { id: 'create', name: 'Create New', description: 'Generate from scratch', image: '/images/canvas/create.png' },
+        { id: 'edit', name: 'Edit Image', description: 'Modify existing images', image: '/images/canvas/edit.png' },
+        { id: 'upscale', name: 'Upscale', description: 'Enhance and improve', image: '/images/canvas/upscale.png' },
+        { id: 'remove-bg', name: 'Remove BG', description: 'Remove background', image: '/images/canvas/remove-bg.png' },
+      ],
+    },
+  },
+  {
+    id: 'video',
+    label: 'Video',
+    icon: <Video className="w-4 h-4" />,
+    samplePrompts: [
+      'Animate my product photo rotating smoothly with studio lighting',
+      'Transform my portrait into a cinematic scene with camera movement',
+      'Generate a peaceful nature video of cherry blossoms falling slowly',
+      'Create abstract glowing particles swirling together in slow motion',
+      'Make my product float and rotate with soft shadows and reflections',
+      'Add dramatic cinematic lighting and color grading to my portrait',
+      'Generate a smooth drone shot flying through foggy mountain peaks',
+      'Create a looping video of liquid metal flowing into organic shapes',
+      'Transform my photo background into an underwater scene with light rays',
+      'Generate a futuristic cityscape video with neon lights and reflections',
+    ],
+    options: {
+      title: 'Choose video style',
+      items: [
+        { id: 'cinematic', name: 'Cinematic', description: 'Film-like quality', image: '/images/video-styles/cinematic.png' },
+        { id: 'product', name: 'Product', description: 'Clean product showcase', image: '/images/video-styles/product.png' },
+        { id: 'animation', name: 'Animation', description: 'Animated graphics', image: '/images/video-styles/animation.png' },
+        { id: 'nature', name: 'Nature', description: 'Natural scenes', image: '/images/video-styles/nature.png' },
+        { id: 'abstract', name: 'Abstract', description: 'Creative patterns', image: '/images/video-styles/abstract.png' },
+        { id: 'adventure', name: 'Adventure', description: 'Transform your world', image: '/images/video-styles/person.png' },
+      ],
+    },
   },
   {
     id: 'research',
@@ -1105,7 +1146,9 @@ export function SunaModesPanel({
   selectedOutputFormat: controlledSelectedOutputFormat,
   onOutputFormatChange,
   selectedTemplate: controlledSelectedTemplate,
-  onTemplateChange
+  onTemplateChange,
+  isFreeTier = false,
+  onUpgradeClick,
 }: SunaModesPanelProps) {
   const t = useTranslations('suna');
   const currentMode = selectedMode ? modes.find((m) => m.id === selectedMode) : null;
@@ -1113,29 +1156,30 @@ export function SunaModesPanel({
   
   // Get translated prompts for a mode
   const getTranslatedPrompts = (modeId: string): string[] => {
-    const prompts: string[] = [];
-    let index = 0;
-    const maxPrompts = 20; // Safety limit
+    const mode = modes.find((m) => m.id === modeId);
+    if (!mode) return [];
     
-    while (index < maxPrompts) {
+    // Use the hardcoded prompts length as the limit to avoid accessing non-existent translations
+    const maxPrompts = mode.samplePrompts.length;
+    const prompts: string[] = [];
+    
+    for (let index = 0; index < maxPrompts; index++) {
       try {
-        const key = `prompts.${modeId}.${index}`;
+        const key = `prompts.${modeId}.${index}` as any;
         const prompt = t(key);
         // Check if translation exists (next-intl returns the key if missing)
-        if (!prompt || prompt === `suna.${key}` || prompt.startsWith('suna.prompts.')) {
-          break;
+        if (!prompt || prompt === `suna.${key}` || prompt.startsWith('suna.prompts.') || prompt.includes(modeId)) {
+          // If translation is missing, use the hardcoded prompt instead
+          prompts.push(mode.samplePrompts[index]);
+        } else {
+          prompts.push(prompt);
         }
-        prompts.push(prompt);
-        index++;
       } catch {
-        break;
+        // Fallback to hardcoded prompt on error
+        prompts.push(mode.samplePrompts[index]);
       }
     }
     
-    // Fallback to hardcoded prompts if no translations found
-    if (prompts.length === 0 && currentMode) {
-      return currentMode.samplePrompts;
-    }
     return prompts;
   };
   
@@ -1252,7 +1296,7 @@ export function SunaModesPanel({
                 size="sm"
                 onClick={() => onModeSelect(isActive ? null : mode.id)}
                 className={cn(
-                  "h-10 flex items-center justify-center sm:justify-start gap-2 shrink-0 transition-all duration-200 rounded-xl cursor-pointer",
+                  "h-10 flex items-center justify-center sm:justify-start gap-2 shrink-0 transition-all duration-200 rounded-xl cursor-pointer relative",
                   isActive
                     ? "bg-primary/10 text-primary border-primary hover:bg-primary/15 hover:text-primary shadow-sm"
                     : "bg-background hover:bg-accent text-muted-foreground hover:text-foreground border-border"
@@ -1266,8 +1310,8 @@ export function SunaModesPanel({
         </div>
       </div>
 
-      {/* Sample Prompts - Google List Style (for research, people) */}
-      {selectedMode && displayedPrompts && ['research', 'people'].includes(selectedMode) && (
+      {/* Sample Prompts - Google List Style (for research only) */}
+      {selectedMode && displayedPrompts && ['research'].includes(selectedMode) && (
         <div className="animate-in fade-in-0 zoom-in-95 duration-300">
           <div className="flex items-center justify-between px-1 mb-2">
             <span></span>
@@ -1295,33 +1339,61 @@ export function SunaModesPanel({
         </div>
       )}
 
-      {/* Sample Prompts - Card Grid Style (for image, slides, data, docs) */}
-      {selectedMode && displayedPrompts && !['research', 'people'].includes(selectedMode) && (
+      {/* Sample Prompts - Card Grid Style (for image, slides, data, docs, canvas, video) */}
+      {selectedMode && displayedPrompts && !['research'].includes(selectedMode) && (
         <div className="animate-in fade-in-0 zoom-in-95 duration-300">
-          <div className="flex items-center justify-between mb-3">
-            <span></span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleRefreshPrompts}
-              className="h-7 px-2 text-muted-foreground hover:text-foreground transition-colors duration-200"
-            >
-              <motion.div
-                animate={{ rotate: isRefreshing ? 360 : 0 }}
-                transition={{ duration: 0.3, ease: "easeInOut" }}
+          {/* Upgrade Banner for Video Mode - Free Users */}
+          {selectedMode === 'video' && isFreeTier && (
+            <div className="flex items-center justify-between gap-3 p-3 mb-4 rounded-xl bg-card border border-border">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10">
+                  <Lock className="w-4 h-4 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-foreground">Video Generation is a Pro Feature</p>
+                  <p className="text-xs text-muted-foreground">Upgrade your plan to create AI videos</p>
+                </div>
+              </div>
+              {onUpgradeClick && (
+                <Button 
+                  size="sm" 
+                  onClick={onUpgradeClick}
+                  className="shrink-0"
+                >
+                  Upgrade
+                </Button>
+              )}
+            </div>
+          )}
+          
+          <div className={cn(
+            selectedMode === 'video' && isFreeTier && "opacity-50 pointer-events-none"
+          )}>
+            <div className="flex items-center justify-between mb-3">
+              <span></span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRefreshPrompts}
+                className="h-7 px-2 text-muted-foreground hover:text-foreground transition-colors duration-200"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
-              </motion.div>
-            </Button>
+                <motion.div
+                  animate={{ rotate: isRefreshing ? 360 : 0 }}
+                  transition={{ duration: 0.3, ease: "easeInOut" }}
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </motion.div>
+              </Button>
+            </div>
+            <PromptExamples
+              prompts={displayedPrompts.map(p => ({ text: p }))}
+              onPromptClick={handlePromptSelect}
+              title={t('samplePrompts')}
+              variant="card"
+              columns={2}
+              showTitle={true}
+            />
           </div>
-          <PromptExamples
-            prompts={displayedPrompts.map(p => ({ text: p }))}
-            onPromptClick={handlePromptSelect}
-            title={t('samplePrompts')}
-            variant="card"
-            columns={2}
-            showTitle={true}
-          />
         </div>
       )}
 
@@ -1530,6 +1602,95 @@ export function SunaModesPanel({
                 );
               })}
             </div>
+          )}
+
+          {selectedMode === 'canvas' && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {currentMode.options.items.map((item) => {
+                // Generate action-specific prompts
+                const getCanvasPrompt = (actionId: string) => {
+                  switch (actionId) {
+                    case 'create':
+                      return 'Create a new image for me: [describe what you want]';
+                    case 'edit':
+                      return 'Edit my image: [I will upload the image and describe what changes I want]';
+                    case 'upscale':
+                      return 'Upscale my image to higher resolution - I will upload the image';
+                    case 'remove-bg':
+                      return 'Remove the background from my image - I will upload the image';
+                    default:
+                      return `${item.name}: ${item.description}`;
+                  }
+                };
+                return (
+                  <Card
+                    key={item.id}
+                    className="flex flex-col items-center gap-2 cursor-pointer group p-2 bg-transparent hover:bg-transparent transition-all duration-200 border border-border hover:border-border rounded-xl overflow-hidden shadow-none"
+                    onClick={() => handlePromptSelect(getCanvasPrompt(item.id))}
+                  >
+                    <div className="w-full aspect-square rounded-lg border border-transparent group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
+                      {item.image ? (
+                        <Image 
+                          src={item.image} 
+                          alt={item.name}
+                          fill
+                          sizes="(max-width: 640px) 50vw, 25vw"
+                          className="object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <Palette className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                      )}
+                    </div>
+                    <span className="text-xs text-center text-foreground/70 group-hover:text-foreground transition-colors duration-200 font-medium">
+                      {item.name}
+                    </span>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+
+          {selectedMode === 'video' && (
+            <ScrollArea className="w-full">
+              <div className={cn(
+                "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 pb-2",
+                isFreeTier && "opacity-50 pointer-events-none"
+              )}>
+                {currentMode.options.items.map((item) => (
+                  <Card
+                    key={item.id}
+                    className="flex flex-col items-center gap-2 cursor-pointer group p-2 bg-transparent hover:bg-transparent transition-all duration-200 border border-border hover:border-border rounded-xl overflow-hidden shadow-none relative"
+                    onClick={() => !isFreeTier && handlePromptSelect(`Generate a ${item.name.toLowerCase()} style video`)}
+                  >
+                    <div className="w-full aspect-square rounded-lg border border-transparent group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
+                      {item.image ? (
+                        <Image 
+                          src={item.image} 
+                          alt={item.name}
+                          fill
+                          sizes="(max-width: 640px) 33vw, (max-width: 768px) 25vw, 16vw"
+                          className="object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <Video className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                      )}
+                      {/* Lock overlay for free users */}
+                      {isFreeTier && (
+                        <div className="absolute inset-0 bg-background/60 flex items-center justify-center">
+                          <Lock className="w-5 h-5 text-muted-foreground" />
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-xs text-center text-foreground/70 group-hover:text-foreground transition-colors duration-200 font-medium">
+                      {item.name}
+                    </span>
+                  </Card>
+                ))}
+              </div>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
           )}
         </div>
       )}

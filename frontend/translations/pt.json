@@ -944,7 +944,8 @@
       "slides": "Slides",
       "data": "Dados",
       "docs": "Documentos",
-      "people": "Pessoas",
+      "canvas": "Tela",
+      "video": "Vídeo",
       "research": "Pesquisa"
     },
     "styles": {
@@ -1153,17 +1154,29 @@
         "8": "Escrever um plano de resposta a incidentes de segurança com procedimentos de escalação",
         "9": "Criar um guia de estilo abrangente para marca e conteúdo"
       },
-      "people": {
-        "0": "Encontrar candidatos a VP de Engenharia em startups de IA/ML da Série B+ na área da baía de San Francisco com 10+ anos de experiência e histórico comprovado de escalar equipes de engenharia",
-        "1": "Construir lista de leads de CMOs em empresas B2B SaaS ($10M-$50M ARR) que recentemente levantaram financiamento da Série A/B - incluir padrões de email e stack tecnológico",
-        "2": "Pesquisar Engenheiros Sênior de Blockchain com experiência em Solidity/Rust em projetos cripto de topo, abertos a realocação para Dubai ou Singapura",
-        "3": "Gerar lista de prospects de fundadores técnicos em startups Seed-Série A em IA Empresarial que levantaram $2M-$15M nos últimos 6 meses",
-        "4": "Identificar Gerentes de Produto Sênior em empresas fintech com 5-10 anos de experiência da FAANG ou unicórnios, habilidosos em desenvolvimento de produto 0-1",
-        "5": "Encontrar CIOs e VP de Engenharia em empresas de TI de saúde de médio mercado (500-5000 funcionários) com orçamentos de TI de $500K+ planejando migração para nuvem",
-        "6": "Pesquisar VP de Vendas em empresas B2B SaaS mostrando crescimento de 100%+ YoY, com 7+ anos fechando negócios de $100K+ e experiência PLG",
-        "7": "Construir lista de CTOs em empresas empresariais implementando ativamente infraestrutura de IA com orçamentos multimilionários em 2024",
-        "8": "Encontrar Designers Sênior UX/UI com experiência em app de consumidor mobile-first e portfólios de 1M+ usuários, procurando ativamente ou abertos a oportunidades",
-        "9": "Identificar Engenheiros DevOps Sênior em startups cloud-native com expertise em Kubernetes/Terraform e 5-8 anos construindo infraestrutura para 10M+ usuários"
+      "canvas": {
+        "0": "Adicionar um banner de startup tech ao canvas com horizonte urbano futurista",
+        "1": "Criar um logo de marca de café no canvas com estilo minimalista terroso",
+        "2": "Adicionar minha foto de produto ao canvas e remover o fundo",
+        "3": "Desenhar um infográfico de energia renovável no canvas com ícones flat",
+        "4": "Criar uma capa de livro de ficção científica no canvas com estética cyberpunk",
+        "5": "Adicionar uma miniatura do YouTube ao canvas para vídeo de produtividade",
+        "6": "Construir um moodboard de moda de luxo no canvas para millennials",
+        "7": "Desenhar um convite de casamento elegante no canvas com padrões florais",
+        "8": "Adicionar meu retrato ao canvas e aplicar efeito de filme vintage",
+        "9": "Criar um pôster de festival de música no canvas com vibrações psicodélicas"
+      },
+      "video": {
+        "0": "Anime minha foto de produto girando suavemente com iluminação de estúdio",
+        "1": "Transforme meu retrato em uma cena cinematográfica com movimento de câmera",
+        "2": "Gere um vídeo de natureza com pétalas de cerejeira caindo lentamente",
+        "3": "Crie partículas brilhantes girando juntas em câmera lenta",
+        "4": "Faça meu produto flutuar girando com sombras suaves e reflexos",
+        "5": "Adicione iluminação dramática e correção de cor ao meu retrato",
+        "6": "Gere um voo de drone suave através de picos montanhosos enevoados",
+        "7": "Crie um vídeo em loop de metal líquido fluindo em formas orgânicas",
+        "8": "Transforme o fundo da minha foto em cena subaquática com raios de luz",
+        "9": "Gere um vídeo de paisagem urbana futurista com luzes neon e reflexos"
       },
       "research": {
         "0": "Analisar tendências emergentes em computação quântica e aplicações comerciais potenciais",

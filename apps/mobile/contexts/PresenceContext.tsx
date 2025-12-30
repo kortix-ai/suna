@@ -30,11 +30,10 @@ type PresenceContextValue = {
 const PresenceContext = createContext<PresenceContextValue | undefined>(undefined);
 
 const HEARTBEAT_INTERVAL = 60000;
-const DEBOUNCE_DELAY = 500; // Debounce rapid thread changes
+const DEBOUNCE_DELAY = 500;
 const SESSION_STORAGE_KEY = 'presence_session_id';
 
-// Check if presence is disabled via environment variable
-const DISABLE_PRESENCE = process.env.EXPO_PUBLIC_DISABLE_PRESENCE === 'true';
+const DISABLE_PRESENCE = true;
 
 function generateSessionId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
@@ -86,18 +85,15 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Prevent duplicate calls for the same thread unless forced
       const threadKey = threadId || 'null';
       if (!force && lastSentThreadRef.current === threadKey && pendingRequestRef.current) {
         return;
       }
 
-      // Wait for any pending request to complete
       if (pendingRequestRef.current) {
         try {
           await pendingRequestRef.current;
         } catch {
-          // Ignore errors from previous request
         }
       }
 
@@ -126,7 +122,6 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
           console.error('[Presence] Update failed:', err);
           throw err;
         } finally {
-          // Clear pending request after a short delay to allow for rapid changes
           setTimeout(() => {
             if (pendingRequestRef.current === requestPromise) {
               pendingRequestRef.current = null;
@@ -146,7 +141,6 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
     if (!isAuthenticated || !user) {
       return;
     }
-    // Don't send immediately - wait for the interval
     heartbeatRef.current = setInterval(() => {
       sendPresenceUpdate(latestThreadRef.current);
     }, HEARTBEAT_INTERVAL);
@@ -280,7 +274,6 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   const setActiveThreadId = useCallback((threadId: string | null) => {
     const normalized = threadId || null;
     
-    // Update state immediately
     latestThreadRef.current = normalized;
     setActiveThreadState(normalized);
     
@@ -288,15 +281,12 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Clear any existing debounce timer
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
 
-    // Debounce the presence update to prevent rapid-fire calls
     debounceTimerRef.current = setTimeout(() => {
       sendPresenceUpdate(normalized, true);
-      // Ensure heartbeat is running (it won't send immediately)
       startHeartbeat();
     }, DEBOUNCE_DELAY);
   }, [sendPresenceUpdate, startHeartbeat, isAuthenticated, user]);
@@ -317,7 +307,6 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       return;
     }
     
-    // Send initial presence update and start heartbeat
     sendPresenceUpdate(latestThreadRef.current, true);
     startHeartbeat();
     connectChannel();
@@ -339,14 +328,13 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       const currentThread = latestThreadRef.current;
 
       if (nextAppState === 'active' && appStateRef.current.match(/inactive|background/)) {
-        // When becoming active, send update and restart heartbeat
-        sendPresenceUpdate(currentThread, true);
+        sendPresenceUpdate(currentThread, false);
         startHeartbeat();
         connectChannel();
       } else if (nextAppState === 'inactive' || nextAppState === 'background') {
         stopHeartbeat();
         disconnectChannel();
-        sendPresenceUpdate(null, true);
+        sendPresenceUpdate(null, false);
       }
 
       appStateRef.current = nextAppState;

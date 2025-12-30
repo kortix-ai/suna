@@ -46,6 +46,8 @@ from core.agentpress.xml_tool_parser import strip_xml_tool_calls
 
 # Note: Debug stream saving is controlled by global_config.DEBUG_SAVE_LLM_IO
 
+# Constants for terminating tools
+TERMINATING_TOOLS = {'ask', 'complete'}
 
 # Type alias for tool execution strategy
 ToolExecutionStrategy = Literal["sequential", "parallel"]
@@ -132,6 +134,65 @@ class ResponseProcessor:
         self.jit_config = jit_config
         self.thread_manager = thread_manager
         self.project_id = project_id
+        
+        # Per-thread locks for race condition protection during parallel tool execution
+        # Locks are used to serialize DB writes for the same thread while allowing
+        # parallel execution across different threads
+        self._thread_locks: Dict[str, asyncio.Lock] = {}
+        self._locks_lock = asyncio.Lock()  # Lock for managing the thread_locks dict itself
+
+    async def _get_thread_lock(self, thread_id: str) -> asyncio.Lock:
+        """Get or create a lock for the specified thread.
+        
+        This ensures thread-safe access to DB operations for the same thread,
+        preventing race conditions when multiple tools complete simultaneously.
+        
+        Args:
+            thread_id: The thread ID to get a lock for
+            
+        Returns:
+            An asyncio.Lock instance for the thread
+        """
+        # Double-checked locking pattern for thread-safe lock creation
+        if thread_id not in self._thread_locks:
+            async with self._locks_lock:
+                # Check again after acquiring the lock (another coroutine might have created it)
+                if thread_id not in self._thread_locks:
+                    self._thread_locks[thread_id] = asyncio.Lock()
+        return self._thread_locks[thread_id]
+
+    def _log_frontend_message(self, message: Dict[str, Any], debug_file: Optional[Path] = None):
+        """Log a message being sent to the frontend to a debug file.
+        
+        Args:
+            message: The message dictionary being yielded to the frontend
+            debug_file: Optional path to the debug file (if None, logging is skipped)
+        """
+        if debug_file is None:
+            return
+        
+        try:
+            timestamp = datetime.now(timezone.utc).isoformat()
+            with open(debug_file, 'a', encoding='utf-8') as f:
+                f.write("=" * 80 + "\n")
+                f.write(f"TIMESTAMP: {timestamp}\n")
+                f.write("=" * 80 + "\n")
+                f.write(json.dumps(message, indent=2, ensure_ascii=False) + "\n\n")
+        except Exception as e:
+            logger.debug(f"Error logging frontend message: {e}")
+    
+    def _yield_and_log(self, message: Dict[str, Any], debug_file: Optional[Path] = None):
+        """Helper to log and yield a message. Returns the message for yielding.
+        
+        Args:
+            message: The message dictionary to log and yield
+            debug_file: Optional path to the debug file
+            
+        Returns:
+            The message (for use with yield)
+        """
+        self._log_frontend_message(message, debug_file)
+        return message
 
     def _serialize_model_response(self, model_response) -> Dict[str, Any]:
         """Convert a LiteLLM ModelResponse object to a JSON-serializable dictionary.
@@ -482,6 +543,11 @@ class ResponseProcessor:
         # DELTA STREAMING: Track how much has been sent for each tool call to avoid duplication
         tool_call_sent_lengths = {}  # Maps tool_call_index -> length of arguments already sent
         xml_tool_calls_sent_count = 0  # Track how many XML tool calls have been sent
+        
+        # Track streaming tool results and partial assistant messages
+        streaming_tool_result_ids = []  # Track tool result message IDs for batch update after streaming
+        partial_assistant_message_id = None  # Track partial assistant message ID for updates
+        tool_results_buffer = []  # Buffer for tool results that need final processing
 
         # Store the complete LiteLLM response object as received
         final_llm_response = None
@@ -503,19 +569,30 @@ class ResponseProcessor:
         # Track background DB tasks for cleanup
         background_db_tasks = []
         
+        # Setup frontend message logging (only if debug enabled) - MUST be before first yield
+        frontend_debug_file = None
+        if global_config.DEBUG_SAVE_LLM_IO:
+            debug_dir = Path("debug_streams")
+            debug_dir.mkdir(exist_ok=True)
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            frontend_debug_file = debug_dir / f"frontend_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.txt"
+            logger.info(f"📁 Saving frontend messages to: {frontend_debug_file}")
+        
         try:
             # --- Yield Start Events (DB saves in background for zero latency) ---
             if auto_continue_count == 0:
                 start_content = {"status_type": "thread_run_start"}
                 # Yield immediately, save to DB in background (non-blocking)
                 now_start = datetime.now(timezone.utc).isoformat()
-                yield {
+                start_message = {
                     "message_id": None, "thread_id": thread_id, "type": "status",
                     "is_llm_message": False,
                     "content": to_json_string(start_content),
                     "metadata": to_json_string({"thread_run_id": thread_run_id}),
                     "created_at": now_start, "updated_at": now_start
                 }
+                self._log_frontend_message(start_message, frontend_debug_file)
+                yield start_message
                 # Fire-and-forget DB save
                 background_db_tasks.append(asyncio.create_task(
                     self.add_message(thread_id=thread_id, type="status", content=start_content, 
@@ -530,13 +607,15 @@ class ResponseProcessor:
             }
             # Yield immediately, save to DB in background (non-blocking)
             now_llm_start = datetime.now(timezone.utc).isoformat()
-            yield {
+            llm_start_message = {
                 "message_id": None, "thread_id": thread_id, "type": "llm_response_start",
                 "is_llm_message": False,
                 "content": to_json_string(llm_start_content),
                 "metadata": to_json_string({"thread_run_id": thread_run_id, "llm_response_id": llm_response_id}),
                 "created_at": now_llm_start, "updated_at": now_llm_start
             }
+            self._log_frontend_message(llm_start_message, frontend_debug_file)
+            yield llm_start_message
             # Fire-and-forget DB save
             background_db_tasks.append(asyncio.create_task(
                 self.add_message(thread_id=thread_id, type="llm_response_start", content=llm_start_content, 
@@ -552,10 +631,54 @@ class ResponseProcessor:
             debug_file_json = None
             raw_chunks_data = []  # Store all chunk data for JSONL export
             
+            # Setup debug file for DB writes and terminal logs (only if DEBUG_SAVE_LLM_IO is enabled)
+            debug_db_file = None
+            debug_terminal_log_file = None
+            terminal_file_handler = None
+            
             if global_config.DEBUG_SAVE_LLM_IO:
                 debug_dir = Path("debug_streams")
                 debug_dir.mkdir(exist_ok=True)
                 timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                debug_db_file = debug_dir / f"db_writes_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.jsonl"
+                debug_terminal_log_file = debug_dir / f"terminal_logs_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.txt"
+                logger.info(f"📁 Saving DB write logs to: {debug_db_file}")
+                logger.info(f"📁 Saving terminal logs to: {debug_terminal_log_file}")
+                
+                # Setup file handler for terminal logs (captures all logging output)
+                import logging
+                terminal_file_handler = logging.FileHandler(debug_terminal_log_file, encoding='utf-8')
+                terminal_file_handler.setLevel(logging.DEBUG)
+                # Format: timestamp | level | logger_name | message
+                formatter = logging.Formatter('%(asctime)s | %(levelname)-8s | %(name)-30s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+                terminal_file_handler.setFormatter(formatter)
+                # Add handler to root logger to capture all logs
+                root_logger = logging.getLogger()
+                root_logger.addHandler(terminal_file_handler)
+            
+            def log_db_write(operation: str, message_type: str, data: Dict[str, Any], is_update: bool = False):
+                """Log a DB write operation to the debug file."""
+                if debug_db_file is None:
+                    return  # Skip logging if debug is disabled
+                try:
+                    log_entry = {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "operation": operation,  # "save" or "update"
+                        "message_type": message_type,  # "assistant", "tool", "status", etc.
+                        "is_update": is_update,
+                        "data": data
+                    }
+                    with open(debug_db_file, 'a', encoding='utf-8') as f:
+                        f.write(json.dumps(log_entry, ensure_ascii=False, default=str) + '\n')
+                except Exception as e:
+                    logger.debug(f"Error writing DB log: {e}")
+            
+            # Store log function and terminal handler in self for cleanup (only if debug is enabled)
+            if global_config.DEBUG_SAVE_LLM_IO:
+                self._log_db_write = log_db_write
+                self._terminal_file_handler = terminal_file_handler
+            
+            if global_config.DEBUG_SAVE_LLM_IO:
                 debug_file = debug_dir / f"stream_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.txt"
                 debug_file_json = debug_dir / f"stream_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.jsonl"
                 
@@ -660,19 +783,21 @@ class ResponseProcessor:
                     native_tool_calls_updated = False
                     native_tool_calls_updated = False
                     
-                    # Check for and log Anthropic thinking content
+                    # Check for and log Anthropic thinking content (MiniMax reasoning m2.1 with reasoning_split=True, we avoid yielding such chunks)
+                    # NOTE: With reasoning_split=True, reasoning comes separately and should NOT be included in content
                     if delta and hasattr(delta, 'reasoning_content') and delta.reasoning_content:
                         if not has_printed_thinking_prefix:
                             # print("[THINKING]: ", end='', flush=True)
                             has_printed_thinking_prefix = True
                         # print(delta.reasoning_content, end='', flush=True)
-                        # Append reasoning to main content to be saved in the final message
+                        # Track reasoning content for debugging but DO NOT add to accumulated_content
+                        # With reasoning_split=True, reasoning is separate from actual text content
                         reasoning_content = delta.reasoning_content
                         # logger.debug(f"Processing reasoning_content: type={type(reasoning_content)}, value={reasoning_content}")
                         if isinstance(reasoning_content, list):
                             reasoning_content = ''.join(str(item) for item in reasoning_content)
-                        # logger.debug(f"About to concatenate reasoning_content (type={type(reasoning_content)}) to accumulated_content (type={type(accumulated_content)})")
-                        accumulated_content += reasoning_content
+                        # logger.debug(f"Reasoning content received (not included in final message): {reasoning_content[:100]}...")
+                        # DO NOT add reasoning_content to accumulated_content - only actual text content should be saved
 
                     # Process content chunk - HOT PATH, optimized for minimum latency
                     if delta and hasattr(delta, 'content') and delta.content:
@@ -684,7 +809,7 @@ class ResponseProcessor:
 
                         # Yield content chunk IMMEDIATELY - no datetime call, use pre-built metadata
                         # This is the hot path - every microsecond counts!
-                        yield {
+                        content_chunk_message = {
                             "sequence": __sequence,
                             "message_id": None, "thread_id": thread_id, "type": "assistant",
                             "is_llm_message": True,
@@ -693,6 +818,8 @@ class ResponseProcessor:
                             "created_at": _stream_start_time,  # Reuse start time, no datetime.now() per chunk
                             "updated_at": _stream_start_time
                         }
+                        self._log_frontend_message(content_chunk_message, frontend_debug_file)
+                        yield content_chunk_message
                         __sequence += 1
 
                         # --- Process XML Tool Calls (if enabled) ---
@@ -722,6 +849,31 @@ class ResponseProcessor:
                                 
                                 # Execute XML tool calls if enabled
                                 for tool_call in parsed_tool_calls:
+                                    # Create placeholder assistant message if we don't have one yet and we're executing tools
+                                    if config.execute_tools and config.execute_on_stream and not last_assistant_message_object:
+                                        # Create a placeholder assistant message so we have an ID to link tool results
+                                        placeholder_metadata = {
+                                            "thread_run_id": thread_run_id,
+                                            "stream_status": "tool_call_chunk",
+                                            "tool_calls": []  # Will be updated later
+                                        }
+                                        placeholder_message = {
+                                            "role": "assistant",
+                                            "content": ""
+                                        }
+                                        last_assistant_message_object = await self._add_message_with_agent_info(
+                                            thread_id=thread_id, type="assistant", content=placeholder_message,
+                                            is_llm_message=True, metadata=placeholder_metadata
+                                        )
+                                        if last_assistant_message_object:
+                                            logger.debug(f"Created placeholder assistant message {last_assistant_message_object.get('message_id')} for early tool execution")
+                                            self.trace.event(
+                                                name="created_placeholder_assistant_message_for_early_tool_execution",
+                                                level="DEFAULT",
+                                                status_message=(f"Created placeholder assistant message {last_assistant_message_object.get('message_id')} for early tool execution")
+                                            )
+                                        current_assistant_id = last_assistant_message_object['message_id'] if last_assistant_message_object else None
+                                    
                                     context = self._create_tool_context(
                                         tool_call, tool_index, current_assistant_id
                                     )
@@ -729,7 +881,10 @@ class ResponseProcessor:
                                     if config.execute_tools and config.execute_on_stream:
                                         # Save and Yield tool_started status
                                         started_msg_obj = await self._yield_and_save_tool_started(context, thread_id, thread_run_id)
-                                        if started_msg_obj: yield format_for_yield(started_msg_obj)
+                                        if started_msg_obj: 
+                                            formatted = format_for_yield(started_msg_obj)
+                                            self._log_frontend_message(formatted, frontend_debug_file)
+                                            yield formatted
                                         yielded_tool_indices.add(tool_index) # Mark status as yielded
 
                                         execution_task = asyncio.create_task(self._execute_tool(tool_call))
@@ -777,6 +932,30 @@ class ResponseProcessor:
                                 # Mark this index as executed to prevent duplicate executions
                                 executed_native_tool_indices.add(idx)
                                 
+                                # Create placeholder assistant message if we don't have one yet
+                                if not last_assistant_message_object:
+                                    # Create a placeholder assistant message so we have an ID to link tool results
+                                    placeholder_metadata = {
+                                        "thread_run_id": thread_run_id,
+                                        "stream_status": "tool_call_chunk",
+                                        "tool_calls": []  # Will be updated later
+                                    }
+                                    placeholder_message = {
+                                        "role": "assistant",
+                                        "content": ""
+                                    }
+                                    last_assistant_message_object = await self._add_message_with_agent_info(
+                                        thread_id=thread_id, type="assistant", content=placeholder_message,
+                                        is_llm_message=True, metadata=placeholder_metadata
+                                    )
+                                    if last_assistant_message_object:
+                                        logger.debug(f"Created placeholder assistant message {last_assistant_message_object.get('message_id')} for early tool execution")
+                                        self.trace.event(
+                                            name="created_placeholder_assistant_message_for_early_tool_execution",
+                                            level="DEFAULT",
+                                            status_message=(f"Created placeholder assistant message {last_assistant_message_object.get('message_id')} for early tool execution")
+                                        )
+                                
                                 current_tool = tool_calls_buffer[idx]
                                 tool_call_data = convert_to_exec_tool_call(
                                     current_tool,
@@ -789,7 +968,10 @@ class ResponseProcessor:
 
                                 # Save and Yield tool_started status
                                 started_msg_obj = await self._yield_and_save_tool_started(context, thread_id, thread_run_id)
-                                if started_msg_obj: yield format_for_yield(started_msg_obj)
+                                if started_msg_obj: 
+                                    formatted = format_for_yield(started_msg_obj)
+                                    self._log_frontend_message(formatted, frontend_debug_file)
+                                    yield formatted
                                 yielded_tool_indices.add(tool_index) # Mark status as yielded
 
                                 execution_task = asyncio.create_task(self._execute_tool(tool_call_data))
@@ -798,6 +980,52 @@ class ResponseProcessor:
                                     "tool_index": tool_index, "context": context
                                 })
                                 tool_index += 1
+                        
+                        # --- Check for completed tool executions and save immediately ---
+                        if config.execute_tools and config.execute_on_stream:
+                            for execution in pending_tool_executions:
+                                if execution["task"].done() and not execution.get("saved", False):
+                                    try:
+                                        result = execution["task"].result()
+                                        execution["context"].result = result
+                                        
+                                        # Save immediately
+                                        updated_id, saved_result, saved_assistant = await self._handle_tool_execution_completion(
+                                            thread_id, thread_run_id,
+                                            execution["tool_call"], result, execution["tool_index"],
+                                            execution["context"], tool_calls_buffer, accumulated_content,
+                                            xml_tool_calls_with_ids, config, partial_assistant_message_id
+                                        )
+                                        
+                                        if updated_id:
+                                            partial_assistant_message_id = updated_id
+                                        
+                                        if saved_assistant:
+                                            # Update last_assistant_message_object with the saved/updated message
+                                            # Note: We save/update in DB for race condition protection and tool result linking,
+                                            # but we DON'T yield it here. Frontend gets tool calls via tool_call_chunk yields instead.
+                                            # This prevents duplicate assistant messages in the UI.
+                                            last_assistant_message_object = saved_assistant
+                                        
+                                        # Track tool result message ID for later batch update (saved with is_llm_message=False)
+                                        if saved_result and saved_result.get('message_id'):
+                                            streaming_tool_result_ids.append(saved_result['message_id'])
+                                            logger.debug(f"Tracked streaming tool result {saved_result['message_id']} for batch update (currently hidden from LLM)")
+                                        
+                                        execution["saved"] = True  # Mark as saved to avoid duplicate saves
+                                        
+                                        # Still add to buffer for final processing (if needed)
+                                        tool_results_buffer.append((
+                                            execution["tool_call"], result,
+                                            execution["tool_index"], execution["context"]
+                                        ))
+                                        
+                                        # Yield the saved tool result immediately
+                                        if saved_result:
+                                            yield format_for_yield(saved_result)
+                                            
+                                    except Exception as e:
+                                        logger.error(f"Error handling immediate tool save: {e}", exc_info=True)
                         
                         # --- Unified Streaming Chunk Yield (combines XML + Native tool calls) ---
                         if xml_tool_calls_updated or native_tool_calls_updated:
@@ -828,7 +1056,7 @@ class ResponseProcessor:
                                 for tc in unified_tool_calls:
                                     if tc.get('is_delta'):
                                         delta_size = len(tc.get('arguments_delta', ''))
-                                        logger.debug(f"[DELTA STREAM] Tool {tc.get('function_name')}: sending {delta_size} byte delta")
+                                        # logger.debug(f"[DELTA STREAM] Tool {tc.get('function_name')}: sending {delta_size} byte delta")
                                 
                                 transformed_unified_tool_calls = []
                                 for tc in unified_tool_calls:
@@ -842,7 +1070,7 @@ class ResponseProcessor:
                                     "tool_calls": transformed_unified_tool_calls
                                 }
                                 
-                                yield {
+                                tool_chunk_message = {
                                     "sequence": __sequence,
                                     "message_id": None, 
                                     "thread_id": thread_id, 
@@ -853,7 +1081,37 @@ class ResponseProcessor:
                                     "created_at": now_tool_chunk, 
                                     "updated_at": now_tool_chunk
                                 }
+                                self._log_frontend_message(tool_chunk_message, frontend_debug_file)
+                                yield tool_chunk_message
                                 __sequence += 1
+                            
+                    # Process any completed tool executions in real-time (moved outside tool call update block)
+                    # This ensures completed tools are processed immediately even when LLM is generating text
+                    # NOTE: State updates (pending_tool_executions, yielded_tool_indices, agent_should_terminate)
+                    # are atomic within this async context since Python's async is single-threaded. The state
+                    # is updated atomically from the tuple returned by _process_completed_tool_executions.
+                    if pending_tool_executions and config.execute_tools and config.execute_on_stream:
+                        # Process and yield messages immediately as each tool completes
+                        async for item in self._process_completed_tool_executions(
+                            pending_tool_executions,
+                            thread_id,
+                            thread_run_id,
+                            last_assistant_message_object,
+                            yielded_tool_indices,
+                            agent_should_terminate,
+                            frontend_debug_file
+                        ):
+                            if isinstance(item, tuple):
+                                # Final state tuple - extract and update state atomically
+                                remaining_executions, updated_yielded_indices, updated_terminate_flag = item
+                                pending_tool_executions = remaining_executions
+                                yielded_tool_indices = updated_yielded_indices
+                                agent_should_terminate = updated_terminate_flag
+                                break
+                            else:
+                                # Message to yield immediately
+                                self._log_frontend_message(item, frontend_debug_file)
+                                yield item
 
             # Log when stream naturally ends
             if finish_reason == "stop":
@@ -929,65 +1187,48 @@ class ResponseProcessor:
                 logger.warning("⚠️ No usage data captured from streaming chunks")
 
 
-            tool_results_buffer = []
-            if pending_tool_executions:
-                logger.debug(f"Waiting for {len(pending_tool_executions)} pending streamed tool executions")
-                self.trace.event(name="waiting_for_pending_streamed_tool_executions", level="DEFAULT", status_message=(f"Waiting for {len(pending_tool_executions)} pending streamed tool executions"))
+            # Process any remaining tool executions that didn't complete during streaming
+            # Use the same unified processing method to ensure consistent behavior
+            if pending_tool_executions and config.execute_tools and config.execute_on_stream:
+                logger.debug(f"Waiting for {len(pending_tool_executions)} remaining streamed tool executions")
+                self.trace.event(name="waiting_for_remaining_streamed_tool_executions", level="DEFAULT", status_message=(f"Waiting for {len(pending_tool_executions)} remaining streamed tool executions"))
                 pending_tasks = [execution["task"] for execution in pending_tool_executions]
-                done, _ = await asyncio.wait(pending_tasks)
+                done, pending = await asyncio.wait(pending_tasks, return_when=asyncio.ALL_COMPLETED)
+                
+                # Check for exceptions in completed tasks
+                for task in done:
+                    if task.exception():
+                        exc = task.exception()
+                        tool_idx = next((i for i, exec in enumerate(pending_tool_executions) if exec["task"] == task), -1)
+                        logger.error(f"Task {tool_idx} failed with exception: {exc}", exc_info=exc)
+                        self.trace.event(
+                            name="task_failed_in_wait",
+                            level="ERROR",
+                            status_message=(f"Task {tool_idx} failed with exception: {str(exc)}")
+                        )
 
-                for execution in pending_tool_executions:
-                    tool_idx = execution.get("tool_index", -1)
-                    context = execution["context"]
-                    tool_name = context.function_name
-                    
-                    if tool_idx in yielded_tool_indices:
-                         # logger.debug(f"Status for tool index {tool_idx} already yielded.")
-                         try:
-                             if execution["task"].done():
-                                 result = execution["task"].result()
-                                 context.result = result
-                                 tool_results_buffer.append((execution["tool_call"], result, tool_idx, context))
-                                 
-                                 if tool_name in ['ask', 'complete']:
-                                     logger.debug(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag.")
-                                     self.trace.event(name="terminating_tool_completed_during_streaming", level="DEFAULT", status_message=(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag."))
-                                     agent_should_terminate = True
-                                     
-                             else:
-                                logger.warning(f"Task for tool index {tool_idx} not done after wait.")
-                                self.trace.event(name="task_for_tool_index_not_done_after_wait", level="WARNING", status_message=(f"Task for tool index {tool_idx} not done after wait."))
-                         except Exception as e:
-                             logger.error(f"Error getting result for pending tool execution {tool_idx}: {str(e)}")
-                             self.trace.event(name="error_getting_result_for_pending_tool_execution", level="ERROR", status_message=(f"Error getting result for pending tool execution {tool_idx}: {str(e)}"))
-                             context.error = e
-                             error_msg_obj = await self._yield_and_save_tool_error(context, thread_id, thread_run_id)
-                             if error_msg_obj: yield format_for_yield(error_msg_obj)
-                         continue
-
-                    try:
-                        if execution["task"].done():
-                            result = execution["task"].result()
-                            context.result = result
-                            tool_results_buffer.append((execution["tool_call"], result, tool_idx, context))
-                            
-                            if tool_name in ['ask', 'complete']:
-                                logger.debug(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag.")
-                                self.trace.event(name="terminating_tool_completed_during_streaming", level="DEFAULT", status_message=(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag."))
-                                agent_should_terminate = True
-                                
-                            completed_msg_obj = await self._yield_and_save_tool_completed(
-                                context, None, thread_id, thread_run_id
-                            )
-                            if completed_msg_obj: yield format_for_yield(completed_msg_obj)
-                            yielded_tool_indices.add(tool_idx)
-                    except Exception as e:
-                        logger.error(f"Error getting result/yielding status for pending tool execution {tool_idx}: {str(e)}")
-                        self.trace.event(name="error_getting_result_yielding_status_for_pending_tool_execution", level="ERROR", status_message=(f"Error getting result/yielding status for pending tool execution {tool_idx}: {str(e)}"))
-                        context.error = e
-                        error_msg_obj = await self._yield_and_save_tool_error(context, thread_id, thread_run_id)
-                        if error_msg_obj: yield format_for_yield(error_msg_obj)
-                        yielded_tool_indices.add(tool_idx)
+                # Process remaining tools using the unified method
+                # Process and yield messages immediately as each tool completes
+                # NOTE: State updates are atomic within this async context (single-threaded event loop)
+                async for item in self._process_completed_tool_executions(
+                    pending_tool_executions,
+                    thread_id,
+                    thread_run_id,
+                    last_assistant_message_object,
+                    yielded_tool_indices,
+                    agent_should_terminate
+                ):
+                    if isinstance(item, tuple):
+                        # Final state tuple - extract and update state atomically
+                        remaining_executions, updated_yielded_indices, updated_terminate_flag = item
+                        pending_tool_executions = remaining_executions
+                        yielded_tool_indices = updated_yielded_indices
+                        agent_should_terminate = updated_terminate_flag
+                        break
+                    else:
+                        # Message to yield immediately
+                        self._log_frontend_message(item, frontend_debug_file)
+                        yield item
 
 
             # Only auto-continue for 'length' or 'tool_calls' finish reasons (not 'stop' or others)
@@ -1068,10 +1309,118 @@ class ResponseProcessor:
                     assistant_metadata["tool_calls"] = unified_tool_calls
                     logger.debug(f"Storing {len(unified_tool_calls)} unified tool calls in assistant message metadata ({len(complete_native_tool_calls) if complete_native_tool_calls else 0} native, {len(xml_tool_calls_with_ids)} XML)")
 
-                last_assistant_message_object = await self._add_message_with_agent_info(
-                    thread_id=thread_id, type="assistant", content=message_data,
-                    is_llm_message=True, metadata=assistant_metadata
-                )
+                # If we already have a placeholder assistant message, update it instead of creating a new one
+                if last_assistant_message_object and last_assistant_message_object.get('message_id'):
+                    # Store placeholder message_id for cleanup if update fails
+                    placeholder_message_id = last_assistant_message_object['message_id']
+                    # Update the existing placeholder message with final content and metadata
+                    from core.services.supabase import DBConnection
+                    db = DBConnection()
+                    client = await db.client
+                    try:
+                        await client.table('messages').update({
+                            'content': message_data,
+                            'metadata': assistant_metadata,
+                            'updated_at': datetime.now(timezone.utc).isoformat()
+                        }).eq('message_id', placeholder_message_id).execute()
+                        
+                        # Fetch the updated message
+                        result = await client.table('messages').select('*').eq('message_id', placeholder_message_id).single().execute()
+                        if result.data:
+                            last_assistant_message_object = result.data
+                            logger.debug(f"Updated placeholder assistant message {last_assistant_message_object['message_id']} with final content")
+                            self.trace.event(
+                                name="updated_placeholder_assistant_message",
+                                level="DEFAULT",
+                                status_message=(f"Updated placeholder assistant message {last_assistant_message_object['message_id']} with final content")
+                            )
+                        else:
+                            # Fallback to creating new message if update failed
+                            logger.warning(f"Failed to fetch updated message, creating new one and cleaning up placeholder {placeholder_message_id}")
+                            # Create new message first
+                            last_assistant_message_object = await self._add_message_with_agent_info(
+                                thread_id=thread_id, type="assistant", content=message_data,
+                                is_llm_message=True, metadata=assistant_metadata
+                            )
+                            
+                            # If new message was created successfully, migrate tool results and delete placeholder
+                            if last_assistant_message_object and last_assistant_message_object.get('message_id'):
+                                new_message_id = last_assistant_message_object['message_id']
+                                try:
+                                    # Update tool results to point to the new message_id
+                                    tool_results = await client.table('messages').select('message_id, metadata').eq('thread_id', thread_id).eq('type', 'tool').execute()
+                                    if tool_results.data:
+                                        updated_count = 0
+                                        for tool_result in tool_results.data:
+                                            metadata = tool_result.get('metadata', {})
+                                            if metadata.get('assistant_message_id') == placeholder_message_id:
+                                                # Update this tool result to point to the new message
+                                                updated_metadata = metadata.copy()
+                                                updated_metadata['assistant_message_id'] = new_message_id
+                                                await client.table('messages').update({
+                                                    'metadata': updated_metadata
+                                                }).eq('message_id', tool_result['message_id']).execute()
+                                                updated_count += 1
+                                        if updated_count > 0:
+                                            logger.debug(f"Migrated {updated_count} tool result(s) from placeholder {placeholder_message_id} to new message {new_message_id}")
+                                    
+                                    # Delete the orphaned placeholder message
+                                    await client.table('messages').delete().eq('message_id', placeholder_message_id).eq('thread_id', thread_id).execute()
+                                    logger.info(f"Deleted orphaned placeholder message {placeholder_message_id} after failed update")
+                                    self.trace.event(
+                                        name="deleted_orphaned_placeholder_message",
+                                        level="DEFAULT",
+                                        status_message=(f"Deleted orphaned placeholder message {placeholder_message_id} after failed update")
+                                    )
+                                except Exception as cleanup_e:
+                                    logger.error(f"Error cleaning up placeholder message {placeholder_message_id}: {cleanup_e}", exc_info=True)
+                                    # Continue even if cleanup fails - the new message was created successfully
+                    except Exception as e:
+                        logger.error(f"Failed to update placeholder assistant message: {e}, creating new one and cleaning up placeholder {placeholder_message_id}")
+                        # Fallback to creating new message if update failed
+                        last_assistant_message_object = await self._add_message_with_agent_info(
+                            thread_id=thread_id, type="assistant", content=message_data,
+                            is_llm_message=True, metadata=assistant_metadata
+                        )
+                        
+                        # If new message was created successfully, migrate tool results and delete placeholder
+                        if last_assistant_message_object and last_assistant_message_object.get('message_id'):
+                            new_message_id = last_assistant_message_object['message_id']
+                            try:
+                                # Update tool results to point to the new message_id
+                                tool_results = await client.table('messages').select('message_id, metadata').eq('thread_id', thread_id).eq('type', 'tool').execute()
+                                if tool_results.data:
+                                    updated_count = 0
+                                    for tool_result in tool_results.data:
+                                        metadata = tool_result.get('metadata', {})
+                                        if metadata.get('assistant_message_id') == placeholder_message_id:
+                                            # Update this tool result to point to the new message
+                                            updated_metadata = metadata.copy()
+                                            updated_metadata['assistant_message_id'] = new_message_id
+                                            await client.table('messages').update({
+                                                'metadata': updated_metadata
+                                            }).eq('message_id', tool_result['message_id']).execute()
+                                            updated_count += 1
+                                    if updated_count > 0:
+                                        logger.debug(f"Migrated {updated_count} tool result(s) from placeholder {placeholder_message_id} to new message {new_message_id}")
+                                
+                                # Delete the orphaned placeholder message
+                                await client.table('messages').delete().eq('message_id', placeholder_message_id).eq('thread_id', thread_id).execute()
+                                logger.info(f"Deleted orphaned placeholder message {placeholder_message_id} after failed update")
+                                self.trace.event(
+                                    name="deleted_orphaned_placeholder_message",
+                                    level="DEFAULT",
+                                    status_message=(f"Deleted orphaned placeholder message {placeholder_message_id} after failed update")
+                                )
+                            except Exception as cleanup_e:
+                                logger.error(f"Error cleaning up placeholder message {placeholder_message_id}: {cleanup_e}", exc_info=True)
+                                # Continue even if cleanup fails - the new message was created successfully
+                else:
+                    # No placeholder exists, create new message
+                    last_assistant_message_object = await self._add_message_with_agent_info(
+                        thread_id=thread_id, type="assistant", content=message_data,
+                        is_llm_message=True, metadata=assistant_metadata
+                    )
 
                 if last_assistant_message_object:
                     # Yield the complete saved object, adding stream_status metadata just for yield
@@ -1080,7 +1429,9 @@ class ResponseProcessor:
                     # Format the message for yielding
                     yield_message = last_assistant_message_object.copy()
                     yield_message['metadata'] = yield_metadata
-                    yield format_for_yield(yield_message)
+                    formatted_message = format_for_yield(yield_message)
+                    self._log_frontend_message(formatted_message, frontend_debug_file)
+                    yield formatted_message
                 else:
                     logger.error(f"Failed to save final assistant message for thread {thread_id}")
                     self.trace.event(name="failed_to_save_final_assistant_message_for_thread", level="ERROR", status_message=(f"Failed to save final assistant message for thread {thread_id}"))
@@ -1090,7 +1441,10 @@ class ResponseProcessor:
                         thread_id=thread_id, type="status", content=err_content, 
                         is_llm_message=False, metadata={"thread_run_id": thread_run_id}
                     )
-                    if err_msg_obj: yield format_for_yield(err_msg_obj)
+                    if err_msg_obj: 
+                        formatted = format_for_yield(err_msg_obj)
+                        self._log_frontend_message(formatted, frontend_debug_file)
+                        yield formatted
 
             # --- Process All Tool Results Now ---
             if config.execute_tools:
@@ -1144,15 +1498,9 @@ class ResponseProcessor:
 
                 tool_results_map = {} # tool_index -> (tool_call, result, context)
 
-                # Populate from buffer if executed on stream
-                if config.execute_on_stream and tool_results_buffer:
-                    logger.debug(f"Processing {len(tool_results_buffer)} buffered tool results")
-                    self.trace.event(name="processing_buffered_tool_results", level="DEFAULT", status_message=(f"Processing {len(tool_results_buffer)} buffered tool results"))
-                    for tool_call, result, tool_idx, context in tool_results_buffer:
-                        if last_assistant_message_object: context.assistant_message_id = last_assistant_message_object['message_id']
-                        tool_results_map[tool_idx] = (tool_call, result, context)
-                # Or execute now if not streamed (or if streamed but no buffered results)
-                elif final_tool_calls_to_process:
+                # Execute tools that weren't executed during streaming (when execute_on_stream is False)
+                # Tools executed during streaming are already processed immediately by _process_completed_tool_executions
+                if not config.execute_on_stream and final_tool_calls_to_process:
                     logger.debug(f"🔄 STREAMING: Executing {len(final_tool_calls_to_process)} tools ({config.tool_execution_strategy}) after stream")
                     logger.debug(f"📋 Final tool calls to process: {final_tool_calls_to_process}")
                     logger.debug(f"⚙️ Config: execute_on_stream={config.execute_on_stream}, strategy={config.tool_execution_strategy}")
@@ -1182,24 +1530,28 @@ class ResponseProcessor:
                            self.trace.event(name="could_not_map_result_for_tool_index", level="WARNING", status_message=(f"Could not map result for tool index {current_tool_idx}"))
                        current_tool_idx += 1
 
-                # Save and Yield each result message
-                if tool_results_map:
-                    logger.debug(f"Saving and yielding {len(tool_results_map)} final tool result messages")
-                    self.trace.event(name="saving_and_yielding_final_tool_result_messages", level="DEFAULT", status_message=(f"Saving and yielding {len(tool_results_map)} final tool result messages"))
+                # Save and Yield each result message for tools that weren't executed during streaming
+                # Tools executed during streaming are already processed immediately by _process_completed_tool_executions
+                if tool_results_map and not config.execute_on_stream:
+                    logger.debug(f"Saving and yielding {len(tool_results_map)} final tool result messages (non-streamed execution)")
+                    self.trace.event(name="saving_and_yielding_final_tool_result_messages", level="DEFAULT", status_message=(f"Saving and yielding {len(tool_results_map)} final tool result messages (non-streamed execution)"))
                     for tool_idx in sorted(tool_results_map.keys()):
                         tool_call, result, context = tool_results_map[tool_idx]
                         context.result = result
                         if not context.assistant_message_id and last_assistant_message_object:
                             context.assistant_message_id = last_assistant_message_object['message_id']
 
-                        # Yield start status ONLY IF executing non-streamed (already yielded if streamed)
-                        if not config.execute_on_stream and tool_idx not in yielded_tool_indices:
+                        # Yield start status (not yielded yet since not executed during streaming)
+                        if tool_idx not in yielded_tool_indices:
                             started_msg_obj = await self._yield_and_save_tool_started(context, thread_id, thread_run_id)
-                            if started_msg_obj: yield format_for_yield(started_msg_obj)
+                            if started_msg_obj: 
+                                formatted = format_for_yield(started_msg_obj)
+                                self._log_frontend_message(formatted, frontend_debug_file)
+                                yield formatted
                             yielded_tool_indices.add(tool_idx) # Mark status yielded
 
-                        # Save the tool result message to DB
-                        saved_tool_result_object = await self._add_tool_result( # Returns full object or None
+                        # Save the tool result message to DB using _add_tool_result
+                        saved_tool_result_object = await self._add_tool_result(
                             thread_id, tool_call, result,
                             context.assistant_message_id
                         )
@@ -1210,17 +1562,82 @@ class ResponseProcessor:
                             saved_tool_result_object['message_id'] if saved_tool_result_object else None,
                             thread_id, thread_run_id
                         )
-                        if completed_msg_obj: yield format_for_yield(completed_msg_obj)
-                        # Don't add to yielded_tool_indices here, completion status is separate yield
+                        if completed_msg_obj: 
+                            formatted = format_for_yield(completed_msg_obj)
+                            self._log_frontend_message(formatted, frontend_debug_file)
+                            yield formatted
 
                         # Yield the saved tool result object
                         if saved_tool_result_object:
                             tool_result_message_objects[tool_idx] = saved_tool_result_object
-                            yield format_for_yield(saved_tool_result_object)
+                            formatted = format_for_yield(saved_tool_result_object)
+                            self._log_frontend_message(formatted, frontend_debug_file)
+                            yield formatted
                         else:
                              logger.error(f"Failed to save tool result for index {tool_idx}, not yielding result message.")
                              self.trace.event(name="failed_to_save_tool_result_for_index", level="ERROR", status_message=(f"Failed to save tool result for index {tool_idx}, not yielding result message."))
-                             # Optionally yield error status for saving failure?
+
+            # --- Batch-update streaming tool results to make them visible to LLM ---
+            # After all tools complete, update tool results saved during streaming (with is_llm_message=False)
+            # to is_llm_message=True so they become visible to the LLM in the next call
+            if streaming_tool_result_ids and config.execute_tools:
+                try:
+                    logger.debug(f"Batch updating {len(streaming_tool_result_ids)} streaming tool results to is_llm_message=True")
+                    self.trace.event(
+                        name="batch_update_streaming_tool_results",
+                        level="DEFAULT",
+                        status_message=(f"Batch updating {len(streaming_tool_result_ids)} streaming tool results to make them visible to LLM")
+                    )
+                    
+                    # Acquire thread lock to prevent race conditions with concurrent tool result saves
+                    thread_lock = await self._get_thread_lock(thread_id)
+                    async with thread_lock:
+                        client = await self.thread_manager.db.client
+                        update_result = await client.table('messages').update({
+                            'is_llm_message': True
+                        }).in_('message_id', streaming_tool_result_ids).execute()
+                    
+                    if update_result.data:
+                        updated_count = len(update_result.data)
+                        logger.info(f"✅ Successfully batch-updated {updated_count}/{len(streaming_tool_result_ids)} streaming tool results to is_llm_message=True")
+                        self.trace.event(
+                            name="batch_update_streaming_tool_results_success",
+                            level="DEFAULT",
+                            status_message=(f"Successfully batch-updated {updated_count} streaming tool results")
+                        )
+                        
+                        # Log batch update in DB write logs
+                        if hasattr(self, '_log_db_write'):
+                            for msg_id in streaming_tool_result_ids:
+                                # Create a log entry for the batch update
+                                update_log_data = {
+                                    'message_id': msg_id,
+                                    'thread_id': thread_id,
+                                    'type': 'tool',
+                                    'is_llm_message': True,  # Updated value
+                                    '_batch_update': True,
+                                    '_note': 'Batch-updated from is_llm_message=False to True after all tools completed'
+                                }
+                                self._log_db_write("update", "tool", update_log_data, is_update=True)
+                    else:
+                        logger.warning(f"⚠️ Batch update returned no data (may have already been updated or IDs invalid)")
+                        # Log failed batch update attempt
+                        if hasattr(self, '_log_db_write'):
+                            failed_log_data = {
+                                'message_ids': streaming_tool_result_ids,
+                                'thread_id': thread_id,
+                                '_batch_update_failed': True,
+                                '_note': 'Batch update returned no data - tool results may remain hidden from LLM'
+                            }
+                            self._log_db_write("update", "tool", failed_log_data, is_update=True)
+                except Exception as batch_update_error:
+                    logger.error(f"❌ Error batch-updating streaming tool results: {str(batch_update_error)}", exc_info=True)
+                    self.trace.event(
+                        name="batch_update_streaming_tool_results_error",
+                        level="ERROR",
+                        status_message=(f"Error batch-updating streaming tool results: {str(batch_update_error)}")
+                    )
+                    # Don't fail the entire operation - tool results are still saved, just not visible to LLM yet
 
             # --- Re-check auto-continue after tool executions ---
             # The should_auto_continue flag was set earlier, but tool executions may have set agent_should_terminate
@@ -1240,7 +1657,10 @@ class ResponseProcessor:
                     thread_id=thread_id, type="status", content=finish_content, 
                     is_llm_message=False, metadata={"thread_run_id": thread_run_id}
                 )
-                if finish_msg_obj: yield format_for_yield(finish_msg_obj)
+                if finish_msg_obj: 
+                    formatted = format_for_yield(finish_msg_obj)
+                    self._log_frontend_message(formatted, frontend_debug_file)
+                    yield formatted
 
             # Check if agent should terminate after processing pending tools
             if agent_should_terminate:
@@ -1256,7 +1676,10 @@ class ResponseProcessor:
                     thread_id=thread_id, type="status", content=finish_content, 
                     is_llm_message=False, metadata={"thread_run_id": thread_run_id, "agent_should_terminate": True}
                 )
-                if finish_msg_obj: yield format_for_yield(finish_msg_obj)
+                if finish_msg_obj: 
+                    formatted = format_for_yield(finish_msg_obj)
+                    self._log_frontend_message(formatted, frontend_debug_file)
+                    yield formatted
                 
                 # Save llm_response_end BEFORE terminating
                 if last_assistant_message_object:
@@ -1304,13 +1727,16 @@ class ResponseProcessor:
                             )
                             llm_response_end_saved = True
                             # Yield to stream for real-time context usage updates
-                            if llm_end_msg_obj: yield format_for_yield(llm_end_msg_obj)
+                            if llm_end_msg_obj: 
+                                formatted = format_for_yield(llm_end_msg_obj)
+                                self._log_frontend_message(formatted, frontend_debug_file)
+                                yield formatted
                         logger.debug(f"✅ llm_response_end saved for call #{auto_continue_count + 1} (before termination)")
                     except Exception as e:
                         logger.error(f"Error saving llm_response_end (before termination): {str(e)}")
                         self.trace.event(name="error_saving_llm_response_end_before_termination", level="ERROR", status_message=(f"Error saving llm_response_end (before termination): {str(e)}"))
                 
-                # Skip all remaining processing and go to finally block
+                # Skip all remaining processing and go to finally b 
                 return
 
             # --- Save and Yield llm_response_end ---
@@ -1364,7 +1790,10 @@ class ResponseProcessor:
                             )
                             llm_response_end_saved = True
                             # Yield to stream for real-time context usage updates
-                            if llm_end_msg_obj: yield format_for_yield(llm_end_msg_obj)
+                            if llm_end_msg_obj: 
+                                formatted = format_for_yield(llm_end_msg_obj)
+                                self._log_frontend_message(formatted, frontend_debug_file)
+                                yield formatted
                             logger.debug(f"✅ llm_response_end saved for call #{auto_continue_count + 1}")
                         else:
                             logger.warning("⚠️ No complete LiteLLM response available, skipping llm_response_end")
@@ -1384,7 +1813,9 @@ class ResponseProcessor:
                 is_llm_message=False, metadata={"thread_run_id": thread_run_id if 'thread_run_id' in locals() else None}
             )
             if err_msg_obj: 
-                yield format_for_yield(err_msg_obj)
+                formatted = format_for_yield(err_msg_obj)
+                self._log_frontend_message(formatted, frontend_debug_file)
+                yield formatted
             raise
 
         finally:
@@ -1518,13 +1949,15 @@ class ResponseProcessor:
                             updated_content = message_content.copy() if isinstance(message_content, dict) else {}
                             updated_content.pop('tool_calls', None)
                             
-                            # Update in database
-                            from core.services.supabase import DBConnection
-                            db = DBConnection()
-                            client = await db.client
-                            await client.table('messages').update({
-                                'content': updated_content
-                            }).eq('message_id', last_assistant_message_object['message_id']).execute()
+                            # Update in database (protected by lock to prevent race conditions)
+                            thread_lock = await self._get_thread_lock(thread_id)
+                            async with thread_lock:
+                                from core.services.supabase import DBConnection
+                                db = DBConnection()
+                                client = await db.client
+                                await client.table('messages').update({
+                                    'content': updated_content
+                                }).eq('message_id', last_assistant_message_object['message_id']).execute()
                             
                             logger.info(f"✅ Removed {len(tool_call_ids)} orphaned tool_calls from message {last_assistant_message_object['message_id']}: {tool_call_ids}")
                 except Exception as cleanup_e:
@@ -1573,6 +2006,25 @@ class ResponseProcessor:
                 except Exception as final_e:
                     logger.error(f"Error in finally block: {str(final_e)}", exc_info=True)
                     self.trace.event(name="error_in_finally_block", level="ERROR", status_message=(f"Error in finally block: {str(final_e)}"))
+            
+            # Cleanup: Remove log function and terminal file handler
+            if hasattr(self, '_log_db_write'):
+                delattr(self, '_log_db_write')
+            
+            # Cleanup: Remove terminal file handler from logger
+            if hasattr(self, '_terminal_file_handler'):
+                try:
+                    import logging
+                    root_logger = logging.getLogger()
+                    handler = self._terminal_file_handler
+                    root_logger.removeHandler(handler)
+                    handler_path = getattr(handler, 'baseFilename', 'unknown')
+                    handler.close()
+                    logger.debug(f"Removed terminal log file handler: {handler_path}")
+                except Exception as handler_cleanup_err:
+                    logger.warning(f"Error removing terminal log handler: {handler_cleanup_err}")
+                finally:
+                    delattr(self, '_terminal_file_handler')
 
     async def process_non_streaming_response(
         self,
@@ -1606,6 +2058,15 @@ class ResponseProcessor:
         finish_reason = None
         native_tool_calls_for_message = []
 
+        # Setup frontend message logging (only if DEBUG_SAVE_LLM_IO is enabled)
+        frontend_debug_file = None
+        if global_config.DEBUG_SAVE_LLM_IO:
+            debug_dir = Path("debug_streams")
+            debug_dir.mkdir(exist_ok=True)
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            frontend_debug_file = debug_dir / f"frontend_nonstream_{thread_id[:8]}_{timestamp}.txt"
+            logger.info(f"📁 Saving frontend messages (non-streaming) to: {frontend_debug_file}")
+
         try:
             # Save and Yield thread_run_start status message
             start_content = {"status_type": "thread_run_start"}
@@ -1613,7 +2074,10 @@ class ResponseProcessor:
                 thread_id=thread_id, type="status", content=start_content,
                 is_llm_message=False, metadata={"thread_run_id": thread_run_id}
             )
-            if start_msg_obj: yield format_for_yield(start_msg_obj)
+            if start_msg_obj: 
+                formatted = format_for_yield(start_msg_obj)
+                self._log_frontend_message(formatted, frontend_debug_file)
+                yield formatted
 
             # Extract finish_reason, content, tool calls
             if hasattr(llm_response, 'choices') and llm_response.choices:
@@ -1708,7 +2172,10 @@ class ResponseProcessor:
                      thread_id=thread_id, type="status", content=err_content, 
                      is_llm_message=False, metadata={"thread_run_id": thread_run_id}
                  )
-                 if err_msg_obj: yield format_for_yield(err_msg_obj)
+                 if err_msg_obj: 
+                     formatted = format_for_yield(err_msg_obj)
+                     self._log_frontend_message(formatted, frontend_debug_file)
+                     yield formatted
 
        # --- Execute Tools and Yield Results ---
             tool_calls_to_execute = [item['tool_call'] for item in all_tool_data]
@@ -1741,7 +2208,10 @@ class ResponseProcessor:
 
                     # Save and Yield start status
                     started_msg_obj = await self._yield_and_save_tool_started(context, thread_id, thread_run_id)
-                    if started_msg_obj: yield format_for_yield(started_msg_obj)
+                    if started_msg_obj: 
+                        formatted = format_for_yield(started_msg_obj)
+                        self._log_frontend_message(formatted, frontend_debug_file)
+                        yield formatted
 
                     # Save tool result
                     saved_tool_result_object = await self._add_tool_result(
@@ -1755,7 +2225,10 @@ class ResponseProcessor:
                         saved_tool_result_object['message_id'] if saved_tool_result_object else None,
                         thread_id, thread_run_id
                     )
-                    if completed_msg_obj: yield format_for_yield(completed_msg_obj)
+                    if completed_msg_obj: 
+                        formatted = format_for_yield(completed_msg_obj)
+                        self._log_frontend_message(formatted, frontend_debug_file)
+                        yield formatted
 
                     # Yield the saved tool result object
                     if saved_tool_result_object:
@@ -1774,7 +2247,10 @@ class ResponseProcessor:
                     thread_id=thread_id, type="status", content=finish_content, 
                     is_llm_message=False, metadata={"thread_run_id": thread_run_id}
                 )
-                if finish_msg_obj: yield format_for_yield(finish_msg_obj)
+                if finish_msg_obj: 
+                    formatted = format_for_yield(finish_msg_obj)
+                    self._log_frontend_message(formatted, frontend_debug_file)
+                    yield formatted
 
             # --- Save and Yield assistant_response_end ---
             if assistant_message_object: # Only save if assistant message was saved
@@ -1807,7 +2283,9 @@ class ResponseProcessor:
                  is_llm_message=False, metadata={"thread_run_id": thread_run_id if 'thread_run_id' in locals() else None}
              )
              if err_msg_obj: 
-                 yield format_for_yield(err_msg_obj)
+                 formatted = format_for_yield(err_msg_obj)
+                 self._log_frontend_message(formatted, frontend_debug_file)
+                 yield formatted
              
              raise
 
@@ -1835,7 +2313,10 @@ class ResponseProcessor:
                 thread_id=thread_id, type="status", content=end_content, 
                 is_llm_message=False, metadata={"thread_run_id": thread_run_id if 'thread_run_id' in locals() else None}
             )
-            if end_msg_obj: yield format_for_yield(end_msg_obj)
+            if end_msg_obj: 
+                formatted = format_for_yield(end_msg_obj)
+                self._log_frontend_message(formatted, frontend_debug_file)
+                yield formatted
 
     # Tool execution methods
     async def _execute_tool(self, tool_call: Dict[str, Any]) -> ToolResult:
@@ -1862,10 +2343,29 @@ class ResponseProcessor:
 
             tool_fn = available_functions.get(function_name)
             if not tool_fn:
-                mcp_patterns = ['TWITTER_', 'GMAIL_', 'SLACK_', 'GITHUB_', 'LINEAR_', 
-                               'NOTION_', 'GOOGLESHEETS_', 'COMPOSIO_']
-                is_mcp_tool = any(pattern in function_name for pattern in mcp_patterns)
+                is_mcp_tool = False
                 
+                if self.thread_manager and hasattr(self.thread_manager, 'mcp_loader'):
+                    mcp_loader = self.thread_manager.mcp_loader
+                    if mcp_loader and mcp_loader.tool_map and function_name in mcp_loader.tool_map:
+                        logger.debug(f"✅ [MCP DISCOVERY] Found '{function_name}' in thread-local MCP loader")
+                        is_mcp_tool = True
+                
+                if not is_mcp_tool:
+                    from core.agentpress.mcp_registry import get_mcp_registry, init_mcp_registry_from_loader
+                    mcp_registry = get_mcp_registry()
+                    
+                    if self.thread_manager and hasattr(self.thread_manager, 'mcp_loader'):
+                         mcp_loader = self.thread_manager.mcp_loader
+                         if mcp_loader:
+                             if not mcp_registry._initialized or (len(mcp_loader.tool_map) if mcp_loader.tool_map else 0) > len(mcp_registry._tools):
+                                 init_mcp_registry_from_loader(mcp_loader)
+                                 mcp_registry._initialized = True
+                    
+                    if mcp_registry.is_tool_available(function_name):
+                        logger.debug(f"✅ [MCP DISCOVERY] Found '{function_name}' in global MCP registry")
+                        is_mcp_tool = True
+
                 if is_mcp_tool:
                     logger.info(f"🔀 [AUTO REDIRECT] Redirecting MCP tool '{function_name}' through execute_mcp_tool wrapper")
                     execute_mcp_tool_fn = available_functions.get('execute_mcp_tool')
@@ -2038,12 +2538,20 @@ class ResponseProcessor:
             else:
                 logger.error(f"❌ [JIT AUTO] Regular tool activation failed: {result.to_user_message()}")
 
-        # CRITICAL: MCP tools should NOT be auto-activated into main registry
-        # They must use the isolated MCP registry via execute_tool wrapper
-        mcp_patterns = ['TWITTER_', 'GMAIL_', 'SLACK_', 'GITHUB_', 'LINEAR_', 
-                       'NOTION_', 'GOOGLESHEETS_', 'COMPOSIO_']
-        is_mcp_tool = any(pattern in function_name for pattern in mcp_patterns)
+        is_mcp_tool = False
         
+        if thread_manager and hasattr(thread_manager, 'mcp_loader'):
+             mcp_loader = thread_manager.mcp_loader
+             if mcp_loader and mcp_loader.tool_map and function_name in mcp_loader.tool_map:
+                 is_mcp_tool = True
+        
+
+        if not is_mcp_tool:
+            from core.agentpress.mcp_registry import get_mcp_registry
+            mcp_registry = get_mcp_registry()
+            if mcp_registry.is_tool_available(function_name):
+                is_mcp_tool = True
+
         if is_mcp_tool:
             logger.info(f"🔒 [ARCH PROTECTION] Blocked MCP tool '{function_name}' from main registry - must use execute_tool wrapper")
             return False
@@ -2150,7 +2658,7 @@ class ResponseProcessor:
                     logger.debug(f"✅ Completed tool {tool_name} with success={result.success if hasattr(result, 'success') else False}")
 
                     # Check if this is a terminating tool (ask or complete)
-                    if tool_name in ['ask', 'complete']:
+                    if tool_name in TERMINATING_TOOLS:
                         logger.debug(f"🛑 TERMINATING TOOL '{tool_name}' executed. Stopping further tool execution.")
                         self.trace.event(name="terminating_tool_executed", level="DEFAULT", status_message=(f"Terminating tool '{tool_name}' executed. Stopping further tool execution."))
                         break  # Stop executing remaining tools
@@ -2295,12 +2803,198 @@ class ResponseProcessor:
 
             return error_results
 
+    async def _save_or_update_partial_assistant_message(
+        self,
+        thread_id: str,
+        thread_run_id: str,
+        tool_calls_buffer: Dict[int, Dict[str, Any]],
+        accumulated_content: str,
+        xml_tool_calls_with_ids: List[Dict[str, Any]],
+        config: ProcessorConfig,
+        partial_assistant_message_id: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Save or update a partial assistant message with complete tool calls.
+        Returns the saved/updated message object with message_id.
+        """
+        try:
+            # Extract complete tool calls from buffer (only those with complete JSON arguments)
+            complete_native_tool_calls = []
+            if config.native_tool_calling:
+                complete_native_tool_calls = convert_buffer_to_complete_tool_calls(tool_calls_buffer)
+            
+            # Build partial message data with complete tool calls only
+            final_content = accumulated_content
+            if "|||STOP_AGENT|||" in final_content:
+                final_content = final_content.replace("|||STOP_AGENT|||", "").strip()
+            
+            message_data = {
+                "role": "assistant",
+                "content": final_content
+            }
+            
+            # Only add tool_calls field for NATIVE tool calling
+            if config.native_tool_calling and complete_native_tool_calls:
+                message_data["tool_calls"] = complete_native_tool_calls
+            
+            # Build unified metadata with all tool calls (native + XML) and clean text
+            assistant_metadata = {"thread_run_id": thread_run_id}
+            
+            # Extract clean text content (without tool calls)
+            text_content = strip_xml_tool_calls(final_content) if config.xml_tool_calling else final_content
+            if text_content.strip():
+                assistant_metadata["text_content"] = text_content
+            
+            # Unify all tool calls into single tool_calls array
+            unified_tool_calls = []
+            
+            # Add native tool calls
+            if config.native_tool_calling and complete_native_tool_calls:
+                for tc in complete_native_tool_calls:
+                    # Transform execute_tool calls to appear as real tool calls for frontend
+                    transformed_tc = self._transform_execute_tool_call(tc)
+                    unified_tc = convert_to_unified_tool_call_format(transformed_tc)
+                    # Apply streaming transformation as well for consistency
+                    final_tc = self._transform_streaming_execute_tool_call(unified_tc)
+                    unified_tool_calls.append(final_tc)
+            
+            # Add XML tool calls
+            if config.xml_tool_calling and xml_tool_calls_with_ids:
+                for xml_tc in xml_tool_calls_with_ids:
+                    # Transform execute_tool calls for XML as well
+                    transformed_xml_tc = self._transform_xml_execute_tool_call(xml_tc)
+                    unified_xml_tc = {
+                        "tool_call_id": transformed_xml_tc.get("tool_call_id"),
+                        "function_name": transformed_xml_tc.get("function_name"),
+                        "arguments": transformed_xml_tc.get("arguments"),
+                        "source": "xml"
+                    }
+                    # Apply streaming transformation for consistency
+                    final_xml_tc = self._transform_streaming_execute_tool_call(unified_xml_tc)
+                    unified_tool_calls.append(final_xml_tc)
+            
+            if unified_tool_calls:
+                assistant_metadata["tool_calls"] = unified_tool_calls
+            
+            # Acquire thread lock to prevent race conditions when multiple tools complete simultaneously
+            thread_lock = await self._get_thread_lock(thread_id)
+            
+            # If partial_assistant_message_id exists, UPDATE the existing message
+            if partial_assistant_message_id:
+                async with thread_lock:
+                    client = await self.thread_manager.db.client
+                    result = await client.table('messages').update({
+                        'content': message_data,
+                        'metadata': assistant_metadata
+                    }).eq('message_id', partial_assistant_message_id).execute()
+                    
+                    if result.data and len(result.data) > 0:
+                        logger.debug(f"Updated partial assistant message {partial_assistant_message_id} with {len(unified_tool_calls)} tool calls")
+                        updated_message = result.data[0]
+                        # Log DB write for assistant message update
+                        if hasattr(self, '_log_db_write') and updated_message:
+                            self._log_db_write("update", "assistant", updated_message, is_update=True)
+                        return updated_message
+                    else:
+                        logger.warning(f"Failed to update partial assistant message {partial_assistant_message_id}")
+                        return None
+            else:
+                # CREATE a new message
+                async with thread_lock:
+                    message_obj = await self._add_message_with_agent_info(
+                        thread_id=thread_id,
+                        type="assistant",
+                        content=message_data,
+                        is_llm_message=True,
+                        metadata=assistant_metadata
+                    )
+                    if message_obj:
+                        logger.debug(f"Created partial assistant message {message_obj.get('message_id')} with {len(unified_tool_calls)} tool calls")
+                        # Log DB write for assistant message creation
+                        if hasattr(self, '_log_db_write'):
+                            self._log_db_write("save", "assistant", message_obj, is_update=False)
+                    return message_obj
+                
+        except Exception as e:
+            logger.error(f"Error saving/updating partial assistant message: {str(e)}", exc_info=True)
+            return None
+
+    async def _handle_tool_execution_completion(
+        self,
+        thread_id: str,
+        thread_run_id: str,
+        tool_call: Dict[str, Any],
+        result: ToolResult,
+        tool_idx: int,
+        context: ToolExecutionContext,
+        tool_calls_buffer: Dict[int, Dict[str, Any]],
+        accumulated_content: str,
+        xml_tool_calls_with_ids: List[Dict[str, Any]],
+        config: ProcessorConfig,
+        partial_assistant_message_id: Optional[str]
+    ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        """
+        Handle immediate saving when a tool execution completes during streaming.
+        Returns: (updated_partial_assistant_message_id, saved_tool_result_object, saved_assistant_message_object)
+        """
+        try:
+            # Step 1: Save or update partial assistant message to ensure it exists
+            saved_assistant_message = await self._save_or_update_partial_assistant_message(
+                thread_id=thread_id,
+                thread_run_id=thread_run_id,
+                tool_calls_buffer=tool_calls_buffer,
+                accumulated_content=accumulated_content,
+                xml_tool_calls_with_ids=xml_tool_calls_with_ids,
+                config=config,
+                partial_assistant_message_id=partial_assistant_message_id
+            )
+            
+            if not saved_assistant_message:
+                logger.error("Failed to save/update partial assistant message, cannot save tool result")
+                return None, None, None
+            
+            # Step 2: Extract assistant_message_id from the saved/updated message
+            assistant_message_id = saved_assistant_message.get('message_id')
+            if not assistant_message_id:
+                logger.error("Saved assistant message missing message_id")
+                return None, None, None
+            
+            # Step 3: Update context with assistant_message_id
+            context.assistant_message_id = assistant_message_id
+            
+            # Step 4: Save the tool result immediately
+            # During streaming, save with is_llm_message=False to prevent partial results from being visible to LLM
+            # These will be batch-updated to is_llm_message=True after all tools complete
+            saved_tool_result_object = await self._add_tool_result(
+                thread_id=thread_id,
+                tool_call=tool_call,
+                result=result,
+                assistant_message_id=assistant_message_id,
+                is_llm_message=False  # Hidden from LLM until all tools complete
+            )
+            
+            if saved_tool_result_object:
+                logger.debug(f"Immediately saved tool result for tool {tool_idx} (function: {context.function_name}) with assistant_message_id {assistant_message_id}")
+                # Mark context as saved during streaming
+                context.saved_during_streaming = True
+                context.saved_result_object = saved_tool_result_object
+            else:
+                logger.error(f"Failed to save tool result for tool {tool_idx}")
+            
+            # Return the assistant_message_id, saved tool result object, and saved assistant message object
+            return assistant_message_id, saved_tool_result_object, saved_assistant_message
+            
+        except Exception as e:
+            logger.error(f"Error handling tool execution completion: {str(e)}", exc_info=True)
+            return None, None, None
+
     async def _add_tool_result(
         self, 
         thread_id: str, 
         tool_call: Dict[str, Any], 
         result: ToolResult,
-        assistant_message_id: Optional[str] = None
+        assistant_message_id: Optional[str] = None,
+        is_llm_message: bool = True
     ) -> Optional[Dict[str, Any]]: # Return the full message object
         """Add a tool result to the conversation thread based on the tool type.
         
@@ -2316,6 +3010,8 @@ class ResponseProcessor:
             tool_call: The original tool call that produced this result (must have "source" field)
             result: The result from the tool execution
             assistant_message_id: ID of the assistant message that generated this tool call
+            is_llm_message: Whether this message should be visible to the LLM (default True).
+                           Set to False during streaming to prevent partial results from being visible.
         
         Returns:
             The full saved message object or None if save failed
@@ -2395,7 +3091,8 @@ class ResponseProcessor:
                         if isinstance(output_dict, dict) and output_dict.get('_internal'):
                             is_internal = True
                             logger.debug(f"🔒 [INTERNAL] Tool result from '{function_name}' marked as internal (hidden from UI)")
-                    except:
+                    except (json.JSONDecodeError, ValueError, TypeError):
+                        # Ignore JSON parsing errors - not all tool outputs are JSON
                         pass
                 
                 # Mark as internal in metadata so frontend can hide it
@@ -2405,13 +3102,27 @@ class ResponseProcessor:
                 
                 # Add as a tool message to the conversation history
                 # This makes the result visible to the LLM in the next turn (but can be hidden from UI)
-                message_obj = await self.add_message(
-                    thread_id=thread_id,
-                    type="tool",  # Special type for tool responses
-                    content=tool_message,  # Entire tool_message dict goes in content
-                    is_llm_message=True,
-                    metadata=metadata
-                )
+                # Note: is_llm_message may be False during streaming to prevent partial results from being visible
+                # Acquire thread lock to prevent race conditions when multiple tools complete simultaneously
+                thread_lock = await self._get_thread_lock(thread_id)
+                async with thread_lock:
+                    message_obj = await self.add_message(
+                        thread_id=thread_id,
+                        type="tool",  # Special type for tool responses
+                        content=tool_message,  # Entire tool_message dict goes in content
+                        is_llm_message=is_llm_message,
+                        metadata=metadata
+                    )
+                
+                # Log DB write for tool result (outside lock to avoid blocking)
+                if hasattr(self, '_log_db_write') and message_obj:
+                    # Add note in log if saved with is_llm_message=False (streaming mode)
+                    log_data = message_obj.copy()
+                    if not is_llm_message:
+                        log_data['_streaming_hidden'] = True
+                        log_data['_note'] = "Saved with is_llm_message=False - will be batch-updated after all tools complete"
+                    self._log_db_write("save", "tool", log_data, is_update=False)
+                
                 return message_obj # Return the full message object
             
             # For XML tool calls, use role="user" with only content (no name, no tool_call_id)
@@ -2451,13 +3162,27 @@ class ResponseProcessor:
 
             # Add as a tool message to the conversation history
             # XML tool calls use role="user" with only content field
-            message_obj = await self.add_message(
-                thread_id=thread_id,
-                type="tool",  # Special type for tool responses
-                content=tool_message,  # role="user" with only content
-                is_llm_message=True,
-                metadata=metadata
-            )
+            # Note: is_llm_message may be False during streaming to prevent partial results from being visible
+            # Acquire thread lock to prevent race conditions when multiple tools complete simultaneously
+            thread_lock = await self._get_thread_lock(thread_id)
+            async with thread_lock:
+                message_obj = await self.add_message(
+                    thread_id=thread_id,
+                    type="tool",  # Special type for tool responses
+                    content=tool_message,  # role="user" with only content
+                    is_llm_message=is_llm_message,
+                    metadata=metadata
+                )
+            
+            # Log DB write for tool result (outside lock to avoid blocking)
+            if hasattr(self, '_log_db_write') and message_obj:
+                # Add note in log if saved with is_llm_message=False (streaming mode)
+                log_data = message_obj.copy()
+                if not is_llm_message:
+                    log_data['_streaming_hidden'] = True
+                    log_data['_note'] = "Saved with is_llm_message=False - will be batch-updated after all tools complete"
+                self._log_db_write("save", "tool", log_data, is_update=False)
+            
             return message_obj # Return the full message object
         except Exception as e:
             logger.error(f"Error adding tool result: {str(e)}", exc_info=True)
@@ -2468,13 +3193,26 @@ class ResponseProcessor:
                     "role": "user",
                     "content": str(result)
                 }
-                message_obj = await self.add_message(
-                    thread_id=thread_id, 
-                    type="tool", 
-                    content=fallback_message,
-                    is_llm_message=True,
-                    metadata={"assistant_message_id": assistant_message_id} if assistant_message_id else {}
-                )
+                # Acquire thread lock to prevent race conditions when multiple tools complete simultaneously
+                thread_lock = await self._get_thread_lock(thread_id)
+                async with thread_lock:
+                    message_obj = await self.add_message(
+                        thread_id=thread_id, 
+                        type="tool", 
+                        content=fallback_message,
+                        is_llm_message=is_llm_message,
+                        metadata={"assistant_message_id": assistant_message_id} if assistant_message_id else {}
+                    )
+                
+                # Log DB write for tool result (fallback)
+                if hasattr(self, '_log_db_write') and message_obj:
+                    # Add note in log if saved with is_llm_message=False (streaming mode)
+                    log_data = message_obj.copy()
+                    if not is_llm_message:
+                        log_data['_streaming_hidden'] = True
+                        log_data['_note'] = "Saved with is_llm_message=False - will be batch-updated after all tools complete"
+                    self._log_db_write("save", "tool", log_data, is_update=False)
+                
                 return message_obj # Return the full message object
             except Exception as e2:
                 logger.error(f"Failed even with fallback message: {str(e2)}", exc_info=True)
@@ -2539,6 +3277,151 @@ class ResponseProcessor:
         context.function_name = tool_call.get("function_name", "unknown")
         
         return context
+    
+    async def _process_completed_tool_executions(
+        self,
+        pending_tool_executions: List[Dict[str, Any]],
+        thread_id: str,
+        thread_run_id: str,
+        last_assistant_message_object: Optional[Dict[str, Any]],
+        yielded_tool_indices: set,
+        agent_should_terminate: bool,
+        frontend_debug_file: Optional[Path] = None
+    ):
+        """
+        Process any completed tool executions in real-time during streaming.
+        Uses asyncio.wait() with FIRST_COMPLETED to yield results immediately as each tool completes.
+        
+        Yields:
+            Dict: Tool result messages and status messages (yielded immediately)
+            Tuple: Final state tuple (remaining_executions, updated_yielded_indices, updated_terminate_flag) as last item
+        """
+        remaining_executions = []
+        updated_yielded_indices = yielded_tool_indices.copy()
+        updated_terminate_flag = agent_should_terminate
+        
+        if not pending_tool_executions:
+            yield (remaining_executions, updated_yielded_indices, updated_terminate_flag)
+            return
+        
+        # Extract tasks for asyncio.wait()
+        task_to_execution = {execution["task"]: execution for execution in pending_tool_executions}
+        tasks = list(task_to_execution.keys())
+        
+        # Process completed tasks using asyncio.wait() with FIRST_COMPLETED
+        # This allows us to yield results immediately as each tool completes
+        while tasks:
+            try:
+                # Wait for at least one task to complete (with a small timeout to avoid blocking)
+                done, pending = await asyncio.wait(
+                    tasks, 
+                    return_when=asyncio.FIRST_COMPLETED,
+                    timeout=0.001  # Very short timeout to avoid blocking the stream
+                )
+                
+                # Process all completed tasks
+                for task in done:
+                    execution = task_to_execution[task]
+                    tool_idx = execution.get("tool_index", -1)
+                    context = execution["context"]
+                    tool_call = execution["tool_call"]
+                    tool_name = context.function_name
+                    
+                    # Check for exceptions before getting result
+                    task_exception = task.exception()
+                    if task_exception:
+                        # Task completed with an exception - handle as error
+                        logger.error(f"Tool execution {tool_idx} failed with exception: {str(task_exception)}", exc_info=task_exception)
+                        self.trace.event(
+                            name="tool_execution_failed",
+                            level="ERROR",
+                            status_message=(f"Tool execution {tool_idx} failed with exception: {str(task_exception)}")
+                        )
+                        context.error = task_exception
+                        error_msg_obj = await self._yield_and_save_tool_error(context, thread_id, thread_run_id)
+                        if error_msg_obj:
+                            formatted = format_for_yield(error_msg_obj)
+                            self._log_frontend_message(formatted, frontend_debug_file)
+                            yield formatted
+                        updated_yielded_indices.add(tool_idx)
+                        tasks.remove(task)
+                        continue
+                    
+                    # Task completed successfully - get result and process
+                    try:
+                        result = task.result()
+                        context.result = result
+                        
+                        # Get assistant message ID
+                        assistant_message_id = (
+                            last_assistant_message_object['message_id'] 
+                            if last_assistant_message_object 
+                            else context.assistant_message_id
+                        )
+                        
+                        # Add tool result to conversation thread
+                        saved_tool_result_object = await self._add_tool_result(
+                            thread_id, tool_call, result, assistant_message_id
+                        )
+                        
+                        # Get tool_message_id from saved result
+                        tool_message_id = saved_tool_result_object['message_id'] if saved_tool_result_object else None
+                        
+                        # Check for terminating tools
+                        if tool_name in TERMINATING_TOOLS:
+                            logger.debug(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag.")
+                            self.trace.event(
+                                name="terminating_tool_completed_during_streaming",
+                                level="DEFAULT",
+                                status_message=(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag.")
+                            )
+                            updated_terminate_flag = True
+                        
+                        # Yield and save tool completed status
+                        completed_msg_obj = await self._yield_and_save_tool_completed(
+                            context, tool_message_id, thread_id, thread_run_id
+                        )
+                        
+                        # Yield the tool result message object immediately
+                        if saved_tool_result_object:
+                            yield format_for_yield(saved_tool_result_object)
+                        
+                        # Yield the completed status message immediately
+                        if completed_msg_obj:
+                            yield format_for_yield(completed_msg_obj)
+                        
+                        updated_yielded_indices.add(tool_idx)
+                        tasks.remove(task)
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing completed tool execution {tool_idx}: {str(e)}", exc_info=True)
+                        self.trace.event(
+                            name="error_processing_completed_tool_execution",
+                            level="ERROR",
+                            status_message=(f"Error processing completed tool execution {tool_idx}: {str(e)}")
+                        )
+                        context.error = e
+                        error_msg_obj = await self._yield_and_save_tool_error(context, thread_id, thread_run_id)
+                        if error_msg_obj:
+                            formatted = format_for_yield(error_msg_obj)
+                            self._log_frontend_message(formatted, frontend_debug_file)
+                            yield formatted
+                        updated_yielded_indices.add(tool_idx)
+                        tasks.remove(task)
+                
+                # Update tasks list to only pending ones
+                tasks = list(pending)
+                
+            except asyncio.TimeoutError:
+                # No tasks completed within timeout - break and return remaining
+                break
+        
+        # Add remaining tasks back to remaining_executions
+        for task in tasks:
+            remaining_executions.append(task_to_execution[task])
+        
+        # Yield final state tuple as last item
+        yield (remaining_executions, updated_yielded_indices, updated_terminate_flag)
         
     async def _yield_and_save_tool_started(self, context: ToolExecutionContext, thread_id: str, thread_run_id: str) -> Optional[Dict[str, Any]]:
         """Formats, saves, and returns a tool started status message."""
@@ -2573,7 +3456,7 @@ class ResponseProcessor:
             metadata["linked_tool_result_message_id"] = tool_message_id
             
         # Signal if this is a terminating tool
-        if context.function_name in ['ask', 'complete']:
+        if context.function_name in TERMINATING_TOOLS:
             metadata["agent_should_terminate"] = True
             logger.debug(f"Marking tool status for '{context.function_name}' with termination signal.")
 

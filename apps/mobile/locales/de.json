@@ -787,6 +787,9 @@
     "upgradeRequired": "Upgrade Erforderlich",
     "upgradeRequiredMessage": "Thread-Freigabe ist nur in kostenpflichtigen Plänen verfügbar. Upgrade, um diese Funktion freizuschalten.",
     "upgrade": "Upgraden",
+    "share": "Teilen",
+    "files": "Dateien",
+    "delete": "Löschen",
     "shareThread": "Thread teilen",
     "shareThreadUpgrade": "Thread teilen (Upgrade)",
     "availableOnPaidPlans": "In kostenpflichtigen Plänen verfügbar",
@@ -794,6 +797,7 @@
     "manageFiles": "Dateien verwalten",
     "viewManageAttachments": "Anhänge anzeigen und verwalten",
     "deleteThread": "Thread löschen",
+    "deleteConfirm": "Möchten Sie diesen Thread wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
     "permanentlyDelete": "Diese Unterhaltung dauerhaft löschen"
   },
   "triggers": {

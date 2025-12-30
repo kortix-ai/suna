@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Command,
   Info,
+  Table,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
@@ -30,6 +31,7 @@ interface QuickLaunchProps {
   onOpenBrowser?: () => void;
   onOpenTerminal?: () => void;
   onOpenSystemInfo?: () => void;
+  onOpenSpreadsheets?: () => void;
   files?: FileResult[];
 }
 
@@ -38,6 +40,7 @@ const quickActions = [
   { id: 'browser', name: 'Open Browser', icon: Globe, shortcut: '⌘2' },
   { id: 'terminal', name: 'Open Terminal', icon: Terminal, shortcut: '⌘3' },
   { id: 'info', name: 'System Info', icon: Info, shortcut: '⌘I' },
+  { id: 'spreadsheet', name: 'Spreadsheets', icon: Table, shortcut: '⌘S' },
 ];
 
 export const QuickLaunch = memo(function QuickLaunch({
@@ -48,6 +51,7 @@ export const QuickLaunch = memo(function QuickLaunch({
   onOpenBrowser,
   onOpenTerminal,
   onOpenSystemInfo,
+  onOpenSpreadsheets,
   files = [],
 }: QuickLaunchProps) {
   const [query, setQuery] = useState('');
@@ -96,6 +100,7 @@ export const QuickLaunch = memo(function QuickLaunch({
       if (item.id === 'browser') onOpenBrowser?.();
       if (item.id === 'terminal') onOpenTerminal?.();
       if (item.id === 'info') onOpenSystemInfo?.();
+      if (item.id === 'spreadsheet') onOpenSpreadsheets?.();
       onClose();
     } else if (item.type === 'file') {
       onFileSelect?.(item.path);

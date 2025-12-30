@@ -45,7 +45,7 @@ async def get_user_threads(
         
         # Optimized: Select only needed columns from threads table
         threads_result = await client.table('threads')\
-            .select('thread_id,project_id,metadata,is_public,created_at,updated_at')\
+            .select('thread_id,project_id,name,metadata,is_public,created_at,updated_at')\
             .eq('account_id', user_id)\
             .order('created_at', desc=True)\
             .range(offset, offset + limit - 1)\
@@ -96,6 +96,7 @@ async def get_user_threads(
             mapped_thread = {
                 "thread_id": thread['thread_id'],
                 "project_id": thread.get('project_id'),
+                "name": thread.get('name', 'New Chat'),
                 "metadata": thread.get('metadata', {}),
                 "is_public": thread.get('is_public', False),
                 "created_at": thread['created_at'],
@@ -172,11 +173,24 @@ async def get_project(
                     raise HTTPException(status_code=403, detail="Not authorized to access this project")
         
         # Map project data for frontend
+        # Get sandbox info from resource if it exists
+        sandbox_info = {}
+        sandbox_resource_id = project.get('sandbox_resource_id')
+        if sandbox_resource_id:
+            from core.resources import ResourceService
+            resource_service = ResourceService(client)
+            resource = await resource_service.get_resource_by_id(sandbox_resource_id)
+            if resource:
+                sandbox_info = {
+                    'id': resource.get('external_id'),
+                    **resource.get('config', {})
+                }
+        
         project_data = {
             "project_id": project['project_id'],
             "name": project.get('name', ''),
             "description": project.get('description', ''),
-            "sandbox": project.get('sandbox', {}),
+            "sandbox": sandbox_info,
             "is_public": project.get('is_public', False),
             "icon_name": project.get('icon_name'),
             "created_at": project['created_at'],
@@ -191,6 +205,261 @@ async def get_project(
     except Exception as e:
         logger.error(f"Error fetching project {project_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch project: {str(e)}")
+
+@router.get("/projects/{project_id}/threads", summary="List Project Threads", operation_id="list_project_threads")
+async def get_project_threads(
+    project_id: str,
+    request: Request,
+    user_id: Optional[str] = Depends(verify_and_get_user_id_from_jwt),
+    page: Optional[int] = Query(1, ge=1, description="Page number (1-based)"),
+    limit: Optional[int] = Query(100, ge=1, le=1000, description="Number of items per page (max 1000)")
+):
+    """List all threads for a specific project."""
+    logger.debug(f"Fetching threads for project: {project_id} (page={page}, limit={limit})")
+    client = await utils.db.client
+    
+    try:
+        # Verify project access
+        project_result = await client.table('projects').select('account_id, is_public').eq('project_id', project_id).execute()
+        if not project_result.data or len(project_result.data) == 0:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        project = project_result.data[0]
+        is_public = project.get('is_public', False)
+        
+        if not is_public:
+            if not user_id:
+                raise HTTPException(status_code=401, detail="Authentication required for private projects")
+            
+            account_id = project.get('account_id')
+            if account_id:
+                account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', account_id).execute()
+                if not (account_user_result.data and len(account_user_result.data) > 0):
+                    raise HTTPException(status_code=403, detail="Not authorized to access this project")
+        
+        offset = (page - 1) * limit
+        
+        # Count threads for this project
+        count_result = await client.table('threads').select('thread_id', count='exact').eq('project_id', project_id).execute()
+        total_count = count_result.count or 0
+        
+        if total_count == 0:
+            return {
+                "threads": [],
+                "pagination": {
+                    "page": page,
+                    "limit": limit,
+                    "total": 0,
+                    "pages": 0
+                }
+            }
+        
+        # Get threads for this project
+        threads_result = await client.table('threads')\
+            .select('thread_id,project_id,name,metadata,is_public,created_at,updated_at')\
+            .eq('project_id', project_id)\
+            .order('created_at', desc=True)\
+            .range(offset, offset + limit - 1)\
+            .execute()
+        
+        threads = threads_result.data or []
+        
+        # Get message counts for each thread
+        thread_ids = [t['thread_id'] for t in threads]
+        mapped_threads = []
+        
+        for thread in threads:
+            message_count_result = await client.table('messages').select('message_id', count='exact').eq('thread_id', thread['thread_id']).execute()
+            message_count = message_count_result.count if message_count_result.count is not None else 0
+            
+            mapped_thread = {
+                "thread_id": thread['thread_id'],
+                "project_id": thread.get('project_id'),
+                "name": thread.get('name', 'New Chat'),
+                "metadata": thread.get('metadata', {}),
+                "is_public": thread.get('is_public', False),
+                "created_at": thread['created_at'],
+                "updated_at": thread['updated_at'],
+                "message_count": message_count
+            }
+            mapped_threads.append(mapped_thread)
+        
+        total_pages = (total_count + limit - 1) // limit if total_count else 0
+        
+        return {
+            "threads": mapped_threads,
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": total_count,
+                "pages": total_pages
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching threads for project {project_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch project threads: {str(e)}")
+
+@router.post("/projects/{project_id}/threads", response_model=CreateThreadResponse, summary="Create Thread in Project", operation_id="create_thread_in_project")
+async def create_thread_in_project(
+    project_id: str,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """Create a new thread within an existing project. Shares the project's sandbox resource."""
+    logger.debug(f"Creating new thread in project: {project_id}")
+    client = await utils.db.client
+    account_id = user_id
+    
+    try:
+        # Verify project exists and user has access
+        project_result = await client.table('projects').select('account_id, name').eq('project_id', project_id).execute()
+        if not project_result.data or len(project_result.data) == 0:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        project = project_result.data[0]
+        project_account_id = project.get('account_id')
+        
+        # Verify user has access to this project
+        if project_account_id != account_id:
+            account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', account_id).eq('account_id', project_account_id).execute()
+            if not (account_user_result.data and len(account_user_result.data) > 0):
+                raise HTTPException(status_code=403, detail="Not authorized to create threads in this project")
+        
+        # Check thread limit
+        if config.ENV_MODE != EnvMode.LOCAL:
+            from core.utils.limits_checker import check_thread_limit
+            thread_limit_check = await check_thread_limit(client, account_id)
+            if not thread_limit_check['can_create']:
+                error_detail = {
+                    "message": f"Maximum of {thread_limit_check['limit']} threads allowed for your current plan. You have {thread_limit_check['current_count']} threads.",
+                    "current_count": thread_limit_check['current_count'],
+                    "limit": thread_limit_check['limit'],
+                    "tier_name": thread_limit_check['tier_name'],
+                    "error_code": "THREAD_LIMIT_EXCEEDED"
+                }
+                logger.warning(f"Thread limit exceeded for account {account_id}: {thread_limit_check['current_count']}/{thread_limit_check['limit']}")
+                raise HTTPException(status_code=402, detail=error_detail)
+        
+        # Create thread linked to existing project
+        thread_data = {
+            "thread_id": str(uuid.uuid4()),
+            "project_id": project_id,
+            "account_id": account_id,
+            "name": "New Chat",  # Default name for empty threads
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        from core.utils.logger import structlog
+        structlog.contextvars.bind_contextvars(
+            thread_id=thread_data["thread_id"],
+            project_id=project_id,
+            account_id=account_id,
+        )
+        
+        thread = await client.table('threads').insert(thread_data).execute()
+        thread_id = thread.data[0]['thread_id']
+        logger.debug(f"Created new thread: {thread_id} in project: {project_id}")
+        
+        # Increment thread count cache (fire-and-forget)
+        try:
+            from core.runtime_cache import increment_thread_count_cache
+            asyncio.create_task(increment_thread_count_cache(account_id))
+        except Exception:
+            pass
+        
+        logger.debug(f"Successfully created thread {thread_id} in project {project_id}")
+        return {"thread_id": thread_id, "project_id": project_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating thread in project {project_id}: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to create thread: {str(e)}")
+
+@router.delete("/projects/{project_id}", summary="Delete Project", operation_id="delete_project")
+async def delete_project(
+    project_id: str,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """Delete a project and all its threads, messages, agent runs, and associated resources."""
+    logger.debug(f"Deleting project: {project_id}")
+    client = await utils.db.client
+    
+    try:
+        # Verify project exists and user has access
+        project_result = await client.table('projects').select('account_id').eq('project_id', project_id).execute()
+        if not project_result.data or len(project_result.data) == 0:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        project = project_result.data[0]
+        project_account_id = project.get('account_id')
+        
+        # Verify user has access to this project
+        if project_account_id != user_id:
+            account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', project_account_id).execute()
+            if not (account_user_result.data and len(account_user_result.data) > 0):
+                raise HTTPException(status_code=403, detail="Not authorized to delete this project")
+        
+        # Get all threads for this project
+        threads_result = await client.table('threads').select('thread_id').eq('project_id', project_id).execute()
+        thread_ids = [t['thread_id'] for t in (threads_result.data or [])]
+        
+        # Delete sandbox resource if it exists
+        from core.resources import ResourceService
+        resource_service = ResourceService(client)
+        sandbox_resource = await resource_service.get_project_sandbox_resource(project_id)
+        if sandbox_resource:
+            sandbox_id = sandbox_resource.get('external_id')
+            if sandbox_id:
+                try:
+                    logger.debug(f"Deleting sandbox {sandbox_id} for project {project_id}")
+                    await delete_sandbox(sandbox_id)
+                    logger.debug(f"Successfully deleted sandbox {sandbox_id}")
+                except Exception as e:
+                    logger.error(f"Error deleting sandbox {sandbox_id}: {str(e)}")
+        
+        # Delete all agent runs for all threads
+        if thread_ids:
+            logger.debug(f"Deleting agent runs for {len(thread_ids)} threads")
+            for thread_id in thread_ids:
+                await client.table('agent_runs').delete().eq('thread_id', thread_id).execute()
+        
+        # Delete all messages for all threads
+        if thread_ids:
+            logger.debug(f"Deleting messages for {len(thread_ids)} threads")
+            for thread_id in thread_ids:
+                await client.table('messages').delete().eq('thread_id', thread_id).execute()
+        
+        # Delete all threads
+        if thread_ids:
+            logger.debug(f"Deleting {len(thread_ids)} threads")
+            await client.table('threads').delete().eq('project_id', project_id).execute()
+        
+        # Delete the project
+        logger.debug(f"Deleting project {project_id}")
+        project_delete_result = await client.table('projects').delete().eq('project_id', project_id).execute()
+        
+        if not project_delete_result.data:
+            raise HTTPException(status_code=500, detail="Failed to delete project")
+        
+        # Invalidate caches
+        try:
+            from core.runtime_cache import invalidate_thread_count_cache, invalidate_project_cache
+            await invalidate_thread_count_cache(user_id)
+            await invalidate_project_cache(project_id)
+        except Exception:
+            pass
+        
+        logger.debug(f"Successfully deleted project {project_id} and all associated data")
+        return {"message": "Project deleted successfully", "project_id": project_id, "threads_deleted": len(thread_ids)}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting project {project_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete project: {str(e)}")
 
 @router.get("/threads/{thread_id}", summary="Get Thread", operation_id="get_thread")
 async def get_thread(
@@ -219,11 +488,25 @@ async def get_thread(
             
             if project_result.data:
                 project = project_result.data[0]
+                
+                # Get sandbox info from resource if it exists
+                sandbox_info = {}
+                sandbox_resource_id = project.get('sandbox_resource_id')
+                if sandbox_resource_id:
+                    from core.resources import ResourceService
+                    resource_service = ResourceService(client)
+                    resource = await resource_service.get_resource_by_id(sandbox_resource_id)
+                    if resource:
+                        sandbox_info = {
+                            'id': resource.get('external_id'),
+                            **resource.get('config', {})
+                        }
+                
                 project_data = {
                     "project_id": project['project_id'],
                     "name": project.get('name', ''),
                     "description": project.get('description', ''),
-                    "sandbox": project.get('sandbox', {}),
+                    "sandbox": sandbox_info,
                     "is_public": project.get('is_public', False),
                     "icon_name": project.get('icon_name'),
                     "created_at": project['created_at'],
@@ -231,7 +514,6 @@ async def get_thread(
                 }
                 
                 # If thread has an existing sandbox, start it proactively in background
-                sandbox_info = project.get('sandbox', {})
                 if sandbox_info and sandbox_info.get('id'):
                     sandbox_id = sandbox_info.get('id')
                     logger.info(f"Thread {thread_id} has existing sandbox {sandbox_id}, starting it in background...")
@@ -267,6 +549,7 @@ async def get_thread(
         mapped_thread = {
             "thread_id": thread['thread_id'],
             "project_id": thread.get('project_id'),
+            "name": thread.get('name', 'New Chat'),
             "metadata": thread.get('metadata', {}),
             "is_public": thread.get('is_public', False),
             "created_at": thread['created_at'],
@@ -359,24 +642,45 @@ async def create_thread(
                     logger.error(f"Error deleting sandbox: {str(e)}")
             raise Exception("Failed to create sandbox")
 
-        update_result = await client.table('projects').update({
-            'sandbox': {
-                'id': sandbox_id, 
-                'pass': sandbox_pass, 
+        # Create resource record and link to project using ResourceService
+        try:
+            from core.resources import ResourceService, ResourceType, ResourceStatus
+            resource_service = ResourceService(client)
+            
+            sandbox_config = {
+                'pass': sandbox_pass,
                 'vnc_preview': vnc_url,
-                'sandbox_url': website_url, 
+                'sandbox_url': website_url,
                 'token': token
             }
-        }).eq('project_id', project_id).execute()
-
-        if not update_result.data:
-            logger.error(f"Failed to update project {project_id} with new sandbox {sandbox_id}")
+            
+            resource = await resource_service.create_resource(
+                account_id=account_id,
+                resource_type=ResourceType.SANDBOX,
+                external_id=sandbox_id,
+                config=sandbox_config,
+                status=ResourceStatus.ACTIVE
+            )
+            resource_id = resource['id']
+            
+            # Link resource to project
+            if not await resource_service.link_resource_to_project(project_id, resource_id):
+                logger.error(f"Failed to link resource {resource_id} to project {project_id}")
+                if sandbox_id:
+                    try: 
+                        await delete_sandbox(sandbox_id)
+                        await resource_service.delete_resource(resource_id)
+                    except Exception as e: 
+                        logger.error(f"Error deleting sandbox: {str(e)}")
+                raise Exception("Database update failed")
+        except Exception as e:
+            logger.error(f"Failed to create resource for sandbox {sandbox_id}: {str(e)}")
             if sandbox_id:
                 try: 
                     await delete_sandbox(sandbox_id)
                 except Exception as e: 
                     logger.error(f"Error deleting sandbox: {str(e)}")
-            raise Exception("Database update failed")
+            raise Exception(f"Failed to create sandbox resource: {str(e)}")
 
         # Update project metadata cache with sandbox data (instead of invalidate)
         try:
@@ -397,6 +701,7 @@ async def create_thread(
             "thread_id": str(uuid.uuid4()), 
             "project_id": project_id, 
             "account_id": account_id,
+            "name": "New Chat",  # Default name for empty threads
             "created_at": datetime.now(timezone.utc).isoformat()
         }
 
@@ -543,6 +848,13 @@ async def add_message_to_thread(
         await verify_and_authorize_thread_access(client, thread_id, user_id)
     
     try:
+        # Check if thread still has default name and update it
+        thread_name_result = await client.table('threads').select('name').eq('thread_id', thread_id).execute()
+        if thread_name_result.data and thread_name_result.data[0].get('name') in ('New Chat', None):
+            # Update thread name in background
+            from core.utils.thread_name_generator import generate_and_update_thread_name
+            asyncio.create_task(generate_and_update_thread_name(thread_id=thread_id, prompt=message))
+        
         message_result = await client.table('messages').insert({
             'thread_id': thread_id,
             'type': 'user',
@@ -685,11 +997,25 @@ async def update_thread(
             project_result = await client.table('projects').select('*').eq('project_id', project_id).execute()
             if project_result.data:
                 project = project_result.data[0]
+                
+                # Get sandbox info from resource if it exists
+                sandbox_info = {}
+                sandbox_resource_id = project.get('sandbox_resource_id')
+                if sandbox_resource_id:
+                    from core.resources import ResourceService
+                    resource_service = ResourceService(client)
+                    resource = await resource_service.get_resource_by_id(sandbox_resource_id)
+                    if resource:
+                        sandbox_info = {
+                            'id': resource.get('external_id'),
+                            **resource.get('config', {})
+                        }
+                
                 project_data = {
                     "project_id": project['project_id'],
                     "name": project.get('name', ''),
                     "description": project.get('description', ''),
-                    "sandbox": project.get('sandbox', {}),
+                    "sandbox": sandbox_info,
                     "is_public": project.get('is_public', False),
                     "icon_name": project.get('icon_name'),
                     "created_at": project['created_at'],
@@ -719,6 +1045,7 @@ async def delete_thread(
     thread_id: str,
     auth: AuthorizedThreadAccess = Depends(require_thread_access)
 ):
+    """Delete a thread. Only deletes the project if this is the last thread in the project."""
     logger.debug(f"Deleting thread: {thread_id}")
     client = await utils.db.client
     
@@ -729,28 +1056,16 @@ async def delete_thread(
         
         thread = thread_result.data[0]
         project_id = thread.get('project_id')
-        sandbox_id = None
         
-        if project_id:
-            project_result = await client.table('projects').select('sandbox').eq('project_id', project_id).execute()
-            if project_result.data and project_result.data[0].get('sandbox'):
-                sandbox_data = project_result.data[0]['sandbox']
-                sandbox_id = sandbox_data.get('id') if isinstance(sandbox_data, dict) else None
-        
-        if sandbox_id:
-            try:
-                logger.debug(f"Deleting sandbox {sandbox_id} for thread {thread_id}")
-                await delete_sandbox(sandbox_id)
-                logger.debug(f"Successfully deleted sandbox {sandbox_id}")
-            except Exception as e:
-                logger.error(f"Error deleting sandbox {sandbox_id}: {str(e)}")
-        
+        # Delete agent runs for this thread
         logger.debug(f"Deleting agent runs for thread {thread_id}")
         await client.table('agent_runs').delete().eq('thread_id', thread_id).execute()
         
+        # Delete messages for this thread
         logger.debug(f"Deleting messages for thread {thread_id}")
         await client.table('messages').delete().eq('thread_id', thread_id).execute()
         
+        # Delete the thread
         logger.debug(f"Deleting thread {thread_id}")
         thread_delete_result = await client.table('threads').delete().eq('thread_id', thread_id).execute()
         
@@ -764,18 +1079,43 @@ async def delete_thread(
         except Exception:
             pass
         
+        # Check if this was the last thread in the project
         if project_id:
-            logger.debug(f"Deleting project {project_id}")
-            await client.table('projects').delete().eq('project_id', project_id).execute()
+            remaining_threads_result = await client.table('threads').select('thread_id', count='exact').eq('project_id', project_id).execute()
+            remaining_thread_count = remaining_threads_result.count or 0
             
-            # Invalidate project cache
-            try:
-                from core.runtime_cache import invalidate_project_cache
-                await invalidate_project_cache(project_id)
-            except Exception:
-                pass
+            # Only delete project and sandbox if this was the last thread
+            if remaining_thread_count == 0:
+                logger.debug(f"Last thread deleted, cleaning up project {project_id}")
+                
+                # Delete sandbox resource if it exists
+                from core.resources import ResourceService
+                resource_service = ResourceService(client)
+                sandbox_resource = await resource_service.get_project_sandbox_resource(project_id)
+                if sandbox_resource:
+                    sandbox_id = sandbox_resource.get('external_id')
+                    if sandbox_id:
+                        try:
+                            logger.debug(f"Deleting sandbox {sandbox_id} for project {project_id}")
+                            await delete_sandbox(sandbox_id)
+                            logger.debug(f"Successfully deleted sandbox {sandbox_id}")
+                        except Exception as e:
+                            logger.error(f"Error deleting sandbox {sandbox_id}: {str(e)}")
+                
+                # Delete the project
+                logger.debug(f"Deleting project {project_id}")
+                await client.table('projects').delete().eq('project_id', project_id).execute()
+                
+                # Invalidate project cache
+                try:
+                    from core.runtime_cache import invalidate_project_cache
+                    await invalidate_project_cache(project_id)
+                except Exception:
+                    pass
+            else:
+                logger.debug(f"Project {project_id} has {remaining_thread_count} remaining threads, keeping project")
         
-        logger.debug(f"Successfully deleted thread {thread_id} and all associated data")
+        logger.debug(f"Successfully deleted thread {thread_id}")
         return {"message": "Thread deleted successfully", "thread_id": thread_id}
         
     except HTTPException:

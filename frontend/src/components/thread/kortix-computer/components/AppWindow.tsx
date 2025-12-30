@@ -5,6 +5,10 @@ import { motion, useDragControls, PanInfo } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { Minus, Square, X } from 'lucide-react';
 
+export const DESKTOP_HEADER_HEIGHT = 36;
+export const DESKTOP_DOCK_HEIGHT = 68;
+export const DESKTOP_PADDING = 4;
+
 interface AppWindowProps {
   id: string;
   title: string;
@@ -56,10 +60,13 @@ export const AppWindow = memo(function AppWindow({
       setIsMaximized(false);
     } else {
       setPreMaximizeState({ position, size });
-      setPosition({ x: 20, y: 20 });
+      const containerHeight = window.innerHeight - DESKTOP_HEADER_HEIGHT;
+      const usableHeight = containerHeight - DESKTOP_DOCK_HEIGHT - (DESKTOP_PADDING * 2);
+      const usableWidth = window.innerWidth - (DESKTOP_PADDING * 2);
+      setPosition({ x: DESKTOP_PADDING, y: DESKTOP_PADDING });
       setSize({ 
-        width: window.innerWidth - 40, 
-        height: window.innerHeight - 40 
+        width: usableWidth, 
+        height: usableHeight 
       });
       setIsMaximized(true);
     }
@@ -144,9 +151,9 @@ export const AppWindow = memo(function AppWindow({
       onMouseDown={onFocus}
       style={{ zIndex }}
       className={cn(
-        "absolute flex flex-col rounded-2xl overflow-hidden",
-        "border border-border",
-        isActive ? "shadow-2xl" : "shadow-xl"
+        "absolute flex flex-col rounded-xl overflow-hidden",
+        "border border-border/60",
+        isActive ? "shadow-2xl shadow-black/20" : "shadow-xl shadow-black/10"
       )}
     >
       <div
@@ -157,8 +164,8 @@ export const AppWindow = memo(function AppWindow({
         }}
         onDoubleClick={handleMaximize}
         className={cn(
-          "flex items-center h-11 px-2.5 gap-3 select-none flex-shrink-0",
-          "border-b border-border bg-background/60 backdrop-blur-2xl"
+          "flex items-center h-9 px-2.5 gap-2 select-none flex-shrink-0",
+          "border-b border-border/50 bg-background/80 backdrop-blur-2xl"
         )}
       >
         <div className="flex items-center gap-1.5">
@@ -167,41 +174,41 @@ export const AppWindow = memo(function AppWindow({
               e.stopPropagation();
               onClose();
             }}
-            className="group w-4 h-4 rounded-sm bg-red-500 hover:opacity-80 flex items-center justify-center transition-colors"
+            className="group w-3 h-3 rounded-full bg-[#ff5f57] hover:bg-[#ff5f57]/80 flex items-center justify-center transition-all"
           >
-            <X className="w-2.5 h-2.5 text-white transition-colors" strokeWidth={2} />
+            <X className="w-2 h-2 text-[#ff5f57] group-hover:text-red-900 transition-colors opacity-0 group-hover:opacity-100" strokeWidth={2.5} />
           </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
               onMinimize?.();
             }}
-            className="group w-4 h-4 rounded-sm bg-yellow-500 hover:opacity-80 flex items-center justify-center transition-colors"
+            className="group w-3 h-3 rounded-full bg-[#febc2e] hover:bg-[#febc2e]/80 flex items-center justify-center transition-all"
           >
-            <Minus className="w-2.5 h-2.5 text-white transition-colors" strokeWidth={2} />
+            <Minus className="w-2 h-2 text-[#febc2e] group-hover:text-yellow-900 transition-colors opacity-0 group-hover:opacity-100" strokeWidth={2.5} />
           </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
               handleMaximize();
             }}
-            className="group w-4 h-4 rounded-md bg-green-500 hover:opacity-80 flex items-center justify-center transition-colors"
+            className="group w-3 h-3 rounded-full bg-[#28c840] hover:bg-[#28c840]/80 flex items-center justify-center transition-all"
           >
-            <Square className="w-2.5 h-2.5 text-white transition-colors" strokeWidth={2} />
+            <Square className="w-1.5 h-1.5 text-[#28c840] group-hover:text-green-900 transition-colors opacity-0 group-hover:opacity-100" strokeWidth={2.5} />
           </button>
         </div>
 
-        <div className="flex-1 flex items-center justify-center gap-2">
-          {icon && <div className="w-4 h-4 flex-shrink-0">{icon}</div>}
-          <span className="text-[13px] font-semibold truncate text-muted-foreground">
+        <div className="flex-1 flex items-center justify-center gap-1.5">
+          {icon && <div className="w-3.5 h-3.5 flex-shrink-0">{icon}</div>}
+          <span className="text-xs font-medium truncate text-muted-foreground">
             {title}
           </span>
         </div>
 
-        <div className="w-[52px]" />
+        <div className="w-[44px]" />
       </div>
 
-      <div className="flex-1 overflow-hidden bg-background/60 backdrop-blur-xl">
+      <div className="flex-1 overflow-hidden bg-background/95 backdrop-blur-2xl">
         {children}
       </div>
 

@@ -23,10 +23,10 @@ KB_VERSION = "0.1.2"
     weight=35,
     visible=True,
     usage_guide="""
-### FILE READING & SEARCH - USE search_file() BY DEFAULT!
+### FILE READING & SEARCH - USE search_file BY DEFAULT!
 
-**DEFAULT: Always use `search_file()` first!**
-- `search_file(file_path="uploads/document.pdf", query="what is this about")`
+**DEFAULT: Always use search_file first!**
+- use search_file with file_path "uploads/document.pdf" and query "what is this about"
 - Returns relevant chunks without flooding context!
 
 **SUPPORTED FILE TYPES:**
@@ -35,21 +35,21 @@ KB_VERSION = "0.1.2"
 - Code files (py, js, ts, java, etc.)
 - Text files (txt, md, log, etc.)
 
-**Only use `read_file()` for:**
+**Only use read_file for:**
 - Tiny config files (<2KB)
 - When you need EXACT full content
 
 **EXAMPLES:**
-- PDF: `search_file(file_path="uploads/report.pdf", query="key findings")`
-- Excel: `search_file(file_path="uploads/data.xlsx", query="sales summary")`
-- PowerPoint: `search_file(file_path="uploads/deck.pptx", query="main slides")`
-- Word: `search_file(file_path="uploads/doc.docx", query="contract terms")`
-- Config: `read_file(file_path="uploads/config.json")` (tiny files only!)
+- PDF: use search_file with file_path "uploads/report.pdf" and query "key findings"
+- Excel: use search_file with file_path "uploads/data.xlsx" and query "sales summary"
+- PowerPoint: use search_file with file_path "uploads/deck.pptx" and query "main slides"
+- Word: use search_file with file_path "uploads/doc.docx" and query "contract terms"
+- Config: use read_file with file_path "uploads/config.json" (tiny files only!)
 
 **CRITICAL:**
-- 95% of files → use `search_file()`
-- Images → use `load_image()`
-- ❌ NEVER use `read_file()` on large files!
+- 95% of files → use search_file
+- Images → use load_image
+- ❌ NEVER use read_file on large files!
 """
 )
 class SandboxFileReaderTool(SandboxToolsBase):
@@ -132,7 +132,7 @@ class SandboxFileReaderTool(SandboxToolsBase):
                 return {
                     "file_path": cleaned_path,
                     "success": False,
-                    "error": f"'{cleaned_path}' is an image file. Use load_image() instead of read_file() for images."
+                    "error": f"'{cleaned_path}' is an image file. Use load_image instead of read_file for images."
                 }
 
             try:
@@ -343,25 +343,26 @@ class SandboxFileReaderTool(SandboxToolsBase):
             "description": """Read and extract text content from files in the workspace. Supports batch reading of multiple files concurrently.
 
 Supports PDFs (extracts text), Word docs, and all text-based files (txt, csv, json, code files, etc.).
-For images (jpg, png, gif, webp, svg), use load_image() instead.
+For images (jpg, png, gif, webp, svg), use load_image instead.
 
-Single file: read_file(file_path="uploads/document.pdf")
-Batch mode: read_file(file_paths=["uploads/doc1.pdf", "uploads/doc2.csv", "uploads/doc3.txt"])
+Single file: use read_file with file_path "uploads/document.pdf"
+Batch mode: use read_file with file_paths parameter containing multiple file paths
 
-Batch mode reads up to 20 files concurrently - much faster for multiple files!""",
+Batch mode reads up to 20 files concurrently - much faster for multiple files! **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `file_path` (optional, single file), `file_paths` (optional, batch mode). Use ONE of these, not both.""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "Single file path within /workspace (e.g., 'uploads/document.pdf'). Use this OR file_paths, not both."
+                        "description": "**OPTIONAL** - Single file path within /workspace. Example: 'uploads/document.pdf'. Use this OR file_paths, not both."
                     },
                     "file_paths": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Array of file paths to read concurrently (e.g., ['uploads/doc1.pdf', 'uploads/doc2.csv']). Max 20 files per batch."
+                        "description": "**OPTIONAL** - Array of file paths to read concurrently. Example: ['uploads/doc1.pdf', 'uploads/doc2.csv']. Max 20 files per batch. Use this OR file_path, not both."
                     }
-                }
+                },
+                "additionalProperties": False
             }
         }
     })
@@ -416,14 +417,15 @@ Batch mode reads up to 20 files concurrently - much faster for multiple files!""
             "name": "search_file",
             "description": """Semantic search within files - returns only relevant chunks instead of full content. MUCH better for large files!
 
-Use this instead of read_file() for:
+Use this instead of read_file for:
 - Large PDFs and documents
 - When looking for specific information
 - Multiple files where you need to find something
 
 Examples:
-- search_file(file_path="uploads/contract.pdf", query="termination clause")
-- search_file(file_paths=["uploads/doc1.pdf", "uploads/doc2.pdf"], query="payment terms")""",
+- Use search_file with file_path "uploads/contract.pdf" and query "termination clause"
+- Use search_file with file_paths containing multiple file paths and query "payment terms"
+""",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -472,7 +474,7 @@ Examples:
                     return self.fail_response(f"Path not found: {p}")
             
             if not await self._ensure_kb():
-                return self.fail_response("Failed to initialize search. Try read_file() instead.")
+                return self.fail_response("Failed to initialize search. Try read_file instead.")
             
             env = {"OPENAI_API_KEY": config.OPENAI_API_KEY} if config.OPENAI_API_KEY else {}
             
@@ -521,7 +523,7 @@ Examples:
                     "query": query,
                     "total_hits": total_hits,
                     "results": formatted_results,
-                    "note": "Showing top relevant chunks. Use read_file() if you need the complete file."
+                    "note": "Showing top relevant chunks. Use read_file if you need the complete file."
                 })
                 
             except json.JSONDecodeError:

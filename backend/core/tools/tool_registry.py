@@ -17,6 +17,8 @@ SANDBOX_TOOLS = [
     ('sb_image_edit_tool', 'core.tools.sb_image_edit_tool', 'SandboxImageEditTool'),
     ('sb_kb_tool', 'core.tools.sb_kb_tool', 'SandboxKbTool'),
     ('sb_presentation_tool', 'core.tools.sb_presentation_tool', 'SandboxPresentationTool'),
+    ('sb_canvas_tool', 'core.tools.sb_canvas_tool', 'SandboxCanvasTool'),
+    ('sb_spreadsheet_tool', 'core.tools.sb_spreadsheet_tool', 'SandboxSpreadsheetTool'),
     ('sb_upload_file_tool', 'core.tools.sb_upload_file_tool', 'SandboxUploadFileTool'),
     ('sb_git_sync', 'core.tools.sb_git_sync', 'SandboxGitTool'),
 ]

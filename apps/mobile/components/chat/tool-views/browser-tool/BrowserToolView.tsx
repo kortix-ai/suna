@@ -104,55 +104,66 @@ export function BrowserToolView({
   const url = args?.url || args?.target_url || null;
   const parameters = args || null;
 
-  // Extract result data from toolResult - match frontend logic exactly
+  // Extract result data from toolResult with proper parsing - match frontend logic exactly
   let browserStateMessageId: string | undefined;
   let screenshotUrlFinal: string | null = null;
   let screenshotBase64Final: string | null = null;
   let result: Record<string, any> | null = null;
 
-  // First, try to get screenshot from toolResult.output
-  const screenshotUrl = toolResult?.output?.image_url || null;
-  const screenshotBase64 = toolResult?.output?.screenshot_base64 || null;
-
   if (toolResult?.output) {
-    const output = toolResult.output;
-
-    if (typeof output === 'object' && output !== null) {
+    let output = toolResult.output;
+    
+    // Handle string outputs that need parsing (backward compatibility)
+    if (typeof output === 'string') {
+      try {
+        // Try to parse as JSON
+        const parsed = JSON.parse(output);
+        if (typeof parsed === 'object' && parsed !== null) {
+          output = parsed;
+        } else {
+          // If parsing succeeds but result is not an object, treat as message
+          result = { message: output };
+          output = null;
+        }
+      } catch (e) {
+        // Not valid JSON, treat as plain message
+        result = { message: output };
+        output = null;
+      }
+    }
+    
+    // Process object output
+    if (output && typeof output === 'object' && output !== null) {
       // Extract screenshot URL and message ID from output
       if (output.image_url) {
-        screenshotUrlFinal = output.image_url;
+        // Clean up URL - remove trailing ? and whitespace
+        screenshotUrlFinal = String(output.image_url).trim().replace(/\?+$/, '');
       }
       if (output.screenshot_base64) {
-        screenshotBase64Final = output.screenshot_base64;
+        screenshotBase64Final = String(output.screenshot_base64).trim();
       }
       if (output.message_id) {
-        browserStateMessageId = output.message_id;
+        browserStateMessageId = String(output.message_id).trim();
       }
-
-      // Set result, excluding message_id
+      
+      // Set result, excluding message_id and screenshot fields for cleaner display
       result = Object.fromEntries(
-        Object.entries(output).filter(([k]) => k !== 'message_id')
+        Object.entries(output).filter(([k]) => 
+          k !== 'message_id' && 
+          k !== 'image_url' && 
+          k !== 'screenshot_base64'
+        )
       ) as Record<string, any>;
-    } else if (typeof output === 'string') {
-      try {
-        const parsed = JSON.parse(output);
-        if (parsed && typeof parsed === 'object') {
-          screenshotUrlFinal = parsed.image_url || null;
-          screenshotBase64Final = parsed.screenshot_base64 || null;
-          browserStateMessageId = parsed.message_id;
-          result = Object.fromEntries(
-            Object.entries(parsed).filter(([k]) => k !== 'message_id')
-          ) as Record<string, any>;
-        } else {
-          result = { message: output };
-        }
-      } catch {
-        result = { message: output };
+      
+      // If result is empty, at least show success/message
+      if (Object.keys(result).length === 0 && output.message) {
+        result = { message: output.message };
       }
     }
   }
 
-  // Try to find browser state message if we have a message_id (frontend logic)
+  // Try to find browser state message if we have a message_id but no screenshot yet
+  // This is a fallback - the screenshot should already be in toolResult.output
   if (!screenshotUrlFinal && !screenshotBase64Final && browserStateMessageId && messages && messages.length > 0) {
     const browserStateMessage: UnifiedMessage | undefined = messages.find(
       (msg: UnifiedMessage) =>
@@ -167,14 +178,42 @@ export function BrowserToolView({
           : browserStateMessage.content;
 
         if (browserStateContent && typeof browserStateContent === 'object') {
-          screenshotBase64Final = browserStateContent?.screenshot_base64 || null;
-          screenshotUrlFinal = browserStateContent?.image_url || null;
+          if (browserStateContent.screenshot_base64) {
+            screenshotBase64Final = String(browserStateContent.screenshot_base64).trim();
+          }
+          if (browserStateContent.image_url) {
+            // Clean up URL - remove trailing ? and whitespace
+            screenshotUrlFinal = String(browserStateContent.image_url).trim().replace(/\?+$/, '');
+          }
         }
-      } catch {
-        // Ignore parse errors
+        
+        console.log('[BrowserToolView] Found browser_state message:', {
+          messageId: browserStateMessageId,
+          hasImageUrl: !!screenshotUrlFinal,
+          hasBase64: !!screenshotBase64Final,
+        });
+      } catch (e) {
+        console.log('[BrowserToolView] Error parsing browser_state message:', e);
       }
+    } else {
+      console.log('[BrowserToolView] Browser state message not found:', {
+        messageId: browserStateMessageId,
+        availableMessages: messages.map(m => ({ type: m.type, id: m.message_id })),
+      });
     }
   }
+
+  // Log extracted data for debugging
+  useEffect(() => {
+    console.log('[BrowserToolView] Extracted data:', {
+      screenshotUrl: screenshotUrlFinal,
+      screenshotBase64: screenshotBase64Final ? 'present' : null,
+      browserStateMessageId,
+      hasResult: !!result,
+      toolResultOutput: toolResult?.output,
+      toolResultOutputType: typeof toolResult?.output,
+    });
+  }, [screenshotUrlFinal, screenshotBase64Final, browserStateMessageId, result, toolResult?.output]);
 
   const isRunning = isStreaming || agentStatus === 'running';
   const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;

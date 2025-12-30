@@ -19,7 +19,7 @@ import dramatiq
 
 from core.ai_models import model_manager
 
-from .api_models import AgentVersionResponse, AgentResponse, ThreadAgentResponse, UnifiedAgentStartResponse
+from .api_models import AgentVersionResponse, AgentResponse, UnifiedAgentStartResponse
 from . import core_utils as utils
 
 from .core_utils import (
@@ -610,21 +610,37 @@ async def _handle_staged_files_for_thread(
 
 
 async def _ensure_sandbox_for_thread(client, project_id: str, files: Optional[List[Any]] = None):
-    project_result = await client.table('projects').select('sandbox').eq('project_id', project_id).execute()
+    from core.resources import ResourceService, ResourceType, ResourceStatus
+    
+    project_result = await client.table('projects').select('project_id, account_id, sandbox_resource_id').eq('project_id', project_id).execute()
     
     if not project_result.data:
         logger.warning(f"Project {project_id} not found when checking for sandbox")
         return None, None
     
-    existing_sandbox_data = project_result.data[0].get('sandbox')
+    project_data = project_result.data[0]
+    account_id = project_data.get('account_id')
+    sandbox_resource_id = project_data.get('sandbox_resource_id')
     
-    if existing_sandbox_data and existing_sandbox_data.get('id'):
-        sandbox_id = existing_sandbox_data.get('id')
+    resource_service = ResourceService(client)
+    
+    # Try to get existing sandbox resource
+    sandbox_resource = None
+    if sandbox_resource_id:
+        sandbox_resource = await resource_service.get_resource_by_id(sandbox_resource_id)
+    
+    if sandbox_resource and sandbox_resource.get('status') == ResourceStatus.ACTIVE.value:
+        sandbox_id = sandbox_resource.get('external_id')
         logger.debug(f"Project {project_id} already has sandbox {sandbox_id}, retrieving it...")
         
         try:
             sandbox = await get_or_start_sandbox(sandbox_id)
             logger.debug(f"Successfully retrieved existing sandbox {sandbox_id}")
+            # Update last_used_at
+            try:
+                await resource_service.update_last_used(sandbox_resource_id)
+            except Exception:
+                logger.warning(f"Failed to update last_used_at for resource {sandbox_resource_id}")
             return sandbox, sandbox_id
         except Exception as e:
             logger.error(f"Error retrieving existing sandbox {sandbox_id}: {str(e)}")
@@ -650,24 +666,42 @@ async def _ensure_sandbox_for_thread(client, project_id: str, files: Optional[Li
         elif "token='" in str(vnc_link):
             token = str(vnc_link).split("token='")[1].split("'")[0]
 
-        update_result = await client.table('projects').update({
-            'sandbox': {
-                'id': sandbox_id,
-                'pass': sandbox_pass,
-                'vnc_preview': vnc_url,
-                'sandbox_url': website_url,
-                'token': token
-            }
-        }).eq('project_id', project_id).execute()
-
-        if not update_result.data:
-            logger.error(f"Failed to update project {project_id} with new sandbox {sandbox_id}")
+        # Create resource record
+        sandbox_config = {
+            'pass': sandbox_pass,
+            'vnc_preview': vnc_url,
+            'sandbox_url': website_url,
+            'token': token
+        }
+        
+        try:
+            resource = await resource_service.create_resource(
+                account_id=account_id,
+                resource_type=ResourceType.SANDBOX,
+                external_id=sandbox_id,
+                config=sandbox_config,
+                status=ResourceStatus.ACTIVE
+            )
+            resource_id = resource['id']
+            
+            # Link resource to project
+            if not await resource_service.link_resource_to_project(project_id, resource_id):
+                logger.error(f"Failed to link resource {resource_id} to project {project_id}")
+                if sandbox_id:
+                    try:
+                        await delete_sandbox(sandbox_id)
+                        await resource_service.delete_resource(resource_id)
+                    except Exception as e:
+                        logger.error(f"Error deleting sandbox: {str(e)}")
+                raise Exception("Database update failed")
+        except Exception as e:
+            logger.error(f"Failed to create resource for sandbox {sandbox_id}: {str(e)}")
             if sandbox_id:
                 try:
                     await delete_sandbox(sandbox_id)
                 except Exception as e:
                     logger.error(f"Error deleting sandbox: {str(e)}")
-            raise Exception("Database update failed")
+            raise Exception(f"Failed to create sandbox resource: {str(e)}")
         
         try:
             from core.runtime_cache import set_cached_project_metadata
@@ -755,13 +789,20 @@ async def start_agent_run(
         t_thread = time.time()
         thread_id = str(uuid.uuid4())
         try:
+            # Create thread with default name, will be updated by LLM in background
             await client.table('threads').insert({
                 "thread_id": thread_id,
                 "project_id": project_id,
                 "account_id": account_id,
+                "name": "New Chat",
                 "created_at": datetime.now(timezone.utc).isoformat()
             }).execute()
             logger.debug(f"⏱️ [TIMING] Thread created: {(time.time() - t_thread) * 1000:.1f}ms")
+            
+            # Generate proper thread name in background using LLM (fire-and-forget)
+            if prompt:
+                from core.utils.thread_name_generator import generate_and_update_thread_name
+                asyncio.create_task(generate_and_update_thread_name(thread_id=thread_id, prompt=prompt))
             
             if project_id and project_id != thread_id:
                 try:
@@ -1250,119 +1291,6 @@ async def get_agent_run(agent_run_id: str, user_id: str = Depends(verify_and_get
         "completedAt": agent_run_data['completed_at'],
         "error": agent_run_data['error']
     }
-
-@router.get("/thread/{thread_id}/agent", response_model=ThreadAgentResponse, summary="Get Thread Agent", operation_id="get_thread_agent")
-async def get_thread_agent(thread_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
-    structlog.contextvars.bind_contextvars(
-        thread_id=thread_id,
-    )
-    logger.debug(f"Fetching agent details for thread: {thread_id}")
-    client = await utils.db.client
-    
-    try:
-        await verify_and_authorize_thread_access(client, thread_id, user_id)
-        thread_result = await client.table('threads').select('account_id').eq('thread_id', thread_id).execute()
-        
-        if not thread_result.data:
-            raise HTTPException(status_code=404, detail="Thread not found")
-        
-        thread_data = thread_result.data[0]
-        account_id = thread_data.get('account_id')
-        
-        effective_agent_id = None
-        agent_source = "none"
-        
-        recent_agent_result = await client.table('agent_runs').select('agent_id', 'agent_version_id').eq('thread_id', thread_id).not_.is_('agent_id', 'null').order('created_at', desc=True).limit(1).execute()
-        if recent_agent_result.data:
-            effective_agent_id = recent_agent_result.data[0]['agent_id']
-            recent_version_id = recent_agent_result.data[0].get('agent_version_id')
-            agent_source = "recent"
-            logger.debug(f"Found most recently used agent: {effective_agent_id} (version: {recent_version_id})")
-        
-        if not effective_agent_id:
-            return {
-                "agent": None,
-                "source": "none",
-                "message": "No worker has been used in this thread yet. Threads are worker-agnostic - use /agent/start to select a worker."
-            }
-        
-        agent_result = await client.table('agents').select('*').eq('agent_id', effective_agent_id).eq('account_id', account_id).execute()
-        
-        if not agent_result.data:
-            return {
-                "agent": None,
-                "source": "missing",
-                "message": f"Worker {effective_agent_id} not found or was deleted. You can select a different worker."
-            }
-        
-        agent_data = agent_result.data[0]
-        
-        version_data = None
-        current_version = None
-        if agent_data.get('current_version_id'):
-            try:
-                version_service = await _get_version_service()
-                current_version_obj = await version_service.get_version(
-                    agent_id=effective_agent_id,
-                    version_id=agent_data['current_version_id'],
-                    user_id=user_id
-                )
-                current_version_data = current_version_obj.to_dict()
-                version_data = current_version_data
-                
-                current_version = AgentVersionResponse(
-                    version_id=current_version_data['version_id'],
-                    agent_id=current_version_data['agent_id'],
-                    version_number=current_version_data['version_number'],
-                    version_name=current_version_data['version_name'],
-                    system_prompt=current_version_data['system_prompt'],
-                    model=current_version_data.get('model'),
-                    configured_mcps=current_version_data.get('configured_mcps', []),
-                    custom_mcps=current_version_data.get('custom_mcps', []),
-                    agentpress_tools=current_version_data.get('agentpress_tools', {}),
-                    is_active=current_version_data.get('is_active', True),
-                    created_at=current_version_data['created_at'],
-                    updated_at=current_version_data.get('updated_at', current_version_data['created_at']),
-                    created_by=current_version_data.get('created_by')
-                )
-                
-                logger.debug(f"Using agent {agent_data['name']} version {current_version_data.get('version_name', 'v1')}")
-            except Exception as e:
-                logger.warning(f"Failed to get version data for agent {effective_agent_id}: {e}")
-        
-        version_data = None
-        if current_version:
-            version_data = {
-                'version_id': current_version.version_id,
-                'agent_id': current_version.agent_id,
-                'version_number': current_version.version_number,
-                'version_name': current_version.version_name,
-                'system_prompt': current_version.system_prompt,
-                'model': current_version.model,
-                'configured_mcps': current_version.configured_mcps,
-                'custom_mcps': current_version.custom_mcps,
-                'agentpress_tools': current_version.agentpress_tools,
-                'is_active': current_version.is_active,
-                'created_at': current_version.created_at,
-                'updated_at': current_version.updated_at,
-                'created_by': current_version.created_by
-            }
-        
-        from .agent_loader import get_agent_loader
-        loader = await get_agent_loader()
-        agent_obj = await loader.load_agent(agent_data['agent_id'], user_id, load_config=True)
-        
-        return {
-            "agent": agent_obj.to_pydantic_model(),
-            "source": agent_source,
-            "message": f"Using {agent_source} agent: {agent_data['name']}. Threads are agent-agnostic - you can change agents anytime."
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching agent for thread {thread_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch thread agent: {str(e)}")
 
 @router.get("/agent-run/{agent_run_id}/stream", summary="Stream Agent Run", operation_id="stream_agent_run")
 async def stream_agent_run(

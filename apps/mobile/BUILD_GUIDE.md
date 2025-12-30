@@ -16,6 +16,12 @@ npm run android:build
 npm run android:dev      
 ```
 
+## IOS Development Setup
+```bash
+cd apps/mobile
+npx expo run:ios  
+```
+
 ## Build & Submit
 
 **Production (iOS - App Store):**
@@ -45,14 +51,16 @@ eas build --profile testflight --platform android --auto-submit
 
 ```bash
 # 1. app.json (line 5)
-"version": "1.2.0"
+"version": "1.1.1"
 
-# 2. ios/Kortix/Info.plist (CFBundleShortVersionString)
-<string>1.2.0</string>
+# 2. ios/Kortix/Info.plist (CFBundleShortVersionString - line 24)
+<string>1.1.1</string>
 
-# 3. android/app/build.gradle (versionName)
-versionName "1.2.0"
+# 3. android/app/build.gradle (versionName - line 96)
+versionName "1.1.1"
 ```
+
+**Important:** All 3 files must match exactly, or the build will use the wrong version!
 
 **Build numbers** → Auto-managed by EAS (remote)
 

@@ -463,9 +463,15 @@ class ThreadManager:
                             new_msg_tokens = 0
                             
                             if is_auto_continue:
-                                # Auto-continue: No new user message, last_total already includes everything
-                                new_msg_tokens = 0
-                                logger.debug(f"✅ Auto-continue detected (count={auto_continue_state['count']}), skipping new message token count")
+                                # Auto-continue: Get tool result tokens from auto_continue_state
+                                # These are tracked by _auto_continue_generator when tool chunks are yielded
+                                new_msg_tokens = auto_continue_state.get('tool_result_tokens', 0)
+                                if new_msg_tokens > 0:
+                                    logger.debug(f"🔧 Auto-continue: adding {new_msg_tokens} tool result tokens from state")
+                                else:
+                                    logger.debug(f"✅ Auto-continue: no tool result tokens in state")
+                                # Reset AFTER consuming - ready for next iteration
+                                auto_continue_state['tool_result_tokens'] = 0
                             elif latest_user_message_content:
                                 # First turn: Use passed content (avoids DB query)
                                 new_msg_tokens = token_counter(
@@ -750,6 +756,8 @@ class ThreadManager:
         
         while auto_continue_state['active'] and auto_continue_state['count'] < native_max_auto_continues:
             auto_continue_state['active'] = False  # Reset for this iteration
+            # NOTE: Don't reset tool_result_tokens here! It needs to be used by fast check first.
+            # It gets reset inside _execute_run AFTER the fast check consumes it.
             
             try:
                 # Check for cancellation before continuing
@@ -795,6 +803,25 @@ class ThreadManager:
                         if cancellation_event and cancellation_event.is_set():
                             logger.info(f"Cancellation signal received while processing stream in auto-continue for thread {thread_id}")
                             break
+                        
+                        # Track tool result tokens for fast check in next iteration
+                        if chunk.get('type') == 'tool':
+                            try:
+                                from litellm.utils import token_counter
+                                content = chunk.get('content', {})
+                                if isinstance(content, str):
+                                    content = json.loads(content)
+                                # Extract the actual content string for token counting
+                                content_str = content.get('content', '') if isinstance(content, dict) else str(content)
+                                if content_str:
+                                    tool_tokens = token_counter(
+                                        model=llm_model,
+                                        messages=[{"role": "tool", "content": content_str}]
+                                    )
+                                    auto_continue_state['tool_result_tokens'] = auto_continue_state.get('tool_result_tokens', 0) + tool_tokens
+                                    logger.debug(f"🔧 Tracked {tool_tokens} tool result tokens (total: {auto_continue_state['tool_result_tokens']})")
+                            except Exception as e:
+                                logger.debug(f"Failed to count tool result tokens: {e}")
                         
                         # Check for auto-continue triggers
                         should_continue = self._check_auto_continue_trigger(

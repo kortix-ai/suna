@@ -3,7 +3,8 @@ import { View, Platform, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
-import { KeyboardStickyView } from 'react-native-keyboard-controller';
+import { KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
+import Animated, { useAnimatedStyle, interpolate } from 'react-native-reanimated';
 import { ChatInput, type ChatInputRef } from '../ChatInput';
 import { AttachmentBar } from '@/components/attachments';
 import { QuickActionBar, QuickActionExpandedView, QUICK_ACTIONS } from '@/components/quick-actions';
@@ -163,6 +164,35 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const chatInputRef = React.useRef<ChatInputRef>(null);
+  
+  // Get keyboard animation progress for smooth padding transitions
+  // progress goes from 0 (closed) to 1 (open)
+  const { progress } = useReanimatedKeyboardAnimation();
+
+  // Calculate padding values
+  const quickActionsPaddingClosed = Math.max(insets.bottom, 24) + 16;
+  const quickActionsPaddingOpened = 8;
+  const nonQuickActionsPaddingClosed = Math.max(insets.bottom, 8);
+  const nonQuickActionsPaddingOpened = 8;
+
+  // Animated style for quick actions bar bottom padding
+  // Smoothly interpolates between open and closed values
+  const quickActionsAnimatedStyle = useAnimatedStyle(() => ({
+    paddingBottom: interpolate(
+      progress.value,
+      [0, 1],
+      [quickActionsPaddingClosed, quickActionsPaddingOpened]
+    ),
+  }), [quickActionsPaddingClosed]);
+
+  // Animated style for non-quick-actions bottom spacing
+  const bottomSpacingAnimatedStyle = useAnimatedStyle(() => ({
+    height: interpolate(
+      progress.value,
+      [0, 1],
+      [nonQuickActionsPaddingClosed, nonQuickActionsPaddingOpened]
+    ),
+  }), [nonQuickActionsPaddingClosed]);
 
   // Memoize gradient colors based on color scheme
   const gradientColors = React.useMemo(
@@ -272,18 +302,22 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
 
         {/* Quick Action Bar - Below input (camera-style mode selector, only on home) */}
         {showQuickActions && onQuickActionPress && (
-          <View className="pb-8" pointerEvents="box-none" collapsable={false}>
+          <Animated.View 
+            style={quickActionsAnimatedStyle}
+            pointerEvents="box-none" 
+            collapsable={false}
+          >
             <QuickActionBar
               onActionPress={onQuickActionPress}
               selectedActionId={selectedQuickAction}
             />
-          </View>
+          </Animated.View>
         )}
 
-        {/* Safe area bottom padding - always present when quick actions are hidden */}
-        {/* The KeyboardStickyView handles the keyboard offset, so we don't need to conditionally hide this */}
+        {/* Safe area bottom padding - animates smoothly with keyboard */}
+        {/* When keyboard is open, it covers the bottom safe area so less padding is needed */}
         {!showQuickActions && (
-          <View style={{ height: Math.max(insets.bottom, 8) }} />
+          <Animated.View style={bottomSpacingAnimatedStyle} />
         )}
       </View>
     </KeyboardStickyView>

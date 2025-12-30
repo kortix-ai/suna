@@ -29,6 +29,7 @@ def is_retryable_error(error: Exception) -> bool:
     """Check if an error is a transient error that should be retried."""
     error_str = str(error).lower()
     # Check for gateway errors (502, 503, 504) and connection errors
+    # Also include sandbox startup/state errors that might be transient
     retryable_patterns = [
         '502', 'bad gateway',
         '503', 'service unavailable',
@@ -37,6 +38,10 @@ def is_retryable_error(error: Exception) -> bool:
         'connection refused',
         'connection error',
         'timeout',
+        'starting',  # Sandbox is starting
+        'not ready',  # Sandbox not ready yet
+        'state',  # State transition errors
+        'temporarily unavailable',  # Temporary unavailability
     ]
     return any(pattern in error_str for pattern in retryable_patterns)
 
@@ -150,37 +155,50 @@ def normalize_path(path: str) -> str:
 
 async def get_sandbox_by_id_safely(client, sandbox_id: str) -> AsyncSandbox:
     """
-    Safely retrieve a sandbox object by its ID, using the project that owns it.
+    Safely retrieve a sandbox object by its ID, using the resource that owns it.
+    Includes retry logic for transient sandbox startup failures.
     
     Args:
         client: The Supabase client
-        sandbox_id: The sandbox ID to retrieve
+        sandbox_id: The sandbox ID (external_id) to retrieve
     
     Returns:
         AsyncSandbox: The sandbox object
         
     Raises:
-        HTTPException: If the sandbox doesn't exist or can't be retrieved
+        HTTPException: If the sandbox doesn't exist or can't be retrieved after retries
     """
-    # Find the project that owns this sandbox
-    project_result = await client.table('projects').select('project_id').filter('sandbox->>id', 'eq', sandbox_id).execute()
+    from core.resources import ResourceService, ResourceType
     
-    if not project_result.data or len(project_result.data) == 0:
-        logger.error(f"No project found for sandbox ID: {sandbox_id}")
-        raise HTTPException(status_code=404, detail="Sandbox not found - no project owns this sandbox ID")
+    # Find the resource that owns this sandbox
+    resource_service = ResourceService(client)
+    resource = await resource_service.get_resource_by_external_id(sandbox_id, ResourceType.SANDBOX)
     
-    # project_id = project_result.data[0]['project_id']
-    # logger.debug(f"Found project {project_id} for sandbox {sandbox_id}")
+    if not resource:
+        logger.error(f"No resource found for sandbox ID: {sandbox_id}")
+        raise HTTPException(status_code=404, detail="Sandbox not found - no resource exists for this sandbox ID")
     
+    # Get the sandbox with retry logic for transient startup failures
     try:
-        # Get the sandbox
-        sandbox = await get_or_start_sandbox(sandbox_id)
-        # Extract just the sandbox object from the tuple (sandbox, sandbox_id, sandbox_pass)
-        # sandbox = sandbox_tuple[0]
-            
+        sandbox = await retry_with_backoff(
+            operation=lambda: get_or_start_sandbox(sandbox_id),
+            operation_name=f"get_or_start_sandbox({sandbox_id})",
+            max_attempts=3,  # Retry up to 3 times for sandbox startup
+            base_delay=2.0,  # Start with 2 second delay (sandbox startup takes time)
+            max_delay=10.0  # Max 10 second delay between retries
+        )
         return sandbox
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
-        logger.error(f"Error retrieving sandbox {sandbox_id}: {str(e)}")
+        error_str = str(e).lower()
+        # Check if it's a "not found" error
+        if 'not found' in error_str or '404' in error_str:
+            logger.error(f"Sandbox {sandbox_id} not found: {str(e)}")
+            raise HTTPException(status_code=404, detail=f"Sandbox not found: {sandbox_id}")
+        # For other errors, return 500
+        logger.error(f"Error retrieving sandbox {sandbox_id} after retries: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve sandbox: {str(e)}")
 
 @router.post("/sandboxes/{sandbox_id}/files")
@@ -237,6 +255,38 @@ async def create_file(
         logger.error(f"Error creating file in sandbox {sandbox_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.put("/sandboxes/{sandbox_id}/files/binary")
+async def update_file_binary(
+    sandbox_id: str, 
+    path: str = Form(...),
+    file: UploadFile = File(...),
+    request: Request = None,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    path = normalize_path(path)
+    
+    logger.debug(f"Received binary file update request for sandbox {sandbox_id}, path: {path}, user_id: {user_id}")
+    client = await db.client
+    
+    await verify_sandbox_access(client, sandbox_id, user_id)
+    
+    try:
+        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        
+        content = await file.read()
+        
+        await sandbox.fs.upload_file(content, path)
+        logger.info(f"Binary file updated successfully: {path} in sandbox {sandbox_id}")
+        
+        return {
+            "status": "success", 
+            "updated": True, 
+            "path": path
+        }
+    except Exception as e:
+        logger.error(f"Error updating binary file in sandbox {sandbox_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.put("/sandboxes/{sandbox_id}/files")
 async def update_file(
     sandbox_id: str,
@@ -276,23 +326,65 @@ async def list_files(
     request: Request = None,
     user_id: Optional[str] = Depends(get_optional_user_id)
 ):
+    """List files in a sandbox directory"""
+    # Validate sandbox_id
+    if not sandbox_id or not sandbox_id.strip():
+        logger.error("Sandbox ID is required")
+        raise HTTPException(status_code=400, detail="Sandbox ID is required")
     path = normalize_path(path)
     
     logger.debug(f"Received list files request for sandbox {sandbox_id}, path: {path}, user_id: {user_id}")
     client = await db.client
     
-    # Verify the user has access to this sandbox
-    await verify_sandbox_access_optional(client, sandbox_id, user_id)
+    try:
+        # Verify the user has access to this sandbox
+        await verify_sandbox_access_optional(client, sandbox_id, user_id)
+    except HTTPException as http_err:
+        # Re-raise HTTP exceptions as-is (they already have proper status codes)
+        raise
+    except Exception as access_err:
+        error_str = str(access_err).lower()
+        logger.error(f"Error verifying sandbox access for {sandbox_id}: {str(access_err)}", exc_info=True)
+        
+        # Distinguish between different error types
+        if 'not found' in error_str or '404' in error_str or 'no project owns' in error_str:
+            raise HTTPException(status_code=404, detail=f"Sandbox not found: {sandbox_id}")
+        elif 'authentication required' in error_str or '401' in error_str:
+            raise HTTPException(status_code=401, detail="Authentication required for this private project")
+        elif 'not authorized' in error_str or 'forbidden' in error_str or '403' in error_str:
+            raise HTTPException(status_code=403, detail=f"Access denied: Not authorized to access this sandbox")
+        else:
+            # For other errors, return 500 but with a clear message
+            raise HTTPException(status_code=500, detail=f"Error verifying sandbox access: {str(access_err)}")
     
     try:
         # Get sandbox using the safer method
-        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        try:
+            sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        except HTTPException:
+            raise
+        except Exception as sandbox_err:
+            logger.error(f"Error retrieving sandbox {sandbox_id}: {str(sandbox_err)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Failed to retrieve sandbox: {str(sandbox_err)}")
         
         # List files with retry logic for transient errors
-        files = await retry_with_backoff(
-            operation=lambda: sandbox.fs.list_files(path),
-            operation_name=f"list_files({path}) in sandbox {sandbox_id}"
-        )
+        try:
+            files = await retry_with_backoff(
+                operation=lambda: sandbox.fs.list_files(path),
+                operation_name=f"list_files({path}) in sandbox {sandbox_id}"
+            )
+        except Exception as list_err:
+            error_msg = str(list_err)
+            logger.error(f"Error listing files {path} in sandbox {sandbox_id}: {error_msg}")
+            # Check if it's a file not found error
+            if 'not found' in error_msg.lower() or '404' in error_msg.lower():
+                raise HTTPException(status_code=404, detail=f"Directory not found: {path}")
+            # Check if it's a permission error
+            if 'permission' in error_msg.lower() or '403' in error_msg.lower():
+                raise HTTPException(status_code=403, detail=f"Permission denied: {path}")
+            # For other errors, return 500
+            raise HTTPException(status_code=500, detail=f"Failed to list files: {error_msg}")
+        
         result = []
         
         for file in files:
@@ -311,9 +403,12 @@ async def list_files(
         
         logger.debug(f"Successfully listed {len(result)} files in sandbox {sandbox_id}")
         return {"files": [file.dict() for file in result]}
+    except HTTPException:
+        # Re-raise HTTP exceptions without wrapping
+        raise
     except Exception as e:
-        logger.error(f"Error listing files in sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error listing files in sandbox {sandbox_id}, path {path}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.get("/sandboxes/{sandbox_id}/files/content")
 async def read_file(
@@ -331,14 +426,51 @@ async def read_file(
     if original_path != path:
         logger.debug(f"Normalized path from '{original_path}' to '{path}'")
     
+    if not sandbox_id:
+        logger.error("Sandbox ID is required")
+        raise HTTPException(status_code=400, detail="Sandbox ID is required")
+    
+    if not path:
+        logger.error("Path is required")
+        raise HTTPException(status_code=400, detail="Path is required")
+    
+    # Validate sandbox_id format (basic validation - should be non-empty string)
+    if not sandbox_id.strip():
+        logger.error("Sandbox ID cannot be empty")
+        raise HTTPException(status_code=400, detail="Sandbox ID cannot be empty")
+    
     client = await db.client
     
-    # Verify the user has access to this sandbox
-    await verify_sandbox_access_optional(client, sandbox_id, user_id)
+    try:
+        # Verify the user has access to this sandbox
+        await verify_sandbox_access_optional(client, sandbox_id, user_id)
+    except HTTPException as http_err:
+        # Re-raise HTTP exceptions as-is (they already have proper status codes)
+        raise
+    except Exception as access_err:
+        error_str = str(access_err).lower()
+        logger.error(f"Error verifying sandbox access for {sandbox_id}: {str(access_err)}", exc_info=True)
+        
+        # Distinguish between different error types
+        if 'not found' in error_str or '404' in error_str or 'no project owns' in error_str:
+            raise HTTPException(status_code=404, detail=f"Sandbox not found: {sandbox_id}")
+        elif 'authentication required' in error_str or '401' in error_str:
+            raise HTTPException(status_code=401, detail="Authentication required for this private project")
+        elif 'not authorized' in error_str or 'forbidden' in error_str or '403' in error_str:
+            raise HTTPException(status_code=403, detail=f"Access denied: Not authorized to access this sandbox")
+        else:
+            # For other errors, return 500 but with a clear message
+            raise HTTPException(status_code=500, detail=f"Error verifying sandbox access: {str(access_err)}")
     
     try:
         # Get sandbox using the safer method
-        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        try:
+            sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        except HTTPException:
+            raise
+        except Exception as sandbox_err:
+            logger.error(f"Error retrieving sandbox {sandbox_id}: {str(sandbox_err)}")
+            raise HTTPException(status_code=500, detail=f"Failed to retrieve sandbox: {str(sandbox_err)}")
         
         # Read file with retry logic for transient errors (502, 503, 504)
         try:
@@ -347,10 +479,24 @@ async def read_file(
                 operation_name=f"download_file({path}) from sandbox {sandbox_id}"
             )
         except Exception as download_err:
-            logger.error(f"Error downloading file {path} from sandbox {sandbox_id}: {str(download_err)}")
+            error_msg = str(download_err)
+            logger.error(f"Error downloading file {path} from sandbox {sandbox_id}: {error_msg}")
+            # Check if it's a file not found error
+            if 'not found' in error_msg.lower() or '404' in error_msg.lower():
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"File not found: {path}"
+                )
+            # Check if it's a permission error
+            if 'permission' in error_msg.lower() or '403' in error_msg.lower():
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Permission denied: {path}"
+                )
+            # For other errors, return 500
             raise HTTPException(
-                status_code=404, 
-                detail=f"Failed to download file: {str(download_err)}"
+                status_code=500, 
+                detail=f"Failed to download file: {error_msg}"
             )
         
         # Return a Response object with the content directly
@@ -372,8 +518,8 @@ async def read_file(
         # Re-raise HTTP exceptions without wrapping
         raise
     except Exception as e:
-        logger.error(f"Error reading file in sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error reading file in sandbox {sandbox_id}, path {path}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.delete("/sandboxes/{sandbox_id}/files")
 async def delete_file(
@@ -463,14 +609,24 @@ async def ensure_project_sandbox_active(
                 raise HTTPException(status_code=403, detail="Not authorized to access this project")
     
     try:
-        sandbox_info = project_data.get('sandbox', {})
-        if not sandbox_info.get('id'):
+        from core.resources import ResourceService, ResourceType
+        
+        resource_service = ResourceService(client)
+        sandbox_resource = await resource_service.get_project_sandbox_resource(project_id)
+        
+        if not sandbox_resource:
             raise HTTPException(status_code=404, detail="No sandbox found for this project")
             
-        sandbox_id = sandbox_info['id']
+        sandbox_id = sandbox_resource.get('external_id')
         
         logger.debug(f"Ensuring sandbox is active for project {project_id}")
         sandbox = await get_or_start_sandbox(sandbox_id)
+        
+        # Update last_used_at
+        try:
+            await resource_service.update_last_used(sandbox_resource['id'])
+        except Exception:
+            logger.warning(f"Failed to update last_used_at for resource {sandbox_resource['id']}")
         
         logger.debug(f"Successfully ensured sandbox {sandbox_id} is active for project {project_id}")
         
@@ -479,6 +635,8 @@ async def ensure_project_sandbox_active(
             "sandbox_id": sandbox_id,
             "message": "Sandbox is active"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error ensuring sandbox is active for project {project_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -518,11 +676,16 @@ async def get_project_sandbox_details(
                 raise HTTPException(status_code=403, detail="Not authorized to access this project")
     
     try:
-        sandbox_info = project_data.get('sandbox', {})
-        if not sandbox_info.get('id'):
+        from core.resources import ResourceService, ResourceType
+        
+        resource_service = ResourceService(client)
+        sandbox_resource = await resource_service.get_project_sandbox_resource(project_id)
+        
+        if not sandbox_resource:
             raise HTTPException(status_code=404, detail="No sandbox found for this project")
             
-        sandbox_id = sandbox_info['id']
+        sandbox_id = sandbox_resource.get('external_id')
+        config = sandbox_resource.get('config', {})
         
         logger.debug(f"Fetching sandbox details for sandbox {sandbox_id} (project {project_id})")
         sandbox = await daytona.get(sandbox_id)
@@ -531,8 +694,8 @@ async def get_project_sandbox_details(
             "sandbox_id": sandbox.id,
             "state": sandbox.state.value if hasattr(sandbox.state, 'value') else str(sandbox.state),
             "project_id": project_id,
-            "vnc_preview": sandbox_info.get('vnc_preview'),
-            "sandbox_url": sandbox_info.get('sandbox_url'),
+            "vnc_preview": config.get('vnc_preview'),
+            "sandbox_url": config.get('sandbox_url'),
         }
         
         if hasattr(sandbox, 'created_at') and sandbox.created_at:
@@ -601,7 +764,10 @@ async def create_file_in_project(
         from core.agent_runs import _ensure_sandbox_for_thread
         
         # Check if sandbox existed before
-        existing_sandbox_id = project_data.get('sandbox', {}).get('id')
+        from core.resources import ResourceService
+        resource_service = ResourceService(client)
+        sandbox_resource = await resource_service.get_project_sandbox_resource(project_id)
+        existing_sandbox_id = sandbox_resource.get('external_id') if sandbox_resource else None
         
         # Ensure sandbox exists (creates if needed)
         sandbox, sandbox_id = await _ensure_sandbox_for_thread(client, project_id, [file])

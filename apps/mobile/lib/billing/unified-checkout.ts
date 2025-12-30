@@ -132,9 +132,20 @@ export async function startUnifiedCreditPurchase(
     
     if (!offerings) {
       console.warn('⚠️ No topups offering found, trying default offering');
-      offerings = await getOfferings(true);
-      if (!offerings) {
-        throw new Error('No credit offerings available');
+      try {
+        offerings = await getOfferings(true);
+        if (!offerings) {
+          throw new Error('No credit offerings available. Please check your RevenueCat dashboard configuration.');
+        }
+      } catch (getOfferingsError: any) {
+        // If getOfferings also fails, provide helpful error message
+        if (getOfferingsError?.code === 'CONFIGURATION_ERROR') {
+          throw new Error(
+            'RevenueCat configuration error: The "topups" offering is not properly configured. ' +
+            'Please ensure the offering exists in your RevenueCat dashboard and has packages configured.'
+          );
+        }
+        throw getOfferingsError;
       }
     }
 
@@ -165,6 +176,14 @@ export async function startUnifiedCreditPurchase(
     if (error.userCancelled) {
       onCancel?.();
     } else {
+      // Log configuration errors with more context
+      if (error?.code === 'CONFIGURATION_ERROR' || error?.code === 'OFFERING_NOT_FOUND') {
+        console.error('❌ RevenueCat configuration issue for credit purchase:', {
+          error: error.message,
+          availableOfferings: error?.availableOfferings,
+          amount,
+        });
+      }
       throw error;
     }
   }

@@ -28,24 +28,34 @@ async def update_presence(
     try:
         account_id = await get_user_id_from_stream_auth(request, token)
         
+        if not account_id:
+            logger.error("Failed to get account_id from auth")
+            raise HTTPException(status_code=401, detail="Authentication required")
+        
         if not payload.session_id:
+            logger.error("session_id is missing from request")
             raise HTTPException(status_code=400, detail="session_id is required")
+        
+        # Ensure platform has a default value
+        platform = payload.platform or "web"
         
         logger.debug(
             f"Presence update request: account={account_id}, session={payload.session_id}, "
-            f"thread={payload.active_thread_id}, timestamp={payload.client_timestamp}"
+            f"thread={payload.active_thread_id}, platform={platform}, timestamp={payload.client_timestamp}"
         )
         
         success = await presence_service.update_presence(
             session_id=payload.session_id,
             account_id=account_id,
             active_thread_id=payload.active_thread_id,
-            platform=payload.platform,
+            platform=platform,
             client_timestamp=payload.client_timestamp,
             device_info=payload.device_info
         )
         
         if not success:
+            # Log warning instead of error - this could be a validation/permission issue
+            logger.warning(f"Presence update failed for session {payload.session_id}, account {account_id}")
             raise HTTPException(status_code=500, detail="Failed to update presence")
         
         return {"success": True, "session_id": payload.session_id}
@@ -53,8 +63,11 @@ async def update_presence(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in update_presence endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        error_str = str(e).lower()
+        # Don't log 204 "Missing response" errors - they're handled silently now
+        if '204' not in error_str or 'missing response' not in error_str:
+            logger.error(f"Error in update_presence endpoint: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.post("/clear")

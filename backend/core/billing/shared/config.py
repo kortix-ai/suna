@@ -2,7 +2,6 @@ from decimal import Decimal
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 
-from click.decorators import R
 from core.utils.config import config
 
 TRIAL_ENABLED = False
@@ -17,6 +16,12 @@ DEFAULT_TOKEN_COST = Decimal('0.000002')
 CREDITS_PER_DOLLAR = 100
 
 FREE_TIER_INITIAL_CREDITS = Decimal('0.00')
+
+# "Unlimited" plan limits
+# We keep these as large integers (instead of None/inf) to avoid touching downstream
+# DB queries, JSON serialization, and comparison logic across the codebase.
+UNLIMITED_THREAD_LIMIT = 100_000
+UNLIMITED_PROJECT_LIMIT = UNLIMITED_THREAD_LIMIT * 2
 
 @dataclass
 class Tier:
@@ -92,12 +97,16 @@ TIERS: Dict[str, Tier] = {
         display_name='Plus',
         can_purchase_credits=False,
         models=['all'],
-        project_limit=200,  # 2x thread_limit
-        thread_limit=100,
+        # Frontend advertises "Unlimited Chats" on paid tiers.
+        # Threads are effectively "chats" and each thread creates a project, so both
+        # limits must be raised together to avoid mismatches and unexpected blocking.
+        project_limit=UNLIMITED_PROJECT_LIMIT,  # 2x thread_limit
+        thread_limit=UNLIMITED_THREAD_LIMIT,
         concurrent_runs=3,
         custom_workers_limit=5,
         scheduled_triggers_limit=5,
-        app_triggers_limit=10,
+        # Matches frontend pricing copy: "25 app triggers"
+        app_triggers_limit=25,
         memory_config={
             'enabled': True,
             'max_memories': 100,
@@ -121,12 +130,13 @@ TIERS: Dict[str, Tier] = {
         display_name='Pro',
         can_purchase_credits=False,
         models=['all'],
-        project_limit=1000,  # 2x thread_limit
-        thread_limit=500,
+        project_limit=UNLIMITED_PROJECT_LIMIT,  # 2x thread_limit
+        thread_limit=UNLIMITED_THREAD_LIMIT,
         concurrent_runs=5,
         custom_workers_limit=20,
         scheduled_triggers_limit=10,
-        app_triggers_limit=25,
+        # Matches frontend pricing copy: "50 app triggers"
+        app_triggers_limit=50,
         memory_config={
             'enabled': True,
             'max_memories': 500,
@@ -150,12 +160,13 @@ TIERS: Dict[str, Tier] = {
         display_name='Ultra',
         can_purchase_credits=True,
         models=['all'],
-        project_limit=5000,  # 2x thread_limit
-        thread_limit=2500,
+        project_limit=UNLIMITED_PROJECT_LIMIT,  # 2x thread_limit
+        thread_limit=UNLIMITED_THREAD_LIMIT,
         concurrent_runs=20,
         custom_workers_limit=100,
         scheduled_triggers_limit=50,
-        app_triggers_limit=100,
+        # Matches frontend pricing copy: "200 app triggers"
+        app_triggers_limit=200,
         memory_config={
             'enabled': True,
             'max_memories': 2000,

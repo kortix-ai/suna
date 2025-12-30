@@ -12,8 +12,10 @@ import { roobert } from './fonts/roobert';
 import { roobertMono } from './fonts/roobert-mono';
 import { Suspense, lazy } from 'react';
 import { I18nProvider } from '@/components/i18n-provider';
+import { featureFlags } from '@/lib/feature-flags';
 
 // Lazy load non-critical analytics and global components
+// Note: Analytics scripts will be automatically blocked by cookie consent service until consent is given
 const Analytics = lazy(() => import('@vercel/analytics/react').then(mod => ({ default: mod.Analytics })));
 const SpeedInsights = lazy(() => import('@vercel/speed-insights/next').then(mod => ({ default: mod.SpeedInsights })));
 const GoogleAnalytics = lazy(() => import('@next/third-parties/google').then(mod => ({ default: mod.GoogleAnalytics })));
@@ -21,7 +23,7 @@ const GoogleTagManager = lazy(() => import('@next/third-parties/google').then(mo
 const PostHogIdentify = lazy(() => import('@/components/posthog-identify').then(mod => ({ default: mod.PostHogIdentify })));
 const PlanSelectionModal = lazy(() => import('@/components/billing/pricing/plan-selection-modal').then(mod => ({ default: mod.PlanSelectionModal })));
 const AnnouncementDialog = lazy(() => import('@/components/announcements/announcement-dialog').then(mod => ({ default: mod.AnnouncementDialog })));
-const ReactScan = lazy(() => import('@/components/react-scan').then(mod => ({ default: mod.ReactScan })));
+const CookieConsent = lazy(() => import('@/components/cookie-consent').then(mod => ({ default: mod.CookieConsent })));
 
 
 export const viewport: Viewport = {
@@ -115,8 +117,6 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://connect.facebook.net" />
         <link rel="dns-prefetch" href="https://eu.i.posthog.com" />
         
-        {/* React Scan - development only */}
-        
         {/* Static SEO meta tags - rendered in initial HTML */}
         <title>Kortix: Your Autonomous AI Worker</title>
         <meta name="description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
@@ -133,8 +133,14 @@ export default function RootLayout({
         <meta name="twitter:image" content="https://kortix.com/banner.png" />
         <meta name="twitter:site" content="@kortix" />
         <link rel="canonical" href="https://kortix.com" />
+        
+        {/* iOS Smart App Banner - shows native install banner in Safari */}
+        {!featureFlags.disableMobileAdvertising ? (
+          <meta name="apple-itunes-app" content="app-id=6754448524, app-argument=kortix://" />
+        ) : null}
 
-        <Script id="facebook-pixel" strategy="lazyOnload">
+        {/* Facebook Pixel - Will be blocked by cookie consent service until marketing consent is given */}
+        <Script id="facebook-pixel" strategy="lazyOnload" data-cookieconsent="marketing">
           {`
             !function(f,b,e,v,n,t,s)
             {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
@@ -248,9 +254,8 @@ export default function RootLayout({
           <Suspense fallback={null}>
             <PostHogIdentify />
           </Suspense>
-          {/* React Scan - only loads in development */}
           <Suspense fallback={null}>
-            <ReactScan />
+            <CookieConsent />
           </Suspense>
         </ThemeProvider>
       </body>

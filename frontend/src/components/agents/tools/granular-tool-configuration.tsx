@@ -53,11 +53,30 @@ export const GranularToolConfiguration = ({
 
   const isToolGroupEnabled = (toolName: string): boolean => {
     const toolConfig = tools[toolName];
-    if (toolConfig === undefined) return false;
-    if (typeof toolConfig === 'boolean') return toolConfig;
-    if (typeof toolConfig === 'object' && toolConfig !== null) {
-      return toolConfig.enabled ?? true;
+    
+    // If tool is explicitly configured in agentpress_tools, use that value
+    if (toolConfig !== undefined) {
+      if (typeof toolConfig === 'boolean') return toolConfig;
+      if (typeof toolConfig === 'object' && toolConfig !== null) {
+        return toolConfig.enabled ?? true;
+      }
+      return false;
     }
+    
+    // If tool is NOT in agentpress_tools, check if it exists in TOOL_GROUPS
+    const toolGroup = getToolGroup(toolName, toolsData);
+    if (toolGroup) {
+      // For visible tools that aren't in agentpress_tools, default to enabled
+      // This ensures tools available in metadata are enabled by default
+      if (toolGroup.visible !== false) {
+        // Visible tools should be enabled by default when not explicitly configured
+        return true;
+      }
+      // Hidden tools follow metadata enabled state
+      return toolGroup.enabled ?? false;
+    }
+    
+    // Tool doesn't exist in metadata - default to disabled
     return false;
   };
 
@@ -197,9 +216,30 @@ export const GranularToolConfiguration = ({
   };
 
   const getEnabledToolsCount = (): number => {
-    return Object.entries(tools).filter(([toolName, toolConfig]) => {
-      return isToolGroupEnabled(toolName);
-    }).length;
+    // Count all enabled tools - both from agentpress_tools and visible tools from TOOL_GROUPS
+    // This ensures we count tools that are enabled either explicitly or by default
+    const enabledFromConfig = Object.entries(tools)
+      .filter(([toolName, toolConfig]) => {
+        return isToolGroupEnabled(toolName);
+      }).length;
+    
+    // Also count visible tools from TOOL_GROUPS that aren't in agentpress_tools (they default to enabled)
+    const enabledFromMetadata = Object.values(TOOL_GROUPS)
+      .filter(toolGroup => {
+        // Count visible tools that aren't in agentpress_tools (they default to enabled)
+        if (toolGroup.visible === false) return false;
+        if (tools[toolGroup.name] !== undefined) return false; // Already counted above
+        return true; // Visible tool not in config = enabled by default
+      }).length;
+    
+    return enabledFromConfig + enabledFromMetadata;
+  };
+
+  const getTotalVisibleToolsCount = (): number => {
+    // Count all visible tools from TOOL_GROUPS
+    return Object.values(TOOL_GROUPS)
+      .filter(toolGroup => toolGroup.visible !== false)
+      .length;
   };
 
   const getEnabledMethodsCount = (toolName: string): number => {
@@ -234,7 +274,7 @@ export const GranularToolConfiguration = ({
           </p>
         </div>
         <Badge variant="default" className="text-xs">
-          {getEnabledToolsCount()} / {Object.keys(TOOL_GROUPS).length} tools enabled
+          {getEnabledToolsCount()} / {getTotalVisibleToolsCount()} tools enabled
         </Badge>
       </div>
 

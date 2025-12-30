@@ -133,7 +133,9 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
   className,
   isStreaming = false,
 }) => {
-  if (!content) {
+  const safeContent = typeof content === 'string' ? content : (content ? String(content) : '');
+  
+  if (!safeContent) {
     return (
       <div className={cn('text-muted-foreground text-sm', className)}>
         No content
@@ -142,7 +144,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
   }
 
   // Auto-link plain URLs before rendering
-  const processedContent = autoLinkUrls(content);
+  const processedContent = autoLinkUrls(safeContent);
 
   return (
     <div className={cn('kortix-markdown', className)}>
@@ -268,7 +270,11 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
             const match = /language-(\w+)/.exec(codeClassName || '');
             const language = match ? match[1] : '';
             const code = String(children).replace(/\n$/, '');
-            const isBlock = codeClassName?.includes('language-');
+            
+            // Detect block code: has language class OR contains newlines (multi-line)
+            const hasLanguageClass = codeClassName?.includes('language-');
+            const isMultiLine = code.includes('\n');
+            const isBlock = hasLanguageClass || isMultiLine;
 
             if (isBlock) {
               // Mermaid diagrams
@@ -276,9 +282,9 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
                 return <MermaidRenderer chart={code} className="my-5" />;
               }
 
-              // Block code inside pre - inherit styles
+              // Block code inside pre - inherit styles, clean mono font
               return (
-                <code className="text-[13px] leading-relaxed text-inherit">
+                <code className="text-[13px] font-mono leading-relaxed text-inherit whitespace-pre">
                   {children}
                 </code>
               );
@@ -286,7 +292,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
 
             // Inline code - subtle pill style
             return (
-              <code className="px-2 py-1 rounded-md text-[13px] font-mono bg-card dark:bg-[#161618] border border-neutral-200 dark:border-neutral-700/50 text-foreground">
+              <code className="px-1.5 py-0.5 rounded-md text-[13px] font-mono bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/50 text-foreground">
                 {children}
               </code>
             );

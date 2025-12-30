@@ -325,32 +325,43 @@ async def cancel_account_subscriptions_immediately(account_id: str, client) -> d
         raise
 
 async def delete_account_sandboxes(account_id: str, client) -> int:
-    """Delete all Daytona sandboxes associated with an account's projects."""
+    """Delete all Daytona sandboxes associated with an account's resources."""
+    from core.resources import ResourceService, ResourceType, ResourceStatus
+    
     deleted_count = 0
     try:
-        # Get all projects for this account that have sandboxes
-        projects_result = await client.table('projects').select('project_id, sandbox').eq('account_id', account_id).execute()
+        resource_service = ResourceService(client)
         
-        if not projects_result.data:
-            logger.info(f"No projects found for account {account_id}")
+        # Get all sandbox resources for this account
+        resources = await resource_service.get_account_resources(
+            account_id=account_id,
+            resource_type=ResourceType.SANDBOX,
+            status=ResourceStatus.ACTIVE
+        )
+        
+        if not resources:
+            logger.info(f"No sandbox resources found for account {account_id}")
             return 0
         
-        for project in projects_result.data:
-            sandbox_data = project.get('sandbox')
-            if not sandbox_data or not isinstance(sandbox_data, dict):
-                continue
+        for resource in resources:
+            sandbox_id = resource.get('external_id')
+            resource_id = resource.get('id')
             
-            sandbox_id = sandbox_data.get('id')
             if not sandbox_id:
                 continue
             
             try:
+                # Delete the actual Daytona sandbox
                 await delete_sandbox(sandbox_id)
+                
+                # Mark resource as deleted
+                await resource_service.delete_resource(resource_id)
+                
                 deleted_count += 1
-                logger.info(f"Deleted sandbox {sandbox_id} for project {project['project_id']}")
+                logger.info(f"Deleted sandbox {sandbox_id} (resource {resource_id}) for account {account_id}")
             except Exception as e:
                 # Log but don't fail - sandbox might already be deleted or not exist
-                logger.warning(f"Failed to delete sandbox {sandbox_id} for project {project['project_id']}: {str(e)}")
+                logger.warning(f"Failed to delete sandbox {sandbox_id} (resource {resource_id}): {str(e)}")
         
         logger.info(f"Deleted {deleted_count} sandboxes for account {account_id}")
         return deleted_count

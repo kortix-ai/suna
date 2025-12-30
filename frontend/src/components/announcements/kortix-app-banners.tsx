@@ -2,18 +2,18 @@
 
 import * as React from 'react';
 import { useState, useEffect } from 'react';
-import { X, Download, Smartphone, Monitor } from 'lucide-react';
+import { X, Smartphone, Monitor } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Button } from '@/components/ui/button';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { isElectron } from '@/lib/utils/is-electron';
+import { featureFlags } from '@/lib/feature-flags';
 
 const MOBILE_STORAGE_KEY = 'kortix-mobile-banner-dismissed';
 const DESKTOP_STORAGE_KEY = 'kortix-desktop-banner-dismissed';
 
 const STORE_LINKS = {
   ios: 'https://apps.apple.com/ie/app/kortix/id6754448524',
-  android: 'https://play.google.com/store/games?hl=en',
+  android: 'https://play.google.com/store/apps/details?id=com.kortix.app',
 };
 
 const DOWNLOAD_LINKS = {
@@ -24,6 +24,16 @@ const DOWNLOAD_LINKS = {
 
 type MobilePlatform = 'ios' | 'android';
 type DesktopPlatform = 'windows' | 'mac';
+
+type KortixAppBannersProps = {
+  /**
+   * When true, hides ONLY the mobile (App Store / Play Store) banner.
+   * Desktop download banner can still show.
+   *
+   * If omitted, defaults to the global `featureFlags.disableMobileAdvertising`.
+   */
+  disableMobileAdvertising?: boolean;
+};
 
 // Apple logo SVG
 function AppleLogo({ className }: { className?: string }) {
@@ -57,7 +67,10 @@ function detectDesktopPlatform(): DesktopPlatform {
 }
 
 
-export function KortixAppBanners() {
+export function KortixAppBanners(props: KortixAppBannersProps) {
+  const disableMobileAdvertising =
+    props.disableMobileAdvertising ?? featureFlags.disableMobileAdvertising;
+
   const [isVisible, setIsVisible] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -74,21 +87,28 @@ export function KortixAppBanners() {
     setMounted(true);
     setDesktopPlatform(detectDesktopPlatform());
     
-    const mobileDismissed = localStorage.getItem(MOBILE_STORAGE_KEY);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[KortixAppBanners] flags', { disableMobileAdvertising });
+    }
+
     const desktopDismissed = localStorage.getItem(DESKTOP_STORAGE_KEY);
     
-    setMobileVisible(!mobileDismissed);
+    const mobileDismissed = disableMobileAdvertising
+      ? 'true'
+      : localStorage.getItem(MOBILE_STORAGE_KEY);
+
+    setMobileVisible(!mobileDismissed && !disableMobileAdvertising);
     // Hide desktop banner if running in Electron
     setDesktopVisible(!desktopDismissed && !isElectron());
     
     // Show banners after a short delay if at least one is not dismissed
-    if (!mobileDismissed || (!desktopDismissed && !isElectron())) {
+    if ((!mobileDismissed && !disableMobileAdvertising) || (!desktopDismissed && !isElectron())) {
       const timer = setTimeout(() => {
         setIsVisible(true);
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, []);
+  }, [disableMobileAdvertising]);
 
   const handleCloseMobile = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -115,6 +135,10 @@ export function KortixAppBanners() {
 
   const handleDownloadIntel = () => {
     window.open(DOWNLOAD_LINKS.macIntel, '_blank');
+  };
+
+  const handleOpenStore = () => {
+    window.open(STORE_LINKS[selectedMobilePlatform], '_blank');
   };
 
   const currentStoreUrl = STORE_LINKS[selectedMobilePlatform];
@@ -196,64 +220,76 @@ export function KortixAppBanners() {
 
                     {/* QR Code area */}
                     <div className="relative h-[140px] bg-muted dark:bg-[#e8e4df] flex items-center justify-center p-4">
-                      <div className="relative bg-white rounded-lg p-2 shadow-sm">
+                      <button
+                        onClick={handleOpenStore}
+                        className="relative bg-white rounded-lg p-2 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                      >
                 <img 
                   src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(currentStoreUrl)}&format=svg&ecc=H`}
                   alt={`QR Code to download Kortix on ${selectedMobilePlatform === 'ios' ? 'App Store' : 'Play Store'}`}
                   width={100}
                   height={100}
-                  className={`block ${selectedMobilePlatform === 'android' ? 'grayscale opacity-40' : ''}`}
+                  className="block"
                 />
                 {/* Kortix logo in center */}
-                <div className={`absolute inset-0 flex items-center justify-center ${selectedMobilePlatform === 'android' ? 'opacity-40' : ''}`}>
+                <div className="absolute inset-0 flex items-center justify-center">
                   <div className="bg-white p-1.5 rounded-lg">
                     <KortixLogo size={24} />
                   </div>
                 </div>
-                        {selectedMobilePlatform === 'android' && (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="bg-foreground/90 dark:bg-black/80 text-background dark:text-white text-sm font-bold px-3 py-1 rounded-md">
-                              Soon
-                            </span>
-                          </div>
-                        )}
-                      </div>
+                      </button>
                     </div>
 
                     {/* Content area */}
                     <div className="p-4 bg-muted/50 dark:bg-[#161618]">
                       <h3 className="text-foreground dark:text-white text-sm font-semibold mb-1">
-                        Kortix for Mobile coming soon
+                        Kortix for Mobile is here
                       </h3>
                       <p className="text-muted-foreground dark:text-white/60 text-xs leading-relaxed mb-3">
                         {selectedMobilePlatform === 'ios' 
-                          ? 'Preorder on App Store now.' 
-                          : 'Coming soon to Android devices.'}
+                          ? 'Download on App Store now.' 
+                          : 'Download on Play Store now.'}
                       </p>
 
-                      {/* Platform switcher */}
+                      {/* Store badges - native app store styling */}
                       <div className="flex gap-2">
                         <button
-                          onClick={() => setSelectedMobilePlatform('ios')}
-                          className={`flex-1 h-9 flex items-center justify-center gap-1.5 text-xs font-medium rounded-lg transition-all ${
-                            selectedMobilePlatform === 'ios'
-                              ? 'bg-foreground dark:bg-white text-background dark:text-black'
-                              : 'bg-transparent border border-border dark:border-[#3a3a3c] text-muted-foreground hover:text-foreground hover:border-foreground/50 dark:hover:text-white dark:hover:border-white/30'
+                          onClick={() => {
+                            setSelectedMobilePlatform('ios');
+                            window.open(STORE_LINKS.ios, '_blank');
+                          }}
+                          className={`flex-1 h-10 bg-black dark:bg-white rounded-lg flex items-center justify-center gap-2 hover:opacity-90 transition-opacity ${
+                            selectedMobilePlatform === 'ios' ? 'ring-2 ring-offset-1 ring-foreground/20' : ''
                           }`}
                         >
-                          <AppleLogo className="h-3.5 w-3.5" />
-                          App Store
+                          <AppleLogo className="h-5 w-5 text-white dark:text-black" />
+                          <div className="flex flex-col items-start">
+                            <span className="text-[8px] text-white/80 dark:text-black/80 leading-none">
+                              Download on the
+                            </span>
+                            <span className="text-[11px] font-semibold text-white dark:text-black leading-tight">
+                              App Store
+                            </span>
+                          </div>
                         </button>
                         <button
-                          onClick={() => setSelectedMobilePlatform('android')}
-                          className={`flex-1 h-9 flex items-center justify-center gap-1.5 text-xs font-medium rounded-lg transition-all ${
-                            selectedMobilePlatform === 'android'
-                              ? 'bg-foreground dark:bg-white text-background dark:text-black'
-                              : 'bg-transparent border border-border dark:border-[#3a3a3c] text-muted-foreground hover:text-foreground hover:border-foreground/50 dark:hover:text-white dark:hover:border-white/30'
+                          onClick={() => {
+                            setSelectedMobilePlatform('android');
+                            window.open(STORE_LINKS.android, '_blank');
+                          }}
+                          className={`flex-1 h-10 bg-black dark:bg-white rounded-lg flex items-center justify-center gap-2 hover:opacity-90 transition-opacity ${
+                            selectedMobilePlatform === 'android' ? 'ring-2 ring-offset-1 ring-foreground/20' : ''
                           }`}
                         >
-                          <PlayStoreLogo className="h-3.5 w-3.5" />
-                          Play Store
+                          <PlayStoreLogo className="h-5 w-5 text-white dark:text-black" />
+                          <div className="flex flex-col items-start">
+                            <span className="text-[8px] text-white/80 dark:text-black/80 leading-none">
+                              GET IT ON
+                            </span>
+                            <span className="text-[11px] font-semibold text-white dark:text-black leading-tight">
+                              Google Play
+                            </span>
+                          </div>
                         </button>
                       </div>
                     </div>
@@ -307,22 +343,32 @@ export function KortixAppBanners() {
                         Hand it off to Kortix. From anywhere on your {desktopPlatform === 'mac' ? 'Mac' : 'Desktop'}. Download now.
                       </p>
 
-                      <Button
+                      {/* Desktop download badge */}
+                      <button
                         onClick={handleDownload}
-                        variant="outline"
-                        size="sm"
-                        className="w-full h-9 !bg-foreground hover:!bg-foreground/90 dark:!bg-white dark:hover:!bg-gray-100 !border-transparent !text-background dark:!text-black text-xs rounded-lg gap-1.5"
+                        className="w-full h-10 bg-black dark:bg-white rounded-lg flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
                       >
-                        <Download className="h-3.5 w-3.5" />
-                        Download for {desktopPlatformLabel}
-                      </Button>
+                        {desktopPlatform === 'mac' ? (
+                          <AppleLogo className="h-5 w-5 text-white dark:text-black" />
+                        ) : (
+                          <Monitor className="h-5 w-5 text-white dark:text-black" />
+                        )}
+                        <div className="flex flex-col items-start">
+                          <span className="text-[8px] text-white/80 dark:text-black/80 leading-none">
+                            Download for
+                          </span>
+                          <span className="text-[11px] font-semibold text-white dark:text-black leading-tight">
+                            {desktopPlatformLabel}
+                          </span>
+                        </div>
+                      </button>
                       
                       {desktopPlatform === 'mac' && (
                         <button
                           onClick={handleDownloadIntel}
-                          className="w-full mt-2 text-xs text-muted-foreground dark:text-white/60 hover:text-foreground dark:hover:text-white transition-colors underline"
+                          className="w-full mt-2 text-[10px] text-muted-foreground dark:text-white/60 hover:text-foreground dark:hover:text-white transition-colors"
                         >
-                          Download for Intel Mac
+                          Intel Mac? Download here
                         </button>
                       )}
                     </div>

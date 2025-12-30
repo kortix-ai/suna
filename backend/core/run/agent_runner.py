@@ -98,9 +98,24 @@ class AgentRunner:
             
             cached_project = await get_cached_project_metadata(self.config.project_id)
             if not cached_project:
-                project = await self.client.table('projects').select('project_id, sandbox').eq('project_id', self.config.project_id).execute()
+                project = await self.client.table('projects').select('project_id, sandbox_resource_id').eq('project_id', self.config.project_id).execute()
                 if project.data:
-                    await set_cached_project_metadata(self.config.project_id, project.data[0].get('sandbox', {}))
+                    project_data = project.data[0]
+                    sandbox_resource_id = project_data.get('sandbox_resource_id')
+                    
+                    # Get sandbox info from resource if it exists
+                    sandbox_info = {}
+                    if sandbox_resource_id:
+                        from core.resources import ResourceService
+                        resource_service = ResourceService(self.client)
+                        resource = await resource_service.get_resource_by_id(sandbox_resource_id)
+                        if resource:
+                            sandbox_info = {
+                                'id': resource.get('external_id'),
+                                **resource.get('config', {})
+                            }
+                    
+                    await set_cached_project_metadata(self.config.project_id, sandbox_info)
             
             if hasattr(self.thread_manager, 'mcp_loader') and self.thread_manager.mcp_loader:
                 if len(self.thread_manager.mcp_loader.tool_map) == 0:
@@ -193,16 +208,34 @@ class AgentRunner:
             cached_project = await get_cached_project_metadata(self.config.project_id)
             if cached_project:
                 project_data = cached_project
+                sandbox_info = cached_project  # Cache stores sandbox metadata directly
                 logger.debug(f"⏱️ [TIMING] ⚡ Project from cache: {(time.time() - q_start) * 1000:.1f}ms")
             else:
-                project = await self.client.table('projects').select('project_id, sandbox').eq('project_id', self.config.project_id).execute()
+                from core.resources import ResourceService
+                resource_service = ResourceService(self.client)
+                
+                # Lazy migration: Migrate sandbox JSONB to resources table if needed
+                await resource_service.migrate_project_sandbox_if_needed(self.config.project_id)
+                
+                project = await self.client.table('projects').select('project_id, sandbox_resource_id').eq('project_id', self.config.project_id).execute()
                 
                 if not project.data or len(project.data) == 0:
                     raise ValueError(f"Project {self.config.project_id} not found")
                 
                 project_data = project.data[0]
+                sandbox_resource_id = project_data.get('sandbox_resource_id')
                 
-                await set_cached_project_metadata(self.config.project_id, project_data.get('sandbox', {}))
+                # Get sandbox info from resource if it exists
+                sandbox_info = {}
+                if sandbox_resource_id:
+                    resource = await resource_service.get_resource_by_id(sandbox_resource_id)
+                    if resource:
+                        sandbox_info = {
+                            'id': resource.get('external_id'),
+                            **resource.get('config', {})
+                        }
+                
+                await set_cached_project_metadata(self.config.project_id, sandbox_info)
                 logger.debug(f"⏱️ [TIMING] Project query + cache set: {(time.time() - q_start) * 1000:.1f}ms")
         else:
             parallel_start = time.time()
@@ -210,7 +243,7 @@ class AgentRunner:
             from core.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
             
             thread_query = self.client.table('threads').select('account_id').eq('thread_id', self.config.thread_id).execute()
-            project_query = self.client.table('projects').select('project_id, sandbox').eq('project_id', self.config.project_id).execute()
+            project_query = self.client.table('projects').select('project_id, sandbox_resource_id').eq('project_id', self.config.project_id).execute()
             
             response, project = await asyncio.gather(thread_query, project_query)
             logger.debug(f"⏱️ [TIMING] Parallel DB queries (thread + project): {(time.time() - parallel_start) * 1000:.1f}ms")
@@ -227,10 +260,22 @@ class AgentRunner:
                 raise ValueError(f"Project {self.config.project_id} not found")
 
             project_data = project.data[0]
+            sandbox_resource_id = project_data.get('sandbox_resource_id')
             
-            await set_cached_project_metadata(self.config.project_id, project_data.get('sandbox', {}))
+            # Get sandbox info from resource if it exists
+            sandbox_info = {}
+            if sandbox_resource_id:
+                from core.resources import ResourceService
+                resource_service = ResourceService(self.client)
+                resource = await resource_service.get_resource_by_id(sandbox_resource_id)
+                if resource:
+                    sandbox_info = {
+                        'id': resource.get('external_id'),
+                        **resource.get('config', {})
+                    }
+            
+            await set_cached_project_metadata(self.config.project_id, sandbox_info)
         
-        sandbox_info = project_data.get('sandbox', {})
         if not sandbox_info.get('id'):
             logger.debug(f"No sandbox found for project {self.config.project_id}; will create lazily when needed")
         

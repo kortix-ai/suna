@@ -91,28 +91,47 @@ export function DynamicGreeting({ className }: DynamicGreetingProps) {
     return 0;
   };
 
-  // Show placeholder during SSR
+  // Show visible static text during SSR so it can be the LCP element
   if (!mounted) {
-    return <p className={cn('tracking-tight opacity-0', className)}>&nbsp;</p>;
+    return <p className={cn('tracking-tight', className)}>Let&apos;s build something awesome</p>;
   }
+
+  // Split by whitespace but keep whitespace tokens so the browser can wrap between words.
+  // We render each word as a single inline group to prevent mid-word line breaks (e.g. "W" + "hat's").
+  const tokens = greeting.split(/(\s+)/);
+  let globalLetterIndex = 0;
 
   return (
     <p className={cn('tracking-tight', className)}>
-      {greeting.split('').map((letter, index) => (
-        <span
-          key={index}
-          onMouseEnter={() => setHoveredIndex(index)}
-          onMouseLeave={() => setHoveredIndex(null)}
-          style={{
-            display: 'inline-block',
-            transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-            transform: `translateY(${getLiftAmount(index)}px)`,
-            cursor: 'default',
-          }}
-        >
-          {letter === ' ' ? '\u00A0' : letter}
-        </span>
-      ))}
+      {/* Accessibility: announce the full greeting as a sentence, not letter-by-letter */}
+      <span className="sr-only">{greeting}</span>
+      <span aria-hidden="true">
+        {tokens.map((token, tokenIndex) => {
+          // Preserve whitespace as-is so wrapping occurs only at spaces.
+          if (/^\s+$/.test(token)) {
+            return <span key={`space-${tokenIndex}`}>{token}</span>;
+          }
+
+          return (
+            <span key={`word-${tokenIndex}`} className="inline-flex whitespace-nowrap">
+              {Array.from(token).map((letter) => {
+                const index = globalLetterIndex++;
+                return (
+                  <span
+                    key={index}
+                    onMouseEnter={() => setHoveredIndex(index)}
+                    onMouseLeave={() => setHoveredIndex(null)}
+                    className="inline-block cursor-default transition-transform duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]"
+                    style={{ transform: `translateY(${getLiftAmount(index)}px)` }}
+                  >
+                    {letter}
+                  </span>
+                );
+              })}
+            </span>
+          );
+        })}
+      </span>
     </p>
   );
 }

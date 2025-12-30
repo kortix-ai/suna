@@ -6,11 +6,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
+import { KortixLoader } from '@/components/ui';
 import { Mail } from 'lucide-react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '@/hooks/useAuth';
-import { useOnboarding } from '@/hooks/useOnboarding';
 import { useLanguage, useAuthContext } from '@/contexts';
 import * as Haptics from 'expo-haptics';
 import Animated, { 
@@ -196,7 +196,7 @@ function GoogleLogo() {
 export default function AuthScreen() {
   const router = useRouter();
   const { signInWithOAuth } = useAuth();
-  const { isAuthenticated } = useAuthContext();
+  const { isAuthenticated, isLoading: authLoading } = useAuthContext();
   const emailDrawerRef = React.useRef<EmailAuthDrawerRef>(null);
 
   // Prevent back navigation if authenticated
@@ -205,7 +205,7 @@ export default function AuthScreen() {
       if (Platform.OS === 'android') {
         const onBackPress = () => {
           if (isAuthenticated) {
-            router.replace('/');
+            router.replace('/home');
             return true;
           }
           return false;
@@ -219,9 +219,9 @@ export default function AuthScreen() {
   // Redirect if already authenticated AND close any open drawer
   React.useEffect(() => {
     if (isAuthenticated) {
-      console.log('🔄 Auth page: user authenticated, closing drawer and redirecting');
+      console.log('🔄 Auth page: user authenticated, closing drawer and redirecting to /home');
       emailDrawerRef.current?.close();
-      router.replace('/');
+      router.replace('/home');
     }
   }, [isAuthenticated, router]);
 
@@ -235,6 +235,20 @@ export default function AuthScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     emailDrawerRef.current?.open();
   }, []);
+
+  // CRITICAL: If user is already authenticated, show loader instead of auth UI
+  // This prevents any flash of auth content while redirect is happening
+  // AuthProtection in _layout.tsx will handle the redirect
+  if (isAuthenticated && !authLoading) {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false, gestureEnabled: false }} />
+        <View className="flex-1 bg-background items-center justify-center">
+          <KortixLoader size="xlarge" />
+        </View>
+      </>
+    );
+  }
 
   return (
     <>
