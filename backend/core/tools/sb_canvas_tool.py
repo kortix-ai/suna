@@ -19,22 +19,36 @@ _canvas_locks: Dict[str, asyncio.Lock] = {}
 
 @tool_metadata(
     display_name="Canvas Editor",
-    description="Create and manage interactive canvases for image composition and design. Includes AI processing (upscale, remove background) for canvas elements.",
+    description="Create and manage interactive canvases for image composition and design. Includes frames for export regions and AI processing (upscale, remove background).",
     icon="Layout",
     color="bg-blue-100 dark:bg-blue-800/50",
     weight=215,
     visible=True,
     usage_guide="""
-### CANVAS EDITOR
+### CANVAS EDITOR - SOCIAL MEDIA WORKFLOW
 
-**🚀 PREFERRED WORKFLOW: Use image_edit_or_generate with canvas_path**
-```python
-# BEST: Single call generates AND adds to canvas (auto-creates canvas if needed)
-image_edit_or_generate(
-    prompt=["logo design", "background pattern"],
-    canvas_path="canvases/my-design.kanvax"
-)
-```
+**MANDATORY for Instagram, TikTok, YouTube, any sized design:**
+
+1. add_frame_to_canvas(canvas_path="canvases/design.kanvax", width=1080, height=1920, background_color="#000000") → get element_id
+2. image_edit_or_generate(prompt="...", canvas_path="canvases/design.kanvax", frame_id=element_id, aspect_ratio="2:3")
+
+**⚠️ CRITICAL RULES:**
+- BOTH canvas_path AND frame_id are REQUIRED in image_edit_or_generate!
+- Generate **ONE COMPREHENSIVE IMAGE** per post - include ALL text, logos, and design in ONE prompt!
+- Do NOT generate multiple images for text overlays!
+
+**SIZES & ASPECT RATIOS:**
+- IG Story/Reel/TikTok: 1080x1920 → aspect_ratio="2:3" (portrait)
+- IG Post: 1080x1080 → aspect_ratio="1:1" (square)
+- LinkedIn Post: 1200x627 → aspect_ratio="3:2" (landscape)
+- YouTube: 1280x720 → aspect_ratio="3:2" (landscape)
+- Twitter: 1200x675 → aspect_ratio="3:2" (landscape)
+
+**⚠️ CREATE ONLY ONE FRAME AND ONE IMAGE PER REQUEST!**
+
+**FRAME FILL:** Use background_color="#000000" (black) to fill gaps!
+
+**NEVER create HTML for social media content!**
 
 **🎨 AI PROCESSING ON CANVAS ELEMENTS:**
 ```python
@@ -59,6 +73,7 @@ ai_process_canvas_element(
 **⚠️ RULES:**
 - NEVER call add_image_to_canvas in PARALLEL - causes race conditions!
 - Use list_canvas_elements to get element IDs before processing
+- For frame sizes not in presets: ASK the user OR use web_search to find dimensions
 """
 )
 class SandboxCanvasTool(SandboxToolsBase):
@@ -109,6 +124,37 @@ class SandboxCanvasTool(SandboxToolsBase):
         """Convert canvas name to safe filename"""
         return "".join(c for c in name if c.isalnum() or c in "-_").lower()
 
+    def _normalize_path(self, path: str) -> str:
+        """Normalize canvas/file paths to relative paths.
+        
+        Handles:
+        - Absolute paths like /workspace/canvases/foo.kanvax -> canvases/foo.kanvax
+        - Malformed paths with XML garbage
+        - Extra slashes
+        """
+        if not path:
+            return path
+        
+        # Strip any XML-like garbage that LLMs sometimes generate
+        if '</parameter>' in path or '<parameter' in path:
+            # Take only the part before any XML tags
+            path = path.split('</parameter>')[0].split('<parameter')[0].strip()
+        
+        # Remove /workspace/ prefix if present
+        if path.startswith('/workspace/'):
+            path = path[11:]  # len('/workspace/') = 11
+        elif path.startswith('workspace/'):
+            path = path[10:]  # len('workspace/') = 10
+        
+        # Remove leading slashes
+        path = path.lstrip('/')
+        
+        # Clean up any double slashes
+        while '//' in path:
+            path = path.replace('//', '/')
+        
+        return path
+
     def _create_canvas_data(
         self, 
         name: str, 
@@ -131,9 +177,14 @@ class SandboxCanvasTool(SandboxToolsBase):
         """Load canvas data from .kanvax file"""
         try:
             await self._ensure_sandbox()
-            content = await self.sandbox.fs.download_file(f"{self.workspace_path}/{canvas_path}")
+            # Normalize path to handle /workspace/ prefix and other issues
+            normalized_path = self._normalize_path(canvas_path)
+            full_path = f"{self.workspace_path}/{normalized_path}"
+            logger.debug(f"[Canvas] Loading canvas from: {full_path} (original: {canvas_path})")
+            content = await self.sandbox.fs.download_file(full_path)
             return json.loads(content.decode() if isinstance(content, bytes) else content)
         except Exception as e:
+            logger.warning(f"[Canvas] Failed to load canvas {canvas_path}: {e}")
             return None
 
     async def _save_canvas_data(self, canvas_path: str, canvas_data: Dict[str, Any]):
@@ -142,11 +193,13 @@ class SandboxCanvasTool(SandboxToolsBase):
             await self._ensure_sandbox()
             await self._ensure_canvases_dir()  # Ensure directory exists!
             
+            # Normalize path
+            normalized_path = self._normalize_path(canvas_path)
             canvas_data["updated_at"] = datetime.utcnow().isoformat() + "Z"
             content = json.dumps(canvas_data, indent=2)
-            full_path = f"{self.workspace_path}/{canvas_path}"
+            full_path = f"{self.workspace_path}/{normalized_path}"
             
-            logger.debug(f"[Canvas] Saving canvas to: {full_path} in sandbox {self._sandbox_id}")
+            logger.debug(f"[Canvas] Saving canvas to: {full_path} (original: {canvas_path})")
             await self.sandbox.fs.upload_file(content.encode(), full_path)
             
             # Verify file was saved
@@ -237,7 +290,7 @@ class SandboxCanvasTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "save_canvas",
-            "description": "Save canvas data with all elements. Used to persist user changes from the canvas editor. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `canvas_path` (REQUIRED), `elements` (REQUIRED).",
+            "description": "Save canvas data with all elements. Used to persist user changes from the canvas editor. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `canvas_path` (REQUIRED), `elements` (REQUIRED). **⚠️ IMPORTANT**: For frame elements, include `backgroundColor` to preserve fill color!",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -247,13 +300,13 @@ class SandboxCanvasTool(SandboxToolsBase):
                     },
                     "elements": {
                         "type": "array",
-                        "description": "**REQUIRED** - Array of canvas elements with their properties (id, type, src, x, y, width, height, rotation, scaleX, scaleY, opacity, locked, name).",
+                        "description": "**REQUIRED** - Array of canvas elements with their properties. For frames: include backgroundColor to preserve fill color!",
                         "items": {
                             "type": "object",
                             "properties": {
                                 "id": {"type": "string"},
-                                "type": {"type": "string"},
-                                "src": {"type": "string"},
+                                "type": {"type": "string", "description": "'image' or 'frame'"},
+                                "src": {"type": "string", "description": "Image source path (for image type only)"},
                                 "x": {"type": "number"},
                                 "y": {"type": "number"},
                                 "width": {"type": "number"},
@@ -263,7 +316,8 @@ class SandboxCanvasTool(SandboxToolsBase):
                                 "scaleY": {"type": "number"},
                                 "opacity": {"type": "number"},
                                 "locked": {"type": "boolean"},
-                                "name": {"type": "string"}
+                                "name": {"type": "string"},
+                                "backgroundColor": {"type": "string", "description": "**FOR FRAMES ONLY** - Fill color in hex format (e.g. '#000000'). MUST preserve from list_canvas_elements!"}
                             }
                         }
                     }
@@ -281,6 +335,9 @@ class SandboxCanvasTool(SandboxToolsBase):
         """
         Save canvas with updated elements.
         """
+        # Normalize path
+        canvas_path = self._normalize_path(canvas_path)
+        
         try:
             await self._ensure_sandbox()
             
@@ -313,7 +370,7 @@ class SandboxCanvasTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "add_image_to_canvas",
-            "description": "Add an image element to an existing canvas. Image can be from designs folder or any workspace path. **⚠️ IMPORTANT**: NEVER call this function in parallel - causes race conditions! Call ONE AT A TIME. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `canvas_path` (REQUIRED), `image_path` (REQUIRED), `x` (optional), `y` (optional), `width` (optional), `height` (optional), `name` (optional).",
+            "description": "Add an image element to an existing canvas. Image can be from designs folder or any workspace path. **⚠️ IMPORTANT**: NEVER call this function in parallel - causes race conditions! Call ONE AT A TIME. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `canvas_path` (REQUIRED), `image_path` (REQUIRED), `x` (optional), `y` (optional), `width` (optional), `height` (optional), `name` (optional), `frame_id` (optional for precise frame placement).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -327,12 +384,12 @@ class SandboxCanvasTool(SandboxToolsBase):
                     },
                     "x": {
                         "type": "number",
-                        "description": "**OPTIONAL** - X position on canvas in pixels. Default: 100.",
+                        "description": "**OPTIONAL** - X position on canvas in pixels. Default: 100. Ignored if frame_id is provided.",
                         "default": 100
                     },
                     "y": {
                         "type": "number",
-                        "description": "**OPTIONAL** - Y position on canvas in pixels. Default: 100.",
+                        "description": "**OPTIONAL** - Y position on canvas in pixels. Default: 100. Ignored if frame_id is provided.",
                         "default": 100
                     },
                     "width": {
@@ -348,6 +405,10 @@ class SandboxCanvasTool(SandboxToolsBase):
                     "name": {
                         "type": "string",
                         "description": "**OPTIONAL** - Name for the element. Defaults to image filename if not provided."
+                    },
+                    "frame_id": {
+                        "type": "string",
+                        "description": "**OPTIONAL** - Frame element ID to place image inside. Image will be centered and scaled to fit within the frame. Use list_canvas_elements to get frame IDs."
                     }
                 },
                 "required": ["canvas_path", "image_path"],
@@ -363,9 +424,14 @@ class SandboxCanvasTool(SandboxToolsBase):
         y: float = 100,
         width: Optional[float] = None,
         height: Optional[float] = None,
-        name: Optional[str] = None
+        name: Optional[str] = None,
+        frame_id: Optional[str] = None
     ) -> ToolResult:
         """Add an image element to the canvas"""
+        # Normalize paths to handle /workspace/ prefix and XML garbage
+        canvas_path = self._normalize_path(canvas_path)
+        image_path = self._normalize_path(image_path)
+        
         # Ensure x, y, width, height are numbers (AI sometimes passes strings)
         try:
             x = float(x) if x is not None else 100
@@ -441,25 +507,48 @@ class SandboxCanvasTool(SandboxToolsBase):
                     elem_height = height
                     elem_width = height * aspect_ratio
                 else:
-                    # No size specified - use actual image size, capped
-                    max_size = 600
-                    if actual_img_width > max_size or actual_img_height > max_size:
-                        if actual_img_width > actual_img_height:
-                            elem_width = max_size
-                            elem_height = max_size / aspect_ratio
-                        else:
-                            elem_height = max_size
-                            elem_width = max_size * aspect_ratio
-                    else:
-                        elem_width = actual_img_width
-                        elem_height = actual_img_height
+                    # No size specified - use actual image size (no cap - canvas is infinite)
+                    elem_width = actual_img_width
+                    elem_height = actual_img_height
                 
-                # Auto-calculate position if not specified (x=100 and y=100 are defaults)
-                # Create a grid layout based on existing elements
+                # Handle frame_id placement - find frame and position/size to fit inside
+                target_frame = None
+                if frame_id:
+                    for el in canvas_data.get("elements", []):
+                        if el.get("id") == frame_id and el.get("type") == "frame":
+                            target_frame = el
+                            break
+                    if not target_frame:
+                        logger.warning(f"Frame {frame_id} not found in canvas, using default positioning")
+                
+                # Calculate position
                 actual_x = x
                 actual_y = y
-                if x == 100 and y == 100 and len(canvas_data["elements"]) > 0:
-                    # Calculate next position in grid
+                
+                if target_frame:
+                    # Place inside frame - scale to fit and center
+                    frame_w = target_frame["width"]
+                    frame_h = target_frame["height"]
+                    
+                    # Scale image to fit within frame while maintaining aspect ratio
+                    img_aspect = actual_img_width / actual_img_height if actual_img_height > 0 else 1
+                    frame_aspect = frame_w / frame_h if frame_h > 0 else 1
+                    
+                    if img_aspect > frame_aspect:
+                        # Image is wider than frame - fit to width
+                        elem_width = frame_w
+                        elem_height = frame_w / img_aspect
+                    else:
+                        # Image is taller than frame - fit to height
+                        elem_height = frame_h
+                        elem_width = frame_h * img_aspect
+                    
+                    # Center inside frame
+                    actual_x = target_frame["x"] + (frame_w - elem_width) / 2
+                    actual_y = target_frame["y"] + (frame_h - elem_height) / 2
+                    
+                elif x == 100 and y == 100 and len(canvas_data["elements"]) > 0:
+                    # Auto-calculate position in grid layout
                     existing = canvas_data["elements"]
                     cols = 3  # 3 columns
                     gap = 50  # Gap between elements
@@ -511,6 +600,212 @@ class SandboxCanvasTool(SandboxToolsBase):
             except Exception as e:
                 return self.fail_response(f"Failed to add image to canvas: {str(e)}")
 
+    # Frame size presets - common sizes for design work
+    FRAME_PRESETS = {
+        # Social Media
+        "instagram_post": {"width": 1080, "height": 1080, "name": "Instagram Post"},
+        "instagram_story": {"width": 1080, "height": 1920, "name": "Instagram Story"},
+        "instagram_reel": {"width": 1080, "height": 1920, "name": "Instagram Reel"},
+        "facebook_post": {"width": 1200, "height": 630, "name": "Facebook Post"},
+        "facebook_cover": {"width": 820, "height": 312, "name": "Facebook Cover"},
+        "twitter_post": {"width": 1200, "height": 675, "name": "Twitter/X Post"},
+        "twitter_header": {"width": 1500, "height": 500, "name": "Twitter/X Header"},
+        "linkedin_post": {"width": 1200, "height": 627, "name": "LinkedIn Post"},
+        "linkedin_cover": {"width": 1584, "height": 396, "name": "LinkedIn Cover"},
+        "youtube_thumbnail": {"width": 1280, "height": 720, "name": "YouTube Thumbnail"},
+        "tiktok_video": {"width": 1080, "height": 1920, "name": "TikTok Video"},
+        "pinterest_pin": {"width": 1000, "height": 1500, "name": "Pinterest Pin"},
+        # Devices
+        "iphone_15_pro": {"width": 1179, "height": 2556, "name": "iPhone 15 Pro"},
+        "iphone_15": {"width": 1170, "height": 2532, "name": "iPhone 15"},
+        "iphone_se": {"width": 750, "height": 1334, "name": "iPhone SE"},
+        "ipad_pro_12": {"width": 2048, "height": 2732, "name": "iPad Pro 12.9\""},
+        "ipad_pro_11": {"width": 1668, "height": 2388, "name": "iPad Pro 11\""},
+        "android_phone": {"width": 1080, "height": 2340, "name": "Android Phone"},
+        "macbook_pro_16": {"width": 3456, "height": 2234, "name": "MacBook Pro 16\""},
+        "macbook_air_15": {"width": 2880, "height": 1864, "name": "MacBook Air 15\""},
+        # Design Platforms
+        "dribbble_shot": {"width": 1600, "height": 1200, "name": "Dribbble Shot"},
+        "behance_project": {"width": 1400, "height": 1050, "name": "Behance Project"},
+        "figma_frame": {"width": 1440, "height": 900, "name": "Figma Desktop"},
+        # Print
+        "a4_portrait": {"width": 2480, "height": 3508, "name": "A4 Portrait (300dpi)"},
+        "a4_landscape": {"width": 3508, "height": 2480, "name": "A4 Landscape (300dpi)"},
+        "a3_portrait": {"width": 3508, "height": 4961, "name": "A3 Portrait (300dpi)"},
+        "letter_portrait": {"width": 2550, "height": 3300, "name": "US Letter Portrait"},
+        "business_card": {"width": 1050, "height": 600, "name": "Business Card"},
+        "poster_24x36": {"width": 7200, "height": 10800, "name": "Poster 24x36\""},
+        # Common Aspect Ratios
+        "hd_1080p": {"width": 1920, "height": 1080, "name": "HD 1080p"},
+        "hd_720p": {"width": 1280, "height": 720, "name": "HD 720p"},
+        "4k_uhd": {"width": 3840, "height": 2160, "name": "4K UHD"},
+        "square_1000": {"width": 1000, "height": 1000, "name": "Square 1000px"},
+        "square_2000": {"width": 2000, "height": 2000, "name": "Square 2000px"},
+    }
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "add_frame_to_canvas",
+            "description": """⚠️ CALL THIS FIRST for Instagram/TikTok/YouTube/any sized design! Returns frame_id to use with image_edit_or_generate. Auto-creates canvas.
+
+**SIZES:** IG Story/Reel/TikTok=1080x1920, IG Post=1080x1080, YouTube=1280x720, Twitter=1200x675""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "canvas_path": {
+                        "type": "string",
+                        "description": "**REQUIRED** - Path to the canvas file. Example: 'canvases/project-mockup.kanvax'"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "**REQUIRED** - Name for the frame. Use descriptive names like 'Instagram Post 1', 'Hero Banner', 'Mobile Screenshot'."
+                    },
+                    "width": {
+                        "type": "number",
+                        "description": "**REQUIRED** - Width of the frame in pixels. Use preset dimensions for common formats.",
+                        "minimum": 100
+                    },
+                    "height": {
+                        "type": "number",
+                        "description": "**REQUIRED** - Height of the frame in pixels. Use preset dimensions for common formats.",
+                        "minimum": 100
+                    },
+                    "x": {
+                        "type": "number",
+                        "description": "**OPTIONAL** - X position on canvas in pixels. Default: 100.",
+                        "default": 100
+                    },
+                    "y": {
+                        "type": "number",
+                        "description": "**OPTIONAL** - Y position on canvas in pixels. Default: 100.",
+                        "default": 100
+                    },
+                    "background_color": {
+                        "type": "string",
+                        "description": "**OPTIONAL** - Background color in hex format. Example: '#ffffff' for white, '#000000' for black, 'transparent' for no background. Default: transparent.",
+                        "default": "transparent"
+                    }
+                },
+                "required": ["canvas_path", "name", "width", "height"],
+                "additionalProperties": False
+            }
+        }
+    })
+    async def add_frame_to_canvas(
+        self,
+        canvas_path: str,
+        name: str,
+        width: float,
+        height: float,
+        x: float = 100,
+        y: float = 100,
+        background_color: str = "transparent"
+    ) -> ToolResult:
+        """Add a frame element to the canvas"""
+        # Normalize path to handle /workspace/ prefix and XML garbage
+        canvas_path = self._normalize_path(canvas_path)
+        
+        # Ensure dimensions are valid numbers
+        try:
+            width = float(width) if width is not None else 400
+            height = float(height) if height is not None else 400
+            x = float(x) if x is not None else 100
+            y = float(y) if y is not None else 100
+        except (ValueError, TypeError):
+            return self.fail_response("Invalid dimensions provided. Width and height must be numbers.")
+        
+        # Validate minimum size
+        if width < 100 or height < 100:
+            return self.fail_response("Frame dimensions must be at least 100x100 pixels.")
+        
+        # Use lock to prevent race conditions
+        canvas_lock = self._get_canvas_lock(canvas_path)
+        
+        async with canvas_lock:
+            try:
+                await self._ensure_sandbox()
+                
+                # Ensure canvas_path has correct format
+                if not canvas_path.endswith('.kanvax'):
+                    canvas_path = f"{canvas_path}.kanvax"
+                if not canvas_path.startswith('canvases/'):
+                    canvas_path = f"canvases/{canvas_path}"
+                
+                # Ensure canvases directory exists
+                canvases_dir = f"{self.workspace_path}/canvases"
+                await self.sandbox.process.exec(f"mkdir -p '{canvases_dir}'")
+                
+                # Load canvas data or create new one
+                canvas_data = await self._load_canvas_data(canvas_path)
+                if not canvas_data:
+                    # Auto-create canvas
+                    canvas_name = canvas_path.split('/')[-1].replace('.kanvax', '')
+                    canvas_data = {
+                        "name": canvas_name,
+                        "version": "1.0",
+                        "background": "#1a1a1a",
+                        "description": f"Auto-created canvas for {canvas_name}",
+                        "elements": [],
+                        "created_at": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat(),
+                    }
+                
+                # Create frame element
+                element_id = str(uuid.uuid4())
+                
+                # Auto-calculate position if using defaults and other frames exist
+                actual_x = x
+                actual_y = y
+                if x == 100 and y == 100:
+                    # Find existing frames and offset new one
+                    existing_frames = [el for el in canvas_data["elements"] if el.get("type") == "frame"]
+                    if existing_frames:
+                        # Place next to the last frame with gap
+                        last_frame = existing_frames[-1]
+                        actual_x = last_frame["x"] + last_frame["width"] + 100
+                        actual_y = last_frame["y"]
+                
+                element = {
+                    "id": element_id,
+                    "type": "frame",
+                    "x": actual_x,
+                    "y": actual_y,
+                    "width": width,
+                    "height": height,
+                    "rotation": 0,
+                    "opacity": 1,
+                    "locked": False,
+                    "name": name,
+                    "visible": True,
+                    "backgroundColor": background_color if background_color != "transparent" else None
+                }
+                
+                # Add frame to canvas (frames should be at the beginning so they render behind images)
+                # Insert at the beginning of elements array
+                canvas_data["elements"].insert(0, element)
+                
+                # Save canvas
+                await self._save_canvas_data(canvas_path, canvas_data)
+                
+                result = {
+                    "canvas_path": canvas_path,
+                    "element_id": element_id,
+                    "element_name": name,
+                    "element_type": "frame",
+                    "position": {"x": actual_x, "y": actual_y},
+                    "size": {"width": width, "height": height},
+                    "backgroundColor": background_color if background_color != "transparent" else None,
+                    "total_elements": len(canvas_data["elements"]),
+                    "sandbox_id": self.sandbox_id,
+                    "message": f"Added frame '{name}' ({int(width)}x{int(height)}) to canvas at position ({int(actual_x)}, {int(actual_y)})"
+                }
+                
+                return self.success_response(result)
+                
+            except Exception as e:
+                return self.fail_response(f"Failed to add frame to canvas: {str(e)}")
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -531,6 +826,9 @@ class SandboxCanvasTool(SandboxToolsBase):
     })
     async def list_canvas_elements(self, canvas_path: str) -> ToolResult:
         """List all elements in a canvas"""
+        # Normalize path
+        canvas_path = self._normalize_path(canvas_path)
+        
         try:
             await self._ensure_sandbox()
             canvas_data = await self._load_canvas_data(canvas_path)
@@ -540,26 +838,36 @@ class SandboxCanvasTool(SandboxToolsBase):
 
             elements_info = []
             for element in canvas_data.get("elements", []):
-                # Get src info but NEVER include base64 data in tool results (LLM context bloat)
-                src = element.get("src", "")
-                if src.startswith("data:"):
-                    # Base64 embedded - just indicate it exists
-                    src_info = "(embedded image)"
-                else:
-                    # File path reference - safe to include
-                    src_info = src
+                element_type = element.get("type", "image")
                 
-                elements_info.append({
+                # Build base info common to all element types
+                elem_info = {
                     "id": element["id"],
                     "name": element["name"],
-                    "type": element["type"],
-                    "src": src_info,  # Path or indicator, NEVER base64 data
+                    "type": element_type,
                     "position": {"x": element["x"], "y": element["y"]},
                     "size": {"width": element["width"], "height": element["height"]},
                     "rotation": element.get("rotation", 0),
                     "opacity": element.get("opacity", 1),
                     "locked": element.get("locked", False)
-                })
+                }
+                
+                # Add type-specific info
+                if element_type == "image":
+                    # Get src info but NEVER include base64 data in tool results (LLM context bloat)
+                    src = element.get("src", "")
+                    if src.startswith("data:"):
+                        # Base64 embedded - just indicate it exists
+                        src_info = "(embedded image)"
+                    else:
+                        # File path reference - safe to include
+                        src_info = src
+                    elem_info["src"] = src_info
+                elif element_type == "frame":
+                    # Frame-specific properties (use camelCase to match save_canvas format)
+                    elem_info["backgroundColor"] = element.get("backgroundColor", "transparent")
+                
+                elements_info.append(elem_info)
 
             result = {
                 "canvas_name": canvas_data["name"],
@@ -612,6 +920,9 @@ class SandboxCanvasTool(SandboxToolsBase):
         **updates
     ) -> ToolResult:
         """Update element properties"""
+        # Normalize path
+        canvas_path = self._normalize_path(canvas_path)
+        
         try:
             await self._ensure_sandbox()
             canvas_data = await self._load_canvas_data(canvas_path)
@@ -678,6 +989,9 @@ class SandboxCanvasTool(SandboxToolsBase):
     })
     async def remove_canvas_element(self, canvas_path: str, element_id: str) -> ToolResult:
         """Remove an element from the canvas"""
+        # Normalize path
+        canvas_path = self._normalize_path(canvas_path)
+        
         try:
             await self._ensure_sandbox()
             canvas_data = await self._load_canvas_data(canvas_path)
@@ -758,6 +1072,9 @@ class SandboxCanvasTool(SandboxToolsBase):
         4. Saves result as new file
         5. Adds new element to canvas next to original
         """
+        # Normalize path
+        canvas_path = self._normalize_path(canvas_path)
+        
         try:
             await self._ensure_sandbox()
             
@@ -876,19 +1193,9 @@ class SandboxCanvasTool(SandboxToolsBase):
             new_x = source_element.get("x", 100) + source_element.get("width", 400) + 50
             new_y = source_element.get("y", 100)
             
-            # Scale down if needed (max 600px)
-            max_size = 600
-            aspect_ratio = result_width / result_height if result_height > 0 else 1
-            if result_width > max_size or result_height > max_size:
-                if result_width > result_height:
-                    elem_width = max_size
-                    elem_height = max_size / aspect_ratio
-                else:
-                    elem_height = max_size
-                    elem_width = max_size * aspect_ratio
-            else:
-                elem_width = result_width
-                elem_height = result_height
+            # Use actual result size (no cap - canvas is infinite)
+            elem_width = result_width
+            elem_height = result_height
             
             # Create new element
             new_element_id = str(uuid.uuid4())

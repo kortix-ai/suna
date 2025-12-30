@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { ToolViewProps } from '../types';
 import { GenericToolView } from '../GenericToolView';
 import { BrowserToolView } from '../BrowserToolView';
@@ -180,12 +180,16 @@ const defaultRegistry: ToolViewRegistryType = {
   'save_canvas': CanvasToolView,
   'add-image-to-canvas': CanvasToolView,
   'add_image_to_canvas': CanvasToolView,
+  'add-frame-to-canvas': CanvasToolView,
+  'add_frame_to_canvas': CanvasToolView,
   'list-canvas-elements': CanvasToolView,
   'list_canvas_elements': CanvasToolView,
   'update-canvas-element': CanvasToolView,
   'update_canvas_element': CanvasToolView,
   'remove-canvas-element': CanvasToolView,
   'remove_canvas_element': CanvasToolView,
+  'ai-process-canvas-element': CanvasToolView,
+  'ai_process_canvas_element': CanvasToolView,
 
   'wait': WaitToolView,
   'expand_message': ExpandMessageToolView,
@@ -323,12 +327,52 @@ export function useToolView(toolName: string): ToolViewComponent {
 
 
 
+// Track which tool calls have already emitted canvas refresh events
+const canvasRefreshedToolCalls = new Set<string>();
+
+// Initialize pending events map on window for cross-component communication
+if (typeof window !== 'undefined' && !(window as any).__pendingCanvasRefreshEvents) {
+  (window as any).__pendingCanvasRefreshEvents = new Map<string, number>();
+}
+
 export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
   // Extract tool name from function_name (handle undefined case)
   const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'default';
 
   // Get file path directly from tool call arguments (from metadata)
   const filePath = toolCall?.arguments?.file_path || toolCall?.arguments?.target_file || toolCall?.arguments?.canvas_path;
+  
+  // Emit canvas refresh for ANY tool with canvas_path that completes successfully
+  const canvasPath = toolCall?.arguments?.canvas_path;
+  const toolCallId = (toolCall as any)?.tool_call_id;
+  
+  useEffect(() => {
+    // Only emit once per tool call
+    if (!toolCallId || canvasRefreshedToolCalls.has(toolCallId)) return;
+    
+    // Only emit if there's a canvas_path and tool completed successfully
+    if (canvasPath && toolResult?.success) {
+      console.log('[CANVAS_LIVE_DEBUG] ToolView emitting canvas refresh for:', {
+        toolName: name,
+        canvasPath,
+        toolCallId,
+      });
+      canvasRefreshedToolCalls.add(toolCallId);
+      
+      // Store in pending events queue for canvas-renderer to pick up
+      const pendingEvents = (window as any).__pendingCanvasRefreshEvents as Map<string, number> | undefined;
+      if (pendingEvents) {
+        pendingEvents.set(canvasPath, Date.now());
+      }
+      
+      // Small delay to ensure file is written
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('canvas-tool-updated', {
+          detail: { canvasPath, timestamp: Date.now() }
+        }));
+      }, 300);
+    }
+  }, [toolCallId, canvasPath, toolResult?.success, name]);
 
   // check if the file path is a presentation slide
   const { isValid: isPresentationSlide, presentationName, slideNumber } = parsePresentationSlidePath(filePath);
@@ -351,9 +395,11 @@ export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
     'create-canvas', 'create_canvas',
     'save-canvas', 'save_canvas',
     'add-image-to-canvas', 'add_image_to_canvas',
+    'add-frame-to-canvas', 'add_frame_to_canvas',
     'list-canvas-elements', 'list_canvas_elements',
     'update-canvas-element', 'update_canvas_element',
     'remove-canvas-element', 'remove_canvas_element',
+    'ai-process-canvas-element', 'ai_process_canvas_element',
   ]
 
   const isAlreadyPresentationTool = presentationTools.includes(name);
