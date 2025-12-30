@@ -504,7 +504,16 @@ class ThreadManager:
                                         )
                                         logger.debug(f"First turn (DB fallback): counting {new_msg_tokens} tokens from DB query")
                             
-                            estimated_total = last_total_tokens + new_msg_tokens
+                            # Count memory context tokens (only on first turn - auto-continue already has it in last_total_tokens)
+                            memory_context_tokens = 0
+                            if not is_auto_continue and self._memory_context:
+                                memory_context_tokens = token_counter(
+                                    model=llm_model,
+                                    messages=[self._memory_context]
+                                )
+                                logger.debug(f"📝 Memory context: {memory_context_tokens} tokens")
+                            
+                            estimated_total = last_total_tokens + new_msg_tokens + memory_context_tokens
                             estimated_total_tokens = estimated_total  # Store for response processor
                             
                             # Calculate threshold (same logic as context_manager.py)
@@ -521,7 +530,10 @@ class ThreadManager:
                             else:
                                 max_tokens = int(context_window * 0.84)
                             
-                            logger.debug(f"⚡ Fast check: {last_total_tokens} + {new_msg_tokens} = {estimated_total} tokens (threshold: {max_tokens})")
+                            if memory_context_tokens > 0:
+                                logger.debug(f"⚡ Fast check: {last_total_tokens} + {new_msg_tokens} + {memory_context_tokens} (memory) = {estimated_total} tokens (threshold: {max_tokens})")
+                            else:
+                                logger.debug(f"⚡ Fast check: {last_total_tokens} + {new_msg_tokens} = {estimated_total} tokens (threshold: {max_tokens})")
                             
                             if estimated_total < max_tokens:
                                 logger.debug(f"✅ Under threshold, skipping compression")
@@ -662,11 +674,8 @@ class ThreadManager:
                 logger.warning(f"⚠️ PRE-SEND VALIDATION: Found pairing issues - attempting repair")
                 logger.warning(f"⚠️ Orphaned tool_results: {orphaned_ids}")
                 logger.warning(f"⚠️ Unanswered tool_calls: {unanswered_ids}")
-                
-                # Attempt to repair by fixing both directions
+
                 prepared_messages = context_manager.repair_tool_call_pairing(prepared_messages)
-                
-                # Re-validate after repair
                 is_valid_after, orphans_after, unanswered_after = context_manager.validate_tool_call_pairing(prepared_messages)
                 if not is_valid_after:
                     logger.error(f"🚨 CRITICAL: Could not repair message structure. Orphaned: {len(orphans_after)}, Unanswered: {len(unanswered_after)}")
@@ -676,8 +685,25 @@ class ThreadManager:
                 logger.debug(f"✅ Pre-send validation passed: all tool calls properly paired")
             logger.debug(f"⏱️ [TIMING] Pre-send validation: {(time.time() - validation_start) * 1000:.1f}ms")
             
+            actual_tokens = token_counter(model=llm_model, messages=prepared_messages)
+            if estimated_total_tokens is not None:
+                token_diff = actual_tokens - estimated_total_tokens
+                diff_pct = (token_diff / estimated_total_tokens * 100) if estimated_total_tokens > 0 else 0
+                logger.info(f"📤 PRE-SEND: {len(prepared_messages)} messages, {actual_tokens} tokens (fast check: {estimated_total_tokens}, diff: {token_diff:+d} / {diff_pct:+.1f}%)")
+            else:
+                estimated_total_tokens = actual_tokens
+                logger.info(f"📤 PRE-SEND: {len(prepared_messages)} messages, {actual_tokens} tokens (no fast check available)")
+            
+            from core.ai_models.registry import registry as model_registry
+            model_info = model_registry.get(llm_model) or model_registry.get(model_registry.resolve_model_id(llm_model))
+            context_window = model_info.context_window if model_info else 200_000
+            safety_threshold = int(context_window * 0.84)
+            
+            if actual_tokens >= safety_threshold and (estimated_total_tokens is None or estimated_total_tokens < safety_threshold):
+                logger.warning(f"⚠️ FAST CHECK UNDERESTIMATED: actual={actual_tokens} >= threshold={safety_threshold}, but fast check={estimated_total_tokens} was under. Should have compressed!")
+                estimated_total_tokens = actual_tokens
+            
             llm_call_start = time.time()
-            logger.debug(f"📤 Sending {len(prepared_messages)} prepared messages to LLM")
 
             # Make LLM call
             try:

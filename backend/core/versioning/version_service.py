@@ -480,6 +480,70 @@ class VersionService:
         
         return new_version
     
+    async def get_current_mcp_config(self, agent_id: str, user_id: str = "system") -> Optional[Dict[str, Any]]:
+        logger.info(f"🔍 [VERSION-MCP-DEBUG] Loading current MCP config for agent {agent_id}")
+        
+        try:
+            client = await self._get_client()
+            
+            agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).execute()
+            logger.info(f"🔍 [VERSION-MCP-DEBUG] Agent query result: {agent_result.data}")
+            
+            if not agent_result.data or not agent_result.data[0].get('current_version_id'):
+                logger.error(f"🔍 [VERSION-MCP-DEBUG] ❌ No current_version_id found for agent {agent_id}")
+                logger.error(f"🔍 [VERSION-MCP-DEBUG] Agent data: {agent_result.data}")
+                return None
+            
+            current_version_id = agent_result.data[0]['current_version_id']
+            logger.info(f"🔍 [VERSION-MCP-DEBUG] Agent {agent_id} current_version_id: {current_version_id}")
+            
+            version_result = await client.table('agent_versions').select('config').eq(
+                'version_id', current_version_id
+            ).eq('agent_id', agent_id).execute()
+            
+            logger.info(f"🔍 [VERSION-MCP-DEBUG] Version query result: found {len(version_result.data) if version_result.data else 0} records")
+            
+            if not version_result.data:
+                logger.error(f"🔍 [VERSION-MCP-DEBUG] ❌ Version {current_version_id} not found for agent {agent_id}")
+                return None
+            
+            config = version_result.data[0].get('config', {})
+            tools = config.get('tools', {})
+            
+            configured_mcps = tools.get('mcp', [])
+            custom_mcps = tools.get('custom_mcp', [])
+            
+            logger.info(f"🔍 [VERSION-MCP-DEBUG] Found raw MCP config:")
+            logger.info(f"🔍 [VERSION-MCP-DEBUG]   configured_mcps: {len(configured_mcps)}")
+            logger.info(f"🔍 [VERSION-MCP-DEBUG]   custom_mcps: {len(custom_mcps)}")
+            
+            for i, mcp in enumerate(configured_mcps):
+                logger.info(f"🔍 [VERSION-MCP-DEBUG]   configured_mcp[{i}]: name={mcp.get('name')}, toolkit_slug={mcp.get('toolkit_slug')}")
+            
+            for i, mcp in enumerate(custom_mcps):
+                toolkit_slug = mcp.get('toolkit_slug')
+                mcp_type = mcp.get('type') or mcp.get('customType')
+                enabled_tools = mcp.get('enabledTools', [])
+                logger.info(f"🔍 [VERSION-MCP-DEBUG]   custom_mcp[{i}]: name={mcp.get('name')}, type={mcp_type}, toolkit_slug={toolkit_slug}, tools={len(enabled_tools)}")
+            
+            # Return in the EXACT format expected by all components
+            # CRITICAL: Use custom_mcp (singular) as that's what the loader expects
+            final_config = {
+                'custom_mcp': custom_mcps,        # Loader expects custom_mcp (singular)
+                'configured_mcps': configured_mcps,
+                'account_id': user_id
+            }
+            
+            logger.info(f"🔍 [VERSION-MCP-DEBUG] ✅ Returning standardized config:")
+            logger.info(f"🔍 [VERSION-MCP-DEBUG]   final custom_mcp: {len(final_config['custom_mcp'])}")
+            logger.info(f"🔍 [VERSION-MCP-DEBUG]   final configured_mcps: {len(final_config['configured_mcps'])}")
+            
+            return final_config
+            
+        except Exception as e:
+            logger.error(f"🔍 [VERSION-MCP-DEBUG] ❌ Error loading current MCP config for agent {agent_id}: {e}", exc_info=True)
+            return None
+
     async def update_version_details(
         self,
         agent_id: str,

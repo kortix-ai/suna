@@ -16,8 +16,15 @@ import {
     isPdfExtension,
 } from '@/lib/utils/file-types';
 import { AttachmentGroup } from './attachment-group';
-import { HtmlRenderer, SpreadsheetViewer, PdfRenderer, JsonRenderer } from '@/components/file-renderers';
+import { HtmlRenderer, PdfRenderer, JsonRenderer } from '@/components/file-renderers';
 import { UnifiedMarkdown } from '@/components/markdown';
+import dynamic from 'next/dynamic';
+
+// Lazy load SpreadsheetViewer as it imports Syncfusion (~1-2 MB)
+const SpreadsheetViewer = dynamic(
+  () => import('@/components/thread/tool-views/spreadsheet/SpreadsheetViewer').then((mod) => mod.SpreadsheetViewer),
+  { ssr: false, loading: () => <div className="p-4 text-muted-foreground">Loading spreadsheet...</div> }
+);
 import {
     DropdownMenu,
     DropdownMenuContent,

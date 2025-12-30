@@ -29,13 +29,22 @@ type PresenceContextValue = {
 const PresenceContext = createContext<PresenceContextValue | undefined>(undefined);
 
 const HEARTBEAT_INTERVAL = 60000;
-const DEBOUNCE_DELAY = 500; // Debounce rapid thread changes
+const DEBOUNCE_DELAY = 500;
 
-// Check if presence is disabled via environment variable
-const DISABLE_PRESENCE = process.env.NEXT_PUBLIC_DISABLE_PRESENCE === 'true';
+const DISABLE_PRESENCE = true;
 
 function generateSessionId(): string {
-  return crypto.randomUUID();
+  // Use crypto.randomUUID if available, otherwise fallback to a custom implementation
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  
+  // Fallback UUID v4 implementation
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
 export function PresenceProvider({ children }: { children: ReactNode }) {

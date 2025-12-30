@@ -48,7 +48,10 @@ If relevant context seems missing, ask a clarifying question.
         if preloaded_guides:
             content += preloaded_guides
         
-        content = await PromptManager._append_jit_mcp_info(content, mcp_loader)
+        # Get agent_id for fresh config loading
+        agent_id = agent_config.get('agent_id') if agent_config else None
+        
+        content = await PromptManager._append_jit_mcp_info(content, mcp_loader, agent_id, user_id)
         
         # Fetch user context (locale, username), memory, and file context in parallel
         user_context_task = PromptManager._fetch_user_context_data(user_id, client)
@@ -100,8 +103,11 @@ If relevant context seems missing, ask a clarifying question.
         memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
         file_task = PromptManager._fetch_file_context(thread_id)
         
-        system_content = PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance)
-        system_content = await PromptManager._append_jit_mcp_info(system_content, mcp_loader)
+        # Get agent_id for fresh config loading
+        agent_id = agent_config.get('agent_id') if agent_config else None
+        
+        system_content = await PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance, agent_id, user_id)
+        system_content = await PromptManager._append_jit_mcp_info(system_content, mcp_loader, agent_id, user_id)
         system_content = PromptManager._append_xml_tool_calling_instructions(system_content, xml_tool_calling, tool_registry)
         system_content = PromptManager._append_datetime_info(system_content)
         
@@ -234,7 +240,26 @@ If relevant context seems missing, ask a clarifying question.
             return None
     
     @staticmethod
-    def _append_mcp_tools_info(system_content: str, agent_config: Optional[dict], mcp_wrapper_instance: Optional[MCPToolWrapper]) -> str:
+    async def _append_mcp_tools_info(system_content: str, agent_config: Optional[dict], mcp_wrapper_instance: Optional[MCPToolWrapper], 
+                                     agent_id: Optional[str] = None, user_id: Optional[str] = None) -> str:
+        fresh_mcp_config = None
+        if agent_id and user_id:
+            try:
+                # Get standardized config directly from version service - no mapping needed
+                from core.versioning.version_service import get_version_service
+                version_service = await get_version_service()
+                fresh_mcp_config = await version_service.get_current_mcp_config(agent_id, user_id)
+                
+                if fresh_mcp_config:
+                    logger.debug(f"🔄 [MCP PROMPT] Using fresh MCP config from current version: {len(fresh_mcp_config.get('configured_mcps', []))} configured, {len(fresh_mcp_config.get('custom_mcp', []))} custom")
+                    # Map to the format this method expects (custom_mcps vs custom_mcp)
+                    agent_config = {
+                        'configured_mcps': fresh_mcp_config.get('configured_mcps', []),
+                        'custom_mcps': fresh_mcp_config.get('custom_mcp', [])  # Map custom_mcp to custom_mcps for this method
+                    }
+            except Exception as e:
+                logger.warning(f"Failed to load fresh MCP config, using provided config: {e}")
+        
         if not (agent_config and (agent_config.get('configured_mcps') or agent_config.get('custom_mcps')) and mcp_wrapper_instance and mcp_wrapper_instance._initialized):
             return system_content
         
@@ -283,88 +308,121 @@ If relevant context seems missing, ask a clarifying question.
         return system_content + mcp_info
     
     @staticmethod
-    async def _append_jit_mcp_info(system_content: str, mcp_loader) -> str:
-        if not mcp_loader:
-            logger.debug("⚡ [MCP PROMPT] No mcp_loader provided, skipping JIT MCP info")
+    async def _append_jit_mcp_info(system_content: str, mcp_loader, agent_id: Optional[str] = None, user_id: Optional[str] = None) -> str:
+        toolkit_tools = {}
+        
+        if agent_id and user_id:
+            try:
+                from core.versioning.version_service import get_version_service
+                version_service = await get_version_service()
+                fresh_mcp_config = await version_service.get_current_mcp_config(agent_id, user_id)
+                
+                if fresh_mcp_config:
+                    custom_mcps = fresh_mcp_config.get('custom_mcp', [])
+                    configured_mcps = fresh_mcp_config.get('configured_mcps', [])
+                    
+                    logger.info(f"🔍 [MCP-PROMPT-DIRECT] Loading tools DIRECTLY from current version config")
+                    logger.info(f"🔍 [MCP-PROMPT-DIRECT] custom_mcp count: {len(custom_mcps)}, configured_mcps count: {len(configured_mcps)}")
+                    
+                    for mcp in custom_mcps:
+                        mcp_name = mcp.get('name', 'unknown')
+                        toolkit_slug = mcp.get('toolkit_slug', '')
+                        enabled_tools = mcp.get('enabledTools', [])
+                        mcp_type = mcp.get('type') or mcp.get('customType', '')
+                        
+                        logger.info(f"🔍 [MCP-PROMPT-DIRECT] Processing custom_mcp: name={mcp_name}, toolkit={toolkit_slug}, type={mcp_type}, enabledTools={len(enabled_tools)}")
+                        
+                        if enabled_tools:
+                            if mcp_type in ('sse', 'http', 'json'):
+                                display_name = mcp_name.upper().replace(' ', '_')
+                            else:
+                                display_name = toolkit_slug.upper() if toolkit_slug else mcp_name.upper().replace(' ', '_')
+                            
+                            if display_name not in toolkit_tools:
+                                toolkit_tools[display_name] = []
+                            
+                            for tool in enabled_tools:
+                                if tool not in toolkit_tools[display_name]:
+                                    toolkit_tools[display_name].append(tool)
+                            
+                            logger.info(f"🔍 [MCP-PROMPT-DIRECT] ✅ Added {len(enabled_tools)} tools for {display_name}")
+                    
+                    for mcp in configured_mcps:
+                        mcp_name = mcp.get('name', 'unknown')
+                        toolkit_slug = mcp.get('toolkit_slug', '')
+                        enabled_tools = mcp.get('enabledTools', [])
+                        qualified_name = mcp.get('qualifiedName', '')
+                        
+                        if not toolkit_slug and qualified_name:
+                            toolkit_slug = qualified_name.split('.')[-1]
+                        
+                        logger.info(f"🔍 [MCP-PROMPT-DIRECT] Processing configured_mcp: name={mcp_name}, toolkit={toolkit_slug}, enabledTools={len(enabled_tools)}")
+                        
+                        if enabled_tools:
+                            display_name = toolkit_slug.upper() if toolkit_slug else mcp_name.upper().replace(' ', '_')
+                            
+                            if display_name not in toolkit_tools:
+                                toolkit_tools[display_name] = []
+                            
+                            for tool in enabled_tools:
+                                if tool not in toolkit_tools[display_name]:
+                                    toolkit_tools[display_name].append(tool)
+                            
+                            logger.info(f"🔍 [MCP-PROMPT-DIRECT] ✅ Added {len(enabled_tools)} tools for {display_name}")
+                    
+                    if mcp_loader:
+                        try:
+                            await mcp_loader.rebuild_tool_map(fresh_mcp_config)
+                            logger.debug(f"🔄 [MCP JIT] Updated loader with current version config")
+                        except Exception as e:
+                            logger.warning(f"Failed to update mcp_loader (non-critical): {e}")
+                else:
+                    logger.warning(f"🔍 [MCP-PROMPT-DIRECT] ❌ No fresh config returned from version service")
+            except Exception as e:
+                logger.warning(f"Failed to load MCP config from version service: {e}")
+        
+        if not toolkit_tools:
+            logger.debug("⚡ [MCP PROMPT] No toolkit tools found, skipping JIT MCP info")
             return system_content
         
-        try:
-            available_tools = await mcp_loader.get_available_tools()
-            toolkits = await mcp_loader.get_toolkits()
-            
-            logger.debug(f"⚡ [MCP PROMPT] Available tools: {len(available_tools)}, Toolkits: {toolkits}")
-            
-            if not available_tools:
-                logger.debug("⚡ [MCP PROMPT] No available tools, skipping JIT MCP info")
-                return system_content
-            
-            mcp_jit_info = "\n\n--- EXTERNAL MCP TOOLS ---\n"
-            mcp_jit_info += f"🔥 You have {len(available_tools)} external MCP tools from {len(toolkits)} connected services.\n"
-            mcp_jit_info += "⚡ TWO-STEP WORKFLOW: (1) discover_mcp_tools → (2) execute_mcp_tool\n"
-            mcp_jit_info += "🎯 DISCOVERY: use discover_mcp_tools with filter parameter \"TOOL1,TOOL2,TOOL3\"\n"
-            mcp_jit_info += "🎯 EXECUTION: use execute_mcp_tool with tool_name parameter and args parameter\n\n"
-            
-            toolkit_tools = {}
-            for tool_name in available_tools:
-                tool_info = await mcp_loader.get_tool_info(tool_name)
-                if tool_info:
-                    toolkit_slug = tool_info.toolkit_slug
-                    if toolkit_slug.startswith("custom_"):
-                        parts = toolkit_slug.split("_")
-                        if len(parts) >= 3:
-                            toolkit = "_".join(parts[2:]).upper()  # Everything after custom_type_
-                        else:
-                            toolkit = toolkit_slug.upper()
-                        api_name = tool_name
-                    else:
-                        toolkit = toolkit_slug.upper()
-                        api_name = tool_name
-                        if not api_name.startswith(toolkit + '_'):
-                            api_name = f"{toolkit}_{tool_name.upper()}"
-                    
-                    if toolkit not in toolkit_tools:
-                        toolkit_tools[toolkit] = []
-                    toolkit_tools[toolkit].append(api_name)
-                else:
-                    logger.warning(f"⚠️ [MCP PROMPT] No tool_info for tool: {tool_name}")
-            
-            logger.info(f"⚡ [MCP PROMPT] Collected {len(toolkit_tools)} toolkits: {list(toolkit_tools.keys())}")
-            for tk, tl in toolkit_tools.items():
-                logger.debug(f"⚡ [MCP PROMPT] Toolkit {tk}: {len(tl)} tools")
-            
-            for toolkit, tools in toolkit_tools.items():
-                if toolkit == "TWITTER":
-                    mcp_jit_info += f"**Twitter Functions**: {', '.join(tools)}\n"
-                elif toolkit == "GOOGLESHEETS":
-                    mcp_jit_info += f"**Google Sheets Functions**: {', '.join(tools)}\n"
-                else:
-                    mcp_jit_info += f"**{toolkit} Functions**: {', '.join(tools)}\n"
-            
-            mcp_jit_info += "\n🎯 **SMART BATCH DISCOVERY:**\n\n"
-            mcp_jit_info += "**STEP 1: Check conversation history**\n"
-            mcp_jit_info += "- Are the tool schemas already in this conversation? → Skip to execution!\n"
-            mcp_jit_info += "- Not in history? → Discover ALL needed tools in ONE batch call\n\n"
-            mcp_jit_info += "**✅ CORRECT - Batch Discovery:**\n"
-            mcp_jit_info += "use discover_mcp_tools with filter parameter \"NOTION_CREATE_PAGE,NOTION_APPEND_BLOCK,NOTION_SEARCH\"\n"
-            mcp_jit_info += "→ Returns: All 3 schemas in ONE call\n"
-            mcp_jit_info += "→ Schemas cached in conversation forever\n"
-            mcp_jit_info += "→ NEVER discover these tools again!\n\n"
-            mcp_jit_info += "**❌ WRONG - Multiple Discoveries:**\n"
-            mcp_jit_info += "Never call discover 3 times for 3 tools - batch them!\n\n"
-            mcp_jit_info += "**STEP 2: Execute tools with schemas:**\n"
-            mcp_jit_info += "use execute_mcp_tool with tool_name \"NOTION_CREATE_PAGE\" and args parameter\n"
-            mcp_jit_info += "use execute_mcp_tool with tool_name \"NOTION_APPEND_BLOCK\" and args parameter\n\n"
-            mcp_jit_info += "⛔ **CRITICAL RULES**:\n"
-            mcp_jit_info += "1. Analyze task → Identify ALL tools → Discover ALL in ONE call\n"
-            mcp_jit_info += "2. NEVER discover one-by-one (always batch!)\n"
-            mcp_jit_info += "3. NEVER re-discover tools already in conversation history\n"
-            mcp_jit_info += "4. Check history first - if schemas exist, skip directly to execute_mcp_tool!\n\n"
-            
-            logger.info(f"⚡ [MCP PROMPT] Appended MCP info ({len(mcp_jit_info)} chars) for {len(toolkit_tools)} toolkits")
-            return system_content + mcp_jit_info
-        except Exception as e:
-            logger.warning(f"⚠️  [MCP JIT] Failed to load dynamic tools for prompt: {e}", exc_info=True)
-            return system_content
+        total_tools = sum(len(tools) for tools in toolkit_tools.values())
+        
+        logger.info(f"🔍 [MCP-PROMPT-DIRECT] Final toolkit breakdown:")
+        for tk, tl in toolkit_tools.items():
+            logger.info(f"🔍 [MCP-PROMPT-DIRECT]   {tk}: {len(tl)} tools - {tl[:5]}{'...' if len(tl) > 5 else ''}")
+        
+        mcp_jit_info = "\n\n--- EXTERNAL MCP TOOLS ---\n"
+        mcp_jit_info += f"🔥 You have {total_tools} external MCP tools from {len(toolkit_tools)} connected services.\n"
+        mcp_jit_info += "⚡ TWO-STEP WORKFLOW: (1) discover_mcp_tools → (2) execute_mcp_tool\n"
+        mcp_jit_info += "🎯 DISCOVERY: use discover_mcp_tools with filter parameter \"TOOL1,TOOL2,TOOL3\"\n"
+        mcp_jit_info += "🎯 EXECUTION: use execute_mcp_tool with tool_name parameter and args parameter\n\n"
+        
+        for toolkit, tools in toolkit_tools.items():
+            display_name = toolkit.replace('_', ' ').title()
+            mcp_jit_info += f"**{display_name} Functions**: {', '.join(tools)}\n"
+        
+        mcp_jit_info += "\n🎯 **SMART BATCH DISCOVERY:**\n\n"
+        mcp_jit_info += "**STEP 1: Check conversation history**\n"
+        mcp_jit_info += "- Are the tool schemas already in this conversation? → Skip to execution!\n"
+        mcp_jit_info += "- Not in history? → Discover ALL needed tools in ONE batch call\n\n"
+        mcp_jit_info += "**✅ CORRECT - Batch Discovery:**\n"
+        mcp_jit_info += "use discover_mcp_tools with filter parameter \"NOTION_CREATE_PAGE,NOTION_APPEND_BLOCK,NOTION_SEARCH\"\n"
+        mcp_jit_info += "→ Returns: All 3 schemas in ONE call\n"
+        mcp_jit_info += "→ Schemas cached in conversation forever\n"
+        mcp_jit_info += "→ NEVER discover these tools again!\n\n"
+        mcp_jit_info += "**❌ WRONG - Multiple Discoveries:**\n"
+        mcp_jit_info += "Never call discover 3 times for 3 tools - batch them!\n\n"
+        mcp_jit_info += "**STEP 2: Execute tools with schemas:**\n"
+        mcp_jit_info += "use execute_mcp_tool with tool_name \"NOTION_CREATE_PAGE\" and args parameter\n"
+        mcp_jit_info += "use execute_mcp_tool with tool_name \"NOTION_APPEND_BLOCK\" and args parameter\n\n"
+        mcp_jit_info += "⛔ **CRITICAL RULES**:\n"
+        mcp_jit_info += "1. Analyze task → Identify ALL tools → Discover ALL in ONE call\n"
+        mcp_jit_info += "2. NEVER discover one-by-one (always batch!)\n"
+        mcp_jit_info += "3. NEVER re-discover tools already in conversation history\n"
+        mcp_jit_info += "4. Check history first - if schemas exist, skip directly to execute_mcp_tool!\n\n"
+        
+        logger.info(f"⚡ [MCP PROMPT] Appended MCP info ({len(mcp_jit_info)} chars) for {len(toolkit_tools)} toolkits, {total_tools} total tools")
+        return system_content + mcp_jit_info
     
     @staticmethod
     def _append_xml_tool_calling_instructions(system_content: str, xml_tool_calling: bool, tool_registry) -> str:

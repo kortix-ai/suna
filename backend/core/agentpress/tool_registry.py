@@ -121,3 +121,7 @@ class ToolRegistry:
     
     def invalidate_schema_cache(self):
         self._cached_openapi_schemas = None
+    
+    def invalidate_mcp_cache(self):
+        self._cached_openapi_schemas = None
+        logger.debug("🔄 [TOOL REGISTRY] Invalidated MCP-related caches")

@@ -31,6 +31,7 @@ import { AppDock } from './components/Dock';
 import { SandboxDesktop } from './components/Desktop';
 import { EnhancedFileBrowser } from './components/EnhancedFileBrowser';
 import { useDirectoryQuery } from '@/hooks/files';
+import { getToolNumber } from '@/hooks/messages/tool-tracking';
 
 export interface ToolCallInput {
   toolCall: ToolCallData;
@@ -347,6 +348,21 @@ export const KortixComputer = memo(function KortixComputer({
   const isCurrentToolStreaming = currentToolCall != null && currentToolCall.toolResult === undefined;
 
   const currentToolName = currentToolCall?.toolCall?.function_name?.replace(/_/g, '-').toLowerCase();
+  
+  // Track previous displayToolCall for render logging
+  const prevDisplayToolCallRef = useRef<ToolCallInput | undefined>(undefined);
+  
+  // Log when a tool is rendered
+  useEffect(() => {
+    if (displayToolCall && displayToolCall !== prevDisplayToolCallRef.current) {
+      const toolCallId = displayToolCall.toolCall?.tool_call_id;
+      const functionName = displayToolCall.toolCall?.function_name;
+      const hasResult = !!displayToolCall.toolResult;
+      const isStreaming = !hasResult;
+      
+      prevDisplayToolCallRef.current = displayToolCall;
+    }
+  }, [displayToolCall, displayIndex]);
 
   const showDuringStreaming = currentToolName && [
     'create-file', 'edit-file', 'full-file-rewrite', 'read-file', 'delete-file',
@@ -960,4 +976,3 @@ export const KortixComputer = memo(function KortixComputer({
     </motion.div>
   );
 });
-

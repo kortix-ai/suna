@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
 import { MarkdownEditor, type MarkdownEditorControls } from './markdown-editor';
 import { UnifiedMarkdown } from '@/components/markdown';
@@ -9,12 +10,17 @@ import { PdfRenderer } from '@/components/file-renderers/pdf-renderer';
 import { ImageRenderer } from '@/components/file-renderers/image-renderer';
 import { VideoRenderer } from '@/components/file-renderers/video-renderer';
 import { BinaryRenderer } from '@/components/file-renderers/binary-renderer';
-import { SpreadsheetViewer } from '../thread/tool-views/spreadsheet/SpreadsheetViewer';
 import { PptxRenderer } from '@/components/file-renderers/pptx-renderer';
 import { HtmlRenderer } from '@/components/file-renderers/html-renderer';
 import { CanvasRenderer } from '@/components/file-renderers/canvas-renderer';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { processUnicodeContent, getFileTypeFromExtension, getLanguageFromExtension } from './utils';
+
+// Lazy load SpreadsheetViewer as it imports Syncfusion (~1-2 MB)
+const SpreadsheetViewer = dynamic(
+  () => import('@/components/thread/tool-views/spreadsheet/SpreadsheetViewer').then((mod) => mod.SpreadsheetViewer),
+  { ssr: false, loading: () => <div className="flex items-center justify-center h-full text-muted-foreground">Loading spreadsheet...</div> }
+);
 
 export type EditableFileType =
   | 'markdown'

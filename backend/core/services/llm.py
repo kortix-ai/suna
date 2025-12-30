@@ -216,15 +216,9 @@ async def make_llm_api_call(
     
     params = model_manager.get_litellm_params(resolved_model_name, **override_params)
     
-    # Add OpenRouter app parameter if using OpenRouter
-    # Check if the actual LiteLLM model ID is an OpenRouter model
-    actual_litellm_model_id = params.get("model", resolved_model_name)
-    if isinstance(actual_litellm_model_id, str) and actual_litellm_model_id.startswith("openrouter/"):
-        # OpenRouter requires the "app" parameter in extra_body
-        if "extra_body" not in params:
-            params["extra_body"] = {}
-        params["extra_body"]["app"] = "Kortix.com"
-        logger.debug(f"Added OpenRouter app parameter: Kortix.com for model {actual_litellm_model_id}")
+    # NOTE: OpenRouter app params (OR_APP_NAME, OR_SITE_URL) are set via environment
+    # variables in setup_api_keys(). Do NOT use extra_body here as it breaks
+    # fallback to other providers (e.g. Bedrock rejects extra_body params).
     
     # Add tools if provided
     if tools:
@@ -236,7 +230,14 @@ async def make_llm_api_call(
         params["model_id"] = model_id
     if stream:
         params["stream_options"] = {"include_usage": True}
-    
+
+    # Add OpenRouter-specific reasoning parameter for MiniMax models (minimax-2.1)
+    actual_model_id = params.get("model", "")
+    if actual_model_id.startswith("openrouter/") and "minimax" in actual_model_id.lower():
+        params["reasoning"] = {"enabled": True}
+        params["reasoning_split"] = True
+        # avoid showing reasoning tokens in plain content
+        
     try:
         _save_debug_input(params)
         response = await provider_router.acompletion(**params)
