@@ -5,6 +5,39 @@ import React, { useMemo, useEffect, useRef } from 'react';
 // Module-level Set to track which tool_call_ids we've already auto-opened
 // Persists across component mounts within the same session
 const autoOpenedToolCalls = new Set<string>();
+
+// Module-level Set to track which tool_call_ids we've already emitted refresh events for
+const refreshedToolCalls = new Set<string>();
+
+// Global pending canvas refresh events (for when event is dispatched before listener is ready)
+// This is stored on window so canvas-renderer can access it
+declare global {
+  interface Window {
+    __pendingCanvasRefreshEvents?: Map<string, number>;
+  }
+}
+
+// Initialize pending events map
+if (typeof window !== 'undefined' && !window.__pendingCanvasRefreshEvents) {
+  window.__pendingCanvasRefreshEvents = new Map();
+}
+
+// Emit custom event to trigger canvas refresh when tool modifies canvas
+function emitCanvasRefresh(canvasPath: string) {
+  console.log('[CANVAS_LIVE_DEBUG] emitCanvasRefresh called with path:', canvasPath);
+  
+  // Store in pending events queue (canvas-renderer will check this when it mounts)
+  if (window.__pendingCanvasRefreshEvents) {
+    window.__pendingCanvasRefreshEvents.set(canvasPath, Date.now());
+    console.log('[CANVAS_LIVE_DEBUG] Added to pending events queue:', canvasPath);
+  }
+  
+  const event = new CustomEvent('canvas-tool-updated', { 
+    detail: { canvasPath, timestamp: Date.now() } 
+  });
+  console.log('[CANVAS_LIVE_DEBUG] Dispatching canvas-tool-updated event');
+  window.dispatchEvent(event);
+}
 import {
   Layout,
   ImagePlus,
@@ -127,13 +160,14 @@ export function CanvasToolView({
   const hasValidTimestamp = !!toolTimestamp && toolTimestampMs > 0;
   const isRecentResult = !hasValidTimestamp || (Date.now() - toolTimestampMs) < 30000;
 
-  // Debug logging on mount
+  // Debug logging on mount and updates
   useEffect(() => {
-    console.log('[CanvasToolView] Mounted', {
+    console.log('[CANVAS_LIVE_DEBUG] CanvasToolView mounted/updated', {
       toolName,
       toolCallId,
       hasCanvasPath,
-      toolResult: !!toolResult,
+      hasToolResult: !!toolResult,
+      toolResultKeys: toolResult ? Object.keys(toolResult) : null,
       actualIsSuccess,
       isStreaming,
       canvasPath,
@@ -145,8 +179,22 @@ export function CanvasToolView({
       toolTimestampMs,
       nowMs: Date.now(),
       alreadyAutoOpened: toolCallId ? autoOpenedToolCalls.has(toolCallId) : false,
+      alreadyRefreshed: toolCallId ? refreshedToolCalls.has(toolCallId) : false,
     });
-  }, []);
+  });
+  
+  // Log when toolResult changes
+  useEffect(() => {
+    if (toolResult) {
+      console.log('[CANVAS_LIVE_DEBUG] toolResult received:', {
+        toolCallId,
+        toolName,
+        success: toolResult.success,
+        outputType: typeof toolResult.output,
+        outputPreview: toolResult.output ? (typeof toolResult.output === 'string' ? toolResult.output.substring(0, 200) : JSON.stringify(toolResult.output).substring(0, 200)) : null,
+      });
+    }
+  }, [toolResult, toolCallId, toolName]);
 
   // Auto-open canvas editor when tool completes
   // Uses tool_call_id to ensure we only open once per tool call
@@ -214,6 +262,46 @@ export function CanvasToolView({
       });
     }
   }, [toolCallId, toolResult, actualIsSuccess, hasCanvasPath, onFileClick, canvasPath, canvasName, args.canvas_path, toolTimestampMs, hasValidTimestamp]);
+
+  // Emit canvas refresh event when tool completes (for live updates during streaming)
+  useEffect(() => {
+    const path = canvasPath || args.canvas_path || (canvasName ? `canvases/${canvasName}.kanvax` : null);
+    
+    console.log('[CANVAS_LIVE_DEBUG] Refresh effect triggered:', {
+      toolCallId,
+      toolName,
+      hasToolResult: !!toolResult,
+      toolResultOutput: toolResult?.output ? (typeof toolResult.output === 'string' ? toolResult.output.substring(0, 100) : JSON.stringify(toolResult.output).substring(0, 100)) : null,
+      actualIsSuccess,
+      path,
+      alreadyRefreshed: toolCallId ? refreshedToolCalls.has(toolCallId) : false,
+      isStreaming,
+    });
+    
+    // Skip if already emitted for this tool call
+    if (toolCallId && refreshedToolCalls.has(toolCallId)) {
+      console.log('[CANVAS_LIVE_DEBUG] Skipping - already emitted refresh for:', toolCallId);
+      return;
+    }
+    
+    // Emit refresh when tool completes successfully with canvas changes
+    if (toolCallId && toolResult && actualIsSuccess && path) {
+      console.log('[CANVAS_LIVE_DEBUG] Will emit refresh in 200ms for:', path);
+      refreshedToolCalls.add(toolCallId);
+      // Small delay to ensure file is written
+      setTimeout(() => {
+        console.log('[CANVAS_LIVE_DEBUG] Executing delayed emitCanvasRefresh for:', path);
+        emitCanvasRefresh(path);
+      }, 200);
+    } else {
+      console.log('[CANVAS_LIVE_DEBUG] NOT emitting refresh - missing conditions:', {
+        hasToolCallId: !!toolCallId,
+        hasToolResult: !!toolResult,
+        actualIsSuccess,
+        hasPath: !!path,
+      });
+    }
+  }, [toolCallId, toolResult, actualIsSuccess, canvasPath, canvasName, args.canvas_path, toolName, isStreaming]);
 
   // Determine what action was taken
   const getActionInfo = () => {

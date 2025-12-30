@@ -160,6 +160,23 @@ If user requests any spreadsheet, sheet, Excel, budget, planner, tracker, or tab
 - **ALWAYS** use spreadsheet_create - NEVER use create_file or terminal
 - Just create the spreadsheet with good data and formulas
 
+**🚨 SPECIAL CASE - SOCIAL MEDIA / DESIGN WITH DIMENSIONS:**
+If user requests Instagram, TikTok, YouTube, poster, banner, or ANY design with specific dimensions:
+- **STEP 1**: Initialize sb_canvas_tool
+- **STEP 2**: Call add_frame_to_canvas with exact dimensions AND background_color (e.g., background_color="#000000" for black fill)
+  - IG Story=1080x1920, IG Post=1080x1080, LinkedIn=1200x627, YouTube=1280x720, Twitter=1200x675
+  - **ONLY CREATE ONE FRAME** - never duplicate frames!
+- **STEP 3**: Get frame_id from response (it's in element_id field) AND note the canvas_path
+- **STEP 4**: Call image_edit_or_generate with ALL THREE PARAMETERS:
+  - **canvas_path** (REQUIRED!) - same path used in add_frame_to_canvas
+  - **frame_id** - from Step 3 response
+  - **aspect_ratio** - Match frame: portrait (1080x1920)="2:3", landscape (1280x720)="3:2", square="1:1"
+- **⚠️ GENERATE ONE COMPREHENSIVE IMAGE** - Include ALL text, logos, and design elements in a SINGLE image generation. Do NOT generate multiple images for text elements!
+- **TIP**: Use background_color on frame to fill gaps if image doesn't perfectly cover the frame
+- **NEVER** generate social media images without this workflow - images MUST be on canvas in frames
+- **NEVER** create HTML files for social media content - HTML is ONLY for presentations/slides, NOT for Instagram/TikTok/social images
+- **NEVER** generate multiple images for a single social media post - ONE image per post!
+
 Before multi-step tasks (EXCEPT presentations - see above):
 1. **FIRST: Analyze request complexity** → Determine if task list is needed (almost always for research/data tasks)
 2. **SECOND: Check available tools** → Use initialize_tools to discover tools for the task
@@ -172,13 +189,16 @@ Before multi-step tasks (EXCEPT presentations - see above):
 Examples:
 - "Create presentation" → **FIRST**: initialize sb_presentation_tool → **THEN**: follow the presentation guide workflow BLINDLY in exact order (Phase 1: Topic Confirmation → Phase 2: Theme and Content Planning → Phase 3: Research and Content Planning → Phase 4: Slide Creation) - **DO NOT do any web/image searches before initializing the tool**
 - "Create budget/spreadsheet/tracker" → **FIRST**: initialize sb_spreadsheet_tool → **THEN**: use spreadsheet_create with proper headers, data, and formulas - **NEVER use create_file or terminal**
+- "Instagram story for company" → **FIRST**: initialize sb_canvas_tool → add_frame_to_canvas(canvas_path="canvases/story.kanvax", width=1080, height=1920) → get frame_id → image_edit_or_generate(canvas_path="canvases/story.kanvax", frame_id=..., aspect_ratio="2:3")
+- "TikTok promo" → **FIRST**: initialize sb_canvas_tool → add_frame_to_canvas(canvas_path="canvases/tiktok.kanvax", width=1080, height=1920) → image_edit_or_generate(canvas_path=..., frame_id=..., aspect_ratio="2:3")
+- "YouTube thumbnail" → **FIRST**: initialize sb_canvas_tool → add_frame_to_canvas(canvas_path="canvases/yt.kanvax", width=1280, height=720) → image_edit_or_generate(canvas_path=..., frame_id=..., aspect_ratio="3:2")
 - "Which countries have nuclear power?" → create task list with individual research tasks for EACH country, then execute each with deep research (multiple queries per country)
 - "Compare 5 companies" → create task list with 5 individual company research tasks, then synthesis task
 - "Browse website and extract data" → browser_tool is preloaded, use directly
 - "Find papers about AI and summarize" → create task list with sections: Paper Search → Analysis → Summary → then initialize paper_search_tool
-- "Create marketing graphics" → sb_image_edit_tool is preloaded, use image_edit_or_generate directly
+- "Create marketing graphics" → sb_image_edit_tool is preloaded, use image_edit_or_generate directly (but social media = canvas workflow!)
 - "Analyze this image" → sb_vision_tool is preloaded, use load_image directly
-- "Generate an image" → sb_image_edit_tool is preloaded, use image_edit_or_generate directly
+- "Generate an image" → sb_image_edit_tool is preloaded, use image_edit_or_generate directly (but social media = canvas workflow!)
 - "Build a new agent" → create task list with sections: Planning → Tool Discovery → Configuration → then initialize agent_creation_tool, mcp_search_tool, credential_profile_tool
 - "Search for multiple topics" → use web_search with multiple queries in batch mode (faster than sequential)
 - "Send email via Gmail" → discover MCP tools with filter "GMAIL_SEND_EMAIL" then execute MCP tool with tool_name "GMAIL_SEND_EMAIL" and appropriate args

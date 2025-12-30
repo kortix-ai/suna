@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   Plus,
   Minus,
@@ -22,6 +22,8 @@ import {
   ArrowLeftRight,
   Wand2,
   Scissors,
+  Frame,
+  Palette,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -62,21 +64,41 @@ interface TextRegion {
   confidence: number;
 }
 
-interface CanvasElement {
+// Base element properties shared by all element types
+interface BaseCanvasElement {
   id: string;
-  type: 'image';
-  src: string;
   x: number;
   y: number;
   width: number;
   height: number;
   rotation?: number;
-  scaleX?: number;
-  scaleY?: number;
   opacity?: number;
   locked?: boolean;
   name: string;
   visible?: boolean;
+}
+
+// Image element - has src for image data
+interface ImageCanvasElement extends BaseCanvasElement {
+  type: 'image';
+  src: string;
+  scaleX?: number;
+  scaleY?: number;
+}
+
+// Frame element - container/viewport for exporting, no src needed
+interface FrameCanvasElement extends BaseCanvasElement {
+  type: 'frame';
+  backgroundColor?: string; // Optional fill color, default transparent
+}
+
+type CanvasElement = ImageCanvasElement | FrameCanvasElement;
+
+// Snap guide for visual alignment feedback
+interface SnapGuide {
+  type: 'vertical' | 'horizontal';
+  position: number; // Canvas coordinate (not screen)
+  frameId: string; // Which frame this guide belongs to
 }
 
 interface CanvasData {
@@ -93,27 +115,39 @@ interface CanvasData {
 
 // Sanitize element to ensure all numeric fields are actually numbers
 // (AI sometimes passes strings like "700" instead of 700)
-function sanitizeElement(el: Partial<CanvasElement>): CanvasElement {
-  return {
-    ...el,
+function sanitizeElement(el: Partial<CanvasElement> & { type?: string }): CanvasElement {
+  const base = {
     id: el.id || '',
-    type: 'image',
-    src: el.src || '',
     name: el.name || '',
     x: Number(el.x) || 0,
     y: Number(el.y) || 0,
     width: Number(el.width) || 100,
     height: Number(el.height) || 100,
     rotation: Number(el.rotation) || 0,
-    scaleX: Number(el.scaleX) || 1,
-    scaleY: Number(el.scaleY) || 1,
     opacity: el.opacity !== undefined ? Number(el.opacity) : 1,
     locked: Boolean(el.locked),
     visible: el.visible !== false,
-  } as CanvasElement;
+  };
+
+  if (el.type === 'frame') {
+    return {
+      ...base,
+      type: 'frame',
+      backgroundColor: (el as Partial<FrameCanvasElement>).backgroundColor || undefined,
+    } as FrameCanvasElement;
+  }
+
+  // Default to image type
+  return {
+    ...base,
+    type: 'image',
+    src: (el as Partial<ImageCanvasElement>).src || '',
+    scaleX: Number((el as Partial<ImageCanvasElement>).scaleX) || 1,
+    scaleY: Number((el as Partial<ImageCanvasElement>).scaleY) || 1,
+  } as ImageCanvasElement;
 }
 
-function sanitizeElements(elements: Partial<CanvasElement>[]): CanvasElement[] {
+function sanitizeElements(elements: (Partial<CanvasElement> & { type?: string })[]): CanvasElement[] {
   return (elements || []).map(sanitizeElement);
 }
 
@@ -195,6 +229,107 @@ function AIProcessingOverlay({ isVisible }: { isVisible: boolean }) {
   );
 }
 
+// Snap Guides Overlay - shows alignment lines when dragging near frame centers
+function SnapGuidesOverlay({
+  guides,
+  frames,
+  scale,
+  stagePosition,
+}: {
+  guides: SnapGuide[];
+  frames: FrameCanvasElement[];
+  scale: number;
+  stagePosition: { x: number; y: number };
+}) {
+  if (guides.length === 0) return null;
+
+  return (
+    <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 50 }}>
+      {guides.map((guide, idx) => {
+        const frame = frames.find(f => f.id === guide.frameId);
+        if (!frame) return null;
+
+        if (guide.type === 'vertical') {
+          // Vertical line at frame center X
+          const screenX = guide.position * scale + stagePosition.x;
+          const frameTop = frame.y * scale + stagePosition.y;
+          const frameBottom = (frame.y + frame.height) * scale + stagePosition.y;
+
+          return (
+            <div
+              key={`guide-${idx}`}
+              style={{
+                position: 'absolute',
+                left: screenX,
+                top: frameTop,
+                width: 1,
+                height: frameBottom - frameTop,
+                backgroundColor: '#ff3366',
+                boxShadow: '0 0 4px #ff3366',
+              }}
+            />
+          );
+        } else {
+          // Horizontal line at frame center Y
+          const screenY = guide.position * scale + stagePosition.y;
+          const frameLeft = frame.x * scale + stagePosition.x;
+          const frameRight = (frame.x + frame.width) * scale + stagePosition.x;
+
+          return (
+            <div
+              key={`guide-${idx}`}
+              style={{
+                position: 'absolute',
+                left: frameLeft,
+                top: screenY,
+                width: frameRight - frameLeft,
+                height: 1,
+                backgroundColor: '#ff3366',
+                boxShadow: '0 0 4px #ff3366',
+              }}
+            />
+          );
+        }
+      })}
+    </div>
+  );
+}
+
+// Calculate snap guides and snapped position for an element
+const SNAP_THRESHOLD = 12; // Pixels threshold for snapping (in canvas coords)
+
+function calculateSnapResult(
+  elemCenterX: number,
+  elemCenterY: number,
+  frames: FrameCanvasElement[],
+  excludeFrameId?: string
+): { snapX: number | null; snapY: number | null; guides: SnapGuide[] } {
+  let snapX: number | null = null;
+  let snapY: number | null = null;
+  const guides: SnapGuide[] = [];
+
+  for (const frame of frames) {
+    if (frame.id === excludeFrameId) continue;
+
+    const frameCenterX = frame.x + frame.width / 2;
+    const frameCenterY = frame.y + frame.height / 2;
+
+    // Check vertical center alignment (element center X == frame center X)
+    if (Math.abs(elemCenterX - frameCenterX) < SNAP_THRESHOLD) {
+      snapX = frameCenterX;
+      guides.push({ type: 'vertical', position: frameCenterX, frameId: frame.id });
+    }
+
+    // Check horizontal center alignment (element center Y == frame center Y)
+    if (Math.abs(elemCenterY - frameCenterY) < SNAP_THRESHOLD) {
+      snapY = frameCenterY;
+      guides.push({ type: 'horizontal', position: frameCenterY, frameId: frame.id });
+    }
+  }
+
+  return { snapX, snapY, guides };
+}
+
 // Image element with drag and resize
 function CanvasImageElement({
   element,
@@ -206,16 +341,22 @@ function CanvasImageElement({
   stagePosition,
   authToken,
   isProcessing = false,
+  clipPath,
+  frames = [],
+  onSnapChange,
 }: {
-  element: CanvasElement;
+  element: ImageCanvasElement;
   isSelected: boolean;
   onSelect: (e: React.MouseEvent) => void;
-  onChange: (newAttrs: Partial<CanvasElement>) => void;
+  onChange: (newAttrs: Partial<ImageCanvasElement>) => void;
   sandboxId?: string;
   scale: number;
   stagePosition: { x: number; y: number };
   authToken?: string;
   isProcessing?: boolean;
+  clipPath?: string; // CSS clip-path for frame clipping
+  frames?: FrameCanvasElement[]; // Available frames for snapping
+  onSnapChange?: (guides: SnapGuide[]) => void; // Callback to update snap guides
 }) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -243,24 +384,52 @@ function CanvasImageElement({
       return;
     }
 
+    let cancelled = false;
+    let retryCount = 0;
+    const maxRetries = 5;
+
     const loadImage = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const url = sandboxId ? getSandboxFileUrl(sandboxId, element.src) : element.src;
-        const headers: Record<string, string> = {};
-        if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-        const response = await fetch(url, { credentials: 'include', headers });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const blob = await response.blob();
-        setImageSrc(URL.createObjectURL(blob));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed');
-      } finally {
-        setLoading(false);
+      const url = sandboxId ? getSandboxFileUrl(sandboxId, element.src) : element.src;
+      const headers: Record<string, string> = {};
+      if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+      while (retryCount < maxRetries && !cancelled) {
+        try {
+          setLoading(true);
+          setError(null);
+          const response = await fetch(url, { credentials: 'include', headers });
+          if (!response.ok) {
+            // Retry on 404 (image might not be ready yet) or 5xx
+            if ((response.status === 404 || response.status >= 500) && retryCount < maxRetries - 1) {
+              retryCount++;
+              await new Promise(r => setTimeout(r, 500 * retryCount)); // 500ms, 1s, 1.5s, 2s
+              continue;
+            }
+            throw new Error(`HTTP ${response.status}`);
+          }
+          const blob = await response.blob();
+          if (!cancelled) {
+            setImageSrc(URL.createObjectURL(blob));
+            setLoading(false);
+          }
+          return; // Success, exit retry loop
+        } catch (err) {
+          if (retryCount < maxRetries - 1 && !cancelled) {
+            retryCount++;
+            await new Promise(r => setTimeout(r, 500 * retryCount));
+            continue;
+          }
+          if (!cancelled) {
+            setError(err instanceof Error ? err.message : 'Failed');
+            setLoading(false);
+          }
+          return;
+        }
       }
     };
     loadImage();
+
+    return () => { cancelled = true; };
   }, [element.src, sandboxId, authToken]);
 
   const posX = element.x * scale + stagePosition.x;
@@ -293,7 +462,28 @@ function CanvasImageElement({
       const dy = (e.clientY - dragState.startY) / scale;
 
       if (dragState.type === 'move') {
-        onChange({ x: dragState.startElemX + dx, y: dragState.startElemY + dy });
+        let newX = dragState.startElemX + dx;
+        let newY = dragState.startElemY + dy;
+
+        // Calculate element center for snapping
+        const elemCenterX = newX + element.width / 2;
+        const elemCenterY = newY + element.height / 2;
+
+        // Check for snap points against frames
+        const { snapX, snapY, guides } = calculateSnapResult(elemCenterX, elemCenterY, frames);
+
+        // Apply snapping - adjust position so element center aligns with snap point
+        if (snapX !== null) {
+          newX = snapX - element.width / 2;
+        }
+        if (snapY !== null) {
+          newY = snapY - element.height / 2;
+        }
+
+        // Update snap guides visualization
+        onSnapChange?.(guides);
+
+        onChange({ x: newX, y: newY });
       } else if (dragState.type === 'resize' && dragState.handle) {
         const aspectRatio = dragState.startWidth / dragState.startHeight;
         let newX = dragState.startElemX;
@@ -369,7 +559,11 @@ function CanvasImageElement({
       }
     };
 
-    const handleMouseUp = () => setDragState(null);
+    const handleMouseUp = () => {
+      setDragState(null);
+      // Clear snap guides when drag ends
+      onSnapChange?.([]);
+    };
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
@@ -377,7 +571,7 @@ function CanvasImageElement({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [dragState, scale, onChange]);
+  }, [dragState, scale, onChange, frames, element.width, element.height, onSnapChange]);
 
   if (loading || isProcessing) {
     return (
@@ -432,13 +626,28 @@ function CanvasImageElement({
         opacity: element.opacity || 1,
         transform: `rotate(${element.rotation || 0}deg)`,
         transformOrigin: 'center center',
+        zIndex: 2,
+        // NO clipPath here - selection UI must be fully visible
       }}
     >
-      <div className={cn("w-full h-full rounded overflow-hidden relative", isSelected && "ring-2 ring-blue-500")}>
+      {/* Image content - THIS gets clipped if inside frame */}
+      <div 
+        className="w-full h-full rounded overflow-hidden relative"
+        style={{ clipPath: clipPath || undefined }}
+      >
         <img src={imageSrc} alt={element.name} draggable={false} className="w-full h-full object-fill pointer-events-none" />
         <AIProcessingOverlay isVisible={isProcessing} />
       </div>
 
+      {/* Selection ring - OUTSIDE clipped area, always fully visible */}
+      {isSelected && (
+        <div 
+          className="absolute inset-0 rounded ring-2 ring-blue-500 pointer-events-none"
+          style={{ zIndex: 5 }}
+        />
+      )}
+
+      {/* Resize handles - OUTSIDE clipped area, always fully visible */}
       {isSelected && !element.locked && (
         <>
           {/* Corner handles - blue */}
@@ -451,6 +660,229 @@ function CanvasImageElement({
           <div className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ew-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'e')} />
           <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ns-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'n')} />
           <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ns-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 's')} />
+        </>
+      )}
+    </div>
+  );
+}
+
+// Frame element - a container/viewport that can be exported
+function CanvasFrameElement({
+  element,
+  isSelected,
+  onSelect,
+  onChange,
+  scale,
+  stagePosition,
+  allElements,
+  onMoveChildren,
+}: {
+  element: FrameCanvasElement;
+  isSelected: boolean;
+  onSelect: (e: React.MouseEvent) => void;
+  onChange: (newAttrs: Partial<FrameCanvasElement>) => void;
+  scale: number;
+  stagePosition: { x: number; y: number };
+  allElements?: CanvasElement[];
+  onMoveChildren?: (childStartPositions: { id: string; x: number; y: number }[], dx: number, dy: number) => void;
+}) {
+  const [dragState, setDragState] = useState<{
+    type: 'move' | 'resize';
+    handle?: string;
+    startX: number;
+    startY: number;
+    startElemX: number;
+    startElemY: number;
+    startWidth: number;
+    startHeight: number;
+    childIds?: string[]; // IDs of elements inside this frame at drag start
+    childStartPositions?: { id: string; x: number; y: number }[]; // Starting positions of children
+  } | null>(null);
+
+  const posX = element.x * scale + stagePosition.x;
+  const posY = element.y * scale + stagePosition.y;
+  const width = element.width * scale;
+  const height = element.height * scale;
+
+  const handleMouseDown = (e: React.MouseEvent, type: 'move' | 'resize' = 'move', handle?: string) => {
+    if (element.locked && type === 'move') return;
+    e.stopPropagation();
+    e.preventDefault();
+    onSelect(e);
+
+    // Find all elements inside this frame at drag start (only for move, not resize)
+    let childIds: string[] = [];
+    let childStartPositions: { id: string; x: number; y: number }[] = [];
+    if (type === 'move' && allElements) {
+      const frameRight = element.x + element.width;
+      const frameBottom = element.y + element.height;
+      const children = allElements.filter(el => {
+        if (el.id === element.id || el.type === 'frame') return false;
+        // Check if element overlaps with frame
+        const elRight = el.x + el.width;
+        const elBottom = el.y + el.height;
+        return el.x < frameRight && elRight > element.x && el.y < frameBottom && elBottom > element.y;
+      });
+      childIds = children.map(el => el.id);
+      childStartPositions = children.map(el => ({ id: el.id, x: el.x, y: el.y }));
+    }
+
+    setDragState({
+      type,
+      handle,
+      startX: e.clientX,
+      startY: e.clientY,
+      startElemX: element.x,
+      startElemY: element.y,
+      startWidth: element.width,
+      startHeight: element.height,
+      childIds,
+      childStartPositions,
+    });
+  };
+
+  useEffect(() => {
+    if (!dragState) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const dx = (e.clientX - dragState.startX) / scale;
+      const dy = (e.clientY - dragState.startY) / scale;
+
+      if (dragState.type === 'move') {
+        onChange({ x: dragState.startElemX + dx, y: dragState.startElemY + dy });
+        // Also move children
+        if (onMoveChildren && dragState.childStartPositions && dragState.childStartPositions.length > 0) {
+          onMoveChildren(dragState.childStartPositions, dx, dy);
+        }
+      } else if (dragState.type === 'resize' && dragState.handle) {
+        let newX = dragState.startElemX;
+        let newY = dragState.startElemY;
+        let newW = dragState.startWidth;
+        let newH = dragState.startHeight;
+
+        // Frame resize - free aspect ratio (not locked like images)
+        switch (dragState.handle) {
+          case 'se':
+            newW = Math.max(100, dragState.startWidth + dx);
+            newH = Math.max(100, dragState.startHeight + dy);
+            break;
+          case 'sw':
+            newW = Math.max(100, dragState.startWidth - dx);
+            newH = Math.max(100, dragState.startHeight + dy);
+            newX = dragState.startElemX + (dragState.startWidth - newW);
+            break;
+          case 'ne':
+            newW = Math.max(100, dragState.startWidth + dx);
+            newH = Math.max(100, dragState.startHeight - dy);
+            newY = dragState.startElemY + (dragState.startHeight - newH);
+            break;
+          case 'nw':
+            newW = Math.max(100, dragState.startWidth - dx);
+            newH = Math.max(100, dragState.startHeight - dy);
+            newX = dragState.startElemX + (dragState.startWidth - newW);
+            newY = dragState.startElemY + (dragState.startHeight - newH);
+            break;
+          case 'e':
+            newW = Math.max(100, dragState.startWidth + dx);
+            break;
+          case 'w':
+            newW = Math.max(100, dragState.startWidth - dx);
+            newX = dragState.startElemX + (dragState.startWidth - newW);
+            break;
+          case 's':
+            newH = Math.max(100, dragState.startHeight + dy);
+            break;
+          case 'n':
+            newH = Math.max(100, dragState.startHeight - dy);
+            newY = dragState.startElemY + (dragState.startHeight - newH);
+            break;
+        }
+
+        onChange({ x: newX, y: newY, width: newW, height: newH });
+      }
+    };
+
+    const handleMouseUp = () => setDragState(null);
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [dragState, scale, onChange]);
+
+  const isDragging = dragState?.type === 'move';
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: posX,
+        top: posY,
+        width,
+        height,
+        opacity: element.opacity || 1,
+        transform: `rotate(${element.rotation || 0}deg)`,
+        transformOrigin: 'center center',
+        zIndex: 10, // Frames always on top
+        pointerEvents: 'none', // Frame area doesn't catch clicks - only label and handles do
+      }}
+    >
+      {/* Frame border only - background rendered separately */}
+      <div
+        className="w-full h-full relative"
+        style={{
+          border: isSelected ? '2px solid #3b82f6' : '2px dashed #404040',
+          borderRadius: '4px',
+        }}
+      >
+        {/* Frame label - top left outside frame - THIS is the click target for selection/move */}
+        <div 
+          className="absolute left-0 flex items-center gap-1 px-1.5 py-0.5 rounded-t-sm"
+          style={{
+            top: '-22px',
+            backgroundColor: isSelected ? '#3b82f6' : '#333333',
+            color: '#fff',
+            fontSize: '10px',
+            cursor: element.locked ? 'default' : isDragging ? 'grabbing' : 'grab',
+            pointerEvents: 'auto', // Label catches clicks
+          }}
+          onMouseDown={(e) => handleMouseDown(e, 'move')}
+        >
+          <Frame className="h-3 w-3" />
+          <span className="truncate max-w-[100px]">{element.name}</span>
+        </div>
+
+        {/* Dimension indicator - bottom center when selected */}
+        {isSelected && (
+          <div 
+            className="absolute left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-sm pointer-events-none"
+            style={{
+              bottom: '-24px',
+              backgroundColor: '#3b82f6',
+              color: '#fff',
+              fontSize: '11px',
+              fontFamily: 'monospace',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {Math.round(element.width)} × {Math.round(element.height)}
+          </div>
+        )}
+      </div>
+
+      {/* Resize handles - blue when selected, pointer-events:auto so they're clickable */}
+      {isSelected && !element.locked && (
+        <>
+          <div className="absolute -top-1.5 -left-1.5 w-3 h-3 rounded-sm cursor-nwse-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'nw')} />
+          <div className="absolute -top-1.5 -right-1.5 w-3 h-3 rounded-sm cursor-nesw-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'ne')} />
+          <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 rounded-sm cursor-nesw-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'sw')} />
+          <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 rounded-sm cursor-nwse-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'se')} />
+          <div className="absolute top-1/2 -left-1.5 -translate-y-1/2 w-3 h-3 rounded-sm cursor-ew-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'w')} />
+          <div className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 rounded-sm cursor-ew-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'e')} />
+          <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-sm cursor-ns-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'n')} />
+          <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-sm cursor-ns-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 's')} />
         </>
       )}
     </div>
@@ -652,10 +1084,10 @@ function FloatingToolbar({
   authToken,
   sandboxId,
 }: {
-  element: CanvasElement;
+  element: ImageCanvasElement;
   scale: number;
   stagePosition: { x: number; y: number };
-  onChange: (newAttrs: Partial<CanvasElement>) => void;
+  onChange: (newAttrs: Partial<ImageCanvasElement>) => void;
   onDuplicate: () => void;
   onDelete: () => void;
   onDownloadPng: () => void;
@@ -1374,6 +1806,336 @@ function FloatingToolbar({
   );
 }
 
+// Floating toolbar for Frame elements - simpler than image toolbar
+function FrameFloatingToolbar({
+  element,
+  elements,
+  scale,
+  stagePosition,
+  onChange,
+  onDuplicate,
+  onDelete,
+  onExportFrame,
+  sandboxId,
+  authToken,
+}: {
+  element: FrameCanvasElement;
+  elements: CanvasElement[]; // All elements for export
+  scale: number;
+  stagePosition: { x: number; y: number };
+  onChange: (newAttrs: Partial<FrameCanvasElement>) => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+  onExportFrame: () => void;
+  sandboxId?: string;
+  authToken?: string;
+}) {
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showSizePopover, setShowSizePopover] = useState(false);
+  const [showNamePopover, setShowNamePopover] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [tempWidth, setTempWidth] = useState(String(Math.round(element.width)));
+  const [tempHeight, setTempHeight] = useState(String(Math.round(element.height)));
+  const [tempName, setTempName] = useState(element.name);
+
+  // Sync temp values when element changes
+  useEffect(() => {
+    setTempWidth(String(Math.round(element.width)));
+    setTempHeight(String(Math.round(element.height)));
+    setTempName(element.name);
+  }, [element.width, element.height, element.name]);
+
+  // Common preset colors
+  const presetColors = [
+    'transparent', '#ffffff', '#000000', '#f5f5f5', '#1a1a1a',
+    '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6',
+  ];
+
+  // Apply size changes
+  const applySize = () => {
+    const newWidth = Math.max(100, parseInt(tempWidth) || 400);
+    const newHeight = Math.max(100, parseInt(tempHeight) || 300);
+    onChange({ width: newWidth, height: newHeight });
+    setShowSizePopover(false);
+  };
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: element.x * scale + stagePosition.x + (element.width * scale) / 2,
+        top: element.y * scale + stagePosition.y + element.height * scale + 8,
+        transform: 'translateX(-50%)',
+        zIndex: 100,
+      }}
+    >
+      {/* Frame toolbar */}
+      <div className="flex items-center gap-0.5 bg-card border border-border rounded-full px-1.5 py-1">
+        <TooltipProvider delayDuration={0}>
+          {/* Frame name - clickable to edit */}
+          <Popover open={showNamePopover} onOpenChange={setShowNamePopover}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 rounded-full gap-1 text-xs"
+                  >
+                    <Frame className="h-3 w-3" />
+                    <span className="truncate max-w-[80px]">{element.name}</span>
+                  </Button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent>Rename frame</TooltipContent>
+            </Tooltip>
+            <PopoverContent className="w-auto p-3" align="center">
+              <div className="space-y-2">
+                <div className="text-xs text-muted-foreground font-medium">Frame Name</div>
+                <input
+                  type="text"
+                  value={tempName}
+                  onChange={(e) => setTempName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      onChange({ name: tempName.trim() || 'Frame' });
+                      setShowNamePopover(false);
+                    }
+                  }}
+                  className="w-40 h-7 px-2 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  autoFocus
+                />
+                <Button 
+                  size="sm" 
+                  className="w-full h-7 text-xs" 
+                  onClick={() => {
+                    onChange({ name: tempName.trim() || 'Frame' });
+                    setShowNamePopover(false);
+                  }}
+                >
+                  Rename
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          <div className="w-px h-5 bg-border mx-0.5" />
+
+          {/* Size control */}
+          <Popover open={showSizePopover} onOpenChange={setShowSizePopover}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 rounded-full gap-1 text-xs font-mono"
+                  >
+                    {Math.round(element.width)}×{Math.round(element.height)}
+                  </Button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent>Set dimensions</TooltipContent>
+            </Tooltip>
+            <PopoverContent className="w-auto p-3" align="center">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-muted-foreground font-medium">Frame Size</div>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-muted-foreground">
+                        Presets
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-48 p-1 max-h-64 overflow-y-auto" align="end" side="right">
+                      {[
+                        { cat: 'SOCIAL', items: [
+                          { n: 'Instagram Post', w: 1080, h: 1080 },
+                          { n: 'Instagram Story', w: 1080, h: 1920 },
+                          { n: 'TikTok', w: 1080, h: 1920 },
+                          { n: 'Twitter Post', w: 1200, h: 675 },
+                          { n: 'Facebook Post', w: 1200, h: 630 },
+                          { n: 'YouTube Thumb', w: 1280, h: 720 },
+                        ]},
+                        { cat: 'DEVICES', items: [
+                          { n: 'iPhone 15 Pro', w: 1179, h: 2556 },
+                          { n: 'iPhone 15 Pro Max', w: 1290, h: 2796 },
+                          { n: 'iPad Pro 11"', w: 1668, h: 2388 },
+                        ]},
+                        { cat: 'DESIGN', items: [
+                          { n: 'Dribbble', w: 400, h: 300 },
+                          { n: 'Dribbble HD', w: 800, h: 600 },
+                          { n: 'Square', w: 1000, h: 1000 },
+                        ]},
+                      ].map(cat => (
+                        <div key={cat.cat}>
+                          <div className="px-2 py-1 text-[9px] text-muted-foreground uppercase tracking-wider">{cat.cat}</div>
+                          {cat.items.map(p => (
+                            <button
+                              key={p.n}
+                              className="w-full flex items-center justify-between px-2 py-1 text-xs hover:bg-accent rounded-lg text-left"
+                              onClick={() => {
+                                setTempWidth(String(p.w));
+                                setTempHeight(String(p.h));
+                              }}
+                            >
+                              <span>{p.n}</span>
+                              <span className="text-[9px] text-muted-foreground font-mono">{p.w}×{p.h}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] text-muted-foreground uppercase">Width</label>
+                    <input
+                      type="number"
+                      value={tempWidth}
+                      onChange={(e) => setTempWidth(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && applySize()}
+                      className="w-20 h-7 px-2 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      min={100}
+                    />
+                  </div>
+                  <X className="h-3 w-3 text-muted-foreground mt-4" />
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] text-muted-foreground uppercase">Height</label>
+                    <input
+                      type="number"
+                      value={tempHeight}
+                      onChange={(e) => setTempHeight(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && applySize()}
+                      className="w-20 h-7 px-2 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      min={100}
+                    />
+                  </div>
+                </div>
+                <Button size="sm" className="w-full h-7 text-xs" onClick={applySize}>
+                  Apply
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          <div className="w-px h-5 bg-border mx-0.5" />
+
+          {/* Background color */}
+          <Popover open={showColorPicker} onOpenChange={setShowColorPicker}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 rounded-full gap-1.5 text-xs"
+                  >
+                    <div
+                      className="w-3.5 h-3.5 rounded-sm border border-border"
+                      style={{
+                        backgroundColor: element.backgroundColor || 'transparent',
+                        backgroundImage: !element.backgroundColor || element.backgroundColor === 'transparent'
+                          ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)'
+                          : undefined,
+                        backgroundSize: '6px 6px',
+                        backgroundPosition: '0 0, 0 3px, 3px -3px, -3px 0px',
+                      }}
+                    />
+                    Fill
+                  </Button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent>Background color</TooltipContent>
+            </Tooltip>
+            <PopoverContent className="w-auto p-2" align="center">
+              <div className="grid grid-cols-6 gap-1">
+                {presetColors.map((color) => (
+                  <button
+                    key={color}
+                    className={cn(
+                      "w-6 h-6 rounded-sm border border-border hover:ring-2 hover:ring-blue-500 transition-all",
+                      element.backgroundColor === color && "ring-2 ring-blue-500"
+                    )}
+                    style={{
+                      backgroundColor: color === 'transparent' ? 'transparent' : color,
+                      backgroundImage: color === 'transparent'
+                        ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)'
+                        : undefined,
+                      backgroundSize: '8px 8px',
+                      backgroundPosition: '0 0, 0 4px, 4px -4px, -4px 0px',
+                    }}
+                    onClick={() => {
+                      onChange({ backgroundColor: color === 'transparent' ? undefined : color });
+                      setShowColorPicker(false);
+                    }}
+                  />
+                ))}
+                {/* Custom color picker */}
+                <label
+                  className="w-6 h-6 rounded-sm border border-dashed border-muted-foreground hover:border-blue-500 hover:ring-2 hover:ring-blue-500 transition-all cursor-pointer flex items-center justify-center overflow-hidden relative bg-background"
+                >
+                  <Plus className="h-3 w-3 text-muted-foreground" />
+                  <input
+                    type="color"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    value={element.backgroundColor || '#ffffff'}
+                    onChange={(e) => {
+                      onChange({ backgroundColor: e.target.value });
+                    }}
+                  />
+                </label>
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          <div className="w-px h-5 bg-border mx-0.5" />
+
+          {/* Export as PNG */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 rounded-full gap-1.5 text-xs"
+                onClick={onExportFrame}
+                disabled={isExporting}
+              >
+                {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                Export
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Export frame as PNG</TooltipContent>
+          </Tooltip>
+
+          <div className="w-px h-5 bg-border mx-0.5" />
+
+          {/* Duplicate */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" onClick={onDuplicate}>
+                <Copy className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Duplicate</TooltipContent>
+          </Tooltip>
+
+          {/* Delete */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full text-destructive hover:text-destructive" onClick={onDelete}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Delete</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+    </div>
+  );
+}
+
 // Multi-select toolbar for merging multiple images
 function MultiSelectToolbar({
   elements,
@@ -1677,6 +2439,10 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     elementId: string;
     cropRect: { x: number; y: number; width: number; height: number };
   } | null>(null);
+  
+  // Snap guides state - for visual alignment feedback when dragging
+  const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
+  
   const [canvasData, setCanvasData] = useState<CanvasData | null>(null);
   const [scale, setScale] = useState(1);
   const [stagePosition, setStagePosition] = useState({ x: 50, y: 50 });
@@ -1699,6 +2465,12 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   const isSavingRef = useRef(false);
 
   const authToken = session?.access_token;
+
+  // Memoized frames for snapping - available to child components
+  const frames = useMemo(() => 
+    elements.filter(el => el.type === 'frame') as FrameCanvasElement[],
+    [elements]
+  );
 
   // Keep ref in sync with state
   useEffect(() => { isSavingRef.current = isSaving; }, [isSaving]);
@@ -1783,6 +2555,119 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     elementsRef.current = elements;
   }, [elements]);
 
+  // Force fetch function that can be triggered externally
+  const forceFetch = useCallback(async () => {
+    console.log('[CANVAS_LIVE_DEBUG] forceFetch called:', { sandboxId, filePath, hasAuth: !!authToken, hasUnsavedChanges });
+    
+    if (!sandboxId || !filePath || !authToken) {
+      console.log('[CANVAS_LIVE_DEBUG] forceFetch skipped - missing required params');
+      return;
+    }
+    if (hasUnsavedChanges || isUserEditingRef.current) {
+      console.log('[CANVAS_LIVE_DEBUG] forceFetch skipped - user editing');
+      return;
+    }
+    
+    lastFetchTimeRef.current = Date.now();
+    
+    try {
+      const baseUrl = getSandboxFileUrl(sandboxId, filePath);
+      const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}_t=${Date.now()}`;
+      console.log('[CANVAS_LIVE_DEBUG] forceFetch fetching:', url);
+      
+      const response = await fetch(url, {
+        headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+        credentials: 'include',
+        cache: 'no-store',
+      });
+
+      console.log('[CANVAS_LIVE_DEBUG] forceFetch response status:', response.status);
+      
+      if (!response.ok) {
+        console.log('[CANVAS_LIVE_DEBUG] forceFetch failed - bad response');
+        return;
+      }
+
+      const newContent = await response.text();
+      console.log('[CANVAS_LIVE_DEBUG] forceFetch content length:', newContent?.length);
+      
+      if (!newContent) return;
+
+      try {
+        const parsed: CanvasData = JSON.parse(newContent);
+        const newElementIds = (parsed.elements || []).map(e => e.id).sort().join(',');
+        const currentElementIds = elementsRef.current.map(e => e.id).sort().join(',');
+
+        console.log('[CANVAS_LIVE_DEBUG] forceFetch comparing elements:', {
+          newCount: parsed.elements?.length,
+          currentCount: elementsRef.current.length,
+          changed: newElementIds !== currentElementIds,
+        });
+
+        if (newElementIds !== currentElementIds) {
+          console.log('[CANVAS_LIVE_DEBUG] forceFetch updating elements - CHANGE DETECTED!');
+          setCanvasData(parsed);
+          setElements(sanitizeElements(parsed.elements || []));
+        } else {
+          console.log('[CANVAS_LIVE_DEBUG] forceFetch - no changes detected');
+        }
+      } catch (parseErr) {
+        console.log('[CANVAS_LIVE_DEBUG] forceFetch parse error:', parseErr);
+      }
+    } catch (err) {
+      console.log('[CANVAS_LIVE_DEBUG] forceFetch network error:', err);
+    }
+  }, [sandboxId, filePath, authToken, hasUnsavedChanges]);
+
+  // Listen for canvas-tool-updated events to trigger immediate refresh
+  useEffect(() => {
+    console.log('[CANVAS_LIVE_DEBUG] Setting up canvas-tool-updated listener for filePath:', filePath);
+    
+    const handleCanvasUpdate = (event: CustomEvent<{ canvasPath: string; timestamp: number }>) => {
+      const eventPath = event.detail.canvasPath;
+      console.log('[CANVAS_LIVE_DEBUG] Received canvas-tool-updated event:', {
+        eventPath,
+        filePath,
+        timestamp: event.detail.timestamp,
+      });
+      
+      // Check if this event is for our canvas
+      if (filePath && (filePath.includes(eventPath) || eventPath.includes(filePath.replace('canvases/', '')))) {
+        console.log('[CANVAS_LIVE_DEBUG] Event matches our canvas, calling forceFetch');
+        forceFetch();
+      } else {
+        console.log('[CANVAS_LIVE_DEBUG] Event does NOT match our canvas, ignoring');
+      }
+    };
+
+    window.addEventListener('canvas-tool-updated', handleCanvasUpdate as EventListener);
+    
+    // Check for any pending events that were dispatched before listener was set up
+    const pendingEvents = (window as any).__pendingCanvasRefreshEvents as Map<string, number> | undefined;
+    if (pendingEvents && filePath) {
+      // Check if any pending event matches our canvas
+      for (const [eventPath, timestamp] of pendingEvents.entries()) {
+        // Only process events from the last 10 seconds
+        if (Date.now() - timestamp < 10000) {
+          if (filePath.includes(eventPath) || eventPath.includes(filePath.replace('canvases/', '').replace('/workspace/', ''))) {
+            console.log('[CANVAS_LIVE_DEBUG] Found pending event for our canvas, forcing fetch:', eventPath);
+            pendingEvents.delete(eventPath); // Clear after processing
+            forceFetch();
+            break;
+          }
+        } else {
+          // Clean up old events
+          pendingEvents.delete(eventPath);
+        }
+      }
+    }
+    
+    return () => {
+      console.log('[CANVAS_LIVE_DEBUG] Removing canvas-tool-updated listener');
+      window.removeEventListener('canvas-tool-updated', handleCanvasUpdate as EventListener);
+    };
+  }, [filePath, forceFetch]);
+
   useEffect(() => {
     if (!sandboxId || !filePath || !authToken) return;
 
@@ -1791,12 +2676,17 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
     const fetchLatestContent = async () => {
       // Skip if user is actively editing (has unsaved changes)
-      if (hasUnsavedChanges || isUserEditingRef.current) return;
+      if (hasUnsavedChanges || isUserEditingRef.current) {
+        console.log('[CANVAS_LIVE_DEBUG] Polling skipped - user editing');
+        return;
+      }
 
       // Skip if we just fetched (with small buffer)
       const now = Date.now();
       if (now - lastFetchTimeRef.current < POLL_INTERVAL - 200) return;
       lastFetchTimeRef.current = now;
+
+      console.log('[CANVAS_LIVE_DEBUG] Polling: fetching canvas content');
 
       try {
         // Add cache-busting to ensure fresh content from server
@@ -1808,7 +2698,10 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           cache: 'no-store', // Prevent browser caching
         });
 
-        if (!response.ok) return;
+        if (!response.ok) {
+          console.log('[CANVAS_LIVE_DEBUG] Polling: fetch failed with status', response.status);
+          return;
+        }
 
         const newContent = await response.text();
         if (!newContent) return;
@@ -1819,18 +2712,24 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           const newElementIds = (parsed.elements || []).map(e => e.id).sort().join(',');
           const currentElementIds = elementsRef.current.map(e => e.id).sort().join(',');
 
+          console.log('[CANVAS_LIVE_DEBUG] Polling: comparing elements', {
+            serverCount: parsed.elements?.length,
+            currentCount: elementsRef.current.length,
+            changed: newElementIds !== currentElementIds,
+          });
+
           // Only update if structure actually changed (new/removed elements)
           if (newElementIds !== currentElementIds) {
-            console.log('[CanvasRenderer] Live update: new elements detected', parsed.elements?.length, 'vs current', elementsRef.current.length);
+            console.log('[CANVAS_LIVE_DEBUG] Polling: UPDATING - new elements detected!');
             setCanvasData(parsed);
             setElements(sanitizeElements(parsed.elements || []));
             hasCenteredRef.current = false; // Re-center to show new content
           }
         } catch (parseErr) {
-          // Ignore parse errors during polling
+          console.log('[CANVAS_LIVE_DEBUG] Polling: parse error', parseErr);
         }
       } catch (err) {
-        // Ignore network errors during polling
+        console.log('[CANVAS_LIVE_DEBUG] Polling: network error', err);
       }
     };
 
@@ -1840,7 +2739,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     // Note: elements is accessed via ref pattern inside fetchLatestContent to avoid re-creating interval
   }, [sandboxId, filePath, authToken, hasUnsavedChanges]);
 
-  // Center canvas ONCE on initial load only
+  // Center canvas and fit content on initial load only
   useEffect(() => {
     if (hasCenteredRef.current) return; // Already centered, don't run again
     if (elements.length === 0 || containerSize.width === 0 || containerSize.height === 0) return;
@@ -1858,13 +2757,23 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     const contentCenterX = minX + contentWidth / 2;
     const contentCenterY = minY + contentHeight / 2;
 
-    // Position so content is centered in the container
-    const newX = (containerSize.width / 2) - (contentCenterX * scale);
-    const newY = (containerSize.height / 2) - (contentCenterY * scale);
+    // Calculate scale to fit content with padding (80% of container)
+    const padding = 0.8;
+    const scaleX = (containerSize.width * padding) / contentWidth;
+    const scaleY = (containerSize.height * padding) / contentHeight;
+    // Use the smaller scale to ensure content fits, but cap at 1 (don't zoom in beyond 100%)
+    const fitScale = Math.min(scaleX, scaleY, 1);
+    // For large frames (like screens), zoom out to fit; minimum 0.15 to keep usable
+    const newScale = Math.max(fitScale, 0.15);
 
+    // Position so content is centered in the container at the new scale
+    const newX = (containerSize.width / 2) - (contentCenterX * newScale);
+    const newY = (containerSize.height / 2) - (contentCenterY * newScale);
+
+    setScale(newScale);
     setStagePosition({ x: newX, y: newY });
     hasCenteredRef.current = true;
-  }, [elements, containerSize.width, containerSize.height, scale]);
+  }, [elements, containerSize.width, containerSize.height]);
 
   const handleZoomIn = () => setScale(s => Math.min(s * 1.15, 5));
   const handleZoomOut = () => setScale(s => Math.max(s / 1.15, 0.1));
@@ -2046,14 +2955,22 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     }
   };
 
-  // Track unsaved changes
+  // Track unsaved changes - compare sanitized versions to avoid false positives
   useEffect(() => {
     if (canvasData && elements.length > 0) {
+      // Sanitize both to ensure fair comparison (raw data might be missing defaults)
       const currentElementsJson = JSON.stringify(elements);
-      const originalElementsJson = JSON.stringify(canvasData.elements || []);
-      setHasUnsavedChanges(currentElementsJson !== originalElementsJson);
+      const originalElementsJson = JSON.stringify(sanitizeElements(canvasData.elements || []));
+      const hasChanges = currentElementsJson !== originalElementsJson;
+      
+      // Only log when there's a change to avoid spam
+      if (hasChanges !== hasUnsavedChanges) {
+        console.log('[CANVAS_LIVE_DEBUG] hasUnsavedChanges changed to:', hasChanges);
+      }
+      
+      setHasUnsavedChanges(hasChanges);
     }
-  }, [elements, canvasData]);
+  }, [elements, canvasData, hasUnsavedChanges]);
 
   // Calculate next image position based on existing elements
   const getNextImagePosition = useCallback((imgWidth: number, imgHeight: number) => {
@@ -2211,6 +3128,73 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   }, [canvasData, elements, onSave]);
 
   const handleUploadClick = () => fileInputRef.current?.click();
+
+  // Add a new frame to the canvas
+  // Frame presets organized by category
+  const framePresets = useMemo(() => [
+    { category: 'Social Media', items: [
+      { name: 'Instagram Post', width: 1080, height: 1080 },
+      { name: 'Instagram Story', width: 1080, height: 1920 },
+      { name: 'Instagram Reel', width: 1080, height: 1920 },
+      { name: 'TikTok', width: 1080, height: 1920 },
+      { name: 'Twitter Post', width: 1200, height: 675 },
+      { name: 'Twitter Header', width: 1500, height: 500 },
+      { name: 'Facebook Post', width: 1200, height: 630 },
+      { name: 'Facebook Cover', width: 820, height: 312 },
+      { name: 'LinkedIn Post', width: 1200, height: 627 },
+      { name: 'LinkedIn Cover', width: 1584, height: 396 },
+      { name: 'Pinterest Pin', width: 1000, height: 1500 },
+      { name: 'YouTube Thumbnail', width: 1280, height: 720 },
+      { name: 'YouTube Shorts', width: 1080, height: 1920 },
+    ]},
+    { category: 'Devices', items: [
+      { name: 'iPhone 15 Pro Max', width: 1290, height: 2796 },
+      { name: 'iPhone 15 Pro', width: 1179, height: 2556 },
+      { name: 'iPhone 15', width: 1179, height: 2556 },
+      { name: 'iPhone 14', width: 1170, height: 2532 },
+      { name: 'iPhone SE', width: 750, height: 1334 },
+      { name: 'iPad Pro 12.9"', width: 2048, height: 2732 },
+      { name: 'iPad Pro 11"', width: 1668, height: 2388 },
+      { name: 'Android Phone', width: 1080, height: 2400 },
+    ]},
+    { category: 'Design', items: [
+      { name: 'Dribbble Shot', width: 400, height: 300 },
+      { name: 'Dribbble Shot HD', width: 800, height: 600 },
+      { name: 'Behance Project', width: 1400, height: 788 },
+      { name: 'App Icon', width: 1024, height: 1024 },
+      { name: 'Favicon', width: 512, height: 512 },
+      { name: 'Open Graph', width: 1200, height: 630 },
+    ]},
+    { category: 'Print', items: [
+      { name: 'Business Card', width: 1050, height: 600 },
+      { name: 'Poster 18×24', width: 1800, height: 2400 },
+      { name: 'A4', width: 2480, height: 3508 },
+      { name: 'Square', width: 1000, height: 1000 },
+    ]},
+  ], []);
+
+  const handleAddFrame = useCallback((width: number = 400, height: number = 300, presetName?: string) => {
+    const { x, y } = getNextImagePosition(width, height);
+    const frameCount = elements.filter(e => e.type === 'frame').length + 1;
+
+    const newFrame: FrameCanvasElement = {
+      id: `frame-${Date.now()}`,
+      type: 'frame',
+      x,
+      y,
+      width,
+      height,
+      rotation: 0,
+      opacity: 1,
+      locked: false,
+      visible: true,
+      name: presetName || `Frame ${frameCount}`,
+      backgroundColor: undefined, // Transparent by default
+    };
+    setElements(prev => [...prev, newFrame]);
+    setSelectedIds([newFrame.id]);
+    toast.success('Frame added');
+  }, [elements, getNextImagePosition]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2370,6 +3354,46 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleResetView}><Maximize className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Reset View</TooltipContent></Tooltip>
             <Tooltip><TooltipTrigger asChild><Button id="canvas-save-btn" variant="ghost" size="icon" className={cn("h-8 w-8 relative", hasUnsavedChanges && "text-primary")} onClick={handleSave} disabled={isSaving || !onSave}>{isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{hasUnsavedChanges && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-primary rounded-full" />}</Button></TooltipTrigger><TooltipContent>{isSaving ? 'Saving...' : hasUnsavedChanges ? 'Save changes (⌘S)' : 'No changes'}</TooltipContent></Tooltip>
             <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleUploadClick}><ImagePlus className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Add Image</TooltipContent></Tooltip>
+            {/* Add Frame with presets */}
+            <Popover>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <Frame className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent>Add Frame</TooltipContent>
+              </Tooltip>
+              <PopoverContent className="w-56 p-1 max-h-96 overflow-y-auto" align="start">
+                {/* Custom frame at top */}
+                <button
+                  className="w-full flex items-center px-2 py-1.5 text-sm hover:bg-accent rounded-lg transition-colors text-left mb-1"
+                  onClick={() => handleAddFrame(400, 300)}
+                >
+                  Custom
+                </button>
+                
+                {framePresets.map((category) => (
+                  <div key={category.category}>
+                    <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wider">
+                      {category.category}
+                    </div>
+                    {category.items.map((preset) => (
+                      <button
+                        key={preset.name}
+                        className="w-full flex items-center justify-between px-2 py-1.5 text-sm hover:bg-accent rounded-lg transition-colors text-left"
+                        onClick={() => handleAddFrame(preset.width, preset.height, preset.name)}
+                      >
+                        <span>{preset.name}</span>
+                        <span className="text-[10px] text-muted-foreground font-mono">{preset.width}×{preset.height}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </PopoverContent>
+            </Popover>
 
             {/* AI Generate */}
             <Popover>
@@ -2467,20 +3491,128 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           </div>
         )}
 
-        {elements.map((element) => (
-          <CanvasImageElement
-            key={element.id}
-            element={element}
-            isSelected={selectedIds.includes(element.id)}
-            onSelect={(e) => handleElementSelect(element.id, e)}
-            onChange={(newAttrs) => handleElementChange(element.id, newAttrs)}
-            authToken={authToken}
-            sandboxId={sandboxId}
-            scale={scale}
-            stagePosition={stagePosition}
-            isProcessing={processingElementId === element.id}
-          />
-        ))}
+        {/* Render order: Frame backgrounds -> Images (clipped if inside frame) -> Frame borders on top */}
+        {(() => {
+          const frames = elements.filter(el => el.type === 'frame') as FrameCanvasElement[];
+          const images = elements.filter(el => el.type === 'image') as ImageCanvasElement[];
+
+          // Helper: check if image overlaps with frame (any percentage)
+          const getOverlappingFrame = (img: ImageCanvasElement): FrameCanvasElement | null => {
+            for (const frame of frames) {
+              const imgRight = img.x + img.width;
+              const imgBottom = img.y + img.height;
+              const frameRight = frame.x + frame.width;
+              const frameBottom = frame.y + frame.height;
+
+              // Check if any part overlaps
+              if (img.x < frameRight && imgRight > frame.x && img.y < frameBottom && imgBottom > frame.y) {
+                return frame;
+              }
+            }
+            return null;
+          };
+
+          // Calculate clip-path for image relative to frame (in screen coords)
+          const getClipPath = (img: ImageCanvasElement, frame: FrameCanvasElement): string => {
+            // Image position in screen coords
+            const imgScreenX = img.x * scale + stagePosition.x;
+            const imgScreenY = img.y * scale + stagePosition.y;
+            const imgScreenW = img.width * scale;
+            const imgScreenH = img.height * scale;
+
+            // Frame position in screen coords
+            const frameScreenX = frame.x * scale + stagePosition.x;
+            const frameScreenY = frame.y * scale + stagePosition.y;
+            const frameScreenW = frame.width * scale;
+            const frameScreenH = frame.height * scale;
+
+            // Calculate clip rect relative to image element (0-100%)
+            const clipLeft = Math.max(0, (frameScreenX - imgScreenX) / imgScreenW * 100);
+            const clipTop = Math.max(0, (frameScreenY - imgScreenY) / imgScreenH * 100);
+            const clipRight = Math.min(100, (frameScreenX + frameScreenW - imgScreenX) / imgScreenW * 100);
+            const clipBottom = Math.min(100, (frameScreenY + frameScreenH - imgScreenY) / imgScreenH * 100);
+
+            return `polygon(${clipLeft}% ${clipTop}%, ${clipRight}% ${clipTop}%, ${clipRight}% ${clipBottom}%, ${clipLeft}% ${clipBottom}%)`;
+          };
+
+          return (
+            <>
+              {/* 1. Frame backgrounds (z-index 1) */}
+              {frames.map((frame) => (
+                <div
+                  key={`frame-bg-${frame.id}`}
+                  style={{
+                    position: 'absolute',
+                    left: frame.x * scale + stagePosition.x,
+                    top: frame.y * scale + stagePosition.y,
+                    width: frame.width * scale,
+                    height: frame.height * scale,
+                    backgroundColor: frame.backgroundColor || 'transparent',
+                    borderRadius: '4px',
+                    zIndex: 1,
+                    pointerEvents: 'none',
+                  }}
+                />
+              ))}
+
+              {/* 2. Images (z-index 2) - clipped if overlapping with frame */}
+              {images.map((img) => {
+                const overlappingFrame = getOverlappingFrame(img);
+                const clipPath = overlappingFrame ? getClipPath(img, overlappingFrame) : undefined;
+
+                return (
+                  <CanvasImageElement
+                    key={img.id}
+                    element={img}
+                    isSelected={selectedIds.includes(img.id)}
+                    onSelect={(e) => handleElementSelect(img.id, e)}
+                    onChange={(newAttrs) => handleElementChange(img.id, newAttrs)}
+                    authToken={authToken}
+                    sandboxId={sandboxId}
+                    scale={scale}
+                    stagePosition={stagePosition}
+                    isProcessing={processingElementId === img.id}
+                    clipPath={clipPath}
+                    frames={frames}
+                    onSnapChange={setSnapGuides}
+                  />
+                );
+              })}
+
+              {/* 3. Frame borders/controls (z-index 10) - always on top */}
+              {frames.map((frame) => (
+                <CanvasFrameElement
+                  key={frame.id}
+                  element={frame}
+                  isSelected={selectedIds.includes(frame.id)}
+                  onSelect={(e) => handleElementSelect(frame.id, e)}
+                  onChange={(newAttrs) => handleElementChange(frame.id, newAttrs)}
+                  scale={scale}
+                  stagePosition={stagePosition}
+                  allElements={elements}
+                  onMoveChildren={(childStartPositions, dx, dy) => {
+                    // Move all children by the delta from their starting positions
+                    setElements(prev => prev.map(el => {
+                      const startPos = childStartPositions.find(c => c.id === el.id);
+                      if (startPos) {
+                        return { ...el, x: startPos.x + dx, y: startPos.y + dy };
+                      }
+                      return el;
+                    }));
+                  }}
+                />
+              ))}
+            </>
+          );
+        })()}
+
+        {/* Snap Guides Overlay - shows alignment lines when dragging */}
+        <SnapGuidesOverlay
+          guides={snapGuides}
+          frames={frames}
+          scale={scale}
+          stagePosition={stagePosition}
+        />
 
         {/* Crop Overlay - rendered at canvas level for proper pan/zoom sync */}
         {cropState && selectedIds.length === 1 && (() => {
@@ -2595,10 +3727,10 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           />
         )}
 
-        {/* Floating AI toolbar - single selection */}
-        {selectedIds.length === 1 && selectedElement && (
+        {/* Floating AI toolbar - for selected IMAGE element */}
+        {selectedIds.length === 1 && selectedElement && selectedElement.type === 'image' && (
           <FloatingToolbar
-            element={selectedElement}
+            element={selectedElement as ImageCanvasElement}
             scale={scale}
             stagePosition={stagePosition}
             onChange={(newAttrs) => handleElementChange(selectedElement.id, newAttrs)}
@@ -2785,6 +3917,123 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             }}
             authToken={authToken}
             sandboxId={sandboxId}
+          />
+        )}
+
+        {/* Floating toolbar - for selected FRAME element */}
+        {selectedIds.length === 1 && selectedElement && selectedElement.type === 'frame' && (
+          <FrameFloatingToolbar
+            element={selectedElement as FrameCanvasElement}
+            elements={elements}
+            scale={scale}
+            stagePosition={stagePosition}
+            onChange={(newAttrs) => handleElementChange(selectedElement.id, newAttrs)}
+            onDuplicate={() => {
+              const newEl: FrameCanvasElement = {
+                ...(selectedElement as FrameCanvasElement),
+                id: `frame-${Date.now()}`,
+                x: selectedElement.x + selectedElement.width + 24,
+              };
+              setElements(prev => [...prev, newEl]);
+              setSelectedIds([newEl.id]);
+            }}
+            onDelete={() => {
+              setElements(prev => prev.filter(el => el.id !== selectedElement.id));
+              setSelectedIds([]);
+            }}
+            onExportFrame={async () => {
+              // Export frame as PNG - captures all images within frame bounds
+              try {
+                toast.info('Exporting frame...');
+                const frame = selectedElement as FrameCanvasElement;
+
+                // Create a canvas at frame dimensions
+                const exportCanvas = document.createElement('canvas');
+                exportCanvas.width = Math.round(frame.width);
+                exportCanvas.height = Math.round(frame.height);
+                const ctx = exportCanvas.getContext('2d');
+                if (!ctx) throw new Error('Failed to get canvas context');
+
+                // Fill background if set
+                if (frame.backgroundColor && frame.backgroundColor !== 'transparent') {
+                  ctx.fillStyle = frame.backgroundColor;
+                  ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+                }
+
+                // Find all images that intersect with this frame
+                const frameLeft = frame.x;
+                const frameTop = frame.y;
+                const frameRight = frame.x + frame.width;
+                const frameBottom = frame.y + frame.height;
+
+                const imageElements = elements.filter(el => {
+                  if (el.type !== 'image') return false;
+                  const img = el as ImageCanvasElement;
+                  // Check if image intersects with frame
+                  const imgRight = img.x + img.width;
+                  const imgBottom = img.y + img.height;
+                  return img.x < frameRight && imgRight > frameLeft &&
+                         img.y < frameBottom && imgBottom > frameTop;
+                }) as ImageCanvasElement[];
+
+                // Sort by z-index (order in array)
+                const sortedImages = imageElements.sort((a, b) => {
+                  return elements.indexOf(a) - elements.indexOf(b);
+                });
+
+                // Draw each image
+                for (const imgEl of sortedImages) {
+                  try {
+                    let imgSrc = imgEl.src;
+
+                    // Fetch image if it's a path
+                    if (!imgSrc.startsWith('data:')) {
+                      const url = sandboxId ? getSandboxFileUrl(sandboxId, imgSrc) : imgSrc;
+                      const headers: Record<string, string> = {};
+                      if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+                      const response = await fetch(url, { credentials: 'include', headers });
+                      if (!response.ok) continue;
+                      const blob = await response.blob();
+                      imgSrc = await new Promise<string>((resolve) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result as string);
+                        reader.readAsDataURL(blob);
+                      });
+                    }
+
+                    // Load and draw image
+                    const img = new Image();
+                    await new Promise<void>((resolve, reject) => {
+                      img.onload = () => resolve();
+                      img.onerror = reject;
+                      img.src = imgSrc;
+                    });
+
+                    // Calculate position relative to frame
+                    const drawX = imgEl.x - frame.x;
+                    const drawY = imgEl.y - frame.y;
+
+                    ctx.drawImage(img, drawX, drawY, imgEl.width, imgEl.height);
+                  } catch (err) {
+                    console.warn('Failed to draw image:', imgEl.name, err);
+                  }
+                }
+
+                // Download the canvas
+                const dataUrl = exportCanvas.toDataURL('image/png');
+                const link = document.createElement('a');
+                link.href = dataUrl;
+                link.download = `${frame.name.replace(/[^a-zA-Z0-9-_]/g, '_')}.png`;
+                link.click();
+
+                toast.success('Frame exported!');
+              } catch (err) {
+                console.error('Export error:', err);
+                toast.error('Failed to export frame: ' + (err instanceof Error ? err.message : 'Unknown error'));
+              }
+            }}
+            sandboxId={sandboxId}
+            authToken={authToken}
           />
         )}
 
