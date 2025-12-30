@@ -105,21 +105,46 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     const containerRef = useRef<HTMLDivElement>(null);
     const [shouldShowContent, setShouldShowContent] = useState(false);
     const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
-    // Use ref to store stable start time - only set once!
     const stableStartTimeRef = useRef<number | null>(null);
 
-    // Set stable start time only once
+    const [throttledContent, setThrottledContent] = useState(content);
+    const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const lastUpdateRef = useRef<number>(0);
+
+    useEffect(() => {
+        const now = Date.now();
+        const timeSinceLastUpdate = now - lastUpdateRef.current;
+
+        if (timeSinceLastUpdate >= 100) {
+            setThrottledContent(content);
+            lastUpdateRef.current = now;
+        } else {
+            if (throttleTimeoutRef.current) {
+                clearTimeout(throttleTimeoutRef.current);
+            }
+            throttleTimeoutRef.current = setTimeout(() => {
+                setThrottledContent(content);
+                lastUpdateRef.current = Date.now();
+            }, 100 - timeSinceLastUpdate);
+        }
+
+        return () => {
+            if (throttleTimeoutRef.current) {
+                clearTimeout(throttleTimeoutRef.current);
+            }
+        };
+    }, [content]);
+
     if (showExpanded && !stableStartTimeRef.current) {
         stableStartTimeRef.current = Date.now();
     }
 
-    // Parse tool info from content
     const { rawToolName, parsedToolCall } = useMemo(() => {
         let rawName: string | null = null;
         let parsed: any = null;
         
         try {
-          parsed = JSON.parse(content);
+          parsed = JSON.parse(throttledContent);
           if (parsed.function?.name) {
             rawName = parsed.function.name;
           } else if (parsed.tool_name) {
@@ -128,14 +153,14 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
             rawName = parsed.function_name;
           }
         } catch (e) {
-          const match = content.match(/(?:function|tool)[_\-]?name["']?\s*[:=]\s*["']?([^"'\s]+)/i);
+          const match = throttledContent.match(/(?:function|tool)[_\-]?name["']?\s*[:=]\s*["']?([^"'\s]+)/i);
           if (match) {
             rawName = match[1];
           }
         }
         
         return { rawToolName: rawName, parsedToolCall: parsed };
-    }, [content]);
+    }, [throttledContent]);
     
     const toolName = getUserFriendlyToolName(rawToolName || '');
     const isEditFile = toolName === 'AI File Edit';
@@ -176,11 +201,11 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
 
     // Extract streaming content from JSON or plain text
     const streamingContent = useMemo(() => {
-        if (!content) return { html: '', plainText: '' };
+        if (!throttledContent) return { html: '', plainText: '' };
 
         try {
             // Try to parse as JSON first
-            const parsed = JSON.parse(content);
+            const parsed = JSON.parse(throttledContent);
             
             // For file operations, extract file_contents or code_edit
             if (STREAMABLE_TOOLS.FILE_OPERATIONS.has(toolName || '')) {
@@ -247,8 +272,8 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
         }
 
         // Fallback: return content as-is
-        return { html: content, plainText: content };
-    }, [content, toolName, isEditFile, isCreateFile, isFullFileRewrite]);
+        return { html: throttledContent, plainText: throttledContent };
+    }, [throttledContent, toolName, isEditFile, isCreateFile, isFullFileRewrite]);
 
     // Show streaming content for all streamable tools with delayed transitions
     useEffect(() => {
@@ -266,7 +291,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
         if (containerRef.current && shouldShowContent && shouldAutoScroll) {
             containerRef.current.scrollTop = containerRef.current.scrollHeight;
         }
-    }, [content, shouldShowContent, shouldAutoScroll]);
+    }, [throttledContent, shouldShowContent, shouldAutoScroll]);
 
     // Handle scroll events to disable auto-scroll when user scrolls up
     useEffect(() => {
@@ -284,7 +309,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     }, [shouldShowContent]);
 
     // Calculate paramDisplay before early return to satisfy Rules of Hooks
-    const paramDisplay = useMemo(() => extractPrimaryParam(rawToolName || '', content), [rawToolName, content]);
+    const paramDisplay = useMemo(() => extractPrimaryParam(rawToolName || '', throttledContent), [rawToolName, throttledContent]);
 
     // Check if this is a media generation tool - show shimmer card
     const isMediaGenTool = MEDIA_GENERATION_TOOLS.has(rawToolName || '') || MEDIA_GENERATION_TOOLS.has(toolName || '');
