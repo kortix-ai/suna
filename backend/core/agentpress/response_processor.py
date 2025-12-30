@@ -1859,8 +1859,10 @@ class ResponseProcessor:
             except Exception as cleanup_err:
                 logger.warning(f"Error during resource cleanup: {cleanup_err}")
             
-            if not llm_response_end_saved and last_assistant_message_object:
+            if not llm_response_end_saved and final_llm_response:
                 try:
+                    if not last_assistant_message_object:
+                        logger.warning(f"💰 BULLETPROOF BILLING: No assistant message but saving llm_response_end anyway (0 completion tokens case)")
                     logger.debug(f"💰 BULLETPROOF BILLING: Saving llm_response_end in finally block for call #{auto_continue_count + 1}")
                     if final_llm_response:
                         logger.debug("💰 Using exact usage from LLM response")
