@@ -175,17 +175,9 @@ export function TopNav({
         <Icon as={TextAlignStart} size={20} className="text-foreground" strokeWidth={2} />
       </TouchableOpacity>
 
-      {/* Center: Upgrade Button */}
-      <View 
-        style={{ 
-          position: 'absolute', 
-          left: 0, 
-          right: 0,
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}
-        pointerEvents="box-none"
-      >
+      {/* Right: Upgrade Button and Token Usage Circle */}
+      <View className="flex-row items-center gap-3">
+        {/* Upgrade Button */}
         <AnimatedPressable
           onPressIn={() => {
             centeredUpgradeScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
@@ -202,37 +194,37 @@ export function TopNav({
             {t('billing.upgrade')}
           </Text>
         </AnimatedPressable>
-      </View>
 
-      {/* Right: Token Usage Circle */}
-      <TouchableOpacity
-        onPress={handleCreditsPress}
-        hitSlop={ANDROID_HIT_SLOP}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityLabel="View usage"
-        accessibilityHint="Opens usage details">
-        {(() => {
-          const balance = creditBalance?.balance || 0;
-          
-          // Determine the credit limit based on tier type
-          // For free tier and tiers with daily credits, use daily_amount
-          // For paid tiers with monthly credits, use tier.monthly_credits
-          const hasDailyCredits = accountState?.credits?.daily_refresh?.enabled;
-          const dailyLimit = accountState?.credits?.daily_refresh?.daily_amount || 0;
-          const monthlyLimit = subscriptionData?.tier?.credits || subscriptionData?.credits?.tier_credits || 0;
-          
-          // Use daily limit if daily credits are enabled, otherwise use monthly limit
-          // Fallback to 100 if both are 0 (default for free tier)
-          const limit = hasDailyCredits && dailyLimit > 0 
-            ? dailyLimit 
-            : monthlyLimit > 0 
-              ? monthlyLimit 
-              : 100;
-          
-          return <CircularProgress balance={balance} limit={limit} />;
-        })()}
-      </TouchableOpacity>
+        {/* Token Usage Circle */}
+        <TouchableOpacity
+          onPress={handleCreditsPress}
+          hitSlop={ANDROID_HIT_SLOP}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="View usage"
+          accessibilityHint="Opens usage details">
+          {(() => {
+            const balance = creditBalance?.balance || 0;
+            
+            // Determine the credit limit based on tier type
+            // For free tier and tiers with daily credits, use daily_amount
+            // For paid tiers with monthly credits, use tier.monthly_credits
+            const hasDailyCredits = accountState?.credits?.daily_refresh?.enabled;
+            const dailyLimit = accountState?.credits?.daily_refresh?.daily_amount || 0;
+            const monthlyLimit = subscriptionData?.tier?.credits || subscriptionData?.credits?.tier_credits || 0;
+            
+            // Use daily limit if daily credits are enabled, otherwise use monthly limit
+            // Fallback to 100 if both are 0 (default for free tier)
+            const limit = hasDailyCredits && dailyLimit > 0 
+              ? dailyLimit 
+              : monthlyLimit > 0 
+                ? monthlyLimit 
+                : 100;
+            
+            return <CircularProgress balance={balance} limit={limit} />;
+          })()}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
