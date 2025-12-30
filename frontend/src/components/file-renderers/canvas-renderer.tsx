@@ -94,6 +94,13 @@ interface FrameCanvasElement extends BaseCanvasElement {
 
 type CanvasElement = ImageCanvasElement | FrameCanvasElement;
 
+// Snap guide for visual alignment feedback
+interface SnapGuide {
+  type: 'vertical' | 'horizontal';
+  position: number; // Canvas coordinate (not screen)
+  frameId: string; // Which frame this guide belongs to
+}
+
 interface CanvasData {
   name: string;
   version: string;
@@ -222,6 +229,107 @@ function AIProcessingOverlay({ isVisible }: { isVisible: boolean }) {
   );
 }
 
+// Snap Guides Overlay - shows alignment lines when dragging near frame centers
+function SnapGuidesOverlay({
+  guides,
+  frames,
+  scale,
+  stagePosition,
+}: {
+  guides: SnapGuide[];
+  frames: FrameCanvasElement[];
+  scale: number;
+  stagePosition: { x: number; y: number };
+}) {
+  if (guides.length === 0) return null;
+
+  return (
+    <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 50 }}>
+      {guides.map((guide, idx) => {
+        const frame = frames.find(f => f.id === guide.frameId);
+        if (!frame) return null;
+
+        if (guide.type === 'vertical') {
+          // Vertical line at frame center X
+          const screenX = guide.position * scale + stagePosition.x;
+          const frameTop = frame.y * scale + stagePosition.y;
+          const frameBottom = (frame.y + frame.height) * scale + stagePosition.y;
+
+          return (
+            <div
+              key={`guide-${idx}`}
+              style={{
+                position: 'absolute',
+                left: screenX,
+                top: frameTop,
+                width: 1,
+                height: frameBottom - frameTop,
+                backgroundColor: '#ff3366',
+                boxShadow: '0 0 4px #ff3366',
+              }}
+            />
+          );
+        } else {
+          // Horizontal line at frame center Y
+          const screenY = guide.position * scale + stagePosition.y;
+          const frameLeft = frame.x * scale + stagePosition.x;
+          const frameRight = (frame.x + frame.width) * scale + stagePosition.x;
+
+          return (
+            <div
+              key={`guide-${idx}`}
+              style={{
+                position: 'absolute',
+                left: frameLeft,
+                top: screenY,
+                width: frameRight - frameLeft,
+                height: 1,
+                backgroundColor: '#ff3366',
+                boxShadow: '0 0 4px #ff3366',
+              }}
+            />
+          );
+        }
+      })}
+    </div>
+  );
+}
+
+// Calculate snap guides and snapped position for an element
+const SNAP_THRESHOLD = 12; // Pixels threshold for snapping (in canvas coords)
+
+function calculateSnapResult(
+  elemCenterX: number,
+  elemCenterY: number,
+  frames: FrameCanvasElement[],
+  excludeFrameId?: string
+): { snapX: number | null; snapY: number | null; guides: SnapGuide[] } {
+  let snapX: number | null = null;
+  let snapY: number | null = null;
+  const guides: SnapGuide[] = [];
+
+  for (const frame of frames) {
+    if (frame.id === excludeFrameId) continue;
+
+    const frameCenterX = frame.x + frame.width / 2;
+    const frameCenterY = frame.y + frame.height / 2;
+
+    // Check vertical center alignment (element center X == frame center X)
+    if (Math.abs(elemCenterX - frameCenterX) < SNAP_THRESHOLD) {
+      snapX = frameCenterX;
+      guides.push({ type: 'vertical', position: frameCenterX, frameId: frame.id });
+    }
+
+    // Check horizontal center alignment (element center Y == frame center Y)
+    if (Math.abs(elemCenterY - frameCenterY) < SNAP_THRESHOLD) {
+      snapY = frameCenterY;
+      guides.push({ type: 'horizontal', position: frameCenterY, frameId: frame.id });
+    }
+  }
+
+  return { snapX, snapY, guides };
+}
+
 // Image element with drag and resize
 function CanvasImageElement({
   element,
@@ -234,6 +342,8 @@ function CanvasImageElement({
   authToken,
   isProcessing = false,
   clipPath,
+  frames = [],
+  onSnapChange,
 }: {
   element: ImageCanvasElement;
   isSelected: boolean;
@@ -245,6 +355,8 @@ function CanvasImageElement({
   authToken?: string;
   isProcessing?: boolean;
   clipPath?: string; // CSS clip-path for frame clipping
+  frames?: FrameCanvasElement[]; // Available frames for snapping
+  onSnapChange?: (guides: SnapGuide[]) => void; // Callback to update snap guides
 }) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -272,24 +384,52 @@ function CanvasImageElement({
       return;
     }
 
+    let cancelled = false;
+    let retryCount = 0;
+    const maxRetries = 5;
+
     const loadImage = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const url = sandboxId ? getSandboxFileUrl(sandboxId, element.src) : element.src;
-        const headers: Record<string, string> = {};
-        if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-        const response = await fetch(url, { credentials: 'include', headers });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const blob = await response.blob();
-        setImageSrc(URL.createObjectURL(blob));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed');
-      } finally {
-        setLoading(false);
+      const url = sandboxId ? getSandboxFileUrl(sandboxId, element.src) : element.src;
+      const headers: Record<string, string> = {};
+      if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+      while (retryCount < maxRetries && !cancelled) {
+        try {
+          setLoading(true);
+          setError(null);
+          const response = await fetch(url, { credentials: 'include', headers });
+          if (!response.ok) {
+            // Retry on 404 (image might not be ready yet) or 5xx
+            if ((response.status === 404 || response.status >= 500) && retryCount < maxRetries - 1) {
+              retryCount++;
+              await new Promise(r => setTimeout(r, 500 * retryCount)); // 500ms, 1s, 1.5s, 2s
+              continue;
+            }
+            throw new Error(`HTTP ${response.status}`);
+          }
+          const blob = await response.blob();
+          if (!cancelled) {
+            setImageSrc(URL.createObjectURL(blob));
+            setLoading(false);
+          }
+          return; // Success, exit retry loop
+        } catch (err) {
+          if (retryCount < maxRetries - 1 && !cancelled) {
+            retryCount++;
+            await new Promise(r => setTimeout(r, 500 * retryCount));
+            continue;
+          }
+          if (!cancelled) {
+            setError(err instanceof Error ? err.message : 'Failed');
+            setLoading(false);
+          }
+          return;
+        }
       }
     };
     loadImage();
+
+    return () => { cancelled = true; };
   }, [element.src, sandboxId, authToken]);
 
   const posX = element.x * scale + stagePosition.x;
@@ -322,7 +462,28 @@ function CanvasImageElement({
       const dy = (e.clientY - dragState.startY) / scale;
 
       if (dragState.type === 'move') {
-        onChange({ x: dragState.startElemX + dx, y: dragState.startElemY + dy });
+        let newX = dragState.startElemX + dx;
+        let newY = dragState.startElemY + dy;
+
+        // Calculate element center for snapping
+        const elemCenterX = newX + element.width / 2;
+        const elemCenterY = newY + element.height / 2;
+
+        // Check for snap points against frames
+        const { snapX, snapY, guides } = calculateSnapResult(elemCenterX, elemCenterY, frames);
+
+        // Apply snapping - adjust position so element center aligns with snap point
+        if (snapX !== null) {
+          newX = snapX - element.width / 2;
+        }
+        if (snapY !== null) {
+          newY = snapY - element.height / 2;
+        }
+
+        // Update snap guides visualization
+        onSnapChange?.(guides);
+
+        onChange({ x: newX, y: newY });
       } else if (dragState.type === 'resize' && dragState.handle) {
         const aspectRatio = dragState.startWidth / dragState.startHeight;
         let newX = dragState.startElemX;
@@ -398,7 +559,11 @@ function CanvasImageElement({
       }
     };
 
-    const handleMouseUp = () => setDragState(null);
+    const handleMouseUp = () => {
+      setDragState(null);
+      // Clear snap guides when drag ends
+      onSnapChange?.([]);
+    };
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
@@ -406,7 +571,7 @@ function CanvasImageElement({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [dragState, scale, onChange]);
+  }, [dragState, scale, onChange, frames, element.width, element.height, onSnapChange]);
 
   if (loading || isProcessing) {
     return (
@@ -2274,6 +2439,10 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     elementId: string;
     cropRect: { x: number; y: number; width: number; height: number };
   } | null>(null);
+  
+  // Snap guides state - for visual alignment feedback when dragging
+  const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
+  
   const [canvasData, setCanvasData] = useState<CanvasData | null>(null);
   const [scale, setScale] = useState(1);
   const [stagePosition, setStagePosition] = useState({ x: 50, y: 50 });
@@ -2296,6 +2465,12 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   const isSavingRef = useRef(false);
 
   const authToken = session?.access_token;
+
+  // Memoized frames for snapping - available to child components
+  const frames = useMemo(() => 
+    elements.filter(el => el.type === 'frame') as FrameCanvasElement[],
+    [elements]
+  );
 
   // Keep ref in sync with state
   useEffect(() => { isSavingRef.current = isSaving; }, [isSaving]);
@@ -2437,7 +2612,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     // Note: elements is accessed via ref pattern inside fetchLatestContent to avoid re-creating interval
   }, [sandboxId, filePath, authToken, hasUnsavedChanges]);
 
-  // Center canvas ONCE on initial load only
+  // Center canvas and fit content on initial load only
   useEffect(() => {
     if (hasCenteredRef.current) return; // Already centered, don't run again
     if (elements.length === 0 || containerSize.width === 0 || containerSize.height === 0) return;
@@ -2455,13 +2630,23 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     const contentCenterX = minX + contentWidth / 2;
     const contentCenterY = minY + contentHeight / 2;
 
-    // Position so content is centered in the container
-    const newX = (containerSize.width / 2) - (contentCenterX * scale);
-    const newY = (containerSize.height / 2) - (contentCenterY * scale);
+    // Calculate scale to fit content with padding (80% of container)
+    const padding = 0.8;
+    const scaleX = (containerSize.width * padding) / contentWidth;
+    const scaleY = (containerSize.height * padding) / contentHeight;
+    // Use the smaller scale to ensure content fits, but cap at 1 (don't zoom in beyond 100%)
+    const fitScale = Math.min(scaleX, scaleY, 1);
+    // For large frames (like screens), zoom out to fit; minimum 0.15 to keep usable
+    const newScale = Math.max(fitScale, 0.15);
 
+    // Position so content is centered in the container at the new scale
+    const newX = (containerSize.width / 2) - (contentCenterX * newScale);
+    const newY = (containerSize.height / 2) - (contentCenterY * newScale);
+
+    setScale(newScale);
     setStagePosition({ x: newX, y: newY });
     hasCenteredRef.current = true;
-  }, [elements, containerSize.width, containerSize.height, scale]);
+  }, [elements, containerSize.width, containerSize.height]);
 
   const handleZoomIn = () => setScale(s => Math.min(s * 1.15, 5));
   const handleZoomOut = () => setScale(s => Math.max(s / 1.15, 0.1));
@@ -3253,6 +3438,8 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                     stagePosition={stagePosition}
                     isProcessing={processingElementId === img.id}
                     clipPath={clipPath}
+                    frames={frames}
+                    onSnapChange={setSnapGuides}
                   />
                 );
               })}
@@ -3283,6 +3470,14 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             </>
           );
         })()}
+
+        {/* Snap Guides Overlay - shows alignment lines when dragging */}
+        <SnapGuidesOverlay
+          guides={snapGuides}
+          frames={frames}
+          scale={scale}
+          stagePosition={stagePosition}
+        />
 
         {/* Crop Overlay - rendered at canvas level for proper pan/zoom sync */}
         {cropState && selectedIds.length === 1 && (() => {
