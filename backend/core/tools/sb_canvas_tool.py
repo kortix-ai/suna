@@ -25,39 +25,20 @@ _canvas_locks: Dict[str, asyncio.Lock] = {}
     weight=215,
     visible=True,
     usage_guide="""
-### CANVAS EDITOR
+### CANVAS EDITOR - SOCIAL MEDIA WORKFLOW
 
-**🚀 PREFERRED WORKFLOW: Use image_edit_or_generate with canvas_path**
-```python
-# BEST: Single call generates AND adds to canvas (auto-creates canvas if needed)
-image_edit_or_generate(
-    prompt=["logo design", "background pattern"],
-    canvas_path="canvases/my-design.kanvax"
-)
-```
+**MANDATORY for Instagram, TikTok, YouTube, any sized design:**
 
-**📐 FRAMES - Export Regions & Collage Containers:**
-```python
-# Add a frame with preset size (Instagram Story)
-add_frame_to_canvas(
-    canvas_path="canvases/my-design.kanvax",
-    name="Instagram Story 1",
-    width=1080,
-    height=1920
-)
+1. add_frame_to_canvas(canvas_path="...", width=1080, height=1920) → get element_id
+2. image_edit_or_generate(prompt="...", frame_id=element_id, aspect_ratio="2:3")
 
-# Common presets (memorize these!):
-# - Instagram Post: 1080x1080
-# - Instagram Story/Reel: 1080x1920
-# - YouTube Thumbnail: 1280x720
-# - Dribbble Shot: 1600x1200
-# - Twitter/X Post: 1200x675
-# - iPhone 15 Pro: 1179x2556
-# - HD 1080p: 1920x1080
-# - 4K UHD: 3840x2160
+**SIZES & ASPECT RATIOS:**
+- IG Story/Reel/TikTok: 1080x1920 → aspect_ratio="2:3" (portrait)
+- IG Post: 1080x1080 → aspect_ratio="1:1" (square)
+- YouTube: 1280x720 → aspect_ratio="3:2" (landscape)
+- Twitter: 1200x675 → aspect_ratio="3:2" (landscape)
 
-# ⚠️ If preset not listed: ASK USER or use web_search!
-```
+**NEVER create HTML for social media content!**
 
 **🎨 AI PROCESSING ON CANVAS ELEMENTS:**
 ```python
@@ -610,29 +591,9 @@ class SandboxCanvasTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "add_frame_to_canvas",
-            "description": """Add a frame element to canvas. Frames are window-like containers for creating collages and export regions.
+            "description": """⚠️ CALL THIS FIRST for Instagram/TikTok/YouTube/any sized design! Returns frame_id to use with image_edit_or_generate. Auto-creates canvas.
 
-**COMMON PRESETS** (use these exact dimensions):
-- Instagram Post: 1080x1080
-- Instagram Story/Reel: 1080x1920  
-- YouTube Thumbnail: 1280x720
-- Dribbble Shot: 1600x1200
-- iPhone 15 Pro: 1179x2556
-- Twitter/X Post: 1200x675
-- Facebook Post: 1200x630
-- LinkedIn Post: 1200x627
-- Pinterest Pin: 1000x1500
-- TikTok Video: 1080x1920
-- HD 1080p: 1920x1080
-- 4K UHD: 3840x2160
-- A4 Portrait (300dpi): 2480x3508
-- Business Card: 1050x600
-
-**⚠️ If user requests a size not listed above:**
-1. Ask the user for specific dimensions, OR
-2. Use web_search to find the correct dimensions for that platform/device
-
-**🚨 PARAMETER NAMES**: Use EXACTLY: `canvas_path` (REQUIRED), `name` (REQUIRED), `width` (REQUIRED), `height` (REQUIRED), `x` (optional), `y` (optional), `background_color` (optional).""",
+**SIZES:** IG Story/Reel/TikTok=1080x1920, IG Post=1080x1080, YouTube=1280x720, Twitter=1200x675""",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -706,10 +667,30 @@ class SandboxCanvasTool(SandboxToolsBase):
             try:
                 await self._ensure_sandbox()
                 
-                # Load canvas data
+                # Ensure canvas_path has correct format
+                if not canvas_path.endswith('.kanvax'):
+                    canvas_path = f"{canvas_path}.kanvax"
+                if not canvas_path.startswith('canvases/'):
+                    canvas_path = f"canvases/{canvas_path}"
+                
+                # Ensure canvases directory exists
+                canvases_dir = f"{self.workspace_path}/canvases"
+                await self.sandbox.process.exec(f"mkdir -p '{canvases_dir}'")
+                
+                # Load canvas data or create new one
                 canvas_data = await self._load_canvas_data(canvas_path)
                 if not canvas_data:
-                    return self.fail_response(f"Canvas not found: {canvas_path}")
+                    # Auto-create canvas
+                    canvas_name = canvas_path.split('/')[-1].replace('.kanvax', '')
+                    canvas_data = {
+                        "name": canvas_name,
+                        "version": "1.0",
+                        "background": "#1a1a1a",
+                        "description": f"Auto-created canvas for {canvas_name}",
+                        "elements": [],
+                        "created_at": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat(),
+                    }
                 
                 # Create frame element
                 element_id = str(uuid.uuid4())

@@ -138,11 +138,15 @@ class SandboxImageEditTool(SandboxToolsBase):
             "type": "function",
             "function": {
                 "name": "image_edit_or_generate",
-                "description": """Generate, edit, upscale, or remove background from images. Also supports video generation.
+                "description": """⚠️ USE CANVAS FOR SPECIFIC DESIGNS! Instagram/TikTok/YouTube/poster/banner → call add_frame_to_canvas (load canvas instructions) FIRST with exact size, get frame_id back, THEN call this with frame_id param!
 
-**💡 TIP:** If generating for a real use case (social media, design, specific dimensions) → use canvas + frame instead of raw image gen.
+Generate, edit, upscale, or remove background from images. Video generation supported.
 
-**ASPECT RATIOS:** 1:1 (default), 3:2 (landscape), 2:3 (portrait)""",
+**ASPECT RATIOS - MANDATORY when using frame_id:**
+- Portrait frames (height > width, e.g. IG Story 1080x1920): aspect_ratio='2:3' 
+- Landscape frames (width > height, e.g. YouTube 1280x720): aspect_ratio='3:2'
+- Square frames (1080x1080): aspect_ratio='1:1'
+**ALWAYS match aspect_ratio to frame orientation!** Default is 1:1 if not specified.""",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -168,16 +172,16 @@ class SandboxImageEditTool(SandboxToolsBase):
                         "aspect_ratio": {
                             "type": "string",
                             "enum": ["1:1", "3:2", "2:3"],
-                            "description": "**OPTIONAL** - Aspect ratio for generated images. Only 3 ratios supported: '1:1' (square, default), '3:2' (landscape), '2:3' (portrait for Stories/TikTok). Default: '1:1'."
+                            "description": "**MANDATORY when using frame_id!** Match frame orientation: portrait frames (1080x1920)='2:3', landscape (1280x720)='3:2', square (1080x1080)='1:1'. Default: '1:1'."
                         },
                         "video_options": {
                             "type": "object",
                             "description": "**OPTIONAL** - Include this to generate VIDEO instead of image. Provide an object with optional properties: duration (number, e.g., 5), aspect_ratio (string, e.g., \"16:9\"), fps (number, e.g., 24), generate_audio (boolean), camera_fixed (boolean), last_frame_image (string path)."
                         },
-                        "canvas_path": {"type": "string", "description": "**OPTIONAL** - Canvas file path to auto-add result. Example: 'canvases/my-design.kanvax'."},
-                        "canvas_x": {"type": "number", "description": "**OPTIONAL** - X position on canvas in pixels."},
-                        "canvas_y": {"type": "number", "description": "**OPTIONAL** - Y position on canvas in pixels."},
-                        "frame_id": {"type": "string", "description": "**OPTIONAL** - Frame element ID to place image inside. Image will be positioned at center of frame and sized to fit."}
+                        "canvas_path": {"type": "string", "description": "Canvas path (with frame_id for social media designs). Example: 'canvases/instagram-promo.kanvax'"},
+                        "canvas_x": {"type": "number", "description": "X position on canvas in pixels."},
+                        "canvas_y": {"type": "number", "description": "Y position on canvas in pixels."},
+                        "frame_id": {"type": "string", "description": "⚠️ REQUIRED for social media! Get from add_frame_to_canvas. Image centers and fits inside frame."}
                     },
                     "required": [],
                     "additionalProperties": False
