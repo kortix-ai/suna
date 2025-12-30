@@ -19,7 +19,7 @@ _canvas_locks: Dict[str, asyncio.Lock] = {}
 
 @tool_metadata(
     display_name="Canvas Editor",
-    description="Create and manage interactive canvases for image composition and design. Includes AI processing (upscale, remove background) for canvas elements.",
+    description="Create and manage interactive canvases for image composition and design. Includes frames for export regions and AI processing (upscale, remove background).",
     icon="Layout",
     color="bg-blue-100 dark:bg-blue-800/50",
     weight=215,
@@ -34,6 +34,29 @@ image_edit_or_generate(
     prompt=["logo design", "background pattern"],
     canvas_path="canvases/my-design.kanvax"
 )
+```
+
+**📐 FRAMES - Export Regions & Collage Containers:**
+```python
+# Add a frame with preset size (Instagram Story)
+add_frame_to_canvas(
+    canvas_path="canvases/my-design.kanvax",
+    name="Instagram Story 1",
+    width=1080,
+    height=1920
+)
+
+# Common presets (memorize these!):
+# - Instagram Post: 1080x1080
+# - Instagram Story/Reel: 1080x1920
+# - YouTube Thumbnail: 1280x720
+# - Dribbble Shot: 1600x1200
+# - Twitter/X Post: 1200x675
+# - iPhone 15 Pro: 1179x2556
+# - HD 1080p: 1920x1080
+# - 4K UHD: 3840x2160
+
+# ⚠️ If preset not listed: ASK USER or use web_search!
 ```
 
 **🎨 AI PROCESSING ON CANVAS ELEMENTS:**
@@ -59,6 +82,7 @@ ai_process_canvas_element(
 **⚠️ RULES:**
 - NEVER call add_image_to_canvas in PARALLEL - causes race conditions!
 - Use list_canvas_elements to get element IDs before processing
+- For frame sizes not in presets: ASK the user OR use web_search to find dimensions
 """
 )
 class SandboxCanvasTool(SandboxToolsBase):
@@ -511,6 +535,209 @@ class SandboxCanvasTool(SandboxToolsBase):
             except Exception as e:
                 return self.fail_response(f"Failed to add image to canvas: {str(e)}")
 
+    # Frame size presets - common sizes for design work
+    FRAME_PRESETS = {
+        # Social Media
+        "instagram_post": {"width": 1080, "height": 1080, "name": "Instagram Post"},
+        "instagram_story": {"width": 1080, "height": 1920, "name": "Instagram Story"},
+        "instagram_reel": {"width": 1080, "height": 1920, "name": "Instagram Reel"},
+        "facebook_post": {"width": 1200, "height": 630, "name": "Facebook Post"},
+        "facebook_cover": {"width": 820, "height": 312, "name": "Facebook Cover"},
+        "twitter_post": {"width": 1200, "height": 675, "name": "Twitter/X Post"},
+        "twitter_header": {"width": 1500, "height": 500, "name": "Twitter/X Header"},
+        "linkedin_post": {"width": 1200, "height": 627, "name": "LinkedIn Post"},
+        "linkedin_cover": {"width": 1584, "height": 396, "name": "LinkedIn Cover"},
+        "youtube_thumbnail": {"width": 1280, "height": 720, "name": "YouTube Thumbnail"},
+        "tiktok_video": {"width": 1080, "height": 1920, "name": "TikTok Video"},
+        "pinterest_pin": {"width": 1000, "height": 1500, "name": "Pinterest Pin"},
+        # Devices
+        "iphone_15_pro": {"width": 1179, "height": 2556, "name": "iPhone 15 Pro"},
+        "iphone_15": {"width": 1170, "height": 2532, "name": "iPhone 15"},
+        "iphone_se": {"width": 750, "height": 1334, "name": "iPhone SE"},
+        "ipad_pro_12": {"width": 2048, "height": 2732, "name": "iPad Pro 12.9\""},
+        "ipad_pro_11": {"width": 1668, "height": 2388, "name": "iPad Pro 11\""},
+        "android_phone": {"width": 1080, "height": 2340, "name": "Android Phone"},
+        "macbook_pro_16": {"width": 3456, "height": 2234, "name": "MacBook Pro 16\""},
+        "macbook_air_15": {"width": 2880, "height": 1864, "name": "MacBook Air 15\""},
+        # Design Platforms
+        "dribbble_shot": {"width": 1600, "height": 1200, "name": "Dribbble Shot"},
+        "behance_project": {"width": 1400, "height": 1050, "name": "Behance Project"},
+        "figma_frame": {"width": 1440, "height": 900, "name": "Figma Desktop"},
+        # Print
+        "a4_portrait": {"width": 2480, "height": 3508, "name": "A4 Portrait (300dpi)"},
+        "a4_landscape": {"width": 3508, "height": 2480, "name": "A4 Landscape (300dpi)"},
+        "a3_portrait": {"width": 3508, "height": 4961, "name": "A3 Portrait (300dpi)"},
+        "letter_portrait": {"width": 2550, "height": 3300, "name": "US Letter Portrait"},
+        "business_card": {"width": 1050, "height": 600, "name": "Business Card"},
+        "poster_24x36": {"width": 7200, "height": 10800, "name": "Poster 24x36\""},
+        # Common Aspect Ratios
+        "hd_1080p": {"width": 1920, "height": 1080, "name": "HD 1080p"},
+        "hd_720p": {"width": 1280, "height": 720, "name": "HD 720p"},
+        "4k_uhd": {"width": 3840, "height": 2160, "name": "4K UHD"},
+        "square_1000": {"width": 1000, "height": 1000, "name": "Square 1000px"},
+        "square_2000": {"width": 2000, "height": 2000, "name": "Square 2000px"},
+    }
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "add_frame_to_canvas",
+            "description": """Add a frame element to canvas. Frames are window-like containers for creating collages and export regions.
+
+**COMMON PRESETS** (use these exact dimensions):
+- Instagram Post: 1080x1080
+- Instagram Story/Reel: 1080x1920  
+- YouTube Thumbnail: 1280x720
+- Dribbble Shot: 1600x1200
+- iPhone 15 Pro: 1179x2556
+- Twitter/X Post: 1200x675
+- Facebook Post: 1200x630
+- LinkedIn Post: 1200x627
+- Pinterest Pin: 1000x1500
+- TikTok Video: 1080x1920
+- HD 1080p: 1920x1080
+- 4K UHD: 3840x2160
+- A4 Portrait (300dpi): 2480x3508
+- Business Card: 1050x600
+
+**⚠️ If user requests a size not listed above:**
+1. Ask the user for specific dimensions, OR
+2. Use web_search to find the correct dimensions for that platform/device
+
+**🚨 PARAMETER NAMES**: Use EXACTLY: `canvas_path` (REQUIRED), `name` (REQUIRED), `width` (REQUIRED), `height` (REQUIRED), `x` (optional), `y` (optional), `background_color` (optional).""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "canvas_path": {
+                        "type": "string",
+                        "description": "**REQUIRED** - Path to the canvas file. Example: 'canvases/project-mockup.kanvax'"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "**REQUIRED** - Name for the frame. Use descriptive names like 'Instagram Post 1', 'Hero Banner', 'Mobile Screenshot'."
+                    },
+                    "width": {
+                        "type": "number",
+                        "description": "**REQUIRED** - Width of the frame in pixels. Use preset dimensions for common formats.",
+                        "minimum": 100
+                    },
+                    "height": {
+                        "type": "number",
+                        "description": "**REQUIRED** - Height of the frame in pixels. Use preset dimensions for common formats.",
+                        "minimum": 100
+                    },
+                    "x": {
+                        "type": "number",
+                        "description": "**OPTIONAL** - X position on canvas in pixels. Default: 100.",
+                        "default": 100
+                    },
+                    "y": {
+                        "type": "number",
+                        "description": "**OPTIONAL** - Y position on canvas in pixels. Default: 100.",
+                        "default": 100
+                    },
+                    "background_color": {
+                        "type": "string",
+                        "description": "**OPTIONAL** - Background color in hex format. Example: '#ffffff' for white, '#000000' for black, 'transparent' for no background. Default: transparent.",
+                        "default": "transparent"
+                    }
+                },
+                "required": ["canvas_path", "name", "width", "height"],
+                "additionalProperties": False
+            }
+        }
+    })
+    async def add_frame_to_canvas(
+        self,
+        canvas_path: str,
+        name: str,
+        width: float,
+        height: float,
+        x: float = 100,
+        y: float = 100,
+        background_color: str = "transparent"
+    ) -> ToolResult:
+        """Add a frame element to the canvas"""
+        # Ensure dimensions are valid numbers
+        try:
+            width = float(width) if width is not None else 400
+            height = float(height) if height is not None else 400
+            x = float(x) if x is not None else 100
+            y = float(y) if y is not None else 100
+        except (ValueError, TypeError):
+            return self.fail_response("Invalid dimensions provided. Width and height must be numbers.")
+        
+        # Validate minimum size
+        if width < 100 or height < 100:
+            return self.fail_response("Frame dimensions must be at least 100x100 pixels.")
+        
+        # Use lock to prevent race conditions
+        canvas_lock = self._get_canvas_lock(canvas_path)
+        
+        async with canvas_lock:
+            try:
+                await self._ensure_sandbox()
+                
+                # Load canvas data
+                canvas_data = await self._load_canvas_data(canvas_path)
+                if not canvas_data:
+                    return self.fail_response(f"Canvas not found: {canvas_path}")
+                
+                # Create frame element
+                element_id = str(uuid.uuid4())
+                
+                # Auto-calculate position if using defaults and other frames exist
+                actual_x = x
+                actual_y = y
+                if x == 100 and y == 100:
+                    # Find existing frames and offset new one
+                    existing_frames = [el for el in canvas_data["elements"] if el.get("type") == "frame"]
+                    if existing_frames:
+                        # Place next to the last frame with gap
+                        last_frame = existing_frames[-1]
+                        actual_x = last_frame["x"] + last_frame["width"] + 100
+                        actual_y = last_frame["y"]
+                
+                element = {
+                    "id": element_id,
+                    "type": "frame",
+                    "x": actual_x,
+                    "y": actual_y,
+                    "width": width,
+                    "height": height,
+                    "rotation": 0,
+                    "opacity": 1,
+                    "locked": False,
+                    "name": name,
+                    "visible": True,
+                    "backgroundColor": background_color if background_color != "transparent" else None
+                }
+                
+                # Add frame to canvas (frames should be at the beginning so they render behind images)
+                # Insert at the beginning of elements array
+                canvas_data["elements"].insert(0, element)
+                
+                # Save canvas
+                await self._save_canvas_data(canvas_path, canvas_data)
+                
+                result = {
+                    "canvas_path": canvas_path,
+                    "element_id": element_id,
+                    "element_name": name,
+                    "element_type": "frame",
+                    "position": {"x": actual_x, "y": actual_y},
+                    "size": {"width": width, "height": height},
+                    "background_color": background_color,
+                    "total_elements": len(canvas_data["elements"]),
+                    "sandbox_id": self.sandbox_id,
+                    "message": f"Added frame '{name}' ({int(width)}x{int(height)}) to canvas at position ({int(actual_x)}, {int(actual_y)})"
+                }
+                
+                return self.success_response(result)
+                
+            except Exception as e:
+                return self.fail_response(f"Failed to add frame to canvas: {str(e)}")
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -540,26 +767,36 @@ class SandboxCanvasTool(SandboxToolsBase):
 
             elements_info = []
             for element in canvas_data.get("elements", []):
-                # Get src info but NEVER include base64 data in tool results (LLM context bloat)
-                src = element.get("src", "")
-                if src.startswith("data:"):
-                    # Base64 embedded - just indicate it exists
-                    src_info = "(embedded image)"
-                else:
-                    # File path reference - safe to include
-                    src_info = src
+                element_type = element.get("type", "image")
                 
-                elements_info.append({
+                # Build base info common to all element types
+                elem_info = {
                     "id": element["id"],
                     "name": element["name"],
-                    "type": element["type"],
-                    "src": src_info,  # Path or indicator, NEVER base64 data
+                    "type": element_type,
                     "position": {"x": element["x"], "y": element["y"]},
                     "size": {"width": element["width"], "height": element["height"]},
                     "rotation": element.get("rotation", 0),
                     "opacity": element.get("opacity", 1),
                     "locked": element.get("locked", False)
-                })
+                }
+                
+                # Add type-specific info
+                if element_type == "image":
+                    # Get src info but NEVER include base64 data in tool results (LLM context bloat)
+                    src = element.get("src", "")
+                    if src.startswith("data:"):
+                        # Base64 embedded - just indicate it exists
+                        src_info = "(embedded image)"
+                    else:
+                        # File path reference - safe to include
+                        src_info = src
+                    elem_info["src"] = src_info
+                elif element_type == "frame":
+                    # Frame-specific properties
+                    elem_info["background_color"] = element.get("backgroundColor", "transparent")
+                
+                elements_info.append(elem_info)
 
             result = {
                 "canvas_name": canvas_data["name"],
