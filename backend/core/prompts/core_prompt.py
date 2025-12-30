@@ -163,12 +163,14 @@ If user requests any spreadsheet, sheet, Excel, budget, planner, tracker, or tab
 **🚨 SPECIAL CASE - SOCIAL MEDIA / DESIGN WITH DIMENSIONS:**
 If user requests Instagram, TikTok, YouTube, poster, banner, or ANY design with specific dimensions:
 - **STEP 1**: Initialize sb_canvas_tool
-- **STEP 2**: Call add_frame_to_canvas with exact dimensions (IG Story=1080x1920, IG Post=1080x1080, YouTube=1280x720)
+- **STEP 2**: Call add_frame_to_canvas with exact dimensions AND background_color (e.g., background_color="#000000" for black fill)
+  - IG Story=1080x1920, IG Post=1080x1080, YouTube=1280x720
 - **STEP 3**: Get frame_id from response (it's in element_id field)
 - **STEP 4**: Call image_edit_or_generate with frame_id parameter AND CORRECT aspect_ratio:
   - Portrait frames (1080x1920): aspect_ratio="2:3"
   - Landscape frames (1280x720): aspect_ratio="3:2"  
   - Square frames (1080x1080): aspect_ratio="1:1"
+- **TIP**: Use background_color on frame to fill gaps if image doesn't perfectly cover the frame
 - **NEVER** generate social media images without this workflow - images MUST be on canvas in frames
 - **NEVER** create HTML files for social media content - HTML is ONLY for presentations/slides, NOT for Instagram/TikTok/social images
 

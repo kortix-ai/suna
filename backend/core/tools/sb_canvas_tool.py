@@ -29,7 +29,7 @@ _canvas_locks: Dict[str, asyncio.Lock] = {}
 
 **MANDATORY for Instagram, TikTok, YouTube, any sized design:**
 
-1. add_frame_to_canvas(canvas_path="...", width=1080, height=1920) → get element_id
+1. add_frame_to_canvas(canvas_path="...", width=1080, height=1920, background_color="#000000") → get element_id
 2. image_edit_or_generate(prompt="...", frame_id=element_id, aspect_ratio="2:3")
 
 **SIZES & ASPECT RATIOS:**
@@ -37,6 +37,8 @@ _canvas_locks: Dict[str, asyncio.Lock] = {}
 - IG Post: 1080x1080 → aspect_ratio="1:1" (square)
 - YouTube: 1280x720 → aspect_ratio="3:2" (landscape)
 - Twitter: 1200x675 → aspect_ratio="3:2" (landscape)
+
+**FRAME FILL:** Use background_color="#000000" (black) or other hex color to fill gaps when image doesn't fully cover frame!
 
 **NEVER create HTML for social media content!**
 
@@ -242,7 +244,7 @@ class SandboxCanvasTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "save_canvas",
-            "description": "Save canvas data with all elements. Used to persist user changes from the canvas editor. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `canvas_path` (REQUIRED), `elements` (REQUIRED).",
+            "description": "Save canvas data with all elements. Used to persist user changes from the canvas editor. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `canvas_path` (REQUIRED), `elements` (REQUIRED). **⚠️ IMPORTANT**: For frame elements, include `backgroundColor` to preserve fill color!",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -252,13 +254,13 @@ class SandboxCanvasTool(SandboxToolsBase):
                     },
                     "elements": {
                         "type": "array",
-                        "description": "**REQUIRED** - Array of canvas elements with their properties (id, type, src, x, y, width, height, rotation, scaleX, scaleY, opacity, locked, name).",
+                        "description": "**REQUIRED** - Array of canvas elements with their properties. For frames: include backgroundColor to preserve fill color!",
                         "items": {
                             "type": "object",
                             "properties": {
                                 "id": {"type": "string"},
-                                "type": {"type": "string"},
-                                "src": {"type": "string"},
+                                "type": {"type": "string", "description": "'image' or 'frame'"},
+                                "src": {"type": "string", "description": "Image source path (for image type only)"},
                                 "x": {"type": "number"},
                                 "y": {"type": "number"},
                                 "width": {"type": "number"},
@@ -268,7 +270,8 @@ class SandboxCanvasTool(SandboxToolsBase):
                                 "scaleY": {"type": "number"},
                                 "opacity": {"type": "number"},
                                 "locked": {"type": "boolean"},
-                                "name": {"type": "string"}
+                                "name": {"type": "string"},
+                                "backgroundColor": {"type": "string", "description": "**FOR FRAMES ONLY** - Fill color in hex format (e.g. '#000000'). MUST preserve from list_canvas_elements!"}
                             }
                         }
                     }
@@ -736,7 +739,7 @@ class SandboxCanvasTool(SandboxToolsBase):
                     "element_type": "frame",
                     "position": {"x": actual_x, "y": actual_y},
                     "size": {"width": width, "height": height},
-                    "background_color": background_color,
+                    "backgroundColor": background_color if background_color != "transparent" else None,
                     "total_elements": len(canvas_data["elements"]),
                     "sandbox_id": self.sandbox_id,
                     "message": f"Added frame '{name}' ({int(width)}x{int(height)}) to canvas at position ({int(actual_x)}, {int(actual_y)})"
@@ -802,8 +805,8 @@ class SandboxCanvasTool(SandboxToolsBase):
                         src_info = src
                     elem_info["src"] = src_info
                 elif element_type == "frame":
-                    # Frame-specific properties
-                    elem_info["background_color"] = element.get("backgroundColor", "transparent")
+                    # Frame-specific properties (use camelCase to match save_canvas format)
+                    elem_info["backgroundColor"] = element.get("backgroundColor", "transparent")
                 
                 elements_info.append(elem_info)
 
