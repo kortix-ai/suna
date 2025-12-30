@@ -216,9 +216,16 @@ async def make_llm_api_call(
     
     params = model_manager.get_litellm_params(resolved_model_name, **override_params)
     
-    # NOTE: OpenRouter app params (OR_APP_NAME, OR_SITE_URL) are set via environment
-    # variables in setup_api_keys(). Do NOT use extra_body here as it breaks
-    # fallback to other providers (e.g. Bedrock rejects extra_body params).
+    # Add OpenRouter app parameter if using OpenRouter
+    actual_litellm_model_id = params.get("model", resolved_model_name)
+    is_openrouter_model = isinstance(actual_litellm_model_id, str) and actual_litellm_model_id.startswith("openrouter/")
+    
+    if is_openrouter_model:
+        # OpenRouter requires the "app" parameter in extra_body
+        if "extra_body" not in params:
+            params["extra_body"] = {}
+        params["extra_body"]["app"] = "Kortix.com"
+        logger.debug(f"Added OpenRouter app parameter: Kortix.com for model {actual_litellm_model_id}")
     
     # Add tools if provided
     if tools:
@@ -237,19 +244,48 @@ async def make_llm_api_call(
         params["reasoning"] = {"enabled": True}
         params["reasoning_split"] = True
         # avoid showing reasoning tokens in plain content
-        
-    try:
-        _save_debug_input(params)
-        response = await provider_router.acompletion(**params)
-        
-        if stream and hasattr(response, '__aiter__'):
-            return _wrap_streaming_response(response)
-        return response
-        
-    except Exception as e:
-        processed_error = ErrorProcessor.process_llm_error(e, context={"model": model_name})
-        ErrorProcessor.log_error(processed_error)
-        raise LLMError(processed_error.message)
+    
+    # Attempt API call with retry logic for Bedrock fallback scenario
+    retry_attempted = False
+    while True:
+        try:
+            _save_debug_input(params)
+            response = await provider_router.acompletion(**params)
+            
+            if stream and hasattr(response, '__aiter__'):
+                return _wrap_streaming_response(response)
+            return response
+            
+        except Exception as e:
+            # Check if this is a Bedrock error about extra_body rejection during fallback
+            # This happens when OpenRouter fails (e.g., no image support) and Router falls back
+            # to Bedrock, but Bedrock rejects the extra_body param that was added for OpenRouter
+            error_str = str(e).lower()
+            should_retry_without_extra_body = (
+                not retry_attempted and
+                is_openrouter_model and
+                "extra_body" in params and
+                ("extra inputs are not permitted" in error_str or 
+                 "extra_body" in error_str or
+                 "extra inputs" in error_str) and
+                ("bedrock" in error_str or "bedrockexception" in error_str)
+            )
+            
+            if should_retry_without_extra_body:
+                logger.warning(
+                    f"Bedrock fallback rejected extra_body parameter (added for OpenRouter). "
+                    f"Retrying once without extra_body. Original model: {actual_litellm_model_id}"
+                )
+                # Remove extra_body and retry once
+                params = params.copy()
+                del params["extra_body"]
+                retry_attempted = True
+                continue  # Retry once
+            
+            # No retry or retry already attempted - process and raise error
+            processed_error = ErrorProcessor.process_llm_error(e, context={"model": model_name})
+            ErrorProcessor.log_error(processed_error)
+            raise LLMError(processed_error.message)
 
 async def _wrap_streaming_response(response) -> AsyncGenerator:
     """Wrap streaming response to handle errors during iteration."""
@@ -280,4 +316,3 @@ if __name__ == "__main__":
             "anthropic-beta": "context-1m-2025-08-07"  # 👈 Enable 1M context
         }
     )
-

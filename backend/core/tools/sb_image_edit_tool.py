@@ -63,23 +63,23 @@ def parse_image_paths(image_path: Optional[str | list[str]]) -> list[str]:
 # Generate new image from prompt
 image_edit_or_generate(prompt="A futuristic city at sunset")
 
-# Edit existing image with prompt
+# Edit existing image with prompt (use relative paths, not /workspace prefix)
 image_edit_or_generate(
     action="edit",
-    prompt="Put this person on Mars", 
-    image_path="/workspace/uploads/image.png"
+    prompt="Put this person on Mars with red landscape", 
+    image_path="uploads/image.png"
 )
 
 # Upscale image (no prompt needed)
 image_edit_or_generate(
     action="upscale",
-    image_path="/workspace/uploads/photo.png"
+    image_path="uploads/photo.png"
 )
 
 # Remove background (no prompt needed)
 image_edit_or_generate(
     action="remove_bg",
-    image_path="/workspace/uploads/product.png"
+    image_path="uploads/product.png"
 )
 
 # Generate video
@@ -912,13 +912,6 @@ Generate, edit, upscale, or remove background from images. Video generation supp
         """Read image from sandbox filesystem."""
         try:
             cleaned_path = self.clean_path(image_path)
-            
-            # If path already starts with /workspace/, strip it to avoid doubling
-            if cleaned_path.startswith("/workspace/"):
-                cleaned_path = cleaned_path[len("/workspace/"):]
-            elif cleaned_path.startswith("workspace/"):
-                cleaned_path = cleaned_path[len("workspace/"):]
-            
             full_path = f"{self.workspace_path}/{cleaned_path}"
 
             # Check if file exists and is not a directory

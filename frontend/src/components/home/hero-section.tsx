@@ -204,7 +204,24 @@ export function HeroSection() {
         message: string,
         options?: { model_name?: string; enable_thinking?: boolean }
     ) => {
-        if ((!message.trim() && !chatInputRef.current?.getPendingFiles().length) || isSubmitting) return;
+        const pendingFiles = chatInputRef.current?.getPendingFiles() || [];
+        console.log('[HeroSection handleChatInputSubmit] Received:', {
+            message,
+            options,
+            pendingFilesCount: pendingFiles.length,
+            pendingFiles: pendingFiles.map(f => ({ name: f.name, type: f.type, size: f.size })),
+            isSubmitting,
+            user: !!user,
+        });
+        
+        if ((!message.trim() && !pendingFiles.length) || isSubmitting) {
+            console.log('[HeroSection handleChatInputSubmit] Blocked:', {
+                noMessage: !message.trim(),
+                noFiles: !pendingFiles.length,
+                isSubmitting,
+            });
+            return;
+        }
         if (!user && !isLoading) {
             localStorage.setItem(PENDING_PROMPT_KEY, message.trim());
             setAuthDialogOpen(true);
@@ -213,7 +230,7 @@ export function HeroSection() {
 
         setIsSubmitting(true);
         try {
-            const files = chatInputRef.current?.getPendingFiles() || [];
+            const files = pendingFiles;
             localStorage.removeItem(PENDING_PROMPT_KEY);
             
             const normalizedFiles = files.map((file) => {

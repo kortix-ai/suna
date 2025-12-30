@@ -180,6 +180,7 @@ const handleLocalFiles = async (
   setUploadedFiles: React.Dispatch<React.SetStateAction<UploadedFile[]>>,
   setIsUploading?: React.Dispatch<React.SetStateAction<boolean>>,
 ) => {
+  console.log('[handleLocalFiles] Starting with files:', files.map(f => ({ name: f.name, type: f.type, size: f.size })));
   const processedFiles: File[] = [];
   
   for (const file of files) {
@@ -458,12 +459,23 @@ const handleFiles = async (
   messages: any[] = [],
   queryClient?: any,
 ) => {
+  console.log('[handleFiles] Starting with:', {
+    filesCount: files.length,
+    files: files.map(f => ({ name: f.name, type: f.type, size: f.size })),
+    sandboxId,
+    projectId,
+  });
+  
   await handleLocalFiles(files, setPendingFiles, setUploadedFiles, setIsUploading);
 
   if (sandboxId && files.length > 0) {
+    console.log('[handleFiles] Uploading to sandbox');
     await uploadFiles(files, sandboxId, setUploadedFiles, setIsUploading, messages, queryClient, setPendingFiles);
   } else if (projectId && files.length > 0) {
+    console.log('[handleFiles] Uploading to project');
     await uploadFilesToProject(files, projectId, setUploadedFiles, setIsUploading, setPendingFiles);
+  } else {
+    console.log('[handleFiles] No sandboxId or projectId - files will remain pending');
   }
 };
 

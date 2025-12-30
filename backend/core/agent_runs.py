@@ -371,13 +371,13 @@ async def _fast_parse_files(files: List[UploadFile], prompt: str = "") -> Tuple[
                     parsed_content = parsed_content[:100000]
             
             files_for_upload.append((original_filename, content_bytes, mime_type, parsed_content))
-            file_refs.append(f"[Attached: {original_filename} ({format_file_size(result.file_size)}) -> /workspace/uploads/{original_filename}]")
+            file_refs.append(f"[Attached: {original_filename} ({format_file_size(result.file_size)}) -> uploads/{original_filename}]")
             
             logger.debug(f"Fast-parsed {original_filename}: {result.char_count} chars, type={result.file_type.name}")
                 
         except Exception as e:
             logger.error(f"Error fast-parsing file {file.filename}: {str(e)}", exc_info=True)
-            file_refs.append(f"[Attached: {file.filename} -> /workspace/uploads/{file.filename}]")
+            file_refs.append(f"[Attached: {file.filename} -> uploads/{file.filename}]")
         finally:
             await file.seek(0)
     
@@ -577,9 +577,9 @@ async def _handle_staged_files_for_thread(
                 "url": sf['image_url'],
                 "mime_type": sf['mime_type']
             })
-            file_refs.append(f"[Image: {filename} ({sf['file_size']:,} bytes) -> /workspace/uploads/{filename}]")
+            file_refs.append(f"[Image: {filename} ({sf['file_size']:,} bytes) -> uploads/{filename}]")
         else:
-            file_refs.append(f"[Attached: {filename} ({sf['file_size']:,} bytes) -> /workspace/uploads/{filename}]")
+            file_refs.append(f"[Attached: {filename} ({sf['file_size']:,} bytes) -> uploads/{filename}]")
             if sf.get('parsed_content'):
                 parsed_contents.append({
                     "filename": filename,
