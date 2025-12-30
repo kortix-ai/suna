@@ -309,110 +309,120 @@ If relevant context seems missing, ask a clarifying question.
     
     @staticmethod
     async def _append_jit_mcp_info(system_content: str, mcp_loader, agent_id: Optional[str] = None, user_id: Optional[str] = None) -> str:
-        if agent_id and user_id and mcp_loader:
+        toolkit_tools = {}
+        
+        if agent_id and user_id:
             try:
                 from core.versioning.version_service import get_version_service
                 version_service = await get_version_service()
                 fresh_mcp_config = await version_service.get_current_mcp_config(agent_id, user_id)
                 
                 if fresh_mcp_config:
-                    logger.debug(f"🔄 [MCP JIT] Refreshing loader with current version config: {len(fresh_mcp_config.get('custom_mcp', []))} custom MCPs, {len(fresh_mcp_config.get('configured_mcps', []))} configured")
-                    await mcp_loader.rebuild_tool_map(fresh_mcp_config)
+                    custom_mcps = fresh_mcp_config.get('custom_mcp', [])
+                    configured_mcps = fresh_mcp_config.get('configured_mcps', [])
+                    
+                    logger.info(f"🔍 [MCP-PROMPT-DIRECT] Loading tools DIRECTLY from current version config")
+                    logger.info(f"🔍 [MCP-PROMPT-DIRECT] custom_mcp count: {len(custom_mcps)}, configured_mcps count: {len(configured_mcps)}")
+                    
+                    for mcp in custom_mcps:
+                        mcp_name = mcp.get('name', 'unknown')
+                        toolkit_slug = mcp.get('toolkit_slug', '')
+                        enabled_tools = mcp.get('enabledTools', [])
+                        mcp_type = mcp.get('type') or mcp.get('customType', '')
+                        
+                        logger.info(f"🔍 [MCP-PROMPT-DIRECT] Processing custom_mcp: name={mcp_name}, toolkit={toolkit_slug}, type={mcp_type}, enabledTools={len(enabled_tools)}")
+                        
+                        if enabled_tools:
+                            if mcp_type in ('sse', 'http', 'json'):
+                                display_name = mcp_name.upper().replace(' ', '_')
+                            else:
+                                display_name = toolkit_slug.upper() if toolkit_slug else mcp_name.upper().replace(' ', '_')
+                            
+                            if display_name not in toolkit_tools:
+                                toolkit_tools[display_name] = []
+                            
+                            for tool in enabled_tools:
+                                if tool not in toolkit_tools[display_name]:
+                                    toolkit_tools[display_name].append(tool)
+                            
+                            logger.info(f"🔍 [MCP-PROMPT-DIRECT] ✅ Added {len(enabled_tools)} tools for {display_name}")
+                    
+                    for mcp in configured_mcps:
+                        mcp_name = mcp.get('name', 'unknown')
+                        toolkit_slug = mcp.get('toolkit_slug', '')
+                        enabled_tools = mcp.get('enabledTools', [])
+                        qualified_name = mcp.get('qualifiedName', '')
+                        
+                        if not toolkit_slug and qualified_name:
+                            toolkit_slug = qualified_name.split('.')[-1]
+                        
+                        logger.info(f"🔍 [MCP-PROMPT-DIRECT] Processing configured_mcp: name={mcp_name}, toolkit={toolkit_slug}, enabledTools={len(enabled_tools)}")
+                        
+                        if enabled_tools:
+                            display_name = toolkit_slug.upper() if toolkit_slug else mcp_name.upper().replace(' ', '_')
+                            
+                            if display_name not in toolkit_tools:
+                                toolkit_tools[display_name] = []
+                            
+                            for tool in enabled_tools:
+                                if tool not in toolkit_tools[display_name]:
+                                    toolkit_tools[display_name].append(tool)
+                            
+                            logger.info(f"🔍 [MCP-PROMPT-DIRECT] ✅ Added {len(enabled_tools)} tools for {display_name}")
+                    
+                    if mcp_loader:
+                        try:
+                            await mcp_loader.rebuild_tool_map(fresh_mcp_config)
+                            logger.debug(f"🔄 [MCP JIT] Updated loader with current version config")
+                        except Exception as e:
+                            logger.warning(f"Failed to update mcp_loader (non-critical): {e}")
                 else:
-                    logger.warning(f"🔄 [MCP JIT] No fresh config returned from version service")
+                    logger.warning(f"🔍 [MCP-PROMPT-DIRECT] ❌ No fresh config returned from version service")
             except Exception as e:
-                logger.warning(f"Failed to refresh MCP loader with current version: {e}")
+                logger.warning(f"Failed to load MCP config from version service: {e}")
         
-        if not mcp_loader:
-            logger.debug("⚡ [MCP PROMPT] No mcp_loader provided, skipping JIT MCP info")
+        if not toolkit_tools:
+            logger.debug("⚡ [MCP PROMPT] No toolkit tools found, skipping JIT MCP info")
             return system_content
         
-        try:
-            available_tools = await mcp_loader.get_available_tools()
-            toolkits = await mcp_loader.get_toolkits()
-            
-            logger.debug(f"⚡ [MCP PROMPT] Available tools: {len(available_tools)}, Toolkits: {toolkits}")
-            
-            if not available_tools:
-                logger.debug("⚡ [MCP PROMPT] No available tools, skipping JIT MCP info")
-                return system_content
-            
-            mcp_jit_info = "\n\n--- EXTERNAL MCP TOOLS ---\n"
-            mcp_jit_info += f"🔥 You have {len(available_tools)} external MCP tools from {len(toolkits)} connected services.\n"
-            mcp_jit_info += "⚡ TWO-STEP WORKFLOW: (1) discover_mcp_tools → (2) execute_mcp_tool\n"
-            mcp_jit_info += "🎯 DISCOVERY: use discover_mcp_tools with filter parameter \"TOOL1,TOOL2,TOOL3\"\n"
-            mcp_jit_info += "🎯 EXECUTION: use execute_mcp_tool with tool_name parameter and args parameter\n\n"
-            
-            logger.info(f"🔍 [MCP-PROMPT-DEBUG] Processing {len(available_tools)} available tools for system prompt")
-            
-            toolkit_tools = {}
-            for i, tool_name in enumerate(available_tools):
-                logger.info(f"🔍 [MCP-PROMPT-DEBUG] Processing tool [{i+1}/{len(available_tools)}]: {tool_name}")
-                
-                tool_info = await mcp_loader.get_tool_info(tool_name)
-                if tool_info:
-                    toolkit_slug = tool_info.toolkit_slug
-                    logger.info(f"🔍 [MCP-PROMPT-DEBUG]   tool_info.toolkit_slug: {toolkit_slug}")
-                    
-                    if toolkit_slug.startswith("custom_"):
-                        parts = toolkit_slug.split("_")
-                        if len(parts) >= 3:
-                            toolkit = "_".join(parts[2:]).upper()  # Everything after custom_type_
-                        else:
-                            toolkit = toolkit_slug.upper()
-                        api_name = tool_name
-                        logger.info(f"🔍 [MCP-PROMPT-DEBUG]   custom toolkit: {toolkit}, api_name: {api_name}")
-                    else:
-                        toolkit = toolkit_slug.upper()
-                        api_name = tool_name
-                        if not api_name.startswith(toolkit + '_'):
-                            api_name = f"{toolkit}_{tool_name.upper()}"
-                        logger.info(f"🔍 [MCP-PROMPT-DEBUG]   standard toolkit: {toolkit}, api_name: {api_name}")
-                    
-                    if toolkit not in toolkit_tools:
-                        toolkit_tools[toolkit] = []
-                    toolkit_tools[toolkit].append(api_name)
-                    logger.info(f"🔍 [MCP-PROMPT-DEBUG]   ✅ Added {api_name} to {toolkit} (total: {len(toolkit_tools[toolkit])})")
-                else:
-                    logger.warning(f"🔍 [MCP-PROMPT-DEBUG] ❌ No tool_info for tool: {tool_name}")
-            
-            logger.info(f"🔍 [MCP-PROMPT-DEBUG] Final toolkit breakdown:")
-            for tk, tl in toolkit_tools.items():
-                logger.info(f"🔍 [MCP-PROMPT-DEBUG]   {tk}: {len(tl)} tools - {tl[:5]}{'...' if len(tl) > 5 else ''}")
-            
-            for toolkit, tools in toolkit_tools.items():
-                if toolkit == "TWITTER":
-                    mcp_jit_info += f"**Twitter Functions**: {', '.join(tools)}\n"
-                elif toolkit == "GOOGLESHEETS":
-                    mcp_jit_info += f"**Google Sheets Functions**: {', '.join(tools)}\n"
-                else:
-                    mcp_jit_info += f"**{toolkit} Functions**: {', '.join(tools)}\n"
-            
-            mcp_jit_info += "\n🎯 **SMART BATCH DISCOVERY:**\n\n"
-            mcp_jit_info += "**STEP 1: Check conversation history**\n"
-            mcp_jit_info += "- Are the tool schemas already in this conversation? → Skip to execution!\n"
-            mcp_jit_info += "- Not in history? → Discover ALL needed tools in ONE batch call\n\n"
-            mcp_jit_info += "**✅ CORRECT - Batch Discovery:**\n"
-            mcp_jit_info += "use discover_mcp_tools with filter parameter \"NOTION_CREATE_PAGE,NOTION_APPEND_BLOCK,NOTION_SEARCH\"\n"
-            mcp_jit_info += "→ Returns: All 3 schemas in ONE call\n"
-            mcp_jit_info += "→ Schemas cached in conversation forever\n"
-            mcp_jit_info += "→ NEVER discover these tools again!\n\n"
-            mcp_jit_info += "**❌ WRONG - Multiple Discoveries:**\n"
-            mcp_jit_info += "Never call discover 3 times for 3 tools - batch them!\n\n"
-            mcp_jit_info += "**STEP 2: Execute tools with schemas:**\n"
-            mcp_jit_info += "use execute_mcp_tool with tool_name \"NOTION_CREATE_PAGE\" and args parameter\n"
-            mcp_jit_info += "use execute_mcp_tool with tool_name \"NOTION_APPEND_BLOCK\" and args parameter\n\n"
-            mcp_jit_info += "⛔ **CRITICAL RULES**:\n"
-            mcp_jit_info += "1. Analyze task → Identify ALL tools → Discover ALL in ONE call\n"
-            mcp_jit_info += "2. NEVER discover one-by-one (always batch!)\n"
-            mcp_jit_info += "3. NEVER re-discover tools already in conversation history\n"
-            mcp_jit_info += "4. Check history first - if schemas exist, skip directly to execute_mcp_tool!\n\n"
-            
-            logger.info(f"⚡ [MCP PROMPT] Appended MCP info ({len(mcp_jit_info)} chars) for {len(toolkit_tools)} toolkits")
-            return system_content + mcp_jit_info
-        except Exception as e:
-            logger.warning(f"⚠️  [MCP JIT] Failed to load dynamic tools for prompt: {e}", exc_info=True)
-            return system_content
+        total_tools = sum(len(tools) for tools in toolkit_tools.values())
+        
+        logger.info(f"🔍 [MCP-PROMPT-DIRECT] Final toolkit breakdown:")
+        for tk, tl in toolkit_tools.items():
+            logger.info(f"🔍 [MCP-PROMPT-DIRECT]   {tk}: {len(tl)} tools - {tl[:5]}{'...' if len(tl) > 5 else ''}")
+        
+        mcp_jit_info = "\n\n--- EXTERNAL MCP TOOLS ---\n"
+        mcp_jit_info += f"🔥 You have {total_tools} external MCP tools from {len(toolkit_tools)} connected services.\n"
+        mcp_jit_info += "⚡ TWO-STEP WORKFLOW: (1) discover_mcp_tools → (2) execute_mcp_tool\n"
+        mcp_jit_info += "🎯 DISCOVERY: use discover_mcp_tools with filter parameter \"TOOL1,TOOL2,TOOL3\"\n"
+        mcp_jit_info += "🎯 EXECUTION: use execute_mcp_tool with tool_name parameter and args parameter\n\n"
+        
+        for toolkit, tools in toolkit_tools.items():
+            display_name = toolkit.replace('_', ' ').title()
+            mcp_jit_info += f"**{display_name} Functions**: {', '.join(tools)}\n"
+        
+        mcp_jit_info += "\n🎯 **SMART BATCH DISCOVERY:**\n\n"
+        mcp_jit_info += "**STEP 1: Check conversation history**\n"
+        mcp_jit_info += "- Are the tool schemas already in this conversation? → Skip to execution!\n"
+        mcp_jit_info += "- Not in history? → Discover ALL needed tools in ONE batch call\n\n"
+        mcp_jit_info += "**✅ CORRECT - Batch Discovery:**\n"
+        mcp_jit_info += "use discover_mcp_tools with filter parameter \"NOTION_CREATE_PAGE,NOTION_APPEND_BLOCK,NOTION_SEARCH\"\n"
+        mcp_jit_info += "→ Returns: All 3 schemas in ONE call\n"
+        mcp_jit_info += "→ Schemas cached in conversation forever\n"
+        mcp_jit_info += "→ NEVER discover these tools again!\n\n"
+        mcp_jit_info += "**❌ WRONG - Multiple Discoveries:**\n"
+        mcp_jit_info += "Never call discover 3 times for 3 tools - batch them!\n\n"
+        mcp_jit_info += "**STEP 2: Execute tools with schemas:**\n"
+        mcp_jit_info += "use execute_mcp_tool with tool_name \"NOTION_CREATE_PAGE\" and args parameter\n"
+        mcp_jit_info += "use execute_mcp_tool with tool_name \"NOTION_APPEND_BLOCK\" and args parameter\n\n"
+        mcp_jit_info += "⛔ **CRITICAL RULES**:\n"
+        mcp_jit_info += "1. Analyze task → Identify ALL tools → Discover ALL in ONE call\n"
+        mcp_jit_info += "2. NEVER discover one-by-one (always batch!)\n"
+        mcp_jit_info += "3. NEVER re-discover tools already in conversation history\n"
+        mcp_jit_info += "4. Check history first - if schemas exist, skip directly to execute_mcp_tool!\n\n"
+        
+        logger.info(f"⚡ [MCP PROMPT] Appended MCP info ({len(mcp_jit_info)} chars) for {len(toolkit_tools)} toolkits, {total_tools} total tools")
+        return system_content + mcp_jit_info
     
     @staticmethod
     def _append_xml_tool_calling_instructions(system_content: str, xml_tool_calling: bool, tool_registry) -> str:

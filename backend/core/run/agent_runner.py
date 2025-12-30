@@ -682,14 +682,21 @@ class AgentRunner:
         logger.info(f"🔍 [AGENT-MCP-DEBUG] Loading fresh MCP config from current version")
         
         try:
+            agent_id = self.config.agent_config.get('agent_id')
+            logger.info(f"🔍 [AGENT-MCP-DEBUG] Loading fresh config for agent_id: {agent_id}, account_id: {self.account_id}")
+            
             from core.versioning.version_service import get_version_service
             version_service = await get_version_service()
-            fresh_config = await version_service.get_current_mcp_config(
-                self.config.agent_config.get('agent_id'),
-                self.account_id
-            )
+            fresh_config = await version_service.get_current_mcp_config(agent_id, self.account_id)
+            
+            logger.info(f"🔍 [AGENT-MCP-DEBUG] Version service returned: {fresh_config is not None}")
+            if fresh_config:
+                logger.info(f"🔍 [AGENT-MCP-DEBUG] Fresh config keys: {list(fresh_config.keys())}")
+            else:
+                logger.warning(f"🔍 [AGENT-MCP-DEBUG] ❌ Version service returned None/empty config")
+                
         except Exception as e:
-            logger.error(f"🔍 [AGENT-MCP-DEBUG] ❌ Failed to load fresh config via version service: {e}")
+            logger.error(f"🔍 [AGENT-MCP-DEBUG] ❌ Failed to load fresh config via version service: {e}", exc_info=True)
             fresh_config = None
         
         if fresh_config:
@@ -740,12 +747,13 @@ class AgentRunner:
                     self.thread_manager.mcp_loader = MCPJITLoader(mcp_config)
                     await self.thread_manager.mcp_loader.build_tool_map(cache_only=cache_only)
                 else:
-                    # Use fresh config directly - version service returns correct loader format
-                    loader_config = fresh_config or mcp_config
-                    
-                    logger.info(f"🔍 [AGENT-MCP-DEBUG] Using fresh config for loader rebuild: custom_mcp={len(loader_config.get('custom_mcp', []))}, configured_mcps={len(loader_config.get('configured_mcps', []))}")
-                    logger.debug("🔄 [MCP JIT] Refreshing existing loader with fresh config (no mapping needed)")
-                    await self.thread_manager.mcp_loader.rebuild_tool_map(loader_config)
+                    if fresh_config:
+                        logger.info(f"🔍 [AGENT-MCP-DEBUG] ✅ Using FRESH config for loader rebuild")
+                        logger.info(f"🔍 [AGENT-MCP-DEBUG] Fresh config: custom_mcp={len(fresh_config.get('custom_mcp', []))}, configured_mcps={len(fresh_config.get('configured_mcps', []))}")
+                        await self.thread_manager.mcp_loader.rebuild_tool_map(fresh_config)
+                    else:
+                        logger.error(f"🔍 [AGENT-MCP-DEBUG] ❌ CRITICAL: No fresh config available! Skipping rebuild to avoid stale data")
+                        logger.error(f"🔍 [AGENT-MCP-DEBUG] This means the system prompt will have stale MCP tools!")
                     if cache_only:
                         await self.thread_manager.mcp_loader.build_tool_map(cache_only=cache_only)
                 

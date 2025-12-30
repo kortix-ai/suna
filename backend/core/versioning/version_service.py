@@ -487,8 +487,11 @@ class VersionService:
             client = await self._get_client()
             
             agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).execute()
+            logger.info(f"🔍 [VERSION-MCP-DEBUG] Agent query result: {agent_result.data}")
+            
             if not agent_result.data or not agent_result.data[0].get('current_version_id'):
-                logger.warning(f"🔍 [VERSION-MCP-DEBUG] No current_version_id found for agent {agent_id}")
+                logger.error(f"🔍 [VERSION-MCP-DEBUG] ❌ No current_version_id found for agent {agent_id}")
+                logger.error(f"🔍 [VERSION-MCP-DEBUG] Agent data: {agent_result.data}")
                 return None
             
             current_version_id = agent_result.data[0]['current_version_id']
@@ -498,8 +501,10 @@ class VersionService:
                 'version_id', current_version_id
             ).eq('agent_id', agent_id).execute()
             
+            logger.info(f"🔍 [VERSION-MCP-DEBUG] Version query result: found {len(version_result.data) if version_result.data else 0} records")
+            
             if not version_result.data:
-                logger.warning(f"🔍 [VERSION-MCP-DEBUG] Version {current_version_id} not found for agent {agent_id}")
+                logger.error(f"🔍 [VERSION-MCP-DEBUG] ❌ Version {current_version_id} not found for agent {agent_id}")
                 return None
             
             config = version_result.data[0].get('config', {})
@@ -521,9 +526,10 @@ class VersionService:
                 enabled_tools = mcp.get('enabledTools', [])
                 logger.info(f"🔍 [VERSION-MCP-DEBUG]   custom_mcp[{i}]: name={mcp.get('name')}, type={mcp_type}, toolkit_slug={toolkit_slug}, tools={len(enabled_tools)}")
             
-            # Return in the EXACT format expected by all components (no mapping needed)
+            # Return in the EXACT format expected by all components
+            # CRITICAL: Use custom_mcp (singular) as that's what the loader expects
             final_config = {
-                'custom_mcp': custom_mcps,        # Note: custom_mcp (singular) for loader compatibility
+                'custom_mcp': custom_mcps,        # Loader expects custom_mcp (singular)
                 'configured_mcps': configured_mcps,
                 'account_id': user_id
             }
