@@ -81,12 +81,8 @@ export function useThreadKeyboardShortcuts({
         }
         return;
       }
-
-      // Escape closes side panel
-      if (event.key === 'Escape' && isSidePanelOpen) {
-        setIsSidePanelOpen(false);
-        userClosedPanelRef.current = true;
-      }
+      // Intentionally do NOT close the Kortix Computer on Escape.
+      // Escape is commonly used inside editors / in-panel UIs and should not dismiss the panel.
     };
 
     window.addEventListener('keydown', handleKeyDown);
