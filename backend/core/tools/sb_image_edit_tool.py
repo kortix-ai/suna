@@ -139,7 +139,7 @@ class SandboxImageEditTool(SandboxToolsBase):
             "function": {
                 "name": "image_edit_or_generate",
                 "description": """⚠️ USE CANVAS FOR SPECIFIC DESIGNS! Instagram/TikTok/YouTube/poster/banner → call add_frame_to_canvas (load canvas instructions) FIRST with exact size, get frame_id back, THEN call this with frame_id param!
-
+ADD TO IMAGE GEN PROMPT FONT SO IT GENERATES MORE ACCURATE TEXT LIKE INTER OR ROBOTO
 Generate, edit, upscale, or remove background from images. Video generation supported.
 
 **ASPECT RATIOS - MANDATORY when using frame_id:**

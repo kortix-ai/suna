@@ -573,10 +573,20 @@ function CanvasImageElement({
     };
   }, [dragState, scale, onChange, frames, element.width, element.height, onSnapChange]);
 
-  if (loading || isProcessing) {
+  // Only show loading placeholder if image is actually loading, not if processing
+  // Processing shimmer is now rendered as a separate overlay layer
+  // z-index 100 ensures shimmer shows ABOVE frame backgrounds (1) and borders (10)
+  if (loading) {
     return (
       <div
-        style={{ position: 'absolute', left: posX, top: posY, width, height }}
+        style={{ 
+          position: 'absolute', 
+          left: posX, 
+          top: posY, 
+          width, 
+          height,
+          zIndex: 100, // Above frames!
+        }}
         className="rounded overflow-hidden bg-card/50"
       >
         {/* Shimmer loading effect - no text */}
@@ -636,7 +646,6 @@ function CanvasImageElement({
         style={{ clipPath: clipPath || undefined }}
       >
         <img src={imageSrc} alt={element.name} draggable={false} className="w-full h-full object-fill pointer-events-none" />
-        <AIProcessingOverlay isVisible={isProcessing} />
       </div>
 
       {/* Selection ring - OUTSIDE clipped area, always fully visible */}
@@ -2565,14 +2574,23 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
   // Force fetch function that can be triggered externally
   const forceFetch = useCallback(async () => {
-    console.log('[CANVAS_LIVE_DEBUG] forceFetch called:', { sandboxId, filePath, hasAuth: !!authToken, hasUnsavedChanges });
+    const hasUnsaved = hasUnsavedChangesRef.current;
+    const isEditing = isUserEditingRef.current;
+    
+    console.log('[CANVAS_LIVE_DEBUG] forceFetch called:', { 
+      sandboxId, 
+      filePath, 
+      hasAuth: !!authToken, 
+      hasUnsaved,
+      isEditing,
+    });
 
     if (!sandboxId || !filePath || !authToken) {
       console.log('[CANVAS_LIVE_DEBUG] forceFetch skipped - missing required params');
       return;
     }
-    if (hasUnsavedChanges || isUserEditingRef.current) {
-      console.log('[CANVAS_LIVE_DEBUG] forceFetch skipped - user editing');
+    if (hasUnsaved || isEditing) {
+      console.log('[CANVAS_LIVE_DEBUG] forceFetch skipped - user editing or unsaved changes');
       return;
     }
 
@@ -2603,19 +2621,33 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
       try {
         const parsed: CanvasData = JSON.parse(newContent);
+        const serverCount = parsed.elements?.length || 0;
+        const localCount = elementsRef.current.length;
         const newElementIds = (parsed.elements || []).map(e => e.id).sort().join(',');
         const currentElementIds = elementsRef.current.map(e => e.id).sort().join(',');
 
         console.log('[CANVAS_LIVE_DEBUG] forceFetch comparing elements:', {
-          newCount: parsed.elements?.length,
-          currentCount: elementsRef.current.length,
+          serverCount,
+          localCount,
           changed: newElementIds !== currentElementIds,
+          hasUnsavedNow: hasUnsavedChangesRef.current,
         });
+
+        // Don't overwrite local state if we have more elements locally (user added something)
+        if (localCount > serverCount) {
+          console.log('[CANVAS_LIVE_DEBUG] forceFetch SKIPPED - local has MORE elements (user added content)');
+          return;
+        }
 
         if (newElementIds !== currentElementIds) {
           console.log('[CANVAS_LIVE_DEBUG] forceFetch updating elements - CHANGE DETECTED!');
+          // Only re-center if server has MORE elements (AI added content)
+          const shouldRecenter = serverCount > localCount;
           setCanvasData(parsed);
           setElements(sanitizeElements(parsed.elements || []));
+          if (shouldRecenter) {
+            hasCenteredRef.current = false; // Re-center to show new AI-added content
+          }
         } else {
           console.log('[CANVAS_LIVE_DEBUG] forceFetch - no changes detected');
         }
@@ -2625,7 +2657,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     } catch (err) {
       console.log('[CANVAS_LIVE_DEBUG] forceFetch network error:', err);
     }
-  }, [sandboxId, filePath, authToken, hasUnsavedChanges]);
+  }, [sandboxId, filePath, authToken]);
 
   // Listen for canvas-tool-updated events to trigger immediate refresh
   useEffect(() => {
@@ -2684,8 +2716,11 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
     const fetchLatestContent = async () => {
       // Skip if user is actively editing (has unsaved changes)
-      if (hasUnsavedChanges || isUserEditingRef.current) {
-        console.log('[CANVAS_LIVE_DEBUG] Polling skipped - user editing');
+      const hasUnsaved = hasUnsavedChangesRef.current;
+      const isEditing = isUserEditingRef.current;
+      
+      if (hasUnsaved || isEditing) {
+        console.log('[CANVAS_LIVE_DEBUG] Polling skipped - user editing or unsaved changes', { hasUnsaved, isEditing });
         return;
       }
 
@@ -2717,21 +2752,34 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         // Parse and update if different - always parse to compare element IDs
         try {
           const parsed: CanvasData = JSON.parse(newContent);
+          const serverCount = parsed.elements?.length || 0;
+          const localCount = elementsRef.current.length;
           const newElementIds = (parsed.elements || []).map(e => e.id).sort().join(',');
           const currentElementIds = elementsRef.current.map(e => e.id).sort().join(',');
 
           console.log('[CANVAS_LIVE_DEBUG] Polling: comparing elements', {
-            serverCount: parsed.elements?.length,
-            currentCount: elementsRef.current.length,
+            serverCount,
+            localCount,
             changed: newElementIds !== currentElementIds,
+            hasUnsavedNow: hasUnsavedChangesRef.current,
           });
+
+          // Don't overwrite local state if we have more elements locally (user added something)
+          if (localCount > serverCount) {
+            console.log('[CANVAS_LIVE_DEBUG] Polling SKIPPED - local has MORE elements (user added content)');
+            return;
+          }
 
           // Only update if structure actually changed (new/removed elements)
           if (newElementIds !== currentElementIds) {
             console.log('[CANVAS_LIVE_DEBUG] Polling: UPDATING - new elements detected!');
+            // Only re-center if server has MORE elements (AI added content)
+            const shouldRecenter = serverCount > localCount;
             setCanvasData(parsed);
             setElements(sanitizeElements(parsed.elements || []));
-            hasCenteredRef.current = false; // Re-center to show new content
+            if (shouldRecenter) {
+              hasCenteredRef.current = false; // Re-center to show new AI-added content
+            }
           }
         } catch (parseErr) {
           console.log('[CANVAS_LIVE_DEBUG] Polling: parse error', parseErr);
@@ -2744,8 +2792,8 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     const interval = setInterval(fetchLatestContent, POLL_INTERVAL);
 
     return () => clearInterval(interval);
-    // Note: elements is accessed via ref pattern inside fetchLatestContent to avoid re-creating interval
-  }, [sandboxId, filePath, authToken, hasUnsavedChanges]);
+    // Note: elements and hasUnsavedChanges are accessed via ref pattern to avoid re-creating interval
+  }, [sandboxId, filePath, authToken]);
 
   // Center canvas and fit content on initial load only
   useEffect(() => {
@@ -2964,6 +3012,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   };
 
   // Track unsaved changes - compare sanitized versions to avoid false positives
+  const hasUnsavedChangesRef = useRef(false);
   useEffect(() => {
     if (canvasData && elements.length > 0) {
       // Sanitize both to ensure fair comparison (raw data might be missing defaults)
@@ -2973,10 +3022,14 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
       // Only log when there's a change to avoid spam
       if (hasChanges !== hasUnsavedChanges) {
-        console.log('[CANVAS_LIVE_DEBUG] hasUnsavedChanges changed to:', hasChanges);
+        console.log('[CANVAS_LIVE_DEBUG] hasUnsavedChanges changed to:', hasChanges, {
+          localCount: elements.length,
+          serverCount: canvasData.elements?.length || 0,
+        });
       }
 
       setHasUnsavedChanges(hasChanges);
+      hasUnsavedChangesRef.current = hasChanges;
     }
   }, [elements, canvasData, hasUnsavedChanges]);
 
@@ -3020,6 +3073,9 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         const file = item.getAsFile();
         if (!file) continue;
 
+        // Mark as user editing to prevent polling from overwriting during paste
+        isUserEditingRef.current = true;
+
         const reader = new FileReader();
         reader.onload = (event) => {
           const img = new Image();
@@ -3046,7 +3102,13 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
               name: `pasted-image-${Date.now()}.png`,
             };
             setElements(prev => [...prev, newElement]);
+            setHasUnsavedChanges(true); // Immediately mark as unsaved
             toast.success('Image pasted');
+            
+            // Clear editing flag after a brief delay to allow state to settle
+            setTimeout(() => {
+              isUserEditingRef.current = false;
+            }, 500);
           };
           img.src = event.target?.result as string;
         };
@@ -3618,7 +3680,68 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                   }}
                 />
               ))}
+
             </>
+          );
+        })()}
+
+        {/* Processing shimmer overlay - Show on ENTIRE FRAME if processing element is inside */}
+        {processingElementId && (() => {
+          const processingEl = elements.find(el => el.id === processingElementId);
+          if (!processingEl || processingEl.type !== 'image') return null;
+
+          // Check if processing image is inside a frame
+          const frames = elements.filter(el => el.type === 'frame') as FrameCanvasElement[];
+          let containingFrame: FrameCanvasElement | null = null;
+          
+          for (const frame of frames) {
+            const imgRight = processingEl.x + processingEl.width;
+            const imgBottom = processingEl.y + processingEl.height;
+            const frameRight = frame.x + frame.width;
+            const frameBottom = frame.y + frame.height;
+
+            if (processingEl.x < frameRight && imgRight > frame.x && 
+                processingEl.y < frameBottom && imgBottom > frame.y) {
+              containingFrame = frame;
+              break;
+            }
+          }
+
+          // If inside frame, show shimmer on ENTIRE FRAME
+          // If not inside frame, show shimmer on the image itself
+          const targetEl = containingFrame || processingEl;
+          const posX = targetEl.x * scale + stagePosition.x;
+          const posY = targetEl.y * scale + stagePosition.y;
+          const width = targetEl.width * scale;
+          const height = targetEl.height * scale;
+
+          console.log('[SHIMMER_DEBUG] Showing shimmer on:', { 
+            processingId: processingElementId,
+            showingOn: containingFrame ? 'FRAME' : 'IMAGE',
+            frameId: containingFrame?.id,
+            posX, 
+            posY, 
+            width, 
+            height,
+          });
+
+          return (
+            <div
+              key={`shimmer-${processingElementId}`}
+              style={{
+                position: 'absolute',
+                left: posX,
+                top: posY,
+                width,
+                height,
+                borderRadius: '4px',
+                overflow: 'hidden',
+                zIndex: 9999,
+                pointerEvents: 'none',
+              }}
+            >
+              <AIProcessingOverlay isVisible={true} />
+            </div>
           );
         })()}
 

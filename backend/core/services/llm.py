@@ -24,6 +24,10 @@ litellm.drop_params = True
 if os.environ.get("LITELLM_NUM_RETRIES") is None:
     litellm.num_retries = 1
 
+# Configure Braintrust callback for tracing if API key is set
+if os.getenv("BRAINTRUST_API_KEY"):
+    litellm.callbacks = ["braintrust"]
+
 provider_router = None
 class LLMError(Exception):
     """Exception for LLM-related errors."""
