@@ -24,6 +24,7 @@ const PostHogIdentify = lazy(() => import('@/components/posthog-identify').then(
 const PlanSelectionModal = lazy(() => import('@/components/billing/pricing/plan-selection-modal').then(mod => ({ default: mod.PlanSelectionModal })));
 const AnnouncementDialog = lazy(() => import('@/components/announcements/announcement-dialog').then(mod => ({ default: mod.AnnouncementDialog })));
 const CookieConsent = lazy(() => import('@/components/cookie-consent').then(mod => ({ default: mod.CookieConsent })));
+const RouteChangeTracker = lazy(() => import('@/components/analytics/route-change-tracker').then(mod => ({ default: mod.RouteChangeTracker })));
 
 
 export const viewport: Viewport = {
@@ -140,29 +141,33 @@ export default function RootLayout({
         ) : null}
 
         {/* Facebook Pixel - Will be blocked by cookie consent service until marketing consent is given */}
-        <Script id="facebook-pixel" strategy="lazyOnload" data-cookieconsent="marketing">
-          {`
-            !function(f,b,e,v,n,t,s)
-            {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-            n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-            if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-            n.queue=[];t=b.createElement(e);t.async=!0;
-            t.src=v;s=b.getElementsByTagName(e)[0];
-            s.parentNode.insertBefore(t,s)}(window, document,'script',
-            'https://connect.facebook.net/en_US/fbevents.js');
+        {process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID && (
+          <>
+            <Script id="facebook-pixel" strategy="lazyOnload" data-cookieconsent="marketing">
+              {`
+                !function(f,b,e,v,n,t,s)
+                {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+                n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+                if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+                n.queue=[];t=b.createElement(e);t.async=!0;
+                t.src=v;s=b.getElementsByTagName(e)[0];
+                s.parentNode.insertBefore(t,s)}(window, document,'script',
+                'https://connect.facebook.net/en_US/fbevents.js');
 
-            fbq('init', '1385936776361131');
-            fbq('track', 'PageView');
-          `}
-        </Script>
-        <noscript>
-          <img
-            height="1"
-            width="1"
-            style={{ display: "none" }}
-            src="https://www.facebook.com/tr?id=1385936776361131&ev=PageView&noscript=1"
-          />
-        </noscript>
+                fbq('init', '${process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID}');
+                fbq('track', 'PageView');
+              `}
+            </Script>
+            <noscript>
+              <img
+                height="1"
+                width="1"
+                style={{ display: "none" }}
+                src={`https://www.facebook.com/tr?id=${process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID}&ev=PageView&noscript=1`}
+              />
+            </noscript>
+          </>
+        )}
 
 
         <script
@@ -241,13 +246,21 @@ export default function RootLayout({
           <Suspense fallback={null}>
             <Analytics />
           </Suspense>
-          <Suspense fallback={null}>
-            <GoogleAnalytics gaId="G-QSCBD7F1SD" />
-            <GoogleAnalytics gaId="G-6ETJFB3PT3" />
-          </Suspense>
-          <Suspense fallback={null}>
-            <GoogleTagManager gtmId="GTM-PKFG3JCX" />
-          </Suspense>
+          {process.env.NEXT_PUBLIC_GA_ID_1 && (
+            <Suspense fallback={null}>
+              <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_ID_1} />
+            </Suspense>
+          )}
+          {process.env.NEXT_PUBLIC_GA_ID_2 && (
+            <Suspense fallback={null}>
+              <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_ID_2} />
+            </Suspense>
+          )}
+          {process.env.NEXT_PUBLIC_GTM_ID && (
+            <Suspense fallback={null}>
+              <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
+            </Suspense>
+          )}
           <Suspense fallback={null}>
             <SpeedInsights />
           </Suspense>
@@ -256,6 +269,9 @@ export default function RootLayout({
           </Suspense>
           <Suspense fallback={null}>
             <CookieConsent />
+          </Suspense>
+          <Suspense fallback={null}>
+            <RouteChangeTracker />
           </Suspense>
         </ThemeProvider>
       </body>
