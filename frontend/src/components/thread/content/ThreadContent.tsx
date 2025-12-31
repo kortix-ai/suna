@@ -543,10 +543,10 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
               onClick={() =>
                 handleToolClick(streamingToolCall.message_id || null, "unknown")
               }
-              className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
+              className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 max-w-full"
             >
               <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000" />
-              <span className="font-mono text-xs text-foreground">
+              <span className="font-mono text-xs text-foreground truncate">
                 Using Tool
               </span>
             </button>
@@ -603,7 +603,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
           </div>
           <p className="ml-2 text-sm text-muted-foreground">{agentInfo.name}</p>
         </div>
-        <div className="flex max-w-[90%] break-words overflow-hidden">
+        <div className="flex w-full break-words">
           <div className="space-y-1.5 min-w-0 flex-1">
             {renderedMessages}
             {streamingContent}
@@ -685,7 +685,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
 
     const containerClassName = isPreviewMode
       ? "flex-1 overflow-y-auto scrollbar-hide px-4 py-4 pb-0"
-      : "flex-1 overflow-y-auto scrollbar-hide px-4 py-4 pb-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60";
+      : "flex-1 overflow-y-auto scrollbar-hide px-4 py-4 pb-0 bg-background";
 
     const displayMessages =
       readOnly && visibleMessages ? visibleMessages : messages;

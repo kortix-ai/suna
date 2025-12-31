@@ -53,6 +53,8 @@ RUN apt-get update && apt-get install -y \
     grep \
     gawk \
     sed \
+    # Math/Calculator Tools
+    bc \
     # File Analysis Tools
     file \
     # Data Processing Tools

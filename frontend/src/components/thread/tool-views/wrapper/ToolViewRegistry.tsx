@@ -421,7 +421,7 @@ export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
     console.warn('ToolView: toolCall is undefined or missing function_name. Tool views should use structured props.');
     // Fallback to GenericToolView with error handling
     return (
-      <div className="h-full w-full max-h-full max-w-full overflow-hidden min-w-0 min-h-0" style={{ contain: 'strict' }}>
+      <div className="h-full w-full max-h-full max-w-full overflow-hidden min-w-0 min-h-0" style={{ contain: 'layout style' }}>
         <GenericToolView toolCall={toolCall} toolResult={toolResult} {...props} />
       </div>
     );
@@ -464,7 +464,7 @@ export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
 
   // Wrap all tool views in a container with CSS containment to prevent overflow
   return (
-    <div className="h-full w-full max-h-full max-w-full overflow-auto min-w-0 min-h-0" style={{ contain: 'layout style' }}>
+    <div className="h-full w-full max-h-full max-w-full overflow-hidden min-w-0 min-h-0" style={{ contain: 'layout style' }}>
       <ToolViewComponent toolCall={toolCall} toolResult={modifiedToolResult} {...props} />
     </div>
   );

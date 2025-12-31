@@ -35,6 +35,9 @@ KB_VERSION = "0.1.2"
 - Code files (py, js, ts, java, etc.)
 - Text files (txt, md, log, etc.)
 
+**SCANNED/IMAGE-ONLY PDFs:**
+- If extraction returns empty, use CLI: `pdftoppm -png -r 300 file.pdf /tmp/page` then `tesseract /tmp/page-1.png stdout -l eng`
+
 **Only use read_file for:**
 - Tiny config files (<2KB)
 - When you need EXACT full content
@@ -163,31 +166,45 @@ class SandboxFileReaderTool(SandboxToolsBase):
             extraction_method = "unknown"
 
             if file_type == 'pdf':
+                # Try pdftotext first (fast for native PDFs)
                 result = await self.sandbox.process.exec(
                     f'pdftotext {escaped_path} - 2>/dev/null',
                     timeout=60
                 )
-                if result.exit_code != 0 or not result.result.strip():
+                if result.exit_code == 0 and result.result.strip():
+                    content = result.result
+                    extraction_method = "pdftotext"
+                else:
+                    # Try pdftotext with layout preservation
                     result = await self.sandbox.process.exec(
                         f'pdftotext -layout {escaped_path} - 2>/dev/null',
                         timeout=60
                     )
-                if result.exit_code != 0 or not result.result.strip():
-                    result = await self.sandbox.process.exec(
-                        f'python3 -c "import PyPDF2; r=PyPDF2.PdfReader({escaped_path!r}); print(\\"\\n\\".join(p.extract_text() or \\"\\" for p in r.pages))"',
-                        timeout=60
-                    )
-                    extraction_method = "PyPDF2"
-                else:
-                    extraction_method = "pdftotext"
-                
-                if result.exit_code != 0:
-                    return {
-                        "file_path": cleaned_path,
-                        "success": False,
-                        "error": f"Failed to extract PDF text"
-                    }
-                content = result.result
+                    if result.exit_code == 0 and result.result.strip():
+                        content = result.result
+                        extraction_method = "pdftotext_layout"
+                    else:
+                        # Try PyPDF2 as fallback
+                        result = await self.sandbox.process.exec(
+                            f'python3 -c "import PyPDF2; r=PyPDF2.PdfReader({escaped_path!r}); print(\\"\\n\\".join(p.extract_text() or \\"\\" for p in r.pages))"',
+                            timeout=60
+                        )
+                        if result.exit_code == 0 and result.result.strip():
+                            content = result.result
+                            extraction_method = "PyPDF2"
+                        else:
+                            # Standard extraction failed - likely a scanned/image-only PDF
+                            # Return CLI instructions for manual extraction
+                            return {
+                                "file_path": cleaned_path,
+                                "success": False,
+                                "error": (
+                                    f"This PDF ({os.path.basename(cleaned_path)}) is a scanned/image-only document. "
+                                    f"Use CLI to extract:\n\n"
+                                    f"pdftoppm -png -r 300 '{cleaned_path}' /tmp/page\n"
+                                    f"tesseract /tmp/page-1.png stdout -l eng"
+                                )
+                            }
 
             elif file_type == 'doc':
                 result = await self.sandbox.process.exec(

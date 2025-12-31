@@ -40,6 +40,7 @@ import '../../../../../node_modules/@syncfusion/ej2-popups/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-dropdowns/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-grids/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-react-spreadsheet/styles/material.css';
+import '../../tool-views/spreadsheet/kortix-spreadsheet-styles.css';
 
 const SYNCFUSION_LICENSE = "Ngo9BigBOggjHTQxAR8/V1JGaF5cXGpCf0x0QHxbf1x2ZFFMYFtbRHZPMyBoS35Rc0RhW3ledHRSRmVeVUx+VEFf";
 const SYNCFUSION_BASE_URL = 'https://ej2services.syncfusion.com/production/web-services/api/spreadsheet';
@@ -59,18 +60,25 @@ interface SpreadsheetAppProps {
   onFileOpen?: (path: string) => void;
 }
 
+interface SpreadsheetEditorHandle {
+  forceRefresh: () => void;
+  isSyncing: boolean;
+}
+
 const SpreadsheetEditor = memo(function SpreadsheetEditor({
   sandboxId,
   filePath,
   fileName,
   isActive,
   onUnsavedChange,
+  onActionsReady,
 }: {
   sandboxId?: string;
   filePath: string;
   fileName: string;
   isActive: boolean;
   onUnsavedChange: (hasChanges: boolean) => void;
+  onActionsReady?: (handle: SpreadsheetEditorHandle | null) => void;
 }) {
   const ssRef = useRef<SpreadsheetComponent>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -97,6 +105,21 @@ const SpreadsheetEditor = memo(function SpreadsheetEditor({
     enabled: isActive && !!filePath,
     debounceMs: 1500,
   });
+
+  // Expose actions to parent
+  useEffect(() => {
+    if (isActive && onActionsReady) {
+      onActionsReady({
+        forceRefresh: actions.forceRefresh,
+        isSyncing: isSyncLoading || syncState.status === 'syncing',
+      });
+    }
+    return () => {
+      if (onActionsReady) {
+        onActionsReady(null);
+      }
+    };
+  }, [isActive, onActionsReady, actions.forceRefresh, isSyncLoading, syncState.status]);
 
   useEffect(() => {
     if (isActive && !prevIsActiveRef.current && !isInitialLoad) {
@@ -171,51 +194,6 @@ const SpreadsheetEditor = memo(function SpreadsheetEditor({
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm">
-        <div className="flex items-center gap-2">
-          <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
-          <span className="text-sm font-medium text-zinc-900 dark:text-white truncate max-w-[200px]">
-            {fileName}
-          </span>
-          {syncState.pendingChanges && (
-            <span className="w-2 h-2 rounded-full bg-orange-500 shrink-0" title="Unsaved changes" />
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <SyncStatusIndicator
-            status={syncState.status}
-            lastSyncedAt={syncState.lastSyncedAt}
-            pendingChanges={syncState.pendingChanges}
-            errorMessage={syncState.errorMessage}
-            onRefresh={actions.forceRefresh}
-            onResolveConflict={actions.resolveConflict}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleDownload}
-            disabled={isDownloading}
-            className="h-7 px-2"
-            title="Download file"
-          >
-            {isDownloading ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <Download className="w-3 h-3" />
-            )}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={actions.forceRefresh}
-            disabled={isSyncLoading || syncState.status === 'syncing'}
-            className="h-7 px-2"
-          >
-            <RefreshCw className={cn("w-3 h-3", isSyncLoading && "animate-spin")} />
-          </Button>
-        </div>
-      </div>
-
       <div className="flex-1 relative">
         <SpreadsheetComponent
           ref={ssRef}
@@ -276,6 +254,7 @@ export const SpreadsheetApp = memo(function SpreadsheetApp({
   const [showHome, setShowHome] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [activeEditorHandle, setActiveEditorHandle] = useState<SpreadsheetEditorHandle | null>(null);
 
   const { data: workspaceFiles = [] } = useDirectoryQuery(sandboxId, '/workspace/spreadsheets', {
     enabled: !!sandboxId,
@@ -497,13 +476,26 @@ export const SpreadsheetApp = memo(function SpreadsheetApp({
         ))}
       </div>
 
-      <button
-        onClick={goToHome}
-        className="flex items-center justify-center w-10 h-10 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors border-l border-zinc-200 dark:border-zinc-800 shrink-0"
-        title="Open new file"
-      >
-        <Plus className="w-4 h-4" />
-      </button>
+      <div className="flex items-center border-l border-zinc-200 dark:border-zinc-800 shrink-0">
+        {/* Refresh button - only show when a spreadsheet tab is active */}
+        {activeTabId && !showHome && (
+          <button
+            onClick={() => activeEditorHandle?.forceRefresh()}
+            disabled={activeEditorHandle?.isSyncing}
+            className="flex items-center justify-center w-10 h-10 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors disabled:opacity-50 shrink-0"
+            title="Refresh spreadsheet"
+          >
+            <RefreshCw className={cn("w-4 h-4", activeEditorHandle?.isSyncing && "animate-spin")} />
+          </button>
+        )}
+        <button
+          onClick={goToHome}
+          className="flex items-center justify-center w-10 h-10 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors shrink-0"
+          title="Open new file"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+      </div>
     </div>
   );
 
@@ -649,6 +641,7 @@ export const SpreadsheetApp = memo(function SpreadsheetApp({
                 fileName={tab.fileName}
                 isActive={activeTabId === tab.id && !showHome}
                 onUnsavedChange={(hasChanges) => handleTabUnsavedChange(tab.id, hasChanges)}
+                onActionsReady={activeTabId === tab.id ? setActiveEditorHandle : undefined}
               />
             </div>
           ))}

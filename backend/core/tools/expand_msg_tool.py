@@ -14,16 +14,13 @@ import json
 ### INTERNAL UTILITIES
 
 **initialize_tools - JIT Tool Activation:**
-- INTERNAL operation - completely invisible to users
 - Activates tools on-demand using SPARK algorithm
-- Loads detailed usage documentation for YOU (not the user)
+- Loads detailed usage documentation
 - Supports batch loading multiple tools at once (e.g., tool1, tool2, tool3)
 
 **CRITICAL USAGE:**
-- Call silently at the start of every task
+- Call at the start of every task
 - Analyze user request → Determine ALL needed tools → Load in ONE batch
-- Users NEVER see this operation or its output
-- DO NOT mention tool loading in your responses to users
 
 **discover_mcp_tools - MCP Schema Discovery:**
 - Get schemas for external MCP tools (Gmail, Twitter, Slack, etc.)
@@ -40,8 +37,6 @@ import json
 - View full content of truncated messages
 - Use when previous messages were shortened
 - Retrieve complete message history
-
-**Most operations are internal and transparent to users.**
 """
 )
 class ExpandMessageTool(Tool):

@@ -347,17 +347,17 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 {/* Tool button - exactly like regular tools */}
                 <button
                     onClick={() => onToolClick?.(messageId ?? null, toolName, effectiveToolCall?.tool_call_id)}
-                    className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
+                    className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 max-w-full"
                 >
                     <AppIcon toolCall={effectiveToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground shrink-0" fallbackIcon={IconComponent} />
-                    <span className="font-mono text-xs text-foreground">Generate Media</span>
+                    <span className="font-mono text-xs text-foreground truncate">Generate Media</span>
                     {!isCompleted && (
                         <CircleDashed className="h-3.5 w-3.5 text-muted-foreground shrink-0 animate-spin ml-1" />
                     )}
                 </button>
 
                 {/* Shimmer below - aspect-video for video, aspect-square for image */}
-                <div className={`relative w-80 ${isVideoGeneration ? 'aspect-video' : 'aspect-square'} rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-700/50`}>
+                <div className={`relative w-full max-w-80 ${isVideoGeneration ? 'aspect-video' : 'aspect-square'} rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-700/50`}>
                     {/* Gray base layer - contained with rounded corners */}
                     <div className="absolute inset-[-50%] bg-gradient-to-br from-zinc-300/60 to-zinc-400/60 dark:from-zinc-600/60 dark:to-zinc-700/60 blur-2xl" />
                     {/* Color layer that fades in - contained with rounded corners */}
@@ -502,16 +502,16 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     }
 
     return (
-        <div>
+        <div className="min-w-0 max-w-full">
             <button
                 onClick={() => onToolClick?.(messageId ?? null, toolName, effectiveToolCall?.tool_call_id)}
-                className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
+                className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 max-w-full"
             >
-                <div className='flex items-center justify-center'>
+                <div className='flex items-center justify-center flex-shrink-0'>
                     <AppIcon toolCall={effectiveToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fallbackIcon={IconComponent} />
                 </div>
-                <span className="font-mono text-xs text-foreground">{displayName}</span>
-                {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
+                <span className="font-mono text-xs text-foreground truncate">{displayName}</span>
+                {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[150px] sm:max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
                 {!isCompleted && (
                     <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-1" />
                 )}

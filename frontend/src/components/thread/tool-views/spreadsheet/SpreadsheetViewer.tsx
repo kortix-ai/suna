@@ -23,6 +23,7 @@ import '../../../../../node_modules/@syncfusion/ej2-popups/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-dropdowns/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-grids/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-react-spreadsheet/styles/material.css';
+import './kortix-spreadsheet-styles.css';
 
 
 const SYNCFUSION_LICENSE = "Ngo9BigBOggjHTQxAR8/V1JGaF5cXGpCf0x0QHxbf1x2ZFFMYFtbRHZPMyBoS35Rc0RhW3ledHRSRmVeVUx+VEFf";
@@ -150,7 +151,7 @@ export function SpreadsheetViewer({
     enabled: !!resolvedSandboxId && !!resolvedFilePath,
     debounceMs: 1500,
     maxRetries: 3,
-    pollIntervalMs: 3000,
+    pollIntervalMs: 30000, // 30 seconds - only poll for external changes when idle
   });
 
   useEffect(() => {
@@ -300,61 +301,6 @@ export function SpreadsheetViewer({
 
   return (
     <div className={cn('w-full h-full relative flex flex-col', className)}>
-      {showToolbar && !compact && (
-        <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm">
-          <div className="flex items-center gap-2">
-            <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
-            <span className="text-sm font-medium text-zinc-900 dark:text-white truncate max-w-[200px]">
-              {fileName}
-            </span>
-            <div className="flex items-center gap-1">
-              {getSyncIcon()}
-              {syncState.pendingChanges && syncState.status !== 'syncing' && (
-                <span className="text-[10px] text-zinc-500">Saving...</span>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {syncState.status === 'conflict' && (
-              <SyncStatusIndicator
-                status={syncState.status}
-                lastSyncedAt={syncState.lastSyncedAt}
-                pendingChanges={syncState.pendingChanges}
-                errorMessage={syncState.errorMessage}
-                onRefresh={actions.forceRefresh}
-                onResolveConflict={actions.resolveConflict}
-              />
-            )}
-            {showDownloadButton && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleDownload}
-                disabled={isDownloading}
-                className="h-7 px-2"
-                title="Download file"
-              >
-                {isDownloading ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <Download className="w-3 h-3" />
-                )}
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={actions.forceRefresh}
-              disabled={isLoading}
-              className="h-7 px-2"
-              title="Refresh from server"
-            >
-              <RefreshCw className={cn("w-3 h-3", isLoading && "animate-spin")} />
-            </Button>
-          </div>
-        </div>
-      )}
-      
       <div className="flex-1 relative">
         <SpreadsheetComponent
           ref={ssRef}

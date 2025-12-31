@@ -241,7 +241,7 @@ export const ThreadLayout = memo(function ThreadLayout({
 
           {/* ChatInput - positioned at bottom for mobile */}
           {chatInput && (
-            <div className="flex-shrink-0 relative z-10 bg-gradient-to-b from-background via-background/90 to-transparent px-4">
+            <div className="flex-shrink-0 relative bg-background px-4">
               {chatInput}
             </div>
           )}
@@ -305,17 +305,17 @@ export const ThreadLayout = memo(function ThreadLayout({
 
           {/* ChatInput - positioned at bottom of main content panel */}
           {chatInput && (
-            <div className="flex-shrink-0 relative z-10 bg-gradient-to-b from-background via-background/90 to-transparent px-4">
+            <div className="flex-shrink-0 relative bg-background px-4">
               {chatInput}
             </div>
           )}
         </ResizablePanel>
 
-        {/* Resizable handle - hidden in suite mode */}
+        {/* Resizable handle - always enabled */}
         <ResizableHandle
-          withHandle={!isSuiteMode}
-          disabled={isSuiteMode}
-          className={cn("z-20 w-0", isSuiteMode && "opacity-0 pointer-events-none")}
+          withHandle={true}
+          disabled={false}
+          className="z-20 w-0"
         />
 
         {/* Side panel - always render but control size */}

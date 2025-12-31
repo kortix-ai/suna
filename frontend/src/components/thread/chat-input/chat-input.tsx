@@ -23,7 +23,7 @@ import { KortixLoader } from '@/components/ui/kortix-loader';
 import { VoiceRecorder } from './voice-recorder';
 import { useTheme } from 'next-themes';
 import { UnifiedConfigMenu } from './unified-config-menu';
-import { AttachmentGroup } from '../attachment-group';
+import { AttachmentGroup } from '../file-attachment';
 import { cn } from '@/lib/utils';
 import { useModelSelection } from '@/hooks/agents';
 import { useFileDelete } from '@/hooks/files';
@@ -1318,12 +1318,14 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           />
         )} */}
 
-        <SunaAgentModeSwitcher
-          enabled={ENABLE_SUNA_AGENT_MODES}
-          isSunaAgent={isSunaAgent}
-          sunaAgentModes={sunaAgentModes}
-          onModeChange={setSunaAgentModes}
-        />
+        <div className="hidden sm:block">
+          <SunaAgentModeSwitcher
+            enabled={ENABLE_SUNA_AGENT_MODES}
+            isSunaAgent={isSunaAgent}
+            sunaAgentModes={sunaAgentModes}
+            onModeChange={setSunaAgentModes}
+          />
+        </div>
 
         {onModeDeselect && (
           <div className="hidden sm:block">

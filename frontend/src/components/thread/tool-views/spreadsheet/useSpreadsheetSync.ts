@@ -104,6 +104,15 @@ export function useSpreadsheetSync({
   const [isLoading, setIsLoading] = useState(true);
   const [isComponentReady, setIsComponentReady] = useState(false);
 
+  // Keep refs in sync with state for polling
+  useEffect(() => {
+    pendingChangesRef.current = syncState.pendingChanges;
+  }, [syncState.pendingChanges]);
+
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
+
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const hasInitiallyLoadedRef = useRef(false);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -117,6 +126,8 @@ export function useSpreadsheetSync({
   const lastEditTimeRef = useRef<number>(0);
   const saveQueueRef = useRef<Blob | null>(null);
   const initialLoadDoneRef = useRef(false);
+  const pendingChangesRef = useRef(false);
+  const isLoadingRef = useRef(false);
 
   const cacheKey = sandboxId && filePath ? `${sandboxId}:${filePath}` : null;
 
@@ -520,19 +531,31 @@ export function useSpreadsheetSync({
   }, [sandboxId, filePath, isComponentReady, enabled]);
 
   useEffect(() => {
-    if (!enabled || !sandboxId || !filePath || pollIntervalMs <= 0) return;
+    if (!enabled || !sandboxId || !filePath || pollIntervalMs <= 0) {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+      return;
+    }
+
+    // Clear any existing interval
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+    }
 
     pollIntervalRef.current = setInterval(async () => {
-      if (!hasInitiallyLoadedRef.current || isSavingRef.current || !isOnlineRef.current || isLoading || isEditingRef.current) {
+      // Use refs to check current state without causing interval recreation
+      if (!hasInitiallyLoadedRef.current || isSavingRef.current || !isOnlineRef.current || isLoadingRef.current || isEditingRef.current) {
         return;
       }
 
-      if (syncState.pendingChanges) {
+      if (pendingChangesRef.current) {
         return;
       }
 
       const timeSinceLastEdit = Date.now() - lastEditTimeRef.current;
-      if (timeSinceLastEdit < 2000) {
+      if (timeSinceLastEdit < 5000) { // Increased from 2000ms to 5000ms - don't poll right after edits
         return;
       }
 
@@ -550,7 +573,8 @@ export function useSpreadsheetSync({
         const hash = await generateHash(blob);
 
         if (lastKnownHashRef.current && hash !== lastKnownHashRef.current) {
-          if (syncState.pendingChanges || isEditingRef.current) {
+          // Double-check state with refs before updating
+          if (pendingChangesRef.current || isEditingRef.current) {
             setSyncState(prev => ({
               ...prev,
               status: 'conflict',
@@ -596,9 +620,10 @@ export function useSpreadsheetSync({
     return () => {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
       }
     };
-  }, [enabled, sandboxId, filePath, pollIntervalMs, syncState.pendingChanges, isLoading, spreadsheetRef, cacheKey]);
+  }, [enabled, sandboxId, filePath, pollIntervalMs, spreadsheetRef, cacheKey]); // Removed syncState.pendingChanges and isLoading from deps
 
   const forceRefresh = useCallback(async () => {
     if (cacheKey) {
