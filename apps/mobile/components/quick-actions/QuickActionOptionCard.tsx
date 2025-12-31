@@ -92,15 +92,15 @@ export function QuickActionOptionCard({ option, actionId, onPress, isSelected = 
   const cardWidth = isSlideTemplate ? 160 : 100;
   const cardHeight = isSlideTemplate ? 90 : 100; // 16:9 for slides, square for others
 
-  // Get icon color based on theme and selection state
-  // Primary: #121215 (light) / #F8F8F8 (dark)
-  // Foreground with 70% opacity: rgba(18, 18, 21, 0.7) (light) / rgba(248, 248, 248, 0.7) (dark)
+  // Get icon color based on theme and selection state using neutral colors
+  // neutral-50 (dark) / neutral-900 (light)
+  // neutral-300 (dark) / neutral-700 (light) with 70% opacity
   const iconColor = React.useMemo(() => {
     if (isSelected) {
-      return colorScheme === 'dark' ? '#F8F8F8' : '#121215'; // primary
+      return colorScheme === 'dark' ? '#fafafa' : '#171717'; // neutral-50 / neutral-900
     }
-    // 70% opacity
-    return colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.7)' : 'rgba(18, 18, 21, 0.7)';
+    // 70% opacity for unselected state
+    return colorScheme === 'dark' ? 'rgba(212, 212, 212, 0.7)' : 'rgba(64, 64, 64, 0.7)'; // neutral-300 / neutral-700
   }, [isSelected, colorScheme]);
 
   return (

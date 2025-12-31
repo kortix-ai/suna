@@ -26,6 +26,7 @@ interface CircularProgressProps {
 }
 
 function CircularProgress({ balance, limit }: CircularProgressProps) {
+  const { colorScheme } = useColorScheme();
   const size = 20;
   const strokeWidth = 3;
   const radius = (size - strokeWidth) / 2;
@@ -34,15 +35,17 @@ function CircularProgress({ balance, limit }: CircularProgressProps) {
   // Calculate percentage remaining (balance / limit)
   const percentageRemaining = Math.max(0, Math.min(100, (balance / limit) * 100));
   
-  // Determine color based on percentage remaining
+  // Determine color based on percentage remaining with dark mode support
   const getColor = (percentage: number) => {
-    if (percentage >= 60) return '#16a34a'; // green-600
-    if (percentage >= 20) return '#ca8a04'; // yellow-600
-    return '#dc2626'; // red-600
+    if (percentage >= 60) return '#22c55e'; // green-500 (works well in both modes)
+    if (percentage >= 20) return '#eab308'; // yellow-500 (works well in both modes)
+    return '#ef4444'; // red-500 (works well in both modes)
   };
   
   const color = getColor(percentageRemaining);
-  const backgroundColor = 'rgba(128, 128, 128, 0.2)'; // Light gray background
+  const backgroundColor = colorScheme === 'dark' 
+    ? 'rgba(115, 115, 115, 0.3)' // neutral-500 with opacity for dark mode
+    : 'rgba(163, 163, 163, 0.2)'; // neutral-400 with opacity for light mode
   
   // Calculate stroke dash offset for progress circle showing REMAINING tokens
   // When percentageRemaining = 100% → strokeDashoffset = 0 → full circle visible
@@ -186,11 +189,11 @@ export function TopNav({
             centeredUpgradeScale.value = withSpring(1, { damping: 15, stiffness: 400 });
           }}
           onPress={handleUpgradePress}
-          className="h-10 flex-row items-center gap-1.5 rounded-full bg-black px-3"
+          className="h-10 flex-row items-center gap-1.5 rounded-full bg-neutral-900 dark:bg-neutral-100 px-3"
           style={centeredUpgradeAnimatedStyle}
           accessibilityRole="button"
           accessibilityLabel="Upgrade">
-          <Text className="text-sm font-roobert-semibold text-white">
+          <Text className="text-sm font-roobert-semibold text-neutral-50 dark:text-neutral-900">
             {t('billing.upgrade')}
           </Text>
         </AnimatedPressable>
@@ -199,7 +202,7 @@ export function TopNav({
         <TouchableOpacity
           onPress={handleCreditsPress}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 40, paddingHorizontal: 10, borderRadius: 20 }}
-          className="bg-neutral-50"
+          className="bg-neutral-100 dark:bg-neutral-800"
           hitSlop={ANDROID_HIT_SLOP}
           activeOpacity={0.7}
           accessibilityRole="button"
@@ -226,7 +229,7 @@ export function TopNav({
             return (
               <>
                 <CircularProgress balance={balance} limit={limit} />
-                <Text className="font-roobert-medium text-sm text-neutral-600">
+                <Text className="font-roobert-medium text-sm text-neutral-600 dark:text-neutral-400">
                   {formatCredits(balance)}
                 </Text>
               </>

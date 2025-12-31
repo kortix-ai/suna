@@ -173,7 +173,7 @@ export function LibraryTemplateSelector({
           )}
 
           {/* Template Name */}
-          <Text className="text-sm font-roobert-medium text-black">
+          <Text className="text-sm font-roobert-medium text-neutral-900 dark:text-neutral-50">
             {selectedTemplate.label}
           </Text>
 
@@ -189,10 +189,10 @@ export function LibraryTemplateSelector({
     <View className="px-4 mb-3">
       <Pressable
         onPress={handleLibraryPress}
-        className="border-[1.5px] border-black/10 rounded-full flex-row items-center gap-1 px-4 h-10 self-start"
+        className="border-[1.5px] border-neutral-900/10 dark:border-neutral-50/10 rounded-full flex-row items-center gap-1 px-4 h-10 self-start"
         style={{ opacity: 0.7 }}
       >
-        <Text className="text-base font-roobert-medium text-black">{buttonConfig.text}</Text>
+        <Text className="text-base font-roobert-medium text-neutral-900 dark:text-neutral-50">{buttonConfig.text}</Text>
         <Image
           source={buttonConfig.image}
           style={{ width: 20, height: 20 }}

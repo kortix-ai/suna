@@ -134,7 +134,7 @@ function ThreadItem({ thread, onPress }: { thread: Thread; onPress: () => void }
           title={title}
           icon={threadIcon}
           size={48}
-          backgroundColor={isDarkMode ? '#1C1D20' : '#ECECEC'}
+          backgroundColor={isDarkMode ? '#262626' : '#f5f5f5'} // neutral-800 / neutral-100
           className="flex-row items-center justify-center"
           style={{
             borderWidth: 0,
@@ -189,10 +189,10 @@ function ThreadSection({
 function ModeHeader({ modeIcon: ModeIcon, modeLabel }: { modeIcon: React.ComponentType<any>; modeLabel: string }) {
   const { colorScheme } = useColorScheme();
   
-  // Get icon color based on theme
-  // Foreground: #121215 (light) / #F8F8F8 (dark)
+  // Get icon color based on theme using neutral colors
+  // neutral-50 (dark) / neutral-900 (light)
   const iconColor = React.useMemo(() => {
-    return colorScheme === 'dark' ? '#F8F8F8' : '#121215';
+    return colorScheme === 'dark' ? '#fafafa' : '#171717';
   }, [colorScheme]);
 
   return (
@@ -216,9 +216,9 @@ function EmptyState({ modeLabel }: { modeLabel: string }) {
         className="mb-6 h-20 w-20 items-center justify-center rounded-full"
         style={{
           backgroundColor:
-            colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)',
+            colorScheme === 'dark' ? 'rgba(250, 250, 250, 0.1)' : 'rgba(64, 64, 64, 0.05)', // neutral-50 / neutral-700 with opacity
         }}>
-        <MessageCircle size={40} color={colorScheme === 'dark' ? '#666' : '#999'} />
+        <MessageCircle size={40} color={colorScheme === 'dark' ? '#737373' : '#a3a3a3'} /> {/* neutral-500 / neutral-400 */}
       </View>
       <Text className="mb-2 text-center font-roobert-semibold text-xl text-foreground">
         {t('modes.noThreadsYet', { defaultValue: `No ${modeLabel} threads yet` })}

@@ -9,7 +9,7 @@
 
   /* Light Mode (Default) - Kortix Brand */
   :root {
-    --background: 0 0% 96%;         /* #F6F6F6 - Kortix White */
+    --background: 0 0% 98%;         /* #FAFAFA - neutral-50 */
     --foreground: 218 12% 7%;          /* #121215 - Kortix Black */
     --card: 210 20% 98%;                 /* #F9FAFB - Pure white cards */
     --card-foreground: 218 12% 7%;     /* #121215 - Card text */
@@ -37,7 +37,7 @@
 
   /* Dark Mode - Kortix Brand */
   .dark:root {
-    --background: 240 8% 8%;          /* #121215 - Kortix Black */
+    --background: 0 0% 9%;          /* #171717 - neutral-900 */
     --foreground: 240 11% 97%;         /* #F8F8F8 - Kortix White */
     --card: 240 4% 9%;                 /* #161618 - Dark cards */
     --card-foreground: 240 11% 97%;    /* #F8F8F8 - Card text */

@@ -107,14 +107,22 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
   }, [agent]);
 
   const modeText = isBasicMode ? 'Basic' : 'Advanced';
-  const modeImage = isBasicMode 
-    ? require('@/assets/images/Basic-Agent.png')
-    : require('@/assets/images/Advanced-Agent.png');
+  const modeImage = React.useMemo(() => {
+    if (isBasicMode) {
+      return isDark 
+        ? require('@/assets/images/Basic-Agent-Dark.png')
+        : require('@/assets/images/Basic-Agent.png');
+    } else {
+      return isDark 
+        ? require('@/assets/images/Advanced-Agent-Dark.png')
+        : require('@/assets/images/Advanced-Agent.png');
+    }
+  }, [isBasicMode, isDark]);
 
   return (
     <TouchableOpacity
       onPress={onPress}
-      className="h-10 rounded-full bg-neutral-100 flex-row items-center gap-2 px-[10px]"
+      className="h-10 rounded-full bg-neutral-50 dark:bg-neutral-900 flex-row items-center gap-2 px-[10px]"
       hitSlop={ANDROID_HIT_SLOP}
       activeOpacity={0.7}
     >
@@ -125,7 +133,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
           resizeMode="cover"
         />
       </View>
-      <Text className="text-foreground text-sm font-roobert-medium">{modeText}</Text>
+      <Text className="text-neutral-700 dark:text-neutral-300 text-sm font-roobert-medium">{modeText}</Text>
     </TouchableOpacity>
   );
 }

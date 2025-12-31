@@ -334,6 +334,7 @@ export function AgentDrawer({
   const modelOptions = React.useMemo(() => {
     const basicModel = models.find((m) => !m.requires_subscription);
     const advancedModel = models.find((m) => m.requires_subscription);
+    const isDark = colorScheme === 'dark';
 
     return [
       {
@@ -341,7 +342,9 @@ export function AgentDrawer({
         modelId: basicModel?.id || 'gpt-4o-mini',
         name: 'Basic',
         description: 'Fastest, useful for everyday tasks.',
-        icon: require('@/assets/images/Basic-Agent.png'),
+        icon: isDark 
+          ? require('@/assets/images/Basic-Agent-Dark.png')
+          : require('@/assets/images/Basic-Agent.png'),
         isLocked: false,
       },
       {
@@ -349,11 +352,13 @@ export function AgentDrawer({
         modelId: advancedModel?.id || 'o1',
         name: 'Advanced',
         description: 'Best for reasoning and heavy usage.',
-        icon: require('@/assets/images/Advanced-Agent.png'),
+        icon: isDark 
+          ? require('@/assets/images/Advanced-Agent-Dark.png')
+          : require('@/assets/images/Advanced-Agent.png'),
         isLocked: hasFreeTier,
       },
     ];
-  }, [models, hasFreeTier]);
+  }, [models, hasFreeTier, colorScheme]);
 
   // Handle model selection
   const handleModelPress = React.useCallback(

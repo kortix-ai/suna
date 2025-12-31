@@ -4,6 +4,7 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
+import { Icon } from '@/components/ui/icon';
 import { QUICK_ACTIONS } from './quickActions';
 import { QuickAction } from '.';
 import { useLanguage } from '@/contexts';
@@ -36,8 +37,17 @@ interface ModeItemProps {
 
 const ModeItem = React.memo(({ action, index, isSelected, onPress, isLast }: ModeItemProps) => {
   const { t } = useLanguage();
+  const { colorScheme } = useColorScheme();
   const translatedLabel = t(`quickActions.${action.id}`, { defaultValue: action.label });
-  const IconComponent = action.icon;
+  
+  // Get icon color based on theme and selection state using neutral colors
+  const iconColor = React.useMemo(() => {
+    if (isSelected) {
+      return colorScheme === 'dark' ? '#fafafa' : '#171717'; // neutral-50 / neutral-900
+    }
+    // 50% opacity for unselected state (matching the opacity style)
+    return colorScheme === 'dark' ? 'rgba(212, 212, 212, 0.5)' : 'rgba(64, 64, 64, 0.5)'; // neutral-300 / neutral-700
+  }, [isSelected, colorScheme]);
 
   return (
     <Pressable 
@@ -57,12 +67,15 @@ const ModeItem = React.memo(({ action, index, isSelected, onPress, isLast }: Mod
           marginLeft: 0,
         }}
       >
-        <IconComponent 
+        <Icon 
+          as={action.icon}
           size={20}
-          className={isSelected ? 'text-primary' : 'text-foreground'}
+          color={iconColor}
+          className={isSelected ? 'text-neutral-900 dark:text-neutral-50' : 'text-neutral-700 dark:text-neutral-300'}
+          strokeWidth={2}
         />
         <Text 
-          className={`text-lg font-medium ${isSelected ? 'text-primary' : 'text-foreground'}`}
+          className={`text-lg font-medium ${isSelected ? 'text-neutral-900 dark:text-neutral-50' : 'text-neutral-700 dark:text-neutral-300'}`}
         >
           {translatedLabel}
         </Text>
@@ -227,12 +240,12 @@ export function QuickActionBar({
     }
   }, [getCenteredIndex, scrollToCenter, actions, selectedActionId, onActionPress]);
 
-  // Gradient colors for fade effect
+  // Gradient colors for fade effect using neutral colors
   const fadeGradientColors = React.useMemo(
     () =>
       colorScheme === 'dark'
-        ? (['rgba(18, 18, 21, 1)', 'rgba(18, 18, 21, 0)'] as const)
-        : (['rgba(246, 246, 246, 1)', 'rgba(246, 246, 246, 0)'] as const),
+        ? (['rgba(23, 23, 23, 1)', 'rgba(23, 23, 23, 0)'] as const) // neutral-900
+        : (['rgba(250, 250, 250, 1)', 'rgba(250, 250, 250, 0)'] as const), // neutral-50
     [colorScheme]
   );
 

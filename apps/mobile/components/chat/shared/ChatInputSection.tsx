@@ -71,13 +71,13 @@ export interface ChatInputSectionRef {
   focusInput: () => void;
 }
 
-// Background colors for the solid input area
-const DARK_BACKGROUND = '#121215';
-const LIGHT_BACKGROUND = '#F8F8F8';
+// Background colors for the solid input area using neutral colors
+const DARK_BACKGROUND = '#171717'; // neutral-900
+const LIGHT_BACKGROUND = '#fafafa'; // neutral-50
 
-// Gradient colors - fade from transparent to solid background
-const DARK_GRADIENT_COLORS = ['rgba(18, 18, 21, 0)', 'rgba(18, 18, 21, 0.8)', 'rgba(18, 18, 21, 1)'] as const;
-const LIGHT_GRADIENT_COLORS = ['rgba(248, 248, 248, 0)', 'rgba(248, 248, 248, 0.8)', 'rgba(248, 248, 248, 1)'] as const;
+// Gradient colors - fade from transparent to solid background using neutral colors
+const DARK_GRADIENT_COLORS = ['rgba(23, 23, 23, 0)', 'rgba(23, 23, 23, 0.8)', 'rgba(23, 23, 23, 1)'] as const; // neutral-900
+const LIGHT_GRADIENT_COLORS = ['rgba(250, 250, 250, 0)', 'rgba(250, 250, 250, 0.8)', 'rgba(250, 250, 250, 1)'] as const; // neutral-50
 const GRADIENT_LOCATIONS = [0, 0.4, 1] as const;
 
 // Gradient height - just for the fade effect above the solid area

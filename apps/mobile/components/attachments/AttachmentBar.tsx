@@ -151,7 +151,7 @@ function AttachmentItem({
         style={{ 
           width: 80,
           height: 80,
-          shadowColor: '#000',
+          shadowColor: colorScheme === 'dark' ? '#171717' : '#404040', // neutral-900 / neutral-700
           shadowOffset: { width: 0, height: 1 },
           shadowOpacity: colorScheme === 'dark' ? 0.3 : 0.05,
           shadowRadius: 2,
@@ -168,8 +168,8 @@ function AttachmentItem({
             
             {/* Minimal video badge */}
             {attachment.type === 'video' && !isUploading && !hasError && (
-              <View className="absolute top-1 left-1 bg-black/60 backdrop-blur-sm rounded px-1 py-0.5">
-                <Text className="text-[9px] font-roobert-semibold text-white tracking-tight">
+              <View className="absolute top-1 left-1 bg-neutral-900/60 dark:bg-neutral-900/70 backdrop-blur-sm rounded px-1 py-0.5">
+                <Text className="text-[9px] font-roobert-semibold text-neutral-50 tracking-tight">
                   VID
                 </Text>
               </View>
@@ -177,9 +177,9 @@ function AttachmentItem({
             
             {/* Minimal upload overlay */}
             {isUploading && (
-              <View className="absolute inset-0 bg-black/20 backdrop-blur-[2px] items-center justify-center">
-                <View className="bg-white/90 dark:bg-black/80 rounded-full p-1.5">
-                  <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#fff' : '#000'} />
+              <View className="absolute inset-0 bg-neutral-900/20 dark:bg-neutral-900/30 backdrop-blur-[2px] items-center justify-center">
+                <View className="bg-neutral-50/90 dark:bg-neutral-900/80 rounded-full p-1.5">
+                  <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#fafafa' : '#171717'} />
                 </View>
               </View>
             )}
@@ -213,10 +213,10 @@ function AttachmentItem({
                 />
               </View>
             ) : isUploading ? (
-              <View className="bg-white/90 dark:bg-black/80 rounded-full p-1.5">
+              <View className="bg-neutral-50/90 dark:bg-neutral-900/80 rounded-full p-1.5">
                 <ActivityIndicator
                   size="small"
-                  color={colorScheme === 'dark' ? '#fff' : '#000'}
+                  color={colorScheme === 'dark' ? '#fafafa' : '#171717'}
                 />
               </View>
             ) : (
@@ -246,7 +246,7 @@ function AttachmentItem({
               height: 28,
               zIndex: 9999,
               elevation: 5,
-              shadowColor: '#000',
+              shadowColor: colorScheme === 'dark' ? '#171717' : '#404040', // neutral-900 / neutral-700
               shadowOffset: { width: 0, height: 2 },
               shadowOpacity: colorScheme === 'dark' ? 0.5 : 0.25,
               shadowRadius: 4,
