@@ -20,7 +20,7 @@ You can modify the sandbox environment for development or to add new capabilitie
    ```
    cd backend/sandbox/docker
    docker compose build
-   docker push kortix/suna:0.1.3.25
+   docker push kortix/suna:0.1.3.28
    ```
 3. Test your changes locally using docker-compose
 

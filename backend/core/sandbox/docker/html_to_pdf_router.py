@@ -256,7 +256,7 @@ class PresentationToPDFAPI:
                         '--disable-gpu',
                         '--force-device-scale-factor=1',
                         '--disable-background-timer-throttling',
-                        '--single-process',  # More stable for PDF generation
+                        # Note: --single-process removed - causes browser crashes with concurrent PDF generation
                     ]
                 )
                 

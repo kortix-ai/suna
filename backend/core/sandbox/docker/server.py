@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 import uvicorn
 import os
@@ -24,15 +23,6 @@ class WorkspaceDirMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 app = FastAPI()
-
-# Add CORS middleware to allow cross-origin requests
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for sandbox access
-    allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods
-    allow_headers=["*"],  # Allow all headers
-)
 
 app.add_middleware(WorkspaceDirMiddleware)
 
