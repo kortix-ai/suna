@@ -5,7 +5,7 @@ import {
   FileText, 
   Users, 
   Search,
-  Sparkles
+  LayoutGrid
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 
@@ -28,7 +28,7 @@ export const QUICK_ACTIONS: QuickAction[] = [
   {
     id: 'general',
     label: 'General',
-    icon: Sparkles,
+    icon: LayoutGrid,
   },
   {
     id: 'slides',

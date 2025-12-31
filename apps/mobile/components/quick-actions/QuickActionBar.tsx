@@ -37,6 +37,7 @@ interface ModeItemProps {
 const ModeItem = React.memo(({ action, index, isSelected, onPress, isLast }: ModeItemProps) => {
   const { t } = useLanguage();
   const translatedLabel = t(`quickActions.${action.id}`, { defaultValue: action.label });
+  const IconComponent = action.icon;
 
   return (
     <Pressable 
@@ -49,13 +50,17 @@ const ModeItem = React.memo(({ action, index, isSelected, onPress, isLast }: Mod
       }}
     >
       <View
-        className="py-2.5 px-3 flex-row items-center"
+        className="py-2.5 px-3 flex-row items-center gap-2"
         style={{
           opacity: isSelected ? 1 : 0.5,
           marginRight: 0,
           marginLeft: 0,
         }}
       >
+        <IconComponent 
+          size={20}
+          className={isSelected ? 'text-primary' : 'text-foreground'}
+        />
         <Text 
           className={`text-lg font-medium ${isSelected ? 'text-primary' : 'text-foreground'}`}
         >
