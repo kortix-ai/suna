@@ -744,9 +744,28 @@ export const KortixComputer = memo(function KortixComputer({
   };
 
   if (isMobile) {
+    const handleDrawerKeyDown = (e: React.KeyboardEvent) => {
+      // Vaul drawers are dismissible by Escape by default.
+      // Prevent Escape / Esc from closing the Kortix Computer.
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
     return (
-      <Drawer open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-        <DrawerContent className="h-[85vh] max-h-[85vh] overflow-hidden" style={{ contain: 'strict' }}>
+      <Drawer
+        open={isOpen}
+        onOpenChange={(open) => !open && handleClose()}
+        // Never allow Esc/Escape to dismiss the Kortix Computer.
+        // (Users commonly hit Escape in editors / sandbox UIs.)
+        dismissible={false}
+      >
+        <DrawerContent
+          className="h-[85vh] max-h-[85vh] overflow-hidden"
+          style={{ contain: 'strict' }}
+          onKeyDown={handleDrawerKeyDown}
+        >
           <PanelHeader
             agentName={agentName}
             onClose={handleClose}
