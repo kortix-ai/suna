@@ -63,6 +63,21 @@ function normalizeAttachments(attachments: unknown): string[] {
   }
   
   if (typeof attachments === 'string') {
+    // Try parsing as JSON first (handles JSON stringified arrays like "[\"file1.json\", \"file2.json\"]")
+    const trimmed = attachments.trim();
+    if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || 
+        (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((a: any) => a && typeof a === 'string' && a.trim().length > 0);
+        }
+      } catch {
+        // Not valid JSON, fall through to comma-separated parsing
+      }
+    }
+    
+    // Fallback to comma-separated string parsing
     return attachments.split(',').map(a => a.trim()).filter(a => a.length > 0);
   }
   

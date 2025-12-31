@@ -37,7 +37,26 @@ export function extractCompleteData({ toolCall, toolResult }: { toolCall: ToolCa
   
   if (args?.attachments) {
     if (typeof args.attachments === 'string') {
-      attachments = args.attachments.split(',').map((a: string) => a.trim()).filter(Boolean);
+      // Try parsing as JSON first (handles JSON stringified arrays like "[\"file1.json\", \"file2.json\"]")
+      const trimmed = args.attachments.trim();
+      if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || 
+          (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) {
+            attachments = parsed.filter((a: any) => a && typeof a === 'string' && a.trim().length > 0);
+          } else {
+            // Not an array, fall through to comma-separated parsing
+            attachments = args.attachments.split(',').map((a: string) => a.trim()).filter(Boolean);
+          }
+        } catch {
+          // Not valid JSON, fall through to comma-separated parsing
+          attachments = args.attachments.split(',').map((a: string) => a.trim()).filter(Boolean);
+        }
+      } else {
+        // Not JSON-like, use comma-separated parsing
+        attachments = args.attachments.split(',').map((a: string) => a.trim()).filter(Boolean);
+      }
     } else if (Array.isArray(args.attachments)) {
       attachments = args.attachments;
     }

@@ -99,9 +99,6 @@ class Model:
     priority: int = 0
     recommended: bool = False
     
-    # Fallback model ID - LiteLLM model ID to use when this model fails (e.g., for vision fallback)
-    fallback_model_id: Optional[str] = None
-    
     # Centralized model configuration
     config: Optional[ModelConfig] = None
     

@@ -18,7 +18,7 @@ import {
   CustomWorkerLimitError,
   ModelAccessDeniedError
 } from '@/lib/api/errors';
-import { useIsMobile } from '@/hooks/utils';
+import { useIsMobile, useLeadingDebouncedCallback } from '@/hooks/utils';
 import { useAuth } from '@/components/AuthProvider';
 import { config, isLocalMode, isStagingMode } from '@/lib/config';
 import { useInitiateAgentWithInvalidation } from '@/hooks/dashboard/use-initiate-agent';
@@ -279,7 +279,7 @@ export function DashboardContent() {
 
   const addOptimisticFiles = useOptimisticFilesStore((state) => state.addFiles);
 
-  const handleSubmit = async (
+  const handleSubmit = useLeadingDebouncedCallback(async (
     message: string,
     options?: {
       model_name?: string;
@@ -318,8 +318,7 @@ export function DashboardContent() {
       const threadId = crypto.randomUUID();
       const projectId = crypto.randomUUID();
       
-      chatInputRef.current?.clearPendingFiles();
-      chatInputRef.current?.clearUploadedFiles();
+      // Note: No need to clear files here - navigation to new page will unmount this component
       setIsRedirecting(true);
       
       const normalizedPendingFiles = pendingFiles.map((file) => {
@@ -332,13 +331,26 @@ export function DashboardContent() {
         addOptimisticFiles(threadId, projectId, normalizedPendingFiles);
         sessionStorage.setItem('optimistic_files', 'true');
         const fileRefs = normalizedPendingFiles.map((f) => 
-          `[Uploaded File: /workspace/uploads/${f.name}]`
+          `[Uploaded File: uploads/${f.name}]`
         ).join('\n');
         promptWithFiles = `${trimmedMessage || message}\n\n${fileRefs}`;
       }
       
       sessionStorage.setItem('optimistic_prompt', promptWithFiles);
       sessionStorage.setItem('optimistic_thread', threadId);
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Dashboard] New thread navigation:', {
+          projectId,
+          threadId,
+          agent_id: selectedAgentId || undefined,
+          model_name: options?.model_name,
+          promptLength: promptWithFiles.length,
+          promptPreview: promptWithFiles.slice(0, 140),
+          file_ids_count: fileIds.length,
+          pending_files_count: pendingFiles.length,
+        });
+      }
       
       router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
       
@@ -498,7 +510,7 @@ export function DashboardContent() {
       setIsSubmitting(false);
       setIsRedirecting(false);
     }
-  };
+  }, 1200);
 
   React.useEffect(() => {
     const timer = setTimeout(() => {

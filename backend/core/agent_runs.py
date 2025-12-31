@@ -345,6 +345,7 @@ async def _trigger_agent_background(
 
 async def _fast_parse_files(files: List[UploadFile], prompt: str = "") -> Tuple[str, List[Tuple[str, bytes, str, Optional[str]]]]:
     from core.utils.fast_parse import parse, FileType, format_file_size
+    import re
     
     if not files:
         return prompt, []
@@ -352,6 +353,16 @@ async def _fast_parse_files(files: List[UploadFile], prompt: str = "") -> Tuple[
     message_content = prompt
     files_for_upload: List[Tuple[str, bytes, str, Optional[str]]] = []
     file_refs = []
+    
+    # Extract existing file references from prompt to avoid duplicates
+    existing_refs = set()
+    if prompt:
+        # Match both [Uploaded File: ...] and [Attached: ...] patterns
+        existing_matches = re.findall(r'\[(?:Uploaded File|Attached|Image):\s*([^\]]+)\]', prompt)
+        for match in existing_matches:
+            # Normalize path (strip /workspace/ prefix if present)
+            normalized = match.replace('/workspace/', '') if match.startswith('/workspace/') else match
+            existing_refs.add(normalized.lower())
     
     for file in files:
         if not file.filename:
@@ -371,13 +382,19 @@ async def _fast_parse_files(files: List[UploadFile], prompt: str = "") -> Tuple[
                     parsed_content = parsed_content[:100000]
             
             files_for_upload.append((original_filename, content_bytes, mime_type, parsed_content))
-            file_refs.append(f"[Attached: {original_filename} ({format_file_size(result.file_size)}) -> uploads/{original_filename}]")
+            
+            # Check if this file is already referenced in the prompt
+            file_path = f"uploads/{original_filename}"
+            if file_path.lower() not in existing_refs:
+                file_refs.append(f"[Attached: {original_filename} ({format_file_size(result.file_size)}) -> {file_path}]")
             
             logger.debug(f"Fast-parsed {original_filename}: {result.char_count} chars, type={result.file_type.name}")
                 
         except Exception as e:
             logger.error(f"Error fast-parsing file {file.filename}: {str(e)}", exc_info=True)
-            file_refs.append(f"[Attached: {file.filename} -> uploads/{file.filename}]")
+            file_path = f"uploads/{file.filename}"
+            if file_path.lower() not in existing_refs:
+                file_refs.append(f"[Attached: {file.filename} -> {file_path}]")
         finally:
             await file.seek(0)
     
