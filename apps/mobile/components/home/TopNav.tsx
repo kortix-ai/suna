@@ -26,7 +26,7 @@ interface CircularProgressProps {
 }
 
 function CircularProgress({ balance, limit }: CircularProgressProps) {
-  const size = 24;
+  const size = 20;
   const strokeWidth = 3;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -176,7 +176,7 @@ export function TopNav({
       </TouchableOpacity>
 
       {/* Right: Upgrade Button and Token Usage Circle */}
-      <View className="flex-row items-center gap-3">
+      <View className="flex-row items-center gap-2">
         {/* Upgrade Button */}
         <AnimatedPressable
           onPressIn={() => {
@@ -186,18 +186,20 @@ export function TopNav({
             centeredUpgradeScale.value = withSpring(1, { damping: 15, stiffness: 400 });
           }}
           onPress={handleUpgradePress}
-          className="h-8 flex-row items-center gap-1.5 rounded-full bg-[#121215] px-2"
+          className="h-10 flex-row items-center gap-1.5 rounded-full bg-black px-3"
           style={centeredUpgradeAnimatedStyle}
           accessibilityRole="button"
           accessibilityLabel="Upgrade">
-          <Text className="text-sm font-semibold text-white">
+          <Text className="text-sm font-roobert-semibold text-white">
             {t('billing.upgrade')}
           </Text>
         </AnimatedPressable>
 
-        {/* Token Usage Circle */}
+        {/* Token Usage Button */}
         <TouchableOpacity
           onPress={handleCreditsPress}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 40, paddingHorizontal: 10, borderRadius: 20 }}
+          className="bg-neutral-50"
           hitSlop={ANDROID_HIT_SLOP}
           activeOpacity={0.7}
           accessibilityRole="button"
@@ -221,7 +223,14 @@ export function TopNav({
                 ? monthlyLimit 
                 : 100;
             
-            return <CircularProgress balance={balance} limit={limit} />;
+            return (
+              <>
+                <CircularProgress balance={balance} limit={limit} />
+                <Text className="font-roobert-medium text-sm text-neutral-600">
+                  {formatCredits(balance)}
+                </Text>
+              </>
+            );
           })()}
         </TouchableOpacity>
       </View>

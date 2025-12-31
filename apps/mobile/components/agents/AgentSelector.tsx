@@ -25,7 +25,7 @@ interface AgentSelectorProps {
 }
 
 export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
-  const { getCurrentAgent, isLoading, agents, hasInitialized, error } = useAgent();
+  const { getCurrentAgent, selectedModelId, isLoading, agents, hasInitialized, error } = useAgent();
   const agent = getCurrentAgent();
   const scale = useSharedValue(1);
   const { colorScheme } = useColorScheme();
@@ -59,7 +59,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
           <Text className="text-muted-foreground text-xs font-roobert-bold">?</Text>
         </View>
         <Text className="text-muted-foreground text-sm font-roobert-medium">
-          {error ? 'Error loading' : 'Select Worker'}
+          {error ? 'Error loading' : 'Select Mode'}
         </Text>
         <Icon
           as={ChevronDown}
@@ -92,8 +92,20 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
   }
 
   // For non-compact mode, show as "Basic" or "Advanced" button with mode-specific image
-  // Basic mode = Suna default agent, Advanced mode = custom agent
-  const isBasicMode = agent.metadata?.is_suna_default || false;
+  // Determine mode based on selected model ID or agent metadata
+  // Basic models: gpt-4o-mini, etc. (models that don't require subscription)
+  // Advanced models: o1, o1-mini, o1-preview, etc. (models that require subscription)
+  const isBasicMode = React.useMemo(() => {
+    // Check agent's model if we have a selected agent
+    if (agent?.model) {
+      // List of basic (free) models
+      const basicModels = ['gpt-4o-mini', 'gpt-4o', 'claude-3-5-sonnet-20241022'];
+      return basicModels.includes(agent.model);
+    }
+    // Fallback to agent metadata
+    return agent?.metadata?.is_suna_default || false;
+  }, [agent]);
+
   const modeText = isBasicMode ? 'Basic' : 'Advanced';
   const modeImage = isBasicMode 
     ? require('@/assets/images/Basic-Agent.png')
