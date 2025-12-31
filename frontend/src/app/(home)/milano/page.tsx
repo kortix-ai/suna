@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, Suspense, lazy } from 'react';
 import { MapPin } from 'lucide-react';
 import { AnimatedBg } from '@/components/ui/animated-bg';
-import { useIsMobile } from '@/hooks/utils';
+import { useIsMobile, useLeadingDebouncedCallback } from '@/hooks/utils';
 import { ChatInput, ChatInputHandles } from '@/components/thread/chat-input/chat-input';
 import { useAuth } from '@/components/AuthProvider';
 import { useRouter } from 'next/navigation';
@@ -73,7 +73,7 @@ export default function MilanoPage() {
   const isSunaAgent = !user || selectedAgent?.metadata?.is_suna_default || false;
   const addOptimisticFiles = useOptimisticFilesStore((state) => state.addFiles);
 
-  const handleChatInputSubmit = async (
+  const handleChatInputSubmit = useLeadingDebouncedCallback(async (
     message: string,
     options?: { model_name?: string; enable_thinking?: boolean }
   ) => {
@@ -84,6 +84,7 @@ export default function MilanoPage() {
     }
 
     setIsSubmitting(true);
+    let didNavigate = false;
     try {
       const files = chatInputRef.current?.getPendingFiles() || [];
       const normalizedFiles = files.map((file) => {
@@ -109,8 +110,21 @@ export default function MilanoPage() {
       
       sessionStorage.setItem('optimistic_prompt', promptWithFiles);
       sessionStorage.setItem('optimistic_thread', threadId);
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Milano] Starting new thread:', {
+          projectId,
+          threadId,
+          agent_id: selectedAgentId || undefined,
+          model_name: options?.model_name,
+          promptLength: promptWithFiles.length,
+          promptPreview: promptWithFiles.slice(0, 140),
+          files: normalizedFiles.map((f) => ({ name: f.name, size: f.size, type: f.type })),
+        });
+      }
       
       router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
+      didNavigate = true;
       
       optimisticAgentStart({
         thread_id: threadId,
@@ -135,10 +149,11 @@ export default function MilanoPage() {
       });
     } catch (error: any) {
       toast.error(error.message || 'Failed to create Worker. Please try again.');
-    } finally {
-      setIsSubmitting(false);
+      if (!didNavigate) {
+        setIsSubmitting(false);
+      }
     }
-  };
+  }, 1200);
 
   return (
     <main className="w-full">

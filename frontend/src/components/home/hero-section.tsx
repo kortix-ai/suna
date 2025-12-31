@@ -1,6 +1,6 @@
 'use client';
 import { siteConfig } from '@/lib/site-config';
-import { useIsMobile } from '@/hooks/utils';
+import { useIsMobile, useLeadingDebouncedCallback } from '@/hooks/utils';
 import dynamic from 'next/dynamic';
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import Link from 'next/link';
@@ -200,12 +200,12 @@ export function HeroSection() {
 
     const addOptimisticFiles = useOptimisticFilesStore((state) => state.addFiles);
 
-    const handleChatInputSubmit = async (
+    const handleChatInputSubmit = useLeadingDebouncedCallback(async (
         message: string,
         options?: { model_name?: string; enable_thinking?: boolean }
     ) => {
         const pendingFiles = chatInputRef.current?.getPendingFiles() || [];
-        
+
         if ((!message.trim() && !pendingFiles.length) || isSubmitting) {
             return;
         }
@@ -216,36 +216,48 @@ export function HeroSection() {
         }
 
         setIsSubmitting(true);
+        let didNavigate = false;
         try {
             const files = pendingFiles;
             localStorage.removeItem(PENDING_PROMPT_KEY);
-            
+
             const normalizedFiles = files.map((file) => {
                 const normalizedName = normalizeFilenameToNFC(file.name);
                 return new File([file], normalizedName, { type: file.type });
             });
-            
+
             const threadId = crypto.randomUUID();
             const projectId = crypto.randomUUID();
             const trimmedMessage = message.trim();
-            
-            // Note: No need to clear files/input here - navigation to new page will unmount this component
-            
+
             let promptWithFiles = trimmedMessage;
             if (normalizedFiles.length > 0) {
                 addOptimisticFiles(threadId, projectId, normalizedFiles);
                 sessionStorage.setItem('optimistic_files', 'true');
-                const fileRefs = normalizedFiles.map((f) => 
+                const fileRefs = normalizedFiles.map((f) =>
                     `[Uploaded File: uploads/${f.name}]`
                 ).join('\n');
                 promptWithFiles = `${trimmedMessage}\n\n${fileRefs}`;
             }
-            
+
             sessionStorage.setItem('optimistic_prompt', promptWithFiles);
             sessionStorage.setItem('optimistic_thread', threadId);
-            
+
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('[HeroSection] Starting new thread:', {
+                    projectId,
+                    threadId,
+                    agent_id: selectedAgentId || undefined,
+                    model_name: options?.model_name,
+                    promptLength: promptWithFiles.length,
+                    promptPreview: promptWithFiles.slice(0, 140),
+                    files: normalizedFiles.map((f) => ({ name: f.name, size: f.size, type: f.type })),
+                });
+            }
+
             router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
-            
+            didNavigate = true;
+
             optimisticAgentStart({
                 thread_id: threadId,
                 project_id: projectId,
@@ -353,10 +365,11 @@ export function HeroSection() {
                     error.message || 'Failed to create Worker. Please try again.',
                 );
             }
-        } finally {
-            setIsSubmitting(false);
+            if (!didNavigate) {
+                setIsSubmitting(false);
+            }
         }
-    };
+    }, 1200);
 
     return (
         <section id="hero" className="w-full relative overflow-hidden">
