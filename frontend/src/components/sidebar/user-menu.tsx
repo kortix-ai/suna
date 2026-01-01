@@ -4,18 +4,14 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  BadgeCheck,
   Bell,
-  ChevronDown,
-  ChevronsUpDown,
   ChevronRight,
+  ChevronsUpDown,
   Command,
   CreditCard,
   Key,
   LogOut,
-  Plus,
   Settings,
-  User,
   AudioWaveform,
   Sun,
   Moon,
@@ -23,8 +19,6 @@ import {
   Plug,
   Zap,
   Shield,
-  DollarSign,
-  Users,
   BarChart3,
   FileText,
   TrendingDown,
@@ -44,12 +38,7 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
   DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuPortal,
 } from '@/components/ui/dropdown-menu';
 import {
   SidebarMenu,
@@ -63,7 +52,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import { createClient } from '@/lib/supabase/client';
 import { useTheme } from 'next-themes';
@@ -75,10 +63,9 @@ import { TierBadge } from '@/components/billing/tier-badge';
 import { useTranslations } from 'next-intl';
 import { useReferralDialog } from '@/stores/referral-dialog';
 import { ReferralDialog } from '@/components/referrals/referral-dialog';
-import { Badge } from '@/components/ui/badge';
-import { SpotlightCard } from '@/components/ui/spotlight-card';
+import { cn } from '@/lib/utils';
 
-export function NavUserWithTeams({
+export function UserMenu({
   user,
 }: {
   user: {
@@ -92,7 +79,7 @@ export function NavUserWithTeams({
 }) {
   const t = useTranslations('sidebar');
   const router = useRouter();
-  const { isMobile } = useSidebar();
+  const { isMobile, state } = useSidebar();
   const { data: accounts } = useAccounts();
   const { data: accountState } = useAccountState({ enabled: true });
   const [showNewTeamDialog, setShowNewTeamDialog] = React.useState(false);
@@ -102,12 +89,10 @@ export function NavUserWithTeams({
   const { isOpen: isReferralDialogOpen, openDialog: openReferralDialog, closeDialog: closeReferralDialog } = useReferralDialog();
   const { theme, setTheme } = useTheme();
 
-  // Check if user is on free tier
   const isFreeTier = accountState?.subscription?.tier_key === 'free' ||
     accountState?.tier?.name === 'free' ||
     !accountState?.subscription?.tier_key;
 
-  // Prepare personal account and team accounts
   const personalAccount = React.useMemo(
     () => accounts?.find((account) => account.personal_account),
     [accounts],
@@ -117,7 +102,6 @@ export function NavUserWithTeams({
     [accounts],
   );
 
-  // Create a default list of teams with logos for the UI (will show until real data loads)
   const defaultTeams = [
     {
       name: personalAccount?.name || 'Personal Account',
@@ -137,10 +121,8 @@ export function NavUserWithTeams({
     })) || []),
   ];
 
-  // Use the first team or first entry in defaultTeams as activeTeam
   const [activeTeam, setActiveTeam] = React.useState(defaultTeams[0]);
 
-  // Update active team when accounts load
   React.useEffect(() => {
     if (accounts?.length) {
       const currentTeam = accounts.find(
@@ -156,7 +138,6 @@ export function NavUserWithTeams({
           personal_account: currentTeam.personal_account,
         });
       } else {
-        // If current team not found, set first available account as active
         const firstAccount = accounts[0];
         setActiveTeam({
           name: firstAccount.name,
@@ -170,11 +151,8 @@ export function NavUserWithTeams({
     }
   }, [accounts, activeTeam.account_id]);
 
-  // Handle team selection
-  const handleTeamSelect = (team) => {
+  const handleTeamSelect = (team: typeof activeTeam) => {
     setActiveTeam(team);
-
-    // Navigate to the appropriate dashboard
     if (team.personal_account) {
       router.push('/dashboard');
     } else {
@@ -185,7 +163,6 @@ export function NavUserWithTeams({
   const handleLogout = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
-    // Clear local storage after sign out
     clearUserLocalStorage();
     router.push('/auth');
   };
@@ -203,73 +180,90 @@ export function NavUserWithTeams({
     return null;
   }
 
+  const isCollapsed = state === 'collapsed';
+
   return (
     <Dialog open={showNewTeamDialog} onOpenChange={setShowNewTeamDialog}>
       <SidebarMenu>
         <SidebarMenuItem className="relative">
-          {/* Buttons Container - Above user card */}
-          <div className="absolute bottom-full left-0 right-0 mb-2 px-0 group-data-[collapsible=icon]:hidden z-50 flex flex-col gap-2">
-            {/* Referral Button - Above Upgrade */}
-            {!isProductionMode() && (
-              <SpotlightCard className="bg-zinc-200/60 dark:bg-zinc-800/60 backdrop-blur-md cursor-pointer">
-                <div
+          {/* Upgrade & Referral buttons above user card */}
+          {!isCollapsed && (
+            <div className="mb-3 space-y-2">
+              {/* Referral Card */}
+              {!isProductionMode() && (
+                <button
                   onClick={openReferralDialog}
-                  className="flex items-center gap-3 px-3 py-2.5"
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-foreground/[0.04] hover:bg-foreground/[0.06] transition-colors text-left group"
                 >
-                  <Heart className="h-4 w-4 text-zinc-700 dark:text-zinc-300 flex-shrink-0" />
-                  <div className="flex-1 text-left">
-                    <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{t('referralShareTitle')}</div>
-                    <div className="text-xs text-zinc-600 dark:text-zinc-400">{t('referralShareSubtitle')}</div>
+                  <Heart className="h-4 w-4 text-rose-500 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-foreground">{t('referralShareTitle')}</div>
+                    <div className="text-xs text-muted-foreground truncate">{t('referralShareSubtitle')}</div>
                   </div>
-                  <ChevronRight className="h-4 w-4 text-zinc-500 flex-shrink-0" />
-                </div>
-              </SpotlightCard>
-            )}
-            {/* Upgrade Button - Closest to user card */}
-            {isFreeTier && (
-              <Button
-                onClick={() => setShowPlanModal(true)}
-                variant="default"
-                size="lg"
-                className="w-full"
-              >
-                {t('upgrade')}
-              </Button>
-            )}
-          </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors flex-shrink-0" />
+                </button>
+              )}
+              
+              {/* Upgrade Button */}
+              {isFreeTier && (
+                <Button
+                  onClick={() => setShowPlanModal(true)}
+                  className="w-full h-10 rounded-xl font-medium"
+                >
+                  <Zap className="h-4 w-4 mr-2" />
+                  {t('upgrade')}
+                </Button>
+              )}
+            </div>
+          )}
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
-                className="bg-transparent hover:bg-transparent data-[state=open]:bg-transparent border-[1.5px] border-border h-[64px] p-3 group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:!h-10 group-data-[collapsible=icon]:!w-10 group-data-[collapsible=icon]:border-0"
+                className={cn(
+                  "rounded-xl transition-all",
+                  isCollapsed 
+                    ? "h-9 w-9 p-0 justify-center" 
+                    : "h-12 px-3 bg-foreground/[0.04] hover:bg-foreground/[0.06]"
+                )}
               >
-                <Avatar className="h-10 w-10 rounded-full flex-shrink-0">
+                <Avatar className={cn(
+                  "flex-shrink-0 ring-1 ring-border/50",
+                  isCollapsed ? "h-7 w-7" : "h-8 w-8"
+                )}>
                   <AvatarImage src={user.avatar} alt={user.name} />
-                  <AvatarFallback className="rounded-full">
+                  <AvatarFallback className="text-xs font-medium bg-foreground/[0.06]">
                     {getInitials(user.name)}
                   </AvatarFallback>
                 </Avatar>
-                <div className="flex flex-col justify-between flex-1 min-w-0 h-10 group-data-[collapsible=icon]:hidden">
-                  <span className="truncate font-medium text-sm leading-tight">{user.name}</span>
-                  {user.planName ? (
-                    <TierBadge planName={user.planName} size="xs" variant="default" />
-                  ) : (
-                    <span className="truncate text-xs text-muted-foreground leading-tight">{user.email}</span>
-                  )}
-                </div>
-                <ChevronsUpDown className="ml-auto size-4 flex-shrink-0 group-data-[collapsible=icon]:hidden" />
+                
+                {!isCollapsed && (
+                  <>
+                    <div className="flex flex-col flex-1 min-w-0 text-left">
+                      <span className="truncate text-sm font-medium leading-tight">{user.name}</span>
+                      {user.planName ? (
+                        <TierBadge planName={user.planName} size="xs" variant="default" />
+                      ) : (
+                        <span className="truncate text-xs text-muted-foreground leading-tight">{user.email}</span>
+                      )}
+                    </div>
+                    <ChevronsUpDown className="h-4 w-4 text-muted-foreground/50 flex-shrink-0" />
+                  </>
+                )}
               </SidebarMenuButton>
             </DropdownMenuTrigger>
+            
             <DropdownMenuContent
-              className="w-(--radix-dropdown-menu-trigger-width) min-w-56 p-2"
+              className="w-64 p-2 rounded-xl"
               side={isMobile ? 'bottom' : 'top'}
               align="start"
-              sideOffset={4}
+              sideOffset={8}
             >
-              {/* Teams Section */}
+              {/* Workspaces */}
               {personalAccount && (
                 <>
-                  <DropdownMenuLabel className="text-muted-foreground text-xs px-2 py-1.5">
+                  <DropdownMenuLabel className="text-muted-foreground text-xs px-2 py-1.5 font-medium">
                     {t('workspaces')}
                   </DropdownMenuLabel>
                   <DropdownMenuItem
@@ -284,24 +278,22 @@ export function NavUserWithTeams({
                         personal_account: true,
                       })
                     }
-                    className="gap-2 p-2"
+                    className="gap-3 p-2 rounded-lg"
                   >
-                    <div className="flex size-6 items-center justify-center rounded-xs border">
-                      <Command className="size-4 shrink-0" />
+                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-foreground/[0.06]">
+                      <Command className="h-3.5 w-3.5" />
                     </div>
-                    <span className="flex-1">{personalAccount.name}</span>
+                    <span className="flex-1 font-medium">{personalAccount.name}</span>
                     {activeTeam.account_id === personalAccount.account_id && (
-                      <div className="size-4 flex items-center justify-center">
-                        <div className="size-1.5 rounded-full bg-primary" />
-                      </div>
+                      <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                     )}
                   </DropdownMenuItem>
                 </>
               )}
 
-              {teamAccounts?.length > 0 && (
+              {teamAccounts && teamAccounts.length > 0 && (
                 <>
-                  {teamAccounts.map((team, index) => (
+                  {teamAccounts.map((team) => (
                     <DropdownMenuItem
                       key={team.account_id}
                       onClick={() =>
@@ -314,62 +306,44 @@ export function NavUserWithTeams({
                           personal_account: false,
                         })
                       }
-                      className="gap-2 p-2"
+                      className="gap-3 p-2 rounded-lg"
                     >
-                      <div className="flex size-6 items-center justify-center rounded-xs border">
-                        <AudioWaveform className="size-4 shrink-0" />
+                      <div className="flex h-6 w-6 items-center justify-center rounded-md bg-foreground/[0.06]">
+                        <AudioWaveform className="h-3.5 w-3.5" />
                       </div>
-                      <span className="flex-1">{team.name}</span>
+                      <span className="flex-1 font-medium">{team.name}</span>
                       {activeTeam.account_id === team.account_id && (
-                        <div className="size-4 flex items-center justify-center">
-                          <div className="size-1.5 rounded-full bg-primary" />
-                        </div>
+                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                       )}
                     </DropdownMenuItem>
                   ))}
                 </>
               )}
 
-              {/* <DropdownMenuSeparator />
-              <DialogTrigger asChild>
-                <DropdownMenuItem 
-                  className="gap-2 p-2"
-                  onClick={() => {
-                    setShowNewTeamDialog(true)
-                  }}
-                >
-                  <div className="bg-background flex size-6 items-center justify-center rounded-md border">
-                    <Plus className="size-4" />
-                  </div>
-                  <div className="text-muted-foreground font-medium">Add team</div>
-                </DropdownMenuItem>
-              </DialogTrigger> */}
               {(personalAccount || (teamAccounts && teamAccounts.length > 0)) && (
-                <DropdownMenuSeparator className="my-1" />
+                <DropdownMenuSeparator className="my-2" />
               )}
 
               {/* General Section */}
-              <DropdownMenuLabel className="text-muted-foreground text-xs px-2 py-1.5">
+              <DropdownMenuLabel className="text-muted-foreground text-xs px-2 py-1.5 font-medium">
                 General
               </DropdownMenuLabel>
               <DropdownMenuGroup>
                 <DropdownMenuItem
-                  onClick={() => {
-                    setShowPlanModal(true);
-                  }}
-                  className="gap-2 p-2"
+                  onClick={() => setShowPlanModal(true)}
+                  className="gap-3 p-2 rounded-lg"
                 >
                   <Zap className="h-4 w-4" />
                   <span>Plan</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/knowledge" className="gap-2 p-2">
+                  <Link href="/knowledge" className="gap-3 p-2 rounded-lg">
                     <FileText className="h-4 w-4" />
                     <span>Knowledge Base</span>
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/support" className="gap-2 p-2">
+                  <Link href="/support" className="gap-3 p-2 rounded-lg">
                     <LifeBuoy className="h-4 w-4" />
                     <span>Support</span>
                   </Link>
@@ -379,7 +353,7 @@ export function NavUserWithTeams({
                     setSettingsTab('billing');
                     setShowSettingsModal(true);
                   }}
-                  className="gap-2 p-2"
+                  className="gap-3 p-2 rounded-lg"
                 >
                   <CreditCard className="h-4 w-4" />
                   <span>Billing</span>
@@ -389,19 +363,19 @@ export function NavUserWithTeams({
                     setSettingsTab('usage');
                     setShowSettingsModal(true);
                   }}
-                  className="gap-2 p-2"
+                  className="gap-3 p-2 rounded-lg"
                 >
                   <TrendingDown className="h-4 w-4" />
                   <span>Usage</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/settings/credentials" className="gap-2 p-2">
+                  <Link href="/settings/credentials" className="gap-3 p-2 rounded-lg">
                     <Plug className="h-4 w-4" />
                     <span>Integrations</span>
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/settings/api-keys" className="gap-2 p-2">
+                  <Link href="/settings/api-keys" className="gap-3 p-2 rounded-lg">
                     <Key className="h-4 w-4" />
                     <span>API Keys</span>
                   </Link>
@@ -411,14 +385,14 @@ export function NavUserWithTeams({
                     setSettingsTab('general');
                     setShowSettingsModal(true);
                   }}
-                  className="gap-2 p-2"
+                  className="gap-3 p-2 rounded-lg"
                 >
                   <Settings className="h-4 w-4" />
                   <span>Settings</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-                  className="gap-2 p-2"
+                  className="gap-3 p-2 rounded-lg"
                 >
                   <div className="relative h-4 w-4">
                     <Sun className="h-4 w-4 absolute rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
@@ -427,16 +401,18 @@ export function NavUserWithTeams({
                   <span>{t('theme')}</span>
                 </DropdownMenuItem>
               </DropdownMenuGroup>
+
+              {/* Admin Section */}
               {(user.isAdmin || isLocalMode()) && (
                 <>
-                  <DropdownMenuSeparator className="my-1" />
-                  <DropdownMenuLabel className="text-muted-foreground text-xs px-2 py-1.5">
+                  <DropdownMenuSeparator className="my-2" />
+                  <DropdownMenuLabel className="text-muted-foreground text-xs px-2 py-1.5 font-medium">
                     Advanced
                   </DropdownMenuLabel>
                   <DropdownMenuGroup>
                     {user.isAdmin && (
                       <DropdownMenuItem asChild>
-                        <Link href="/admin/billing" className="gap-2 p-2">
+                        <Link href="/admin/billing" className="gap-3 p-2 rounded-lg">
                           <Shield className="h-4 w-4" />
                           <span>Admin Panel</span>
                         </Link>
@@ -444,7 +420,7 @@ export function NavUserWithTeams({
                     )}
                     {user.isAdmin && (
                       <DropdownMenuItem asChild>
-                        <Link href="/admin/feedback" className="gap-2 p-2">
+                        <Link href="/admin/feedback" className="gap-3 p-2 rounded-lg">
                           <MessageSquare className="h-4 w-4" />
                           <span>User Feedback</span>
                         </Link>
@@ -452,7 +428,7 @@ export function NavUserWithTeams({
                     )}
                     {user.isAdmin && (
                       <DropdownMenuItem asChild>
-                        <Link href="/admin/analytics" className="gap-2 p-2">
+                        <Link href="/admin/analytics" className="gap-3 p-2 rounded-lg">
                           <BarChart3 className="h-4 w-4" />
                           <span>Analytics</span>
                         </Link>
@@ -460,7 +436,7 @@ export function NavUserWithTeams({
                     )}
                     {user.isAdmin && (
                       <DropdownMenuItem asChild>
-                        <Link href="/admin/notifications" className="gap-2 p-2">
+                        <Link href="/admin/notifications" className="gap-3 p-2 rounded-lg">
                           <Bell className="h-4 w-4" />
                           <span>Notifications</span>
                         </Link>
@@ -472,7 +448,7 @@ export function NavUserWithTeams({
                           setSettingsTab('env-manager');
                           setShowSettingsModal(true);
                         }}
-                        className="gap-2 p-2"
+                        className="gap-3 p-2 rounded-lg"
                       >
                         <KeyRound className="h-4 w-4" />
                         <span>Local .Env Manager</span>
@@ -481,8 +457,12 @@ export function NavUserWithTeams({
                   </DropdownMenuGroup>
                 </>
               )}
-              <DropdownMenuSeparator className="my-1" />
-              <DropdownMenuItem onClick={handleLogout} className="gap-2 p-2">
+
+              <DropdownMenuSeparator className="my-2" />
+              <DropdownMenuItem 
+                onClick={handleLogout} 
+                className="gap-3 p-2 rounded-lg text-destructive focus:text-destructive"
+              >
                 <LogOut className="h-4 w-4" />
                 <span>{t('logout')}</span>
               </DropdownMenuItem>
@@ -491,19 +471,15 @@ export function NavUserWithTeams({
         </SidebarMenuItem>
       </SidebarMenu>
 
-      <DialogContent className="sm:max-w-[425px] border-subtle dark:border-white/10 bg-card-bg dark:bg-background-secondary rounded-2xl shadow-custom">
+      <DialogContent className="sm:max-w-[425px] rounded-2xl">
         <DialogHeader>
-          <DialogTitle className="text-foreground">
-            Create a new team
-          </DialogTitle>
-          <DialogDescription className="text-foreground/70">
+          <DialogTitle>Create a new team</DialogTitle>
+          <DialogDescription>
             Create a team to collaborate with others.
           </DialogDescription>
         </DialogHeader>
-        {/* Team form removed - basejump functionality deprecated */}
       </DialogContent>
 
-      {/* User Settings Modal */}
       <UserSettingsModal
         open={showSettingsModal}
         onOpenChange={setShowSettingsModal}
@@ -511,14 +487,12 @@ export function NavUserWithTeams({
         returnUrl={typeof window !== 'undefined' ? window?.location?.href || '/' : '/'}
       />
 
-      {/* Plan Selection Modal */}
       <PlanSelectionModal
         open={showPlanModal}
         onOpenChange={setShowPlanModal}
         returnUrl={typeof window !== 'undefined' ? window?.location?.href || '/' : '/'}
       />
       
-      {/* Referral Dialog */}
       <ReferralDialog
         open={isReferralDialogOpen}
         onOpenChange={closeReferralDialog}
@@ -526,3 +500,7 @@ export function NavUserWithTeams({
     </Dialog>
   );
 }
+
+// Legacy export for backward compatibility
+export const NavUserWithTeams = UserMenu;
+

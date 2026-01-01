@@ -6,17 +6,17 @@ import { MessageSquareMore } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { normalizeIconName } from '@/lib/utils/icon-utils';
 
-interface ThreadIconProps {
+interface TaskIconProps {
   iconName?: string | null;
   className?: string;
   size?: number;
 }
 
-export function ThreadIcon({
+export function TaskIcon({
   iconName,
   className,
   size = 16
-}: ThreadIconProps) {
+}: TaskIconProps) {
   // If no icon name is provided, use MessageSquareMore as fallback
   if (!iconName) {
     return (
@@ -60,3 +60,7 @@ export function ThreadIcon({
     );
   }
 }
+
+// Legacy export for backward compatibility
+export const ThreadIcon = TaskIcon;
+

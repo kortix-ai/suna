@@ -183,9 +183,9 @@ const IsolatedTextarea = memo(forwardRef<HTMLTextAreaElement, IsolatedTextareaPr
         placeholder={placeholder}
         className={cn(
           'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 min-h-[100px] sm:min-h-[72px] max-h-[200px] overflow-y-auto resize-none rounded-[24px]',
-          // Use 16px on mobile to prevent zoom, 15px on desktop
+          // Use rem-based sizes that scale with base font size (16px = 1rem, 15px = 0.9375rem)
           // Use Tailwind responsive classes to avoid hydration mismatch (same classes on server and client)
-          '!text-[16px] sm:!text-[15px]',
+          '!text-base sm:!text-[0.9375rem]',
           isDraggingOver ? 'opacity-40' : '',
         )}
         disabled={disabled && !isAgentRunning}

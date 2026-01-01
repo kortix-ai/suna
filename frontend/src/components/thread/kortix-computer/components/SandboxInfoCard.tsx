@@ -96,28 +96,28 @@ export const SandboxInfoCard = memo(function SandboxInfoCard({
           <div className="bg-muted/50 rounded-xl p-3 border border-border">
             <div className="flex items-center gap-1.5 mb-1">
               <Cpu className="w-3.5 h-3.5" />
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">CPU</span>
+              <span className="text-[0.625rem] text-muted-foreground uppercase tracking-wide">CPU</span>
             </div>
             <p className="text-foreground font-semibold text-lg leading-tight">{sandboxDetails.cpu || 1}</p>
-            <p className="text-[10px] text-muted-foreground/70">cores</p>
+            <p className="text-[0.625rem] text-muted-foreground/70">cores</p>
           </div>
 
           <div className="bg-muted/50 rounded-xl p-3 border border-border">
             <div className="flex items-center gap-1.5 mb-1">
               <MemoryStick className="w-3.5 h-3.5" />
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">RAM</span>
+              <span className="text-[0.625rem] text-muted-foreground uppercase tracking-wide">RAM</span>
             </div>
             <p className="text-foreground font-semibold text-lg leading-tight">{sandboxDetails.memory || 1}</p>
-            <p className="text-[10px] text-muted-foreground/70">GB</p>
+            <p className="text-[0.625rem] text-muted-foreground/70">GB</p>
           </div>
 
           <div className="bg-muted/50 rounded-xl p-3 border border-border">
             <div className="flex items-center gap-1.5 mb-1">
               <HardDrive className="w-3.5 h-3.5" />
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Disk</span>
+              <span className="text-[0.625rem] text-muted-foreground uppercase tracking-wide">Disk</span>
             </div>
             <p className="text-foreground font-semibold text-lg leading-tight">{sandboxDetails.disk || 3}</p>
-            <p className="text-[10px] text-muted-foreground/70">GB</p>
+            <p className="text-[0.625rem] text-muted-foreground/70">GB</p>
           </div>
         </div>
 
@@ -129,7 +129,7 @@ export const SandboxInfoCard = memo(function SandboxInfoCard({
           </div>
         )}
 
-        <p className="text-[10px] text-muted-foreground text-center mt-4">
+        <p className="text-[0.625rem] text-muted-foreground text-center mt-4">
           Click on dock items to open windows
         </p>
       </Card>

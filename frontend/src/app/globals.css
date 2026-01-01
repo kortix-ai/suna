@@ -323,6 +323,7 @@
     @apply border-border outline-ring/50;
   }
   html {
+    font-size: 1.05rem;
     scroll-behavior: smooth;
     zoom: 100%;
     text-rendering: optimizeLegibility;

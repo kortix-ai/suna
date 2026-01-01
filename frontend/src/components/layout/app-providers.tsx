@@ -6,8 +6,8 @@ import { useDeleteOperationEffects } from '@/stores/delete-operation-store';
 import { SubscriptionStoreSync } from '@/stores/subscription-store';
 
 // Lazy load the heavy sidebar component
-const SidebarLeft = lazy(() => 
-  import('@/components/sidebar/sidebar-left').then(mod => ({ default: mod.SidebarLeft }))
+const AppSidebar = lazy(() => 
+  import('@/components/sidebar/sidebar').then(mod => ({ default: mod.AppSidebar }))
 );
 
 // Sidebar skeleton for immediate render
@@ -47,7 +47,7 @@ interface AppProvidersProps {
  * Shared wrapper component that provides common app-level providers:
  * - DeleteOperationEffectsWrapper
  * - SubscriptionStoreSync
- * - SidebarProvider + SidebarLeft + SidebarInset (if showSidebar is true)
+ * - SidebarProvider + AppSidebar + SidebarInset (if showSidebar is true)
  */
 export function AppProviders({ 
   children, 
@@ -71,7 +71,7 @@ export function AppProviders({
     <SidebarProvider>
       {sidebarContent || (
         <Suspense fallback={<SidebarSkeleton />}>
-          <SidebarLeft />
+          <AppSidebar />
         </Suspense>
       )}
       <SidebarInset>

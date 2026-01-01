@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { MessageCircle, Clock, Frown } from 'lucide-react';
+import { Clock, Frown } from 'lucide-react';
 import {
     Command,
     CommandEmpty,
@@ -14,13 +14,13 @@ import {
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
-import { ThreadIcon } from './thread-icon';
+import { TaskIcon } from './task-icon';
 import { useThreads } from '@/hooks/sidebar/use-sidebar';
 import { useIsMobile } from '@/hooks/utils';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useTranslations } from 'next-intl';
 
-interface ThreadSearchModalProps {
+interface SearchModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }
@@ -34,7 +34,7 @@ type ThreadWithProject = {
     iconName?: string;
 };
 
-export function ThreadSearchModal({ open, onOpenChange }: ThreadSearchModalProps) {
+export function SearchModal({ open, onOpenChange }: SearchModalProps) {
     const [search, setSearch] = useState('');
     const router = useRouter();
     const isMobile = useIsMobile();
@@ -93,12 +93,12 @@ export function ThreadSearchModal({ open, onOpenChange }: ThreadSearchModalProps
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-2xl p-0 overflow-hidden bg-background" hideCloseButton>
                 <VisuallyHidden>
-                    <DialogTitle>Search chats</DialogTitle>
+                    <DialogTitle>Search tasks</DialogTitle>
                 </VisuallyHidden>
                 <Command className="bg-background border-0" shouldFilter={false}>
                     <div className="px-4 py-3 border-b">
                         <CommandInput
-                            placeholder="Search chats..."
+                            placeholder="Search tasks..."
                             value={search}
                             onValueChange={setSearch}
                             className=" px-0 focus-visible:ring-0 focus-visible:ring-offset-0"
@@ -114,7 +114,7 @@ export function ThreadSearchModal({ open, onOpenChange }: ThreadSearchModalProps
                             </div>
                         ) : filtered.length === 0 ? (
                             <CommandEmpty className="py-6 text-center text-sm text-muted-foreground">
-                                No chats found
+                                No tasks found
                             </CommandEmpty>
                         ) : (
                             <CommandGroup className="p-0 [&_[cmdk-group-heading]]:hidden">
@@ -129,7 +129,7 @@ export function ThreadSearchModal({ open, onOpenChange }: ThreadSearchModalProps
                                             <SpotlightCard className="w-full cursor-pointer">
                                                 <div className="flex items-center gap-3 px-3 py-2">
                                                     <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border shrink-0">
-                                                        <ThreadIcon
+                                                        <TaskIcon
                                                             iconName={thread.iconName}
                                                             className="text-muted-foreground"
                                                             size={16}
@@ -150,3 +150,7 @@ export function ThreadSearchModal({ open, onOpenChange }: ThreadSearchModalProps
         </Dialog>
     );
 }
+
+// Legacy export for backward compatibility
+export const ThreadSearchModal = SearchModal;
+

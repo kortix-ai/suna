@@ -19,7 +19,7 @@ import { AnnouncementDialog } from '../announcements/announcement-dialog';
 
 // Lazy load heavy components that aren't needed for initial render
 const FloatingMobileMenuButton = lazy(() => 
-  import('@/components/sidebar/sidebar-left').then(mod => ({ default: mod.FloatingMobileMenuButton }))
+  import('@/components/sidebar/sidebar').then(mod => ({ default: mod.FloatingMobileMenuButton }))
 );
 const MaintenancePage = lazy(() => 
   import('@/components/maintenance/maintenance-page').then(mod => ({ default: mod.MaintenancePage }))
