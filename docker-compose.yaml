@@ -59,6 +59,65 @@ services:
         condition: service_healthy
       worker:
         condition: service_started
+    # -------------------------------------------------------------------------
+    # STARTUP PATCHES:
+    # 1. Disable local JWT signature verification (Supabase handles auth)
+    # 2. Add local mode bypass to trial endpoint (skip Stripe in local mode)
+    # -------------------------------------------------------------------------
+    command:
+      - sh
+      - -c
+      - |
+        echo "🔧 Applying backend patches..."
+        
+        # Patch 1: Disable local JWT signature verification
+        sed -i 's/"verify_signature": True/"verify_signature": False/g' /app/core/utils/auth_utils.py
+        echo "✅ Auth patched"
+        
+        # Patch 2: Add local mode bypass to trial endpoint
+        cat > /tmp/trial_patch.py << 'PYPATCH'
+        filepath = '/app/core/billing/endpoints/trial.py'
+        with open(filepath, 'r') as f:
+            content = f.read()
+        
+        if 'ENV_MODE == EnvMode.LOCAL' in content:
+            print('Trial endpoint already patched')
+        else:
+            old_import = 'from fastapi import APIRouter, HTTPException, Depends'
+            new_import = '''from fastapi import APIRouter, HTTPException, Depends
+        from core.utils.config import config, EnvMode'''
+            content = content.replace(old_import, new_import)
+            
+            old_func = '''@router.post("/trial/start")
+        async def start_trial(
+            request: TrialStartRequest,
+            account_id: str = Depends(verify_and_get_user_id_from_jwt)
+        ) -> Dict:
+            try:'''
+            
+            new_func = '''@router.post("/trial/start")
+        async def start_trial(
+            request: TrialStartRequest,
+            account_id: str = Depends(verify_and_get_user_id_from_jwt)
+        ) -> Dict:
+            if config.ENV_MODE == EnvMode.LOCAL:
+                return {
+                    "success": True,
+                    "message": "Trial activated (local mode)",
+                    "redirect_url": request.success_url or "https://kortix.darwisyah.com/dashboard"
+                }
+            try:'''
+            
+            content = content.replace(old_func, new_func)
+            
+            with open(filepath, 'w') as f:
+                f.write(content)
+            print('✅ Trial endpoint patched for local mode')
+        PYPATCH
+        python3 /tmp/trial_patch.py
+        
+        echo "🚀 Starting backend server..."
+        exec uv run uvicorn api:app --host 0.0.0.0 --port 8000
 
   worker:
     image: ghcr.io/suna-ai/suna-backend:latest
@@ -91,6 +150,66 @@ services:
       - "3000:3000"
     depends_on:
       - backend
+    # -------------------------------------------------------------------------
+    # Environment variables for auth and URL handling
+    # -------------------------------------------------------------------------
+    environment:
+      - NEXTAUTH_URL=https://kortix.darwisyah.com
+      - NEXT_PUBLIC_APP_URL=https://kortix.darwisyah.com
+      - NEXT_PUBLIC_URL=https://kortix.darwisyah.com
+      - HOST=0.0.0.0
+      - PORT=3000
+    # -------------------------------------------------------------------------
+    # STARTUP PATCHES:
+    # 1. Fix server.js: Prevent Next.js from using HOSTNAME=0.0.0.0 for URLs
+    # 2. Fix auth callback: Force correct origin instead of nextUrl.origin
+    # -------------------------------------------------------------------------
+    command:
+      - sh
+      - -lc
+      - |
+        echo "🔧 Applying startup patches..."
+
+        node -e "
+        const fs = require('fs');
+        const serverPath = '/app/server.js';
+        let content = fs.readFileSync(serverPath, 'utf8');
+        const original = content;
+        content = content.replace(
+          \"const hostname = process.env.HOSTNAME || '0.0.0.0'\",
+          \"const hostname = process.env.HOST || '0.0.0.0'\"
+        );
+        if (content !== original) {
+          fs.writeFileSync(serverPath, content);
+          console.log('✅ Patched server.js: HOSTNAME -> HOST');
+        } else {
+          console.log('ℹ️  server.js already patched or pattern not found');
+        }
+        "
+
+        node -e "
+        const fs = require('fs');
+        const callbackPath = '/app/.next/server/app/auth/callback/route.js';
+        if (fs.existsSync(callbackPath)) {
+          let content = fs.readFileSync(callbackPath, 'utf8');
+          const original = content;
+          content = content.replace(
+            /a\.nextUrl\.origin\s*\|\|\s*['\"]https:\/\/kortix\.darwisyah\.com['\"]/g,
+            '\"https://kortix.darwisyah.com\"'
+          );
+          if (content !== original) {
+            fs.writeFileSync(callbackPath, content);
+            console.log('✅ Patched auth callback: forced correct origin');
+          } else {
+            console.log('ℹ️  auth callback already patched or pattern not found');
+          }
+        } else {
+          console.log('⚠️  auth callback file not found at expected path');
+        }
+        "
+
+        echo "🚀 Starting Next.js server..."
+        exec node /app/server.js
 
 volumes:
   redis_data:
