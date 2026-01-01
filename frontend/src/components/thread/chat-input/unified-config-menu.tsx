@@ -372,10 +372,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
 
         return (
             <div className="flex flex-col gap-2">
-                <div className={cn(
-                    "flex items-center gap-1.5 p-1 bg-muted/50 rounded-xl",
-                    compact ? "" : ""
-                )}>
+                <div className="flex items-center gap-2 w-full">
                     {/* Basic Mode */}
                     <button
                         onClick={() => {
@@ -384,17 +381,13 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                             }
                         }}
                         className={cn(
-                            "flex-1 flex items-center justify-center gap-1.5 rounded-lg transition-all",
-                            compact ? "px-3 py-1.5" : "px-4 py-2",
+                            "flex-1 flex items-center justify-center gap-1.5 h-10 rounded-2xl cursor-pointer transition-all text-sm",
                             isBasicSelected
-                                ? "bg-background shadow-sm text-foreground"
-                                : "text-muted-foreground hover:text-foreground"
+                                ? "border-[1.5px] bg-background dark:bg-card text-foreground font-medium hover:bg-accent hover:text-accent-foreground dark:hover:bg-card/50"
+                                : "text-muted-foreground hover:bg-muted/60"
                         )}
                     >
-                        <span className={cn(
-                            "font-medium",
-                            compact ? "text-xs" : "text-sm"
-                        )}>Basic</span>
+                        <span className="font-medium text-sm">Basic</span>
                     </button>
 
                     {/* Advanced Mode */}
@@ -413,26 +406,21 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                             }
                         }}
                         className={cn(
-                            "flex-1 flex items-center justify-center gap-1.5 rounded-lg transition-all",
-                            compact ? "px-3 py-1.5" : "px-4 py-2",
+                            "flex-1 flex items-center justify-center gap-1.5 h-10 rounded-2xl cursor-pointer transition-all text-sm",
                             isPowerSelected
-                                ? "bg-background shadow-sm"
+                                ? "border-[1.5px] bg-background dark:bg-card text-foreground font-medium hover:bg-accent hover:text-accent-foreground dark:hover:bg-card/50"
                                 : canAccessPower
-                                    ? "text-muted-foreground hover:text-foreground"
-                                    : "text-muted-foreground/50"
+                                    ? "text-muted-foreground hover:bg-muted/60"
+                                    : "text-muted-foreground/50 hover:bg-muted/60"
                         )}
                     >
-                        <KortixLogo size={compact ? 10 : 12} variant="symbol" />
+                        <KortixLogo size={12} variant="symbol" />
                         <span className={cn(
-                            "font-medium",
-                            compact ? "text-xs" : "text-sm",
-                            isPowerSelected ? "text-primary" : canAccessPower ? "text-muted-foreground" : "text-muted-foreground/50"
+                            "font-medium text-sm",
+                            isPowerSelected ? "text-foreground" : canAccessPower ? "" : "text-muted-foreground/50"
                         )}>Advanced</span>
                         {!canAccessPower && (
-                            <Lock className={cn(
-                                "text-muted-foreground/50",
-                                compact ? "h-3 w-3" : "h-3.5 w-3.5"
-                            )} />
+                            <Lock className="h-3.5 w-3.5 text-muted-foreground/50" />
                         )}
                     </button>
                 </div>
