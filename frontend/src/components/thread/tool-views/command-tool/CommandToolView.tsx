@@ -221,9 +221,9 @@ export function CommandToolView({
           <div className="h-full flex flex-col overflow-hidden">
             <div className="flex-shrink-0 p-4 pb-2">
               {command && (
-                <div className="mb-4 bg-card border border-border rounded-lg p-3.5">
+                <div className="mb-4 bg-zinc-900 dark:bg-zinc-950 border border-border rounded-lg p-3.5">
                   <div className="flex items-center gap-2 mb-2">
-                    <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal">
+                    <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal border-green-700/30 text-green-400">
                       <TerminalIcon className="h-2.5 w-2.5 mr-1 opacity-70" />
                       Command
                     </Badge>
@@ -242,9 +242,9 @@ export function CommandToolView({
                       </Badge>
                     )}
                   </div>
-                  <div className="font-mono text-xs text-foreground">
+                  <div className="font-mono text-xs">
                     <span className="text-green-500 dark:text-green-400 font-semibold">{displayPrefix} </span>
-                    <span className="text-foreground">{command}</span>
+                    <span className="text-green-300">{command}</span>
                   </div>
                 </div>
               )}
@@ -290,30 +290,30 @@ export function CommandToolView({
             <div className="flex-shrink-0 p-4 pb-2">
               {/* Command section */}
               {command && (
-                <div className="mb-4 bg-card border border-border rounded-lg p-3.5">
+                <div className="mb-4 bg-zinc-900 dark:bg-zinc-950 border border-border rounded-lg p-3.5">
                   <div className="flex items-center gap-2 mb-2">
-                    <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal">
+                    <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal border-green-700/30 text-green-400">
                       <TerminalIcon className="h-2.5 w-2.5 mr-1 opacity-70" />
                       Command
                     </Badge>
                   </div>
-                  <div className="font-mono text-xs text-foreground">
+                  <div className="font-mono text-xs">
                     <span className="text-green-500 dark:text-green-400 font-semibold">{displayPrefix} </span>
-                    <span className="text-foreground">{command}</span>
+                    <span className="text-green-300">{command}</span>
                   </div>
                 </div>
               )}
 
               {/* Show status message for non-blocking commands */}
               {isNonBlockingCommand && displayOutput && (
-                <div className="mb-4 bg-card border border-border rounded-lg p-3.5">
+                <div className="mb-4 bg-zinc-900 dark:bg-zinc-950 border border-border rounded-lg p-3.5">
                   <div className="flex items-center gap-2 mb-2">
-                    <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal">
-                      <CircleDashed className="h-2.5 w-2.5 mr-1 opacity-70 text-blue-500" />
+                    <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal border-green-700/30 text-green-400">
+                      <CircleDashed className="h-2.5 w-2.5 mr-1 opacity-70" />
                       Status
                     </Badge>
                   </div>
-                  <p className="text-xs text-foreground font-mono">{displayOutput}</p>
+                  <p className="text-xs text-green-400 font-mono">{displayOutput}</p>
                 </div>
               )}
             </div>
@@ -321,10 +321,10 @@ export function CommandToolView({
             {/* Output section - fills remaining height and scrolls */}
             {formattedOutput.length > 0 ? (
               <div className="flex-1 min-h-0 px-4 pb-4">
-                <div className="h-full bg-card border border-border rounded-lg flex flex-col overflow-hidden">
+                <div className="h-full bg-zinc-900 dark:bg-zinc-950 border border-border rounded-lg flex flex-col overflow-hidden">
                   <div className="flex-shrink-0 p-3.5 pb-2 border-b border-border">
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal">
+                      <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal border-green-700/30 text-green-400">
                         <TerminalIcon className="h-2.5 w-2.5 mr-1 opacity-70" />
                         Output
                       </Badge>
@@ -338,7 +338,7 @@ export function CommandToolView({
                   </div>
                   <ScrollArea className="flex-1 min-h-0">
                     <div className="p-3.5 pt-2">
-                      <pre className="text-xs text-foreground font-mono whitespace-pre-wrap break-words">
+                      <pre className="text-xs text-green-400 font-mono whitespace-pre-wrap break-words">
                         {linesToShow.map((line, idx) => (
                           <span key={idx}>
                             {line}
@@ -351,7 +351,7 @@ export function CommandToolView({
                         ))}
                       </pre>
                       {!showFullOutput && hasMoreLines && (
-                        <div className="text-muted-foreground mt-2 border-t border-border pt-2 text-xs font-mono">
+                        <div className="text-green-600 mt-2 border-t border-green-900/30 pt-2 text-xs font-mono">
                           + {formattedOutput.length - 10} more lines
                         </div>
                       )}
