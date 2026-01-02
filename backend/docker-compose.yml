@@ -42,7 +42,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: uv run dramatiq --skip-logging --processes 4 --threads 4 run_agent_background
+    command: uv run python -m core.temporal.worker
     env_file:
       - .env
     volumes:

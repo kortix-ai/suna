@@ -4,6 +4,10 @@ import * as React from 'react';
 import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
 
+// Static imports for Lottie animations (Turbopack compatible)
+import loadingWhiteData from '@/assets/animations/loading-white.json';
+import loadingBlackData from '@/assets/animations/loading-black.json';
+
 interface KortixLoaderProps {
   /**
    * Size preset for the loader
@@ -175,34 +179,27 @@ function LottieAnimation({
 }) {
   const lottieRef = React.useRef<any>(null);
   const [Lottie, setLottie] = React.useState<any>(null);
-  const [animationData, setAnimationData] = React.useState<any>(null);
 
-  // Dynamically import Lottie and correct animation based on variant
+  // Get the correct animation data based on variant (statically imported)
+  const animationData = variant === 'white' ? loadingWhiteData : loadingBlackData;
+
+  // Dynamically import Lottie library only
   React.useEffect(() => {
-    // Reset animation data when variant changes
-    setAnimationData(null);
-    
-    Promise.all([
-      import('lottie-react'),
-      variant === 'white'
-        ? import('@/assets/animations/loading-white.json')
-        : import('@/assets/animations/loading-black.json')
-    ]).then(([lottieModule, animData]) => {
+    import('lottie-react').then((lottieModule) => {
       setLottie(() => lottieModule.default);
-      setAnimationData(animData.default);
     });
-  }, [variant]); // Reload when variant changes
+  }, []);
 
-  // Ensure animation starts from beginning when loaded
+  // Ensure animation starts from beginning when loaded or variant changes
   React.useEffect(() => {
     if (lottieRef.current) {
       lottieRef.current.goToAndPlay(0, true);
       lottieRef.current.setSpeed(speed);
     }
-  }, [animationData, speed]);
+  }, [variant, speed]);
 
-  // Show placeholder while loading
-  if (!Lottie || !animationData) {
+  // Show placeholder while loading Lottie library
+  if (!Lottie) {
     return (
       <div 
         style={{ 
@@ -215,6 +212,7 @@ function LottieAnimation({
 
   return (
     <Lottie
+      key={variant} // Force re-mount when variant changes for clean animation restart
       lottieRef={lottieRef}
       animationData={animationData}
       loop={loop}

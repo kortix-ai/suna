@@ -14,8 +14,8 @@ from core.utils.config import config, EnvMode
 from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox, get_or_start_sandbox
 from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
-from run_agent_background import run_agent_background
-import dramatiq
+from core.temporal.client import get_temporal_client
+from core.temporal.workflows import AgentRunWorkflow
 
 from core.ai_models import model_manager
 
@@ -323,23 +323,24 @@ async def _trigger_agent_background(
 ):
     request_id = structlog.contextvars.get_contextvars().get('request_id')
 
-    logger.info(f"🚀 Sending agent run {agent_run_id} to Dramatiq queue (thread: {thread_id}, model: {effective_model})")
+    logger.info(f"🚀 Starting Temporal workflow for agent run {agent_run_id} (thread: {thread_id}, model: {effective_model})")
     
     try:
-        message = run_agent_background.send(
-            agent_run_id=agent_run_id,
-            thread_id=thread_id,
-            instance_id=utils.instance_id,
-            project_id=project_id,
-            model_name=effective_model,
-            agent_id=agent_id,
-            account_id=account_id,
-            request_id=request_id,
+        client = await get_temporal_client()
+        
+        # Start workflow with agent_run_id as workflow ID for deduplication
+        # Temporal SDK requires multiple args passed via 'args' parameter
+        handle = await client.start_workflow(
+            AgentRunWorkflow.run,
+            args=[agent_run_id, thread_id, utils.instance_id, project_id, effective_model, agent_id, account_id, request_id],
+            id=f"agent-run-{agent_run_id}",  # Use agent_run_id for deduplication
+            task_queue="default",
         )
-        message_id = message.message_id if hasattr(message, 'message_id') else 'N/A'
-        logger.info(f"✅ Successfully enqueued agent run {agent_run_id} to Dramatiq (message_id: {message_id})")
+        
+        workflow_id = handle.id
+        logger.info(f"✅ Successfully started Temporal workflow for agent run {agent_run_id} (workflow_id: {workflow_id})")
     except Exception as e:
-        logger.error(f"❌ Failed to enqueue agent run {agent_run_id} to Dramatiq: {e}", exc_info=True)
+        logger.error(f"❌ Failed to start Temporal workflow for agent run {agent_run_id}: {e}", exc_info=True)
         raise
 
 
