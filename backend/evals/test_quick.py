@@ -25,7 +25,7 @@ QUICK_TEST = [
 print("Starting quick eval with 1 test case...")
 
 Eval(
-    "Suna Agent Quick Test",
+    "Kortix Agent Quick Test",
     data=lambda: QUICK_TEST,
     task=create_agent_task(
         model_name="kortix/basic",

@@ -2,37 +2,50 @@
 Custom Scorers for Agent Evaluation.
 
 These scorers work with Braintrust to evaluate agent outputs.
-They can be used standalone or combined with autoevals scorers.
+Uses LiteLLM for LLM-based scoring (works with Gemini, OpenAI, etc.)
 """
 
 import os
 import json
 from typing import Any, Dict, List, Optional, Union
 
-# Braintrust autoevals provides many useful scorers
-from autoevals import (
-    Factuality,
-    ClosedQA,
-    Summary,
-    Levenshtein,
-    NumericDiff,
-    JSONDiff,
-    ExactMatch,
-    LLMClassifier,
-)
+import litellm
 
 from core.utils.logger import logger
+
+# Scoring prompt template
+FACTUALITY_PROMPT = """You are comparing a submitted answer to an expert answer on a given question.
+
+Question: {input}
+
+Expert Answer: {expected}
+
+Submitted Answer: {output}
+
+Compare the submitted answer to the expert answer. Focus on whether the key facts and numbers match.
+
+Respond with ONLY a JSON object in this exact format:
+{{"score": <0.0 to 1.0>, "reason": "<brief explanation>"}}
+
+Score guide:
+- 1.0: Correct - the submitted answer contains the same key information as the expert answer
+- 0.5: Partially correct - some key facts match but others are missing or wrong
+- 0.0: Incorrect - the submitted answer contradicts or doesn't match the expert answer
+
+JSON response:"""
 
 
 def AnswerCorrectness(
     output: Union[str, Dict[str, Any]],
     expected: Optional[str] = None,
+    input: Optional[Union[str, Dict[str, Any]]] = None,
     **kwargs,
 ) -> Dict[str, Any]:
     """
-    Simple scorer that checks if expected answer is in the output.
+    Uses LiteLLM + Gemini to check if the output is factually correct.
     
-    Perfect for math/factual questions where we know the exact answer.
+    This uses an LLM to determine if the agent's answer matches the expected answer,
+    handling paraphrasing, different formats, etc.
     """
     # Extract output text
     if isinstance(output, dict):
@@ -40,25 +53,77 @@ def AnswerCorrectness(
     else:
         output_text = str(output)
     
-    # If no expected answer provided, can't score
+    # Extract input text
+    if isinstance(input, dict):
+        input_text = input.get("input", str(input))
+    else:
+        input_text = str(input) if input else ""
+    
+    # If no expected answer, can't score
     if not expected:
         return {
             "name": "AnswerCorrectness",
             "score": None,
-            "metadata": {"reason": "No expected answer provided", "output_received": output_text[:200]}
+            "metadata": {"reason": "No expected answer provided"}
         }
     
-    # Check if expected answer appears in output (case-insensitive)
-    score = 1.0 if expected.lower() in output_text.lower() else 0.0
-    
-    return {
-        "name": "AnswerCorrectness",
-        "score": score,
-        "metadata": {
-            "expected": expected,
-            "output": output_text[:200],  # First 200 chars for context
+    # Use LiteLLM with Gemini for scoring
+    try:
+        prompt = FACTUALITY_PROMPT.format(
+            input=input_text,
+            expected=expected,
+            output=output_text[:2000],  # Limit output length
+        )
+        
+        response = litellm.completion(
+            model="gemini/gemini-2.0-flash",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=150,
+            temperature=0,
+        )
+        
+        result_text = response.choices[0].message.content.strip()
+        
+        # Parse JSON response
+        try:
+            # Handle potential markdown code blocks
+            if "```" in result_text:
+                result_text = result_text.split("```")[1]
+                if result_text.startswith("json"):
+                    result_text = result_text[4:]
+            result_json = json.loads(result_text)
+            score = float(result_json.get("score", 0))
+            reason = result_json.get("reason", "")
+        except:
+            # Fallback: look for score in text
+            if "1.0" in result_text or "correct" in result_text.lower():
+                score = 1.0
+                reason = result_text
+            elif "0.5" in result_text or "partial" in result_text.lower():
+                score = 0.5
+                reason = result_text
+            else:
+                score = 0.0
+                reason = result_text
+        
+        return {
+            "name": "AnswerCorrectness", 
+            "score": score,
+            "metadata": {
+                "expected": expected,
+                "output_preview": output_text[:300] if output_text else "EMPTY",
+                "reason": reason,
+            }
         }
-    }
+    except Exception as e:
+        logger.warning(f"LLM scorer failed: {e}, falling back to substring match")
+        # Fallback to simple substring match
+        score = 1.0 if expected.lower() in output_text.lower() else 0.0
+        return {
+            "name": "AnswerCorrectness",
+            "score": score,
+            "metadata": {"expected": expected, "fallback": True, "error": str(e)}
+        }
 
 
 def TaskCompletionScorer(
@@ -141,16 +206,18 @@ def TaskCompletionScorer(
 def ToolUsageScorer(
     output: Union[str, Dict[str, Any]],
     expected: Optional[Union[str, List[str]]] = None,
+    input: Optional[Union[str, Dict[str, Any]]] = None,
     **kwargs,
 ) -> Dict[str, Any]:
     """
-    Score whether the agent used the expected tools.
+    Score whether the agent used tools appropriately.
     
-    Checks if the agent called the right tools for the task.
+    Checks if the agent called tools when needed.
     
     Args:
         output: Agent output (dict with 'tools_called' key)
-        expected: Expected tools (list of tool names or comma-separated string)
+        expected: The expected answer (NOT expected tools - we look in input for that)
+        input: The input dict which may contain 'expected_tools'
         
     Returns:
         Dict with 'score' (0-1) and 'metadata'
@@ -158,42 +225,53 @@ def ToolUsageScorer(
     # Get tools called from output
     if isinstance(output, dict):
         tools_called = set(output.get("tools_called", []))
+        tool_calls_count = output.get("tool_calls", 0)
     else:
         tools_called = set()
+        tool_calls_count = 0
     
-    # Parse expected tools
-    if expected is None:
-        # No expected tools specified - just check if any tools were used
-        if tools_called:
+    # Get expected tools from INPUT (not expected, which is the answer)
+    expected_tools = None
+    if isinstance(input, dict):
+        expected_tools = input.get("expected_tools")
+    
+    # If no expected tools specified in input
+    if expected_tools is None:
+        # Score based on whether tools were used at all
+        if tools_called or tool_calls_count > 0:
             return {
                 "name": "ToolUsage",
                 "score": 1.0,
-                "metadata": {"tools_called": list(tools_called), "reason": "Tools were used"}
+                "metadata": {
+                    "tools_called": list(tools_called),
+                    "tool_calls_count": tool_calls_count,
+                    "reason": f"Agent used {len(tools_called)} tools ({tool_calls_count} calls)"
+                }
             }
         else:
             return {
                 "name": "ToolUsage",
                 "score": 0.5,
-                "metadata": {"reason": "No tools called (may be correct)"}
+                "metadata": {"reason": "No tools called (may be correct for simple tasks)"}
             }
     
     # Parse expected tools from string or list
-    if isinstance(expected, str):
-        expected_tools = set(t.strip() for t in expected.split(","))
+    if isinstance(expected_tools, str):
+        expected_tools_set = set(t.strip() for t in expected_tools.split(","))
     else:
-        expected_tools = set(expected)
+        expected_tools_set = set(expected_tools)
     
     # Calculate overlap
-    correct_tools = tools_called & expected_tools
-    missing_tools = expected_tools - tools_called
-    extra_tools = tools_called - expected_tools
+    correct_tools = tools_called & expected_tools_set
+    missing_tools = expected_tools_set - tools_called
+    extra_tools = tools_called - expected_tools_set
     
     # Score based on how many expected tools were called
-    if not expected_tools:
+    if not expected_tools_set:
         score = 1.0 if not tools_called else 0.8
     else:
         precision = len(correct_tools) / len(tools_called) if tools_called else 0
-        recall = len(correct_tools) / len(expected_tools)
+        recall = len(correct_tools) / len(expected_tools_set)
         score = (precision + recall) / 2
     
     return {
@@ -201,7 +279,7 @@ def ToolUsageScorer(
         "score": score,
         "metadata": {
             "tools_called": list(tools_called),
-            "expected_tools": list(expected_tools),
+            "expected_tools": list(expected_tools_set),
             "correct": list(correct_tools),
             "missing": list(missing_tools),
             "extra": list(extra_tools),

@@ -73,17 +73,25 @@ class AgentEvalRunner:
     
     def __init__(
         self,
-        project_name: str = "Suna Agent",
+        project_name: str = "Kortix Agent",
         model_name: Optional[str] = "kortix/basic",
         max_iterations: int = 50,
         timeout_seconds: float = 120.0,
+        project_id: Optional[str] = None,  # Optional project with sandbox for tool access
     ):
         self.project_name = project_name
         self.model_name = model_name or "kortix/basic"  # Fallback to default
         self.max_iterations = max_iterations
         self.timeout_seconds = timeout_seconds
+        self.project_id = project_id or os.getenv("EVAL_PROJECT_ID")  # Use env var if not specified
+        self._current_project_id: Optional[str] = None  # Set per-case
         self.test_account_id: Optional[str] = None
         self._test_user_initialized = False
+        
+        if self.project_id:
+            logger.info(f"🔧 Using existing project {self.project_id} for evals")
+        else:
+            logger.info(f"🔧 Will create new project per eval case (sandbox tools enabled)")
         
         # Speed up evals by disabling expensive features
         os.environ["EVAL_MODE"] = "true"
@@ -157,15 +165,52 @@ class AgentEvalRunner:
             # Ensure test user exists
             account_id = await self._ensure_test_user()
             
+            # Create project if not provided (needed for sandbox tools like web_search)
+            project_id = self.project_id
+            if not project_id:
+                from core.services.supabase import DBConnection
+                from datetime import timezone
+                import uuid
+                
+                db = DBConnection()
+                client = await db.client
+                
+                project_id = str(uuid.uuid4())
+                placeholder_name = f"[Eval] {case.input[:30]}..." if len(case.input) > 30 else f"[Eval] {case.input}"
+                
+                await client.table('projects').insert({
+                    "project_id": project_id,
+                    "account_id": account_id,
+                    "name": placeholder_name,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                }).execute()
+                
+                logger.info(f"✅ Created eval project: {project_id}")
+            
+            # Store for use in run_agent
+            self._current_project_id = project_id
+            
             # Create isolated thread manager for this eval
             thread_manager = ThreadManager(account_id=account_id)
             
-            # Create a new thread for this test case
+            # Create a new thread for this test case (linked to project)
             try:
-                thread_id = await thread_manager.create_thread(
-                    account_id=account_id,
-                    metadata={"eval_case": True, "tags": case.tags}
-                )
+                from core.services.supabase import DBConnection
+                import uuid
+                
+                db = DBConnection()
+                client = await db.client
+                
+                thread_id = str(uuid.uuid4())
+                await client.table('threads').insert({
+                    "thread_id": thread_id,
+                    "project_id": project_id,
+                    "account_id": account_id,
+                    "name": "Eval Test",
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                }).execute()
+                
+                logger.info(f"✅ Created eval thread: {thread_id} (project: {project_id})")
             except Exception as e:
                 error = f"Thread creation failed: {e}"
                 logger.error(f"❌ Thread creation failed: {e}")
@@ -204,7 +249,7 @@ class AgentEvalRunner:
                 logger.error(f"🔄 [{thread_id[:8]}] About to enter async for loop...")
                 async for chunk in run_agent(
                     thread_id=thread_id,
-                    project_id=None,  # No project for eval
+                    project_id=self._current_project_id,  # Use project for sandbox tools (web_search, etc.)
                     max_iterations=self.max_iterations,
                     model_name=self.model_name,
                     cancellation_event=cancellation_event,
@@ -240,14 +285,21 @@ class AgentEvalRunner:
                         if chunk_type in ('status', 'assistant', 'tool_call', 'error'):
                             logger.warning(f"📦 [{thread_id[:8]}] Chunk #{chunk_count}: {chunk_type}")
                         
-                        # Collect text content from both 'content' and 'assistant' chunks
+                        # Collect text content from streaming chunks
                         if chunk_type == 'content':
-                            output += chunk.get('content', '')
+                            content_text = chunk.get('content', '')
+                            if isinstance(content_text, str):
+                                output += content_text
                         elif chunk_type == 'assistant':
-                            # Assistant messages have content field
+                            # Assistant messages - extract the text content
                             content = chunk.get('content', '')
-                            if isinstance(content, str) and content:
+                            if isinstance(content, str) and content.strip():
                                 output += content
+                            elif isinstance(content, dict):
+                                # Content might be structured
+                                text = content.get('text', content.get('message', ''))
+                                if text:
+                                    output += text
                         
                         # Track tool calls
                         if chunk_type == 'tool_call':
@@ -300,9 +352,29 @@ class AgentEvalRunner:
                 all_messages_result = await client.table('messages').select('*').eq('thread_id', thread_id).order('created_at').execute()
                 all_messages_db = all_messages_result.data if all_messages_result and all_messages_result.data else []
                 
-                # Extract usage from llm_response_end messages
+                # Extract usage from llm_response_end messages and tools from tool_call messages
                 for msg in all_messages_db:
                     msg_type = msg.get('type')
+                    
+                    # Track tool calls
+                    if msg_type == 'tool_call':
+                        content = msg.get('content')
+                        if isinstance(content, dict):
+                            tool_name = content.get('name', content.get('function', {}).get('name'))
+                            if tool_name and tool_name not in tools_called:
+                                tools_called.append(tool_name)
+                    
+                    # Also check assistant messages for tool_calls in metadata
+                    if msg_type == 'assistant':
+                        metadata = msg.get('metadata', {})
+                        if isinstance(metadata, dict):
+                            msg_tool_calls = metadata.get('tool_calls', [])
+                            for tc in msg_tool_calls:
+                                if isinstance(tc, dict):
+                                    tool_name = tc.get('function_name') or tc.get('name') or (tc.get('function', {}) or {}).get('name')
+                                    if tool_name and tool_name not in tools_called:
+                                        tools_called.append(tool_name)
+                    
                     if msg_type == 'llm_response_end':
                         # Usage data is in content.usage (content is the full LiteLLM response object)
                         content = msg.get('content')
@@ -323,11 +395,43 @@ class AgentEvalRunner:
                             if isinstance(completion_details, dict):
                                 usage_data['reasoning_tokens'] += completion_details.get('reasoning_tokens', 0)
                 
+                logger.info(f"📊 [{thread_id[:8]}] Extracted {len(tools_called)} tools from DB: {tools_called}")
+                
                 # Now get user-facing messages for output extraction
                 final_messages = await thread_manager.get_llm_messages(thread_id)
                 messages = final_messages
                 
-                # Extract output from final assistant message if we didn't get it from streaming
+                # ALWAYS try to extract clean output from complete/ask tool calls
+                # The streaming output is often raw JSON chunks, but tool calls have the actual answer
+                clean_output = ""
+                for msg in reversed(final_messages):
+                    if msg.get('role') == 'assistant':
+                        metadata = msg.get('metadata', {})
+                        if isinstance(metadata, dict):
+                            tool_calls = metadata.get('tool_calls', [])
+                            for tool_call in tool_calls:
+                                if isinstance(tool_call, dict):
+                                    func_name = tool_call.get('function', {}).get('name', '') or tool_call.get('function_name', '')
+                                    if func_name in ('ask', 'complete'):
+                                        args = tool_call.get('function', {}).get('arguments', {}) or tool_call.get('arguments', {})
+                                        if isinstance(args, str):
+                                            try:
+                                                args = json.loads(args)
+                                            except:
+                                                pass
+                                        if isinstance(args, dict):
+                                            clean_output = args.get('text', args.get('message', ''))
+                                            if clean_output:
+                                                logger.warning(f"✅ [{thread_id[:8]}] Extracted CLEAN output from {func_name}: {len(clean_output)} chars")
+                                                break
+                            if clean_output:
+                                break
+                
+                # Use clean output if we got it, otherwise fall back to streaming output
+                if clean_output:
+                    output = clean_output
+                
+                # Extract output from final assistant message if we still don't have it
                 if not output and final_messages:
                     for msg in reversed(final_messages):
                         if msg.get('role') == 'assistant':
@@ -521,6 +625,7 @@ def create_agent_task(
     model_name: Optional[str] = None,
     max_iterations: int = 50,
     timeout_seconds: float = 120.0,
+    project_id: Optional[str] = None,
 ) -> Callable:
     """
     Create a task function for Braintrust Eval.
@@ -528,25 +633,42 @@ def create_agent_task(
     This wraps the agent runner into a simple function that takes
     an input string and returns an output string.
     
+    Args:
+        model_name: LLM model to use
+        max_iterations: Maximum agent loop iterations
+        timeout_seconds: Timeout per test case
+        project_id: Optional project ID with sandbox (enables web_search, file tools, etc.)
+                   Create a project in the web UI first to get a project ID.
+    
     Usage with Braintrust:
         from braintrust import Eval
         from evals.runner import create_agent_task
         
         Eval(
-            "Suna Agent",
+            "Kortix Agent",
             data=lambda: [...],
-            task=create_agent_task(),
+            task=create_agent_task(project_id="your-project-id"),  # Enable sandbox tools
             scores=[...],
         )
     """
-    runner = AgentEvalRunner(
-        model_name=model_name,
-        max_iterations=max_iterations,
-        timeout_seconds=timeout_seconds,
-    )
+    # Store config - create fresh runner per task to avoid shared async state
+    _config = {
+        "model_name": model_name,
+        "max_iterations": max_iterations,
+        "timeout_seconds": timeout_seconds,
+        "project_id": project_id,
+    }
     
     async def task(input_data: Union[str, Dict]) -> Dict[str, Any]:
         """Run agent and return structured result."""
+        # Create FRESH runner for each task to avoid event loop contamination
+        runner = AgentEvalRunner(
+            model_name=_config["model_name"],
+            max_iterations=_config["max_iterations"],
+            timeout_seconds=_config["timeout_seconds"],
+            project_id=_config["project_id"],
+        )
+        
         # Handle both string and dict inputs
         if isinstance(input_data, dict):
             user_input = input_data.get("input", input_data.get("message", str(input_data)))
@@ -603,25 +725,92 @@ def create_agent_task(
         Sync wrapper that runs the async task.
         
         Braintrust runs tasks in a thread pool, so we need to create
-        a new event loop in each thread.
+        a new event loop in each thread with proper isolation.
         """
+        import gc
+        import time
+        
+        # CRITICAL: Reset ALL singleton connections before each test
+        # This prevents "Event loop is closed" errors when running multiple tests
+        def reset_singletons():
+            """Reset all singleton instances that hold async state."""
+            try:
+                from core.services.supabase import DBConnection
+                DBConnection._instance = None
+            except Exception:
+                pass
+            
+            try:
+                from core.services.redis import _redis_client
+                import core.services.redis as redis_module
+                redis_module._redis_client = None
+            except Exception:
+                pass
+            
+            try:
+                from core.utils.db_helpers import _db_instance
+                import core.utils.db_helpers as db_helpers_module
+                db_helpers_module._db_instance = None
+            except Exception:
+                pass
+        
+        reset_singletons()
+        
         try:
-            # Create a new event loop for this thread
+            # Create a completely fresh event loop for this task
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+            
             try:
                 result = loop.run_until_complete(task(input_data))
                 return result
             finally:
+                # Proper cleanup: cancel all pending tasks
+                try:
+                    pending = asyncio.all_tasks(loop)
+                    for pending_task in pending:
+                        pending_task.cancel()
+                    
+                    # Give tasks time to cancel
+                    if pending:
+                        loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                except Exception:
+                    pass
+                
+                # Close the loop
+                try:
+                    loop.run_until_complete(loop.shutdown_asyncgens())
+                except Exception:
+                    pass
+                
                 loop.close()
+                
+                # Reset all singletons again after loop closes
+                reset_singletons()
+                
+                # Force garbage collection to clean up async resources
+                gc.collect()
+                
+                # Small delay to ensure cleanup before next test
+                time.sleep(1.0)
+                
         except Exception as e:
-            logger.error(f"Task execution error: {e}")
+            logger.error(f"Task execution error: {e}", exc_info=True)
             return {
                 "output": "",
                 "tools_called": [],
                 "duration_ms": 0,
                 "error": str(e),
                 "message_count": 0,
+                "llm_calls": 0,
+                "tool_calls": 0,
+                "errors": 1,
+                "llm_errors": 0,
+                "tool_errors": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "estimated_cost": 0,
             }
     
     return sync_task

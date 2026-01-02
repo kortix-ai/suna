@@ -1,5 +1,5 @@
 """
-Braintrust Evaluation Framework for Suna Agent.
+Braintrust Evaluation Framework for Kortix Agent.
 
 This module provides tools for evaluating agent performance using Braintrust.
 It integrates with the existing agent system to:

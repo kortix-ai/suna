@@ -1,5 +1,5 @@
 """
-Evaluation Datasets for Suna Agent.
+Evaluation Datasets for Kortix Agent.
 
 This module provides various test datasets for evaluation:
 1. Static test cases for regression testing
@@ -23,7 +23,7 @@ from core.utils.logger import logger
 BASIC_TESTS = [
     {
         "input": "Hello, who are you?",
-        "expected_behavior": "Should introduce itself as Suna, an AI assistant",
+        "expected_behavior": "Should introduce itself as Kortix, an AI assistant",
         "tags": ["basic", "greeting"],
     },
     {
@@ -215,7 +215,7 @@ def load_from_braintrust_dataset(
 
 
 def create_golden_dataset_from_logs(
-    project: str = "Suna Agent",
+    project: str = "Kortix Agent",
     min_score: float = 0.8,
     limit: int = 100,
 ) -> List[Dict[str, Any]]:
@@ -251,10 +251,45 @@ def create_golden_dataset_from_logs(
 
 
 # ============================================================================
+# EXTERNAL DATASET LOADERS
+# ============================================================================
+
+def _load_gaia(level: int, count: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Load GAIA benchmark dataset."""
+    try:
+        from evals.external_datasets.gaia import load_gaia_dataset, gaia_to_eval_cases
+        questions = load_gaia_dataset(level=level, count=count)
+        return gaia_to_eval_cases(questions)
+    except ImportError as e:
+        logger.error(f"Failed to load GAIA: {e}")
+        logger.error("Install with: uv add huggingface_hub datasets")
+        return []
+
+
+def load_test_cases(category: str = "complex") -> List[Dict[str, Any]]:
+    """Load test cases from test_cases.json by category."""
+    json_path = Path(__file__).parent / "test_cases.json"
+    if not json_path.exists():
+        logger.warning(f"test_cases.json not found at {json_path}")
+        return []
+    
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+    
+    if category not in data:
+        available = ", ".join(data.keys())
+        logger.warning(f"Category '{category}' not found. Available: {available}")
+        return []
+    
+    return data[category]
+
+
+# ============================================================================
 # DATASET PRESETS
 # ============================================================================
 
 DATASET_PRESETS = {
+    # Static test cases
     "basic": BASIC_TESTS,
     "coding": CODING_TESTS,
     "tools": TOOL_TESTS,
@@ -262,10 +297,25 @@ DATASET_PRESETS = {
     "edge_cases": EDGE_CASE_TESTS,
     "all": get_all_static_tests,  # Function to call
     "quick": BASIC_TESTS[:2] + CODING_TESTS[:1],  # Quick smoke test
+    
+    # JSON test cases
+    "math": lambda: load_test_cases("math_basic"),
+    "complex": lambda: load_test_cases("complex"),
+    "real_world": lambda: load_test_cases("real_world"),
+    
+    # GAIA benchmark levels
+    "gaia-level1": lambda count=None: _load_gaia(1, count),
+    "gaia-level2": lambda count=None: _load_gaia(2, count),
+    "gaia-level3": lambda count=None: _load_gaia(3, count),
 }
 
 
-def get_dataset(name: str = "all") -> List[Dict[str, Any]]:
+def list_available_datasets() -> List[str]:
+    """Return list of all available dataset names."""
+    return list(DATASET_PRESETS.keys())
+
+
+def get_dataset(name: str = "all", count: Optional[int] = None) -> List[Dict[str, Any]]:
     """
     Get a dataset by preset name.
     
@@ -277,6 +327,19 @@ def get_dataset(name: str = "all") -> List[Dict[str, Any]]:
     - edge_cases: Edge case handling
     - all: All tests combined
     - quick: Fast smoke test (3 cases)
+    - math: Math problems from test_cases.json
+    - complex: Complex tool-using tasks
+    - real_world: Real-world scenarios
+    - gaia-level1: GAIA benchmark level 1 (easiest)
+    - gaia-level2: GAIA benchmark level 2 (medium)
+    - gaia-level3: GAIA benchmark level 3 (hardest)
+    
+    Args:
+        name: Dataset preset name
+        count: Optional limit on number of test cases (for large datasets)
+    
+    Returns:
+        List of test case dictionaries
     """
     if name not in DATASET_PRESETS:
         available = ", ".join(DATASET_PRESETS.keys())
@@ -285,7 +348,20 @@ def get_dataset(name: str = "all") -> List[Dict[str, Any]]:
     preset = DATASET_PRESETS[name]
     
     if callable(preset):
-        return preset()
+        # Check if the function accepts 'count' parameter
+        import inspect
+        sig = inspect.signature(preset)
+        if 'count' in sig.parameters:
+            result = preset(count=count)
+        else:
+            result = preset()
+            if count:
+                result = result[:count]
+        return result
+    
+    # Static list
+    if count:
+        return preset[:count]
     return preset
 
 
