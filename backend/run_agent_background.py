@@ -626,12 +626,13 @@ async def run_agent_background(
                     message_ids = [m['message_id'] for m in messages_result.data]
                     temporal_client = await get_temporal_client()
                     # Temporal SDK requires multiple args passed via 'args' parameter
-                    from core.temporal.workflows import MemoryExtractionWorkflow
+                    # Use background queue for memory extraction (lower priority)
+                    from core.temporal.workflows import MemoryExtractionWorkflow, TASK_QUEUE_BACKGROUND
                     await temporal_client.start_workflow(
                         MemoryExtractionWorkflow.run,
                         args=[thread_id, account_id, message_ids],
                         id=f"memory-extraction-{thread_id}",
-                        task_queue="default",
+                        task_queue=TASK_QUEUE_BACKGROUND,
                     )
                     logger.debug(f"Started memory extraction workflow for thread {thread_id}")
             except Exception as mem_error:

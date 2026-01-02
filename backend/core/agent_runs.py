@@ -15,7 +15,7 @@ from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox, get_or_start_sandbox
 from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
 from core.temporal.client import get_temporal_client
-from core.temporal.workflows import AgentRunWorkflow
+from core.temporal.workflows import AgentRunWorkflow, TASK_QUEUE_AGENT_RUNS
 
 from core.ai_models import model_manager
 
@@ -330,11 +330,12 @@ async def _trigger_agent_background(
         
         # Start workflow with agent_run_id as workflow ID for deduplication
         # Temporal SDK requires multiple args passed via 'args' parameter
+        # Use agent-runs queue for high-priority processing
         handle = await client.start_workflow(
             AgentRunWorkflow.run,
             args=[agent_run_id, thread_id, utils.instance_id, project_id, effective_model, agent_id, account_id, request_id],
-            id=f"agent-run-{agent_run_id}",  # Use agent_run_id for deduplication
-            task_queue="default",
+            id=f"agent-run-{agent_run_id}",
+            task_queue=TASK_QUEUE_AGENT_RUNS,
         )
         
         workflow_id = handle.id
