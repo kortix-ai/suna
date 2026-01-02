@@ -7,6 +7,10 @@ for composition.
 
 NOTE: Workflows run in a sandboxed environment. Use workflow.logger instead of
 importing logger modules directly.
+
+TASK QUEUE ARCHITECTURE:
+- "agent-runs": High-priority queue for long-running agent executions
+- "background": Lower-priority queue for memory extraction, categorization, etc.
 """
 import asyncio
 from datetime import timedelta
@@ -18,6 +22,10 @@ from temporalio.exceptions import ApplicationError
 
 # Do NOT import logger here - workflows run in sandbox
 # Use workflow.logger instead (provided by Temporal)
+
+# Task queue constants
+TASK_QUEUE_AGENT_RUNS = "agent-runs"
+TASK_QUEUE_BACKGROUND = "background"
 
 # Import activities - must use unsafe imports for workflow code
 with workflow.unsafe.imports_passed_through():
@@ -41,6 +49,8 @@ class AgentRunWorkflow:
     - Stop signal for cancellation
     - Status query for monitoring
     - Long-running agent execution with heartbeating
+    
+    Runs on: agent-runs queue (high priority)
     """
     
     def __init__(self) -> None:
@@ -145,6 +155,12 @@ class AgentRunWorkflow:
 class ThreadInitWorkflow:
     """
     Workflow for initializing a thread and then starting the agent run.
+    
+    OPTIMIZATION: Uses fire-and-forget pattern for child workflow.
+    Parent workflow completes immediately after starting child,
+    reducing resource usage for long-running agent runs.
+    
+    Runs on: agent-runs queue (high priority)
     """
     
     @workflow.run
@@ -158,7 +174,7 @@ class ThreadInitWorkflow:
         model_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Initialize thread and start agent run.
+        Initialize thread and start agent run (fire-and-forget).
         
         Args:
             thread_id: Thread ID
@@ -169,7 +185,7 @@ class ThreadInitWorkflow:
             model_name: Optional model name
             
         Returns:
-            Dict with agent_run_id and status
+            Dict with agent_run_id and status (returns immediately, doesn't wait for agent run)
         """
         workflow.logger.info(f"Starting ThreadInitWorkflow for thread {thread_id}")
         
@@ -189,31 +205,30 @@ class ThreadInitWorkflow:
             
             agent_run_id = init_result["agent_run_id"]
             effective_model = init_result["effective_model"]
-            agent_config = init_result["agent_config"]
             
             workflow.logger.info(f"Thread {thread_id} initialized, starting agent run: {agent_run_id}")
             
-            # Start agent run as child workflow
+            # Start agent run as child workflow with FIRE-AND-FORGET pattern
             # Use workflow.uuid4() for deterministic UUID generation in workflows
             worker_instance_id = str(workflow.uuid4())[:8]
             
-            agent_run_handle = await workflow.start_child_workflow(
+            # Start child workflow but DON'T await it
+            # Parent close policy ABANDON means child continues even if parent completes
+            await workflow.start_child_workflow(
                 AgentRunWorkflow.run,
-                args=[agent_run_id, thread_id, worker_instance_id, project_id, effective_model, agent_id, account_id, None],  # request_id=None
-                id=f"agent-run-{agent_run_id}",  # Use agent_run_id for deduplication
-                task_queue="default",
+                args=[agent_run_id, thread_id, worker_instance_id, project_id, effective_model, agent_id, account_id, None],
+                id=f"agent-run-{agent_run_id}",
+                task_queue=TASK_QUEUE_AGENT_RUNS,
+                parent_close_policy=workflow.ParentClosePolicy.ABANDON,  # Child continues if parent closes
             )
             
-            # Wait for child workflow to complete
-            result = await agent_run_handle
+            workflow.logger.info(f"ThreadInitWorkflow completed for thread {thread_id}, agent_run_id: {agent_run_id} (fire-and-forget)")
             
-            workflow.logger.info(f"ThreadInitWorkflow completed for thread {thread_id}, agent_run_id: {agent_run_id}")
-            
+            # Return immediately - don't wait for agent run to complete
             return {
                 "thread_id": thread_id,
                 "agent_run_id": agent_run_id,
-                "status": "completed",
-                "agent_run_result": result,
+                "status": "started",  # Changed from "completed" to "started"
             }
             
         except Exception as e:
@@ -228,6 +243,8 @@ class MemoryExtractionWorkflow:
     Workflow for extracting and storing memories from a conversation.
     
     Orchestrates: extract → embed_and_store
+    
+    Runs on: background queue (lower priority)
     """
     
     @workflow.run
@@ -301,6 +318,8 @@ class CategorizationWorkflow:
     Workflow for batch categorization of stale projects.
     
     Finds stale projects and categorizes them in parallel.
+    
+    Runs on: background queue (lower priority)
     """
     
     @workflow.run
@@ -346,48 +365,7 @@ class CategorizationWorkflow:
                     CategorizeProjectWorkflow.run,
                     args=[project['project_id']],
                     id=f"categorize-{project['project_id']}",
-                    task_queue="default",
-                )
-                child_handles.append(handle)
-            
-            # Wait for all children to complete
-            results = []
-            for handle in child_handles:
-                try:
-                    result = await handle
-                    results.append(result)
-                except Exception as e:
-                    workflow.logger.error(f"Child categorization workflow failed: {e}")
-                    results.append({"error": str(e)})
-            
-            processed_count = len([r for r in results if not r.get("error")])
-            
-            workflow.logger.info(f"CategorizationWorkflow completed: processed {processed_count}/{len(projects)} projects")
-            
-            return {"processed_count": processed_count, "total_count": len(projects)}
-            
-            if not projects:
-                workflow.logger.debug("No stale projects to categorize")
-                return {"processed_count": 0}
-            
-            workflow.logger.info(f"Found {len(projects)} stale projects")
-            
-            # Start child workflows for each project (with staggered delays)
-            DELAY_BETWEEN_PROJECTS_SECONDS = 2
-            child_handles = []
-            
-            for i, project in enumerate(projects):
-                # Stagger workflow starts to avoid rate limits
-                delay_seconds = i * DELAY_BETWEEN_PROJECTS_SECONDS
-                
-                if delay_seconds > 0:
-                    await asyncio.sleep(delay_seconds)
-                
-                handle = await workflow.start_child_workflow(
-                    CategorizeProjectWorkflow.run,
-                    args=[project['project_id']],
-                    id=f"categorize-{project['project_id']}",
-                    task_queue="default",
+                    task_queue=TASK_QUEUE_BACKGROUND,
                 )
                 child_handles.append(handle)
             
@@ -417,6 +395,8 @@ class CategorizationWorkflow:
 class CategorizeProjectWorkflow:
     """
     Workflow for categorizing a single project.
+    
+    Runs on: background queue (lower priority)
     """
     
     @workflow.run
@@ -450,4 +430,3 @@ class CategorizeProjectWorkflow:
             error_msg = str(e)
             workflow.logger.error(f"CategorizeProjectWorkflow failed for {project_id}: {error_msg}")
             raise ApplicationError(f"Project categorization failed: {error_msg}", non_retryable=True)
-

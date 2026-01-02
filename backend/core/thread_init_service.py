@@ -40,17 +40,18 @@ async def initialize_thread_background(
     
     try:
         # Import here to avoid circular import
-        from core.temporal.workflows import ThreadInitWorkflow
+        from core.temporal.workflows import ThreadInitWorkflow, TASK_QUEUE_AGENT_RUNS
         
         client = await get_temporal_client()
         
         # Start workflow with thread_id as workflow ID for idempotency
         # Temporal SDK requires multiple args passed via 'args' parameter
+        # Use agent-runs queue for high-priority processing
         handle = await client.start_workflow(
             ThreadInitWorkflow.run,
             args=[thread_id, project_id, account_id, prompt, agent_id, model_name],
             id=f"thread-init-{thread_id}",  # Use thread_id for deduplication
-            task_queue="default",
+            task_queue=TASK_QUEUE_AGENT_RUNS,
         )
         
         logger.info(f"Started ThreadInitWorkflow for thread {thread_id}, workflow_id: {handle.id}")

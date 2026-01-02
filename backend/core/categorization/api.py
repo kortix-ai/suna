@@ -16,11 +16,12 @@ async def categorize_stale_projects_endpoint(
     try:
         client = await get_temporal_client()
         # Best practice: Pass the workflow's .run method reference
-        from core.temporal.workflows import CategorizationWorkflow
+        # Use background queue for categorization (lower priority)
+        from core.temporal.workflows import CategorizationWorkflow, TASK_QUEUE_BACKGROUND
         await client.start_workflow(
             CategorizationWorkflow.run,
             id="categorization-batch",  # Use fixed ID for deduplication
-            task_queue="default",
+            task_queue=TASK_QUEUE_BACKGROUND,
         )
         return {"success": True, "message": "Categorization workflow started"}
     except Exception as e:

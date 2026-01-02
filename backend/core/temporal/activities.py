@@ -134,18 +134,54 @@ async def run_agent_activity(
             stream_key=redis_keys['response_stream']
         )
         
-        # Check for cancellation periodically and send heartbeats
-        stop_signal_checker_state = {'stop_signal_received': False, 'total_responses': 0, 'stop_reason': None}
+        # Check for cancellation periodically and send heartbeats with progress data
+        stop_signal_checker_state = {
+            'stop_signal_received': False, 
+            'total_responses': 0, 
+            'stop_reason': None,
+            'last_response_type': None,
+            'started_at': datetime.now(timezone.utc).isoformat(),
+        }
         
-        async def check_cancellation():
-            """Check for Temporal cancellation and send heartbeats."""
+        async def check_cancellation_and_heartbeat():
+            """
+            Check for Temporal cancellation and send heartbeats with progress data.
+            
+            Heartbeats include:
+            - Total responses processed
+            - Last response type
+            - Running duration
+            - Agent run ID for tracking
+            """
+            heartbeat_count = 0
             while not stop_signal_checker_state.get('stop_signal_received'):
                 try:
-                    # Send heartbeat to Temporal
-                    activity.heartbeat()
+                    heartbeat_count += 1
                     
-                    # Refresh instance_active TTL periodically
-                    if stop_signal_checker_state.get('total_responses', 0) % 50 == 0:
+                    # Build progress data for heartbeat
+                    progress_data = {
+                        "agent_run_id": agent_run_id,
+                        "thread_id": thread_id,
+                        "responses_processed": stop_signal_checker_state.get('total_responses', 0),
+                        "last_response_type": stop_signal_checker_state.get('last_response_type'),
+                        "heartbeat_count": heartbeat_count,
+                        "running_seconds": (datetime.now(timezone.utc) - start_time).total_seconds(),
+                    }
+                    
+                    # Send heartbeat with progress data to Temporal
+                    # This allows monitoring and detecting stuck activities
+                    activity.heartbeat(progress_data)
+                    
+                    # Also check if Temporal requested cancellation
+                    if activity.is_cancelled():
+                        logger.warning(f"🛑 Temporal cancellation detected for agent run {agent_run_id}")
+                        stop_signal_checker_state['stop_signal_received'] = True
+                        stop_signal_checker_state['stop_reason'] = 'temporal_cancellation'
+                        cancellation_event.set()
+                        break
+                    
+                    # Refresh instance_active TTL every 25 heartbeats (~12.5 seconds)
+                    if heartbeat_count % 25 == 0:
                         try:
                             await asyncio.wait_for(
                                 redis.expire(redis_keys['instance_active'], redis.REDIS_KEY_TTL),
@@ -154,7 +190,8 @@ async def run_agent_activity(
                         except (asyncio.TimeoutError, Exception):
                             pass
                     
-                    await asyncio.sleep(0.5)  # Check every 500ms
+                    await asyncio.sleep(0.5)  # Heartbeat every 500ms
+                    
                 except asyncio.CancelledError:
                     logger.warning(f"🛑 Activity cancelled for agent run {agent_run_id}")
                     stop_signal_checker_state['stop_signal_received'] = True
@@ -162,10 +199,10 @@ async def run_agent_activity(
                     cancellation_event.set()
                     break
                 except Exception as e:
-                    logger.error(f"Error in cancellation checker: {e}", exc_info=True)
+                    logger.error(f"Error in heartbeat/cancellation checker: {e}", exc_info=True)
                     await asyncio.sleep(1)
         
-        cancellation_checker = asyncio.create_task(check_cancellation())
+        cancellation_checker = asyncio.create_task(check_cancellation_and_heartbeat())
         
         try:
             agent_gen = run_agent(
