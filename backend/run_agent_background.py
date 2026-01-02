@@ -52,6 +52,10 @@ dramatiq.set_broker(redis_broker)
 from core.memory import background_jobs as memory_jobs
 from core.categorization import background_jobs as categorization_jobs
 
+# CRITICAL: Import thread_init_service at module level so Dramatiq discovers its actors
+# Without this, the worker won't consume messages for initialize_thread_background
+from core import thread_init_service
+
 warm_up_tools_cache()
 logger.info("✅ Worker process ready, tool cache warmed")
 
@@ -448,7 +452,7 @@ async def publish_final_control_signal(agent_run_id: str, final_status: str, sto
 from core import thread_init_service
 from core.tool_output_streaming_context import set_tool_output_streaming_context, clear_tool_output_streaming_context
 
-@dramatiq.actor(queue_name=get_queue_name("default"))
+@dramatiq.actor(queue_name=get_queue_name("default"), priority=0)  # Priority 0 = highest priority
 async def run_agent_background(
     agent_run_id: str,
     thread_id: str,

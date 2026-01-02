@@ -21,6 +21,94 @@ export function initDataLayer() {
 }
 
 /**
+ * Container Load - First data push before GTM loads
+ * Provides contextual page information (master_group, content_group, page_type, language)
+ * NOTE: No 'event' key - this is initialization data only
+ */
+export interface ContainerLoadData {
+  master_group: string;
+  content_group: string;
+  page_type: string;
+  language: string;
+}
+
+export function getPageContext(pathname: string): ContainerLoadData {
+  // Determine language from document or default to 'en'
+  const language = typeof document !== 'undefined' 
+    ? document.documentElement.lang || 'en' 
+    : 'en';
+
+  // Map pathname to page context
+  if (pathname === '/' || pathname === '') {
+    return {
+      master_group: 'General',
+      content_group: 'Other',
+      page_type: 'home',
+      language,
+    };
+  }
+  
+  if (pathname.startsWith('/auth')) {
+    return {
+      master_group: 'General',
+      content_group: 'User',
+      page_type: 'auth',
+      language,
+    };
+  }
+  
+  if (pathname === '/dashboard') {
+    return {
+      master_group: 'Platform',
+      content_group: 'Dashboard',
+      page_type: 'home',
+      language,
+    };
+  }
+  
+  if (pathname.startsWith('/projects') || pathname.startsWith('/thread')) {
+    return {
+      master_group: 'Platform',
+      content_group: 'Dashboard',
+      page_type: 'thread',
+      language,
+    };
+  }
+  
+  if (pathname.startsWith('/settings')) {
+    return {
+      master_group: 'Platform',
+      content_group: 'User',
+      page_type: 'settings',
+      language,
+    };
+  }
+  
+  // Default for other pages
+  return {
+    master_group: 'General',
+    content_group: 'Other',
+    page_type: 'other',
+    language,
+  };
+}
+
+export function pushContainerLoad(pathname: string) {
+  if (typeof window === 'undefined') return;
+  
+  initDataLayer();
+  
+  const pageContext = getPageContext(pathname);
+  
+  // Push without 'event' key - this is initialization data
+  window.dataLayer?.push(pageContext);
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[GTM] Container Load pushed:', pageContext);
+  }
+}
+
+/**
  * Get the current page referrer from sessionStorage or document.referrer
  */
 function getPageReferrer(): string {
@@ -374,5 +462,139 @@ export function getStoredCheckoutData(): {
 export function clearCheckoutData() {
   if (typeof window === 'undefined') return;
   sessionStorage.removeItem('gtm_checkout_data');
+}
+
+// =============================================================================
+// PLANS EVENTS - select_item, view_item, add_to_cart
+// =============================================================================
+
+export interface PlanItemData {
+  item_id: string;         // e.g., "pro_monthly", "plus_yearly", "ultra_monthly"
+  item_name: string;       // e.g., "Pro Monthly", "Plus Yearly", "Ultra"
+  coupon?: string;
+  discount?: number;
+  item_brand: string;      // "Kortix AI"
+  item_category: string;   // "Plans"
+  item_list_id: string;    // "plans_listing"
+  item_list_name: string;  // "Plans Listing"
+  price: number;
+  quantity: number;
+}
+
+/**
+ * Track select_item event when user clicks on Plus/Pro/Ultra plan tabs
+ * Priority 2 event
+ */
+export function trackSelectItem(item: PlanItemData) {
+  if (typeof window === 'undefined') return;
+  
+  initDataLayer();
+  
+  // Clear previous ecommerce object (GA4 best practice)
+  window.dataLayer?.push({ ecommerce: null });
+  
+  const selectItemEvent = {
+    event: 'select_item',
+    ecommerce: {
+      item_list_id: 'plans_listing',
+      item_list_name: 'Plans Listing',
+      items: [{
+        item_id: item.item_id,
+        item_name: item.item_name,
+        coupon: item.coupon ?? '',
+        discount: item.discount ?? 0,
+        item_brand: item.item_brand,
+        item_category: item.item_category,
+        item_list_id: item.item_list_id,
+        item_list_name: item.item_list_name,
+        price: item.price,
+        quantity: item.quantity,
+      }],
+    },
+  };
+  
+  window.dataLayer?.push(selectItemEvent);
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[GTM] select_item pushed:', selectItemEvent);
+  }
+}
+
+/**
+ * Track view_item event when modal opens or billing period changes
+ * Priority 2 event
+ */
+export function trackViewItem(item: PlanItemData, currency: string, value: number) {
+  if (typeof window === 'undefined') return;
+  
+  initDataLayer();
+  
+  // Clear previous ecommerce object (GA4 best practice)
+  window.dataLayer?.push({ ecommerce: null });
+  
+  const viewItemEvent = {
+    event: 'view_item',
+    ecommerce: {
+      currency: currency,
+      value: value,
+      items: [{
+        item_id: item.item_id,
+        item_name: item.item_name,
+        coupon: item.coupon ?? '',
+        discount: item.discount ?? 0,
+        item_brand: item.item_brand,
+        item_category: item.item_category,
+        item_list_id: item.item_list_id,
+        item_list_name: item.item_list_name,
+        price: item.price,
+        quantity: item.quantity,
+      }],
+    },
+  };
+  
+  window.dataLayer?.push(viewItemEvent);
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[GTM] view_item pushed:', viewItemEvent);
+  }
+}
+
+/**
+ * Track add_to_cart event when user clicks Upgrade button
+ * Priority 2 event
+ */
+export function trackAddToCart(item: PlanItemData, currency: string, value: number) {
+  if (typeof window === 'undefined') return;
+  
+  initDataLayer();
+  
+  // Clear previous ecommerce object (GA4 best practice)
+  window.dataLayer?.push({ ecommerce: null });
+  
+  const addToCartEvent = {
+    event: 'add_to_cart',
+    ecommerce: {
+      currency: currency,
+      value: value,
+      items: [{
+        item_id: item.item_id,
+        item_name: item.item_name,
+        coupon: item.coupon ?? '',
+        discount: item.discount ?? 0,
+        item_brand: item.item_brand,
+        item_category: item.item_category,
+        item_list_id: item.item_list_id,
+        item_list_name: item.item_list_name,
+        price: item.price,
+        quantity: item.quantity,
+      }],
+    },
+  };
+  
+  window.dataLayer?.push(addToCartEvent);
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[GTM] add_to_cart pushed:', addToCartEvent);
+  }
 }
 

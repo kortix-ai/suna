@@ -23,7 +23,7 @@ def get_queue_name(base_name: str) -> str:
 
 db = DBConnection()
 
-@dramatiq.actor(queue_name=get_queue_name("default"))
+@dramatiq.actor(queue_name=get_queue_name("default"), priority=0)  # Priority 0 = highest priority
 async def initialize_thread_background(
     thread_id: str,
     project_id: str,

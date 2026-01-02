@@ -8,28 +8,16 @@ import {
   ChatInput,
   ChatInputHandles,
 } from '@/components/thread/chat-input/chat-input';
-import { 
-  AgentRunLimitError, 
-  ProjectLimitError, 
-  BillingError,
-  ThreadLimitError,
-  AgentCountLimitError,
-  TriggerLimitError,
-  CustomWorkerLimitError,
-  ModelAccessDeniedError
-} from '@/lib/api/errors';
 import { useIsMobile, useLeadingDebouncedCallback } from '@/hooks/utils';
 import { useAuth } from '@/components/AuthProvider';
 import { config, isLocalMode, isStagingMode } from '@/lib/config';
-import { useInitiateAgentWithInvalidation } from '@/hooks/dashboard/use-initiate-agent';
-import { optimisticAgentStart } from '@/lib/api/agents';
+import { useOptimisticAgentStart } from '@/hooks/threads';
 import { useAccountState, accountStateSelectors, invalidateAccountState } from '@/hooks/billing';
 import { getPlanName } from '@/components/billing/plan-utils';
 import { useAgents } from '@/hooks/agents/use-agents';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useAgentSelection } from '@/stores/agent-selection-store';
 import { useThreadQuery } from '@/hooks/threads/use-threads';
-import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { toast } from 'sonner';
 import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { Button } from '../ui/button';
@@ -41,7 +29,6 @@ import { useSidebar } from '@/components/ui/sidebar';
 import { useWelcomeBannerStore } from '@/stores/welcome-banner-store';
 import { cn } from '@/lib/utils';
 import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
-import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 import { trackPurchase, getStoredCheckoutData, clearCheckoutData } from '@/lib/analytics/gtm';
 
 // Lazy load heavy components that aren't immediately visible
@@ -102,19 +89,16 @@ export function DashboardContent() {
     getCurrentAgent
   } = useAgentSelection();
   const [initiatedThreadId, setInitiatedThreadId] = useState<string | null>(null);
-  const [showAgentLimitBanner, setShowAgentLimitBanner] = useState(false);
-  const [agentLimitData, setAgentLimitData] = useState<{
-    runningCount: number;
-    runningThreadIds: string[];
-  } | null>(null);
-
-  // Ensure dialog opens when agentLimitData is set
-  useEffect(() => {
-    if (agentLimitData && !showAgentLimitBanner) {
-      console.log('agentLimitData set, opening dialog');
-      setShowAgentLimitBanner(true);
-    }
-  }, [agentLimitData, showAgentLimitBanner]);
+  
+  // Use centralized optimistic agent start hook
+  const {
+    startAgent,
+    isStarting: isOptimisticStarting,
+    agentLimitData,
+    showAgentLimitBanner,
+    setShowAgentLimitBanner,
+    clearAgentLimitData,
+  } = useOptimisticAgentStart('/dashboard');
   const [showUpgradeCelebration, setShowUpgradeCelebration] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -124,7 +108,6 @@ export function DashboardContent() {
   const { setOpen: setSidebarOpen } = useSidebar();
   const { isVisible: isWelcomeBannerVisible } = useWelcomeBannerStore();
   const chatInputRef = React.useRef<ChatInputHandles>(null);
-  const initiateAgentMutation = useInitiateAgentWithInvalidation();
   const pricingModalStore = usePricingModalStore();
   
   const prefetchedRouteRef = React.useRef<string | null>(null);
@@ -304,8 +287,6 @@ export function DashboardContent() {
     }
   }, [searchParams, router, tAuth]);
 
-  const addOptimisticFiles = useOptimisticFilesStore((state) => state.addFiles);
-
   const handleSubmit = useLeadingDebouncedCallback(async (
     message: string,
     options?: {
@@ -316,223 +297,39 @@ export function DashboardContent() {
     if (
       (!message.trim() && !chatInputRef.current?.getPendingFiles().length) ||
       isSubmitting ||
-      isRedirecting
+      isRedirecting ||
+      isOptimisticStarting
     )
       return;
 
     setIsSubmitting(true);
+    localStorage.removeItem(PENDING_PROMPT_KEY);
 
-    try {
-      const fileIds = chatInputRef.current?.getUploadedFileIds() || [];
-      const pendingFiles = chatInputRef.current?.getPendingFiles() || [];
-      localStorage.removeItem(PENDING_PROMPT_KEY);
+    const fileIds = chatInputRef.current?.getUploadedFileIds() || [];
+    const pendingFiles = chatInputRef.current?.getPendingFiles() || [];
 
-      const trimmedMessage = message.trim();
-      if (!trimmedMessage && fileIds.length === 0 && pendingFiles.length === 0) {
-        setIsSubmitting(false);
-        throw new Error('Prompt is required when starting a new Worker');
-      }
+    console.log('[Dashboard] Starting agent with:', {
+      prompt: message.substring(0, 100),
+      promptLength: message.length,
+      model_name: options?.model_name,
+      agent_id: selectedAgentId,
+      fileIds: fileIds.length,
+      pendingFiles: pendingFiles.length,
+    });
 
-      console.log('[Dashboard] Starting agent with:', {
-        prompt: message.substring(0, 100),
-        promptLength: message.length,
-        model_name: options?.model_name,
-        agent_id: selectedAgentId,
-        fileIds: fileIds.length,
-        pendingFiles: pendingFiles.length,
-      });
+    setIsRedirecting(true);
 
-      const threadId = crypto.randomUUID();
-      const projectId = crypto.randomUUID();
-      
-      // Note: No need to clear files here - navigation to new page will unmount this component
-      setIsRedirecting(true);
-      
-      const normalizedPendingFiles = pendingFiles.map((file) => {
-        const normalizedName = normalizeFilenameToNFC(file.name);
-        return new File([file], normalizedName, { type: file.type });
-      });
-      
-      let promptWithFiles = trimmedMessage || message;
-      if (normalizedPendingFiles.length > 0 && fileIds.length === 0) {
-        addOptimisticFiles(threadId, projectId, normalizedPendingFiles);
-        sessionStorage.setItem('optimistic_files', 'true');
-        const fileRefs = normalizedPendingFiles.map((f) => 
-          `[Uploaded File: uploads/${f.name}]`
-        ).join('\n');
-        promptWithFiles = `${trimmedMessage || message}\n\n${fileRefs}`;
-      }
-      
-      sessionStorage.setItem('optimistic_prompt', promptWithFiles);
-      sessionStorage.setItem('optimistic_thread', threadId);
+    const result = await startAgent({
+      message,
+      files: pendingFiles,
+      fileIds: fileIds.length > 0 ? fileIds : undefined,
+      modelName: options?.model_name,
+      agentId: selectedAgentId || undefined,
+      memoryEnabled: true,
+    });
 
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('[Dashboard] New thread navigation:', {
-          projectId,
-          threadId,
-          agent_id: selectedAgentId || undefined,
-          model_name: options?.model_name,
-          promptLength: promptWithFiles.length,
-          promptPreview: promptWithFiles.slice(0, 140),
-          file_ids_count: fileIds.length,
-          pending_files_count: pendingFiles.length,
-        });
-      }
-      
-      router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
-      
-      optimisticAgentStart({
-        thread_id: threadId,
-        project_id: projectId,
-        prompt: promptWithFiles,
-        file_ids: fileIds.length > 0 ? fileIds : undefined,
-        model_name: options?.model_name,
-        agent_id: selectedAgentId || undefined,
-        memory_enabled: true,
-      }).then(() => {
-        queryClient.invalidateQueries({ queryKey: ['threads', 'list'] });
-        queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });
-      }).catch((error) => {
-        console.error('Background agent start failed:', error);
-        console.error('Error type:', error?.constructor?.name);
-        console.error('Is AgentRunLimitError?', error instanceof AgentRunLimitError);
-        
-        if (error instanceof BillingError || error?.status === 402) {
-          const message = error.detail?.message?.toLowerCase() || error.message?.toLowerCase() || '';
-          const originalMessage = error.detail?.message || error.message || '';
-          const isCreditsExhausted = 
-            message.includes('credit') ||
-            message.includes('balance') ||
-            message.includes('insufficient') ||
-            message.includes('out of credits') ||
-            message.includes('no credits');
-          
-          const balanceMatch = originalMessage.match(/balance is (-?\d+)\s*credits/i);
-          const balance = balanceMatch ? balanceMatch[1] : null;
-          
-          const alertTitle = isCreditsExhausted 
-            ? 'You ran out of credits'
-            : 'Pick the plan that works for you';
-          
-          const alertSubtitle = balance 
-            ? `Your current balance is ${balance} credits. Upgrade your plan to continue.`
-            : isCreditsExhausted 
-              ? 'Upgrade your plan to get more credits and continue using the AI assistant.'
-              : undefined;
-          
-          router.replace('/dashboard');
-          pricingModalStore.openPricingModal({ 
-            isAlert: true,
-            alertTitle,
-            alertSubtitle
-          });
-          return;
-        }
-        
-        if (error instanceof AgentRunLimitError) {
-          console.log('Caught AgentRunLimitError, showing dialog');
-          const { running_thread_ids, running_count } = error.detail;
-          console.log('Running threads:', running_thread_ids, 'Count:', running_count);
-          // Set state BEFORE navigation to ensure it persists
-          setAgentLimitData({
-            runningCount: running_count,
-            runningThreadIds: running_thread_ids,
-          });
-          setShowAgentLimitBanner(true);
-          console.log('State set, navigating...');
-          router.replace('/dashboard');
-          return;
-        }
-        
-        // Also check for error code in case instanceof check fails
-        if (error?.detail?.error_code === 'AGENT_RUN_LIMIT_EXCEEDED' || 
-            error?.code === 'AGENT_RUN_LIMIT_EXCEEDED' ||
-            (error?.status === 402 && error?.detail?.running_count !== undefined)) {
-          console.log('Caught agent run limit error by code, showing dialog');
-          const running_thread_ids = error.detail?.running_thread_ids || [];
-          const running_count = error.detail?.running_count || 0;
-          setAgentLimitData({
-            runningCount: running_count,
-            runningThreadIds: running_thread_ids,
-          });
-          setShowAgentLimitBanner(true);
-          router.replace('/dashboard');
-          return;
-        }
-        
-        if (error instanceof ProjectLimitError) {
-          router.replace('/dashboard');
-          pricingModalStore.openPricingModal({ 
-            isAlert: true,
-            alertTitle: `${tBilling('reachedLimit')} ${tBilling('projectLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
-          });
-          return;
-        }
-        
-        if (error instanceof ThreadLimitError) {
-          router.replace('/dashboard');
-          pricingModalStore.openPricingModal({ 
-            isAlert: true,
-            alertTitle: `${tBilling('reachedLimit')} ${tBilling('threadLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
-          });
-          return;
-        }
-        
-        toast.error('Failed to start conversation');
-      });
-    } catch (error: any) {
-      console.error('Error during submission process:', error);
-      if (error instanceof ProjectLimitError) {
-        pricingModalStore.openPricingModal({ 
-          isAlert: true,
-          alertTitle: `${tBilling('reachedLimit')} ${tBilling('projectLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
-        });
-      } else if (error instanceof ThreadLimitError) {
-        pricingModalStore.openPricingModal({ 
-          isAlert: true,
-          alertTitle: `${tBilling('reachedLimit')} ${tBilling('threadLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
-        });
-      } else if (error instanceof BillingError) {
-        const message = error.detail?.message?.toLowerCase() || '';
-        const originalMessage = error.detail?.message || '';
-        const isCreditsExhausted = 
-          message.includes('credit') ||
-          message.includes('balance') ||
-          message.includes('insufficient') ||
-          message.includes('out of credits') ||
-          message.includes('no credits');
-        
-        // Extract balance from message if present
-        const balanceMatch = originalMessage.match(/balance is (-?\d+)\s*credits/i);
-        const balance = balanceMatch ? balanceMatch[1] : null;
-        
-        const alertTitle = isCreditsExhausted 
-          ? 'You ran out of credits'
-          : 'Pick the plan that works for you';
-        
-        const alertSubtitle = balance 
-          ? `Your current balance is ${balance} credits. Upgrade your plan to continue.`
-          : isCreditsExhausted 
-            ? 'Upgrade your plan to get more credits and continue using the AI assistant.'
-            : undefined;
-        
-        pricingModalStore.openPricingModal({ 
-          isAlert: true,
-          alertTitle,
-          alertSubtitle
-        });
-      } else if (error instanceof AgentRunLimitError) {
-        const { running_thread_ids, running_count } = error.detail;
-        setAgentLimitData({
-          runningCount: running_count,
-          runningThreadIds: running_thread_ids,
-        });
-        setShowAgentLimitBanner(true);
-      } else {
-        const errorMessage = error instanceof Error ? error.message : 'Operation failed';
-        toast.error(errorMessage);
-      }
-      // Keep the input value on error so user doesn't lose their message
+    if (!result) {
+      // Error was handled by the hook, reset state
       chatInputRef.current?.clearPendingFiles();
       setIsSubmitting(false);
       setIsRedirecting(false);
@@ -785,7 +582,7 @@ export function DashboardContent() {
             onOpenChange={(open) => {
               setShowAgentLimitBanner(open);
               if (!open) {
-                setAgentLimitData(null);
+                clearAgentLimitData();
               }
             }}
             runningCount={agentLimitData.runningCount}

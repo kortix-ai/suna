@@ -116,6 +116,9 @@ export function useThreadData(
     const retryTimeout = setTimeout(() => {
       if (!foundRunningAgentRef.current && !agentRunId) {
         retryCountRef.current += 1;
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[useThreadData] Retry polling for agent runs, attempt:', retryCountRef.current);
+        }
         agentRunsQuery.refetch();
       }
     }, getRetryDelay(retryCountRef.current));
@@ -126,6 +129,11 @@ export function useThreadData(
   // Detect running agent from query data
   useEffect(() => {
     if (isShared || !agentRunsQuery.data) return;
+    
+    // Debug logging for agent runs
+    if (process.env.NODE_ENV !== 'production' && waitingForAgent && agentRunsQuery.data.length > 0) {
+      console.log('[useThreadData] Agent runs data:', agentRunsQuery.data.map(r => ({ id: r.id, status: r.status })));
+    }
     
     const runningRuns = agentRunsQuery.data.filter(r => r.status === 'running');
     

@@ -1476,12 +1476,19 @@ async def stream_agent_run(
             if last_id != "0":
                 last_id = "$"  # "$" means only new entries
             
+            # Startup timeout: if no real data received after N pings, check if worker is stuck
+            consecutive_pings = 0
+            received_real_data = len(initial_entries) > 0 if initial_entries else False
+            MAX_STARTUP_PINGS = 4  # 4 pings * 5 seconds = 20 second startup timeout (should start in ms)
+            
             while not terminate_stream:
                 try:
                     # Blocking XREAD - waits up to 5 seconds for new entries
                     entries = await redis.stream_read(stream_key, last_id, block_ms=5000)
                     
                     if entries:
+                        received_real_data = True
+                        consecutive_pings = 0  # Reset ping counter on real data
                         for entry_id, fields in entries:
                             data = fields.get('data', '{}')
                             yield f"data: {data}\n\n"
@@ -1497,6 +1504,34 @@ async def stream_agent_run(
                             except json.JSONDecodeError:
                                 pass
                     else:
+                        consecutive_pings += 1
+                        
+                        # Startup timeout check: if we haven't received any real data and hit the limit
+                        if not received_real_data and consecutive_pings >= MAX_STARTUP_PINGS:
+                            logger.warning(f"Startup timeout for agent run {agent_run_id}: no data received after {consecutive_pings * 5}s")
+                            # Check DB status to see if run is still supposed to be running
+                            try:
+                                run_check = await client.table('agent_runs').select('status').eq('id', agent_run_id).maybe_single().execute()
+                                db_status = run_check.data.get('status') if run_check.data else None
+                                if db_status == 'running':
+                                    # Worker never started - mark as failed
+                                    logger.error(f"Agent run {agent_run_id} stuck: status is 'running' but worker never produced output")
+                                    await client.table('agent_runs').update({
+                                        'status': 'failed',
+                                        'error': 'Worker failed to start within timeout period',
+                                        'completed_at': datetime.now(timezone.utc).isoformat()
+                                    }).eq('id', agent_run_id).execute()
+                                    yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': 'Agent worker failed to start. Please try again.'})}\n\n"
+                                    terminate_stream = True
+                                    break
+                                elif db_status in ['completed', 'failed', 'stopped']:
+                                    logger.debug(f"Agent run {agent_run_id} already finished with status: {db_status}")
+                                    yield f"data: {json.dumps({'type': 'status', 'status': db_status})}\n\n"
+                                    terminate_stream = True
+                                    break
+                            except Exception as db_err:
+                                logger.warning(f"Failed to check agent_run status during timeout: {db_err}")
+                        
                         # Timeout - send ping to keep connection alive
                         yield f"data: {json.dumps({'type': 'ping'})}\n\n"
 
