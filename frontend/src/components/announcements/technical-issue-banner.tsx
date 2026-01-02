@@ -1,9 +1,9 @@
 'use client';
 
 import { AlertTriangle, ExternalLink, X } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
 import { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { usePathname } from 'next/navigation';
 
 interface TechnicalIssueBannerProps {
   message: string;
@@ -16,6 +16,8 @@ export function TechnicalIssueBanner({
 }: TechnicalIssueBannerProps) {
   const [isDismissed, setIsDismissed] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const pathname = usePathname();
+  const isDashboardPage = pathname.startsWith('/dashboard')
 
   const dismissKey = `technical-issue-dismissed-${message}`;
 
@@ -27,7 +29,8 @@ export function TechnicalIssueBanner({
     }
   }, [dismissKey]);
 
-  const handleDismiss = () => {
+  const handleDismiss = (e: React.MouseEvent) => {
+    e.stopPropagation();
     setIsDismissed(true);
     localStorage.setItem(dismissKey, 'true');
   };
@@ -38,38 +41,56 @@ export function TechnicalIssueBanner({
     }
   };
 
-  if (!isMounted || isDismissed) {
+  if (!isMounted || isDismissed || !isDashboardPage) {
     return null;
   }
 
   return (
-    <Alert className="hover:bg-destructive/10 transition-colors duration-300 border-destructive/10 py-1 border-x-0 border-t-0 bg-destructive/5 rounded-none" onClick={handleStatusClick}>
-      <AlertDescription className="flex items-center justify-between gap-3 text-destructive">
-        <div className="flex items-center w-full justify-center gap-3">
-          <span className="font-medium">{message}</span>
-          {statusUrl && (
-            <Button
-              variant="link"
-              size="sm"
-              className="text-destructive text-xs mt-0.5"
-              onClick={handleStatusClick}
-            >
-              See More
-              <ExternalLink className="size-3" />
-            </Button>
-          )}
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 40 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        className="fixed bottom-4 right-4 z-[100] w-[320px]"
+      >
+        <div className="relative bg-muted rounded-xl overflow-hidden border">
+          <button
+            onClick={handleDismiss}
+            className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-black/10 hover:bg-black/20 dark:bg-black/80 dark:hover:bg-black transition-colors"
+          >
+            <X className="h-3 w-3 text-foreground dark:text-white" />
+          </button>
+
+          <div 
+            className="p-4 bg-muted/50 dark:bg-[#161618] cursor-pointer hover:bg-muted dark:hover:bg-[#1a1a1c] transition-colors"
+            onClick={handleStatusClick}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-12 h-12 bg-destructive/10 dark:bg-destructive/20 rounded-xl border border-destructive/20 dark:border-destructive/30 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+              </div>
+              <div className="flex-1 min-w-0 pr-4">
+                <h3 className="text-foreground dark:text-white text-sm font-semibold mb-1">
+                  Technical Issue
+                </h3>
+                <p className="text-muted-foreground dark:text-white/60 text-xs leading-relaxed line-clamp-2">
+                  {message}
+                </p>
+                {statusUrl && (
+                  <button
+                    onClick={handleStatusClick}
+                    className="flex items-center gap-1 mt-2 text-xs font-medium text-foreground dark:text-white hover:opacity-80 transition-opacity"
+                  >
+                    View Status
+                    <ExternalLink className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
-        
-        {/* <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 w-6 p-0 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200 hover:bg-transparent flex-shrink-0"
-          onClick={handleDismiss}
-          aria-label="Dismiss technical issue notice"
-        >
-          <X className="h-3 w-3" />
-        </Button> */}
-      </AlertDescription>
-    </Alert>
+      </motion.div>
+    </AnimatePresence>
   );
 }
