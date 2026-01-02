@@ -127,3 +127,145 @@ export function clearGTMSession() {
   sessionStorage.removeItem('gtm_has_tracked');
 }
 
+// =============================================================================
+// ECOMMERCE EVENTS - Purchase Tracking
+// =============================================================================
+
+export interface PurchaseItem {
+  item_id: string;          // e.g., "tier_2_20", "tier_6_50", "free"
+  item_name: string;        // e.g., "Plus", "Pro", "Basic"
+  coupon?: string;
+  discount?: number;
+  item_brand: string;       // "Kortix AI"
+  item_category: string;    // "Plans"
+  item_list_id: string;     // "plans_listing"
+  item_list_name: string;   // "Plans Listing"
+  price: number;
+  quantity: number;
+}
+
+export interface PurchaseCustomer {
+  name?: string;
+  surname?: string;
+  email: string;
+}
+
+export interface PurchaseData {
+  transaction_id: string;
+  value: number;
+  tax?: number;
+  currency: string;
+  coupon?: string;
+  customer_type: 'new' | 'returning';
+  items: PurchaseItem[];
+  customer: PurchaseCustomer;
+}
+
+/**
+ * Push a purchase event to the dataLayer
+ * Call this when a user completes a purchase (after checkout success)
+ */
+export function trackPurchase(data: PurchaseData) {
+  if (typeof window === 'undefined') return;
+  
+  initDataLayer();
+  
+  // Clear previous ecommerce object (GA4 best practice)
+  window.dataLayer?.push({ ecommerce: null });
+  
+  // Push the purchase event
+  const purchaseEvent = {
+    event: 'purchase',
+    ecommerce: {
+      item_list_id: 'plans_listing',
+      item_list_name: 'Plans Listing',
+      transaction_id: data.transaction_id,
+      value: data.value,
+      tax: data.tax ?? 0,
+      currency: data.currency,
+      coupon: data.coupon ?? '',
+      customer_type: data.customer_type,
+      items: data.items.map(item => ({
+        item_id: item.item_id,
+        item_name: item.item_name,
+        coupon: item.coupon ?? '',
+        discount: item.discount ?? 0,
+        item_brand: item.item_brand,
+        item_category: item.item_category,
+        item_list_id: item.item_list_id,
+        item_list_name: item.item_list_name,
+        price: item.price,
+        quantity: item.quantity,
+      })),
+    },
+    customer: {
+      name: data.customer.name ?? '',
+      surname: data.customer.surname ?? '',
+      email: data.customer.email,
+    },
+  };
+  
+  window.dataLayer?.push(purchaseEvent);
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[GTM] purchase pushed:', purchaseEvent);
+  }
+}
+
+/**
+ * Store checkout data before redirecting to Stripe
+ * This allows us to track the purchase with full data when user returns
+ */
+export function storeCheckoutData(data: {
+  tier_key: string;
+  tier_name: string;
+  price: number;
+  currency: string;
+  billing_period: string;
+  coupon?: string;
+}) {
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem('gtm_checkout_data', JSON.stringify({
+    ...data,
+    timestamp: Date.now(),
+  }));
+}
+
+/**
+ * Retrieve stored checkout data after returning from Stripe
+ */
+export function getStoredCheckoutData(): {
+  tier_key: string;
+  tier_name: string;
+  price: number;
+  currency: string;
+  billing_period: string;
+  coupon?: string;
+  timestamp: number;
+} | null {
+  if (typeof window === 'undefined') return null;
+  
+  const stored = sessionStorage.getItem('gtm_checkout_data');
+  if (!stored) return null;
+  
+  try {
+    const data = JSON.parse(stored);
+    // Only use if less than 1 hour old
+    if (Date.now() - data.timestamp > 60 * 60 * 1000) {
+      sessionStorage.removeItem('gtm_checkout_data');
+      return null;
+    }
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Clear stored checkout data after tracking
+ */
+export function clearCheckoutData() {
+  if (typeof window === 'undefined') return;
+  sessionStorage.removeItem('gtm_checkout_data');
+}
+
