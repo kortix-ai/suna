@@ -1555,6 +1555,10 @@ class ResponseProcessor:
                             thread_id, tool_call, result,
                             context.assistant_message_id
                         )
+                        
+                        # Save deferred image context if present (after tool result)
+                        if saved_tool_result_object:
+                            await self._save_deferred_image_context(thread_id, result)
 
                         # Yield completed/failed status (linked to saved result ID if available)
                         completed_msg_obj = await self._yield_and_save_tool_completed(
@@ -2220,6 +2224,10 @@ class ResponseProcessor:
                         thread_id, tool_call_from_data, result,
                         current_assistant_id
                     )
+                    
+                    # Save deferred image context if present (after tool result)
+                    if saved_tool_result_object:
+                        await self._save_deferred_image_context(thread_id, result)
 
                     # Save and Yield completed/failed status
                     completed_msg_obj = await self._yield_and_save_tool_completed(
@@ -2980,6 +2988,10 @@ class ResponseProcessor:
                 # Mark context as saved during streaming
                 context.saved_during_streaming = True
                 context.saved_result_object = saved_tool_result_object
+                
+                # Step 5: Check if tool result contains image_context data that needs to be saved
+                # This is used by the vision tool to defer image_context saving until after tool result
+                await self._save_deferred_image_context(thread_id, result)
             else:
                 logger.error(f"Failed to save tool result for tool {tool_idx}")
             
@@ -3267,6 +3279,66 @@ class ResponseProcessor:
             "error": getattr(result, 'error', None) if hasattr(result, 'error') else None
         }
 
+    async def _save_deferred_image_context(self, thread_id: str, result: ToolResult) -> None:
+        """
+        Save image_context message if the tool result contains deferred image data.
+        
+        This is used by the vision tool to ensure image_context is saved AFTER the tool result,
+        maintaining proper message ordering (tool_call -> tool_result -> image_context).
+        
+        Args:
+            thread_id: The thread ID
+            result: The tool result that may contain _image_context_data
+        """
+        try:
+            # Extract output from the result
+            output = result.output if hasattr(result, 'output') else None
+            if not output:
+                logger.debug("[DeferredImageContext] No output in result")
+                return
+            
+            # Parse if it's a JSON string
+            if isinstance(output, str):
+                try:
+                    output = json.loads(output)
+                except (json.JSONDecodeError, ValueError):
+                    logger.debug("[DeferredImageContext] Failed to parse output as JSON")
+                    return
+            
+            # Check if this result contains deferred image context data
+            if not isinstance(output, dict) or '_image_context_data' not in output:
+                logger.debug(f"[DeferredImageContext] No _image_context_data in output (type: {type(output).__name__})")
+                return
+            
+            logger.info(f"[DeferredImageContext] Found _image_context_data, saving for thread {thread_id}")
+            
+            image_context_data = output.get('_image_context_data')
+            if not image_context_data:
+                return
+            
+            # Extract the image context details
+            message_content = image_context_data.get('message_content')
+            metadata = image_context_data.get('metadata', {})
+            
+            if not message_content:
+                logger.warning("_image_context_data missing message_content, skipping")
+                return
+            
+            # Save the image_context message AFTER the tool result
+            await self.add_message(
+                thread_id=thread_id,
+                type="image_context",
+                content=message_content,
+                is_llm_message=True,
+                metadata=metadata
+            )
+            
+            file_path = metadata.get('file_path', 'unknown')
+            logger.info(f"[LoadImage] Added '{file_path}' to context (deferred save after tool result)")
+            
+        except Exception as e:
+            logger.error(f"Error saving deferred image context: {str(e)}", exc_info=True)
+
     def _create_tool_context(self, tool_call: Dict[str, Any], tool_index: int, assistant_message_id: Optional[str] = None) -> ToolExecutionContext:
         """Create a tool execution context with display name populated."""
         context = ToolExecutionContext(
@@ -3365,6 +3437,10 @@ class ResponseProcessor:
                         saved_tool_result_object = await self._add_tool_result(
                             thread_id, tool_call, result, assistant_message_id
                         )
+                        
+                        # Save deferred image context if present (after tool result)
+                        if saved_tool_result_object:
+                            await self._save_deferred_image_context(thread_id, result)
                         
                         # Get tool_message_id from saved result
                         tool_message_id = saved_tool_result_object['message_id'] if saved_tool_result_object else None
