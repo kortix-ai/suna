@@ -102,6 +102,10 @@ class ModelRegistry:
             id="kortix/power",
             name="Kortix Advanced Mode",
             litellm_model_id=power_litellm_id,
+            # Vision model: Use Haiku Bedrock when thread has images
+            vision_litellm_model_id=HAIKU_BEDROCK_ARN,
+            vision_context_window=200_000,
+            vision_pricing=HAIKU_PRICING,
             provider=ModelProvider.OPENROUTER,
             aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
             context_window=200_000,
