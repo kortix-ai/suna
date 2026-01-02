@@ -18,6 +18,7 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { ReferralCodeDialog } from '@/components/referrals/referral-code-dialog';
 import { isElectron, getAuthOrigin } from '@/lib/utils/is-electron';
 import { ExampleShowcase } from '@/components/auth/example-showcase';
+import { trackSendAuthLink } from '@/lib/analytics/gtm';
 
 // Lazy load heavy components
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
@@ -89,6 +90,7 @@ function LoginContent() {
   }, [isExpired, expiredEmail]);
 
   const handleAuth = async (prevState: any, formData: FormData) => {
+    trackSendAuthLink();
     markEmailAsUsed();
 
     const email = formData.get('email') as string;
@@ -181,6 +183,7 @@ function LoginContent() {
   };
 
   const handleResendMagicLink = async (prevState: any, formData: FormData) => {
+    trackSendAuthLink();
     markEmailAsUsed();
 
     const email = expiredEmailState || formData.get('email') as string;

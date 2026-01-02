@@ -214,6 +214,26 @@ export function trackCtaSignup() {
   }
 }
 
+/**
+ * Track send_auth_link event when user clicks magic link button
+ * Priority 3 event
+ */
+export function trackSendAuthLink() {
+  if (typeof window === 'undefined') return;
+  
+  initDataLayer();
+  
+  const authLinkEvent = {
+    event: 'send_auth_link',
+  };
+  
+  window.dataLayer?.push(authLinkEvent);
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[GTM] send_auth_link pushed:', authLinkEvent);
+  }
+}
+
 // =============================================================================
 // ECOMMERCE EVENTS - Purchase Tracking
 // =============================================================================
