@@ -244,10 +244,6 @@ export const KortixComputer = memo(function KortixComputer({
   }, [isMaximized]);
 
   const newSnapshots = useMemo(() => {
-    // #region agent log - track toolCalls prop
-    fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'KortixComputer.tsx:245',message:'toolCalls prop changed',data:{toolCallsLength:toolCalls.length,isOpen,toolCalls:toolCalls.map(tc=>({functionName:tc.toolCall?.function_name,hasResult:!!tc.toolResult}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'TOOL_CALLS_PROP'})}).catch(()=>{});
-    // #endregion
-    
     return toolCalls.map((toolCall, index) => ({
       id: `${index}-${toolCall.assistantTimestamp || Date.now()}`,
       toolCall,
@@ -323,12 +319,6 @@ export const KortixComputer = memo(function KortixComputer({
       snapshot.toolCall.toolResult !== undefined
     );
     const completedCount = completed.length;
-
-    // #region agent log - track current tool call state
-    if (isOpen) {
-      fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'KortixComputer.tsx:310',message:'currentToolCall computed',data:{safeIndex,internalIndex,totalCalls:total,toolCallSnapshotsLength:toolCallSnapshots.length,hasCurrentToolCall:!!toolCall,currentToolCallFunctionName:toolCall?.toolCall?.function_name,currentIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'CURRENT_TOOL_CALL'})}).catch(()=>{});
-    }
-    // #endregion
 
     return {
       safeInternalIndex: safeIndex,
