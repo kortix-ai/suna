@@ -44,15 +44,15 @@ export function QuickActionCard({ action }: QuickActionCardProps) {
 
   const isSelected = action.isSelected ?? false;
 
-  // Get icon color based on theme and selection state
-  // Primary: #121215 (light) / #F8F8F8 (dark)
-  // Foreground with 70% opacity: rgba(18, 18, 21, 0.7) (light) / rgba(248, 248, 248, 0.7) (dark)
+  // Get icon color based on theme and selection state using neutral colors
+  // neutral-900 (light) / neutral-50 (dark) for selected
+  // neutral-700 (light) / neutral-300 (dark) for unselected with opacity
   const iconColor = React.useMemo(() => {
     if (isSelected) {
-      return colorScheme === 'dark' ? '#F8F8F8' : '#121215'; // primary
+      return colorScheme === 'dark' ? '#fafafa' : '#171717'; // neutral-50 / neutral-900
     }
-    // 70% opacity
-    return colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.7)' : 'rgba(18, 18, 21, 0.7)';
+    // 70% opacity for unselected state
+    return colorScheme === 'dark' ? 'rgba(212, 212, 212, 0.7)' : 'rgba(64, 64, 64, 0.7)'; // neutral-300 / neutral-700
   }, [isSelected, colorScheme]);
 
   return (
@@ -66,8 +66,8 @@ export function QuickActionCard({ action }: QuickActionCardProps) {
       onPress={handlePress}
       className={`flex-row items-center px-4 py-2.5 rounded-2xl ${
         isSelected 
-          ? 'bg-primary/10' 
-          : 'bg-primary/5'
+          ? 'bg-neutral-100 dark:bg-neutral-800' 
+          : 'bg-neutral-50 dark:bg-neutral-900'
       }`}
       style={animatedStyle}
     >
@@ -75,11 +75,11 @@ export function QuickActionCard({ action }: QuickActionCardProps) {
         as={action.icon} 
         size={18} 
         color={iconColor}
-        className={isSelected ? 'text-primary mr-2' : 'text-foreground/70 mr-2'}
+        className={isSelected ? 'text-neutral-900 dark:text-neutral-50 mr-2' : 'text-neutral-700 dark:text-neutral-300 mr-2'}
         strokeWidth={2}
       />
       <Text className={`text-sm font-roobert ${
-        isSelected ? 'text-primary font-roobert-medium' : 'text-foreground/80'
+        isSelected ? 'text-neutral-900 dark:text-neutral-50 font-roobert-medium' : 'text-neutral-700 dark:text-neutral-300'
       }`}>
         {translatedLabel}
       </Text>

@@ -47,13 +47,13 @@ export function ThemeSwitcher() {
   return (
     <AnimatedPressable
       onPress={handlePress}
-      className="w-8 h-8 items-center justify-center rounded-full bg-primary/10 active:bg-primary/20"
+      className="w-8 h-8 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 active:bg-neutral-200 dark:active:bg-neutral-700"
       style={animatedStyle}
     >
       <Icon 
         as={isDark ? Sun : Moon}
         size={18}
-        className="text-foreground"
+        className="text-neutral-700 dark:text-neutral-300"
       />
     </AnimatedPressable>
   );

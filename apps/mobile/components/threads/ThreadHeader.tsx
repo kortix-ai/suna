@@ -7,7 +7,7 @@ import { Pressable, TextInput, View, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import {
-  ChevronLeft,
+  TextAlignStart,
   Share2,
   FolderOpen,
   Trash2,
@@ -31,7 +31,7 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 interface ThreadHeaderProps {
   threadTitle?: string;
   onTitleChange?: (newTitle: string) => void;
-  onBackPress?: () => void;
+  onMenuPress?: () => void; // Changed from onBackPress to onMenuPress
   onShare?: () => void;
   onFiles?: () => void;
   onDelete?: () => void;
@@ -106,7 +106,7 @@ const ActionPill = React.memo(function ActionPill({
 export function ThreadHeader({
   threadTitle,
   onTitleChange,
-  onBackPress,
+  onMenuPress, // Changed from onBackPress
   onShare,
   onFiles,
   onDelete,
@@ -142,9 +142,9 @@ export function ThreadHeader({
     }
   }, [threadTitle]);
 
-  const handleBackPress = () => {
+  const handleMenuPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onBackPress?.();
+    onMenuPress?.();
   };
 
   const handleTitlePress = () => {
@@ -212,7 +212,7 @@ export function ThreadHeader({
     >
       {/* Header Content */}
       <View className="px-4 pb-3 flex-row items-center gap-3">
-        {/* Back Button */}
+        {/* Menu Button */}
         <AnimatedPressable
           onPressIn={() => {
             backScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
@@ -220,16 +220,16 @@ export function ThreadHeader({
           onPressOut={() => {
             backScale.value = withSpring(1, { damping: 15, stiffness: 400 });
           }}
-          onPress={handleBackPress}
+          onPress={handleMenuPress}
           style={backAnimatedStyle}
           className="w-8 h-8 items-center justify-center rounded-full"
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel={t('threadHeader.goBack')}
+          accessibilityLabel={t('threadHeader.openMenu')}
         >
           <Icon
-            as={ChevronLeft}
-            size={24}
+            as={TextAlignStart}
+            size={20}
             className="text-foreground"
             strokeWidth={2}
           />

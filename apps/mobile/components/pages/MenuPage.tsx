@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { Platform, Pressable, ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
@@ -23,6 +22,8 @@ import {
   ChevronLeft,
   ChevronFirst,
   ChevronsUpDown,
+  Settings,
+  Sparkles,
 } from 'lucide-react-native';
 import { ConversationSection } from '@/components/menu/ConversationSection';
 import { BottomNav } from '@/components/menu/BottomNav';
@@ -51,9 +52,6 @@ import { ProfilePicture } from '../settings/ProfilePicture';
 import { TierBadge } from '@/components/billing/TierBadge';
 import { cn } from '@/lib/utils';
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
-
 interface EmptyStateProps {
   type: 'loading' | 'error' | 'no-results' | 'empty';
   icon: any;
@@ -72,19 +70,6 @@ function EmptyState({
   onActionPress,
 }: EmptyStateProps) {
   const { colorScheme } = useColorScheme();
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    scale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
 
   const handleActionPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -144,17 +129,14 @@ function EmptyState({
         {description}
       </Text>
       {actionLabel && onActionPress && (
-        <AnimatedPressable
+        <Pressable
           onPress={handleActionPress}
-          onPressIn={handlePressIn}
-          onPressOut={handlePressOut}
-          style={animatedStyle}
           className="mt-8 flex-row items-center gap-2 rounded-full bg-primary px-6 py-3.5"
           accessibilityRole="button"
           accessibilityLabel={actionLabel}>
           <Icon as={Plus} size={18} className="text-primary-foreground" strokeWidth={2.5} />
           <Text className="font-roobert-medium text-sm text-primary-foreground">{actionLabel}</Text>
-        </AnimatedPressable>
+        </Pressable>
       )}
     </View>
   );
@@ -166,19 +148,6 @@ interface BackButtonProps {
 
 function BackButton({ onPress }: BackButtonProps) {
   const { t } = useLanguage();
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    scale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
 
   const handlePress = () => {
     console.log('🎯 Close button pressed');
@@ -188,17 +157,14 @@ function BackButton({ onPress }: BackButtonProps) {
   };
 
   return (
-    <AnimatedPressable
+    <Pressable
       onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={animatedStyle}
       className="h-10 w-10 items-center justify-center rounded-full p-0"
       accessibilityRole="button"
       accessibilityLabel={t('actions.goBack')}
       accessibilityHint={t('actions.returnToHome')}>
       <Icon as={ChevronFirst} size={22} className="text-foreground" strokeWidth={2} />
-    </AnimatedPressable>
+    </Pressable>
   );
 }
 
@@ -209,29 +175,16 @@ interface NewChatButtonProps {
 function NewChatButton({ onPress }: NewChatButtonProps) {
   const { t } = useLanguage();
 
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
   return (
-    <AnimatedPressable
-      style={animatedStyle}
+    <Pressable
       onPress={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         onPress?.();
       }}
-      onPressIn={() => {
-        scale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
-      }}
-      onPressOut={() => {
-        scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-      }}
       className="h-14 w-full flex-row items-center justify-center gap-2 rounded-2xl bg-primary">
       <Icon as={Plus} size={20} strokeWidth={2} className="text-primary-foreground" />
       <Text className="font-roobert-medium text-primary-foreground">{t('menu.newChat')}</Text>
-    </AnimatedPressable>
+    </Pressable>
   );
 }
 
@@ -251,20 +204,6 @@ function FloatingActionButton({
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
   const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
-  const scale = useSharedValue(1);
-  const rotate = useSharedValue(0);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }, { rotate: `${rotate.value}deg` }],
-  }));
-
-  const handlePressIn = () => {
-    scale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
 
   const handlePress = () => {
     const action =
@@ -276,8 +215,6 @@ function FloatingActionButton({
     console.log('🎯 FAB pressed:', action);
     console.log('⏰ Timestamp:', new Date().toISOString());
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    rotate.value = withSpring(rotate.value + 90, { damping: 15, stiffness: 400 });
 
     if (activeTab === 'chats') onChatPress?.();
     else if (activeTab === 'workers') onWorkerPress?.();
@@ -293,23 +230,18 @@ function FloatingActionButton({
   const iconColor = colorScheme === 'dark' ? '#121215' : '#FFFFFF';
 
   return (
-    <AnimatedPressable
+    <Pressable
       onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={[
-        animatedStyle,
-        {
-          width: 60,
-          height: 60,
-          backgroundColor: bgColor,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 6 },
-          shadowOpacity: 0.25,
-          shadowRadius: 12,
-          elevation: 10,
-        },
-      ]}
+      style={{
+        width: 60,
+        height: 60,
+        backgroundColor: bgColor,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.25,
+        shadowRadius: 12,
+        elevation: 10,
+      }}
       className={cn(
         'absolute bottom-44 right-6 items-center justify-center rounded-full',
         advancedFeaturesEnabled ? 'bottom-[230px]' : 'bottom-34'
@@ -317,7 +249,7 @@ function FloatingActionButton({
       accessibilityRole="button"
       accessibilityLabel={getAccessibilityLabel()}>
       <Icon as={Plus} size={26} color={iconColor} strokeWidth={2.5} />
-    </AnimatedPressable>
+    </Pressable>
   );
 }
 
@@ -326,6 +258,7 @@ interface MenuPageProps {
   profile: UserProfile;
   activeTab?: 'chats' | 'workers' | 'triggers';
   selectedAgentId?: string;
+  activeThreadId?: string; // Currently active thread ID for highlighting
   onNewChat?: () => void;
   onNewWorker?: () => void;
   onNewTrigger?: () => void;
@@ -371,6 +304,7 @@ export function MenuPage({
   profile,
   activeTab = 'chats',
   selectedAgentId,
+  activeThreadId: activeThreadIdProp,
   onNewChat,
   onNewWorker,
   onNewTrigger,
@@ -392,8 +326,6 @@ export function MenuPage({
   const { agents } = useAgent();
   const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
   const insets = useSafeAreaInsets();
-  const scrollY = useSharedValue(0);
-  const profileScale = useSharedValue(1);
   const [isSettingsVisible, setIsSettingsVisible] = React.useState(false);
   const [isTriggerDrawerVisible, setIsTriggerDrawerVisible] = React.useState(false);
   const [isWorkerCreationDrawerVisible, setIsWorkerCreationDrawerVisible] = React.useState(false);
@@ -484,33 +416,12 @@ export function MenuPage({
   }, [activeTab]);
 
   /**
-   * Handle scroll event to track scroll position
-   * Used for blur fade effect at bottom
-   */
-  const handleScroll = (event: any) => {
-    'worklet';
-    scrollY.value = event.nativeEvent.contentOffset.y;
-  };
-
-  const profileAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: profileScale.value }],
-  }));
-
-  /**
    * Handle profile press - Opens settings drawer
    */
   const handleProfilePress = () => {
     console.log('🎯 Opening settings drawer');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsSettingsVisible(true);
-  };
-
-  const handleProfilePressIn = () => {
-    profileScale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
-  };
-
-  const handleProfilePressOut = () => {
-    profileScale.value = withSpring(1, { damping: 15, stiffness: 400 });
   };
 
   /**
@@ -591,7 +502,7 @@ export function MenuPage({
 
   return (
     <View
-      className="flex-1 overflow-hidden rounded-r-[24px] bg-background"
+      className="flex-1 overflow-hidden rounded-r-[24px] bg-neutral-50 dark:bg-neutral-900"
       style={{
         shadowColor: '#000',
         shadowOffset: { width: -8, height: 0 },
@@ -600,65 +511,117 @@ export function MenuPage({
         elevation: 16,
       }}>
       <SafeAreaView edges={['top']} className="flex-1">
-        <View className="flex-1 px-6 pt-2">
-          <View className="mb-4 flex-row items-center gap-3">
-            <View className="flex-1">
-              {activeTab === 'chats' && (
-                <SearchBar
-                  value={chatsSearch.query}
-                  onChangeText={chatsSearch.updateQuery}
-                  placeholder={t('menu.searchConversations') || 'Search chats...'}
-                  onClear={chatsSearch.clearSearch}
-                />
-              )}
-              {activeTab === 'workers' && (
-                <SearchBar
-                  value={workersSearch.query}
-                  onChangeText={workersSearch.updateQuery}
-                  placeholder={t('placeholders.searchWorkers') || 'Search workers...'}
-                  onClear={workersSearch.clearSearch}
-                />
-              )}
-              {activeTab === 'triggers' && (
-                <SearchBar
-                  value={triggersSearch.query}
-                  onChangeText={triggersSearch.updateQuery}
-                  placeholder={t('placeholders.searchTriggers') || 'Search triggers...'}
-                  onClear={triggersSearch.clearSearch}
-                />
-              )}
-            </View>
-            <AnimatedPressable
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                if (activeTab === 'chats') onNewChat?.();
-                else if (activeTab === 'workers') handleWorkerCreate();
-                else if (activeTab === 'triggers') handleTriggerCreate();
-              }}
-              onPressIn={() => {
-                profileScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-              }}
-              onPressOut={() => {
-                profileScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-              }}
-              style={profileAnimatedStyle}
-              className="h-11 w-11 items-center justify-center rounded-[21px] bg-primary">
-              <Icon as={Plus} size={20} className="text-primary-foreground" strokeWidth={2.5} />
-            </AnimatedPressable>
-          </View>
+        {/* Top Header - Profile Section */}
+        <Pressable
+          onPress={handleProfilePress}
+          className="flex-row items-center justify-between px-5 py-5 bg-neutral-50 dark:bg-neutral-900">
+          <View className="flex-row items-center gap-3 flex-1">
+            <ProfilePicture
+              imageUrl={user?.user_metadata?.avatar_url || profile?.avatar}
+              size={12}
+              fallbackText={
+                profile.name ||
+                user?.user_metadata?.full_name ||
+                user?.email?.split('@')[0] ||
+                'User'
+              }
+            />
+            <View className="flex-col items-start gap-1.5">
+              <Text className="font-roobert-medium text-sm text-neutral-900 dark:text-neutral-50">
+                {profile.name ||
+                  user?.user_metadata?.full_name ||
+                  user?.email?.split('@')[0] ||
+                  'User'}
+              </Text>
+              {profile.planName ? (
+                (() => {
+                  const planLower = profile.planName.toLowerCase();
+                  const isBasic = planLower === 'basic';
+                  const isPlus = planLower === 'plus';
+                  const isPro = planLower === 'pro';
+                  const isUltra = planLower === 'ultra';
 
-          <View className="relative -mx-6 flex-1">
-            <AnimatedScrollView
-              className="flex-1"
-              contentContainerClassName="px-6"
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ 
-                paddingTop: 0, 
-                paddingBottom: 40,
-                flexGrow: 1,
-              }}
-              onScroll={handleScroll}
-              scrollEventThrottle={16}>
+                  // Basic - no icon, just text
+                  if (isBasic) {
+                    return (
+                      <View className="flex-row items-center h-6 px-2 rounded-full bg-neutral-200 dark:bg-neutral-700">
+                        <Text className="text-xs font-roobert-semibold text-neutral-900 dark:text-neutral-50">
+                          {profile.planName}
+                        </Text>
+                      </View>
+                    );
+                  }
+
+                  // Pro - gradient background
+                  if (isPro) {
+                    return (
+                      <LinearGradient
+                        colors={['#FFE7CE', '#E88002']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 1 }}
+                        style={{ flexDirection: 'row', alignItems: 'center', height: 24, paddingHorizontal: 8, gap: 4, borderRadius: 12 }}
+                      >
+                        <Icon as={Sparkles} size={12} className="text-neutral-900" strokeWidth={2} />
+                        <Text className="text-xs font-roobert-semibold text-neutral-900">
+                          {profile.planName}
+                        </Text>
+                      </LinearGradient>
+                    );
+                  }
+
+                  // Ultra - gradient background
+                  if (isUltra) {
+                    return (
+                      <LinearGradient
+                        colors={['#23D3FF', '#FDF5E0', '#FFC78C', '#FF1B07']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 1 }}
+                        style={{ flexDirection: 'row', alignItems: 'center', height: 24, paddingHorizontal: 8, gap: 4, borderRadius: 12 }}
+                      >
+                        <Icon as={Sparkles} size={12} className="text-neutral-900" strokeWidth={2} />
+                        <Text className="text-xs font-roobert-semibold text-neutral-900">
+                          {profile.planName}
+                        </Text>
+                      </LinearGradient>
+                    );
+                  }
+
+                  // Plus - default with neutral background
+                  return (
+                    <View className="flex-row items-center h-6 px-2 gap-1 rounded-full bg-neutral-200 dark:bg-neutral-700">
+                      <Icon as={Sparkles} size={12} className="text-neutral-900 dark:text-neutral-50" strokeWidth={2} />
+                      <Text className="text-xs font-roobert-semibold text-neutral-900 dark:text-neutral-50">
+                        {profile.planName}
+                      </Text>
+                    </View>
+                  );
+                })()
+              ) : null}
+            </View>
+          </View>
+          <View className="h-12 w-12 items-center justify-center rounded-full">
+            <Icon
+              as={Settings}
+              size={20}
+              className="text-neutral-900 dark:text-neutral-50"
+              strokeWidth={2}
+            />
+          </View>
+        </Pressable>
+
+
+        {/* Content Area */}
+        <View className="flex-1">
+          <ScrollView
+            className="flex-1"
+            contentContainerStyle={{ 
+              paddingTop: 0, 
+              paddingBottom: 120,
+              paddingHorizontal: 8,
+              flexGrow: 1,
+            }}
+            showsVerticalScrollIndicator={false}
+            scrollEventThrottle={16}>
               {activeTab === 'chats' && (
                 <>
                   {isLoadingThreads ? (
@@ -688,7 +651,7 @@ export function MenuPage({
                       onActionPress={onNewChat}
                     />
                   ) : (
-                    <View className="gap-8">
+                    <View className="gap-3">
                       {sections.map((section) => {
                         const filteredConversations = chatsSearch.isSearching
                           ? section.conversations.filter((conv) =>
@@ -707,6 +670,7 @@ export function MenuPage({
                               ...section,
                               conversations: filteredConversations,
                             }}
+                            activeThreadId={activeThreadIdProp}
                             onConversationPress={onConversationPress}
                           />
                         );
@@ -823,83 +787,84 @@ export function MenuPage({
                   )}
                 </>
               )}
-            </AnimatedScrollView>
-
-            <View
-              className="pointer-events-none absolute bottom-0 left-0 right-0"
-              style={{ height: 70 }}>
-              <LinearGradient
-                colors={
-                  colorScheme === 'dark'
-                    ? [
-                        'rgba(18, 18, 21, 0)',
-                        'rgba(18, 18, 21, 0.2)',
-                        'rgba(18, 18, 21, 0.5)',
-                        'rgba(18, 18, 21, 0.8)',
-                        'rgba(18, 18, 21, 0.95)',
-                        '#121215',
-                      ]
-                    : [
-                        'rgba(248, 248, 248, 0)',
-                        'rgba(248, 248, 248, 0.2)',
-                        'rgba(248, 248, 248, 0.5)',
-                        'rgba(248, 248, 248, 0.8)',
-                        'rgba(248, 248, 248, 0.95)',
-                        '#F8F8F8',
-                      ]
-                }
-                locations={[0, 0.2, 0.4, 0.6, 0.8, 1]}
-                style={{ flex: 1 }}
-              />
-            </View>
-          </View>
+          </ScrollView>
         </View>
 
-        <View className="gap-4 px-6" style={{ paddingBottom: Math.max(insets.bottom, 16) + 16}}>
-          <AnimatedPressable
-            onPress={handleProfilePress}
-            onPressIn={handleProfilePressIn}
-            onPressOut={handleProfilePressOut}
-            style={profileAnimatedStyle}
-            className="flex-row items-center gap-3 rounded-2xl border border-border p-3">
-            <ProfilePicture
-              imageUrl={user?.user_metadata?.avatar_url || profile?.avatar}
-              size={12}
-              fallbackText={
-                profile.name ||
-                user?.user_metadata?.full_name ||
-                user?.email?.split('@')[0] ||
-                'User'
-              }
-            />
-            <View className="-mt-1.5 flex-col items-start">
-              <Text className="font-roobert-semibold text-lg text-foreground">
-                {profile.name || 'User'}
-              </Text>
-              {profile.planName ? (
-                <View className="flex-row items-center gap-2">
-                  <TierBadge planName={profile.planName} size="sm" variant="default" />
-                </View>
-              ) : (
-                <Text className="font-roobert text-sm text-muted-foreground">
-                  {profile.email || 'Tap to open settings'}
-                </Text>
-              )}
-            </View>
-            <Icon
-              as={ChevronsUpDown}
-              size={20}
-              className="ml-auto text-muted-foreground"
-              strokeWidth={2}
-            />
-          </AnimatedPressable>
+        {/* Sticky Bottom Bar */}
+        <View
+          className="absolute bottom-0 left-0 right-0 border-t border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900"
+          style={{
+            paddingTop: 16,
+            paddingBottom: Math.max(insets.bottom, 0),
+            paddingHorizontal: 20,
+          }}>
+          <View className="flex-row items-center gap-2">
+            {/* Search Bar */}
+            {activeTab === 'chats' && (
+              <View className="flex-1">
+                <SearchBar
+                  value={chatsSearch.query}
+                  onChangeText={chatsSearch.updateQuery}
+                  placeholder="Search"
+                  onClear={() => {
+                    chatsSearch.clearSearch();
+                  }}
+                />
+              </View>
+            )}
+            {activeTab === 'workers' && (
+              <View className="flex-1">
+                <SearchBar
+                  value={workersSearch.query}
+                  onChangeText={workersSearch.updateQuery}
+                  placeholder="Search"
+                  onClear={() => {
+                    workersSearch.clearSearch();
+                  }}
+                />
+              </View>
+            )}
+            {activeTab === 'triggers' && (
+              <View className="flex-1">
+                <SearchBar
+                  value={triggersSearch.query}
+                  onChangeText={triggersSearch.updateQuery}
+                  placeholder="Search"
+                  onClear={() => {
+                    triggersSearch.clearSearch();
+                  }}
+                />
+              </View>
+            )}
+
+            {/* New Post Button */}
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                if (activeTab === 'chats') onNewChat?.();
+                else if (activeTab === 'workers') handleWorkerCreate();
+                else if (activeTab === 'triggers') handleTriggerCreate();
+              }}
+              className="h-12 w-12 items-center justify-center rounded-full bg-neutral-900 dark:bg-neutral-50">
+              <Icon
+                as={Plus}
+                size={20}
+                className="text-neutral-50 dark:text-neutral-900"
+                strokeWidth={2.5}
+              />
+            </Pressable>
+          </View>
+
+          {/* Bottom Navigation (if advanced features enabled) */}
           {advancedFeaturesEnabled && (
-            <BottomNav
-              activeTab={activeTab}
-              onChatsPress={onChatsPress}
-              onWorkersPress={onWorkersPress}
-              onTriggersPress={onTriggersPress}
-            />
+            <View className="mt-4">
+              <BottomNav
+                activeTab={activeTab}
+                onChatsPress={onChatsPress}
+                onWorkersPress={onWorkersPress}
+                onTriggersPress={onTriggersPress}
+              />
+            </View>
           )}
         </View>
       </SafeAreaView>

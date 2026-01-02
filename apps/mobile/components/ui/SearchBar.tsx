@@ -38,12 +38,12 @@ export function SearchBar({
 
   return (
     <View
-      className={`bg-primary/5 rounded-3xl flex-row items-center px-3 h-12 ${className}`}
+      className={`bg-neutral-50 dark:bg-neutral-800 border-[1.5px] border-neutral-200 dark:border-neutral-700 rounded-full flex-row items-center px-3.5 h-12 ${className}`}
     >
       <Icon
         as={Search}
-        size={18}
-        className="text-muted-foreground"
+        size={20}
+        className="text-neutral-900/50 dark:text-neutral-50/50"
         strokeWidth={2}
       />
       <Input
@@ -53,7 +53,8 @@ export function SearchBar({
         returnKeyType="search"
         containerClassName="flex-1 mx-2"
         wrapperClassName="bg-transparent border-0 rounded-none"
-        inputClassName="px-0 text-base font-roobert-medium"
+        inputClassName="px-0 text-base font-roobert-medium text-neutral-900 dark:text-neutral-50"
+        placeholderClassName="text-neutral-900/50 dark:text-neutral-50/50"
         accessibilityLabel={`Search ${placeholder.toLowerCase()}`}
         accessibilityHint={`Type to search through your ${placeholder.toLowerCase()}`}
       />
@@ -68,7 +69,7 @@ export function SearchBar({
           <Icon
             as={X}
             size={16}
-            className="text-muted-foreground"
+            className="text-neutral-900/50 dark:text-neutral-50/50"
             strokeWidth={2}
           />
         </Pressable>

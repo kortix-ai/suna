@@ -127,9 +127,9 @@ export default function AppScreen() {
           backgroundColor: 'transparent',
         }}
         overlayStyle={{
-          backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.2)',
+          backgroundColor: colorScheme === 'dark' ? 'rgba(23, 23, 23, 0.5)' : 'rgba(64, 64, 64, 0.3)', // neutral-900 / neutral-700 with opacity
         }}
-        swipeEnabled={true}
+        swipeEnabled={false}
         swipeEdgeWidth={80}
         swipeMinDistance={30}
         swipeMinVelocity={300}
@@ -138,6 +138,7 @@ export default function AppScreen() {
             sections={menu.sections}
             profile={menu.profile}
             activeTab={menu.activeTab}
+            activeThreadId={chat.activeThread?.id}
             onNewChat={handleNewChat}
             onNewWorker={() => {
               console.log('🤖 New Worker clicked');

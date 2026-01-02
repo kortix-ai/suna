@@ -1,66 +1,83 @@
 /**
- * Conversation Item Component - Unified thread item using SelectableListItem
+ * Conversation Item Component - Pill-shaped container design
  *
- * Uses the unified SelectableListItem with ThreadAvatar
- * Ensures consistent design across all list types
+ * Matches Figma design: rounded-full container with icon and text
+ * Selected items have bg-neutral-200 background
  */
 
 import * as React from 'react';
-import { useLanguage } from '@/contexts';
-import { formatConversationDate } from '@/lib/utils/date';
-import { SelectableListItem } from '@/components/shared/SelectableListItem';
-import { ThreadAvatar } from '@/components/ui/ThreadAvatar';
-import type { Conversation } from './types';
+import { Pressable } from 'react-native';
 import { useColorScheme } from 'nativewind';
+import * as Haptics from 'expo-haptics';
+import { Icon } from '@/components/ui/icon';
+import { Text } from '@/components/ui/text';
+import { cn } from '@/lib/utils';
+import { getIconFromName } from '@/lib/utils/icon-mapping';
+import { MessageSquare } from 'lucide-react-native';
+import type { Conversation } from './types';
+import type { LucideIcon } from 'lucide-react-native';
 
 interface ConversationItemProps {
   conversation: Conversation;
   onPress?: (conversation: Conversation) => void;
-  showChevron?: boolean;
+  isSelected?: boolean;
 }
 
 /**
  * ConversationItem Component
  *
- * Individual conversation list item with avatar, title, preview, and date.
- * Uses the unified SelectableListItem for consistent design.
+ * Pill-shaped container with icon on left and text on right.
+ * Selected items have bg-neutral-200 background.
+ * Icons are dynamically loaded based on conversation.iconName or conversation.icon
  */
 export function ConversationItem({
   conversation,
   onPress,
-  showChevron = false,
+  isSelected = false,
 }: ConversationItemProps) {
-  const { currentLanguage } = useLanguage();
-
   const { colorScheme } = useColorScheme();
-  const isDarkMode = colorScheme === 'dark';
 
-  const formattedDate = React.useMemo(
-    () => formatConversationDate(conversation.timestamp, currentLanguage),
-    [conversation.timestamp, currentLanguage]
-  );
+  const handlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onPress?.(conversation);
+  };
+
+  // Get the icon component - prioritize iconName from backend, fallback to icon prop
+  const getIconComponent = (): LucideIcon => {
+    if (conversation.iconName) {
+      return getIconFromName(conversation.iconName);
+    }
+    return conversation.icon || MessageSquare;
+  };
+
+  const IconComponent = getIconComponent();
 
   return (
-    <SelectableListItem
-      avatar={
-        <ThreadAvatar
-          title={conversation.title}
-          icon={conversation.iconName || conversation.icon}
-          size={48}
-          backgroundColor={isDarkMode ? '#1C1D20' : '#ECECEC'}
-          className="flex-row items-center justify-center"
-          style={{
-            borderWidth: 0,
-          }}
-        />
-      }
-      isActive
-      title={conversation.title}
-      subtitle={conversation.preview}
-      meta={formattedDate}
-      hideIndicator
-      onPress={() => onPress?.(conversation)}
-      accessibilityLabel={`Open conversation: ${conversation.title}`}
-    />
+    <Pressable
+      onPress={handlePress}
+      className={cn(
+        'h-12 flex-row items-center gap-3 px-4 rounded-full',
+        isSelected
+          ? 'bg-neutral-200 dark:bg-neutral-700'
+          : 'bg-transparent'
+      )}
+      accessibilityRole="button"
+      accessibilityLabel={`Open conversation: ${conversation.title}`}>
+      {/* Icon - w-5 with no outer div or background */}
+      <Icon
+        as={IconComponent}
+        size={20}
+        className="w-5 text-neutral-600 dark:text-neutral-400"
+        strokeWidth={2}
+      />
+
+      {/* Text */}
+      <Text
+        className="flex-1 text-base text-neutral-900 dark:text-neutral-50"
+        style={{ fontFamily: 'Roobert-Medium' }}
+        numberOfLines={1}>
+        {conversation.title}
+      </Text>
+    </Pressable>
   );
 }
