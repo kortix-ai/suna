@@ -48,23 +48,46 @@ async def get_queue_metrics() -> dict:
     Get Dramatiq queue metrics from Redis.
     
     Returns:
-        dict with queue_depth, delay_queue_depth, dead_letter_depth, timestamp
+        dict with queue depths for all queues (agent-runs and default)
     """
     from core.services import redis
     
-    # Use the same queue name that Dramatiq actors use
-    queue_name = _get_queue_name("default")
+    # Check both queues: agent-runs (high priority) and default (background tasks)
+    agent_runs_queue = _get_queue_name("agent-runs")
+    default_queue = _get_queue_name("default")
     
     try:
-        queue_depth = await redis.llen(f"dramatiq:{queue_name}")
-        delay_queue_depth = await redis.llen(f"dramatiq:{queue_name}.DQ")
-        dead_letter_depth = await redis.llen(f"dramatiq:{queue_name}.XQ")
+        # Agent runs queue (high priority - user-facing)
+        agent_runs_depth = await redis.llen(f"dramatiq:{agent_runs_queue}")
+        agent_runs_delay_depth = await redis.llen(f"dramatiq:{agent_runs_queue}.DQ")
+        agent_runs_dlq_depth = await redis.llen(f"dramatiq:{agent_runs_queue}.XQ")
+        
+        # Default queue (background tasks - memory, categorization, etc.)
+        default_depth = await redis.llen(f"dramatiq:{default_queue}")
+        default_delay_depth = await redis.llen(f"dramatiq:{default_queue}.DQ")
+        default_dlq_depth = await redis.llen(f"dramatiq:{default_queue}.XQ")
+        
+        # Total for backwards compatibility and CloudWatch
+        total_queue_depth = agent_runs_depth + default_depth
+        total_dlq_depth = agent_runs_dlq_depth + default_dlq_depth
         
         return {
-            "queue_name": queue_name,  # Include queue name for debugging
-            "queue_depth": queue_depth,
-            "delay_queue_depth": delay_queue_depth,
-            "dead_letter_depth": dead_letter_depth,
+            "agent_runs_queue": {
+                "name": agent_runs_queue,
+                "depth": agent_runs_depth,
+                "delay_depth": agent_runs_delay_depth,
+                "dead_letter_depth": agent_runs_dlq_depth,
+            },
+            "default_queue": {
+                "name": default_queue,
+                "depth": default_depth,
+                "delay_depth": default_delay_depth,
+                "dead_letter_depth": default_dlq_depth,
+            },
+            # Totals for backwards compatibility
+            "queue_depth": total_queue_depth,
+            "delay_queue_depth": agent_runs_delay_depth + default_delay_depth,
+            "dead_letter_depth": total_dlq_depth,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
