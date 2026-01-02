@@ -128,6 +128,93 @@ export function clearGTMSession() {
 }
 
 // =============================================================================
+// AUTH EVENTS - Sign Up & Login Tracking
+// =============================================================================
+
+export type AuthMethod = 'Email' | 'Google' | 'Apple' | 'GitHub';
+
+/**
+ * Track sign_up event when a user completes registration
+ * Priority 1 event
+ */
+export function trackSignUp(method: AuthMethod) {
+  if (typeof window === 'undefined') return;
+  
+  initDataLayer();
+  
+  const signUpEvent = {
+    event: 'sign_up',
+    method: method,
+  };
+  
+  window.dataLayer?.push(signUpEvent);
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[GTM] sign_up pushed:', signUpEvent);
+  }
+}
+
+/**
+ * Track login event when a user logs in
+ * Priority 3 event
+ */
+export function trackLogin(method: AuthMethod) {
+  if (typeof window === 'undefined') return;
+  
+  initDataLayer();
+  
+  const loginEvent = {
+    event: 'login',
+    method: method,
+  };
+  
+  window.dataLayer?.push(loginEvent);
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[GTM] login pushed:', loginEvent);
+  }
+}
+
+/**
+ * Track cta_upgrade event when user clicks upgrade CTA
+ * Priority 3 event
+ */
+export function trackCtaUpgrade() {
+  if (typeof window === 'undefined') return;
+  
+  initDataLayer();
+  
+  const ctaEvent = {
+    event: 'cta_upgrade',
+  };
+  
+  window.dataLayer?.push(ctaEvent);
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[GTM] cta_upgrade pushed:', ctaEvent);
+  }
+}
+
+/**
+ * Track cta_signup event when user clicks signup CTA on homepage
+ */
+export function trackCtaSignup() {
+  if (typeof window === 'undefined') return;
+  
+  initDataLayer();
+  
+  const ctaEvent = {
+    event: 'cta_signup',
+  };
+  
+  window.dataLayer?.push(ctaEvent);
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[GTM] cta_signup pushed:', ctaEvent);
+  }
+}
+
+// =============================================================================
 // ECOMMERCE EVENTS - Purchase Tracking
 // =============================================================================
 

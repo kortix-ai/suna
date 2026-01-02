@@ -224,7 +224,7 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
 
   const supabase = await createClient();
 
-  const { error } = await supabase.auth.signInWithPassword({
+  const { data, error } = await supabase.auth.signInWithPassword({
     email: email.trim().toLowerCase(),
     password,
   });
@@ -233,9 +233,16 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
     return { message: error.message || 'Invalid email or password' };
   }
 
-  // Return success - client will handle redirect
+  // Determine if new user (for analytics)
+  const isNewUser = data.user && (Date.now() - new Date(data.user.created_at).getTime()) < 60000;
+  const authEvent = isNewUser ? 'signup' : 'login';
+  
+  // Return success - client will handle redirect with auth tracking params
   const finalReturnUrl = returnUrl || '/dashboard';
-  redirect(finalReturnUrl);
+  const redirectUrl = new URL(finalReturnUrl, 'http://localhost');
+  redirectUrl.searchParams.set('auth_event', authEvent);
+  redirectUrl.searchParams.set('auth_method', 'email');
+  redirect(`${redirectUrl.pathname}${redirectUrl.search}`);
 }
 
 export async function signUpWithPassword(prevState: any, formData: FormData) {

@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { Computer } from 'lucide-react';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { trackCtaSignup } from '@/lib/analytics/gtm';
 
 interface WorkerType {
     id: string;
@@ -159,7 +160,7 @@ export function ShowCaseSection() {
                                     </div>
 
                                     {/* CTA Button - Always at bottom */}
-                                    <Link href="/auth">
+                                    <Link href="/auth" onClick={() => trackCtaSignup()}>
                                         <Button
                                             variant="default"
                                             size="default"

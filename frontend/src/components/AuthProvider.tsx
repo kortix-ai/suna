@@ -11,6 +11,7 @@ import { createClient } from '@/lib/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
+// Auth tracking moved to AuthEventTracker component (handles OAuth redirects)
 
 type AuthContextType = {
   supabase: SupabaseClient;
@@ -52,6 +53,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (isLoading) setIsLoading(false);
         switch (event) {
           case 'SIGNED_IN':
+            // Auth tracking handled by AuthEventTracker component via URL params
             break;
           case 'SIGNED_OUT':
             clearUserLocalStorage();
