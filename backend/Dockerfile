@@ -1,62 +1,55 @@
-# Use Debian-based image instead of Alpine for pre-built temporalio wheels
+# Debian-based image for pre-built wheels (temporalio, psutil, etc.)
 FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim
 
-ENV ENV_MODE=production
 WORKDIR /app
 
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
-    # Dependencies for Python package compilation
-    libfreetype6-dev \
     gcc \
     libc6-dev \
+    libffi-dev \
+    libfreetype6-dev \
     python3-dev \
-    # Dependencies for WeasyPrint (PDF generation)
+    # WeasyPrint PDF generation
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
     libcairo2 \
     libgdk-pixbuf2.0-0 \
-    libffi-dev \
     fontconfig \
     fonts-dejavu \
     fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Install Python dependencies (before copying app code for better caching)
 COPY pyproject.toml uv.lock ./
 ENV UV_LINK_MODE=copy
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --quiet
+RUN --mount=type=cache,id=uv-bookworm,target=/root/.cache/uv uv sync --locked --quiet
 
 # Copy application code
 COPY . .
 
-# Calculate optimal worker count based on 16 vCPUs
-# Using (2*CPU)+1 formula for CPU-bound applications
-ENV WORKERS=7
-ENV THREADS=2
-ENV WORKER_CONNECTIONS=2000
+# Runtime configuration
+ENV ENV_MODE=production \
+    PYTHONPATH=/app
 
-ENV PYTHONPATH=/app
 EXPOSE 8000
 
-# Gunicorn configuration
+# Gunicorn with Uvicorn workers
+# WORKERS, THREADS, WORKER_CONNECTIONS set by runtime environment (ECS/docker-compose)
 CMD ["sh", "-c", "uv run gunicorn api:app \
-  --workers $WORKERS \
-  --worker-class uvicorn.workers.UvicornWorker \
-  --bind 0.0.0.0:8000 \
-  --timeout 1800 \
-  --graceful-timeout 600 \
-  --keep-alive 1800 \
-  --max-requests 0 \
-  --max-requests-jitter 0 \
-  --forwarded-allow-ips '*' \
-  --worker-connections $WORKER_CONNECTIONS \
-  --worker-tmp-dir /dev/shm \
-  --preload \
-  --log-level info \
-  --access-logfile - \
-  --error-logfile - \
-  --capture-output \
-  --enable-stdio-inheritance \
-  --threads $THREADS"]
+    --workers ${WORKERS:-4} \
+    --threads ${THREADS:-2} \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --worker-connections ${WORKER_CONNECTIONS:-1000} \
+    --worker-tmp-dir /dev/shm \
+    --bind 0.0.0.0:8000 \
+    --timeout 1800 \
+    --graceful-timeout 600 \
+    --keep-alive 1800 \
+    --forwarded-allow-ips '*' \
+    --preload \
+    --log-level info \
+    --access-logfile - \
+    --error-logfile -"]
