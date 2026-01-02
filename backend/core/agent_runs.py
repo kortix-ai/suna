@@ -1399,6 +1399,15 @@ async def stream_agent_run(
         last_id = "0"  # Start from beginning for initial read
 
         try:
+            # Send immediate "connected" message so frontend knows connection is established
+            yield f"data: {json.dumps({'type': 'connected', 'agent_run_id': agent_run_id})}\n\n"
+            
+            # #region agent log
+            try:
+                import urllib.request as _ur; _ur.urlopen(_ur.Request('http://host.docker.internal:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',data=json.dumps({"location":"agent_runs.py:stream_generator:start","message":"Stream generator started","data":{"agent_run_id":agent_run_id,"stream_key":stream_key},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","hypothesisId":"A,B"}).encode(),headers={'Content-Type':'application/json'}),timeout=1)
+            except: pass
+            # #endregion
+            
             initial_entries = await redis.stream_range(stream_key)
             if initial_entries:
                 logger.debug(f"Sending {len(initial_entries)} catch-up responses for {agent_run_id}")
@@ -1464,7 +1473,7 @@ async def stream_agent_run(
             # Startup timeout: if no real data received after N pings, check if worker is stuck
             consecutive_pings = 0
             received_real_data = len(initial_entries) > 0 if initial_entries else False
-            MAX_STARTUP_PINGS = 4  # 4 pings * 5 seconds = 20 second startup timeout (should start in ms)
+            MAX_STARTUP_PINGS = 12  # 12 pings * 5 seconds = 60 second startup timeout (Temporal Cloud may have scheduling latency)
             
             while not terminate_stream:
                 try:
@@ -1474,6 +1483,11 @@ async def stream_agent_run(
                     if entries:
                         received_real_data = True
                         consecutive_pings = 0  # Reset ping counter on real data
+                        # #region agent log
+                        try:
+                            import urllib.request as _ur; _ur.urlopen(_ur.Request('http://host.docker.internal:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',data=json.dumps({"location":"agent_runs.py:stream:data_received","message":"FIRST DATA received","data":{"agent_run_id":agent_run_id,"entries":len(entries)},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","hypothesisId":"A,E"}).encode(),headers={'Content-Type':'application/json'}),timeout=1)
+                        except: pass
+                        # #endregion
                         for entry_id, fields in entries:
                             data = fields.get('data', '{}')
                             yield f"data: {data}\n\n"
@@ -1494,6 +1508,11 @@ async def stream_agent_run(
                         # Startup timeout check: if we haven't received any real data and hit the limit
                         if not received_real_data and consecutive_pings >= MAX_STARTUP_PINGS:
                             logger.warning(f"Startup timeout for agent run {agent_run_id}: no data received after {consecutive_pings * 5}s")
+                            # #region agent log
+                            try:
+                                import urllib.request as _ur; _ur.urlopen(_ur.Request('http://host.docker.internal:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',data=json.dumps({"location":"agent_runs.py:stream_generator:timeout","message":"STARTUP TIMEOUT","data":{"agent_run_id":agent_run_id,"pings":consecutive_pings,"stream_key":stream_key},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","hypothesisId":"A,E"}).encode(),headers={'Content-Type':'application/json'}),timeout=1)
+                            except: pass
+                            # #endregion
                             # Check DB status to see if run is still supposed to be running
                             try:
                                 run_check = await client.table('agent_runs').select('status').eq('id', agent_run_id).maybe_single().execute()

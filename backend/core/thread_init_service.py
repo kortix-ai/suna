@@ -24,10 +24,13 @@ async def initialize_thread_background(
     model_name: Optional[str] = None,
 ):
     """
-    Start thread initialization workflow via Temporal.
+    Initialize thread and start agent run directly.
     
-    This function starts a Temporal workflow that handles thread initialization
-    and agent run dispatch. The workflow is idempotent using thread_id as the workflow ID.
+    This is a simplified flow that:
+    1. Creates agent_run record (quick DB operation)
+    2. Starts AgentRunWorkflow via Temporal (for the long-running agent execution)
+    
+    No need for a separate ThreadInitWorkflow - that was over-engineered.
     """
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(
@@ -36,31 +39,77 @@ async def initialize_thread_background(
         account_id=account_id,
     )
     
-    logger.info(f"Starting Temporal workflow for thread initialization: {thread_id}")
+    logger.info(f"Initializing thread and starting agent: {thread_id}")
     
     try:
-        # Import here to avoid circular import
-        from core.temporal.workflows import ThreadInitWorkflow, TASK_QUEUE_AGENT_RUNS
+        from core.temporal.workflows import AgentRunWorkflow, TASK_QUEUE_AGENT_RUNS
+        from core.agent_runs import _load_agent_config, _get_effective_model, _create_agent_run_record
+        from core.ai_models import model_manager
+        from core.services import redis
+        import time
         
-        client = await get_temporal_client()
+        # Initialize DB
+        if not db._client:
+            await db.initialize()
+        client = await db.client
         
-        # Start workflow with thread_id as workflow ID for idempotency
-        # Temporal SDK requires multiple args passed via 'args' parameter
-        # Use agent-runs queue for high-priority processing
-        handle = await client.start_workflow(
-            ThreadInitWorkflow.run,
-            args=[thread_id, project_id, account_id, prompt, agent_id, model_name],
-            id=f"thread-init-{thread_id}",  # Use thread_id for deduplication
+        # Update thread status to initializing
+        await client.table('threads').update({
+            "status": "initializing",
+            "initialization_started_at": datetime.now(timezone.utc).isoformat()
+        }).eq('thread_id', thread_id).execute()
+        
+        # Get effective model
+        if model_name is None:
+            model_name = await model_manager.get_default_model_for_user(client, account_id)
+        else:
+            model_name = model_manager.resolve_model_id(model_name)
+        
+        # Load agent config and create agent run record
+        agent_config = await _load_agent_config(client, agent_id, account_id, account_id, is_new_thread=False)
+        effective_model = await _get_effective_model(model_name, agent_config, client, account_id)
+        agent_run_id = await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id)
+        
+        # Update thread status to ready
+        await client.table('threads').update({
+            "status": "ready",
+            "initialization_completed_at": datetime.now(timezone.utc).isoformat()
+        }).eq('thread_id', thread_id).execute()
+        
+        # Pre-create Redis stream so frontend can subscribe immediately
+        stream_key = f"agent_run:{agent_run_id}:stream"
+        await redis.verify_stream_writable(stream_key)
+        
+        # #region agent log
+        try:
+            import urllib.request as _ur; _ur.urlopen(_ur.Request('http://host.docker.internal:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',data=__import__('json').dumps({"location":"thread_init_service.py:init_done","message":"Thread init complete, starting AgentRunWorkflow","data":{"thread_id":thread_id,"agent_run_id":agent_run_id},"timestamp":time.time()*1000,"sessionId":"debug-session","hypothesisId":"FIX"}).encode(),headers={'Content-Type':'application/json'}),timeout=1)
+        except: pass
+        # #endregion
+        
+        logger.info(f"Thread {thread_id} initialized, agent_run_id: {agent_run_id}")
+        
+        # Start AgentRunWorkflow directly via Temporal
+        temporal_client = await get_temporal_client()
+        worker_instance_id = str(uuid.uuid4())[:8]
+        
+        agent_handle = await temporal_client.start_workflow(
+            AgentRunWorkflow.run,
+            args=[agent_run_id, thread_id, worker_instance_id, project_id, effective_model, agent_id, account_id, None],
+            id=f"agent-run-{agent_run_id}",
             task_queue=TASK_QUEUE_AGENT_RUNS,
         )
         
-        logger.info(f"Started ThreadInitWorkflow for thread {thread_id}, workflow_id: {handle.id}")
+        # #region agent log
+        try:
+            import urllib.request as _ur; _ur.urlopen(_ur.Request('http://host.docker.internal:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',data=__import__('json').dumps({"location":"thread_init_service.py:workflow_started","message":"AgentRunWorkflow STARTED","data":{"agent_run_id":agent_run_id,"workflow_id":agent_handle.id},"timestamp":time.time()*1000,"sessionId":"debug-session","hypothesisId":"FIX"}).encode(),headers={'Content-Type':'application/json'}),timeout=1)
+        except: pass
+        # #endregion
         
-        # Return immediately - workflow runs asynchronously
-        return handle
+        logger.info(f"Started AgentRunWorkflow: {agent_handle.id}")
+        return agent_handle
         
     except Exception as e:
-        logger.error(f"Failed to start thread initialization workflow for {thread_id}: {str(e)}\n{traceback.format_exc()}")
+        logger.error(f"Thread initialization failed for {thread_id}: {str(e)}\n{traceback.format_exc()}")
         
         # Try to update thread status to error
         try:
@@ -264,14 +313,14 @@ async def create_thread_optimistically(
         except Exception as img_error:
             logger.warning(f"Failed to inject image context for {img_info['filename']}: {img_error}")
     
-    await initialize_thread_background(
+    asyncio.create_task(initialize_thread_background(
         thread_id=thread_id,
         project_id=project_id,
         account_id=account_id,
         prompt=prompt,
         agent_id=agent_id,
         model_name=model_name,
-    )
+    ))
     
     logger.info(f"Dispatched background initialization for thread {thread_id}")
     
