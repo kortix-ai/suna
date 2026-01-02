@@ -2,8 +2,9 @@ import React from 'react';
 import { ToolViewProps } from '../types';
 import { formatTimestamp, getToolTitle } from '../utils';
 import { getToolIcon } from '../../utils';
-import { CircleDashed, CheckCircle, AlertTriangle } from 'lucide-react';
+import { CheckCircle, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 
 export interface ToolViewWrapperProps extends ToolViewProps {
   children: React.ReactNode;
@@ -86,8 +87,8 @@ export function ToolViewWrapper({
 
             {isStreaming && showStatus && (
               <div className="flex items-center gap-2">
-                <CircleDashed className="h-3.5 w-3.5 text-blue-500 animate-spin" />
-                <span>{customStatus?.streaming || "Processing..."}</span>
+                <KortixLoader size="small" customSize={14} />
+                <span className="text-zinc-600 dark:text-zinc-400">{customStatus?.streaming || "Running"}</span>
               </div>
             )}
 

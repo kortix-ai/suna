@@ -1,6 +1,14 @@
-import dramatiq
+"""
+Memory background jobs - now handled by Temporal activities.
+
+These functions are kept for reference but the actual execution is now
+handled by Temporal activities in core/temporal/activities.py.
+
+The Temporal workflows call these activities:
+- MemoryExtractionWorkflow -> extract_memories_activity + embed_and_store_memories_activity
+- MemoryConsolidationWorkflow -> consolidate_memories_activity
+"""
 import asyncio
-import os
 from typing import List, Dict, Any
 from datetime import datetime, timezone, timedelta
 from core.utils.logger import logger, structlog
@@ -9,15 +17,6 @@ from core.billing.shared.config import get_memory_config, is_memory_enabled
 from .extraction_service import MemoryExtractionService
 from .embedding_service import EmbeddingService
 from .models import MemoryType, ExtractionQueueStatus
-
-# Get queue prefix from environment (for preview deployments)
-QUEUE_PREFIX = os.getenv("DRAMATIQ_QUEUE_PREFIX", "")
-
-def get_queue_name(base_name: str) -> str:
-    """Get queue name with optional prefix for preview deployments."""
-    if QUEUE_PREFIX:
-        return f"{QUEUE_PREFIX}{base_name}"
-    return base_name
 
 db = DBConnection()
 extraction_service = MemoryExtractionService()
@@ -29,12 +28,16 @@ __all__ = [
     'consolidate_memories',
 ]
 
-@dramatiq.actor(queue_name=get_queue_name("default"))
+
 async def extract_memories_from_conversation(
     thread_id: str,
     account_id: str,
     message_ids: List[str]
 ):
+    """Extract memories from conversation messages.
+    
+    Note: This function is now called by Temporal activity extract_memories_activity.
+    """
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(
         thread_id=thread_id,
@@ -54,13 +57,13 @@ async def extract_memories_from_conversation(
         
         if not is_memory_enabled(tier_name):
             logger.debug(f"Memory disabled for tier {tier_name}, skipping extraction")
-            return
+            return []
         
         user_memory_result = await client.rpc('get_user_memory_enabled', {'p_account_id': account_id}).execute()
         user_memory_enabled = user_memory_result.data if user_memory_result.data is not None else True
         if not user_memory_enabled:
             logger.debug(f"Memory disabled by user {account_id}, skipping extraction")
-            return
+            return []
         
         recent_extraction = await client.table('memory_extraction_queue').select('created_at').eq('thread_id', thread_id).eq('status', 'completed').order('created_at', desc=True).limit(1).execute()
         
@@ -68,14 +71,14 @@ async def extract_memories_from_conversation(
             last_extraction = datetime.fromisoformat(recent_extraction.data[0]['created_at'].replace('Z', '+00:00'))
             if datetime.now(timezone.utc) - last_extraction < timedelta(hours=1):
                 logger.debug(f"Recent extraction found for thread {thread_id}, skipping")
-                return
+                return []
         
         messages_result = await client.table('messages').select('*').in_('message_id', message_ids).execute()
         messages = messages_result.data or []
         
         if not await extraction_service.should_extract(messages):
             logger.debug(f"Not enough content for extraction in thread {thread_id}")
-            return
+            return []
         
         queue_entry = await client.table('memory_extraction_queue').insert({
             'thread_id': thread_id,
@@ -98,21 +101,7 @@ async def extract_memories_from_conversation(
                 'status': ExtractionQueueStatus.COMPLETED.value,
                 'processed_at': datetime.now(timezone.utc).isoformat()
             }).eq('queue_id', queue_id).execute()
-            return
-        
-        embed_and_store_memories.send(
-            account_id=account_id,
-            thread_id=thread_id,
-            extracted_memories=[
-                {
-                    'content': mem.content,
-                    'memory_type': mem.memory_type.value,
-                    'confidence_score': mem.confidence_score,
-                    'metadata': mem.metadata
-                }
-                for mem in extracted_memories
-            ]
-        )
+            return []
         
         await client.table('memory_extraction_queue').update({
             'status': ExtractionQueueStatus.COMPLETED.value,
@@ -120,6 +109,16 @@ async def extract_memories_from_conversation(
         }).eq('queue_id', queue_id).execute()
         
         logger.info(f"Successfully extracted {len(extracted_memories)} memories from thread {thread_id}")
+        
+        return [
+            {
+                'content': mem.content,
+                'memory_type': mem.memory_type.value,
+                'confidence_score': mem.confidence_score,
+                'metadata': mem.metadata
+            }
+            for mem in extracted_memories
+        ]
     
     except Exception as e:
         logger.error(f"Memory extraction failed for thread {thread_id}: {str(e)}")
@@ -131,13 +130,18 @@ async def extract_memories_from_conversation(
             }).eq('thread_id', thread_id).eq('status', ExtractionQueueStatus.PROCESSING.value).execute()
         except:
             pass
+        raise
 
-@dramatiq.actor(queue_name=get_queue_name("default"))
+
 async def embed_and_store_memories(
     account_id: str,
     thread_id: str,
     extracted_memories: List[Dict[str, Any]]
 ):
+    """Embed and store extracted memories.
+    
+    Note: This function is now called by Temporal activity embed_and_store_memories_activity.
+    """
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(
         thread_id=thread_id,
@@ -188,12 +192,19 @@ async def embed_and_store_memories(
         result = await client.table('user_memories').insert(memories_to_insert).execute()
         
         logger.info(f"Successfully stored {len(result.data)} memories for account {account_id}")
+        
+        return {"stored_count": len(result.data)}
     
     except Exception as e:
         logger.error(f"Memory embedding and storage failed: {str(e)}")
+        raise
 
-@dramatiq.actor(queue_name=get_queue_name("default"))
+
 async def consolidate_memories(account_id: str):
+    """Consolidate duplicate memories.
+    
+    Note: This function is now called by Temporal activity consolidate_memories_activity.
+    """
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(
         account_id=account_id,
@@ -212,7 +223,7 @@ async def consolidate_memories(account_id: str):
         
         if len(memories) < 10:
             logger.debug(f"Not enough memories to consolidate for {account_id}")
-            return
+            return {"consolidated_count": 0}
         
         similarity_threshold = 0.95
         consolidated_count = 0
@@ -241,6 +252,8 @@ async def consolidate_memories(account_id: str):
                     consolidated_count += 1
         
         logger.info(f"Consolidated {consolidated_count} duplicate memories for account {account_id}")
+        return {"consolidated_count": consolidated_count}
     
     except Exception as e:
         logger.error(f"Memory consolidation failed for {account_id}: {str(e)}")
+        raise

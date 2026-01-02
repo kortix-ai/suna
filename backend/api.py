@@ -363,7 +363,7 @@ async def health_check():
 
 @api_router.get("/metrics/queue", summary="Queue Metrics", operation_id="queue_metrics", tags=["system"])
 async def queue_metrics_endpoint():
-    """Get Dramatiq queue depth for monitoring and auto-scaling."""
+    """Get Temporal workflow metrics for monitoring and auto-scaling."""
     from core.services import queue_metrics
     try:
         return await queue_metrics.get_queue_metrics()
@@ -373,7 +373,7 @@ async def queue_metrics_endpoint():
 
 @api_router.get("/metrics/workers", summary="Worker Metrics", operation_id="worker_metrics", tags=["system"])
 async def worker_metrics_endpoint():
-    """Get active Dramatiq worker count and thread utilization for monitoring."""
+    """Get Temporal worker metrics for monitoring."""
     from core.services import worker_metrics
     try:
         return await worker_metrics.get_worker_metrics()
@@ -398,65 +398,34 @@ async def all_metrics_endpoint():
         logger.error(f"Failed to get metrics: {e}")
         raise HTTPException(status_code=500, detail="Failed to get metrics")
 
-@api_router.get("/debug/queue", summary="Debug Queue Status", operation_id="debug_queue", tags=["system"])
+@api_router.get("/debug/queue", summary="Debug Workflow Status", operation_id="debug_queue", tags=["system"])
 async def debug_queue_status():
     """
-    Detailed debug endpoint for queue issues.
-    Shows all Dramatiq-related keys in Redis.
+    Debug endpoint for Temporal workflow status.
+    Shows running workflows and connection status.
     """
-    import os
     try:
-        client = await redis.get_client()
+        from core.temporal.client import get_temporal_client
         
-        # Get all dramatiq-related keys
-        queue_prefix = os.getenv("DRAMATIQ_QUEUE_PREFIX", "")
-        queue_name = f"{queue_prefix}default" if queue_prefix else "default"
+        client = await get_temporal_client()
         
-        # Check various queue states
-        main_queue = await client.llen(f"dramatiq:{queue_name}")
-        delay_queue = await client.llen(f"dramatiq:{queue_name}.DQ")
-        dead_letter = await client.llen(f"dramatiq:{queue_name}.XQ")
+        # Note: Temporal Cloud provides comprehensive workflow visibility via their UI
+        # This endpoint provides basic connection status
+        # For detailed workflow information, use Temporal Cloud dashboard
         
-        # Also check the non-prefixed queue (in case of mismatch)
-        main_queue_default = await client.llen("dramatiq:default")
-        delay_queue_default = await client.llen("dramatiq:default.DQ")
-        dead_letter_default = await client.llen("dramatiq:default.XQ")
-        
-        # Get all dramatiq keys
-        all_dramatiq_keys = await client.keys("dramatiq:*")
-        
-        # Sample dead letter messages (first 3)
-        dead_letter_samples = []
-        if dead_letter > 0:
-            samples = await client.lrange(f"dramatiq:{queue_name}.XQ", 0, 2)
-            dead_letter_samples = [s[:500] if isinstance(s, str) else str(s)[:500] for s in samples]
-        elif dead_letter_default > 0:
-            samples = await client.lrange("dramatiq:default.XQ", 0, 2)
-            dead_letter_samples = [s[:500] if isinstance(s, str) else str(s)[:500] for s in samples]
-        
+        import os
         return {
-            "queue_prefix": queue_prefix or "(none)",
-            "expected_queue_name": queue_name,
-            "prefixed_queue": {
-                "main": main_queue,
-                "delay": delay_queue,
-                "dead_letter": dead_letter,
-            },
-            "default_queue": {
-                "main": main_queue_default,
-                "delay": delay_queue_default,
-                "dead_letter": dead_letter_default,
-            },
-            "all_dramatiq_keys": [k if isinstance(k, str) else k.decode() for k in all_dramatiq_keys[:20]],
-            "dead_letter_samples": dead_letter_samples,
-            "redis_connected": True,
+            "temporal_connected": True,
+            "note": "Use Temporal Cloud dashboard for detailed workflow information",
+            "temporal_address": os.getenv("TEMPORAL_ADDRESS", "not_set"),
+            "temporal_namespace": os.getenv("TEMPORAL_NAMESPACE", "not_set"),
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
-        logger.error(f"Debug queue failed: {e}")
+        logger.error(f"Debug workflow status failed: {e}")
         return {
             "error": str(e),
-            "redis_connected": False,
+            "temporal_connected": False,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
 

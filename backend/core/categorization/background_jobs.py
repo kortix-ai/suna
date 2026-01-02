@@ -1,15 +1,17 @@
-"""Background jobs for project categorization."""
-import dramatiq
-import os
+"""
+Background jobs for project categorization - now handled by Temporal workflows.
+
+These functions are kept for reference but the actual execution is now
+handled by Temporal workflows and activities in core/temporal/.
+
+The Temporal workflows:
+- CategorizationWorkflow -> processes stale projects
+- CategorizeProjectWorkflow -> categorizes a single project
+"""
 from datetime import datetime, timezone, timedelta
 from core.utils.logger import logger
 from core.services.supabase import DBConnection
 from .service import categorize_from_messages
-
-QUEUE_PREFIX = os.getenv("DRAMATIQ_QUEUE_PREFIX", "")
-
-def get_queue_name(base_name: str) -> str:
-    return f"{QUEUE_PREFIX}{base_name}" if QUEUE_PREFIX else base_name
 
 db = DBConnection()
 
@@ -19,9 +21,11 @@ MAX_PROJECTS_PER_RUN = 50
 DELAY_BETWEEN_PROJECTS_MS = 2000  # 2 second delay between tasks
 
 
-@dramatiq.actor(queue_name=get_queue_name("default"))
 async def categorize_project(project_id: str):
-    """Categorize a project based on its thread messages."""
+    """Categorize a project based on its thread messages.
+    
+    Note: This function is now called by Temporal activity categorize_project_activity.
+    """
     logger.info(f"Categorizing project {project_id}")
     
     await db.initialize()
@@ -39,7 +43,7 @@ async def categorize_project(project_id: str):
             await client.table('projects').update({
                 'last_categorized_at': datetime.now(timezone.utc).isoformat()
             }).eq('project_id', project_id).execute()
-            return
+            return {"categories": [], "skipped": True}
         
         thread_id = thread_result.data[0]['thread_id']
         
@@ -57,7 +61,7 @@ async def categorize_project(project_id: str):
             await client.table('projects').update({
                 'last_categorized_at': datetime.now(timezone.utc).isoformat()
             }).eq('project_id', project_id).execute()
-            return
+            return {"categories": [], "skipped": True}
         
         # Categorize
         categories = await categorize_from_messages(messages)
@@ -72,13 +76,19 @@ async def categorize_project(project_id: str):
         
         logger.info(f"Categorized project {project_id}: {categories}")
         
+        return {"categories": categories, "skipped": False}
+        
     except Exception as e:
         logger.error(f"Categorization failed for project {project_id}: {e}")
+        raise
 
 
-@dramatiq.actor(queue_name=get_queue_name("default"))
 async def process_stale_projects():
-    """Find and categorize projects inactive for 30+ minutes."""
+    """Find projects inactive for 30+ minutes that need categorization.
+    
+    Note: This function is now called by Temporal activity find_stale_projects_activity.
+    Returns a list of projects instead of dispatching tasks.
+    """
     logger.info("Processing stale projects for categorization")
     
     await db.initialize()
@@ -100,18 +110,12 @@ async def process_stale_projects():
         
         if not projects:
             logger.debug("No stale projects to categorize")
-            return
+            return []
         
         logger.info(f"Found {len(projects)} stale projects")
         
-        for i, project in enumerate(projects):
-            # Stagger task dispatch to avoid rate limits
-            delay_ms = i * DELAY_BETWEEN_PROJECTS_MS
-            categorize_project.send_with_options(
-                args=(project['project_id'],),
-                delay=delay_ms
-            )
+        return projects
         
     except Exception as e:
         logger.error(f"Stale project processing failed: {e}")
-
+        raise
