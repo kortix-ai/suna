@@ -1,23 +1,27 @@
-FROM ghcr.io/astral-sh/uv:python3.11-alpine
+# Use Debian-based image instead of Alpine for pre-built temporalio wheels
+FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim
 
-ENV ENV_MODE production
+ENV ENV_MODE=production
 WORKDIR /app
 
-RUN apk add --no-cache curl git \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
     # Dependencies for Python package compilation
-    freetype-dev \
+    libfreetype6-dev \
     gcc \
-    linux-headers \
-    musl-dev \
+    libc6-dev \
     python3-dev \
     # Dependencies for WeasyPrint (PDF generation)
-    pango \
-    cairo \
-    gdk-pixbuf \
-    libffi \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libcairo2 \
+    libgdk-pixbuf2.0-0 \
+    libffi-dev \
     fontconfig \
-    ttf-dejavu \
-    ttf-liberation
+    fonts-dejavu \
+    fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY pyproject.toml uv.lock ./
