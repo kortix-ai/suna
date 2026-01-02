@@ -35,6 +35,14 @@ def _get_cloudwatch_client():
     return _cloudwatch_client
 
 
+def _get_queue_name(base_name: str) -> str:
+    """Get queue name with optional prefix for preview deployments."""
+    prefix = os.getenv("DRAMATIQ_QUEUE_PREFIX", "")
+    if prefix:
+        return f"{prefix}{base_name}"
+    return base_name
+
+
 async def get_queue_metrics() -> dict:
     """
     Get Dramatiq queue metrics from Redis.
@@ -44,12 +52,16 @@ async def get_queue_metrics() -> dict:
     """
     from core.services import redis
     
+    # Use the same queue name that Dramatiq actors use
+    queue_name = _get_queue_name("default")
+    
     try:
-        queue_depth = await redis.llen("dramatiq:default")
-        delay_queue_depth = await redis.llen("dramatiq:default.DQ")
-        dead_letter_depth = await redis.llen("dramatiq:default.XQ")
+        queue_depth = await redis.llen(f"dramatiq:{queue_name}")
+        delay_queue_depth = await redis.llen(f"dramatiq:{queue_name}.DQ")
+        dead_letter_depth = await redis.llen(f"dramatiq:{queue_name}.XQ")
         
         return {
+            "queue_name": queue_name,  # Include queue name for debugging
             "queue_depth": queue_depth,
             "delay_queue_depth": delay_queue_depth,
             "dead_letter_depth": dead_letter_depth,

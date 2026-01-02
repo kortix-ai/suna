@@ -1462,7 +1462,7 @@ async def stream_agent_run(
             # Startup timeout: if no real data received after N pings, check if worker is stuck
             consecutive_pings = 0
             received_real_data = len(initial_entries) > 0 if initial_entries else False
-            MAX_STARTUP_PINGS = 6  # 6 pings * 5 seconds = 30 second startup timeout
+            MAX_STARTUP_PINGS = 18  # 18 pings * 5 seconds = 90 second startup timeout (handles queue delays)
             
             while not terminate_stream:
                 try:
