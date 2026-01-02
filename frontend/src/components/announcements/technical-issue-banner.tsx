@@ -10,6 +10,7 @@ interface TechnicalIssueBannerProps {
   statusUrl?: string;
 }
 
+
 export function TechnicalIssueBanner({
   message,
   statusUrl,
