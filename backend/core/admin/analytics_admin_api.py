@@ -590,14 +590,18 @@ async def _browse_threads_filtered(
     # When filtering by category, use database function for efficient JOIN with pagination
     # This fetches only the records we need (e.g., 15) instead of 1000
     if category:
-        # Build date parameters for RPC
+        # Build date parameters for RPC using Berlin timezone (consistent with category distribution)
         date_from_param = None
         date_to_param = None
         
         if date_from:
-            date_from_param = f"{date_from}T00:00:00Z" if 'T' not in date_from else date_from
+            # Parse date and convert to Berlin timezone start of day
+            from_dt = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ) if 'T' not in date_from else datetime.fromisoformat(date_from)
+            date_from_param = from_dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         if date_to:
-            date_to_param = f"{date_to}T23:59:59.999999Z" if 'T' not in date_to else date_to
+            # Parse date and convert to Berlin timezone end of day
+            to_dt = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ) if 'T' not in date_to else datetime.fromisoformat(date_to)
+            date_to_param = to_dt.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
         
         # Calculate offset for pagination
         offset = (params.page - 1) * params.page_size
