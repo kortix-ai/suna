@@ -52,6 +52,10 @@ dramatiq.set_broker(redis_broker)
 from core.memory import background_jobs as memory_jobs
 from core.categorization import background_jobs as categorization_jobs
 
+# CRITICAL: Import thread_init_service at module level so Dramatiq discovers its actors
+# Without this, the worker won't consume messages for initialize_thread_background
+from core import thread_init_service
+
 warm_up_tools_cache()
 logger.info("✅ Worker process ready, tool cache warmed")
 
