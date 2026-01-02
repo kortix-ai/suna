@@ -32,7 +32,7 @@ async def get_temporal_client() -> Client:
     
     if config["api_key"]:
         tls_config = TLSConfig()
-        logger.info(f"Connecting to Temporal Cloud with API key auth: {config['address']}")
+        logger.info(f"Connecting to Temporal: {config['address']}")
         _client = await Client.connect(
             config["address"],
             namespace=config["namespace"],
@@ -50,7 +50,7 @@ async def get_temporal_client() -> Client:
             client_cert=client_cert,
             client_private_key=client_key,
         )
-        logger.info(f"Connecting to Temporal Cloud with mTLS: {config['address']}")
+        logger.info(f"Connecting to Temporal: {config['address']}")
         _client = await Client.connect(
             config["address"],
             namespace=config["namespace"],
