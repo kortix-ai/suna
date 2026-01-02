@@ -46,6 +46,7 @@ import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { MemoryToggle } from './memory-toggle';
 
 import posthog from 'posthog-js';
+import { trackCtaUpgrade } from '@/lib/analytics/gtm';
 
 // ============================================================================
 // ISOLATED TEXTAREA - Manages its own state to prevent parent re-renders
@@ -1460,7 +1461,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             agentName={agentName}
             showToolPreview={showToolPreview}
             subscriptionData={subscriptionData}
-            onOpenUpgrade={() => setPlanSelectionModalOpen(true)}
+            onOpenUpgrade={() => {
+              trackCtaUpgrade();
+              setPlanSelectionModalOpen(true);
+            }}
             isVisible={isSnackVisible}
           />
 

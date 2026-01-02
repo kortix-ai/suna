@@ -107,8 +107,17 @@ export async function GET(request: NextRequest) {
 
       let finalDestination = next
       let shouldClearReferralCookie = false
+      let authEvent = 'login'
+      let authMethod = 'email'
 
       if (data.user) {
+        // Determine if this is a new user (for analytics tracking)
+        const createdAt = new Date(data.user.created_at).getTime();
+        const now = Date.now();
+        const isNewUser = (now - createdAt) < 60000; // Created within last 60 seconds
+        authEvent = isNewUser ? 'signup' : 'login';
+        authMethod = data.user.app_metadata?.provider || 'email';
+        
         const pendingReferralCode = request.cookies.get('pending-referral-code')?.value
         if (pendingReferralCode) {
           try {
@@ -166,8 +175,11 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // Web redirect
-      const response = NextResponse.redirect(`${baseUrl}${finalDestination}`)
+      // Web redirect - include auth event params for client-side tracking
+      const redirectUrl = new URL(`${baseUrl}${finalDestination}`)
+      redirectUrl.searchParams.set('auth_event', authEvent)
+      redirectUrl.searchParams.set('auth_method', authMethod)
+      const response = NextResponse.redirect(redirectUrl)
       
       // Clear referral cookie if it was processed
       if (shouldClearReferralCookie) {

@@ -48,6 +48,7 @@ import { useAccountState } from '@/hooks/billing';
 import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
 import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 import { PromoBanner } from '@/components/home/promo-banner';
+import { trackCtaSignup } from '@/lib/analytics/gtm';
 
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
 const AgentRunLimitBanner = lazy(() => 
@@ -211,6 +212,7 @@ export function HeroSection() {
         }
         if (!user && !isLoading) {
             localStorage.setItem(PENDING_PROMPT_KEY, message.trim());
+            trackCtaSignup();
             setAuthDialogOpen(true);
             return;
         }
@@ -503,7 +505,10 @@ export function HeroSection() {
                         <Link
                             href={`/auth?returnUrl=${encodeURIComponent('/dashboard')}`}
                             className="flex h-12 items-center justify-center w-full text-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-all shadow-sm font-medium"
-                            onClick={() => setAuthDialogOpen(false)}
+                            onClick={() => {
+                                trackCtaSignup();
+                                setAuthDialogOpen(false);
+                            }}
                         >
                             {tAuth('signInWithEmail')}
                         </Link>
@@ -511,7 +516,10 @@ export function HeroSection() {
                         <Link
                             href={`/auth?mode=signup&returnUrl=${encodeURIComponent('/dashboard')}`}
                             className="flex h-12 items-center justify-center w-full text-center rounded-full border border-border bg-background hover:bg-accent/50 transition-all font-medium"
-                            onClick={() => setAuthDialogOpen(false)}
+                            onClick={() => {
+                                trackCtaSignup();
+                                setAuthDialogOpen(false);
+                            }}
                         >
                             {tAuth('createNewAccount')}
                         </Link>
