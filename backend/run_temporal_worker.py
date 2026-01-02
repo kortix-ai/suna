@@ -12,6 +12,9 @@ from core.utils.logger import logger
 
 AGENT_TASK_QUEUE = "agent-runs"
 
+MAX_CONCURRENT_ACTIVITIES = int(os.getenv("TEMPORAL_MAX_CONCURRENT_ACTIVITIES", "50"))
+MAX_CONCURRENT_WORKFLOW_TASKS = int(os.getenv("TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS", "100"))
+
 
 def create_agent_worker(client):
     from core.temporal.agent_workflow import AgentRunWorkflow
@@ -23,11 +26,23 @@ def create_agent_worker(client):
         workflows=[AgentRunWorkflow],
         activities=[run_agent_activity],
         workflow_runner=UnsandboxedWorkflowRunner(),
+        max_concurrent_activities=MAX_CONCURRENT_ACTIVITIES,
+        max_concurrent_workflow_tasks=MAX_CONCURRENT_WORKFLOW_TASKS,
     )
 
 
 async def run_worker():
     logger.info("🚀 Starting Temporal agent worker...")
+    
+    from core.services.supabase import DBConnection
+    from core.services import redis
+    
+    db = DBConnection()
+    await db.initialize()
+    logger.info("✅ Database connection initialized")
+    
+    await redis.initialize_async()
+    logger.info("✅ Redis connection initialized")
     
     client = await get_temporal_client()
     
@@ -35,7 +50,7 @@ async def run_worker():
     warm_up_tools_cache()
     
     worker = create_agent_worker(client)
-    logger.info(f"✅ Agent worker on queue: {AGENT_TASK_QUEUE}")
+    logger.info(f"✅ Agent worker on queue: {AGENT_TASK_QUEUE} (max_activities={MAX_CONCURRENT_ACTIVITIES}, max_workflow_tasks={MAX_CONCURRENT_WORKFLOW_TASKS})")
     
     shutdown_event = asyncio.Event()
     
