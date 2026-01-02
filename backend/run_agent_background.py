@@ -661,19 +661,33 @@ async def run_agent_background(
         await cleanup_redis_keys_for_agent_run(agent_run_id, instance_id)
 
         if final_status == "completed" and account_id:
-            try:
-                from core.memory.background_jobs import extract_memories_from_conversation
-                messages_result = await client.table('messages').select('message_id').eq('thread_id', thread_id).order('created_at', desc=False).execute()
-                if messages_result.data:
-                    message_ids = [m['message_id'] for m in messages_result.data]
-                    extract_memories_from_conversation.send(
-                        thread_id=thread_id,
-                        account_id=account_id,
-                        message_ids=message_ids
-                    )
-                    logger.debug(f"Queued memory extraction for thread {thread_id}")
-            except Exception as mem_error:
-                logger.warning(f"Failed to queue memory extraction: {mem_error}")
+            memory_enabled = os.getenv("ENABLE_MEMORY_EXTRACTION", "false").lower() == "true"
+            if memory_enabled:
+                try:
+                    messages_result = await client.table('messages').select('message_id').eq('thread_id', thread_id).order('created_at', desc=False).execute()
+                    if messages_result.data:
+                        message_ids = [m['message_id'] for m in messages_result.data]
+                        
+                        use_temporal = os.getenv("USE_TEMPORAL_MEMORY_PIPELINE", "false").lower() == "true"
+                        
+                        if use_temporal:
+                            from core.temporal import start_memory_pipeline
+                            await start_memory_pipeline(
+                                thread_id=thread_id,
+                                account_id=account_id,
+                                message_ids=message_ids,
+                            )
+                            logger.debug(f"Started Temporal memory pipeline for thread {thread_id}")
+                        else:
+                            from core.memory.background_jobs import extract_memories_from_conversation
+                            extract_memories_from_conversation.send(
+                                thread_id=thread_id,
+                                account_id=account_id,
+                                message_ids=message_ids
+                            )
+                            logger.debug(f"Queued memory extraction for thread {thread_id}")
+                except Exception as mem_error:
+                    logger.warning(f"Failed to queue memory extraction: {mem_error}")
 
         # MEMORY CLEANUP: Explicitly release memory after agent run completes
         try:

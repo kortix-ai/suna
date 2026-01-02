@@ -321,26 +321,43 @@ async def _trigger_agent_background(
     agent_id: Optional[str],
     account_id: Optional[str] = None
 ):
-    request_id = structlog.contextvars.get_contextvars().get('request_id')
-
-    logger.info(f"🚀 Sending agent run {agent_run_id} to Dramatiq queue (thread: {thread_id}, model: {effective_model})")
+    use_temporal = os.getenv("USE_TEMPORAL_AGENT_RUN", "false").lower() == "true"
     
-    try:
-        message = run_agent_background.send(
-            agent_run_id=agent_run_id,
-            thread_id=thread_id,
-            instance_id=utils.instance_id,
-            project_id=project_id,
-            model_name=effective_model,
-            agent_id=agent_id,
-            account_id=account_id,
-            request_id=request_id,
-        )
-        message_id = message.message_id if hasattr(message, 'message_id') else 'N/A'
-        logger.info(f"✅ Successfully enqueued agent run {agent_run_id} to Dramatiq (message_id: {message_id})")
-    except Exception as e:
-        logger.error(f"❌ Failed to enqueue agent run {agent_run_id} to Dramatiq: {e}", exc_info=True)
-        raise
+    if use_temporal:
+        logger.info(f"🚀 Starting agent run {agent_run_id} via Temporal (thread: {thread_id}, model: {effective_model})")
+        try:
+            from core.temporal import start_agent_run
+            await start_agent_run(
+                agent_run_id=agent_run_id,
+                thread_id=thread_id,
+                project_id=project_id,
+                model_name=effective_model,
+                agent_id=agent_id,
+                account_id=account_id,
+            )
+            logger.info(f"✅ Successfully started agent run {agent_run_id} via Temporal")
+        except Exception as e:
+            logger.error(f"❌ Failed to start agent run {agent_run_id} via Temporal: {e}", exc_info=True)
+            raise
+    else:
+        request_id = structlog.contextvars.get_contextvars().get('request_id')
+        logger.info(f"🚀 Sending agent run {agent_run_id} to Dramatiq queue (thread: {thread_id}, model: {effective_model})")
+        try:
+            message = run_agent_background.send(
+                agent_run_id=agent_run_id,
+                thread_id=thread_id,
+                instance_id=utils.instance_id,
+                project_id=project_id,
+                model_name=effective_model,
+                agent_id=agent_id,
+                account_id=account_id,
+                request_id=request_id,
+            )
+            message_id = message.message_id if hasattr(message, 'message_id') else 'N/A'
+            logger.info(f"✅ Successfully enqueued agent run {agent_run_id} to Dramatiq (message_id: {message_id})")
+        except Exception as e:
+            logger.error(f"❌ Failed to enqueue agent run {agent_run_id} to Dramatiq: {e}", exc_info=True)
+            raise
 
 
 async def _fast_parse_files(files: List[UploadFile], prompt: str = "") -> Tuple[str, List[Tuple[str, bytes, str, Optional[str]]]]:

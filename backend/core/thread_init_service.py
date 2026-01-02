@@ -144,17 +144,35 @@ async def initialize_thread_background(
         
         logger.info(f"Thread {thread_id} marked as ready, dispatching agent: {agent_run_id}")
         
-        worker_instance_id = str(uuid.uuid4())[:8]
+        use_temporal = os.getenv("USE_TEMPORAL_AGENT_RUN", "false").lower() == "true"
         
-        run_agent_background.send(
-            agent_run_id=agent_run_id,
-            thread_id=thread_id,
-            instance_id=worker_instance_id,
-            project_id=project_id,
-            model_name=effective_model,
-            agent_id=agent_id,
-            account_id=account_id,
-        )
+        if use_temporal:
+            logger.info(f"🚀 Starting agent run {agent_run_id} via Temporal (thread: {thread_id})")
+            try:
+                from core.temporal import start_agent_run
+                await start_agent_run(
+                    agent_run_id=agent_run_id,
+                    thread_id=thread_id,
+                    project_id=project_id,
+                    model_name=effective_model,
+                    agent_id=agent_id,
+                    account_id=account_id,
+                )
+                logger.info(f"✅ Successfully started agent run {agent_run_id} via Temporal")
+            except Exception as e:
+                logger.error(f"❌ Failed to start agent run {agent_run_id} via Temporal: {e}", exc_info=True)
+                raise
+        else:
+            worker_instance_id = str(uuid.uuid4())[:8]
+            run_agent_background.send(
+                agent_run_id=agent_run_id,
+                thread_id=thread_id,
+                instance_id=worker_instance_id,
+                project_id=project_id,
+                model_name=effective_model,
+                agent_id=agent_id,
+                account_id=account_id,
+            )
         
         logger.info(f"Thread {thread_id} initialization completed and agent dispatched: {agent_run_id}")
         
@@ -354,16 +372,52 @@ async def create_thread_optimistically(
         except Exception as img_error:
             logger.warning(f"Failed to inject image context for {img_info['filename']}: {img_error}")
     
-    initialize_thread_background.send(
-        thread_id=thread_id,
-        project_id=project_id,
-        account_id=account_id,
-        prompt=prompt,
-        agent_id=agent_id,
-        model_name=model_name,
-    )
+    use_temporal = os.getenv("USE_TEMPORAL_AGENT_RUN", "false").lower() == "true"
     
-    logger.info(f"Dispatched background initialization for thread {thread_id}")
+    if use_temporal:
+        from core.ai_models import model_manager
+        from core.agent_runs import _load_agent_config, _get_effective_model, _create_agent_run_record
+        
+        effective_model = model_name
+        if effective_model is None:
+            effective_model = await model_manager.get_default_model_for_user(client, account_id)
+        else:
+            effective_model = model_manager.resolve_model_id(effective_model)
+        
+        agent_config = await _load_agent_config(client, agent_id, account_id, account_id, is_new_thread=False)
+        effective_model = await _get_effective_model(model_name, agent_config, client, account_id)
+        agent_run_id = await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id)
+        
+        await client.table('threads').update({
+            "status": "ready",
+            "initialization_completed_at": datetime.now(timezone.utc).isoformat()
+        }).eq('thread_id', thread_id).execute()
+        
+        logger.info(f"🚀 Starting agent run {agent_run_id} via Temporal (thread: {thread_id})")
+        try:
+            from core.temporal import start_agent_run
+            await start_agent_run(
+                agent_run_id=agent_run_id,
+                thread_id=thread_id,
+                project_id=project_id,
+                model_name=effective_model,
+                agent_id=agent_id,
+                account_id=account_id,
+            )
+            logger.info(f"✅ Successfully started agent run {agent_run_id} via Temporal")
+        except Exception as e:
+            logger.error(f"❌ Failed to start agent run {agent_run_id} via Temporal: {e}", exc_info=True)
+            raise
+    else:
+        initialize_thread_background.send(
+            thread_id=thread_id,
+            project_id=project_id,
+            account_id=account_id,
+            prompt=prompt,
+            agent_id=agent_id,
+            model_name=model_name,
+        )
+        logger.info(f"Dispatched background initialization for thread {thread_id}")
     
     return {
         "thread_id": thread_id,

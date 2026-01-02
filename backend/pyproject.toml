@@ -98,6 +98,7 @@ dependencies = [
   "apify-client==2.3.0",
   "paramiko>=3.4.0",
   "braintrust>=0.3.15",
+  "temporalio>=1.21.1",
   "autoevals>=0.0.130",
   "huggingface-hub>=0.34.4",
   "datasets>=4.4.2",

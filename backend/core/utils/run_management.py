@@ -1,5 +1,6 @@
 """Agent run management utilities - starting, stopping, and monitoring agent runs."""
 import json
+import os
 from typing import Optional, List
 from fastapi import HTTPException
 from core.services import redis
@@ -14,7 +15,7 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
     This function:
     1. Fetches final responses from Redis stream
     2. Updates database status
-    3. Publishes STOP signals to all control channels
+    3. Publishes STOP signals (Redis + Temporal if enabled)
     4. Cleans up Redis keys
     
     Args:
@@ -24,13 +25,11 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
     """
     logger.warning(f"🛑 Stopping agent run: {agent_run_id} (source: {stop_source}, error: {error_message or 'none'})")
     
-    # Import here to avoid circular dependency
     from ..core_utils import db
     
     client = await db.client
     final_status = "failed" if error_message else "stopped"
 
-    # Attempt to fetch final responses from Redis stream
     stream_key = f"agent_run:{agent_run_id}:stream"
     all_responses = []
     try:
@@ -40,7 +39,6 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
     except Exception as e:
         logger.error(f"Failed to fetch responses from Redis stream for {agent_run_id} during stop/fail: {e}")
 
-    # Update the agent run status in the database
     update_success = await update_agent_run_status(
         client, agent_run_id, final_status, error=error_message
     )
@@ -49,18 +47,26 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
         logger.error(f"Failed to update database status for stopped/failed run {agent_run_id}")
         raise HTTPException(status_code=500, detail="Failed to update agent run status in database")
 
-    # Set STOP signal using simple Redis key (no pubsub needed)
+    use_temporal = os.getenv("USE_TEMPORAL_AGENT_RUN", "false").lower() == "true"
+    
+    if use_temporal:
+        try:
+            from core.temporal import stop_agent_run
+            await stop_agent_run(agent_run_id, reason=stop_source)
+            logger.warning(f"🛑 Sent Temporal stop signal for agent run {agent_run_id} (source: {stop_source})")
+        except Exception as e:
+            logger.warning(f"Failed to send Temporal stop signal for {agent_run_id}: {e}")
+
     try:
         await redis.set_stop_signal(agent_run_id)
-        logger.warning(f"🛑 Set STOP signal for agent run {agent_run_id} (source: {stop_source})")
+        logger.warning(f"🛑 Set Redis STOP signal for agent run {agent_run_id} (source: {stop_source})")
     except Exception as e:
         logger.error(f"Failed to set STOP signal for agent run {agent_run_id}: {str(e)}")
 
-        # Comprehensive cleanup of all Redis keys for this agent run
+    try:
         await cleanup_redis_keys_for_agent_run(agent_run_id)
-
     except Exception as e:
-        logger.error(f"Failed to find or signal active instances for {agent_run_id}: {str(e)}")
+        logger.error(f"Failed to cleanup Redis keys for {agent_run_id}: {str(e)}")
 
     logger.debug(f"Successfully initiated stop process for agent run: {agent_run_id}")
 
