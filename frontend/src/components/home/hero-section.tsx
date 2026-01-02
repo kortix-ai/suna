@@ -6,8 +6,7 @@ import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import { AgentRunLimitError, BillingError, ProjectLimitError, ThreadLimitError } from '@/lib/api/errors';
-import { optimisticAgentStart } from '@/lib/api/agents';
+import { useOptimisticAgentStart } from '@/hooks/threads';
 import {
     Dialog,
     DialogContent,
@@ -17,7 +16,6 @@ import {
     DialogOverlay,
 } from '@/components/ui/dialog';
 import { isLocalMode } from '@/lib/config';
-import { toast } from 'sonner';
 import type { ChatInputHandles } from '@/components/thread/chat-input/chat-input';
 
 // Use next/dynamic with ssr:false to prevent prefetching heavy chunks
@@ -36,8 +34,7 @@ const ChatInput = dynamic(
         )
     }
 );
-import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { agentKeys } from '@/hooks/agents/keys';
 import { getAgents } from '@/hooks/agents/utils';
 import { useSunaModePersistence } from '@/stores/suna-modes-store';
@@ -46,7 +43,6 @@ import { useTranslations } from 'next-intl';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useAccountState } from '@/hooks/billing';
 import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
-import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 import { PromoBanner } from '@/components/home/promo-banner';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 
@@ -95,7 +91,6 @@ export function HeroSection() {
     const { user, isLoading } = useAuth();
     const pricingModalStore = usePricingModalStore();
     const { data: accountState } = useAccountState({ enabled: !!user });
-    const queryClient = useQueryClient();
     
     // Check if user is on free tier (for video generation lock)
     const isFreeTier = accountState && (
@@ -104,19 +99,16 @@ export function HeroSection() {
         !accountState.subscription.tier_key
     );
     const chatInputRef = useRef<ChatInputHandles>(null);
-    const [showAgentLimitBanner, setShowAgentLimitBanner] = useState(false);
-    const [agentLimitData, setAgentLimitData] = useState<{
-        runningCount: number;
-        runningThreadIds: string[];
-    } | null>(null);
-
-    // Ensure dialog opens when agentLimitData is set
-    useEffect(() => {
-        if (agentLimitData && !showAgentLimitBanner) {
-            console.log('agentLimitData set, opening dialog');
-            setShowAgentLimitBanner(true);
-        }
-    }, [agentLimitData, showAgentLimitBanner]);
+    
+    // Use centralized optimistic agent start hook
+    const {
+        startAgent,
+        isStarting: isOptimisticStarting,
+        agentLimitData,
+        showAgentLimitBanner,
+        setShowAgentLimitBanner,
+        clearAgentLimitData,
+    } = useOptimisticAgentStart('/');
 
     const prefetchedRouteRef = useRef<string | null>(null);
     const prefetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -199,15 +191,13 @@ export function HeroSection() {
         };
     }, [inputValue, isSubmitting, router]);
 
-    const addOptimisticFiles = useOptimisticFilesStore((state) => state.addFiles);
-
     const handleChatInputSubmit = useLeadingDebouncedCallback(async (
         message: string,
         options?: { model_name?: string; enable_thinking?: boolean }
     ) => {
         const pendingFiles = chatInputRef.current?.getPendingFiles() || [];
 
-        if ((!message.trim() && !pendingFiles.length) || isSubmitting) {
+        if ((!message.trim() && !pendingFiles.length) || isSubmitting || isOptimisticStarting) {
             return;
         }
         if (!user && !isLoading) {
@@ -218,158 +208,27 @@ export function HeroSection() {
         }
 
         setIsSubmitting(true);
-        let didNavigate = false;
-        try {
-            const files = pendingFiles;
-            localStorage.removeItem(PENDING_PROMPT_KEY);
+        localStorage.removeItem(PENDING_PROMPT_KEY);
 
-            const normalizedFiles = files.map((file) => {
-                const normalizedName = normalizeFilenameToNFC(file.name);
-                return new File([file], normalizedName, { type: file.type });
-            });
+        console.log('[HeroSection] Starting agent with:', {
+            prompt: message.substring(0, 100),
+            promptLength: message.length,
+            model_name: options?.model_name,
+            agent_id: selectedAgentId,
+            pendingFiles: pendingFiles.length,
+        });
 
-            const threadId = crypto.randomUUID();
-            const projectId = crypto.randomUUID();
-            const trimmedMessage = message.trim();
+        const result = await startAgent({
+            message,
+            files: pendingFiles,
+            modelName: options?.model_name,
+            agentId: selectedAgentId || undefined,
+            memoryEnabled: true,
+        });
 
-            let promptWithFiles = trimmedMessage;
-            if (normalizedFiles.length > 0) {
-                addOptimisticFiles(threadId, projectId, normalizedFiles);
-                sessionStorage.setItem('optimistic_files', 'true');
-                const fileRefs = normalizedFiles.map((f) =>
-                    `[Uploaded File: uploads/${f.name}]`
-                ).join('\n');
-                promptWithFiles = `${trimmedMessage}\n\n${fileRefs}`;
-            }
-
-            sessionStorage.setItem('optimistic_prompt', promptWithFiles);
-            sessionStorage.setItem('optimistic_thread', threadId);
-
-            if (process.env.NODE_ENV !== 'production') {
-                console.log('[HeroSection] Starting new thread:', {
-                    projectId,
-                    threadId,
-                    agent_id: selectedAgentId || undefined,
-                    model_name: options?.model_name,
-                    promptLength: promptWithFiles.length,
-                    promptPreview: promptWithFiles.slice(0, 140),
-                    files: normalizedFiles.map((f) => ({ name: f.name, size: f.size, type: f.type })),
-                });
-            }
-
-            router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
-            didNavigate = true;
-
-            optimisticAgentStart({
-                thread_id: threadId,
-                project_id: projectId,
-                prompt: promptWithFiles,
-                model_name: options?.model_name,
-                agent_id: selectedAgentId || undefined,
-                memory_enabled: true,
-            }).then(() => {
-                queryClient.invalidateQueries({ queryKey: ['threads', 'list'] });
-                queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });
-            }).catch((error) => {
-                console.error('Background agent start failed:', error);
-                console.error('Error type:', error?.constructor?.name);
-                console.error('Is AgentRunLimitError?', error instanceof AgentRunLimitError);
-                
-                if (error instanceof BillingError || error?.status === 402) {
-                    const errorMessage = error.detail?.message?.toLowerCase() || error.message?.toLowerCase() || '';
-                    const originalMessage = error.detail?.message || error.message || '';
-                    const isCreditsExhausted = 
-                        errorMessage.includes('credit') ||
-                        errorMessage.includes('balance') ||
-                        errorMessage.includes('insufficient') ||
-                        errorMessage.includes('out of credits') ||
-                        errorMessage.includes('no credits');
-                    
-                    const balanceMatch = originalMessage.match(/balance is (-?\d+)\s*credits/i);
-                    const balance = balanceMatch ? balanceMatch[1] : null;
-                    
-                    const alertTitle = isCreditsExhausted 
-                        ? 'You ran out of credits'
-                        : 'Pick the plan that works for you';
-                    
-                    const alertSubtitle = balance 
-                        ? `Your current balance is ${balance} credits. Upgrade your plan to continue.`
-                        : isCreditsExhausted 
-                            ? 'Upgrade your plan to get more credits and continue using the AI assistant.'
-                            : undefined;
-                    
-                    router.replace('/');
-                    pricingModalStore.openPricingModal({ 
-                        isAlert: true,
-                        alertTitle,
-                        alertSubtitle
-                    });
-                    return;
-                }
-                
-                if (error instanceof AgentRunLimitError) {
-                    console.log('Caught AgentRunLimitError, showing dialog');
-                    const { running_thread_ids, running_count } = error.detail;
-                    console.log('Running threads:', running_thread_ids, 'Count:', running_count);
-                    // Set state BEFORE navigation to ensure it persists
-                    setAgentLimitData({
-                        runningCount: running_count,
-                        runningThreadIds: running_thread_ids,
-                    });
-                    setShowAgentLimitBanner(true);
-                    console.log('State set, navigating...');
-                    router.replace('/');
-                    return;
-                }
-                
-                // Also check for error code in case instanceof check fails
-                if (error?.detail?.error_code === 'AGENT_RUN_LIMIT_EXCEEDED' || 
-                    error?.code === 'AGENT_RUN_LIMIT_EXCEEDED' ||
-                    (error?.status === 402 && error?.detail?.running_count !== undefined)) {
-                    console.log('Caught agent run limit error by code, showing dialog');
-                    const running_thread_ids = error.detail?.running_thread_ids || [];
-                    const running_count = error.detail?.running_count || 0;
-                    setAgentLimitData({
-                        runningCount: running_count,
-                        runningThreadIds: running_thread_ids,
-                    });
-                    setShowAgentLimitBanner(true);
-                    router.replace('/');
-                    return;
-                }
-                
-                if (error instanceof ProjectLimitError) {
-                    router.replace('/');
-                    pricingModalStore.openPricingModal({ 
-                        isAlert: true,
-                        alertTitle: `${tBilling('reachedLimit')} ${tBilling('projectLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
-                    });
-                    return;
-                }
-                
-                if (error instanceof ThreadLimitError) {
-                    router.replace('/');
-                    pricingModalStore.openPricingModal({ 
-                        isAlert: true,
-                        alertTitle: `${tBilling('reachedLimit')} ${tBilling('threadLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
-                    });
-                    return;
-                }
-                
-                toast.error('Failed to start conversation');
-            });
-        } catch (error: any) {
-            const isConnectionError =
-                error instanceof TypeError &&
-                error.message.includes('Failed to fetch');
-            if (!isLocalMode() || isConnectionError) {
-                toast.error(
-                    error.message || 'Failed to create Worker. Please try again.',
-                );
-            }
-            if (!didNavigate) {
-                setIsSubmitting(false);
-            }
+        if (!result) {
+            // Error was handled by the hook, reset state
+            setIsSubmitting(false);
         }
     }, 1200);
 
@@ -545,7 +404,7 @@ export function HeroSection() {
                         onOpenChange={(open) => {
                             setShowAgentLimitBanner(open);
                             if (!open) {
-                                setAgentLimitData(null);
+                                clearAgentLimitData();
                             }
                         }}
                         runningCount={agentLimitData.runningCount}

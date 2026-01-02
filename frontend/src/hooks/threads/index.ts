@@ -21,3 +21,12 @@ export { useMessagesQuery, useAddUserMessageMutation } from '../messages';
 
 // Agent runs
 export { useAgentRunsQuery, useStartAgentMutation, useStopAgentMutation } from './use-agent-run';
+
+// Optimistic agent start
+export { useOptimisticAgentStart } from './use-optimistic-agent-start';
+export type { 
+  OptimisticAgentStartOptions, 
+  OptimisticAgentStartResult, 
+  AgentLimitInfo,
+  UseOptimisticAgentStartReturn 
+} from './use-optimistic-agent-start';

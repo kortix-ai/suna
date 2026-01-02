@@ -1020,7 +1020,21 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
     const shouldAutoStart = userInitiatedRun || isNewThread;
 
+    // Debug logging for stream connection
+    if (process.env.NODE_ENV !== 'production' && agentRunId) {
+      console.log('[ThreadComponent] Stream effect triggered:', {
+        agentRunId,
+        currentHookRunId,
+        shouldAutoStart,
+        userInitiatedRun,
+        isNewThread,
+        initialLoadCompleted,
+        agentStatus,
+      });
+    }
+
     if (agentRunId && agentRunId !== currentHookRunId && shouldAutoStart) {
+      console.log('[ThreadComponent] Starting stream for new thread:', agentRunId);
       startStreaming(agentRunId);
       lastStreamStartedRef.current = agentRunId;
       setUserInitiatedRun(false);
@@ -1034,6 +1048,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       !shouldAutoStart &&
       agentStatus === 'running'
     ) {
+      console.log('[ThreadComponent] Starting stream for existing thread:', agentRunId);
       startStreaming(agentRunId);
       lastStreamStartedRef.current = agentRunId;
     }

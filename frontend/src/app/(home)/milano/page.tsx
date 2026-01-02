@@ -7,17 +7,12 @@ import { useIsMobile, useLeadingDebouncedCallback } from '@/hooks/utils';
 import { ChatInput, ChatInputHandles } from '@/components/thread/chat-input/chat-input';
 import { useAuth } from '@/components/AuthProvider';
 import { useRouter } from 'next/navigation';
-import { optimisticAgentStart } from '@/lib/api/agents';
-import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
-import { toast } from 'sonner';
-import { BillingError } from '@/lib/api/errors';
-import { usePricingModalStore } from '@/stores/pricing-modal-store';
+import { useOptimisticAgentStart } from '@/hooks/threads';
 import { useAgentSelection } from '@/stores/agent-selection-store';
 import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { useQuery } from '@tanstack/react-query';
 import { agentKeys } from '@/hooks/agents/keys';
 import { getAgents } from '@/hooks/agents/utils';
-import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 
 const SunaModesPanel = lazy(() => 
   import('@/components/dashboard/suna-modes-panel').then(mod => ({ default: mod.SunaModesPanel }))
@@ -30,8 +25,10 @@ export default function MilanoPage() {
   const chatInputRef = useRef<ChatInputHandles>(null);
   const router = useRouter();
   const { user, isLoading } = useAuth();
-  const pricingModalStore = usePricingModalStore();
   const { selectedAgentId, setSelectedAgent, initializeFromAgents } = useAgentSelection();
+  
+  // Use centralized optimistic agent start hook
+  const { startAgent, isStarting: isOptimisticStarting } = useOptimisticAgentStart('/');
   const {
     selectedMode,
     selectedCharts,
@@ -71,87 +68,39 @@ export default function MilanoPage() {
     ? agents.find(agent => agent.agent_id === selectedAgentId)
     : null;
   const isSunaAgent = !user || selectedAgent?.metadata?.is_suna_default || false;
-  const addOptimisticFiles = useOptimisticFilesStore((state) => state.addFiles);
 
   const handleChatInputSubmit = useLeadingDebouncedCallback(async (
     message: string,
     options?: { model_name?: string; enable_thinking?: boolean }
   ) => {
-    if ((!message.trim() && !chatInputRef.current?.getPendingFiles().length) || isSubmitting) return;
+    if ((!message.trim() && !chatInputRef.current?.getPendingFiles().length) || isSubmitting || isOptimisticStarting) return;
     if (!user && !isLoading) {
       router.push('/auth');
       return;
     }
 
     setIsSubmitting(true);
-    let didNavigate = false;
-    try {
-      const files = chatInputRef.current?.getPendingFiles() || [];
-      const normalizedFiles = files.map((file) => {
-        const normalizedName = normalizeFilenameToNFC(file.name);
-        return new File([file], normalizedName, { type: file.type });
-      });
-      
-      const threadId = crypto.randomUUID();
-      const projectId = crypto.randomUUID();
-      const trimmedMessage = message.trim();
-      
-      // Note: No need to clear files/input here - navigation to new page will unmount this component
-      
-      let promptWithFiles = trimmedMessage;
-      if (normalizedFiles.length > 0) {
-        addOptimisticFiles(threadId, projectId, normalizedFiles);
-        sessionStorage.setItem('optimistic_files', 'true');
-        const fileRefs = normalizedFiles.map((f) => 
-          `[Uploaded File: uploads/${f.name}]`
-        ).join('\n');
-        promptWithFiles = `${trimmedMessage}\n\n${fileRefs}`;
-      }
-      
-      sessionStorage.setItem('optimistic_prompt', promptWithFiles);
-      sessionStorage.setItem('optimistic_thread', threadId);
+    const pendingFiles = chatInputRef.current?.getPendingFiles() || [];
 
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('[Milano] Starting new thread:', {
-          projectId,
-          threadId,
-          agent_id: selectedAgentId || undefined,
-          model_name: options?.model_name,
-          promptLength: promptWithFiles.length,
-          promptPreview: promptWithFiles.slice(0, 140),
-          files: normalizedFiles.map((f) => ({ name: f.name, size: f.size, type: f.type })),
-        });
-      }
-      
-      router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
-      didNavigate = true;
-      
-      optimisticAgentStart({
-        thread_id: threadId,
-        project_id: projectId,
-        prompt: promptWithFiles,
-        model_name: options?.model_name,
-        agent_id: selectedAgentId || undefined,
-        memory_enabled: true,
-      }).catch((error) => {
-        console.error('Background agent start failed:', error);
-        
-        if (error instanceof BillingError || error?.status === 402) {
-          router.replace('/');
-          pricingModalStore.openPricingModal({ 
-            isAlert: true,
-            alertTitle: 'You ran out of credits'
-          });
-          return;
-        }
-        
-        toast.error('Failed to start conversation');
-      });
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to create Worker. Please try again.');
-      if (!didNavigate) {
-        setIsSubmitting(false);
-      }
+    console.log('[Milano] Starting agent with:', {
+      prompt: message.substring(0, 100),
+      promptLength: message.length,
+      model_name: options?.model_name,
+      agent_id: selectedAgentId,
+      pendingFiles: pendingFiles.length,
+    });
+
+    const result = await startAgent({
+      message,
+      files: pendingFiles,
+      modelName: options?.model_name,
+      agentId: selectedAgentId || undefined,
+      memoryEnabled: true,
+    });
+
+    if (!result) {
+      // Error was handled by the hook, reset state
+      setIsSubmitting(false);
     }
   }, 1200);
 
