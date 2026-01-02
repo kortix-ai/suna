@@ -332,6 +332,29 @@ class ThreadManager:
             logger.error(f"Failed to get messages for thread {thread_id}: {str(e)}", exc_info=True)
             return []
     
+    async def thread_has_images(self, thread_id: str) -> bool:
+        """
+        Check if a thread has any image_context messages.
+        
+        Used to determine if the LLM model should be switched to one that supports
+        image input (e.g., Bedrock) instead of the default (e.g., MiniMax).
+        
+        Args:
+            thread_id: The thread ID to check
+            
+        Returns:
+            True if the thread has at least one image_context message, False otherwise
+        """
+        try:
+            client = await self.db.client
+            result = await client.table('messages').select('message_id').eq('thread_id', thread_id).eq('type', 'image_context').limit(1).execute()
+            has_images = bool(result.data and len(result.data) > 0)
+            logger.info(f"🖼️ Thread {thread_id} has_images check: {has_images}")
+            return has_images
+        except Exception as e:
+            logger.error(f"Error checking thread for images: {str(e)}")
+            return False
+    
     async def run_thread(
         self,
         thread_id: str,
@@ -412,6 +435,21 @@ class ThreadManager:
             ENABLE_CONTEXT_MANAGER = True   # Set to False to disable context compression
             ENABLE_PROMPT_CACHING = True    # Set to False to disable prompt caching
             # ==================================
+            
+            # Store registry model ID for lookups (before any switching)
+            registry_model_id = llm_model
+            
+            # ===== MODEL SWITCHING FOR IMAGES =====
+            # Check if thread has images - if yes, use the model's vision variant
+            # The registry handles switching to the appropriate LLM (e.g., Haiku Bedrock)
+            has_images = await self.thread_has_images(thread_id)
+            if has_images:
+                from core.ai_models import model_manager
+                # Get the vision-specific LLM model ID from registry
+                llm_model = model_manager.get_litellm_model_id(registry_model_id, has_images=True)
+                if llm_model != registry_model_id:
+                    logger.info(f"🖼️ Thread has images - switching model from {registry_model_id} to vision model: {llm_model}")
+            # ======================================
             
             # Fast path: Check stored token count + new message tokens
             skip_fetch = False
@@ -517,7 +555,8 @@ class ThreadManager:
                             estimated_total_tokens = estimated_total  # Store for response processor
                             
                             # Calculate threshold (same logic as context_manager.py)
-                            context_window = model_manager.get_context_window(llm_model)
+                            # Use registry_model_id with has_images to get correct context window
+                            context_window = model_manager.get_context_window(registry_model_id, has_images=has_images)
                             
                             if context_window >= 1_000_000:
                                 max_tokens = context_window - 300_000
@@ -696,7 +735,7 @@ class ThreadManager:
             
             # Calculate threshold (same logic as fast check)
             from core.ai_models import model_manager
-            context_window = model_manager.get_context_window(llm_model)
+            context_window = model_manager.get_context_window(registry_model_id, has_images=has_images)
             if context_window >= 1_000_000:
                 safety_threshold = context_window - 300_000
             elif context_window >= 400_000:

@@ -57,6 +57,10 @@ class ModelRegistry:
             id="kortix/basic",
             name="Kortix Basic",
             litellm_model_id=basic_litellm_id,
+            # Vision model: Use Haiku Bedrock when thread has images
+            vision_litellm_model_id=HAIKU_BEDROCK_ARN,
+            vision_context_window=200_000,
+            vision_pricing=HAIKU_PRICING,
             provider=ModelProvider.OPENROUTER,
             aliases=["kortix-basic", "Kortix Basic"],
             context_window=200_000,
@@ -232,11 +236,16 @@ class ModelRegistry:
             
         return model_id
     
-    def get_litellm_model_id(self, model_id: str) -> str:
-        """Get the LiteLLM model ID for a given registry model ID or alias."""
+    def get_litellm_model_id(self, model_id: str, has_images: bool = False) -> str:
+        """Get the LiteLLM model ID for a given registry model ID or alias.
+        
+        Args:
+            model_id: Registry model ID or alias
+            has_images: Whether the context has images (uses vision model if available)
+        """
         model = self.get(model_id)
         if model:
-            return model.litellm_model_id
+            return model.get_litellm_model_id_for_context(has_images)
         return model_id
     
     def get_litellm_params(self, model_id: str, **override_params) -> Dict[str, Any]:
@@ -350,9 +359,18 @@ class ModelRegistry:
             return True
         return False
     
-    def get_context_window(self, model_id: str, default: int = 31_000) -> int:
+    def get_context_window(self, model_id: str, default: int = 31_000, has_images: bool = False) -> int:
+        """Get context window for a model.
+        
+        Args:
+            model_id: Registry model ID or alias
+            default: Default context window if model not found
+            has_images: Whether context has images (uses vision context window if available)
+        """
         model = self.get(model_id)
-        return model.context_window if model else default
+        if model:
+            return model.get_context_window_for_context(has_images)
+        return default
     
     def get_pricing(self, model_id: str) -> Optional[ModelPricing]:
         """Get pricing for a model by registry ID or LiteLLM ID."""
