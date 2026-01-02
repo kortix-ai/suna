@@ -42,6 +42,7 @@ import { useWelcomeBannerStore } from '@/stores/welcome-banner-store';
 import { cn } from '@/lib/utils';
 import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
 import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
+import { trackPurchase, getStoredCheckoutData, clearCheckoutData } from '@/lib/analytics/gtm';
 
 // Lazy load heavy components that aren't immediately visible
 const PlanSelectionModal = lazy(() => 
@@ -237,6 +238,32 @@ export function DashboardContent() {
     if (subscriptionSuccess === 'success' || checkoutSuccess === 'success' || sessionId || clientSecret) {
       console.log('🎉 Subscription success detected! Showing celebration...');
       celebrationTriggeredRef.current = true;
+      
+      // Track purchase event for GTM/GA4
+      const checkoutData = getStoredCheckoutData();
+      if (checkoutData) {
+        trackPurchase({
+          transaction_id: sessionId || `txn_${Date.now()}`,
+          value: checkoutData.price,
+          currency: checkoutData.currency,
+          customer_type: 'new', // Could be enhanced to detect returning customers
+          items: [{
+            item_id: checkoutData.tier_key,
+            item_name: checkoutData.tier_name,
+            item_brand: 'Kortix AI',
+            item_category: 'Plans',
+            item_list_id: 'plans_listing',
+            item_list_name: 'Plans Listing',
+            price: checkoutData.price,
+            quantity: 1,
+          }],
+          customer: {
+            name: user?.user_metadata?.name || user?.user_metadata?.full_name || '',
+            email: user?.email || '',
+          },
+        });
+        clearCheckoutData();
+      }
       
       // Invalidate and force refetch billing queries to refresh data immediately
       // This ensures fresh data after checkout, bypassing staleTime

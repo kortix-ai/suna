@@ -2,6 +2,7 @@
 
 import type { PricingTier } from '@/lib/pricing-config';
 import { siteConfig } from '@/lib/site-config';
+import { storeCheckoutData } from '@/lib/analytics/gtm';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import React, { useState, useEffect, useCallback } from 'react';
@@ -234,6 +235,15 @@ function PricingTier({
         case 'checkout_created':
         case 'commitment_created':
           if (checkoutUrl) {
+            // Store checkout data for GTM purchase tracking after Stripe redirect
+            const priceAmount = parsePriceAmount(displayPrice);
+            storeCheckoutData({
+              tier_key: tierKey,
+              tier_name: tier.name,
+              price: priceAmount,
+              currency: currency,
+              billing_period: effectiveBillingPeriod,
+            });
             posthog.capture('plan_purchase_attempted');
             window.location.href = checkoutUrl;
           } else {
@@ -245,6 +255,15 @@ function PricingTier({
           break;
         case 'upgraded':
         case 'updated':
+          // Store checkout data for GTM purchase tracking
+          const upgradePriceAmount = parsePriceAmount(displayPrice);
+          storeCheckoutData({
+            tier_key: tierKey,
+            tier_name: tier.name,
+            price: upgradePriceAmount,
+            currency: currency,
+            billing_period: effectiveBillingPeriod,
+          });
           posthog.capture('plan_upgraded');
           if (onSubscriptionUpdate) onSubscriptionUpdate();
           // Redirect to dashboard which will handle cache invalidation
