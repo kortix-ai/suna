@@ -21,6 +21,94 @@ export function initDataLayer() {
 }
 
 /**
+ * Container Load - First data push before GTM loads
+ * Provides contextual page information (master_group, content_group, page_type, language)
+ * NOTE: No 'event' key - this is initialization data only
+ */
+export interface ContainerLoadData {
+  master_group: string;
+  content_group: string;
+  page_type: string;
+  language: string;
+}
+
+export function getPageContext(pathname: string): ContainerLoadData {
+  // Determine language from document or default to 'en'
+  const language = typeof document !== 'undefined' 
+    ? document.documentElement.lang || 'en' 
+    : 'en';
+
+  // Map pathname to page context
+  if (pathname === '/' || pathname === '') {
+    return {
+      master_group: 'General',
+      content_group: 'Other',
+      page_type: 'home',
+      language,
+    };
+  }
+  
+  if (pathname.startsWith('/auth')) {
+    return {
+      master_group: 'General',
+      content_group: 'User',
+      page_type: 'auth',
+      language,
+    };
+  }
+  
+  if (pathname === '/dashboard') {
+    return {
+      master_group: 'Platform',
+      content_group: 'Dashboard',
+      page_type: 'home',
+      language,
+    };
+  }
+  
+  if (pathname.startsWith('/projects') || pathname.startsWith('/thread')) {
+    return {
+      master_group: 'Platform',
+      content_group: 'Dashboard',
+      page_type: 'thread',
+      language,
+    };
+  }
+  
+  if (pathname.startsWith('/settings')) {
+    return {
+      master_group: 'Platform',
+      content_group: 'User',
+      page_type: 'settings',
+      language,
+    };
+  }
+  
+  // Default for other pages
+  return {
+    master_group: 'General',
+    content_group: 'Other',
+    page_type: 'other',
+    language,
+  };
+}
+
+export function pushContainerLoad(pathname: string) {
+  if (typeof window === 'undefined') return;
+  
+  initDataLayer();
+  
+  const pageContext = getPageContext(pathname);
+  
+  // Push without 'event' key - this is initialization data
+  window.dataLayer?.push(pageContext);
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[GTM] Container Load pushed:', pageContext);
+  }
+}
+
+/**
  * Get the current page referrer from sessionStorage or document.referrer
  */
 function getPageReferrer(): string {

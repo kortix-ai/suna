@@ -119,6 +119,54 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://connect.facebook.net" />
         <link rel="dns-prefetch" href="https://eu.i.posthog.com" />
         
+        {/* Container Load - Initialize dataLayer with page context BEFORE GTM loads */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                window.dataLayer = window.dataLayer || [];
+                var pathname = window.location.pathname;
+                
+                // Get language from localStorage, cookie, or default to 'en'
+                var lang = 'en';
+                try {
+                  // Check localStorage first
+                  var stored = localStorage.getItem('locale');
+                  if (stored) {
+                    lang = stored;
+                  } else {
+                    // Check cookie
+                    var cookies = document.cookie.split(';');
+                    for (var i = 0; i < cookies.length; i++) {
+                      var cookie = cookies[i].trim();
+                      if (cookie.indexOf('locale=') === 0) {
+                        lang = cookie.substring(7);
+                        break;
+                      }
+                    }
+                  }
+                } catch (e) {}
+                
+                var context = { master_group: 'General', content_group: 'Other', page_type: 'other', language: lang };
+                
+                if (pathname === '/' || pathname === '') {
+                  context = { master_group: 'General', content_group: 'Other', page_type: 'home', language: lang };
+                } else if (pathname.indexOf('/auth') === 0) {
+                  context = { master_group: 'General', content_group: 'User', page_type: 'auth', language: lang };
+                } else if (pathname === '/dashboard') {
+                  context = { master_group: 'Platform', content_group: 'Dashboard', page_type: 'home', language: lang };
+                } else if (pathname.indexOf('/projects') === 0 || pathname.indexOf('/thread') === 0) {
+                  context = { master_group: 'Platform', content_group: 'Dashboard', page_type: 'thread', language: lang };
+                } else if (pathname.indexOf('/settings') === 0) {
+                  context = { master_group: 'Platform', content_group: 'User', page_type: 'settings', language: lang };
+                }
+                
+                window.dataLayer.push(context);
+              })();
+            `,
+          }}
+        />
+        
         {/* Static SEO meta tags - rendered in initial HTML */}
         <title>Kortix: Your Autonomous AI Worker</title>
         <meta name="description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
