@@ -119,6 +119,51 @@ async def set_cached_user_mcps(
         logger.warning(f"Failed to cache user MCPs: {e}")
 
 
+MCP_VERSION_CONFIG_TTL = 300
+
+def _get_mcp_version_config_key(agent_id: str) -> str:
+    return f"mcp_version_config:{agent_id}"
+
+
+async def get_cached_mcp_version_config(agent_id: str) -> Optional[Dict[str, Any]]:
+    cache_key = _get_mcp_version_config_key(agent_id)
+    
+    try:
+        from core.services import redis as redis_service
+        
+        cached = await redis_service.get(cache_key)
+        if cached:
+            data = json.loads(cached) if isinstance(cached, (str, bytes)) else cached
+            logger.debug(f"⚡ Redis cache hit for MCP version config: {agent_id}")
+            return data
+    except Exception as e:
+        logger.warning(f"Failed to get MCP version config from cache: {e}")
+    
+    return None
+
+
+async def set_cached_mcp_version_config(agent_id: str, config: Dict[str, Any]) -> None:
+    cache_key = _get_mcp_version_config_key(agent_id)
+    
+    try:
+        from core.services import redis as redis_service
+        await redis_service.set(cache_key, json.dumps(config), ex=MCP_VERSION_CONFIG_TTL)
+        logger.debug(f"✅ Cached MCP version config in Redis: {agent_id}")
+    except Exception as e:
+        logger.warning(f"Failed to cache MCP version config: {e}")
+
+
+async def invalidate_mcp_version_config(agent_id: str) -> None:
+    cache_key = _get_mcp_version_config_key(agent_id)
+    
+    try:
+        from core.services import redis as redis_service
+        await redis_service.delete(cache_key)
+        logger.debug(f"🗑️ Invalidated MCP version config cache: {agent_id}")
+    except Exception as e:
+        logger.warning(f"Failed to invalidate MCP version config: {e}")
+
+
 async def get_cached_agent_config(
     agent_id: str,
     version_id: Optional[str] = None
