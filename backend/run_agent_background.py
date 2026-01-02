@@ -452,7 +452,7 @@ async def publish_final_control_signal(agent_run_id: str, final_status: str, sto
 from core import thread_init_service
 from core.tool_output_streaming_context import set_tool_output_streaming_context, clear_tool_output_streaming_context
 
-@dramatiq.actor(queue_name=get_queue_name("agent-runs"), priority=0)  # Priority 0 = highest priority
+@dramatiq.actor(queue_name=get_queue_name("default"), priority=0)  # Priority 0 = highest priority
 async def run_agent_background(
     agent_run_id: str,
     thread_id: str,
