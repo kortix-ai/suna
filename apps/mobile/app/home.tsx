@@ -138,6 +138,7 @@ export default function AppScreen() {
             sections={menu.sections}
             profile={menu.profile}
             activeTab={menu.activeTab}
+            activeThreadId={chat.activeThread?.id}
             onNewChat={handleNewChat}
             onNewWorker={() => {
               console.log('🤖 New Worker clicked');

@@ -524,7 +524,7 @@ export function ThreadPage({
             console.error('Failed to update thread title:', error);
           }
         }}
-        onBackPress={chat.showModeThreadList}
+        onMenuPress={onMenuPress}
         onShare={async () => {
           if (!chat.activeThread?.id) return;
           try {

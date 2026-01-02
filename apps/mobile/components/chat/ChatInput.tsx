@@ -400,7 +400,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   return (
     <View
-      className="relative rounded-[28px] overflow-hidden bg-neutral-100 dark:bg-neutral-800"
+      className="relative rounded-[28px] overflow-hidden bg-neutral-200 dark:bg-neutral-800"
       style={[
         containerStyle,
         { minHeight: 100 }

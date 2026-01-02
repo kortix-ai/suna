@@ -3,18 +3,10 @@ import { Icon } from '@/components/ui/icon';
 import { ChevronDown } from 'lucide-react-native';
 import * as React from 'react';
 import { Pressable, View, Platform, TouchableOpacity, Image } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring
-} from 'react-native-reanimated';
 import { AgentAvatar } from './AgentAvatar';
 import { useAgent } from '@/contexts/AgentContext';
 import { KortixLogo } from '@/components/ui/KortixLogo';
 import { useColorScheme } from 'nativewind';
-
-// NOTE: AnimatedPressable blocks touches on Android - use TouchableOpacity instead
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 // Android hit slop for better touch targets
 const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 10, bottom: 10, left: 10, right: 10 } : undefined;
@@ -27,13 +19,8 @@ interface AgentSelectorProps {
 export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
   const { getCurrentAgent, selectedModelId, isLoading, agents, hasInitialized, error } = useAgent();
   const agent = getCurrentAgent();
-  const scale = useSharedValue(1);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
 
   // Show loading until initialization is complete
   // Don't wait for agents.length > 0 in case of errors

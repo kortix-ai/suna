@@ -9,6 +9,7 @@ import type { ConversationSection as ConversationSectionType, Conversation } fro
 
 interface ConversationSectionProps {
   section: ConversationSectionType;
+  activeThreadId?: string;
   onConversationPress?: (conversation: Conversation) => void;
 }
 
@@ -22,6 +23,7 @@ interface ConversationSectionProps {
  */
 export function ConversationSection({ 
   section, 
+  activeThreadId,
   onConversationPress 
 }: ConversationSectionProps) {
   const { currentLanguage, t } = useLanguage();
@@ -34,17 +36,18 @@ export function ConversationSection({
   
   return (
     <View className="gap-3 w-full">
-      <Text className="text-sm font-roobert-medium text-foreground opacity-50">
+      <Text className="text-sm font-roobert-medium text-foreground opacity-50 px-4">
         {sectionTitle}
       </Text>
       <EntityList
         entities={section.conversations}
-        gap={4}
+        gap={1}
         emptyMessage={t('conversations.noConversationsInPeriod', 'No conversations in this period')}
         renderItem={(conversation) => (
           <ConversationItem
             key={conversation.id}
             conversation={conversation}
+            isSelected={conversation.id === activeThreadId}
             onPress={onConversationPress}
           />
         )}
