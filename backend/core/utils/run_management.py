@@ -72,7 +72,7 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
         except Exception as redis_err:
             logger.error(f"Failed to set Redis stop signal fallback: {redis_err}")
 
-    # Comprehensive cleanup of all Redis keys for this agent run
+        # Comprehensive cleanup of all Redis keys for this agent run
     try:
         await cleanup_redis_keys_for_agent_run(agent_run_id)
     except Exception as e:

@@ -550,6 +550,13 @@ export const startAgentOnThread = async (
   }
 };
 
+/**
+ * Connect to agent run stream.
+ * 
+ * SIMPLIFIED: No pre-check status call - connect directly to stream.
+ * Backend sends 'connected' message immediately, then streams data.
+ * This eliminates race conditions where status changes between check and connect.
+ */
 export const streamAgent = (
   agentRunId: string,
   callbacks: {
@@ -558,12 +565,11 @@ export const streamAgent = (
     onClose: () => void;
   },
 ): (() => void) => {
+  // Only skip if we KNOW this run has definitively ended
   if (nonRunningAgentRuns.has(agentRunId)) {
     setTimeout(() => {
-      callbacks.onError(`Worker run ${agentRunId} is not running`);
       callbacks.onClose();
     }, 0);
-
     return () => {};
   }
 
@@ -572,42 +578,13 @@ export const streamAgent = (
     cleanupEventSource(agentRunId, 'replacing existing stream');
   }
 
-  try {
-    const setupStream = async () => {
-      try {
-        const status = await getAgentStatus(agentRunId);
-        if (status.status !== 'running') {
-          nonRunningAgentRuns.add(agentRunId);
-          callbacks.onError(
-            `Worker run ${agentRunId} is not running (status: ${status.status})`,
-          );
-          callbacks.onClose();
-          return;
-        }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        const isNotFoundError =
-          errorMessage.includes('not found') ||
-          errorMessage.includes('404') ||
-          errorMessage.includes('does not exist');
-
-        if (isNotFoundError) {
-          nonRunningAgentRuns.add(agentRunId);
-        }
-
-        callbacks.onError(errorMessage);
-        callbacks.onClose();
-        return;
-      }
-
+  const setupStream = async () => {
+    try {
       const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const { data: { session } } = await supabase.auth.getSession();
 
       if (!session?.access_token) {
-        const authError = new NoAccessTokenAvailableError();
-        callbacks.onError(authError);
+        callbacks.onError(new NoAccessTokenAvailableError());
         callbacks.onClose();
         return;
       }
@@ -616,119 +593,103 @@ export const streamAgent = (
       url.searchParams.append('token', session.access_token);
 
       const eventSource = new EventSource(url.toString());
-
       activeStreams.set(agentRunId, eventSource);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'agents.ts:streamAgent:eventSourceCreated',message:'EventSource created',data:{agentRunId,url:url.toString()},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,D'})}).catch(()=>{});
+      // #endregion
 
-      eventSource.onopen = () => {
-        // Stream opened successfully
-      };
+      let hasReceivedData = false;
 
       eventSource.onmessage = (event) => {
         try {
           const rawData = event.data;
-          if (rawData.includes('"type": "ping"')) return;
+          if (!rawData || rawData.trim() === '') return;
 
-          if (!rawData || rawData.trim() === '') {
+          // Skip pings but note we're connected
+          if (rawData.includes('"type": "ping"')) {
+            hasReceivedData = true;
+            return;
+          }
+          
+          // Skip connected messages (just for connection confirmation)
+          if (rawData.includes('"type": "connected"')) {
+            hasReceivedData = true;
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'agents.ts:streamAgent:connected',message:'CONNECTED message received',data:{agentRunId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,D'})}).catch(()=>{});
+            // #endregion
             return;
           }
 
+          hasReceivedData = true;
+
+          // Parse to check for terminal states
           try {
             const jsonData = JSON.parse(rawData);
-            if (jsonData.status === 'error') {
-              console.error(`[STREAM] Error status received for ${agentRunId}:`, jsonData);
-              callbacks.onError(jsonData.message || 'Unknown error occurred');
+            
+            // Handle error status
+            if (jsonData.type === 'status' && jsonData.status === 'error') {
+              console.error(`[STREAM] Error status for ${agentRunId}:`, jsonData);
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'agents.ts:streamAgent:errorStatus',message:'ERROR STATUS received',data:{agentRunId,status:jsonData.status,errorMessage:jsonData.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,E'})}).catch(()=>{});
+              // #endregion
+              callbacks.onError(jsonData.message || 'Unknown error');
+              nonRunningAgentRuns.add(agentRunId);
+              cleanupEventSource(agentRunId, 'error status');
+              callbacks.onClose();
               return;
             }
-          } catch (jsonError) {
-            // Not JSON or invalid JSON, continue with normal processing
-          }
 
-          if (
-            rawData.includes('Agent run') &&
-            rawData.includes('not found in active runs')
-          ) {
-            nonRunningAgentRuns.add(agentRunId);
-            callbacks.onError('Worker run not found in active runs');
-            cleanupEventSource(agentRunId, 'agent run not found');
-            callbacks.onClose();
-            return;
-          }
-
-          if (
-            rawData.includes('"type": "status"') &&
-            rawData.includes('"status": "completed"')
-          ) {
-            if (rawData.includes('Agent run completed successfully')) {
+            // Handle completion states - mark as done and close
+            if (jsonData.type === 'status' && ['completed', 'failed', 'stopped'].includes(jsonData.status)) {
               nonRunningAgentRuns.add(agentRunId);
+              callbacks.onMessage(rawData);
+              cleanupEventSource(agentRunId, `status: ${jsonData.status}`);
+              callbacks.onClose();
+              return;
             }
-            callbacks.onMessage(rawData);
-            cleanupEventSource(agentRunId, 'agent run completed');
-            callbacks.onClose();
-            return;
+          } catch {
+            // Not valid JSON, continue
           }
 
-          if (
-            rawData.includes('"type": "status"') &&
-            rawData.includes('thread_run_end')
-          ) {
-            callbacks.onMessage(rawData);
-            return;
-          }
-
+          // Forward all other messages
           callbacks.onMessage(rawData);
         } catch (error) {
           console.error(`[STREAM] Error handling message:`, error);
-          callbacks.onError(error instanceof Error ? error : String(error));
         }
       };
 
-      eventSource.onerror = (event) => {
-        console.error(`[STREAM] EventSource error for ${agentRunId}:`, event);
+      eventSource.onerror = () => {
+        // On error, check if we ever got data
+        if (!hasReceivedData) {
+          // Never got data - might be a connection issue, don't mark as non-running
+          console.warn(`[STREAM] Connection error for ${agentRunId} (no data received)`);
+        }
         
+        // Check actual status before giving up
         getAgentStatus(agentRunId)
           .then((status) => {
-            if (status.status !== 'running') {
+            if (['completed', 'failed', 'stopped'].includes(status.status)) {
               nonRunningAgentRuns.add(agentRunId);
-              cleanupEventSource(agentRunId, 'agent not running');
-              callbacks.onClose();
             }
+            cleanupEventSource(agentRunId, `onerror - status: ${status.status}`);
+            callbacks.onClose();
           })
-          .catch((err) => {
-            console.error(
-              `[STREAM] Error checking agent status after stream error:`,
-              err,
-            );
-
-            const errMsg = err instanceof Error ? err.message : String(err);
-            const isNotFoundErr =
-              errMsg.includes('not found') ||
-              errMsg.includes('404') ||
-              errMsg.includes('does not exist');
-
-            if (isNotFoundErr) {
-              nonRunningAgentRuns.add(agentRunId);
-              cleanupEventSource(agentRunId, 'agent not found');
-              callbacks.onClose();
-            } else {
-              console.warn(`[STREAM] Cleaning up stream for ${agentRunId} due to persistent error`);
-              cleanupEventSource(agentRunId, 'persistent error');
-              callbacks.onError(errMsg);
-              callbacks.onClose();
-            }
+          .catch(() => {
+            cleanupEventSource(agentRunId, 'onerror - status check failed');
+            callbacks.onClose();
           });
       };
-    };
+    } catch (error) {
+      console.error(`[STREAM] Setup error for ${agentRunId}:`, error);
+      callbacks.onError(error instanceof Error ? error : String(error));
+      callbacks.onClose();
+    }
+  };
 
-    setupStream();
+  setupStream();
 
-    return () => {
-      cleanupEventSource(agentRunId, 'manual cleanup');
-    };
-  } catch (error) {
-    console.error(`[STREAM] Error setting up stream for ${agentRunId}:`, error);
-    callbacks.onError(error instanceof Error ? error : String(error));
-    callbacks.onClose();
-    return () => {};
-  }
+  return () => {
+    cleanupEventSource(agentRunId, 'manual cleanup');
+  };
 };
 
