@@ -1,17 +1,21 @@
 import * as React from 'react';
 import { Dimensions, Animated, View } from 'react-native';
 import { useColorScheme } from 'nativewind';
-import { Text } from '@/components/ui/text';
 import { LinearGradient } from 'expo-linear-gradient';
 import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
 import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
+import { GreetingSuggestions } from './GreetingSuggestions';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
+
+interface BackgroundLogoProps {
+  onSuggestionClick?: (suggestion: string) => void;
+}
 
 /**
  * Background Logo Component with Simple Fade
  */
-export function BackgroundLogo() {
+export function BackgroundLogo({ onSuggestionClick }: BackgroundLogoProps) {
   const { colorScheme } = useColorScheme();
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
 
@@ -72,7 +76,7 @@ export function BackgroundLogo() {
         />
       </Animated.View>
 
-      {/* Heading and Description Text - Centered on logo */}
+      {/* Greeting and Suggestions - Centered on logo */}
       <Animated.View
         style={{
           position: 'absolute',
@@ -82,23 +86,12 @@ export function BackgroundLogo() {
           opacity: fadeAnim,
           alignItems: 'center',
           justifyContent: 'center',
-          transform: [{ translateY: -34 }], // Offset to visually center the text (-8px adjustment)
+          transform: [{ translateY: -34 }], // Offset to visually center the content (-8px adjustment)
         }}
       >
-        <View style={{ maxWidth: 248, alignItems: 'center' }}>
-          <Text 
-            className="text-base font-medium text-foreground"
-            style={{ textAlign: 'center' }}
-          >
-            New Chat
-          </Text>
-          <Text 
-            className="text-sm font-medium text-foreground/60"
-            style={{ textAlign: 'center' }}
-          >
-            Describe what you need help with by typing below.
-          </Text>
-        </View>
+        {onSuggestionClick ? (
+          <GreetingSuggestions onSuggestionClick={onSuggestionClick} />
+        ) : null}
       </Animated.View>
     </View>
   );

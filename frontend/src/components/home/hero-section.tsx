@@ -46,8 +46,8 @@ import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { useAgentSelection } from '@/stores/agent-selection-store';
 import { useTranslations } from 'next-intl';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
-import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
 import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
+import { GreetingSuggestions } from '@/components/home/greeting-suggestions';
 
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
 const AgentRunLimitBanner = lazy(() => 
@@ -406,8 +406,12 @@ export function HeroSection() {
                         </div>
                     )}
 
-                    <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-12 sm:pt-20 max-w-4xl mx-auto pb-6 sm:pb-7">
-                        <DynamicGreeting className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-medium text-balance text-center px-4 sm:px-2" />
+                    <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-12 sm:pt-20 max-w-4xl mx-auto pb-6 sm:pb-7 px-4 sm:px-2">
+                        <GreetingSuggestions 
+                            onSuggestionClick={(suggestion) => {
+                                handleChatInputSubmit(suggestion);
+                            }}
+                        />
                     </div>
 
                     <div className="flex flex-col items-center w-full max-w-3xl mx-auto gap-2 flex-wrap justify-center px-4 sm:px-0 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100 fill-mode-both">
