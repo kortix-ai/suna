@@ -1,40 +1,51 @@
 
 **1. Launching the backend**
 
-```
-cd /backend
+```bash
+cd backend
 ```
 
-1.1 Launching REDIS for data caching
-
+**1.1 Launching Redis**
 
 ```bash
+# Option A: Use Docker
 docker compose up redis
+
+# Option B: Run locally (if installed)
+redis-server
 ```
 
+**1.2 Running the Worker**
 
-1.2 Running Dramatiq worker for thread execution
-
-**IMPORTANT**: Always specify `--processes` to control worker count. Without it, Dramatiq defaults to CPU count (often 8-12), which creates too many Redis connections!
+The worker processes background tasks (agent runs, memory extraction, etc.)
 
 ```bash
 uv run dramatiq --processes 2 --threads 2 run_agent_background
 ```
 
-1.3 Running the main server
+You should see:
+```
+⚡ Dramatiq worker_timeout patched to 200ms (faster message pickup)
+✅ Worker process ready, tool cache warmed
+```
+
+> **Note**: Worker timeout is patched to 200ms (vs 1000ms default) to reduce task pickup latency.
+> Configure via `DRAMATIQ_WORKER_TIMEOUT` env var.
+
+**1.3 Running the API**
 
 ```bash
 uv run api.py
 ```
 
+---
+
 **2. Launching the frontend**
 
 ```bash
-
-cd frontend && npm install
-
+cd frontend
+npm install
 npm run dev
 ```
 
-
-Access the main app via `http://localhost:3000`
+Access the app at `http://localhost:3000`

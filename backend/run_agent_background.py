@@ -12,6 +12,7 @@ from core.run import run_agent
 from core.utils.logger import logger, structlog
 from core.utils.tool_discovery import warm_up_tools_cache
 import dramatiq
+from dramatiq import Worker as _OriginalWorker
 import uuid
 from core.services.supabase import DBConnection
 from dramatiq.brokers.redis import RedisBroker
@@ -21,6 +22,16 @@ import time
 
 from core.services.redis import get_redis_config as _get_redis_config
 import os
+
+# Patch Dramatiq Worker to use faster polling (200ms instead of 1000ms default)
+_WORKER_TIMEOUT = int(os.getenv("DRAMATIQ_WORKER_TIMEOUT", "200"))
+_original_worker_init = _OriginalWorker.__init__
+
+def _patched_worker_init(self, broker, *, queues=None, worker_timeout=_WORKER_TIMEOUT, worker_threads=8, **kwargs):
+    return _original_worker_init(self, broker, queues=queues, worker_timeout=worker_timeout, worker_threads=worker_threads, **kwargs)
+
+_OriginalWorker.__init__ = _patched_worker_init
+logger.info(f"⚡ Dramatiq worker_timeout patched to {_WORKER_TIMEOUT}ms (faster message pickup)")
 
 redis_config = _get_redis_config()
 redis_host = redis_config["host"]
