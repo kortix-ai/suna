@@ -1,2 +1,0 @@
-"""Temporal workflow orchestration module."""
-

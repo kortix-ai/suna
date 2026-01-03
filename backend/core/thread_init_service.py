@@ -149,17 +149,50 @@ async def initialize_thread_background(
         
         worker_instance_id = str(uuid.uuid4())[:8]
         
-        run_agent_background.send(
-            agent_run_id=agent_run_id,
-            thread_id=thread_id,
-            instance_id=worker_instance_id,
-            project_id=project_id,
-            model_name=effective_model,
-            agent_id=agent_id,
-            account_id=account_id,
-        )
-        
-        logger.info(f"Thread {thread_id} initialization completed and agent dispatched: {agent_run_id}")
+        try:
+            # Dispatch the agent run message
+            message = run_agent_background.send(
+                agent_run_id=agent_run_id,
+                thread_id=thread_id,
+                instance_id=worker_instance_id,
+                project_id=project_id,
+                model_name=effective_model,
+                agent_id=agent_id,
+                account_id=account_id,
+            )
+            
+            # Get the redis_message_id from the message options (set by RedisBroker)
+            redis_message_id = message.options.get("redis_message_id", message.message_id)
+            
+            logger.info(
+                f"Thread {thread_id} initialization completed and agent dispatched: {agent_run_id} "
+                f"(message_id={message.message_id}, redis_msg_id={redis_message_id}, queue={message.queue_name}, instance={worker_instance_id})"
+            )
+            
+            # Verify message is in Redis (non-blocking check)
+            try:
+                from core.services import redis as redis_service
+                redis_client = await redis_service.get_client()
+                queue_name = f"dramatiq:{message.queue_name}"
+                queue_length = await redis_client.llen(queue_name)
+                logger.debug(f"📊 Queue '{queue_name}' length after dispatch: {queue_length}")
+            except Exception as verify_err:
+                # Non-critical - just log if verification fails
+                logger.warning(f"Could not verify message in queue (non-critical): {verify_err}")
+                
+        except Exception as send_error:
+            logger.error(f"CRITICAL: Failed to dispatch run_agent_background for {agent_run_id}: {send_error}")
+            # Update agent run status to failed since we couldn't dispatch the worker
+            try:
+                client = await db.client
+                await client.table('agent_runs').update({
+                    "status": "failed",
+                    "error": f"Failed to dispatch worker: {str(send_error)[:500]}",
+                    "completed_at": datetime.now(timezone.utc).isoformat()
+                }).eq('id', agent_run_id).execute()
+            except Exception as update_err:
+                logger.error(f"Failed to update agent run status after dispatch failure: {update_err}")
+            raise
         
     except Exception as e:
         logger.error(f"Thread initialization failed for {thread_id}: {str(e)}\n{traceback.format_exc()}")

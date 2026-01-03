@@ -23,8 +23,10 @@ import time
 from core.services.redis import get_redis_config as _get_redis_config
 import os
 
-# Patch Dramatiq Worker to use faster polling (200ms instead of 1000ms default)
-_WORKER_TIMEOUT = int(os.getenv("DRAMATIQ_WORKER_TIMEOUT", "200"))
+# Patch Dramatiq Worker to use faster polling (100ms instead of 1000ms default)
+# Lower timeout = faster message pickup, but slightly more Redis polling overhead
+# Trade-off is worth it for user-facing latency-sensitive operations
+_WORKER_TIMEOUT = int(os.getenv("DRAMATIQ_WORKER_TIMEOUT", "100"))
 _original_worker_init = _OriginalWorker.__init__
 
 def _patched_worker_init(self, broker, *, queues=None, worker_timeout=_WORKER_TIMEOUT, worker_threads=8, **kwargs):
@@ -32,6 +34,11 @@ def _patched_worker_init(self, broker, *, queues=None, worker_timeout=_WORKER_TI
 
 _OriginalWorker.__init__ = _patched_worker_init
 logger.info(f"⚡ Dramatiq worker_timeout patched to {_WORKER_TIMEOUT}ms (faster message pickup)")
+
+# Set prefetch to 1 to prevent workers from holding multiple messages in their internal queue
+# This ensures messages are processed immediately rather than waiting in a worker's local queue
+os.environ.setdefault("dramatiq_queue_prefetch", "1")
+logger.info("⚡ Dramatiq prefetch set to 1 (immediate message processing)")
 
 
 class MessageLatencyMiddleware(Middleware):
@@ -48,10 +55,21 @@ class MessageLatencyMiddleware(Middleware):
     - consumer → actor = Internal work queue delay
     """
     
+    # Critical actors that must be tracked for message delivery
+    CRITICAL_ACTORS = {"run_agent_background", "initialize_thread_background"}
+    
     def before_enqueue(self, broker, message, delay):
         # Add timestamp when message is being enqueued
         message.options["enqueue_ts"] = time.time()
         message.options["enqueue_iso"] = datetime.now(timezone.utc).isoformat()
+    
+    def after_enqueue(self, broker, message, delay):
+        # Confirm message was successfully enqueued
+        if message.actor_name in self.CRITICAL_ACTORS:
+            logger.info(
+                f"📤 [ENQUEUE] {message.actor_name} message_id={message.message_id} "
+                f"enqueued to queue={message.queue_name} at {message.options.get('enqueue_iso')}"
+            )
     
     def before_process_message(self, broker, message):
         # This is called when consumer picks up message from Redis
@@ -72,9 +90,23 @@ class MessageLatencyMiddleware(Middleware):
                     f"⏱️ [LATENCY] Redis polling delay: {redis_delay_ms:.0f}ms | "
                     f"actor={message.actor_name}"
                 )
+            
+            # CRITICAL: Alert if message was delayed more than 10 seconds
+            if redis_delay_ms > 10000 and message.actor_name in self.CRITICAL_ACTORS:
+                logger.error(
+                    f"🚨 CRITICAL DELAY: {message.actor_name} delayed by {redis_delay_ms/1000:.1f}s! "
+                    f"message_id={message.message_id}, enqueued={message.options.get('enqueue_iso')}"
+                )
         
         # Store consumer timestamp for actor to measure internal delay
         message.options["consumer_ts"] = consumer_ts
+    
+    def after_skip_message(self, broker, message):
+        # Log when messages are skipped (e.g., due to deduplication or other reasons)
+        if message.actor_name in self.CRITICAL_ACTORS:
+            logger.warning(
+                f"⏭️ [SKIPPED] {message.actor_name} message_id={message.message_id} was skipped"
+            )
 
 redis_config = _get_redis_config()
 redis_host = redis_config["host"]
@@ -91,13 +123,27 @@ def get_queue_name(base_name: str) -> str:
         return f"{QUEUE_PREFIX}{base_name}"
     return base_name
 
+# RedisBroker configuration with optimized settings for low-latency message pickup
+# socket_timeout: Max time to wait for Redis response (prevents hanging connections)
+# socket_connect_timeout: Max time to establish connection
+REDIS_SOCKET_TIMEOUT = float(os.getenv("DRAMATIQ_REDIS_SOCKET_TIMEOUT", "5"))
+REDIS_SOCKET_CONNECT_TIMEOUT = float(os.getenv("DRAMATIQ_REDIS_SOCKET_CONNECT_TIMEOUT", "5"))
+
+broker_middleware = [
+    MessageLatencyMiddleware(), 
+    dramatiq.middleware.CurrentMessage(), 
+    dramatiq.middleware.AsyncIO()
+]
+
 if redis_config["url"]:
     auth_info = f" (user={redis_username})" if redis_username else ""
     queue_info = f" (queue prefix: '{QUEUE_PREFIX}')" if QUEUE_PREFIX else ""
     logger.info(f"🔧 Configuring Dramatiq broker with Redis at {redis_host}:{redis_port}{auth_info}{queue_info}")
     redis_broker = RedisBroker(
         url=redis_config["url"], 
-        middleware=[MessageLatencyMiddleware(), dramatiq.middleware.CurrentMessage(), dramatiq.middleware.AsyncIO()]
+        middleware=broker_middleware,
+        socket_timeout=REDIS_SOCKET_TIMEOUT,
+        socket_connect_timeout=REDIS_SOCKET_CONNECT_TIMEOUT,
     )
 else:
     queue_info = f" (queue prefix: '{QUEUE_PREFIX}')" if QUEUE_PREFIX else ""
@@ -105,7 +151,9 @@ else:
     redis_broker = RedisBroker(
         host=redis_host, 
         port=redis_port, 
-        middleware=[MessageLatencyMiddleware(), dramatiq.middleware.CurrentMessage(), dramatiq.middleware.AsyncIO()]
+        middleware=broker_middleware,
+        socket_timeout=REDIS_SOCKET_TIMEOUT,
+        socket_connect_timeout=REDIS_SOCKET_CONNECT_TIMEOUT,
     )
 
 dramatiq.set_broker(redis_broker)
@@ -558,6 +606,10 @@ async def run_agent_background(
     actor_start = time.time()
     timings = {}
     
+    # CRITICAL: Log immediately that we started processing this message
+    # This helps diagnose cases where messages are never picked up
+    logger.info(f"🚀 run_agent_background ACTOR STARTED: agent_run_id={agent_run_id}, thread_id={thread_id}, instance={instance_id}")
+    
     # Measure end-to-end latency from enqueue to actor start
     from dramatiq.middleware import CurrentMessage
     current_message = CurrentMessage.get_current_message()
@@ -577,6 +629,16 @@ async def run_agent_background(
                 f"internal_queue={internal_delay_ms:.0f}ms | "
                 f"agent_run_id={agent_run_id}"
             )
+            
+            # Warn if message was delayed significantly (> 5 seconds)
+            if total_delay_ms > 5000:
+                logger.warning(
+                    f"⚠️ SLOW MESSAGE DELIVERY: run_agent_background delayed by {total_delay_ms:.0f}ms "
+                    f"(redis_poll={redis_delay_ms:.0f}ms, internal={internal_delay_ms:.0f}ms) "
+                    f"for agent_run_id={agent_run_id}"
+                )
+    else:
+        logger.warning(f"⚠️ No CurrentMessage context for run_agent_background actor (agent_run_id={agent_run_id})")
     
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(
@@ -602,6 +664,7 @@ async def run_agent_background(
         lock_acquired = await acquire_run_lock(agent_run_id, instance_id, client)
         if not lock_acquired:
             # No cleanup needed - we didn't acquire the lock, another instance has it
+            logger.warning(f"🔒 Lock not acquired for agent run {agent_run_id}, instance {instance_id} - another worker is handling this")
             return
 
         sentry.sentry.set_tag("thread_id", thread_id)
