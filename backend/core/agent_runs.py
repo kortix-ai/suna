@@ -14,8 +14,7 @@ from core.utils.config import config, EnvMode
 from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox, get_or_start_sandbox
 from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
-from run_agent_background import run_agent_background
-import dramatiq
+from core.services.stream_worker import dispatch_agent_run
 
 from core.ai_models import model_manager
 
@@ -323,10 +322,10 @@ async def _trigger_agent_background(
 ):
     request_id = structlog.contextvars.get_contextvars().get('request_id')
 
-    logger.info(f"🚀 Sending agent run {agent_run_id} to Dramatiq queue (thread: {thread_id}, model: {effective_model})")
+    logger.info(f"🚀 Dispatching agent run {agent_run_id} via Redis Streams (thread: {thread_id}, model: {effective_model})")
     
     try:
-        message = run_agent_background.send(
+        entry_id = await dispatch_agent_run(
             agent_run_id=agent_run_id,
             thread_id=thread_id,
             instance_id=utils.instance_id,
@@ -336,10 +335,9 @@ async def _trigger_agent_background(
             account_id=account_id,
             request_id=request_id,
         )
-        message_id = message.message_id if hasattr(message, 'message_id') else 'N/A'
-        logger.info(f"✅ Successfully enqueued agent run {agent_run_id} to Dramatiq (message_id: {message_id})")
+        logger.info(f"✅ Successfully dispatched agent run {agent_run_id} via Redis Streams (entry_id: {entry_id})")
     except Exception as e:
-        logger.error(f"❌ Failed to enqueue agent run {agent_run_id} to Dramatiq: {e}", exc_info=True)
+        logger.error(f"❌ Failed to dispatch agent run {agent_run_id} via Redis Streams: {e}", exc_info=True)
         raise
 
 

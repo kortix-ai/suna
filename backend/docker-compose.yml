@@ -42,7 +42,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: uv run dramatiq --processes 4 --threads 4 run_agent_background
+    command: uv run python run_stream_worker.py --concurrency 48
     env_file:
       - .env
     volumes:

@@ -460,6 +460,28 @@ async def debug_queue_status():
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
+@api_router.get("/debug/stream-worker", summary="Stream Worker Status", operation_id="debug_stream_worker", tags=["system"])
+async def debug_stream_worker_status():
+    """
+    Monitor Redis Streams worker for agent runs.
+    Shows stream length, pending messages, and consumer status.
+    """
+    try:
+        from core.services.stream_worker import get_stream_info
+        info = await get_stream_info()
+        return {
+            "status": "healthy" if not info.get("error") else "error",
+            **info,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Stream worker status failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
 @api_router.get("/health-docker", summary="Docker Health Check", operation_id="health_check_docker", tags=["system"])
 async def health_check_docker():
     logger.debug("Health docker check endpoint called")

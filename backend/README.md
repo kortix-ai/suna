@@ -17,20 +17,21 @@ redis-server
 
 **1.2 Running the Worker**
 
-The worker processes background tasks (agent runs, memory extraction, etc.)
+The worker processes background tasks (agent runs, memory extraction, etc.) using Redis Streams.
 
 ```bash
-uv run dramatiq --processes 2 --threads 2 run_agent_background
+uv run python run_stream_worker.py --concurrency 48
 ```
 
 You should see:
 ```
-⚡ Dramatiq worker_timeout patched to 200ms (faster message pickup)
-✅ Worker process ready, tool cache warmed
+🚀 Starting Redis Streams Worker
+✅ Worker resources initialized
+📡 Consumer loop started
 ```
 
-> **Note**: Worker timeout is patched to 200ms (vs 1000ms default) to reduce task pickup latency.
-> Configure via `DRAMATIQ_WORKER_TIMEOUT` env var.
+> **Note**: The worker uses Redis Streams instead of Dramatiq for near-zero latency message pickup.
+> Adjust concurrency via `--concurrency` flag or `STREAM_WORKER_CONCURRENCY` env var.
 
 **1.3 Running the API**
 
