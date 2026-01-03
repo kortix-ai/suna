@@ -187,14 +187,22 @@ class SubAgentTool(SandboxToolsBase):
             # Queue the sub-agent execution via Dramatiq
             try:
                 from run_agent_background import run_agent_background
-                from core import core_utils as utils
+                from core.ai_models import model_manager
+                
+                # Generate a unique instance_id for this sub-agent run
+                # Each sub-agent gets its own instance to avoid conflicts
+                sub_instance_id = f"sub-{str(uuid.uuid4())[:8]}"
+                
+                # Get the user's default model (same model resolution as parent)
+                effective_model = await model_manager.get_default_model_for_user(client, account_id)
+                logger.info(f"Sub-agent will use model: {effective_model}")
                 
                 run_agent_background.send(
                     agent_run_id=agent_run_id,
                     thread_id=sub_thread_id,
-                    instance_id=utils.instance_id,
+                    instance_id=sub_instance_id,
                     project_id=self.project_id,
-                    model_name="anthropic/claude-sonnet-4-20250514",
+                    model_name=effective_model,
                     agent_id=None,
                     account_id=account_id,
                 )
