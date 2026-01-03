@@ -3,6 +3,7 @@ FROM python:3.11-slim-bookworm
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     wget \
+    ca-certificates \
     netcat-traditional \
     gnupg \
     curl \
@@ -75,7 +76,8 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-eng \
     # File system monitoring
     inotify-tools \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && update-ca-certificates
 
 # Install Node.js and npm (primary package manager)
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
@@ -95,6 +97,20 @@ RUN pnpm config set store-dir /root/.pnpm-store
 RUN git clone https://github.com/novnc/noVNC.git /opt/novnc \
     && git clone https://github.com/novnc/websockify /opt/novnc/utils/websockify \
     && ln -s /opt/novnc/vnc.html /opt/novnc/index.html
+
+
+# Clone Anthropics skills repository with sparse checkout
+# This downloads only the slack-gif-creator skill to /skills
+RUN mkdir -p /tmp/skills-clone \
+&& cd /tmp/skills-clone \
+&& git clone --no-checkout --filter=blob:none https://github.com/anthropics/skills.git . \
+&& git sparse-checkout init --cone \
+&& git sparse-checkout set skills/slack-gif-creator \
+&& git checkout main \
+&& mkdir -p /skills \
+&& mv skills/slack-gif-creator/* /skills/ \
+&& rm -rf /tmp/skills-clone \
+&& ls -la /skills
 
 # Set platform for ARM64 compatibility
 ARG TARGETPLATFORM=linux/amd64

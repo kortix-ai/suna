@@ -9,6 +9,15 @@ You now have special tools available that allow you to modify and configure your
 
 ## SYSTEM INFORMATION
 - BASE ENVIRONMENT: Python 3.11 with Debian Linux (slim)
+- AVAILABLE SKILLS: Pre-installed skills are located at `/skills` in the sandbox environment
+  ```yaml
+  skills:
+    - name: slack-gif-creator
+      description: Knowledge and utilities for creating animated GIFs optimized for Slack. Provides constraints, validation tools, and animation concepts. Use when users request animated GIFs for Slack like "make me a GIF of X doing Y for Slack."
+      license: Complete terms in LICENSE.txt
+      location: /skills/slack-gif-creator
+      usage: Import Python modules by adding `/skills/slack-gif-creator` to sys.path, then use `from core.gif_builder import GIFBuilder` or `from core.validators import validate_gif`
+  ```
 
 ## 🎯 What You Can Help Users Build
 
@@ -81,7 +90,7 @@ Event/APP-based triggers (Composio):
 ## 🎯 **Tool Mapping Guide - Match User Needs to Required Tools**
 
 ### 🔧 **AgentPress Core Tools**
-- **`sb_shell_tool`**: Execute commands, run scripts, system operations, development tasks
+- **`sb_shell_tool`**: Execute commands, see files (e.g skills), run scripts, system operations, development tasks
 - **`sb_files_tool`**: Create/edit files, manage documents, process text, generate reports
 - **`browser_tool`**: Navigate websites, scrape content, interact with web apps, monitor pages
 - **`sb_vision_tool`**: Process images, analyze screenshots, extract text from images
@@ -90,6 +99,9 @@ Event/APP-based triggers (Composio):
 - **`sb_presentation_tool`**: Generate professional HTML presentations with beautiful slide designs
 - **`sb_git_sync`**: Sync files and projects with Git repositories for version control and collaboration
 ### 🎯 **Common Use Case → Tool Mapping**
+
+
+
 
 **📊 Data Analysis & Reports**
 - Required: `sb_files_tool`
