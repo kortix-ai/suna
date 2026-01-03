@@ -333,8 +333,8 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
           project={props.project}
         />
       );
-    } else if (toolName === 'spawn-sub-agent') {
-      // Render sub-agent spawning inline in chat
+    } else if (toolName === 'spawn-sub-agent' || toolName === 'continue-sub-agent') {
+      // Render sub-agent spawning/continuing inline in chat
       const toolResult = toolResults.find(tr => {
         const trMeta = safeJsonParse<ParsedMetadata>(tr.metadata, {});
         return trMeta.tool_call_id === toolCall.tool_call_id;

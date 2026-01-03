@@ -43,6 +43,7 @@ Spawn sub-agents to handle tasks in parallel while you continue orchestrating.
 3. Use `list_sub_agents` to check status
 4. Use `get_sub_agent_result` to retrieve completed results
 5. Use `wait_for_sub_agents` to block until all complete
+6. Use `continue_sub_agent` to send follow-up messages to completed sub-agents
 
 **CONTEXT:**
 - Sub-agents share the same project sandbox (files, environment)
@@ -539,4 +540,131 @@ class SubAgentTool(SandboxToolsBase):
         except Exception as e:
             logger.error(f"Failed to wait for sub-agents: {e}", exc_info=True)
             return ToolResult(success=False, output=f"Failed to wait for sub-agents: {str(e)}")
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "continue_sub_agent",
+            "description": "Send a follow-up message to an existing sub-agent to continue or refine its work. Only works with sub-agents that have completed (not running). **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `sub_agent_id` (REQUIRED), `message` (REQUIRED).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sub_agent_id": {
+                        "type": "string",
+                        "description": "**REQUIRED** - The sub_agent_id of the sub-agent to continue."
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "**REQUIRED** - The follow-up message/instruction for the sub-agent."
+                    }
+                },
+                "required": ["sub_agent_id", "message"],
+                "additionalProperties": False
+            }
+        }
+    })
+    async def continue_sub_agent(self, sub_agent_id: str, message: str) -> ToolResult:
+        """Send a follow-up message to an existing sub-agent."""
+        try:
+            client = await self.thread_manager.db.client
+            
+            # Get the agent run to find the thread
+            run_result = await client.table('agent_runs').select(
+                'id, thread_id, status'
+            ).eq('id', sub_agent_id).maybe_single().execute()
+            
+            if not run_result.data:
+                return ToolResult(success=False, output=f"Sub-agent {sub_agent_id} not found")
+            
+            run = run_result.data
+            sub_thread_id = run['thread_id']
+            status = run['status']
+            
+            # Check if sub-agent is already running
+            if status in ('pending', 'running', 'queued'):
+                return ToolResult(
+                    success=False,
+                    output=f"Sub-agent is still {status}. Wait for it to complete before sending follow-up."
+                )
+            
+            # Verify this is actually a child thread of current thread
+            thread_result = await client.table('threads').select(
+                'parent_thread_id, account_id'
+            ).eq('thread_id', sub_thread_id).maybe_single().execute()
+            
+            if not thread_result.data or thread_result.data.get('parent_thread_id') != self.thread_id:
+                return ToolResult(
+                    success=False,
+                    output="Cannot continue this sub-agent - it was not spawned from this thread."
+                )
+            
+            account_id = thread_result.data.get('account_id')
+            
+            # Add the follow-up message to the sub-agent thread
+            await client.table('messages').insert({
+                "message_id": str(uuid.uuid4()),
+                "thread_id": sub_thread_id,
+                "type": "user",
+                "is_llm_message": True,
+                "content": {"role": "user", "content": message},
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }).execute()
+            
+            # Create new agent run
+            new_run_id = str(uuid.uuid4())
+            run_metadata = {
+                "task_description": f"Follow-up: {message[:200]}",
+                "parent_thread_id": self.thread_id,
+                "spawned_as_sub_agent": True,
+                "continued_from": sub_agent_id,
+                "actual_user_id": account_id
+            }
+            
+            await client.table('agent_runs').insert({
+                "id": new_run_id,
+                "thread_id": sub_thread_id,
+                "status": "pending",
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "metadata": run_metadata
+            }).execute()
+            
+            # Queue the execution
+            try:
+                from run_agent_background import run_agent_background
+                from core.ai_models import model_manager
+                
+                sub_instance_id = f"sub-cont-{str(uuid.uuid4())[:8]}"
+                effective_model = await model_manager.get_default_model_for_user(client, account_id)
+                
+                run_agent_background.send(
+                    agent_run_id=new_run_id,
+                    thread_id=sub_thread_id,
+                    instance_id=sub_instance_id,
+                    project_id=self.project_id,
+                    model_name=effective_model,
+                    agent_id=None,
+                    account_id=account_id,
+                )
+            except Exception as e:
+                logger.error(f"Failed to queue sub-agent continuation: {e}", exc_info=True)
+                await client.table('agent_runs').delete().eq('id', new_run_id).execute()
+                return ToolResult(success=False, output=f"Failed to queue continuation: {str(e)}")
+            
+            logger.info(f"🔄 Continued sub-agent {sub_agent_id} with new run {new_run_id}")
+            
+            return ToolResult(
+                success=True,
+                output=json.dumps({
+                    "sub_agent_id": new_run_id,
+                    "thread_id": sub_thread_id,
+                    "previous_run_id": sub_agent_id,
+                    "message": message[:200],
+                    "status": "continued",
+                    "info": "Follow-up sent. Use list_sub_agents or get_sub_agent_result to track progress."
+                }, indent=2)
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to continue sub-agent: {e}", exc_info=True)
+            return ToolResult(success=False, output=f"Failed to continue sub-agent: {str(e)}")
 

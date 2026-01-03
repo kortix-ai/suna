@@ -292,6 +292,8 @@ const defaultRegistry: ToolViewRegistryType = {
   'get_sub_agent_result': SubAgentToolView,
   'wait-for-sub-agents': SubAgentToolView,
   'wait_for_sub_agents': SubAgentToolView,
+  'continue-sub-agent': SubAgentToolView,
+  'continue_sub_agent': SubAgentToolView,
 };
 
 class ToolViewRegistry {
