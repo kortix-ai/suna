@@ -27,35 +27,98 @@ MAX_SUB_AGENT_DEPTH = 1
     color="bg-indigo-100 dark:bg-indigo-800/50",
     is_core=True,
     usage_guide="""
-### SUB-AGENT PARALLEL EXECUTION
+### SUB-AGENT ORCHESTRATION - CRITICAL PATTERNS
 
-Spawn sub-agents to handle tasks in parallel while you continue orchestrating.
+You are the ORCHESTRATOR. Your job is to DELEGATE, not DO. Sub-agents do the actual work.
 
-**WHEN TO USE:**
-- Research multiple items simultaneously (companies, topics, products)
-- Execute independent tasks that don't depend on each other
-- Parallelize work that would take too long sequentially
-- Delegate focused tasks while continuing main orchestration
+**🚨 GOLDEN RULE: MAIN THREAD = ORCHESTRATION ONLY**
+- NEVER do substantive work in main thread when sub-agents can do it
+- Main thread: spawn → wait → collect → synthesize → present
+- Sub-agents: research, create files, generate content, execute tasks
 
-**WORKFLOW:**
-1. Use `spawn_sub_agent` to start async task execution
-2. Continue other work or spawn more sub-agents
-3. Use `list_sub_agents` to check status
-4. Use `get_sub_agent_result` to retrieve completed results
-5. Use `wait_for_sub_agents` to block until all complete
-6. Use `continue_sub_agent` to send follow-up messages to completed sub-agents
+**OPTIMAL ORCHESTRATION PATTERN:**
 
-**CONTEXT:**
-- Sub-agents share the same project sandbox (files, environment)
-- Sub-agents receive the task description as their prompt
-- Sub-agents run independently with focused context
-- Sub-agents cannot spawn their own sub-agents (depth=1 limit)
+```
+STEP 1: BATCH SPAWN (all at once in parallel tool calls)
+├── spawn_sub_agent(task="Research topic A", validation_level=2)
+├── spawn_sub_agent(task="Research topic B", validation_level=2)  
+├── spawn_sub_agent(task="Create presentation template", validation_level=3)
+└── spawn_sub_agent(task="Generate images", validation_level=2)
 
-**BEST PRACTICES:**
-- Give clear, specific task descriptions
-- Include relevant context/files the sub-agent needs
-- Don't spawn too many at once (5-10 is reasonable)
-- Wait for results before final output
+STEP 2: SINGLE WAIT (don't poll manually!)
+└── wait_for_sub_agents(timeout_seconds=120)  # Waits for ALL automatically
+
+STEP 3: BATCH COLLECT (all results at once)
+├── get_sub_agent_result(sub_agent_id="...")
+├── get_sub_agent_result(sub_agent_id="...")
+└── get_sub_agent_result(sub_agent_id="...")
+
+STEP 4: SYNTHESIZE & PRESENT (only synthesis in main thread)
+└── Combine results, present to user
+```
+
+**🔴 ANTI-PATTERNS TO AVOID:**
+
+❌ DON'T: Manual polling loop
+```
+wait(15s) → list_sub_agents → wait(20s) → list_sub_agents...
+```
+✅ DO: Use wait_for_sub_agents ONCE
+
+❌ DON'T: Do work that sub-agents should do
+```
+Main thread: create_slide × 8, image_generate × 4
+```
+✅ DO: Spawn sub-agent for slides, spawn sub-agent for images
+
+❌ DON'T: Use TaskListTool + SubAgentTool together
+```
+create_tasks → spawn_sub_agent → update_tasks (redundant!)
+```
+✅ DO: Sub-agents ARE the tasks - skip TaskListTool
+
+❌ DON'T: Spawn one, wait, spawn another
+```
+spawn → wait → get_result → spawn → wait...
+```
+✅ DO: Spawn ALL first, then wait ONCE
+
+**VALIDATION LEVELS (optional quality gate):**
+- `validation_level=1`: Basic - has output, not broken
+- `validation_level=2`: Good - properly addresses task  
+- `validation_level=3`: Top-notch - perfect, production-ready
+
+**EXAMPLE: Research & Presentation Task**
+```
+User: "Research X and create presentation"
+
+MAIN THREAD (orchestrator):
+1. spawn_sub_agent(task="Research X biography", validation_level=2)
+2. spawn_sub_agent(task="Research X achievements", validation_level=2)
+3. spawn_sub_agent(task="Research X social media", validation_level=2)
+4. spawn_sub_agent(task="Create presentation with findings", validation_level=3)
+   context="Wait for research sub-agents, then compile into slides"
+5. wait_for_sub_agents(timeout_seconds=180)
+6. get_sub_agent_result(...) for each
+7. Present final output to user
+
+MAIN THREAD DOES: spawn, wait, collect, present
+SUB-AGENTS DO: research, web search, create files, generate images
+```
+
+**CONTEXT SHARING:**
+- Sub-agents share same sandbox (files accessible)
+- Use context param to reference files sub-agents should read
+- Sub-agents can see files created by other sub-agents
+
+**CONTINUE PATTERN (for refinement):**
+```
+1. spawn_sub_agent(task="Write draft")
+2. wait_for_sub_agents()
+3. get_sub_agent_result(...)
+4. If needs improvement: continue_sub_agent(sub_agent_id="...", message="Improve X")
+5. wait_for_sub_agents()
+```
 """,
     weight=8,
     visible=True
@@ -258,7 +321,7 @@ Respond in this EXACT JSON format:
         "type": "function",
         "function": {
             "name": "spawn_sub_agent",
-            "description": "Spawn a sub-agent to execute a task asynchronously in parallel. The sub-agent runs independently, sharing the same project sandbox (files, environment). Returns immediately - use list_sub_agents or wait_for_sub_agents to track progress. Sub-agents cannot spawn their own sub-agents. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `task` (REQUIRED), `context` (optional), `validation_level` (optional).",
+            "description": "Spawn a sub-agent to execute a task asynchronously. 🚨 CRITICAL: Call MULTIPLE spawn_sub_agent in PARALLEL (same tool call batch) for efficiency - don't spawn sequentially! Sub-agent runs independently in same sandbox. Returns immediately - use wait_for_sub_agents (NOT manual polling) to wait for completion. You are ORCHESTRATOR - delegate work to sub-agents, don't do it yourself. **PARAMS**: `task` (REQUIRED), `context` (optional), `validation_level` (optional 1-3).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -416,7 +479,7 @@ Respond in this EXACT JSON format:
         "type": "function",
         "function": {
             "name": "list_sub_agents",
-            "description": "List all sub-agents spawned from this thread with their current status. Use to monitor progress of parallel tasks. **🚨 PARAMETER NAMES**: This function takes no parameters.",
+            "description": "List all sub-agents with status. Use for ONE-TIME status check, NOT for polling loops. For waiting, use wait_for_sub_agents instead. No parameters needed.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -601,7 +664,7 @@ Respond in this EXACT JSON format:
         "type": "function",
         "function": {
             "name": "wait_for_sub_agents",
-            "description": "Wait for one or more sub-agents to complete. Blocks until all specified sub-agents finish (or timeout). If no IDs specified, waits for all sub-agents from this thread. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `sub_agent_ids` (optional), `timeout_seconds` (optional).",
+            "description": "🚨 USE THIS instead of manual wait+list_sub_agents polling! Efficiently waits for sub-agents to complete. Blocks until all finish (or timeout). Call ONCE after spawning all sub-agents - don't poll manually. If no IDs specified, waits for ALL sub-agents. **PARAMS**: `sub_agent_ids` (optional array), `timeout_seconds` (optional, default 300).",
             "parameters": {
                 "type": "object",
                 "properties": {
