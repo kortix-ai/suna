@@ -83,92 +83,6 @@ async def _find_shared_suna_agent(client):
     return None
 
 
-async def _load_agent_config(client, agent_id: Optional[str], account_id: str, user_id: str, is_new_thread: bool = False):
-    import time
-    t_start = time.time()
-    
-    from .agent_loader import get_agent_loader
-    loader = await get_agent_loader()
-    
-    agent_data = None
-    
-    logger.debug(f"[AGENT LOAD] Loading agent: {agent_id or 'default'}")
-
-    if agent_id:
-        from core.runtime_cache import get_static_suna_config, get_cached_user_mcps
-        
-        static_config = get_static_suna_config()
-        cached_mcps = await get_cached_user_mcps(agent_id)
-        
-        if static_config and cached_mcps is not None:
-            from core.agent_loader import AgentData
-            agent_data = AgentData(
-                agent_id=agent_id,
-                name="Kortix",
-                description=None,
-                account_id=account_id,
-                is_default=True,
-                is_public=False,
-                tags=[],
-                icon_name=None,
-                icon_color=None,
-                icon_background=None,
-                created_at="",
-                updated_at="",
-                current_version_id=None,
-                version_count=1,
-                metadata={'is_suna_default': True},
-                system_prompt=static_config['system_prompt'],
-                model=static_config['model'],
-                agentpress_tools=static_config['agentpress_tools'],
-                configured_mcps=cached_mcps.get('configured_mcps', []),
-                custom_mcps=cached_mcps.get('custom_mcps', []),
-                triggers=cached_mcps.get('triggers', []),
-                is_suna_default=True,
-                centrally_managed=True,
-                config_loaded=True,
-                restrictions=static_config['restrictions']
-            )
-            logger.info(f"⚡ [FAST PATH] Suna config from memory + Redis MCPs: {(time.time() - t_start)*1000:.1f}ms (zero DB calls)")
-        else:
-            t_loader = time.time()
-            agent_data = await loader.load_agent(agent_id, user_id, load_config=True)
-            logger.info(f"⏱️ [TIMING] Agent loader (DB path): {(time.time() - t_loader)*1000:.1f}ms | Total: {(time.time() - t_start)*1000:.1f}ms")
-            logger.debug(f"Using agent {agent_data.name} ({agent_id}) version {agent_data.version_name}")
-    else:
-        logger.debug(f"[AGENT LOAD] Loading default agent")
-        
-        if is_new_thread:
-            from core.utils.ensure_suna import ensure_suna_installed
-            await ensure_suna_installed(account_id)
-        
-        default_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('metadata->>is_suna_default', 'true').maybe_single().execute()
-        
-        if default_agent and default_agent.data:
-            agent_data = await loader.load_agent(default_agent.data['agent_id'], user_id, load_config=True)
-            logger.debug(f"Using default agent: {agent_data.name} ({agent_data.agent_id}) version {agent_data.version_name}")
-        else:
-            logger.warning(f"[AGENT LOAD] No default agent found for account {account_id}, searching for shared Suna")
-            agent_data = await _find_shared_suna_agent(client)
-            
-            if not agent_data:
-                any_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).limit(1).maybe_single().execute()
-                
-                if any_agent and any_agent.data:
-                    agent_data = await loader.load_agent(any_agent.data['agent_id'], user_id, load_config=True)
-                    logger.info(f"[AGENT LOAD] Using fallback agent: {agent_data.name} ({agent_data.agent_id})")
-                else:
-                    logger.error(f"[AGENT LOAD] No agents found for account {account_id}")
-                    raise HTTPException(status_code=404, detail="No agents available. Please create an agent first.")
-    
-    agent_config = agent_data.to_dict() if agent_data else None
-    
-    if agent_config:
-        logger.debug(f"Using agent {agent_config['agent_id']} for this agent run")
-    
-    return agent_config
-
-
 async def _check_billing_and_limits(client, account_id: str, model_name: Optional[str], check_project_limit: bool = False, check_thread_limit: bool = False):
     import time
     from core.utils.limits_checker import check_thread_limit as _check_thread_limit
@@ -255,94 +169,6 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
         raise HTTPException(status_code=402, detail=error_detail)
 
 
-async def _get_effective_model(model_name: Optional[str], agent_config: Optional[dict], client, account_id: str) -> str:
-    if model_name:
-        logger.debug(f"Using user-selected model: {model_name}")
-        return model_name
-    elif agent_config and agent_config.get('model'):
-        effective_model = agent_config['model']
-        logger.debug(f"No model specified by user, using agent's configured model: {effective_model}")
-        return effective_model
-    else:
-        effective_model = await model_manager.get_default_model_for_user(client, account_id)
-        logger.debug(f"Using default model for user: {effective_model}")
-        return effective_model
-
-
-async def _create_agent_run_record(
-    client, 
-    thread_id: str, 
-    agent_config: Optional[dict], 
-    effective_model: str, 
-    actual_user_id: str,
-    extra_metadata: Optional[Dict[str, Any]] = None
-) -> str:
-    run_metadata = {
-        "model_name": effective_model,
-        "actual_user_id": actual_user_id
-    }
-    
-    if extra_metadata:
-        run_metadata.update(extra_metadata)
-    
-    agent_run = await client.table('agent_runs').insert({
-        "thread_id": thread_id,
-        "status": "running",
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "agent_id": agent_config.get('agent_id') if agent_config else None,
-        "agent_version_id": agent_config.get('current_version_id') if agent_config else None,
-        "metadata": run_metadata
-    }).execute()
-
-    agent_run_id = agent_run.data[0]['id']
-    structlog.contextvars.bind_contextvars(agent_run_id=agent_run_id)
-    logger.debug(f"Created new agent run: {agent_run_id}")
-
-    try:
-        from core.runtime_cache import invalidate_running_runs_cache
-        await invalidate_running_runs_cache(actual_user_id)
-    except Exception as cache_error:
-        logger.warning(f"Failed to invalidate running runs cache: {cache_error}")
-    
-    try:
-        from core.billing.shared.cache_utils import invalidate_account_state_cache
-        await invalidate_account_state_cache(actual_user_id)
-    except Exception as cache_error:
-        logger.warning(f"Failed to invalidate account-state cache: {cache_error}")
-
-    return agent_run_id
-
-
-async def _trigger_agent_background(
-    agent_run_id: str, 
-    thread_id: str, 
-    project_id: str, 
-    effective_model: str, 
-    agent_id: Optional[str],
-    account_id: Optional[str] = None
-):
-    request_id = structlog.contextvars.get_contextvars().get('request_id')
-
-    logger.info(f"🚀 Starting Temporal workflow for agent run {agent_run_id} (thread: {thread_id}, model: {effective_model})")
-    
-    try:
-        client = await get_temporal_client()
-        
-        # Start workflow with agent_run_id as workflow ID for deduplication
-        # Temporal SDK requires multiple args passed via 'args' parameter
-        # Use agent-runs queue for high-priority processing
-        handle = await client.start_workflow(
-            AgentRunWorkflow.run,
-            args=[agent_run_id, thread_id, utils.instance_id, project_id, effective_model, agent_id, account_id, request_id],
-            id=f"agent-run-{agent_run_id}",
-            task_queue=TASK_QUEUE_AGENT_RUNS,
-        )
-        
-        workflow_id = handle.id
-        logger.info(f"✅ Successfully started Temporal workflow for agent run {agent_run_id} (workflow_id: {workflow_id})")
-    except Exception as e:
-        logger.error(f"❌ Failed to start Temporal workflow for agent run {agent_run_id}: {e}", exc_info=True)
-        raise
 
 
 async def _fast_parse_files(files: List[UploadFile], prompt: str = "") -> Tuple[str, List[Tuple[str, bytes, str, Optional[str]]]]:
@@ -756,6 +582,8 @@ async def start_agent_run(
     import time
     t_start = time.time()
     
+    logger.info(f"[AGENT_FLOW] START_AGENT_RUN: Starting (thread_id: {thread_id}, is_new_thread: {thread_id is None}, account_id: {account_id})")
+    
     client = await utils.db.client
     is_new_thread = thread_id is None
     
@@ -764,11 +592,16 @@ async def start_agent_run(
     t_parallel = time.time()
     
     async def load_config():
+        logger.debug(f"[AGENT_FLOW] START_AGENT_RUN: Loading agent config")
+        # Load config for limits checking (billing checks may need agent info)
+        from core.agent_service import _load_agent_config
         return await _load_agent_config(client, agent_id, account_id, account_id, is_new_thread=is_new_thread)
     
     async def check_limits():
         if skip_limits_check:
+            logger.debug(f"[AGENT_FLOW] START_AGENT_RUN: Skipping limits check")
             return
+        logger.debug(f"[AGENT_FLOW] START_AGENT_RUN: Checking billing and limits")
         await _check_billing_and_limits(
             client, account_id, model_name or "default", 
             check_project_limit=is_new_thread, 
@@ -776,9 +609,7 @@ async def start_agent_run(
         )
     
     agent_config, _ = await asyncio.gather(load_config(), check_limits())
-    logger.debug(f"⏱️ [TIMING] Parallel config+limits: {(time.time() - t_parallel) * 1000:.1f}ms")
-    
-    effective_model = await _get_effective_model(model_name, agent_config, client, account_id)
+    logger.info(f"[AGENT_FLOW] START_AGENT_RUN: Config loaded and limits checked (took {(time.time() - t_parallel) * 1000:.1f}ms)")
     
     if is_new_thread:
         project_created_here = False
@@ -872,17 +703,26 @@ async def start_agent_run(
         }).execute()
         logger.debug(f"Created user message for thread {thread_id}")
     
-    async def create_agent_run():
-        return await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id, metadata)
+    # Create message and start agent run in parallel
+    from core.agent_service import start_agent
     
-    _, agent_run_id = await asyncio.gather(create_message(), create_agent_run())
-    logger.debug(f"⏱️ [TIMING] Parallel message+agent_run: {(time.time() - t_parallel2) * 1000:.1f}ms")
+    async def start_agent_run():
+        logger.debug(f"[AGENT_FLOW] START_AGENT_RUN: Calling agent_service.start_agent()")
+        return await start_agent(
+            thread_id=thread_id,
+            project_id=project_id,
+            account_id=account_id,
+            model_name=model_name,
+            agent_id=agent_id,
+            is_new_thread=is_new_thread,
+            extra_metadata=metadata,
+        )
     
-    t_dispatch = time.time()
-    await _trigger_agent_background(agent_run_id, thread_id, project_id, effective_model, agent_id, account_id)
-    logger.debug(f"⏱️ [TIMING] Worker dispatch: {(time.time() - t_dispatch) * 1000:.1f}ms")
+    logger.info(f"[AGENT_FLOW] START_AGENT_RUN: Creating message and starting agent run in parallel")
+    _, agent_run_id = await asyncio.gather(create_message(), start_agent_run())
+    logger.info(f"[AGENT_FLOW] START_AGENT_RUN: Message created and agent run started (agent_run_id: {agent_run_id}, took {(time.time() - t_parallel2) * 1000:.1f}ms)")
     
-    logger.info(f"⏱️ [TIMING] start_agent_run total: {(time.time() - t_start) * 1000:.1f}ms")
+    logger.info(f"[AGENT_FLOW] START_AGENT_RUN COMPLETE: Total time {(time.time() - t_start) * 1000:.1f}ms")
     
     return {
         "thread_id": thread_id,
@@ -917,7 +757,8 @@ async def unified_agent_start(
     
     is_optimistic = optimistic and optimistic.lower() == 'true'
     
-    logger.debug(f"Received agent start request: optimistic={is_optimistic}, thread_id={thread_id!r}, project_id={project_id!r}, prompt={prompt[:100] if prompt else None!r}, model_name={model_name!r}, agent_id={agent_id!r}, files_count={len(files)}, file_ids_count={len(file_ids)}")
+    logger.info(f"[AGENT_FLOW] API: Received agent start request (optimistic: {is_optimistic}, thread_id: {thread_id}, project_id: {project_id}, user_id: {user_id})")
+    logger.debug(f"[AGENT_FLOW] API: Request details - prompt_length: {len(prompt) if prompt else 0}, model_name: {model_name}, agent_id: {agent_id}, files_count: {len(files)}, file_ids_count: {len(file_ids)}")
     
     staged_files_data = None
     if file_ids and len(file_ids) > 0:
@@ -928,30 +769,39 @@ async def unified_agent_start(
             logger.info(f"📎 Retrieved {len(staged_files_data)} staged files for agent start")
     
     if is_optimistic:
+        logger.info(f"[AGENT_FLOW] API: Processing optimistic start request")
         if not thread_id or not project_id:
+            logger.error(f"[AGENT_FLOW] API: Missing required params (thread_id: {thread_id}, project_id: {project_id})")
             raise HTTPException(status_code=400, detail="thread_id and project_id are required for optimistic mode")
         
         if not prompt or not prompt.strip():
+            logger.error(f"[AGENT_FLOW] API: Missing prompt for optimistic mode")
             raise HTTPException(status_code=400, detail="prompt is required for optimistic mode")
         
         try:
+            logger.debug(f"[AGENT_FLOW] API: Validating UUIDs")
             # Note: uuid module is already imported at module level (line 4)
             # Validate UUID format for thread_id and project_id
             try:
                 uuid.UUID(thread_id)
                 uuid.UUID(project_id)
             except ValueError:
+                logger.error(f"[AGENT_FLOW] API: Invalid UUID format")
                 raise HTTPException(status_code=400, detail="Invalid UUID format for thread_id or project_id")
             
+            logger.info(f"[AGENT_FLOW] API: Resolving model name")
             resolved_model = model_name
             if resolved_model is None:
                 resolved_model = await model_manager.get_default_model_for_user(client, account_id)
+                logger.debug(f"[AGENT_FLOW] API: Using default model: {resolved_model}")
             else:
                 resolved_model = model_manager.resolve_model_id(resolved_model)
+                logger.debug(f"[AGENT_FLOW] API: Resolved provided model: {resolved_model}")
             
             t_billing = time.time()
+            logger.info(f"[AGENT_FLOW] API: Checking billing and limits")
             await _check_billing_and_limits(client, account_id, resolved_model, check_project_limit=True, check_thread_limit=True)
-            logger.debug(f"⏱️ [TIMING] Optimistic billing check: {(time.time() - t_billing) * 1000:.1f}ms")
+            logger.info(f"[AGENT_FLOW] API: Billing check passed (took {(time.time() - t_billing) * 1000:.1f}ms)")
             
             structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id, account_id=account_id)
             
@@ -961,6 +811,7 @@ async def unified_agent_start(
             if memory_enabled is not None:
                 memory_enabled_bool = memory_enabled.lower() == 'true'
             
+            logger.info(f"[AGENT_FLOW] API: Calling create_thread_optimistically")
             result = await create_thread_optimistically(
                 thread_id=thread_id,
                 project_id=project_id,
@@ -973,7 +824,7 @@ async def unified_agent_start(
                 memory_enabled=memory_enabled_bool,
             )
             
-            logger.info(f"⏱️ [TIMING] 🎯 Optimistic API Request Total: {(time.time() - api_request_start) * 1000:.1f}ms")
+            logger.info(f"[AGENT_FLOW] API: Optimistic start complete (thread_id: {result['thread_id']}, total time: {(time.time() - api_request_start) * 1000:.1f}ms)")
             
             return {
                 "thread_id": result["thread_id"],
@@ -1393,22 +1244,75 @@ async def stream_agent_run(
         return last_safe_index
 
     async def stream_generator(agent_run_data):
-        logger.debug(f"Streaming responses for {agent_run_id} (stream: {stream_key})")
+        logger.info(f"[AGENT_FLOW] STREAM: Starting stream generator (agent_run_id: {agent_run_id}, stream_key: {stream_key})")
         terminate_stream = False
         initial_yield_complete = False
         last_id = "0"  # Start from beginning for initial read
 
         try:
             # Send immediate "connected" message so frontend knows connection is established
+            logger.info(f"[AGENT_FLOW] STREAM STEP 1: Sending 'connected' message")
             yield f"data: {json.dumps({'type': 'connected', 'agent_run_id': agent_run_id})}\n\n"
+            logger.debug(f"[AGENT_FLOW] STREAM STEP 1: 'connected' message sent")
             
-            # #region agent log
-            try:
-                import urllib.request as _ur; _ur.urlopen(_ur.Request('http://host.docker.internal:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',data=json.dumps({"location":"agent_runs.py:stream_generator:start","message":"Stream generator started","data":{"agent_run_id":agent_run_id,"stream_key":stream_key},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","hypothesisId":"A,B"}).encode(),headers={'Content-Type':'application/json'}),timeout=1)
-            except: pass
-            # #endregion
-            
+            logger.info(f"[AGENT_FLOW] STREAM STEP 2: Reading initial entries from stream {stream_key}")
             initial_entries = await redis.stream_range(stream_key)
+            logger.info(f"[AGENT_FLOW] STREAM STEP 2: Found {len(initial_entries) if initial_entries else 0} initial entries in stream {stream_key}")
+            
+            # Verify stream exists and check its length
+            try:
+                stream_len = await redis.stream_len(stream_key)
+                logger.info(f"[AGENT_FLOW] STREAM STEP 2: Stream {stream_key} length: {stream_len}")
+            except Exception as e:
+                logger.warning(f"[AGENT_FLOW] STREAM STEP 2: Could not check stream length: {e}")
+            
+            # Early check: Verify Temporal workflow exists and is running
+            workflow_exists = False
+            if not initial_entries:
+                try:
+                    from core.temporal.client import get_temporal_client
+                    temporal_client = await get_temporal_client()
+                    workflow_id = f"agent-run-{agent_run_id}"
+                    logger.debug(f"[AGENT_FLOW] STREAM STEP 2.1: Verifying Temporal workflow exists (workflow_id: {workflow_id})")
+                    
+                    try:
+                        handle = temporal_client.get_workflow_handle(workflow_id)
+                        workflow_status = await handle.describe()
+                        workflow_exists = True
+                        status_name = workflow_status.status.name if hasattr(workflow_status.status, 'name') else str(workflow_status.status)
+                        logger.info(f"[AGENT_FLOW] STREAM STEP 2.1: Temporal workflow found - status: {status_name}")
+                        
+                        # If workflow is already completed/failed, check DB and exit early
+                        if status_name in ['COMPLETED', 'FAILED', 'CANCELLED', 'TERMINATED']:
+                            logger.warning(f"[AGENT_FLOW] STREAM STEP 2.1: Workflow already finished with status: {status_name}")
+                            # Check DB for final status
+                            run_check = await client.table('agent_runs').select('status, error').eq('id', agent_run_id).maybe_single().execute()
+                            db_status = run_check.data.get('status') if run_check.data else 'unknown'
+                            db_error = run_check.data.get('error') if run_check.data else None
+                            
+                            if db_status in ['completed', 'failed', 'stopped']:
+                                yield f"data: {json.dumps({'type': 'status', 'status': db_status, 'error': db_error})}\n\n"
+                                terminate_stream = True
+                                return
+                    except Exception as workflow_check_error:
+                        error_str = str(workflow_check_error)
+                        logger.warning(f"[AGENT_FLOW] STREAM STEP 2.1: Temporal workflow not found or error: {error_str}")
+                        # If workflow doesn't exist and DB shows running, this is a problem
+                        if 'not found' in error_str.lower() or 'does not exist' in error_str.lower():
+                            run_check = await client.table('agent_runs').select('status').eq('id', agent_run_id).maybe_single().execute()
+                            db_status = run_check.data.get('status') if run_check.data else None
+                            if db_status == 'running':
+                                logger.error(f"[AGENT_FLOW] STREAM STEP 2.1: CRITICAL - Workflow {workflow_id} does not exist but DB shows running!")
+                                await client.table('agent_runs').update({
+                                    'status': 'failed',
+                                    'error': 'Temporal workflow was never started or was lost',
+                                    'completed_at': datetime.now(timezone.utc).isoformat()
+                                }).eq('id', agent_run_id).execute()
+                                yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': 'Agent workflow was not started properly. Please try again.'})}\n\n"
+                                terminate_stream = True
+                                return
+                except Exception as temporal_err:
+                    logger.debug(f"[AGENT_FLOW] STREAM STEP 2.1: Could not check Temporal workflow (non-critical): {temporal_err}")
             if initial_entries:
                 logger.debug(f"Sending {len(initial_entries)} catch-up responses for {agent_run_id}")
                 for entry_id, fields in initial_entries:
@@ -1465,33 +1369,67 @@ async def stream_agent_run(
                 thread_id=agent_run_data.get('thread_id'),
             )
 
-            # Use blocking XREAD to wait for new stream entries
-            # After catch-up, only read new entries
-            if last_id != "0":
-                last_id = "$"  # "$" means only new entries
-            
             # Startup timeout: if no real data received after N pings, check if worker is stuck
             consecutive_pings = 0
             received_real_data = len(initial_entries) > 0 if initial_entries else False
-            MAX_STARTUP_PINGS = 12  # 12 pings * 5 seconds = 60 second startup timeout (Temporal Cloud may have scheduling latency)
+            MAX_STARTUP_PINGS = 6  # 6 pings * 5 seconds = 30 second startup timeout (reduced for faster feedback)
+            
+            # Send "waiting" status if workflow exists but no data yet
+            if not received_real_data and workflow_exists:
+                logger.info(f"[AGENT_FLOW] STREAM STEP 2.2: Workflow exists but no data yet - sending waiting status")
+                yield f"data: {json.dumps({'type': 'status', 'status': 'waiting', 'message': 'Waiting for worker to start processing...'})}\n\n"
+            
+            # Re-check stream right before starting blocking reads to catch any entries written
+            # between the initial check and now (race condition protection)
+            if not received_real_data:
+                logger.info(f"[AGENT_FLOW] STREAM STEP 2.3: Re-checking stream {stream_key} for entries written since initial check")
+                recheck_entries = await redis.stream_range(stream_key)
+                logger.info(f"[AGENT_FLOW] STREAM STEP 2.3: Recheck found {len(recheck_entries) if recheck_entries else 0} entries")
+                if recheck_entries:
+                    logger.info(f"[AGENT_FLOW] STREAM STEP 2.3: Found {len(recheck_entries)} entries on recheck - processing catch-up")
+                    for entry_id, fields in recheck_entries:
+                        response = json.loads(fields.get('data', '{}'))
+                        yield f"data: {json.dumps(response)}\n\n"
+                        last_id = entry_id
+                        received_real_data = True
+                        if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
+                            logger.debug(f"Detected completion in recheck catch-up: {response.get('status')}")
+                            terminate_stream = True
+                            return
+            
+            # Use blocking XREAD to wait for new stream entries
+            # After catch-up, only read new entries
+            if last_id == "0":
+                # No entries seen yet - use "$" to only read NEW entries that arrive after we start listening
+                last_id = "$"
+                logger.debug(f"[AGENT_FLOW] STREAM: No entries seen yet, using '$' to read only new entries")
+            else:
+                # We have a last entry ID - use it directly to read entries newer than that ID
+                # Don't change last_id - it already points to the last entry we saw
+                logger.debug(f"[AGENT_FLOW] STREAM: Using last_id '{last_id}' to read entries newer than last seen")
             
             while not terminate_stream:
                 try:
                     # Blocking XREAD - waits up to 5 seconds for new entries
-                    entries = await redis.stream_read(stream_key, last_id, block_ms=5000)
+                    # Wrap with asyncio.wait_for to prevent infinite hangs if Redis connection issues occur
+                    try:
+                        entries = await asyncio.wait_for(
+                            redis.stream_read(stream_key, last_id, block_ms=5000),
+                            timeout=10.0  # Safety timeout - ensures we never hang indefinitely
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning(f"[AGENT_FLOW] STREAM: Redis stream_read timed out after 10s (safety timeout)")
+                        entries = []  # Treat as empty, will trigger ping
                     
                     if entries:
+                        logger.info(f"[AGENT_FLOW] STREAM: ✅ Read {len(entries)} entries from stream {stream_key}")
                         received_real_data = True
                         consecutive_pings = 0  # Reset ping counter on real data
-                        # #region agent log
-                        try:
-                            import urllib.request as _ur; _ur.urlopen(_ur.Request('http://host.docker.internal:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',data=json.dumps({"location":"agent_runs.py:stream:data_received","message":"FIRST DATA received","data":{"agent_run_id":agent_run_id,"entries":len(entries)},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","hypothesisId":"A,E"}).encode(),headers={'Content-Type':'application/json'}),timeout=1)
-                        except: pass
-                        # #endregion
                         for entry_id, fields in entries:
                             data = fields.get('data', '{}')
                             yield f"data: {data}\n\n"
                             last_id = entry_id
+                            logger.debug(f"[AGENT_FLOW] STREAM: Processed entry {entry_id} from stream")
                             
                             # Check for completion status
                             try:
@@ -1505,38 +1443,103 @@ async def stream_agent_run(
                     else:
                         consecutive_pings += 1
                         
+                        # Periodic workflow status check: every 15 seconds (every 3 pings)
+                        if not received_real_data and consecutive_pings > 0 and consecutive_pings % 3 == 0:
+                            try:
+                                from core.temporal.client import get_temporal_client
+                                temporal_client = await get_temporal_client()
+                                workflow_id = f"agent-run-{agent_run_id}"
+                                logger.debug(f"[AGENT_FLOW] STREAM: Periodic workflow check (ping {consecutive_pings}, workflow_id: {workflow_id})")
+                                
+                                try:
+                                    handle = temporal_client.get_workflow_handle(workflow_id)
+                                    workflow_status = await handle.describe()
+                                    status_name = workflow_status.status.name if hasattr(workflow_status.status, 'name') else str(workflow_status.status)
+                                    logger.info(f"[AGENT_FLOW] STREAM: Periodic check - workflow status: {status_name}")
+                                    
+                                    # If workflow is completed/failed but we haven't received data, check DB
+                                    if status_name in ['COMPLETED', 'FAILED', 'CANCELLED', 'TERMINATED']:
+                                        run_check = await client.table('agent_runs').select('status, error').eq('id', agent_run_id).maybe_single().execute()
+                                        db_status = run_check.data.get('status') if run_check.data else 'unknown'
+                                        db_error = run_check.data.get('error') if run_check.data else None
+                                        
+                                        if db_status in ['completed', 'failed', 'stopped']:
+                                            logger.warning(f"[AGENT_FLOW] STREAM: Workflow finished ({status_name}) but no stream data - sending DB status")
+                                            yield f"data: {json.dumps({'type': 'status', 'status': db_status, 'error': db_error})}\n\n"
+                                            terminate_stream = True
+                                            break
+                                except Exception as workflow_check_error:
+                                    error_str = str(workflow_check_error)
+                                    logger.debug(f"[AGENT_FLOW] STREAM: Periodic check - workflow error: {error_str}")
+                                    # Don't terminate on periodic check errors - wait for full timeout
+                            except Exception as temporal_err:
+                                logger.debug(f"[AGENT_FLOW] STREAM: Periodic check - Temporal client error: {temporal_err}")
+                                # Don't terminate on periodic check errors - wait for full timeout
+                        
                         # Startup timeout check: if we haven't received any real data and hit the limit
                         if not received_real_data and consecutive_pings >= MAX_STARTUP_PINGS:
-                            logger.warning(f"Startup timeout for agent run {agent_run_id}: no data received after {consecutive_pings * 5}s")
-                            # #region agent log
-                            try:
-                                import urllib.request as _ur; _ur.urlopen(_ur.Request('http://host.docker.internal:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',data=json.dumps({"location":"agent_runs.py:stream_generator:timeout","message":"STARTUP TIMEOUT","data":{"agent_run_id":agent_run_id,"pings":consecutive_pings,"stream_key":stream_key},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","hypothesisId":"A,E"}).encode(),headers={'Content-Type':'application/json'}),timeout=1)
-                            except: pass
-                            # #endregion
+                            logger.warning(f"[AGENT_FLOW] STREAM TIMEOUT: Agent run {agent_run_id} - no data received after {consecutive_pings * 5}s")
                             # Check DB status to see if run is still supposed to be running
                             try:
                                 run_check = await client.table('agent_runs').select('status').eq('id', agent_run_id).maybe_single().execute()
                                 db_status = run_check.data.get('status') if run_check.data else None
+                                logger.debug(f"[AGENT_FLOW] STREAM TIMEOUT: DB status for {agent_run_id}: {db_status}")
+                                
+                                # Also check Temporal workflow status
+                                workflow_status = None
+                                workflow_error = None
+                                try:
+                                    from core.temporal.client import get_temporal_client
+                                    temporal_client = await get_temporal_client()
+                                    workflow_id = f"agent-run-{agent_run_id}"
+                                    logger.debug(f"[AGENT_FLOW] STREAM TIMEOUT: Checking Temporal workflow status (workflow_id: {workflow_id})")
+                                    
+                                    try:
+                                        handle = temporal_client.get_workflow_handle(workflow_id)
+                                        workflow_status = await handle.describe()
+                                        logger.info(f"[AGENT_FLOW] STREAM TIMEOUT: Temporal workflow status: {workflow_status.status.name if hasattr(workflow_status.status, 'name') else workflow_status.status}")
+                                    except Exception as workflow_check_error:
+                                        workflow_error = str(workflow_check_error)
+                                        logger.warning(f"[AGENT_FLOW] STREAM TIMEOUT: Failed to check Temporal workflow: {workflow_error}")
+                                except Exception as temporal_err:
+                                    logger.warning(f"[AGENT_FLOW] STREAM TIMEOUT: Failed to get Temporal client: {temporal_err}")
+                                
                                 if db_status == 'running':
-                                    # Worker never started - mark as failed
-                                    logger.error(f"Agent run {agent_run_id} stuck: status is 'running' but worker never produced output")
+                                    # Worker never started or workflow not running
+                                    error_msg = 'Worker failed to start within timeout period'
+                                    if workflow_error:
+                                        error_msg += f' (Temporal check failed: {workflow_error})'
+                                    elif workflow_status:
+                                        error_msg += f' (Temporal workflow status: {workflow_status.status})'
+                                    
+                                    logger.error(f"[AGENT_FLOW] STREAM TIMEOUT: Agent run {agent_run_id} stuck - {error_msg}")
                                     await client.table('agent_runs').update({
                                         'status': 'failed',
-                                        'error': 'Worker failed to start within timeout period',
+                                        'error': error_msg,
                                         'completed_at': datetime.now(timezone.utc).isoformat()
                                     }).eq('id', agent_run_id).execute()
                                     yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': 'Agent worker failed to start. Please try again.'})}\n\n"
                                     terminate_stream = True
                                     break
                                 elif db_status in ['completed', 'failed', 'stopped']:
-                                    logger.debug(f"Agent run {agent_run_id} already finished with status: {db_status}")
+                                    logger.debug(f"[AGENT_FLOW] STREAM TIMEOUT: Agent run {agent_run_id} already finished with status: {db_status}")
                                     yield f"data: {json.dumps({'type': 'status', 'status': db_status})}\n\n"
                                     terminate_stream = True
                                     break
+                                else:
+                                    # Unexpected status (None, 'pending', or unknown) - terminate with error
+                                    logger.error(f"[AGENT_FLOW] STREAM TIMEOUT: Agent run {agent_run_id} has unexpected status: {db_status}")
+                                    yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': f'Agent run has unexpected status: {db_status}'})}\n\n"
+                                    terminate_stream = True
+                                    break
                             except Exception as db_err:
-                                logger.warning(f"Failed to check agent_run status during timeout: {db_err}")
+                                logger.warning(f"[AGENT_FLOW] STREAM TIMEOUT: Failed to check agent_run status: {db_err}")
+                                # Even if DB check fails, terminate after timeout to prevent infinite pings
+                                yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': 'Agent worker failed to start (status check failed). Please try again.'})}\n\n"
+                                terminate_stream = True
+                                break
                         
-                        # Timeout - send ping to keep connection alive
+                        # Not timed out yet - send ping to keep connection alive
                         yield f"data: {json.dumps({'type': 'ping'})}\n\n"
 
                 except asyncio.CancelledError:
