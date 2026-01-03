@@ -1094,10 +1094,8 @@ export const SandboxDesktop = memo(function SandboxDesktop({
 
         <div className="relative z-50 flex-shrink-0">
           <PanelHeader
-            sandboxInfoOpen={sandboxInfoOpen}
-            setSandboxInfoOpen={setSandboxInfoOpen}
             onClose={onClose}
-            onMaximize={() => {}}
+            onMaximize={onClose}
             isStreaming={isStreaming}
             variant="motion"
             currentView={currentView}

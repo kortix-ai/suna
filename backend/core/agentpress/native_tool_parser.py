@@ -295,8 +295,9 @@ def convert_buffer_to_metadata_tool_calls(
                 if arguments_str:
                     try:
                         parsed = json.loads(arguments_str)
-                        # Successfully parsed - use the object (avoids double-escaping)
-                        arguments = parsed
+                        # Successfully parsed - normalize nested JSON string values
+                        # (e.g. arrays passed as strings like attachments: "[\"file1\", \"file2\"]")
+                        arguments = _normalize_json_string_values(parsed)
                     except json.JSONDecodeError:
                         # Partial/incomplete JSON - keep as string for frontend to handle
                         arguments = arguments_str

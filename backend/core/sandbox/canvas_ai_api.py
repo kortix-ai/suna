@@ -450,9 +450,9 @@ async def merge_images(
 ):
     """
     Merge multiple images with AI based on a prompt.
-    Uses GPT Image for best multi-image understanding.
+    Uses GPT Image 1.5 via Replicate for best multi-image merging.
     """
-    logger.info(f"Canvas AI: Merging {len(request.images)} images for user {user_id}")
+    logger.info(f"Canvas AI: Merging {len(request.images)} images with GPT Image 1.5 for user {user_id}")
     
     # BILLING: Check if user has credits before proceeding
     has_credits, credit_msg, balance = await media_billing.check_credits(user_id)
@@ -476,12 +476,11 @@ async def merge_images(
                 error="Merge prompt is required"
             )
         
-        # Limit to 4 images max
+        # Limit to 4 images max (GPT Image 1.5 limit)
         images_to_merge = request.images[:4]
         
-        # For Gemini, we can send multiple images in the content
-        # Build a multi-image prompt
-        image_parts = []
+        # Build data URLs for GPT Image 1.5 input_images array
+        input_images = []
         for i, img_b64 in enumerate(images_to_merge):
             try:
                 mime_type, _, clean_b64 = extract_image_data(img_b64)
@@ -489,101 +488,63 @@ async def merge_images(
                     image_data_url = img_b64
                 else:
                     image_data_url = f"data:{mime_type};base64,{clean_b64}"
-                
-                image_parts.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": image_data_url
-                    }
-                })
+                input_images.append(image_data_url)
             except Exception as e:
                 logger.error(f"Failed to process image {i}: {e}")
                 continue
         
-        if len(image_parts) < 2:
+        if len(input_images) < 2:
             return ImageMergeResponse(
                 success=False,
                 error="Could not process images for merging"
             )
         
-        # Use Gemini Pro for multi-image merging
-        model = MODELS["gemini-pro"]
-        
-        merge_prompt = f"""Merge these {len(image_parts)} images together. 
+        # Build merge prompt
+        merge_prompt = f"""Merge these {len(input_images)} images together.
 Instructions: {request.prompt}
 
 Create a single cohesive image that combines these images according to the instructions.
 The result should be a high-quality merged image."""
 
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://kortix.ai",
-            "X-Title": "Kortix Canvas AI"
-        }
+        _get_replicate_token()
         
-        # Build content with text first, then all images
-        content = [{"type": "text", "text": merge_prompt}] + image_parts
+        logger.info(f"Calling Replicate openai/gpt-image-1.5 for merge with {len(input_images)} images")
         
-        payload = {
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": content
+        try:
+            output = replicate.run(
+                "openai/gpt-image-1.5",
+                input={
+                    "prompt": merge_prompt,
+                    "input_images": input_images,
+                    "aspect_ratio": "1:1",
+                    "number_of_images": 1,
+                    "quality": "low",  # Cost-efficient ($0.02/image)
                 }
-            ],
-            "modalities": ["image", "text"],
-            "app": "Kortix.com"
-        }
-        
-        async with httpx.AsyncClient(timeout=180.0) as client:  # Longer timeout for merge
-            response = await client.post(
-                f"{OPENROUTER_BASE_URL}/chat/completions",
-                headers=headers,
-                json=payload
             )
             
-            if response.status_code != 200:
-                error_text = response.text
-                logger.error(f"OpenRouter merge error: {response.status_code} - {error_text}")
-                raise Exception(f"Merge failed: {error_text[:200]}")
+            # Output is a list of FileOutput objects - get the first one
+            output_list = list(output) if hasattr(output, '__iter__') and not hasattr(output, 'read') else [output]
+            if len(output_list) == 0:
+                raise Exception("No output from GPT image model")
             
-            result = response.json()
+            merged_image = _replicate_output_to_base64(output_list[0], "png")
             
-            # Extract generated image
-            merged_image = None
-            if result.get("choices"):
-                message = result["choices"][0].get("message", {})
-                
-                if message.get("images"):
-                    merged_image = message["images"][0]["image_url"]["url"]
-                
-                if not merged_image:
-                    content = message.get("content", [])
-                    if isinstance(content, list):
-                        for part in content:
-                            if isinstance(part, dict) and part.get("type") == "image_url":
-                                merged_image = part["image_url"]["url"]
-                                break
-                    
-                    if not merged_image and isinstance(content, str) and content.startswith("data:image"):
-                        merged_image = content
-            
-            if merged_image:
-                # BILLING: Deduct credits for successful merge
-                await media_billing.deduct_openrouter_image(
-                    account_id=user_id,
-                    model=MODELS["gemini-pro"],
-                    count=1,
-                    description="Canvas image merge",
-                )
-                return ImageMergeResponse(success=True, image=merged_image)
-            
-            return ImageMergeResponse(
-                success=False,
-                error="No merged image in response. The AI may not support this merge operation."
+            # BILLING: Deduct credits for successful merge
+            await media_billing.deduct_media_credits(
+                account_id=user_id,
+                provider="replicate",
+                model="openai/gpt-image-1.5",
+                media_type="image",
+                count=1,
+                description="Canvas image merge",
+                variant="low",
             )
+            
+            return ImageMergeResponse(success=True, image=merged_image)
+            
+        except Exception as e:
+            logger.error(f"GPT Image merge failed: {e}")
+            raise Exception(f"Merge failed: {str(e)}")
         
     except Exception as e:
         error_msg = str(e)

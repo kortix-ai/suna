@@ -77,6 +77,7 @@ import { useReferralDialog } from '@/stores/referral-dialog';
 import { ReferralDialog } from '@/components/referrals/referral-dialog';
 import { Badge } from '@/components/ui/badge';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
+import { trackCtaUpgrade } from '@/lib/analytics/gtm';
 
 export function NavUserWithTeams({
   user,
@@ -228,7 +229,10 @@ export function NavUserWithTeams({
             {/* Upgrade Button - Closest to user card */}
             {isFreeTier && (
               <Button
-                onClick={() => setShowPlanModal(true)}
+                onClick={() => {
+                  trackCtaUpgrade();
+                  setShowPlanModal(true);
+                }}
                 variant="default"
                 size="lg"
                 className="w-full"
@@ -355,6 +359,7 @@ export function NavUserWithTeams({
               <DropdownMenuGroup>
                 <DropdownMenuItem
                   onClick={() => {
+                    trackCtaUpgrade();
                     setShowPlanModal(true);
                   }}
                   className="gap-2 p-2"

@@ -136,6 +136,32 @@ class ErrorProcessor:
                 context=context
             )
         
+        elif isinstance(error, NotFoundError):
+            # Handle NotFoundError (e.g., model doesn't support image input)
+            # Clean up the error message - remove fallback details for user-facing message
+            clean_message = error_message
+            if "Received Model Group=" in error_message:
+                # Extract just the core error before fallback attempts
+                parts = error_message.split(". Received Model Group=")
+                if parts:
+                    clean_message = parts[0]
+            
+            # Check if it's an image input error
+            if "image" in error_message.lower() or "No endpoints found" in error_message:
+                return ProcessedError(
+                    error_type="model_not_supported",
+                    message=f"Model does not support image input. The system will automatically try an alternative model. {clean_message}",
+                    original_error=error,
+                    context=context
+                )
+            
+            return ProcessedError(
+                error_type="not_found_error",
+                message=f"Model or endpoint not found: {clean_message}",
+                original_error=error,
+                context=context
+            )
+        
         elif isinstance(error, BadRequestError):
             # Clean up the error message - extract just the core error, not fallback details
             clean_message = error_message

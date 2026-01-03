@@ -2,6 +2,7 @@
 
 import type { PricingTier } from '@/lib/pricing-config';
 import { siteConfig } from '@/lib/site-config';
+import { storeCheckoutData, trackSelectItem, trackViewItem, trackAddToCart, PlanItemData } from '@/lib/analytics/gtm';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import React, { useState, useEffect, useCallback } from 'react';
@@ -193,6 +194,21 @@ function PricingTier({
       return;
     }
 
+    // Track add_to_cart event when user clicks upgrade/subscribe button
+    const priceAmount = parsePriceAmount(displayPrice);
+    const billingLabel = effectiveBillingPeriod === 'monthly' ? 'Monthly' : 'Yearly';
+    const itemData: PlanItemData = {
+      item_id: `${tier.tierKey}_${effectiveBillingPeriod}`,
+      item_name: `${tier.name} ${billingLabel}`,
+      item_brand: 'Kortix AI',
+      item_category: 'Plans',
+      item_list_id: 'plans_listing',
+      item_list_name: 'Plans Listing',
+      price: priceAmount,
+      quantity: 1,
+    };
+    trackAddToCart(itemData, currency, priceAmount);
+
     try {
       onPlanSelect?.(tierKey);
       const commitmentType = effectiveBillingPeriod === 'yearly_commitment' ? 'yearly_commitment' :
@@ -234,6 +250,15 @@ function PricingTier({
         case 'checkout_created':
         case 'commitment_created':
           if (checkoutUrl) {
+            // Store checkout data for GTM purchase tracking after Stripe redirect
+            const priceAmount = parsePriceAmount(displayPrice);
+            storeCheckoutData({
+              tier_key: tierKey,
+              tier_name: tier.name,
+              price: priceAmount,
+              currency: currency,
+              billing_period: effectiveBillingPeriod,
+            });
             posthog.capture('plan_purchase_attempted');
             window.location.href = checkoutUrl;
           } else {
@@ -245,6 +270,15 @@ function PricingTier({
           break;
         case 'upgraded':
         case 'updated':
+          // Store checkout data for GTM purchase tracking
+          const upgradePriceAmount = parsePriceAmount(displayPrice);
+          storeCheckoutData({
+            tier_key: tierKey,
+            tier_name: tier.name,
+            price: upgradePriceAmount,
+            currency: currency,
+            billing_period: effectiveBillingPeriod,
+          });
           posthog.capture('plan_upgraded');
           if (onSubscriptionUpdate) onSubscriptionUpdate();
           // Redirect to dashboard which will handle cache invalidation
@@ -1077,6 +1111,63 @@ export function PricingSection({
     setPlanLoadingStates((prev) => ({ ...prev, [planId]: true }));
   };
 
+  // Helper to calculate price based on billing period (same logic as PricingTier.getDisplayPrice)
+  const calculatePriceForBillingPeriod = useCallback((tier: PricingTier, billingPeriod: string): number => {
+    const basePrice = parsePriceAmount(tier.price || '$0');
+    if (billingPeriod === 'yearly_commitment') {
+      // 15% discount for yearly commitment
+      return Math.round(basePrice * 0.85);
+    } else if (billingPeriod === 'yearly' && tier.yearlyPrice) {
+      // Monthly equivalent from yearly total
+      return Math.round(parsePriceAmount(tier.yearlyPrice) / 12);
+    }
+    return basePrice;
+  }, []);
+
+  // Helper to build plan item data for GTM tracking
+  const buildPlanItemData = useCallback((tier: PricingTier, billingPeriod: string): PlanItemData => {
+    const priceAmount = calculatePriceForBillingPeriod(tier, billingPeriod);
+    const billingLabel = billingPeriod === 'monthly' ? 'Monthly' : 'Yearly';
+    return {
+      item_id: `${tier.tierKey}_${billingPeriod}`,
+      item_name: `${tier.name} ${billingLabel}`,
+      item_brand: 'Kortix AI',
+      item_category: 'Plans',
+      item_list_id: 'plans_listing',
+      item_list_name: 'Plans Listing',
+      price: priceAmount,
+      quantity: 1,
+    };
+  }, [calculatePriceForBillingPeriod]);
+
+  // Track view_item when pricing section mounts (modal opens)
+  const hasTrackedViewRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!hasTrackedViewRef.current && selectedPaidTier) {
+      const itemData = buildPlanItemData(selectedPaidTier, sharedBillingPeriod);
+      const priceAmount = calculatePriceForBillingPeriod(selectedPaidTier, sharedBillingPeriod);
+      trackViewItem(itemData, currency, priceAmount);
+      hasTrackedViewRef.current = true;
+    }
+  }, [selectedPaidTier, sharedBillingPeriod, currency, buildPlanItemData, calculatePriceForBillingPeriod]);
+
+  // Handler for plan tab selection with tracking
+  const handlePlanTabClick = useCallback((index: number, tier: PricingTier) => {
+    setSelectedPaidTierIndex(index);
+    const itemData = buildPlanItemData(tier, sharedBillingPeriod);
+    trackSelectItem(itemData);
+  }, [sharedBillingPeriod, buildPlanItemData]);
+
+  // Handler for billing period change with tracking
+  const handleBillingPeriodChange = useCallback((period: 'monthly' | 'yearly' | 'yearly_commitment') => {
+    setSharedBillingPeriod(period);
+    if (selectedPaidTier) {
+      const itemData = buildPlanItemData(selectedPaidTier, period);
+      const priceAmount = calculatePriceForBillingPeriod(selectedPaidTier, period);
+      trackViewItem(itemData, currency, priceAmount);
+    }
+  }, [selectedPaidTier, currency, buildPlanItemData, calculatePriceForBillingPeriod]);
+
   const handlePromoCopy = useCallback(async () => {
     if (!promo?.isActive || !promo.promoCode) {
       return;
@@ -1161,7 +1252,7 @@ export function PricingSection({
                 {paidTiers.map((tier, index) => (
                   <button
                     key={tier.name}
-                    onClick={() => setSelectedPaidTierIndex(index)}
+                    onClick={() => handlePlanTabClick(index, tier)}
                     className={cn(
                       "pl-1 pr-2 py-1 rounded-full font-medium text-sm transition-all duration-200 flex items-center gap-2",
                       selectedPaidTierIndex === index
@@ -1256,7 +1347,7 @@ export function PricingSection({
                   returnUrl={returnUrl}
                   insideDialog={insideDialog}
                   billingPeriod={sharedBillingPeriod}
-                  onBillingPeriodChange={setSharedBillingPeriod}
+                  onBillingPeriodChange={handleBillingPeriodChange}
                   currentBillingPeriod={currentBillingPeriod}
                 />
               </div>
@@ -1272,7 +1363,7 @@ export function PricingSection({
                   {paidTiers.map((tier, index) => (
                     <button
                       key={tier.name}
-                      onClick={() => setSelectedPaidTierIndex(index)}
+                      onClick={() => handlePlanTabClick(index, tier)}
                       className={cn(
                         "flex-1 pl-1 pr-2 py-1 rounded-full font-medium text-xs transition-all duration-200 flex items-center justify-center gap-1.5",
                         selectedPaidTierIndex === index
@@ -1302,7 +1393,7 @@ export function PricingSection({
                     returnUrl={returnUrl}
                     insideDialog={insideDialog}
                     billingPeriod={sharedBillingPeriod}
-                    onBillingPeriodChange={setSharedBillingPeriod}
+                    onBillingPeriodChange={handleBillingPeriodChange}
                     currentBillingPeriod={currentBillingPeriod}
                   />
                 )}

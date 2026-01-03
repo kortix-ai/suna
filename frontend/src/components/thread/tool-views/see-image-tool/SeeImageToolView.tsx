@@ -30,11 +30,21 @@ function SafeImage({ src, alt, filePath, className, sandboxId, project }: {
 }) {
   const [isZoomed, setIsZoomed] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [waitingForSandbox, setWaitingForSandbox] = useState(!sandboxId);
   
   // Download restriction for free tier users
   const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
     featureName: 'images',
   });
+  
+  // Track sandbox availability
+  useEffect(() => {
+    if (sandboxId) {
+      setWaitingForSandbox(false);
+    } else {
+      setWaitingForSandbox(true);
+    }
+  }, [sandboxId]);
   
   // Use our robust retry hook instead of custom fetch
   const {
@@ -50,8 +60,8 @@ function SafeImage({ src, alt, filePath, className, sandboxId, project }: {
     }
   );
   
-  // Fallback to direct URL if no sandbox ID
-  const finalImageUrl = imageUrl || src;
+  // Fallback to direct URL if no sandbox ID (but only for URLs)
+  const finalImageUrl = imageUrl || (src.startsWith('http') ? src : undefined);
   
   const handleZoomToggle = () => {
     setIsZoomed(!isZoomed);
@@ -85,13 +95,15 @@ function SafeImage({ src, alt, filePath, className, sandboxId, project }: {
     document.body.removeChild(link);
   };
 
-  // Show loading state with retry counter
-  if (isLoading) {
+  // Show loading state while waiting for sandbox to connect
+  if (waitingForSandbox || isLoading) {
     return (
       <div className="flex py-8 flex-col items-center justify-center w-full h-64 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-900/50 dark:to-zinc-800/30 rounded-lg border-zinc-200 dark:border-zinc-700/50 shadow-inner">
         <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-        <p className="text-xs text-muted-foreground">Loading image...</p>
-        {failureCount > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {waitingForSandbox ? 'Connecting to sandbox...' : 'Loading image...'}
+        </p>
+        {!waitingForSandbox && failureCount > 0 && (
           <p className="text-xs text-muted-foreground mt-2">
             Retrying... (attempt {failureCount + 1})
           </p>
@@ -100,8 +112,8 @@ function SafeImage({ src, alt, filePath, className, sandboxId, project }: {
     );
   }
 
-  // Only show error after retries exhausted (15 attempts)
-  if (error && !isLoading && failureCount >= 15) {
+  // Only show error after retries exhausted (15 attempts) and not waiting for sandbox
+  if (error && !isLoading && !waitingForSandbox && failureCount >= 15) {
     return (
       <div className="flex flex-col items-center justify-center w-full h-64 bg-gradient-to-b from-rose-50 to-rose-100 dark:from-rose-950/30 dark:to-rose-900/20 rounded-lg border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 shadow-inner">
         <div className="bg-white dark:bg-black/30 p-3 rounded-full shadow-md mb-3">
@@ -115,9 +127,14 @@ function SafeImage({ src, alt, filePath, className, sandboxId, project }: {
     );
   }
 
-  // Don't render if no image URL yet
+  // Don't render if no image URL yet - show loading
   if (!finalImageUrl) {
-    return null;
+    return (
+      <div className="flex py-8 flex-col items-center justify-center w-full h-64 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-900/50 dark:to-zinc-800/30 rounded-lg border-zinc-200 dark:border-zinc-700/50 shadow-inner">
+        <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+        <p className="text-xs text-muted-foreground">Preparing image...</p>
+      </div>
+    );
   }
 
   return (

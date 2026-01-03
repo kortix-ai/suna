@@ -27,7 +27,7 @@ SONNET_BEDROCK_ARN = build_bedrock_profile_arn(SONNET_4_5_PROFILE_ID)
 FREE_MODEL_ID = "kortix/basic"
 PREMIUM_MODEL_ID = "kortix/power"
 
-# Haiku 4.5 pricing (used for fallback billing)
+# Haiku 4.5 pricing (used for billing resolution)
 HAIKU_PRICING = ModelPricing(
     input_cost_per_million_tokens=1.00,
     output_cost_per_million_tokens=5.00,
@@ -41,12 +41,12 @@ class ModelRegistry:
     def __init__(self):
         self._models: Dict[str, Model] = {}
         self._aliases: Dict[str, str] = {}
-        # Mapping of LiteLLM model IDs to pricing (for fallback models not in registry)
+        # Mapping of LiteLLM model IDs to pricing (for models not in registry)
         self._litellm_id_to_pricing: Dict[str, ModelPricing] = {}
         self._initialize_models()
     
     def _initialize_models(self):
-        # Register Haiku Bedrock ARN pricing for fallback billing resolution
+        # Register Haiku Bedrock ARN pricing for billing resolution
         self._litellm_id_to_pricing[HAIKU_BEDROCK_ARN] = HAIKU_PRICING
         
         # Kortix Basic - using MiniMax M2.1
@@ -57,6 +57,10 @@ class ModelRegistry:
             id="kortix/basic",
             name="Kortix Basic",
             litellm_model_id=basic_litellm_id,
+            # Vision model: Use Haiku Bedrock when thread has images
+            vision_litellm_model_id=HAIKU_BEDROCK_ARN,
+            vision_context_window=200_000,
+            vision_pricing=HAIKU_PRICING,
             provider=ModelProvider.OPENROUTER,
             aliases=["kortix-basic", "Kortix Basic"],
             context_window=200_000,
@@ -82,7 +86,6 @@ class ModelRegistry:
             priority=102,
             recommended=True,
             enabled=True,
-            fallback_model_id=HAIKU_BEDROCK_ARN,  # Fallback for vision/image input
             config=ModelConfig(
                 # OLD Anthropic config:
                 # extra_headers={
@@ -99,6 +102,10 @@ class ModelRegistry:
             id="kortix/power",
             name="Kortix Advanced Mode",
             litellm_model_id=power_litellm_id,
+            # Vision model: Use Haiku Bedrock when thread has images
+            vision_litellm_model_id=HAIKU_BEDROCK_ARN,
+            vision_context_window=200_000,
+            vision_pricing=HAIKU_PRICING,
             provider=ModelProvider.OPENROUTER,
             aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
             context_window=200_000,
@@ -125,7 +132,6 @@ class ModelRegistry:
             priority=101,
             recommended=True,
             enabled=True,
-            fallback_model_id=HAIKU_BEDROCK_ARN,  # Fallback for vision/image input
             config=ModelConfig(
                 # OLD Anthropic config:
                 # extra_headers={
@@ -138,7 +144,7 @@ class ModelRegistry:
         if config.ENV_MODE != EnvMode.PRODUCTION:
             # test_litellm_id = build_bedrock_profile_arn(MINIMAX_M2_PROFILE_ID)
             # test_litellm_id ="openrouter/minimax/minimax-m2" #  205K context $0.255/M input tokens $1.02/M output tokens
-            test_litellm_id ="openrouter/minimax/minimax-m2.1" #  204,800 context $0.30/M input tokens $1.20/M output tokens 
+            test_litellm_id ="openrouter/z-ai/glm-4.6v" #  204,800 context $0.30/M input tokens $1.20/M output tokens 
             # test_litellm_id = "openrouter/z-ai/glm-4.7" # 203K context $0.44/M input tokens $1.74/M output tokens
             # test_litellm_id = "openrouter/z-ai/glm-4.6v" # 131K context $0.30/M input tokens $0.90/M output tokens 
             # test_litellm_id = "openrouter/google/gemini-3-flash-preview" #  1.05M context $0.50/M input tokens $3/M output tokens $1/M audio tokens
@@ -146,7 +152,7 @@ class ModelRegistry:
             # test_litellm_id = "openrouter/deepseek/deepseek-v3.2-speciale" 164K context $0.27/M input tokens $0.41/M output tokens
             # test_litellm_id = "openrouter/deepseek/deepseek-v3.2" 164K context $0.26/M input tokens $0.38/M output tokens
 
-            test_litellm_id ="groq/moonshotai/kimi-k2-instruct" 
+            # test_litellm_id ="groq/moonshotai/kimi-k2-instruct" 
 
             self.register(Model(
                 id="kortix/test",
@@ -171,7 +177,6 @@ class ModelRegistry:
                 priority=100,
                 recommended=False,
                 enabled=True,
-                fallback_model_id=HAIKU_BEDROCK_ARN,
                 config=ModelConfig()
             ))
     
@@ -235,11 +240,16 @@ class ModelRegistry:
             
         return model_id
     
-    def get_litellm_model_id(self, model_id: str) -> str:
-        """Get the LiteLLM model ID for a given registry model ID or alias."""
+    def get_litellm_model_id(self, model_id: str, has_images: bool = False) -> str:
+        """Get the LiteLLM model ID for a given registry model ID or alias.
+        
+        Args:
+            model_id: Registry model ID or alias
+            has_images: Whether the context has images (uses vision model if available)
+        """
         model = self.get(model_id)
         if model:
-            return model.litellm_model_id
+            return model.get_litellm_model_id_for_context(has_images)
         return model_id
     
     def get_litellm_params(self, model_id: str, **override_params) -> Dict[str, Any]:
@@ -258,23 +268,6 @@ class ModelRegistry:
         
         return params
     
-    def get_fallback_chains(self) -> List[Dict[str, List[str]]]:
-        """Build fallback chain configuration for LiteLLM Router.
-        
-        Returns a list of fallback rules where each rule maps a primary 
-        LiteLLM model ID to a list of fallback LiteLLM model IDs.
-        """
-        fallbacks = []
-        
-        # Add Sonnet -> Haiku fallback for Bedrock
-        fallbacks.append({SONNET_BEDROCK_ARN: [HAIKU_BEDROCK_ARN]})
-        
-        # Build fallback chains from model definitions
-        for model in self._models.values():
-            if model.fallback_model_id:
-                fallbacks.append({model.litellm_model_id: [model.fallback_model_id]})
-        
-        return fallbacks
     
     def _normalize_model_id(self, model_id: str) -> str:
         """Normalize model ID for consistent matching.
@@ -370,9 +363,18 @@ class ModelRegistry:
             return True
         return False
     
-    def get_context_window(self, model_id: str, default: int = 31_000) -> int:
+    def get_context_window(self, model_id: str, default: int = 31_000, has_images: bool = False) -> int:
+        """Get context window for a model.
+        
+        Args:
+            model_id: Registry model ID or alias
+            default: Default context window if model not found
+            has_images: Whether context has images (uses vision context window if available)
+        """
         model = self.get(model_id)
-        return model.context_window if model else default
+        if model:
+            return model.get_context_window_for_context(has_images)
+        return default
     
     def get_pricing(self, model_id: str) -> Optional[ModelPricing]:
         """Get pricing for a model by registry ID or LiteLLM ID."""

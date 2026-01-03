@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { trackCtaUpgrade } from '@/lib/analytics/gtm';
 
 interface PricingModalState {
   isOpen: boolean;
@@ -17,7 +18,10 @@ export const usePricingModalStore = create<PricingModalState>((set) => ({
   customTitle: undefined,
   alertSubtitle: undefined,
   returnUrl: undefined,
-  openPricingModal: (options) =>
+  openPricingModal: (options) => {
+    // Track cta_upgrade event for GTM/GA4
+    trackCtaUpgrade();
+    
     set({
       isOpen: true,
       customTitle: options?.title,
@@ -25,7 +29,8 @@ export const usePricingModalStore = create<PricingModalState>((set) => ({
       alertTitle: options?.alertTitle,
       alertSubtitle: options?.alertSubtitle,
       returnUrl: options?.returnUrl,
-    }),
+    });
+  },
   closePricingModal: () =>
     set({
       isOpen: false,

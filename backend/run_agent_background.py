@@ -11,49 +11,14 @@ from core.services import redis
 from core.run import run_agent
 from core.utils.logger import logger, structlog
 from core.utils.tool_discovery import warm_up_tools_cache
-import dramatiq
 import uuid
 from core.services.supabase import DBConnection
-from dramatiq.brokers.redis import RedisBroker
 from core.services.langfuse import langfuse
 from core.utils.retry import retry
 import time
 
-from core.services.redis import get_redis_config as _get_redis_config
-import os
-
-redis_config = _get_redis_config()
-redis_host = redis_config["host"]
-redis_port = redis_config["port"]
-redis_password = redis_config["password"]
-redis_username = redis_config["username"]
-
-# Get queue prefix from environment (for preview deployments)
-QUEUE_PREFIX = os.getenv("DRAMATIQ_QUEUE_PREFIX", "")
-
-def get_queue_name(base_name: str) -> str:
-    """Get queue name with optional prefix for preview deployments."""
-    if QUEUE_PREFIX:
-        return f"{QUEUE_PREFIX}{base_name}"
-    return base_name
-
-if redis_config["url"]:
-    auth_info = f" (user={redis_username})" if redis_username else ""
-    queue_info = f" (queue prefix: '{QUEUE_PREFIX}')" if QUEUE_PREFIX else ""
-    logger.info(f"🔧 Configuring Dramatiq broker with Redis at {redis_host}:{redis_port}{auth_info}{queue_info}")
-    redis_broker = RedisBroker(url=redis_config["url"], middleware=[dramatiq.middleware.AsyncIO()])
-else:
-    queue_info = f" (queue prefix: '{QUEUE_PREFIX}')" if QUEUE_PREFIX else ""
-    logger.info(f"🔧 Configuring Dramatiq broker with Redis at {redis_host}:{redis_port}{queue_info}")
-    redis_broker = RedisBroker(host=redis_host, port=redis_port, middleware=[dramatiq.middleware.AsyncIO()])
-
-dramatiq.set_broker(redis_broker)
-
-from core.memory import background_jobs as memory_jobs
-from core.categorization import background_jobs as categorization_jobs
-
-warm_up_tools_cache()
-logger.info("✅ Worker process ready, tool cache warmed")
+# Note: This file contains helper functions used by Temporal activities
+# The actual worker entry point is now in core/temporal/worker.py
 
 _initialized = False
 db = DBConnection()
@@ -103,7 +68,7 @@ async def initialize():
     if not instance_id:
         instance_id = str(uuid.uuid4())[:8]
     
-    logger.info(f"Initializing worker async resources with Redis at {redis_host}:{redis_port}")
+    logger.info(f"Initializing worker async resources (instance: {instance_id})")
     await retry(lambda: redis.initialize_async())
     
     await redis.verify_connection()
@@ -130,10 +95,7 @@ async def initialize():
     _initialized = True
     logger.info(f"✅ Worker async resources initialized successfully (instance: {instance_id})")
 
-@dramatiq.actor(queue_name=get_queue_name("default"))
-async def check_health(key: str):
-    structlog.contextvars.clear_contextvars()
-    await redis.set(key, "healthy", ex=redis.REDIS_KEY_TTL)
+# check_health function removed - health checks now handled by worker_health.py
 
 
 async def acquire_run_lock(agent_run_id: str, instance_id: str, client) -> bool:
@@ -445,10 +407,9 @@ async def publish_final_control_signal(agent_run_id: str, final_status: str, sto
 
 
 
-from core import thread_init_service
 from core.tool_output_streaming_context import set_tool_output_streaming_context, clear_tool_output_streaming_context
 
-@dramatiq.actor(queue_name=get_queue_name("default"))
+
 async def run_agent_background(
     agent_run_id: str,
     thread_id: str,
@@ -658,18 +619,24 @@ async def run_agent_background(
 
         if final_status == "completed" and account_id:
             try:
-                from core.memory.background_jobs import extract_memories_from_conversation
+                from core.temporal.client import get_temporal_client
+                from core.temporal.workflows import MemoryExtractionWorkflow
                 messages_result = await client.table('messages').select('message_id').eq('thread_id', thread_id).order('created_at', desc=False).execute()
                 if messages_result.data:
                     message_ids = [m['message_id'] for m in messages_result.data]
-                    extract_memories_from_conversation.send(
-                        thread_id=thread_id,
-                        account_id=account_id,
-                        message_ids=message_ids
+                    temporal_client = await get_temporal_client()
+                    # Temporal SDK requires multiple args passed via 'args' parameter
+                    # Use background queue for memory extraction (lower priority)
+                    from core.temporal.workflows import MemoryExtractionWorkflow, TASK_QUEUE_BACKGROUND
+                    await temporal_client.start_workflow(
+                        MemoryExtractionWorkflow.run,
+                        args=[thread_id, account_id, message_ids],
+                        id=f"memory-extraction-{thread_id}",
+                        task_queue=TASK_QUEUE_BACKGROUND,
                     )
-                    logger.debug(f"Queued memory extraction for thread {thread_id}")
+                    logger.debug(f"Started memory extraction workflow for thread {thread_id}")
             except Exception as mem_error:
-                logger.warning(f"Failed to queue memory extraction: {mem_error}")
+                logger.warning(f"Failed to start memory extraction workflow: {mem_error}")
 
         # MEMORY CLEANUP: Explicitly release memory after agent run completes
         try:

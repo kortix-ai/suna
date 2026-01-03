@@ -67,7 +67,6 @@ class ToolGuideRegistry:
             "**Batch load ALL tools you need upfront:**",
             "- Analyze user request → Identify all needed tools → Load in ONE call",
             "- Example: initialize tools like web_search_tool, browser_tool, sb_files_tool together",
-            "- This is INTERNAL (invisible to users) - don't mention it",
             "",
             "**🚨 CRITICAL - Tool Guides Give You Function Names:**",
             "Each tool provides SPECIFIC FUNCTIONS. Loading the guide reveals what you can use:",

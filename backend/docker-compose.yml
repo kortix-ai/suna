@@ -42,7 +42,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: uv run dramatiq --skip-logging --processes 4 --threads 4 run_agent_background
+    # Temporal worker now handles multiple queues:
+    # - agent-runs: High-priority, long-running agent executions
+    # - background: Memory extraction, categorization, etc.
+    command: uv run python -m core.temporal.worker
     env_file:
       - .env
     volumes:
@@ -60,6 +63,9 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=
       - LOG_LEVEL=INFO
+      # Optional: Override auto-tuned concurrency settings
+      # - MAX_CONCURRENT_AGENT_RUNS=8
+      # - MAX_CONCURRENT_BACKGROUND_TASKS=50
     logging:
       driver: "json-file"
       options:

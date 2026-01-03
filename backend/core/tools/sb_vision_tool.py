@@ -465,36 +465,35 @@ Images remain in the sandbox and can be loaded again anytime. SVG files are auto
                 logger.info(f"[LoadImage] Auto-cleared {cleared} image(s) to make room (was {current_image_count}/3)")
                 current_image_count = 0
             
-            # Add the image to the thread as an image_context message with multi-modal content
-            # This allows the LLM to actually "see" the image
-            message_content = {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": f"[Image loaded from '{cleaned_path}']"},
-                    {"type": "image_url", "image_url": {"url": public_url}}
-                ]
-            }
+            # NOTE: We do NOT save image_context here anymore!
+            # Instead, we return the image data in the result, and the response_processor
+            # will save the image_context AFTER the tool result is saved.
+            # This ensures proper message ordering (tool_call -> tool_result -> image_context).
             
-            await self.thread_manager.add_message(
-                thread_id=self.thread_id,
-                type="image_context",
-                content=message_content,
-                is_llm_message=True,
-                metadata={
-                    "file_path": cleaned_path,
-                    "mime_type": compressed_mime_type,
-                    "original_size": original_size,
-                    "compressed_size": len(compressed_bytes)
-                }
-            )
+            logger.info(f"[LoadImage] Prepared '{cleaned_path}' for context (will be saved after tool result)")
             
-            logger.info(f"[LoadImage] Added '{cleaned_path}' to context")
-            
-            # Return structured output
+            # Return structured output with _image_context_data for deferred saving
             result_data = {
                 "message": f"Successfully loaded image '{cleaned_path}' into context (reduced from {original_size/1024:.1f}KB to {len(compressed_bytes)/1024:.1f}KB).",
                 "file_path": cleaned_path,
-                "image_url": public_url
+                "image_url": public_url,
+                # This special key tells response_processor to save image_context after tool result
+                "_image_context_data": {
+                    "thread_id": self.thread_id,
+                    "message_content": {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": f"[Image loaded from '{cleaned_path}']"},
+                            {"type": "image_url", "image_url": {"url": public_url}}
+                        ]
+                    },
+                    "metadata": {
+                        "file_path": cleaned_path,
+                        "mime_type": compressed_mime_type,
+                        "original_size": original_size,
+                        "compressed_size": len(compressed_bytes)
+                    }
+                }
             }
             
             return self.success_response(result_data)

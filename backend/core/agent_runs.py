@@ -14,8 +14,8 @@ from core.utils.config import config, EnvMode
 from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox, get_or_start_sandbox
 from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
-from run_agent_background import run_agent_background
-import dramatiq
+from core.temporal.client import get_temporal_client
+from core.temporal.workflows import AgentRunWorkflow, TASK_QUEUE_AGENT_RUNS
 
 from core.ai_models import model_manager
 
@@ -323,28 +323,31 @@ async def _trigger_agent_background(
 ):
     request_id = structlog.contextvars.get_contextvars().get('request_id')
 
-    logger.info(f"🚀 Sending agent run {agent_run_id} to Dramatiq queue (thread: {thread_id}, model: {effective_model})")
+    logger.info(f"🚀 Starting Temporal workflow for agent run {agent_run_id} (thread: {thread_id}, model: {effective_model})")
     
     try:
-        message = run_agent_background.send(
-            agent_run_id=agent_run_id,
-            thread_id=thread_id,
-            instance_id=utils.instance_id,
-            project_id=project_id,
-            model_name=effective_model,
-            agent_id=agent_id,
-            account_id=account_id,
-            request_id=request_id,
+        client = await get_temporal_client()
+        
+        # Start workflow with agent_run_id as workflow ID for deduplication
+        # Temporal SDK requires multiple args passed via 'args' parameter
+        # Use agent-runs queue for high-priority processing
+        handle = await client.start_workflow(
+            AgentRunWorkflow.run,
+            args=[agent_run_id, thread_id, utils.instance_id, project_id, effective_model, agent_id, account_id, request_id],
+            id=f"agent-run-{agent_run_id}",
+            task_queue=TASK_QUEUE_AGENT_RUNS,
         )
-        message_id = message.message_id if hasattr(message, 'message_id') else 'N/A'
-        logger.info(f"✅ Successfully enqueued agent run {agent_run_id} to Dramatiq (message_id: {message_id})")
+        
+        workflow_id = handle.id
+        logger.info(f"✅ Successfully started Temporal workflow for agent run {agent_run_id} (workflow_id: {workflow_id})")
     except Exception as e:
-        logger.error(f"❌ Failed to enqueue agent run {agent_run_id} to Dramatiq: {e}", exc_info=True)
+        logger.error(f"❌ Failed to start Temporal workflow for agent run {agent_run_id}: {e}", exc_info=True)
         raise
 
 
 async def _fast_parse_files(files: List[UploadFile], prompt: str = "") -> Tuple[str, List[Tuple[str, bytes, str, Optional[str]]]]:
     from core.utils.fast_parse import parse, FileType, format_file_size
+    import re
     
     if not files:
         return prompt, []
@@ -352,6 +355,16 @@ async def _fast_parse_files(files: List[UploadFile], prompt: str = "") -> Tuple[
     message_content = prompt
     files_for_upload: List[Tuple[str, bytes, str, Optional[str]]] = []
     file_refs = []
+    
+    # Extract existing file references from prompt to avoid duplicates
+    existing_refs = set()
+    if prompt:
+        # Match both [Uploaded File: ...] and [Attached: ...] patterns
+        existing_matches = re.findall(r'\[(?:Uploaded File|Attached|Image):\s*([^\]]+)\]', prompt)
+        for match in existing_matches:
+            # Normalize path (strip /workspace/ prefix if present)
+            normalized = match.replace('/workspace/', '') if match.startswith('/workspace/') else match
+            existing_refs.add(normalized.lower())
     
     for file in files:
         if not file.filename:
@@ -371,13 +384,19 @@ async def _fast_parse_files(files: List[UploadFile], prompt: str = "") -> Tuple[
                     parsed_content = parsed_content[:100000]
             
             files_for_upload.append((original_filename, content_bytes, mime_type, parsed_content))
-            file_refs.append(f"[Attached: {original_filename} ({format_file_size(result.file_size)}) -> /workspace/uploads/{original_filename}]")
+            
+            # Check if this file is already referenced in the prompt
+            file_path = f"uploads/{original_filename}"
+            if file_path.lower() not in existing_refs:
+                file_refs.append(f"[Attached: {original_filename} ({format_file_size(result.file_size)}) -> {file_path}]")
             
             logger.debug(f"Fast-parsed {original_filename}: {result.char_count} chars, type={result.file_type.name}")
                 
         except Exception as e:
             logger.error(f"Error fast-parsing file {file.filename}: {str(e)}", exc_info=True)
-            file_refs.append(f"[Attached: {file.filename} -> /workspace/uploads/{file.filename}]")
+            file_path = f"uploads/{file.filename}"
+            if file_path.lower() not in existing_refs:
+                file_refs.append(f"[Attached: {file.filename} -> {file_path}]")
         finally:
             await file.seek(0)
     
@@ -577,9 +596,9 @@ async def _handle_staged_files_for_thread(
                 "url": sf['image_url'],
                 "mime_type": sf['mime_type']
             })
-            file_refs.append(f"[Image: {filename} ({sf['file_size']:,} bytes) -> /workspace/uploads/{filename}]")
+            file_refs.append(f"[Image: {filename} ({sf['file_size']:,} bytes) -> uploads/{filename}]")
         else:
-            file_refs.append(f"[Attached: {filename} ({sf['file_size']:,} bytes) -> /workspace/uploads/{filename}]")
+            file_refs.append(f"[Attached: {filename} ({sf['file_size']:,} bytes) -> uploads/{filename}]")
             if sf.get('parsed_content'):
                 parsed_contents.append({
                     "filename": filename,
@@ -1380,6 +1399,15 @@ async def stream_agent_run(
         last_id = "0"  # Start from beginning for initial read
 
         try:
+            # Send immediate "connected" message so frontend knows connection is established
+            yield f"data: {json.dumps({'type': 'connected', 'agent_run_id': agent_run_id})}\n\n"
+            
+            # #region agent log
+            try:
+                import urllib.request as _ur; _ur.urlopen(_ur.Request('http://host.docker.internal:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',data=json.dumps({"location":"agent_runs.py:stream_generator:start","message":"Stream generator started","data":{"agent_run_id":agent_run_id,"stream_key":stream_key},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","hypothesisId":"A,B"}).encode(),headers={'Content-Type':'application/json'}),timeout=1)
+            except: pass
+            # #endregion
+            
             initial_entries = await redis.stream_range(stream_key)
             if initial_entries:
                 logger.debug(f"Sending {len(initial_entries)} catch-up responses for {agent_run_id}")
@@ -1442,12 +1470,24 @@ async def stream_agent_run(
             if last_id != "0":
                 last_id = "$"  # "$" means only new entries
             
+            # Startup timeout: if no real data received after N pings, check if worker is stuck
+            consecutive_pings = 0
+            received_real_data = len(initial_entries) > 0 if initial_entries else False
+            MAX_STARTUP_PINGS = 12  # 12 pings * 5 seconds = 60 second startup timeout (Temporal Cloud may have scheduling latency)
+            
             while not terminate_stream:
                 try:
                     # Blocking XREAD - waits up to 5 seconds for new entries
                     entries = await redis.stream_read(stream_key, last_id, block_ms=5000)
                     
                     if entries:
+                        received_real_data = True
+                        consecutive_pings = 0  # Reset ping counter on real data
+                        # #region agent log
+                        try:
+                            import urllib.request as _ur; _ur.urlopen(_ur.Request('http://host.docker.internal:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',data=json.dumps({"location":"agent_runs.py:stream:data_received","message":"FIRST DATA received","data":{"agent_run_id":agent_run_id,"entries":len(entries)},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","hypothesisId":"A,E"}).encode(),headers={'Content-Type':'application/json'}),timeout=1)
+                        except: pass
+                        # #endregion
                         for entry_id, fields in entries:
                             data = fields.get('data', '{}')
                             yield f"data: {data}\n\n"
@@ -1463,6 +1503,39 @@ async def stream_agent_run(
                             except json.JSONDecodeError:
                                 pass
                     else:
+                        consecutive_pings += 1
+                        
+                        # Startup timeout check: if we haven't received any real data and hit the limit
+                        if not received_real_data and consecutive_pings >= MAX_STARTUP_PINGS:
+                            logger.warning(f"Startup timeout for agent run {agent_run_id}: no data received after {consecutive_pings * 5}s")
+                            # #region agent log
+                            try:
+                                import urllib.request as _ur; _ur.urlopen(_ur.Request('http://host.docker.internal:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',data=json.dumps({"location":"agent_runs.py:stream_generator:timeout","message":"STARTUP TIMEOUT","data":{"agent_run_id":agent_run_id,"pings":consecutive_pings,"stream_key":stream_key},"timestamp":datetime.now(timezone.utc).timestamp()*1000,"sessionId":"debug-session","hypothesisId":"A,E"}).encode(),headers={'Content-Type':'application/json'}),timeout=1)
+                            except: pass
+                            # #endregion
+                            # Check DB status to see if run is still supposed to be running
+                            try:
+                                run_check = await client.table('agent_runs').select('status').eq('id', agent_run_id).maybe_single().execute()
+                                db_status = run_check.data.get('status') if run_check.data else None
+                                if db_status == 'running':
+                                    # Worker never started - mark as failed
+                                    logger.error(f"Agent run {agent_run_id} stuck: status is 'running' but worker never produced output")
+                                    await client.table('agent_runs').update({
+                                        'status': 'failed',
+                                        'error': 'Worker failed to start within timeout period',
+                                        'completed_at': datetime.now(timezone.utc).isoformat()
+                                    }).eq('id', agent_run_id).execute()
+                                    yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': 'Agent worker failed to start. Please try again.'})}\n\n"
+                                    terminate_stream = True
+                                    break
+                                elif db_status in ['completed', 'failed', 'stopped']:
+                                    logger.debug(f"Agent run {agent_run_id} already finished with status: {db_status}")
+                                    yield f"data: {json.dumps({'type': 'status', 'status': db_status})}\n\n"
+                                    terminate_stream = True
+                                    break
+                            except Exception as db_err:
+                                logger.warning(f"Failed to check agent_run status during timeout: {db_err}")
+                        
                         # Timeout - send ping to keep connection alive
                         yield f"data: {json.dumps({'type': 'ping'})}\n\n"
 

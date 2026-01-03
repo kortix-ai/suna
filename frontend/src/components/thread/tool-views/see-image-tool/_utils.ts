@@ -210,7 +210,7 @@ export function extractSeeImageData(
 
 export function constructImageUrl(filePath: string, project?: { sandbox?: { sandbox_url?: string; workspace_path?: string; id?: string } }): string {
   if (!filePath || filePath === 'STREAMING') {
-    console.error('Invalid image path:', filePath);
+    // Don't log error for streaming state - it's expected
     return '';
   }
 
@@ -254,6 +254,7 @@ export function constructImageUrl(filePath: string, project?: { sandbox?: { sand
     return fullUrl;
   }
   
-  console.warn('No sandbox URL or ID available, using path as-is:', cleanPath);
-  return cleanPath;
+  // Return empty string when sandbox not ready - the component will show loading state
+  // This is expected during initial render before sandbox info is available
+  return '';
 }

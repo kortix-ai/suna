@@ -10,6 +10,7 @@ import { TierBadge } from '@/components/billing/tier-badge';
 import { PlanSelectionModal } from '@/components/billing/pricing';
 import { cn } from '@/lib/utils';
 import { useQueryClient } from '@tanstack/react-query';
+import { trackCtaUpgrade } from '@/lib/analytics/gtm';
 import { formatCredits } from '@/lib/utils/credit-formatter';
 
 export function CreditsDisplay() {
@@ -35,6 +36,7 @@ export function CreditsDisplay() {
   const formattedCredits = formatCredits(credits);
 
   const handleClick = () => {
+    trackCtaUpgrade();
     setShowPlanModal(true);
   };
 

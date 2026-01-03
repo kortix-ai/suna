@@ -111,8 +111,6 @@ interface PanelHeaderProps {
   isSuiteMode?: boolean;
   onToggleSuiteMode?: () => void;
   hideViewToggle?: boolean;
-  sandboxInfoOpen?: boolean;
-  setSandboxInfoOpen?: (open: boolean) => void;
 }
 
 export const PanelHeader = memo(function PanelHeader({
@@ -129,8 +127,6 @@ export const PanelHeader = memo(function PanelHeader({
   isSuiteMode = false,
   onToggleSuiteMode,
   hideViewToggle = false,
-  sandboxInfoOpen,
-  setSandboxInfoOpen,
 }: PanelHeaderProps) {
   const title = "Kortix Computer";
 
@@ -163,17 +159,21 @@ export const PanelHeader = memo(function PanelHeader({
 
   return (
     <div className={cn(
-      "h-9 flex-shrink-0 px-3 grid grid-cols-3 items-center",
-      !isMaximized && "h-12 border-b border-border"
+      "flex-shrink-0 grid grid-cols-3 items-center",
+      isMaximized 
+        ? "h-9 px-3" 
+        : "h-14 px-3.5 pt-1 border-b border-border"
     )}>
       <div className="flex items-center justify-start">
         <ToolbarButtons 
           onClose={onClose}
-          onMaximize={onMaximize || (() => {})}
           isMaximized={isMaximized}
         />
       </div>
-      <div onClick={() => setSandboxInfoOpen?.(!sandboxInfoOpen)} className="flex items-center justify-center gap-1.5 cursor-default">
+      <div 
+        onClick={() => onMaximize?.()} 
+        className="flex items-center justify-center gap-1.5 cursor-pointer select-none hover:opacity-80 transition-opacity"
+      >
         <div className="w-5 h-5 flex items-center justify-center">
           <KortixLogo size={14}/>
         </div>

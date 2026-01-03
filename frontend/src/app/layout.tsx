@@ -24,6 +24,8 @@ const PostHogIdentify = lazy(() => import('@/components/posthog-identify').then(
 const PlanSelectionModal = lazy(() => import('@/components/billing/pricing/plan-selection-modal').then(mod => ({ default: mod.PlanSelectionModal })));
 const AnnouncementDialog = lazy(() => import('@/components/announcements/announcement-dialog').then(mod => ({ default: mod.AnnouncementDialog })));
 const CookieConsent = lazy(() => import('@/components/cookie-consent').then(mod => ({ default: mod.CookieConsent })));
+const RouteChangeTracker = lazy(() => import('@/components/analytics/route-change-tracker').then(mod => ({ default: mod.RouteChangeTracker })));
+const AuthEventTracker = lazy(() => import('@/components/analytics/auth-event-tracker').then(mod => ({ default: mod.AuthEventTracker })));
 
 
 export const viewport: Viewport = {
@@ -117,6 +119,54 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://connect.facebook.net" />
         <link rel="dns-prefetch" href="https://eu.i.posthog.com" />
         
+        {/* Container Load - Initialize dataLayer with page context BEFORE GTM loads */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                window.dataLayer = window.dataLayer || [];
+                var pathname = window.location.pathname;
+                
+                // Get language from localStorage, cookie, or default to 'en'
+                var lang = 'en';
+                try {
+                  // Check localStorage first
+                  var stored = localStorage.getItem('locale');
+                  if (stored) {
+                    lang = stored;
+                  } else {
+                    // Check cookie
+                    var cookies = document.cookie.split(';');
+                    for (var i = 0; i < cookies.length; i++) {
+                      var cookie = cookies[i].trim();
+                      if (cookie.indexOf('locale=') === 0) {
+                        lang = cookie.substring(7);
+                        break;
+                      }
+                    }
+                  }
+                } catch (e) {}
+                
+                var context = { master_group: 'General', content_group: 'Other', page_type: 'other', language: lang };
+                
+                if (pathname === '/' || pathname === '') {
+                  context = { master_group: 'General', content_group: 'Other', page_type: 'home', language: lang };
+                } else if (pathname.indexOf('/auth') === 0) {
+                  context = { master_group: 'General', content_group: 'User', page_type: 'auth', language: lang };
+                } else if (pathname === '/dashboard') {
+                  context = { master_group: 'Platform', content_group: 'Dashboard', page_type: 'home', language: lang };
+                } else if (pathname.indexOf('/projects') === 0 || pathname.indexOf('/thread') === 0) {
+                  context = { master_group: 'Platform', content_group: 'Dashboard', page_type: 'thread', language: lang };
+                } else if (pathname.indexOf('/settings') === 0) {
+                  context = { master_group: 'Platform', content_group: 'User', page_type: 'settings', language: lang };
+                }
+                
+                window.dataLayer.push(context);
+              })();
+            `,
+          }}
+        />
+        
         {/* Static SEO meta tags - rendered in initial HTML */}
         <title>Kortix: Your Autonomous AI Worker</title>
         <meta name="description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
@@ -140,6 +190,8 @@ export default function RootLayout({
         ) : null}
 
         {/* Facebook Pixel - Will be blocked by cookie consent service until marketing consent is given */}
+        {process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID && (
+          <>
         <Script id="facebook-pixel" strategy="lazyOnload" data-cookieconsent="marketing">
           {`
             !function(f,b,e,v,n,t,s)
@@ -151,7 +203,7 @@ export default function RootLayout({
             s.parentNode.insertBefore(t,s)}(window, document,'script',
             'https://connect.facebook.net/en_US/fbevents.js');
 
-            fbq('init', '1385936776361131');
+                fbq('init', '${process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID}');
             fbq('track', 'PageView');
           `}
         </Script>
@@ -160,9 +212,11 @@ export default function RootLayout({
             height="1"
             width="1"
             style={{ display: "none" }}
-            src="https://www.facebook.com/tr?id=1385936776361131&ev=PageView&noscript=1"
+                src={`https://www.facebook.com/tr?id=${process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID}&ev=PageView&noscript=1`}
           />
         </noscript>
+          </>
+        )}
 
 
         <script
@@ -241,13 +295,21 @@ export default function RootLayout({
           <Suspense fallback={null}>
             <Analytics />
           </Suspense>
+          {process.env.NEXT_PUBLIC_GA_ID_1 && (
+            <Suspense fallback={null}>
+              <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_ID_1} />
+            </Suspense>
+          )}
+          {process.env.NEXT_PUBLIC_GA_ID_2 && (
           <Suspense fallback={null}>
-            <GoogleAnalytics gaId="G-QSCBD7F1SD" />
-            <GoogleAnalytics gaId="G-6ETJFB3PT3" />
+              <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_ID_2} />
           </Suspense>
+          )}
+          {process.env.NEXT_PUBLIC_GTM_ID && (
           <Suspense fallback={null}>
-            <GoogleTagManager gtmId="GTM-PKFG3JCX" />
+              <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
           </Suspense>
+          )}
           <Suspense fallback={null}>
             <SpeedInsights />
           </Suspense>
@@ -256,6 +318,12 @@ export default function RootLayout({
           </Suspense>
           <Suspense fallback={null}>
             <CookieConsent />
+          </Suspense>
+          <Suspense fallback={null}>
+            <RouteChangeTracker />
+          </Suspense>
+          <Suspense fallback={null}>
+            <AuthEventTracker />
           </Suspense>
         </ThemeProvider>
       </body>

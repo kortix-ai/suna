@@ -1,0 +1,226 @@
+{
+    "math_basic": [
+        {
+            "input": "What is 2 + 2?",
+            "expected": "4",
+            "tags": [
+                "math",
+                "simple"
+            ]
+        },
+        {
+            "input": "What is 10 - 3?",
+            "expected": "7",
+            "tags": [
+                "math",
+                "simple"
+            ]
+        },
+        {
+            "input": "What is 5 * 6?",
+            "expected": "30",
+            "tags": [
+                "math",
+                "simple"
+            ]
+        },
+        {
+            "input": "What is 100 divided by 4?",
+            "expected": "25",
+            "tags": [
+                "math",
+                "simple"
+            ]
+        }
+    ],
+    "greeting": [
+        {
+            "input": "Hello, who are you?",
+            "expected_behavior": "Should introduce itself as Kortix",
+            "tags": [
+                "basic",
+                "greeting"
+            ]
+        },
+        {
+            "input": "What can you help me with?",
+            "expected_behavior": "Should explain capabilities",
+            "tags": [
+                "basic",
+                "capabilities"
+            ]
+        }
+    ],
+    "real_world": [
+        {
+            "input": "Explain quantum computing in simple terms",
+            "expected_behavior": "Should provide clear explanation without tools",
+            "tags": [
+                "explanation",
+                "knowledge"
+            ]
+        },
+        {
+            "input": "Write a Python function that reverses a string",
+            "expected_behavior": "Should provide working Python code",
+            "tags": [
+                "coding",
+                "python",
+                "simple"
+            ]
+        },
+        {
+            "input": "What are the best practices for API design?",
+            "expected_behavior": "Should list API design principles",
+            "tags": [
+                "knowledge",
+                "programming"
+            ]
+        },
+        {
+            "input": "How do I center a div in CSS?",
+            "expected_behavior": "Should provide CSS centering methods",
+            "tags": [
+                "coding",
+                "css",
+                "frontend"
+            ]
+        }
+    ],
+    "complex": [
+        {
+            "input": "Search the web for the latest news about OpenAI and summarize the top 3 findings",
+            "expected_tools": [
+                "web_search"
+            ],
+            "expected_behavior": "Should search web and provide structured summary",
+            "tags": [
+                "web",
+                "research",
+                "real-world"
+            ],
+            "timeout": 60
+        },
+        {
+            "input": "Create a Python function that reads a CSV file and calculates the average of a column",
+            "expected_tools": [
+                "sb_files_tool",
+                "sb_shell_tool"
+            ],
+            "expected_behavior": "Should create working Python code and explain usage",
+            "tags": [
+                "coding",
+                "python",
+                "data"
+            ],
+            "timeout": 60
+        },
+        {
+            "input": "Find information about the company Tesla and tell me their latest stock price",
+            "expected_tools": [
+                "company_search_tool",
+                "web_search"
+            ],
+            "expected_behavior": "Should use company search or web search for real-time data",
+            "tags": [
+                "research",
+                "business",
+                "real-world"
+            ],
+            "timeout": 60
+        },
+        {
+            "input": "Create a simple React component with a button that increments a counter",
+            "expected_tools": [
+                "sb_files_tool"
+            ],
+            "expected_behavior": "Should generate working React code with useState",
+            "tags": [
+                "coding",
+                "react",
+                "frontend"
+            ],
+            "timeout": 60
+        },
+        {
+            "input": "Search for recent academic papers about transformer models in AI",
+            "expected_tools": [
+                "paper_search_tool"
+            ],
+            "expected_behavior": "Should search academic papers and summarize findings",
+            "tags": [
+                "research",
+                "ai",
+                "academic"
+            ],
+            "timeout": 60
+        },
+        {
+            "input": "Write a bash script that finds all .txt files in a directory and counts their lines",
+            "expected_tools": [
+                "sb_shell_tool",
+                "sb_files_tool"
+            ],
+            "expected_behavior": "Should create working bash script",
+            "tags": [
+                "coding",
+                "bash",
+                "scripting"
+            ],
+            "timeout": 60
+        },
+        {
+            "input": "Create a task list for building a simple todo app: frontend, backend, and database",
+            "expected_tools": [
+                "task_list_tool"
+            ],
+            "expected_behavior": "Should create structured task list with clear steps",
+            "tags": [
+                "planning",
+                "project-management"
+            ],
+            "timeout": 45
+        },
+        {
+            "input": "Search for images of 'cute puppies' and describe what you find",
+            "expected_tools": [
+                "image_search_tool"
+            ],
+            "expected_behavior": "Should search images and provide descriptions",
+            "tags": [
+                "image",
+                "search",
+                "multimodal"
+            ],
+            "timeout": 60
+        },
+        {
+            "input": "Create a simple REST API with FastAPI that has endpoints for creating and reading users",
+            "expected_tools": [
+                "sb_files_tool"
+            ],
+            "expected_behavior": "Should generate complete FastAPI application with CRUD operations",
+            "tags": [
+                "coding",
+                "python",
+                "api",
+                "backend"
+            ],
+            "timeout": 60
+        },
+        {
+            "input": "Look up information about the founder of SpaceX and summarize their background",
+            "expected_tools": [
+                "people_search_tool",
+                "web_search"
+            ],
+            "expected_behavior": "Should find person info and provide structured summary",
+            "tags": [
+                "research",
+                "people",
+                "real-world"
+            ],
+            "timeout": 60
+        }
+    ]
+}

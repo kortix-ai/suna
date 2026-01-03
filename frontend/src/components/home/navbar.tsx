@@ -14,6 +14,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
+import { trackCtaSignup } from '@/lib/analytics/gtm';
 
 // Scroll threshold with hysteresis to prevent flickering
 const SCROLL_THRESHOLD_DOWN = 50;
@@ -166,7 +167,7 @@ export function Navbar() {
                   size="sm"
                   className="w-fit flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
                 >
-                  <Link href="/auth">
+                  <Link href="/auth" onClick={() => trackCtaSignup()}>
                     {t('tryFree')}
                   </Link>
                 </Button>
@@ -279,7 +280,7 @@ export function Navbar() {
                       size="sm"
                       className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
                     >
-                      <Link href="/auth">
+                      <Link href="/auth" onClick={() => trackCtaSignup()}>
                         {t('tryFree')}
                       </Link>
                     </Button>

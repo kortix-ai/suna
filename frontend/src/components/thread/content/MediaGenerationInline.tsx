@@ -241,10 +241,10 @@ export function MediaGenerationInline({
       {/* Tool button - exactly like regular tools */}
       <button
         onClick={onToolClick}
-        className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
+        className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 max-w-full"
       >
         <AppIcon toolCall={toolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground shrink-0" fallbackIcon={IconComponent} />
-        <span className="font-mono text-xs text-foreground">Generate Media</span>
+        <span className="font-mono text-xs text-foreground truncate">Generate Media</span>
         {!isComplete && <CircleDashed className="h-3.5 w-3.5 text-muted-foreground shrink-0 animate-spin ml-1" />}
       </button>
 

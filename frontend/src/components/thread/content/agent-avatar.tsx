@@ -4,7 +4,9 @@ import React from 'react';
 import { useAgentFromCache } from '@/hooks/agents/use-agents';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { normalizeIconName } from '@/lib/utils/icon-utils';
 import type { Agent } from '@/hooks/agents/utils';
 
 interface AgentAvatarProps {
@@ -93,26 +95,37 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   }
 
   if (iconName) {
-    return (
-      <div
-        className={cn(
-          "flex items-center justify-center transition-all border",
-          filteredClassName
-        )}
-        style={{
-          width: size,
-          height: size,
-          backgroundColor,
-          ...borderRadiusStyle
-        }}
-      >
-        <DynamicIcon
-          name={iconName as any}
-          size={size * 0.5}
-          color={iconColor}
-        />
-      </div>
-    );
+    // Normalize and validate the icon name
+    const normalizedIconName = normalizeIconName(iconName);
+    
+    // If icon name is invalid, fall through to default bot icon
+    if (normalizedIconName) {
+      try {
+        return (
+          <div
+            className={cn(
+              "flex items-center justify-center transition-all border",
+              filteredClassName
+            )}
+            style={{
+              width: size,
+              height: size,
+              backgroundColor,
+              ...borderRadiusStyle
+            }}
+          >
+            <DynamicIcon
+              name={normalizedIconName as any}
+              size={size * 0.5}
+              color={iconColor}
+            />
+          </div>
+        );
+      } catch (error) {
+        // Fallback to default icon if DynamicIcon fails
+        console.warn(`Invalid icon name: ${iconName}`, error);
+      }
+    }
   }
 
   // Fallback to default bot icon
@@ -124,8 +137,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
       )}
       style={{ width: size, height: size, ...borderRadiusStyle }}
     >
-      <DynamicIcon
-        name="bot"
+      <Bot
         size={size * 0.5}
         color="#6B7280"
       />

@@ -573,10 +573,20 @@ function CanvasImageElement({
     };
   }, [dragState, scale, onChange, frames, element.width, element.height, onSnapChange]);
 
-  if (loading || isProcessing) {
+  // Only show loading placeholder if image is actually loading, not if processing
+  // Processing shimmer is now rendered as a separate overlay layer
+  // z-index 100 ensures shimmer shows ABOVE frame backgrounds (1) and borders (10)
+  if (loading) {
     return (
       <div
-        style={{ position: 'absolute', left: posX, top: posY, width, height }}
+        style={{ 
+          position: 'absolute', 
+          left: posX, 
+          top: posY, 
+          width, 
+          height,
+          zIndex: 100, // Above frames!
+        }}
         className="rounded overflow-hidden bg-card/50"
       >
         {/* Shimmer loading effect - no text */}
@@ -631,17 +641,16 @@ function CanvasImageElement({
       }}
     >
       {/* Image content - THIS gets clipped if inside frame */}
-      <div 
+      <div
         className="w-full h-full rounded overflow-hidden relative"
         style={{ clipPath: clipPath || undefined }}
       >
         <img src={imageSrc} alt={element.name} draggable={false} className="w-full h-full object-fill pointer-events-none" />
-        <AIProcessingOverlay isVisible={isProcessing} />
       </div>
 
       {/* Selection ring - OUTSIDE clipped area, always fully visible */}
       {isSelected && (
-        <div 
+        <div
           className="absolute inset-0 rounded ring-2 ring-blue-500 pointer-events-none"
           style={{ zIndex: 5 }}
         />
@@ -838,7 +847,7 @@ function CanvasFrameElement({
         }}
       >
         {/* Frame label - top left outside frame - THIS is the click target for selection/move */}
-        <div 
+        <div
           className="absolute left-0 flex items-center gap-1 px-1.5 py-0.5 rounded-t-sm"
           style={{
             top: '-22px',
@@ -856,7 +865,7 @@ function CanvasFrameElement({
 
         {/* Dimension indicator - bottom center when selected */}
         {isSelected && (
-          <div 
+          <div
             className="absolute left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-sm pointer-events-none"
             style={{
               bottom: '-24px',
@@ -1905,9 +1914,9 @@ function FrameFloatingToolbar({
                   className="w-40 h-7 px-2 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                   autoFocus
                 />
-                <Button 
-                  size="sm" 
-                  className="w-full h-7 text-xs" 
+                <Button
+                  size="sm"
+                  className="w-full h-7 text-xs"
                   onClick={() => {
                     onChange({ name: tempName.trim() || 'Frame' });
                     setShowNamePopover(false);
@@ -1949,24 +1958,30 @@ function FrameFloatingToolbar({
                     </PopoverTrigger>
                     <PopoverContent className="w-48 p-1 max-h-64 overflow-y-auto" align="end" side="right">
                       {[
-                        { cat: 'SOCIAL', items: [
-                          { n: 'Instagram Post', w: 1080, h: 1080 },
-                          { n: 'Instagram Story', w: 1080, h: 1920 },
-                          { n: 'TikTok', w: 1080, h: 1920 },
-                          { n: 'Twitter Post', w: 1200, h: 675 },
-                          { n: 'Facebook Post', w: 1200, h: 630 },
-                          { n: 'YouTube Thumb', w: 1280, h: 720 },
-                        ]},
-                        { cat: 'DEVICES', items: [
-                          { n: 'iPhone 15 Pro', w: 1179, h: 2556 },
-                          { n: 'iPhone 15 Pro Max', w: 1290, h: 2796 },
-                          { n: 'iPad Pro 11"', w: 1668, h: 2388 },
-                        ]},
-                        { cat: 'DESIGN', items: [
-                          { n: 'Dribbble', w: 400, h: 300 },
-                          { n: 'Dribbble HD', w: 800, h: 600 },
-                          { n: 'Square', w: 1000, h: 1000 },
-                        ]},
+                        {
+                          cat: 'SOCIAL', items: [
+                            { n: 'Instagram Post', w: 1080, h: 1080 },
+                            { n: 'Instagram Story', w: 1080, h: 1920 },
+                            { n: 'TikTok', w: 1080, h: 1920 },
+                            { n: 'Twitter Post', w: 1200, h: 675 },
+                            { n: 'Facebook Post', w: 1200, h: 630 },
+                            { n: 'YouTube Thumb', w: 1280, h: 720 },
+                          ]
+                        },
+                        {
+                          cat: 'DEVICES', items: [
+                            { n: 'iPhone 15 Pro', w: 1179, h: 2556 },
+                            { n: 'iPhone 15 Pro Max', w: 1290, h: 2796 },
+                            { n: 'iPad Pro 11"', w: 1668, h: 2388 },
+                          ]
+                        },
+                        {
+                          cat: 'DESIGN', items: [
+                            { n: 'Dribbble', w: 400, h: 300 },
+                            { n: 'Dribbble HD', w: 800, h: 600 },
+                            { n: 'Square', w: 1000, h: 1000 },
+                          ]
+                        },
                       ].map(cat => (
                         <div key={cat.cat}>
                           <div className="px-2 py-1 text-[9px] text-muted-foreground uppercase tracking-wider">{cat.cat}</div>
@@ -2171,8 +2186,10 @@ function MultiSelectToolbar({
     setShowMergeDialog(true);
   };
 
-  // Get ordered elements based on current order
-  const orderedElements = imageOrder.map(id => elements.find(el => el.id === id)).filter(Boolean) as CanvasElement[];
+  // Get ordered elements based on current order (only image elements for merging)
+  const orderedElements = imageOrder
+    .map(id => elements.find(el => el.id === id))
+    .filter((el): el is ImageCanvasElement => el !== undefined && el.type === 'image');
 
   // Swap two images in the order
   const swapImages = (idx1: number, idx2: number) => {
@@ -2439,10 +2456,10 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     elementId: string;
     cropRect: { x: number; y: number; width: number; height: number };
   } | null>(null);
-  
+
   // Snap guides state - for visual alignment feedback when dragging
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
-  
+
   const [canvasData, setCanvasData] = useState<CanvasData | null>(null);
   const [scale, setScale] = useState(1);
   const [stagePosition, setStagePosition] = useState({ x: 50, y: 50 });
@@ -2467,7 +2484,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   const authToken = session?.access_token;
 
   // Memoized frames for snapping - available to child components
-  const frames = useMemo(() => 
+  const frames = useMemo(() =>
     elements.filter(el => el.type === 'frame') as FrameCanvasElement[],
     [elements]
   );
@@ -2557,24 +2574,33 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
   // Force fetch function that can be triggered externally
   const forceFetch = useCallback(async () => {
-    console.log('[CANVAS_LIVE_DEBUG] forceFetch called:', { sandboxId, filePath, hasAuth: !!authToken, hasUnsavedChanges });
+    const hasUnsaved = hasUnsavedChangesRef.current;
+    const isEditing = isUserEditingRef.current;
     
+    console.log('[CANVAS_LIVE_DEBUG] forceFetch called:', { 
+      sandboxId, 
+      filePath, 
+      hasAuth: !!authToken, 
+      hasUnsaved,
+      isEditing,
+    });
+
     if (!sandboxId || !filePath || !authToken) {
       console.log('[CANVAS_LIVE_DEBUG] forceFetch skipped - missing required params');
       return;
     }
-    if (hasUnsavedChanges || isUserEditingRef.current) {
-      console.log('[CANVAS_LIVE_DEBUG] forceFetch skipped - user editing');
+    if (hasUnsaved || isEditing) {
+      console.log('[CANVAS_LIVE_DEBUG] forceFetch skipped - user editing or unsaved changes');
       return;
     }
-    
+
     lastFetchTimeRef.current = Date.now();
-    
+
     try {
       const baseUrl = getSandboxFileUrl(sandboxId, filePath);
       const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}_t=${Date.now()}`;
       console.log('[CANVAS_LIVE_DEBUG] forceFetch fetching:', url);
-      
+
       const response = await fetch(url, {
         headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
         credentials: 'include',
@@ -2582,7 +2608,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       });
 
       console.log('[CANVAS_LIVE_DEBUG] forceFetch response status:', response.status);
-      
+
       if (!response.ok) {
         console.log('[CANVAS_LIVE_DEBUG] forceFetch failed - bad response');
         return;
@@ -2590,24 +2616,38 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
       const newContent = await response.text();
       console.log('[CANVAS_LIVE_DEBUG] forceFetch content length:', newContent?.length);
-      
+
       if (!newContent) return;
 
       try {
         const parsed: CanvasData = JSON.parse(newContent);
+        const serverCount = parsed.elements?.length || 0;
+        const localCount = elementsRef.current.length;
         const newElementIds = (parsed.elements || []).map(e => e.id).sort().join(',');
         const currentElementIds = elementsRef.current.map(e => e.id).sort().join(',');
 
         console.log('[CANVAS_LIVE_DEBUG] forceFetch comparing elements:', {
-          newCount: parsed.elements?.length,
-          currentCount: elementsRef.current.length,
+          serverCount,
+          localCount,
           changed: newElementIds !== currentElementIds,
+          hasUnsavedNow: hasUnsavedChangesRef.current,
         });
+
+        // Don't overwrite local state if we have more elements locally (user added something)
+        if (localCount > serverCount) {
+          console.log('[CANVAS_LIVE_DEBUG] forceFetch SKIPPED - local has MORE elements (user added content)');
+          return;
+        }
 
         if (newElementIds !== currentElementIds) {
           console.log('[CANVAS_LIVE_DEBUG] forceFetch updating elements - CHANGE DETECTED!');
+          // Only re-center if server has MORE elements (AI added content)
+          const shouldRecenter = serverCount > localCount;
           setCanvasData(parsed);
           setElements(sanitizeElements(parsed.elements || []));
+          if (shouldRecenter) {
+            hasCenteredRef.current = false; // Re-center to show new AI-added content
+          }
         } else {
           console.log('[CANVAS_LIVE_DEBUG] forceFetch - no changes detected');
         }
@@ -2617,12 +2657,12 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     } catch (err) {
       console.log('[CANVAS_LIVE_DEBUG] forceFetch network error:', err);
     }
-  }, [sandboxId, filePath, authToken, hasUnsavedChanges]);
+  }, [sandboxId, filePath, authToken]);
 
   // Listen for canvas-tool-updated events to trigger immediate refresh
   useEffect(() => {
     console.log('[CANVAS_LIVE_DEBUG] Setting up canvas-tool-updated listener for filePath:', filePath);
-    
+
     const handleCanvasUpdate = (event: CustomEvent<{ canvasPath: string; timestamp: number }>) => {
       const eventPath = event.detail.canvasPath;
       console.log('[CANVAS_LIVE_DEBUG] Received canvas-tool-updated event:', {
@@ -2630,7 +2670,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         filePath,
         timestamp: event.detail.timestamp,
       });
-      
+
       // Check if this event is for our canvas
       if (filePath && (filePath.includes(eventPath) || eventPath.includes(filePath.replace('canvases/', '')))) {
         console.log('[CANVAS_LIVE_DEBUG] Event matches our canvas, calling forceFetch');
@@ -2641,7 +2681,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     };
 
     window.addEventListener('canvas-tool-updated', handleCanvasUpdate as EventListener);
-    
+
     // Check for any pending events that were dispatched before listener was set up
     const pendingEvents = (window as any).__pendingCanvasRefreshEvents as Map<string, number> | undefined;
     if (pendingEvents && filePath) {
@@ -2661,7 +2701,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         }
       }
     }
-    
+
     return () => {
       console.log('[CANVAS_LIVE_DEBUG] Removing canvas-tool-updated listener');
       window.removeEventListener('canvas-tool-updated', handleCanvasUpdate as EventListener);
@@ -2676,8 +2716,11 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
     const fetchLatestContent = async () => {
       // Skip if user is actively editing (has unsaved changes)
-      if (hasUnsavedChanges || isUserEditingRef.current) {
-        console.log('[CANVAS_LIVE_DEBUG] Polling skipped - user editing');
+      const hasUnsaved = hasUnsavedChangesRef.current;
+      const isEditing = isUserEditingRef.current;
+      
+      if (hasUnsaved || isEditing) {
+        console.log('[CANVAS_LIVE_DEBUG] Polling skipped - user editing or unsaved changes', { hasUnsaved, isEditing });
         return;
       }
 
@@ -2709,21 +2752,34 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         // Parse and update if different - always parse to compare element IDs
         try {
           const parsed: CanvasData = JSON.parse(newContent);
+          const serverCount = parsed.elements?.length || 0;
+          const localCount = elementsRef.current.length;
           const newElementIds = (parsed.elements || []).map(e => e.id).sort().join(',');
           const currentElementIds = elementsRef.current.map(e => e.id).sort().join(',');
 
           console.log('[CANVAS_LIVE_DEBUG] Polling: comparing elements', {
-            serverCount: parsed.elements?.length,
-            currentCount: elementsRef.current.length,
+            serverCount,
+            localCount,
             changed: newElementIds !== currentElementIds,
+            hasUnsavedNow: hasUnsavedChangesRef.current,
           });
+
+          // Don't overwrite local state if we have more elements locally (user added something)
+          if (localCount > serverCount) {
+            console.log('[CANVAS_LIVE_DEBUG] Polling SKIPPED - local has MORE elements (user added content)');
+            return;
+          }
 
           // Only update if structure actually changed (new/removed elements)
           if (newElementIds !== currentElementIds) {
             console.log('[CANVAS_LIVE_DEBUG] Polling: UPDATING - new elements detected!');
+            // Only re-center if server has MORE elements (AI added content)
+            const shouldRecenter = serverCount > localCount;
             setCanvasData(parsed);
             setElements(sanitizeElements(parsed.elements || []));
-            hasCenteredRef.current = false; // Re-center to show new content
+            if (shouldRecenter) {
+              hasCenteredRef.current = false; // Re-center to show new AI-added content
+            }
           }
         } catch (parseErr) {
           console.log('[CANVAS_LIVE_DEBUG] Polling: parse error', parseErr);
@@ -2736,8 +2792,8 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     const interval = setInterval(fetchLatestContent, POLL_INTERVAL);
 
     return () => clearInterval(interval);
-    // Note: elements is accessed via ref pattern inside fetchLatestContent to avoid re-creating interval
-  }, [sandboxId, filePath, authToken, hasUnsavedChanges]);
+    // Note: elements and hasUnsavedChanges are accessed via ref pattern to avoid re-creating interval
+  }, [sandboxId, filePath, authToken]);
 
   // Center canvas and fit content on initial load only
   useEffect(() => {
@@ -2927,7 +2983,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   }, [isPanning, selectionRect, elements, scale, stagePosition]);
 
   const handleElementChange = (id: string, newAttrs: Partial<CanvasElement>) => {
-    setElements(prev => prev.map(el => el.id === id ? { ...el, ...newAttrs } : el));
+    setElements(prev => prev.map(el => el.id === id ? { ...el, ...newAttrs } as CanvasElement : el));
   };
 
   const handleElementSelect = (id: string, e?: React.MouseEvent) => {
@@ -2956,19 +3012,24 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   };
 
   // Track unsaved changes - compare sanitized versions to avoid false positives
+  const hasUnsavedChangesRef = useRef(false);
   useEffect(() => {
     if (canvasData && elements.length > 0) {
       // Sanitize both to ensure fair comparison (raw data might be missing defaults)
       const currentElementsJson = JSON.stringify(elements);
       const originalElementsJson = JSON.stringify(sanitizeElements(canvasData.elements || []));
       const hasChanges = currentElementsJson !== originalElementsJson;
-      
+
       // Only log when there's a change to avoid spam
       if (hasChanges !== hasUnsavedChanges) {
-        console.log('[CANVAS_LIVE_DEBUG] hasUnsavedChanges changed to:', hasChanges);
+        console.log('[CANVAS_LIVE_DEBUG] hasUnsavedChanges changed to:', hasChanges, {
+          localCount: elements.length,
+          serverCount: canvasData.elements?.length || 0,
+        });
       }
-      
+
       setHasUnsavedChanges(hasChanges);
+      hasUnsavedChangesRef.current = hasChanges;
     }
   }, [elements, canvasData, hasUnsavedChanges]);
 
@@ -3012,6 +3073,9 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         const file = item.getAsFile();
         if (!file) continue;
 
+        // Mark as user editing to prevent polling from overwriting during paste
+        isUserEditingRef.current = true;
+
         const reader = new FileReader();
         reader.onload = (event) => {
           const img = new Image();
@@ -3038,7 +3102,13 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
               name: `pasted-image-${Date.now()}.png`,
             };
             setElements(prev => [...prev, newElement]);
+            setHasUnsavedChanges(true); // Immediately mark as unsaved
             toast.success('Image pasted');
+            
+            // Clear editing flag after a brief delay to allow state to settle
+            setTimeout(() => {
+              isUserEditingRef.current = false;
+            }, 500);
           };
           img.src = event.target?.result as string;
         };
@@ -3132,45 +3202,53 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   // Add a new frame to the canvas
   // Frame presets organized by category
   const framePresets = useMemo(() => [
-    { category: 'Social Media', items: [
-      { name: 'Instagram Post', width: 1080, height: 1080 },
-      { name: 'Instagram Story', width: 1080, height: 1920 },
-      { name: 'Instagram Reel', width: 1080, height: 1920 },
-      { name: 'TikTok', width: 1080, height: 1920 },
-      { name: 'Twitter Post', width: 1200, height: 675 },
-      { name: 'Twitter Header', width: 1500, height: 500 },
-      { name: 'Facebook Post', width: 1200, height: 630 },
-      { name: 'Facebook Cover', width: 820, height: 312 },
-      { name: 'LinkedIn Post', width: 1200, height: 627 },
-      { name: 'LinkedIn Cover', width: 1584, height: 396 },
-      { name: 'Pinterest Pin', width: 1000, height: 1500 },
-      { name: 'YouTube Thumbnail', width: 1280, height: 720 },
-      { name: 'YouTube Shorts', width: 1080, height: 1920 },
-    ]},
-    { category: 'Devices', items: [
-      { name: 'iPhone 15 Pro Max', width: 1290, height: 2796 },
-      { name: 'iPhone 15 Pro', width: 1179, height: 2556 },
-      { name: 'iPhone 15', width: 1179, height: 2556 },
-      { name: 'iPhone 14', width: 1170, height: 2532 },
-      { name: 'iPhone SE', width: 750, height: 1334 },
-      { name: 'iPad Pro 12.9"', width: 2048, height: 2732 },
-      { name: 'iPad Pro 11"', width: 1668, height: 2388 },
-      { name: 'Android Phone', width: 1080, height: 2400 },
-    ]},
-    { category: 'Design', items: [
-      { name: 'Dribbble Shot', width: 400, height: 300 },
-      { name: 'Dribbble Shot HD', width: 800, height: 600 },
-      { name: 'Behance Project', width: 1400, height: 788 },
-      { name: 'App Icon', width: 1024, height: 1024 },
-      { name: 'Favicon', width: 512, height: 512 },
-      { name: 'Open Graph', width: 1200, height: 630 },
-    ]},
-    { category: 'Print', items: [
-      { name: 'Business Card', width: 1050, height: 600 },
-      { name: 'Poster 18×24', width: 1800, height: 2400 },
-      { name: 'A4', width: 2480, height: 3508 },
-      { name: 'Square', width: 1000, height: 1000 },
-    ]},
+    {
+      category: 'Social Media', items: [
+        { name: 'Instagram Post', width: 1080, height: 1080 },
+        { name: 'Instagram Story', width: 1080, height: 1920 },
+        { name: 'Instagram Reel', width: 1080, height: 1920 },
+        { name: 'TikTok', width: 1080, height: 1920 },
+        { name: 'Twitter Post', width: 1200, height: 675 },
+        { name: 'Twitter Header', width: 1500, height: 500 },
+        { name: 'Facebook Post', width: 1200, height: 630 },
+        { name: 'Facebook Cover', width: 820, height: 312 },
+        { name: 'LinkedIn Post', width: 1200, height: 627 },
+        { name: 'LinkedIn Cover', width: 1584, height: 396 },
+        { name: 'Pinterest Pin', width: 1000, height: 1500 },
+        { name: 'YouTube Thumbnail', width: 1280, height: 720 },
+        { name: 'YouTube Shorts', width: 1080, height: 1920 },
+      ]
+    },
+    {
+      category: 'Devices', items: [
+        { name: 'iPhone 15 Pro Max', width: 1290, height: 2796 },
+        { name: 'iPhone 15 Pro', width: 1179, height: 2556 },
+        { name: 'iPhone 15', width: 1179, height: 2556 },
+        { name: 'iPhone 14', width: 1170, height: 2532 },
+        { name: 'iPhone SE', width: 750, height: 1334 },
+        { name: 'iPad Pro 12.9"', width: 2048, height: 2732 },
+        { name: 'iPad Pro 11"', width: 1668, height: 2388 },
+        { name: 'Android Phone', width: 1080, height: 2400 },
+      ]
+    },
+    {
+      category: 'Design', items: [
+        { name: 'Dribbble Shot', width: 400, height: 300 },
+        { name: 'Dribbble Shot HD', width: 800, height: 600 },
+        { name: 'Behance Project', width: 1400, height: 788 },
+        { name: 'App Icon', width: 1024, height: 1024 },
+        { name: 'Favicon', width: 512, height: 512 },
+        { name: 'Open Graph', width: 1200, height: 630 },
+      ]
+    },
+    {
+      category: 'Print', items: [
+        { name: 'Business Card', width: 1050, height: 600 },
+        { name: 'Poster 18×24', width: 1800, height: 2400 },
+        { name: 'A4', width: 2480, height: 3508 },
+        { name: 'Square', width: 1000, height: 1000 },
+      ]
+    },
   ], []);
 
   const handleAddFrame = useCallback((width: number = 400, height: number = 300, presetName?: string) => {
@@ -3374,7 +3452,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                 >
                   Custom
                 </button>
-                
+
                 {framePresets.map((category) => (
                   <div key={category.category}>
                     <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wider">
@@ -3602,7 +3680,68 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                   }}
                 />
               ))}
+
             </>
+          );
+        })()}
+
+        {/* Processing shimmer overlay - Show on ENTIRE FRAME if processing element is inside */}
+        {processingElementId && (() => {
+          const processingEl = elements.find(el => el.id === processingElementId);
+          if (!processingEl || processingEl.type !== 'image') return null;
+
+          // Check if processing image is inside a frame
+          const frames = elements.filter(el => el.type === 'frame') as FrameCanvasElement[];
+          let containingFrame: FrameCanvasElement | null = null;
+          
+          for (const frame of frames) {
+            const imgRight = processingEl.x + processingEl.width;
+            const imgBottom = processingEl.y + processingEl.height;
+            const frameRight = frame.x + frame.width;
+            const frameBottom = frame.y + frame.height;
+
+            if (processingEl.x < frameRight && imgRight > frame.x && 
+                processingEl.y < frameBottom && imgBottom > frame.y) {
+              containingFrame = frame;
+              break;
+            }
+          }
+
+          // If inside frame, show shimmer on ENTIRE FRAME
+          // If not inside frame, show shimmer on the image itself
+          const targetEl = containingFrame || processingEl;
+          const posX = targetEl.x * scale + stagePosition.x;
+          const posY = targetEl.y * scale + stagePosition.y;
+          const width = targetEl.width * scale;
+          const height = targetEl.height * scale;
+
+          console.log('[SHIMMER_DEBUG] Showing shimmer on:', { 
+            processingId: processingElementId,
+            showingOn: containingFrame ? 'FRAME' : 'IMAGE',
+            frameId: containingFrame?.id,
+            posX, 
+            posY, 
+            width, 
+            height,
+          });
+
+          return (
+            <div
+              key={`shimmer-${processingElementId}`}
+              style={{
+                position: 'absolute',
+                left: posX,
+                top: posY,
+                width,
+                height,
+                borderRadius: '4px',
+                overflow: 'hidden',
+                zIndex: 9999,
+                pointerEvents: 'none',
+              }}
+            >
+              <AIProcessingOverlay isVisible={true} />
+            </div>
           );
         })()}
 
@@ -3973,7 +4112,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                   const imgRight = img.x + img.width;
                   const imgBottom = img.y + img.height;
                   return img.x < frameRight && imgRight > frameLeft &&
-                         img.y < frameBottom && imgBottom > frameTop;
+                    img.y < frameBottom && imgBottom > frameTop;
                 }) as ImageCanvasElement[];
 
                 // Sort by z-index (order in array)

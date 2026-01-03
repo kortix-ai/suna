@@ -1,0 +1,251 @@
+/* 
+ * Kortix Brand Styles for Syncfusion Spreadsheet
+ * Black accent theme overrides
+ */
+
+/* ============================================
+   CSS VARIABLES
+   ============================================ */
+
+.e-spreadsheet {
+  --kortix-accent: #000000;
+  --kortix-accent-hover: #1a1a1a;
+  --kortix-bg-hover: rgba(0, 0, 0, 0.05);
+  --kortix-bg-active: rgba(0, 0, 0, 0.08);
+  --kortix-bg-pressed: rgba(0, 0, 0, 0.12);
+}
+
+/* Override Syncfusion variables */
+.e-spreadsheet,
+.e-spreadsheet .e-ribbon {
+  --primary-color: var(--kortix-accent) !important;
+  --accent-color: var(--kortix-accent) !important;
+  --ejs-primary: var(--kortix-accent) !important;
+  --ejs-accent: var(--kortix-accent) !important;
+  --e-primary-color: var(--kortix-accent) !important;
+  --e-accent-color: var(--kortix-accent) !important;
+  --error-color: var(--kortix-accent) !important;
+  --danger-color: var(--kortix-accent) !important;
+}
+
+/* ============================================
+   CORE SELECTION & BORDERS
+   ============================================ */
+
+.e-spreadsheet :is(.e-active-cell, .e-selection, .e-highlight, .e-selected-color, .e-split-preview) {
+  border-color: var(--kortix-accent) !important;
+}
+
+/* ============================================
+   RIBBON & TAB INDICATORS
+   ============================================ */
+
+.e-spreadsheet :is(.e-indicator, .e-tab-header .e-indicator) {
+  background-color: var(--kortix-accent) !important;
+  border-color: var(--kortix-accent) !important;
+  border-top-color: var(--kortix-accent) !important;
+}
+
+/* Active tabs - text styling */
+.e-spreadsheet .e-toolbar-item.e-active :is(.e-tab-text, .e-tab-wrap, .e-text-wrap),
+.e-spreadsheet .e-sheet-tab-panel .e-toolbar-item.e-active .e-tab-text {
+  color: var(--kortix-accent) !important;
+  font-weight: 600 !important;
+}
+
+/* Active tabs - background */
+.e-spreadsheet .e-toolbar-item.e-active,
+.e-spreadsheet .e-toolbar-item.e-active :is(.e-tab-wrap, .e-text-wrap) {
+  background: transparent !important;
+}
+
+/* Tab wrap - override all states (fixes pink selection) */
+.e-spreadsheet .e-tab-header .e-tab-wrap,
+.e-spreadsheet .e-tab-header .e-tab-wrap:is(:hover, :focus, :active, [aria-selected="true"]) {
+  background-color: transparent !important;
+  background: transparent !important;
+  color: inherit !important;
+}
+
+.e-spreadsheet .e-tab-header .e-toolbar-item.e-active .e-tab-wrap,
+.e-spreadsheet .e-tab-header .e-toolbar-item:focus .e-tab-wrap,
+.e-spreadsheet .e-tab-header .e-toolbar-item .e-tab-wrap[aria-selected="true"] {
+  background-color: transparent !important;
+  background: transparent !important;
+  color: var(--kortix-accent) !important;
+}
+
+/* Tab wrap pressed state */
+.e-spreadsheet .e-tab-header .e-tab-wrap:active {
+  background-color: var(--kortix-bg-pressed) !important;
+  color: var(--kortix-accent) !important;
+}
+
+/* Remove any ripple/pseudo-element backgrounds on tabs */
+.e-spreadsheet .e-tab-header .e-tab-wrap::before,
+.e-spreadsheet .e-tab-header .e-tab-wrap::after,
+.e-spreadsheet .e-tab-header .e-toolbar-item::before,
+.e-spreadsheet .e-tab-header .e-toolbar-item::after {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* Sheet tab active border */
+.e-spreadsheet .e-sheet-tab-panel .e-toolbar-item.e-active {
+  border-bottom-color: var(--kortix-accent) !important;
+}
+
+/* Active toolbar icons */
+.e-spreadsheet .e-toolbar-item.e-active :is(.e-icons, .e-close-icon) {
+  color: var(--kortix-accent) !important;
+  fill: var(--kortix-accent) !important;
+}
+
+/* ============================================
+   BUTTONS
+   ============================================ */
+
+/* Primary buttons */
+.e-spreadsheet .e-btn.e-primary {
+  background-color: var(--kortix-accent) !important;
+  border-color: var(--kortix-accent) !important;
+  color: #fff !important;
+}
+
+.e-spreadsheet .e-btn.e-primary:is(:hover, :focus) {
+  background-color: var(--kortix-accent-hover) !important;
+}
+
+/* Icon buttons active */
+.e-spreadsheet .e-icon-btn.e-active {
+  color: var(--kortix-accent) !important;
+  background-color: var(--kortix-bg-active) !important;
+}
+
+/* ============================================
+   HOVER STATES
+   ============================================ */
+
+.e-spreadsheet :is(.e-toolbar-item, .e-tbar-btn, .e-btn, .e-icon-btn, .e-dropdown-btn):hover {
+  color: var(--kortix-accent) !important;
+  background-color: var(--kortix-bg-hover) !important;
+}
+
+.e-spreadsheet :is(.e-tbar-btn, .e-dropdown-btn):hover .e-icons {
+  color: var(--kortix-accent) !important;
+}
+
+.e-spreadsheet :is(.e-toolbar-item, .e-sheet-tab-panel .e-toolbar-item):hover .e-tab-text {
+  color: var(--kortix-accent) !important;
+}
+
+.e-spreadsheet .e-menu-item:hover:not(.e-selected) {
+  background-color: var(--kortix-bg-hover) !important;
+  color: var(--kortix-accent) !important;
+}
+
+/* ============================================
+   ACTIVE/PRESSED STATES
+   ============================================ */
+
+.e-spreadsheet :is(.e-tbar-btn, .e-btn, .e-icon-btn, .e-dropdown-btn, .e-split-btn):is(:focus, .e-active) {
+  color: var(--kortix-accent) !important;
+  border-color: var(--kortix-accent) !important;
+}
+
+.e-spreadsheet :is(.e-tbar-btn, .e-split-btn):is(:focus, .e-active) .e-icons {
+  color: var(--kortix-accent) !important;
+}
+
+/* Pressed/click states - disable transitions for instant feedback */
+.e-spreadsheet :is(.e-menu-item, .e-tbar-btn, .e-btn) {
+  transition: background-color 0s !important;
+}
+
+.e-spreadsheet :is(.e-menu-item, .e-tbar-btn, .e-btn, .e-icon-btn, .e-dropdown-btn, .e-split-btn):active {
+  background-color: var(--kortix-bg-pressed) !important;
+  color: var(--kortix-accent) !important;
+  transition: none !important;
+  animation: none !important;
+}
+
+/* ============================================
+   MENU & CONTEXT MENU
+   ============================================ */
+
+.e-spreadsheet :is(.e-contextmenu-wrapper, .e-menu-wrapper, .e-file-menu, .e-menu-parent) .e-menu-item:is(.e-active, .e-selected, :hover) {
+  background-color: var(--kortix-bg-active) !important;
+  color: var(--kortix-accent) !important;
+}
+
+.e-spreadsheet :is(.e-contextmenu-wrapper, .e-menu-wrapper, .e-file-menu, .e-menu-parent) .e-menu-item:active {
+  background-color: var(--kortix-bg-pressed) !important;
+  color: var(--kortix-accent) !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* ============================================
+   FORMULA BAR
+   ============================================ */
+
+.e-spreadsheet .e-formula-bar-panel .e-input-group:is(:focus-within, .e-focus),
+.e-spreadsheet .e-formula-bar:focus {
+  border-color: var(--kortix-accent) !important;
+}
+
+/* ============================================
+   FILTER & SORT
+   ============================================ */
+
+.e-spreadsheet .e-sort-filter-icon:is(.e-active, :hover)::before {
+  color: var(--kortix-accent) !important;
+}
+
+.e-spreadsheet .e-filter-popup .e-btn.e-primary {
+  background-color: var(--kortix-accent) !important;
+  border-color: var(--kortix-accent) !important;
+  color: #fff !important;
+}
+
+.e-spreadsheet .e-filter-popup .e-btn.e-primary:hover {
+  background-color: var(--kortix-accent-hover) !important;
+}
+
+/* ============================================
+   SCROLLBAR
+   ============================================ */
+
+.e-spreadsheet .e-scrollbar .e-scroll-nav:hover {
+  background-color: var(--kortix-bg-active) !important;
+}
+
+/* ============================================
+   FOCUS STATES
+   ============================================ */
+
+.e-spreadsheet *:focus-visible {
+  outline-color: var(--kortix-accent) !important;
+  outline-offset: 2px;
+}
+
+.e-spreadsheet .e-input-group:focus-within {
+  box-shadow: 0 0 0 2px var(--kortix-bg-active) !important;
+}
+
+/* ============================================
+   RIPPLE EFFECT OVERRIDE
+   ============================================ */
+
+.e-spreadsheet .e-ripple,
+.e-spreadsheet :is(.e-menu-item, .e-tbar-btn, .e-btn, .e-tab-wrap, .e-toolbar-item) .e-ripple {
+  background-color: var(--kortix-bg-active) !important;
+}
+
+/* Remove pseudo-element backgrounds on active */
+.e-spreadsheet :is(.e-menu-item, .e-tbar-btn, .e-btn, .e-toolbar-item, .e-tab-wrap):active::before,
+.e-spreadsheet :is(.e-menu-item, .e-tbar-btn, .e-btn, .e-toolbar-item, .e-tab-wrap):active::after,
+.e-spreadsheet :is(.e-menu-item, .e-toolbar-item, .e-tab-wrap).e-selected::before,
+.e-spreadsheet :is(.e-menu-item, .e-toolbar-item, .e-tab-wrap).e-selected::after {
+  background: transparent !important;
+}

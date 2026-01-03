@@ -45,12 +45,16 @@ class DBConnection:
                 logger.error("Missing required environment variables for Supabase connection")
                 raise RuntimeError("SUPABASE_URL and a key (SERVICE_ROLE_KEY or ANON_KEY) environment variables must be set.")
 
-            # logger.debug("Initializing Supabase connection")
+            from supabase.lib.client_options import AsyncClientOptions
             
-            # Create Supabase client with timeout configuration
+            options = AsyncClientOptions(
+                postgrest_client_timeout=30,
+            )
+            
             self._client = await create_async_client(
                 supabase_url, 
                 supabase_key,
+                options=options
             )
             
             self._initialized = True

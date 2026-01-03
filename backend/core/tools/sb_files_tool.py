@@ -71,8 +71,6 @@ class SandboxFilesTool(SandboxToolsBase):
     def _get_full_path(self, path: str) -> str:
         """Get full absolute path relative to /workspace"""
         cleaned = self.clean_path(path)
-        if cleaned.startswith('/workspace'):
-            return cleaned
         return f"{self.workspace_path}/{cleaned}"
 
     def _should_exclude_file(self, rel_path: str) -> bool:

@@ -136,11 +136,11 @@ export function SiteHeader({
       "bg-background sticky top-0 flex h-14 shrink-0 items-center gap-2 z-20 w-full",
       isMobile && "px-2"
     )}>
-      <div className="flex flex-1 items-center gap-2 px-3">
+      <div className="flex flex-1 items-center gap-2 px-3 min-w-0">
         {variant === 'shared' ? (
-          <div className="text-base font-medium text-muted-foreground flex items-center gap-2">
-            {projectName}
-            <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
+          <div className="text-base font-medium text-muted-foreground flex items-center gap-2 min-w-0">
+            <span className="truncate">{projectName}</span>
+            <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full shrink-0">
               Shared
             </span>
           </div>
@@ -158,10 +158,12 @@ export function SiteHeader({
           <Skeleton className="h-5 w-32" />
         ) : (
           <div
-            className={`text-base font-medium text-muted-foreground flex items-center ${isSharedVariant ? '' : 'hover:text-foreground cursor-pointer'
-              }`}
+            className={cn(
+              "text-base font-medium text-muted-foreground truncate",
+              !isSharedVariant && "hover:text-foreground cursor-pointer"
+            )}
             onClick={isSharedVariant ? undefined : startEditing}
-            title={isSharedVariant ? undefined : 'Click to rename project'}
+            title={isSharedVariant ? projectName : `Click to rename project: ${projectName}`}
           >
             {projectName}
           </div>

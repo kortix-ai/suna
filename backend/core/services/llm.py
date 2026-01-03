@@ -20,7 +20,13 @@ from datetime import datetime, timezone
 # Configure LiteLLM
 litellm.modify_params = True
 litellm.drop_params = True
-litellm.num_retries = 3
+# Set num_retries to 1 if not already set via environment variable
+if os.environ.get("LITELLM_NUM_RETRIES") is None:
+    litellm.num_retries = 1
+
+# Configure Braintrust callback for tracing if API key is set
+if os.getenv("BRAINTRUST_API_KEY"):
+    litellm.callbacks = ["braintrust"]
 
 provider_router = None
 class LLMError(Exception):
@@ -48,10 +54,8 @@ def setup_api_keys() -> None:
         os.environ["AWS_BEARER_TOKEN_BEDROCK"] = config.AWS_BEARER_TOKEN_BEDROCK
 
 def setup_provider_router(openai_compatible_api_key: str = None, openai_compatible_api_base: str = None):
-    """Configure LiteLLM Router with fallback chains from model registry."""
+    """Configure LiteLLM Router."""
     global provider_router
-    
-    from core.ai_models.registry import registry
     
     # Model list for router
     model_list = [
@@ -63,19 +67,38 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
                 "api_base": openai_compatible_api_base or getattr(config, 'OPENAI_COMPATIBLE_API_BASE', None),
             },
         },
+        # Configure minimax-m2.1 model group with fallback to glm-4.6v
+        {
+            "model_name": "openrouter/minimax/minimax-m2.1",
+            "litellm_params": {
+                "model": "openrouter/minimax/minimax-m2.1",
+            },
+        },
+        {
+            "model_name": "openrouter/z-ai/glm-4.6v",
+            "litellm_params": {
+                "model": "openrouter/z-ai/glm-4.6v",
+            },
+        },
         {"model_name": "*", "litellm_params": {"model": "*"}},
     ]
     
-    # Get fallback chains from registry (single source of truth)
-    fallbacks = registry.get_fallback_chains()
+    # Configure fallbacks: minimax-m2.1 falls back to glm-4.6v
+    # This handles cases where minimax doesn't support image input
+    fallbacks = [
+        {"openrouter/minimax/minimax-m2.1": ["openrouter/z-ai/glm-4.6v"]}
+    ]
+    
+    # Use configured num_retries or default to 1
+    num_retries = getattr(litellm, 'num_retries', 1)
     
     provider_router = Router(
         model_list=model_list,
-        num_retries=3,
+        num_retries=num_retries,
         fallbacks=fallbacks,
     )
     
-    logger.info(f"LiteLLM Router configured with {len(fallbacks)} fallback rules")
+    logger.info("LiteLLM Router configured with fallbacks: minimax-m2.1 -> glm-4.6v")
 
 def _configure_openai_compatible(model_name: str, api_key: Optional[str], api_base: Optional[str]) -> None:
     """Configure OpenAI-compatible provider if needed."""
@@ -133,6 +156,34 @@ def _strip_internal_properties(messages: List[Dict[str, Any]]) -> List[Dict[str,
         cleaned_messages.append(cleaned_msg)
     
     return cleaned_messages
+
+def _has_image_content(messages: List[Dict[str, Any]]) -> bool:
+    """Check if messages contain image content."""
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        
+        content = msg.get("content", "")
+        
+        # Check for OpenAI-style image content (list with image_url)
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict):
+                    if item.get("type") == "image_url" or "image_url" in item:
+                        return True
+        
+        # Check for Anthropic-style image content
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "image":
+                    return True
+        
+        # Check for base64 image data in string content
+        if isinstance(content, str):
+            if "data:image" in content or "base64" in content.lower():
+                return True
+    
+    return False
 
 async def make_llm_api_call(
     messages: List[Dict[str, Any]],
@@ -216,9 +267,16 @@ async def make_llm_api_call(
     
     params = model_manager.get_litellm_params(resolved_model_name, **override_params)
     
-    # NOTE: OpenRouter app params (OR_APP_NAME, OR_SITE_URL) are set via environment
-    # variables in setup_api_keys(). Do NOT use extra_body here as it breaks
-    # fallback to other providers (e.g. Bedrock rejects extra_body params).
+    # Add OpenRouter app parameter if using OpenRouter
+    actual_litellm_model_id = params.get("model", resolved_model_name)
+    is_openrouter_model = isinstance(actual_litellm_model_id, str) and actual_litellm_model_id.startswith("openrouter/")
+    
+    if is_openrouter_model:
+        # OpenRouter requires the "app" parameter in extra_body
+        if "extra_body" not in params:
+            params["extra_body"] = {}
+        params["extra_body"]["app"] = "Kortix.com"
+        logger.debug(f"Added OpenRouter app parameter: Kortix.com for model {actual_litellm_model_id}")
     
     # Add tools if provided
     if tools:
@@ -231,13 +289,22 @@ async def make_llm_api_call(
     if stream:
         params["stream_options"] = {"include_usage": True}
 
-    # Add OpenRouter-specific reasoning parameter for MiniMax models (minimax-2.1)
     actual_model_id = params.get("model", "")
     if actual_model_id.startswith("openrouter/") and "minimax" in actual_model_id.lower():
         params["reasoning"] = {"enabled": True}
         params["reasoning_split"] = True
         # avoid showing reasoning tokens in plain content
         
+        # Add fallback to glm-4.6v if minimax doesn't support image input
+        # This handles NotFoundError for image input specifically
+        if _has_image_content(messages):
+            if "fallbacks" not in params:
+                params["fallbacks"] = []
+            # Add glm-4.6v as fallback for image input
+            if "openrouter/z-ai/glm-4.6v" not in params["fallbacks"]:
+                params["fallbacks"].append("openrouter/z-ai/glm-4.6v")
+            logger.info(f"Added fallback to glm-4.6v for minimax model with image input")
+    
     try:
         _save_debug_input(params)
         response = await provider_router.acompletion(**params)
@@ -280,4 +347,3 @@ if __name__ == "__main__":
             "anthropic-beta": "context-1m-2025-08-07"  # 👈 Enable 1M context
         }
     )
-

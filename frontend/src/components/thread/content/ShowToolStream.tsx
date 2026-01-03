@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { CircleDashed } from 'lucide-react';
 import { getToolIcon, getUserFriendlyToolName, extractPrimaryParam } from '@/components/thread/utils';
 import { AppIcon } from '../tool-views/shared/AppIcon';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 
 // Media generation tools that show shimmer preview
 const MEDIA_GENERATION_TOOLS = new Set([
@@ -26,9 +26,12 @@ const STREAMABLE_TOOLS = {
 
     // Command tools - show command output streaming
     COMMAND_TOOLS: new Set([
-        'Executing Command',
-        'Checking Command Output',
-        'Terminating Command',
+        'Running Command',
+        'Executing Command', // legacy fallback
+        'Checking Output',
+        'Checking Command Output', // legacy fallback
+        'Stopping Command',
+        'Terminating Command', // legacy fallback
         'Listing Commands',
     ]),
 
@@ -105,21 +108,46 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     const containerRef = useRef<HTMLDivElement>(null);
     const [shouldShowContent, setShouldShowContent] = useState(false);
     const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
-    // Use ref to store stable start time - only set once!
     const stableStartTimeRef = useRef<number | null>(null);
 
-    // Set stable start time only once
+    const [throttledContent, setThrottledContent] = useState(content);
+    const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const lastUpdateRef = useRef<number>(0);
+
+    useEffect(() => {
+        const now = Date.now();
+        const timeSinceLastUpdate = now - lastUpdateRef.current;
+
+        if (timeSinceLastUpdate >= 100) {
+            setThrottledContent(content);
+            lastUpdateRef.current = now;
+        } else {
+            if (throttleTimeoutRef.current) {
+                clearTimeout(throttleTimeoutRef.current);
+            }
+            throttleTimeoutRef.current = setTimeout(() => {
+                setThrottledContent(content);
+                lastUpdateRef.current = Date.now();
+            }, 100 - timeSinceLastUpdate);
+        }
+
+        return () => {
+            if (throttleTimeoutRef.current) {
+                clearTimeout(throttleTimeoutRef.current);
+            }
+        };
+    }, [content]);
+
     if (showExpanded && !stableStartTimeRef.current) {
         stableStartTimeRef.current = Date.now();
     }
 
-    // Parse tool info from content
     const { rawToolName, parsedToolCall } = useMemo(() => {
         let rawName: string | null = null;
         let parsed: any = null;
         
         try {
-          parsed = JSON.parse(content);
+          parsed = JSON.parse(throttledContent);
           if (parsed.function?.name) {
             rawName = parsed.function.name;
           } else if (parsed.tool_name) {
@@ -128,14 +156,14 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
             rawName = parsed.function_name;
           }
         } catch (e) {
-          const match = content.match(/(?:function|tool)[_\-]?name["']?\s*[:=]\s*["']?([^"'\s]+)/i);
+          const match = throttledContent.match(/(?:function|tool)[_\-]?name["']?\s*[:=]\s*["']?([^"'\s]+)/i);
           if (match) {
             rawName = match[1];
           }
         }
         
         return { rawToolName: rawName, parsedToolCall: parsed };
-    }, [content]);
+    }, [throttledContent]);
     
     const toolName = getUserFriendlyToolName(rawToolName || '');
     const isEditFile = toolName === 'AI File Edit';
@@ -176,11 +204,11 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
 
     // Extract streaming content from JSON or plain text
     const streamingContent = useMemo(() => {
-        if (!content) return { html: '', plainText: '' };
+        if (!throttledContent) return { html: '', plainText: '' };
 
         try {
             // Try to parse as JSON first
-            const parsed = JSON.parse(content);
+            const parsed = JSON.parse(throttledContent);
             
             // For file operations, extract file_contents or code_edit
             if (STREAMABLE_TOOLS.FILE_OPERATIONS.has(toolName || '')) {
@@ -247,8 +275,8 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
         }
 
         // Fallback: return content as-is
-        return { html: content, plainText: content };
-    }, [content, toolName, isEditFile, isCreateFile, isFullFileRewrite]);
+        return { html: throttledContent, plainText: throttledContent };
+    }, [throttledContent, toolName, isEditFile, isCreateFile, isFullFileRewrite]);
 
     // Show streaming content for all streamable tools with delayed transitions
     useEffect(() => {
@@ -266,7 +294,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
         if (containerRef.current && shouldShowContent && shouldAutoScroll) {
             containerRef.current.scrollTop = containerRef.current.scrollHeight;
         }
-    }, [content, shouldShowContent, shouldAutoScroll]);
+    }, [throttledContent, shouldShowContent, shouldAutoScroll]);
 
     // Handle scroll events to disable auto-scroll when user scrolls up
     useEffect(() => {
@@ -284,7 +312,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     }, [shouldShowContent]);
 
     // Calculate paramDisplay before early return to satisfy Rules of Hooks
-    const paramDisplay = useMemo(() => extractPrimaryParam(rawToolName || '', content), [rawToolName, content]);
+    const paramDisplay = useMemo(() => extractPrimaryParam(rawToolName || '', throttledContent), [rawToolName, throttledContent]);
 
     // Check if this is a media generation tool - show shimmer card
     const isMediaGenTool = MEDIA_GENERATION_TOOLS.has(rawToolName || '') || MEDIA_GENERATION_TOOLS.has(toolName || '');
@@ -322,17 +350,17 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 {/* Tool button - exactly like regular tools */}
                 <button
                     onClick={() => onToolClick?.(messageId ?? null, toolName, effectiveToolCall?.tool_call_id)}
-                    className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
+                    className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 max-w-full"
                 >
                     <AppIcon toolCall={effectiveToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground shrink-0" fallbackIcon={IconComponent} />
-                    <span className="font-mono text-xs text-foreground">Generate Media</span>
+                    <span className="font-mono text-xs text-foreground truncate">Generate Media</span>
                     {!isCompleted && (
-                        <CircleDashed className="h-3.5 w-3.5 text-muted-foreground shrink-0 animate-spin ml-1" />
+                        <KortixLoader size="small" customSize={14} className="shrink-0 ml-1" />
                     )}
                 </button>
 
                 {/* Shimmer below - aspect-video for video, aspect-square for image */}
-                <div className={`relative w-80 ${isVideoGeneration ? 'aspect-video' : 'aspect-square'} rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-700/50`}>
+                <div className={`relative w-full max-w-80 ${isVideoGeneration ? 'aspect-video' : 'aspect-square'} rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-700/50`}>
                     {/* Gray base layer - contained with rounded corners */}
                     <div className="absolute inset-[-50%] bg-gradient-to-br from-zinc-300/60 to-zinc-400/60 dark:from-zinc-600/60 dark:to-zinc-700/60 blur-2xl" />
                     {/* Color layer that fades in - contained with rounded corners */}
@@ -385,7 +413,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                         <span className="font-mono text-xs text-foreground flex-1">{displayName}</span>
                         {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
                         {!isCompleted && (
-                            <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-auto" />
+                            <KortixLoader size="small" customSize={14} className="flex-shrink-0 ml-auto" />
                         )}
                     </button>
 
@@ -477,18 +505,18 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     }
 
     return (
-        <div>
+        <div className="min-w-0 max-w-full">
             <button
                 onClick={() => onToolClick?.(messageId ?? null, toolName, effectiveToolCall?.tool_call_id)}
-                className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
+                className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 max-w-full"
             >
-                <div className='flex items-center justify-center'>
+                <div className='flex items-center justify-center flex-shrink-0'>
                     <AppIcon toolCall={effectiveToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fallbackIcon={IconComponent} />
                 </div>
-                <span className="font-mono text-xs text-foreground">{displayName}</span>
-                {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
+                <span className="font-mono text-xs text-foreground truncate">{displayName}</span>
+                {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[150px] sm:max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
                 {!isCompleted && (
-                    <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-1" />
+                    <KortixLoader size="small" customSize={14} className="flex-shrink-0 ml-1" />
                 )}
             </button>
         </div>

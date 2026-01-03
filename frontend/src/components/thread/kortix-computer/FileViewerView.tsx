@@ -1146,19 +1146,28 @@ export function FileViewerView({
 
       {/* File content */}
       <div className="flex-1 overflow-hidden max-w-full min-w-0">
-        {(isCachedFileLoading || isLoadingVersionContent) ? (
+        {(() => {
+          // Check if we're still retrying - show loading state instead of error
+          const isStillRetrying = fileRetryAttempt < 15;
+          const hasError = !!(contentError || cachedFileError);
+          
+          return (isCachedFileLoading || isLoadingVersionContent || (hasError && isStillRetrying)) ? (
           <div className="h-full w-full max-w-full flex flex-col items-center justify-center min-w-0">
             <Loader className="h-8 w-8 animate-spin text-primary mb-3" />
             <p className="text-sm text-muted-foreground">
               {isLoadingVersionContent ? 'Loading version...' : `Loading ${fileName}`}
             </p>
-            {!isLoadingVersionContent && fileRetryAttempt > 0 && (
+            {(fileRetryAttempt > 0 || (hasError && isStillRetrying)) && !isLoadingVersionContent && (
               <p className="text-xs text-muted-foreground mt-1">
-                Retrying... (attempt {fileRetryAttempt + 1})
+                {hasError && isStillRetrying 
+                  ? `Retrying... (attempt ${fileRetryAttempt + 1})`
+                  : fileRetryAttempt > 0 
+                    ? `Retrying... (attempt ${fileRetryAttempt + 1})`
+                    : 'Loading...'}
               </p>
             )}
           </div>
-        ) : contentError ? (
+        ) : (contentError && !isStillRetrying) ? (
           <div className="h-full w-full flex items-center justify-center p-4">
             <div className="max-w-md p-6 text-center border rounded-lg bg-muted/10">
               <AlertTriangle className="h-10 w-10 text-orange-500 mx-auto mb-4" />
@@ -1184,7 +1193,7 @@ export function FileViewerView({
               </div>
             </div>
           </div>
-        ) : (
+          ) : (
           <div className="h-full w-full max-w-full overflow-hidden min-w-0" style={{ contain: 'strict' }}>
             {(() => {
               const isImageFile = FileCache.isImageFile(filePath);
@@ -1251,7 +1260,8 @@ export function FileViewerView({
               );
             })()}
           </div>
-        )}
+          );
+        })()}
       </div>
 
       <Dialog open={revertModalOpen} onOpenChange={setRevertModalOpen}>
