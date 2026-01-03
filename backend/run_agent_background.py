@@ -314,6 +314,37 @@ def create_redis_keys(agent_run_id: str, instance_id: str) -> Dict[str, str]:
 
 MAX_PENDING_REDIS_OPS = 500
 
+async def stream_status_message(
+    stream_key: str,
+    status: str,
+    message: str,
+    metadata: Optional[Dict[str, Any]] = None
+) -> None:
+    """Helper function to write status messages to Redis stream."""
+    try:
+        status_msg = {
+            "type": "status",
+            "status": status,
+            "message": message
+        }
+        if metadata:
+            status_msg["metadata"] = metadata
+        
+        status_json = json.dumps(status_msg)
+        await asyncio.wait_for(
+            redis.stream_add(
+                stream_key,
+                {"data": status_json},
+                maxlen=200,
+                approximate=True
+            ),
+            timeout=2.0
+        )
+    except asyncio.TimeoutError:
+        logger.debug(f"Timeout writing status message to stream (non-critical)")
+    except Exception as e:
+        logger.debug(f"Failed to write status message to stream (non-critical): {e}")
+
 async def process_agent_responses(
     agent_gen,
     agent_run_id: str,
@@ -497,18 +528,32 @@ async def run_agent_background(
         logger.info(f"⏱️ [TIMING] Worker init: {timings['initialize']:.1f}ms | Lock: {timings['lock_acquisition']:.1f}ms")
         logger.info(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (Instance: {instance_id})")
         
-        from core.ai_models import model_manager
-        effective_model = model_manager.resolve_model_id(model_name)
-        logger.info(f"🚀 Using model: {effective_model}")
-        
         start_time = datetime.now(timezone.utc)
         stop_checker = None
         cancellation_event = asyncio.Event()
 
         redis_keys = create_redis_keys(agent_run_id, instance_id)
         
+        # Send initial status message
+        await stream_status_message(
+            redis_keys['response_stream'],
+            "initializing",
+            "Worker started, initializing resources..."
+        )
+        
         await redis.verify_stream_writable(redis_keys['response_stream'])
         logger.info(f"✅ Verified Redis stream {redis_keys['response_stream']} is writable")
+        
+        # Send stream verified message
+        await stream_status_message(
+            redis_keys['response_stream'],
+            "initializing",
+            "Redis stream verified, loading agent configuration..."
+        )
+        
+        from core.ai_models import model_manager
+        effective_model = model_manager.resolve_model_id(model_name)
+        logger.info(f"🚀 Using model: {effective_model}")
         
         trace = langfuse.trace(
             name="agent_run",
@@ -576,6 +621,13 @@ async def run_agent_background(
             logger.warning(f"Redis error setting instance_active key for {agent_run_id}: {e} - continuing without")
 
         agent_config = await load_agent_config(agent_id, account_id)
+        
+        # Send agent config loaded message
+        await stream_status_message(
+            redis_keys['response_stream'],
+            "initializing",
+            "Agent configuration loaded, setting up tools..."
+        )
 
         # Set tool output streaming context for tools to publish real-time output
         set_tool_output_streaming_context(
@@ -590,7 +642,7 @@ async def run_agent_background(
             agent_config=agent_config,
             trace=trace,
             cancellation_event=cancellation_event,
-            account_id=account_id,
+            account_id=account_id
         )
         
         total_to_ready = (time.time() - worker_start) * 1000
