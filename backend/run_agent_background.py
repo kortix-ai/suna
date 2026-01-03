@@ -97,7 +97,7 @@ if redis_config["url"]:
     logger.info(f"🔧 Configuring Dramatiq broker with Redis at {redis_host}:{redis_port}{auth_info}{queue_info}")
     redis_broker = RedisBroker(
         url=redis_config["url"], 
-        middleware=[MessageLatencyMiddleware(), dramatiq.middleware.AsyncIO()]
+        middleware=[MessageLatencyMiddleware(), dramatiq.middleware.CurrentMessage(), dramatiq.middleware.AsyncIO()]
     )
 else:
     queue_info = f" (queue prefix: '{QUEUE_PREFIX}')" if QUEUE_PREFIX else ""
@@ -105,7 +105,7 @@ else:
     redis_broker = RedisBroker(
         host=redis_host, 
         port=redis_port, 
-        middleware=[MessageLatencyMiddleware(), dramatiq.middleware.AsyncIO()]
+        middleware=[MessageLatencyMiddleware(), dramatiq.middleware.CurrentMessage(), dramatiq.middleware.AsyncIO()]
     )
 
 dramatiq.set_broker(redis_broker)
@@ -559,7 +559,8 @@ async def run_agent_background(
     timings = {}
     
     # Measure end-to-end latency from enqueue to actor start
-    current_message = dramatiq.get_current_message()
+    from dramatiq.middleware import CurrentMessage
+    current_message = CurrentMessage.get_current_message()
     if current_message:
         enqueue_ts = current_message.options.get("enqueue_ts")
         consumer_ts = current_message.options.get("consumer_ts")

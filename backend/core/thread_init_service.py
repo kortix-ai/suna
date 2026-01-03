@@ -36,7 +36,8 @@ async def initialize_thread_background(
     actor_start = time.time()
     
     # Measure end-to-end latency from enqueue to actor start
-    current_message = dramatiq.get_current_message()
+    from dramatiq.middleware import CurrentMessage
+    current_message = CurrentMessage.get_current_message()
     if current_message:
         enqueue_ts = current_message.options.get("enqueue_ts")
         consumer_ts = current_message.options.get("consumer_ts")
