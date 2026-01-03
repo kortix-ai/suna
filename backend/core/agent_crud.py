@@ -493,19 +493,7 @@ async def get_agents(
         
         agent_responses = []
         for agent_data in paginated_result.data:
-            # Ensure required fields have default values for list operations
-            # These fields are not in the agents table - they come from agent versions
-            metadata = agent_data.get('metadata') or {}
-            agent_data_with_defaults = {
-                **agent_data,
-                'configured_mcps': agent_data.get('configured_mcps', []),
-                'custom_mcps': agent_data.get('custom_mcps', []),
-                'agentpress_tools': agent_data.get('agentpress_tools', {}),
-                'is_default': metadata.get('is_suna_default') == 'true' if isinstance(metadata.get('is_suna_default'), str) else bool(metadata.get('is_suna_default', False)),
-                'tags': agent_data.get('tags') or [],
-                'metadata': metadata
-            }
-            agent_response = AgentResponse(**agent_data_with_defaults)
+            agent_response = AgentResponse(**agent_data)
             agent_responses.append(agent_response)
         
         return AgentsResponse(

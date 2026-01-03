@@ -66,7 +66,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: uv run python -m core.temporal.worker
+    command: uv run dramatiq --skip-logging --processes 4 --threads 4 run_agent_background
     volumes:
       - ./backend/.env:/app/.env:ro
     environment:
@@ -74,9 +74,6 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=
       - REDIS_SSL=False
-      - TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS}
-      - TEMPORAL_NAMESPACE=${TEMPORAL_NAMESPACE}
-      - TEMPORAL_API_KEY=${TEMPORAL_API_KEY}
     depends_on:
       redis:
         condition: service_healthy

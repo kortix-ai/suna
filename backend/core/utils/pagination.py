@@ -61,37 +61,16 @@ class PaginationService:
     async def paginate_database_query(
         base_query: Any,
         params: PaginationParams,
+        count_query: Optional[Any] = None,
         post_process_filter: Optional[Callable[[List[Dict[str, Any]]], List[Dict[str, Any]]]] = None
     ) -> PaginatedResponse[Dict[str, Any]]:
-        """
-        Paginate a Supabase query.
-        
-        IMPORTANT: The base_query MUST be created with count='exact' in the .select() call.
-        Example: db.table('items').select('*', count='exact').eq('active', True)
-        
-        The count will be extracted from the result.count field which contains
-        the total matching rows (ignoring any range applied).
-        """
         try:
-            # Calculate offset for pagination
-            offset = (params.page - 1) * params.page_size
-            
-            # Execute query with range - Supabase returns count for full query (ignoring range)
-            # when count='exact' was specified in the original .select() call
-            data_result = await base_query.range(offset, offset + params.page_size - 1).execute()
-            
-            items = data_result.data or []
-            # Get total count from result (requires count='exact' in original select)
-            # If count is None, it means count='exact' wasn't used - fallback to len(items)
-            total_count = getattr(data_result, 'count', None)
-            if total_count is None:
-                logger.warning("Pagination: count='exact' not found in query result, using len(items) as fallback")
-                total_count = len(items)
-            
-            logger.debug(f"Pagination query result: {len(items)} items, total_count: {total_count}")
-            
-            if post_process_filter:
-                items = post_process_filter(items)
+            if count_query:
+                count_result = await count_query.execute()
+                total_count = count_result.count if count_result.count else 0
+            else:
+                count_result = await base_query.select('*', count='exact').execute()
+                total_count = count_result.count if count_result.count else 0
             
             if total_count == 0:
                 return PaginatedResponse(
@@ -105,6 +84,14 @@ class PaginationService:
                         has_previous=False
                     )
                 )
+            
+            offset = (params.page - 1) * params.page_size
+            data_query = base_query.range(offset, offset + params.page_size - 1)
+            data_result = await data_query.execute()
+            items = data_result.data or []
+            
+            if post_process_filter:
+                items = post_process_filter(items)
                 
             total_pages = max(1, math.ceil(total_count / params.page_size))
             

@@ -156,11 +156,6 @@ def load_existing_env_vars():
             "DAYTONA_SERVER_URL": backend_env.get("DAYTONA_SERVER_URL", ""),
             "DAYTONA_TARGET": backend_env.get("DAYTONA_TARGET", ""),
         },
-        "temporal": {
-            "TEMPORAL_CLOUD_ADDRESS": backend_env.get("TEMPORAL_CLOUD_ADDRESS", ""),
-            "TEMPORAL_NAMESPACE": backend_env.get("TEMPORAL_NAMESPACE", ""),
-            "TEMPORAL_API_KEY": backend_env.get("TEMPORAL_API_KEY", ""),
-        },
         "llm": {
             "OPENAI_API_KEY": backend_env.get("OPENAI_API_KEY", ""),
             "ANTHROPIC_API_KEY": backend_env.get("ANTHROPIC_API_KEY", ""),
@@ -334,7 +329,6 @@ class SetupWizard:
             "supabase_setup_method": None,
             "supabase": existing_env_vars["supabase"],
             "daytona": existing_env_vars["daytona"],
-            "temporal": existing_env_vars["temporal"],
             "llm": existing_env_vars["llm"],
             "search": existing_env_vars["search"],
             "rapidapi": existing_env_vars["rapidapi"],
@@ -568,22 +562,21 @@ class SetupWizard:
             self.run_step(2, self.check_requirements)
             self.run_step(3, self.collect_supabase_info)
             self.run_step(4, self.collect_daytona_info)
-            self.run_step(5, self.collect_temporal_info)
-            self.run_step(6, self.collect_llm_api_keys)
+            self.run_step(5, self.collect_llm_api_keys)
             # Optional tools - users can skip these
-            self.run_step_optional(7, self.collect_morph_api_key, "Morph API Key (Optional)")
-            self.run_step_optional(8, self.collect_search_api_keys, "Search API Keys (Optional)")
-            self.run_step_optional(9, self.collect_rapidapi_keys, "RapidAPI Keys (Optional)")
-            self.run_step(10, self.collect_kortix_keys)
+            self.run_step_optional(6, self.collect_morph_api_key, "Morph API Key (Optional)")
+            self.run_step_optional(7, self.collect_search_api_keys, "Search API Keys (Optional)")
+            self.run_step_optional(8, self.collect_rapidapi_keys, "RapidAPI Keys (Optional)")
+            self.run_step(9, self.collect_kortix_keys)
             # Supabase Cron does not require keys; ensure DB migrations enable cron functions
-            self.run_step_optional(11, self.collect_webhook_keys, "Webhook Configuration (Optional)")
-            self.run_step_optional(12, self.collect_mcp_keys, "MCP Configuration (Optional)")
-            self.run_step_optional(13, self.collect_composio_keys, "Composio Integration (Optional)")
+            self.run_step_optional(10, self.collect_webhook_keys, "Webhook Configuration (Optional)")
+            self.run_step_optional(11, self.collect_mcp_keys, "MCP Configuration (Optional)")
+            self.run_step_optional(12, self.collect_composio_keys, "Composio Integration (Optional)")
             # Removed duplicate webhook collection step
-            self.run_step(14, self.configure_env_files)
-            self.run_step(15, self.setup_supabase_database)
-            self.run_step(16, self.install_dependencies)
-            self.run_step(17, self.start_suna)
+            self.run_step(13, self.configure_env_files)
+            self.run_step(14, self.setup_supabase_database)
+            self.run_step(15, self.install_dependencies)
+            self.run_step(16, self.start_suna)
 
             self.final_instructions()
 
@@ -1105,78 +1098,9 @@ class SetupWizard:
         )
         input("Press Enter to continue once you have created the snapshot...")
 
-    def collect_temporal_info(self):
-        """Collects Temporal Cloud configuration."""
-        print_step(5, self.total_steps, "Collecting Temporal Cloud Information")
-
-        # Check if we already have values configured
-        has_existing = bool(self.env_vars["temporal"]["TEMPORAL_API_KEY"])
-        if has_existing:
-            print_info(
-                "Found existing Temporal Cloud configuration. Press Enter to keep current values or type new ones."
-            )
-        else:
-            print_info(
-                "Kortix Super Worker REQUIRES Temporal Cloud for background task processing.")
-            print_info(
-                "Temporal Cloud manages workflow orchestration for agent runs, memory, and more.")
-            print_info("")
-            print_info("To set up Temporal Cloud:")
-            print_info("  1. Visit https://cloud.temporal.io/ and create an account")
-            print_info("  2. Create a new namespace")
-            print_info("  3. Go to namespace settings → API Keys → Create API Key")
-            print_info("")
-            print_info("You'll need:")
-            print_info(f"  - {Colors.GREEN}Cloud Address{Colors.ENDC}: e.g., us-west-2.aws.api.temporal.io:7233")
-            print_info(f"  - {Colors.GREEN}Namespace{Colors.ENDC}: e.g., your-namespace.abc123")
-            print_info(f"  - {Colors.GREEN}API Key{Colors.ENDC}: The generated API key")
-            input("\nPress Enter to continue once you have your Temporal Cloud details...")
-
-        self.env_vars["temporal"]["TEMPORAL_CLOUD_ADDRESS"] = self._get_input(
-            "Enter your Temporal Cloud address (e.g., us-west-2.aws.api.temporal.io:7233): ",
-            lambda x, allow_empty=False: bool(x) if not allow_empty else True,
-            "Temporal Cloud address is required.",
-            default_value=self.env_vars["temporal"]["TEMPORAL_CLOUD_ADDRESS"],
-        )
-
-        self.env_vars["temporal"]["TEMPORAL_NAMESPACE"] = self._get_input(
-            "Enter your Temporal namespace (e.g., your-namespace.abc123): ",
-            lambda x, allow_empty=False: bool(x) if not allow_empty else True,
-            "Temporal namespace is required.",
-            default_value=self.env_vars["temporal"]["TEMPORAL_NAMESPACE"],
-        )
-
-        self.env_vars["temporal"]["TEMPORAL_API_KEY"] = self._get_input(
-            "Enter your Temporal API key: ",
-            validate_api_key,
-            "Invalid API key format. It should be at least 10 characters long.",
-            default_value=self.env_vars["temporal"]["TEMPORAL_API_KEY"],
-        )
-
-        # Validate that all required Temporal configuration is present
-        if not self.env_vars["temporal"]["TEMPORAL_CLOUD_ADDRESS"]:
-            print_error("TEMPORAL_CLOUD_ADDRESS is required for background task processing.")
-            print_error("Without this, background workers will fail to start.")
-            sys.exit(1)
-        
-        if not self.env_vars["temporal"]["TEMPORAL_NAMESPACE"]:
-            print_error("TEMPORAL_NAMESPACE is required for background task processing.")
-            print_error("Without this, background workers will fail to start.")
-            sys.exit(1)
-        
-        if not self.env_vars["temporal"]["TEMPORAL_API_KEY"]:
-            print_error("TEMPORAL_API_KEY is required for background task processing.")
-            print_error("Without this, background workers will fail to start.")
-            sys.exit(1)
-
-        print_success("Temporal Cloud configuration saved.")
-        print_info(f"  Address: {self.env_vars['temporal']['TEMPORAL_CLOUD_ADDRESS']}")
-        print_info(f"  Namespace: {self.env_vars['temporal']['TEMPORAL_NAMESPACE']}")
-        print_info(f"  API Key: {mask_sensitive_value(self.env_vars['temporal']['TEMPORAL_API_KEY'])}")
-
     def collect_llm_api_keys(self):
         """Collects LLM API keys for various providers."""
-        print_step(6, self.total_steps, "Collecting LLM API Keys")
+        print_step(5, self.total_steps, "Collecting LLM API Keys")
 
         # Check if we already have any LLM keys configured
         existing_keys = {
@@ -1272,7 +1196,7 @@ class SetupWizard:
 
     def collect_morph_api_key(self):
         """Collects the optional MorphLLM API key for code editing."""
-        print_step(7, self.total_steps,
+        print_step(6, self.total_steps,
                    "Configure AI-Powered Code Editing (Optional)")
 
         existing_key = self.env_vars["llm"].get("MORPH_API_KEY", "")
@@ -1332,7 +1256,7 @@ class SetupWizard:
 
     def collect_search_api_keys(self):
         """Collects API keys for search and web scraping tools."""
-        print_step(8, self.total_steps,
+        print_step(7, self.total_steps,
                    "Collecting Search and Scraping API Keys")
 
         # Check if we already have values configured
@@ -1440,7 +1364,7 @@ class SetupWizard:
 
     def collect_rapidapi_keys(self):
         """Collects the optional RapidAPI key."""
-        print_step(9, self.total_steps, "Collecting RapidAPI Key (Optional)")
+        print_step(8, self.total_steps, "Collecting RapidAPI Key (Optional)")
 
         # Check if we already have a value configured
         existing_key = self.env_vars["rapidapi"]["RAPID_API_KEY"]
@@ -1471,7 +1395,7 @@ class SetupWizard:
 
     def collect_kortix_keys(self):
         """Auto-generates the Kortix admin API key."""
-        print_step(10, self.total_steps, "Auto-generating Kortix Admin API Key")
+        print_step(9, self.total_steps, "Auto-generating Kortix Admin API Key")
 
         # Always generate a new key (overwrite existing if any)
         print_info("Generating a secure admin API key for Kortix administrative functions...")
@@ -1481,7 +1405,7 @@ class SetupWizard:
 
     def collect_mcp_keys(self):
         """Collects the MCP configuration."""
-        print_step(12, self.total_steps, "Collecting MCP Configuration")
+        print_step(11, self.total_steps, "Collecting MCP Configuration")
 
         # Check if we already have an encryption key configured
         existing_key = self.env_vars["mcp"]["MCP_CREDENTIAL_ENCRYPTION_KEY"]
@@ -1502,7 +1426,7 @@ class SetupWizard:
 
     def collect_composio_keys(self):
         """Collects the optional Composio configuration."""
-        print_step(13, self.total_steps,
+        print_step(12, self.total_steps,
                    "Collecting Composio Configuration (Optional)")
 
         # Check if we already have values configured
@@ -1557,7 +1481,7 @@ class SetupWizard:
 
     def collect_webhook_keys(self):
         """Collects the webhook configuration."""
-        print_step(11, self.total_steps, "Collecting Webhook Configuration")
+        print_step(10, self.total_steps, "Collecting Webhook Configuration")
 
         # Check if we already have values configured
         has_existing = bool(self.env_vars["webhook"]["WEBHOOK_BASE_URL"])
@@ -1641,7 +1565,6 @@ class SetupWizard:
             **self.env_vars["mcp"],
             **self.env_vars["composio"],
             **self.env_vars["daytona"],
-            **self.env_vars["temporal"],
             **self.env_vars["kortix"],
             **self.env_vars.get("vapi", {}),
             **self.env_vars.get("stripe", {}),
@@ -2041,7 +1964,7 @@ class SetupWizard:
                 f"\n{Colors.BOLD}{step_num}. Start Background Worker (in a new terminal):{Colors.ENDC}"
             )
             print(
-                f"{Colors.CYAN}   cd backend && uv run python -m core.temporal.worker{Colors.ENDC}"
+                f"{Colors.CYAN}   cd backend && uv run dramatiq run_agent_background{Colors.ENDC}"
             )
             
             # Show stop commands for local Supabase

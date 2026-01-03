@@ -258,9 +258,11 @@ export function CommandToolView({
               <div className="flex-1 min-h-0 flex items-center justify-center">
                 <LoadingState
                   icon={Terminal}
-                  title={name === 'check-command-output' ? 'Checking output' : 'Running'}
-                  command={displayText || undefined}
-                  terminalStyle={true}
+                  iconColor="text-blue-500 dark:text-blue-400"
+                  bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
+                  title={name === 'check-command-output' ? 'Checking command output' : 'Executing command'}
+                  filePath={displayText || 'Processing command...'}
+                  showProgress={true}
                 />
               </div>
             )}

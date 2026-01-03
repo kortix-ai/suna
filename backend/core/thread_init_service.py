@@ -5,16 +5,25 @@ import os
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from fastapi import UploadFile
+import dramatiq
 
 from core.utils.logger import logger, structlog
 from core.services.supabase import DBConnection
 from core.utils.project_helpers import generate_and_update_project_name
 from core.utils.retry import retry_db_operation
-from core.temporal.client import get_temporal_client
-# Import ThreadInitWorkflow inside function to avoid circular import
+
+# Get queue prefix from environment (for preview deployments)
+QUEUE_PREFIX = os.getenv("DRAMATIQ_QUEUE_PREFIX", "")
+
+def get_queue_name(base_name: str) -> str:
+    """Get queue name with optional prefix for preview deployments."""
+    if QUEUE_PREFIX:
+        return f"{QUEUE_PREFIX}{base_name}"
+    return base_name
 
 db = DBConnection()
 
+@dramatiq.actor(queue_name=get_queue_name("default"), priority=0)  # Priority 0 = highest priority
 async def initialize_thread_background(
     thread_id: str,
     project_id: str,
@@ -23,14 +32,6 @@ async def initialize_thread_background(
     agent_id: Optional[str] = None,
     model_name: Optional[str] = None,
 ):
-    """
-    Initialize thread and start agent run using unified agent service.
-    
-    This function:
-    1. Updates thread status to initializing
-    2. Calls unified agent_service.start_agent() to handle agent run creation
-    3. Updates thread status to ready
-    """
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(
         thread_id=thread_id,
@@ -38,83 +39,147 @@ async def initialize_thread_background(
         account_id=account_id,
     )
     
-    import time
-    t_start = time.time()
+    logger.info(f"Starting background thread initialization for thread {thread_id}")
     
-    logger.info(f"[AGENT_FLOW] THREAD_INIT: Starting thread initialization (thread_id: {thread_id}, project_id: {project_id})")
+    # Initialize DB connection with retry
+    await retry_db_operation(
+        lambda: db.initialize(),
+        f"DB initialization for thread {thread_id}",
+        max_retries=3,
+        initial_delay=1.0,
+        reset_connection_on_error=True,
+    )
     
-    try:
-        from core.agent_service import start_agent
-        
-        # Initialize DB
-        logger.debug(f"[AGENT_FLOW] THREAD_INIT STEP 1: Initializing DB connection")
-        if not db._client:
-            await db.initialize()
+    # Helper async functions to get fresh client on each retry
+    async def update_thread_initializing():
         client = await db.client
-        logger.debug(f"[AGENT_FLOW] THREAD_INIT STEP 1: DB connection ready")
-        
-        # Update thread status to initializing
-        logger.info(f"[AGENT_FLOW] THREAD_INIT STEP 2: Updating thread status to 'initializing'")
-        await client.table('threads').update({
+        return await client.table('threads').update({
             "status": "initializing",
             "initialization_started_at": datetime.now(timezone.utc).isoformat()
         }).eq('thread_id', thread_id).execute()
-        logger.debug(f"[AGENT_FLOW] THREAD_INIT STEP 2: Thread status updated to 'initializing'")
-        
-        # Use unified agent service to start agent run
-        logger.info(f"[AGENT_FLOW] THREAD_INIT STEP 3: Calling agent_service.start_agent()")
-        agent_run_id = await start_agent(
-            thread_id=thread_id,
-            project_id=project_id,
-            account_id=account_id,
-            model_name=model_name,
-            agent_id=agent_id,
-            is_new_thread=False,
-        )
-        logger.info(f"[AGENT_FLOW] THREAD_INIT STEP 3: Agent service returned agent_run_id: {agent_run_id}")
-        
-        # Update thread status to ready
-        logger.info(f"[AGENT_FLOW] THREAD_INIT STEP 4: Updating thread status to 'ready'")
-        await client.table('threads').update({
+    
+    async def get_default_model():
+        from core.ai_models import model_manager
+        client = await db.client
+        return await model_manager.get_default_model_for_user(client, account_id)
+    
+    async def load_agent_config():
+        from core.agent_runs import _load_agent_config
+        client = await db.client
+        return await _load_agent_config(client, agent_id, account_id, account_id, is_new_thread=False)
+    
+    async def get_effective_model(agent_config):
+        from core.agent_runs import _get_effective_model
+        client = await db.client
+        return await _get_effective_model(model_name, agent_config, client, account_id)
+    
+    async def create_agent_run_record(agent_config, effective_model):
+        from core.agent_runs import _create_agent_run_record
+        client = await db.client
+        return await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id)
+    
+    async def update_thread_ready():
+        client = await db.client
+        return await client.table('threads').update({
             "status": "ready",
             "initialization_completed_at": datetime.now(timezone.utc).isoformat()
         }).eq('thread_id', thread_id).execute()
-        logger.debug(f"[AGENT_FLOW] THREAD_INIT STEP 4: Thread status updated to 'ready'")
+    
+    try:
+        # Update thread status to initializing with retry
+        # Get fresh client inside function to avoid stale reference after connection reset
+        await retry_db_operation(
+            update_thread_initializing,
+            f"Update thread {thread_id} to initializing",
+            max_retries=3,
+            initial_delay=1.0,
+            reset_connection_on_error=True,
+        )
         
-        logger.info(f"[AGENT_FLOW] THREAD_INIT COMPLETE: Thread {thread_id} initialized successfully (agent_run_id: {agent_run_id}, total time: {(time.time() - t_start)*1000:.1f}ms)")
-        return agent_run_id
+        logger.debug(f"Thread {thread_id} marked as initializing")
+        
+        await asyncio.sleep(0.1)
+        
+        from core.ai_models import model_manager
+        from run_agent_background import run_agent_background
+        
+        if model_name is None:
+            model_name = await retry_db_operation(
+                get_default_model,
+                f"Get default model for user {account_id}",
+                max_retries=3,
+                initial_delay=1.0,
+            )
+        else:
+            model_name = model_manager.resolve_model_id(model_name)
+        
+        agent_config = await retry_db_operation(
+            load_agent_config,
+            f"Load agent config for thread {thread_id}",
+            max_retries=3,
+            initial_delay=1.0,
+        )
+        effective_model = await retry_db_operation(
+            lambda: get_effective_model(agent_config),
+            f"Get effective model for thread {thread_id}",
+            max_retries=3,
+            initial_delay=1.0,
+        )
+        agent_run_id = await retry_db_operation(
+            lambda: create_agent_run_record(agent_config, effective_model),
+            f"Create agent run record for thread {thread_id}",
+            max_retries=3,
+            initial_delay=1.0,
+        )
+        
+        # Update thread status to ready with retry
+        # Get fresh client inside function to avoid stale reference after connection reset
+        await retry_db_operation(
+            update_thread_ready,
+            f"Update thread {thread_id} to ready",
+            max_retries=3,
+            initial_delay=1.0,
+            reset_connection_on_error=True,
+        )
+        
+        logger.info(f"Thread {thread_id} marked as ready, dispatching agent: {agent_run_id}")
+        
+        worker_instance_id = str(uuid.uuid4())[:8]
+        
+        run_agent_background.send(
+            agent_run_id=agent_run_id,
+            thread_id=thread_id,
+            instance_id=worker_instance_id,
+            project_id=project_id,
+            model_name=effective_model,
+            agent_id=agent_id,
+            account_id=account_id,
+        )
+        
+        logger.info(f"Thread {thread_id} initialization completed and agent dispatched: {agent_run_id}")
         
     except Exception as e:
         logger.error(f"Thread initialization failed for {thread_id}: {str(e)}\n{traceback.format_exc()}")
         
-        # Try to update thread status to error
-        try:
-            await retry_db_operation(
-                lambda: db.initialize(),
-                f"DB initialization for error update",
-                max_retries=2,
-                initial_delay=0.5,
-            )
+        # Try to update thread status to error with retry
+        # Get fresh client inside function to avoid stale reference after connection reset
+        async def update_thread_error():
             client = await db.client
-            
-            async def update_thread_error():
-                client = await db.client
-                return await client.table('threads').update({
-                    "status": "error",
-                    "initialization_error": str(e)[:1000],
-                    "initialization_completed_at": datetime.now(timezone.utc).isoformat()
-                }).eq('thread_id', thread_id).execute()
-            
+            return await client.table('threads').update({
+                "status": "error",
+                "initialization_error": str(e)[:1000],  # Truncate error message to avoid DB limits
+                "initialization_completed_at": datetime.now(timezone.utc).isoformat()
+            }).eq('thread_id', thread_id).execute()
+        
+        try:
             await retry_db_operation(
                 update_thread_error,
                 f"Update thread {thread_id} to error status",
-                max_retries=2,
+                max_retries=2,  # Fewer retries for error updates
                 initial_delay=0.5,
             )
         except Exception as update_error:
-            logger.error(f"Failed to update thread status to error: {str(update_error)}")
-        
-        raise
+            logger.error(f"Failed to update thread status to error after retries: {str(update_error)}")
 
 
 async def create_thread_optimistically(
@@ -289,14 +354,14 @@ async def create_thread_optimistically(
         except Exception as img_error:
             logger.warning(f"Failed to inject image context for {img_info['filename']}: {img_error}")
     
-    asyncio.create_task(initialize_thread_background(
+    initialize_thread_background.send(
         thread_id=thread_id,
         project_id=project_id,
         account_id=account_id,
         prompt=prompt,
         agent_id=agent_id,
         model_name=model_name,
-    ))
+    )
     
     logger.info(f"Dispatched background initialization for thread {thread_id}")
     

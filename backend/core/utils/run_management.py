@@ -49,34 +49,18 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
         logger.error(f"Failed to update database status for stopped/failed run {agent_run_id}")
         raise HTTPException(status_code=500, detail="Failed to update agent run status in database")
 
-    # Send STOP signal to Temporal workflow
+    # Set STOP signal using simple Redis key (no pubsub needed)
     try:
-        from core.temporal.client import get_temporal_client
-        from core.temporal.workflows import AgentRunWorkflow
-        
-        temporal_client = await get_temporal_client()
-        
-        # Get workflow handle by workflow ID
-        workflow_id = f"agent-run-{agent_run_id}"
-        handle = temporal_client.get_workflow_handle(workflow_id)
-        
-        # Send stop signal (pass reason as positional arg, not keyword)
-        await handle.signal(AgentRunWorkflow.stop, f"{stop_source}: {error_message or 'user_request'}")
-        logger.warning(f"🛑 Sent STOP signal to Temporal workflow {workflow_id} (source: {stop_source})")
+        await redis.set_stop_signal(agent_run_id)
+        logger.warning(f"🛑 Set STOP signal for agent run {agent_run_id} (source: {stop_source})")
     except Exception as e:
-        logger.error(f"Failed to send STOP signal to Temporal workflow for {agent_run_id}: {str(e)}")
-        # Fallback: still set Redis stop signal for backwards compatibility during migration
-        try:
-            await redis.set_stop_signal(agent_run_id)
-            logger.debug(f"Set Redis stop signal as fallback for {agent_run_id}")
-        except Exception as redis_err:
-            logger.error(f"Failed to set Redis stop signal fallback: {redis_err}")
+        logger.error(f"Failed to set STOP signal for agent run {agent_run_id}: {str(e)}")
 
         # Comprehensive cleanup of all Redis keys for this agent run
-    try:
         await cleanup_redis_keys_for_agent_run(agent_run_id)
+
     except Exception as e:
-        logger.error(f"Failed to cleanup Redis keys for {agent_run_id}: {str(e)}")
+        logger.error(f"Failed to find or signal active instances for {agent_run_id}: {str(e)}")
 
     logger.debug(f"Successfully initiated stop process for agent run: {agent_run_id}")
 

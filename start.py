@@ -114,7 +114,7 @@ def print_manual_instructions(compose_cmd_str):
 
     print(f"{Colors.BOLD}{step_num}. Start Background Worker (in a new terminal):{Colors.ENDC}")
     print(
-        f"{Colors.CYAN}   cd backend && uv run python -m core.temporal.worker{Colors.ENDC}\n"
+        f"{Colors.CYAN}   cd backend && uv run dramatiq run_agent_background{Colors.ENDC}\n"
     )
 
     # Show stop commands for local Supabase

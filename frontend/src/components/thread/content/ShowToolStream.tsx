@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { CircleDashed } from 'lucide-react';
 import { getToolIcon, getUserFriendlyToolName, extractPrimaryParam } from '@/components/thread/utils';
 import { AppIcon } from '../tool-views/shared/AppIcon';
-import { KortixLoader } from '@/components/ui/kortix-loader';
 
 // Media generation tools that show shimmer preview
 const MEDIA_GENERATION_TOOLS = new Set([
@@ -26,12 +26,9 @@ const STREAMABLE_TOOLS = {
 
     // Command tools - show command output streaming
     COMMAND_TOOLS: new Set([
-        'Running Command',
-        'Executing Command', // legacy fallback
-        'Checking Output',
-        'Checking Command Output', // legacy fallback
-        'Stopping Command',
-        'Terminating Command', // legacy fallback
+        'Executing Command',
+        'Checking Command Output',
+        'Terminating Command',
         'Listing Commands',
     ]),
 
@@ -355,7 +352,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                     <AppIcon toolCall={effectiveToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground shrink-0" fallbackIcon={IconComponent} />
                     <span className="font-mono text-xs text-foreground truncate">Generate Media</span>
                     {!isCompleted && (
-                        <KortixLoader size="small" customSize={14} className="shrink-0 ml-1" />
+                        <CircleDashed className="h-3.5 w-3.5 text-muted-foreground shrink-0 animate-spin ml-1" />
                     )}
                 </button>
 
@@ -413,7 +410,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                         <span className="font-mono text-xs text-foreground flex-1">{displayName}</span>
                         {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
                         {!isCompleted && (
-                            <KortixLoader size="small" customSize={14} className="flex-shrink-0 ml-auto" />
+                            <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-auto" />
                         )}
                     </button>
 
@@ -516,7 +513,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 <span className="font-mono text-xs text-foreground truncate">{displayName}</span>
                 {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[150px] sm:max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
                 {!isCompleted && (
-                    <KortixLoader size="small" customSize={14} className="flex-shrink-0 ml-1" />
+                    <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-1" />
                 )}
             </button>
         </div>

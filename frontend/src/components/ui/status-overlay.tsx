@@ -1,9 +1,6 @@
-'use client';
-
 import React from 'react';
-import { CheckCircle, AlertCircle } from 'lucide-react';
+import { Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { useDeleteOperation } from '@/stores/delete-operation-store';
-import { KortixLoader } from '@/components/ui/kortix-loader';
 
 export function StatusOverlay() {
   const { state } = useDeleteOperation();
@@ -11,25 +8,25 @@ export function StatusOverlay() {
   if (state.operation === 'none' || !state.isDeleting) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2.5 bg-background/95 backdrop-blur-sm px-4 py-2.5 rounded-full shadow-lg border border-border">
+    <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 bg-background/90 backdrop-blur p-3 rounded-2xl shadow-lg border border-border">
       {state.operation === 'pending' && (
         <>
-          <KortixLoader size="small" customSize={16} />
-          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Working</span>
+          <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
+          <span className="text-sm">Processing...</span>
         </>
       )}
 
       {state.operation === 'success' && (
         <>
-          <CheckCircle className="h-4 w-4 text-emerald-500" />
-          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Done</span>
+          <CheckCircle className="h-5 w-5 text-green-500" />
+          <span className="text-sm">Completed</span>
         </>
       )}
 
       {state.operation === 'error' && (
         <>
-          <AlertCircle className="h-4 w-4 text-destructive" />
-          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Failed</span>
+          <AlertCircle className="h-5 w-5 text-destructive" />
+          <span className="text-sm">Failed</span>
         </>
       )}
     </div>

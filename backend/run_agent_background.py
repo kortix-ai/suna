@@ -11,14 +11,53 @@ from core.services import redis
 from core.run import run_agent
 from core.utils.logger import logger, structlog
 from core.utils.tool_discovery import warm_up_tools_cache
+import dramatiq
 import uuid
 from core.services.supabase import DBConnection
+from dramatiq.brokers.redis import RedisBroker
 from core.services.langfuse import langfuse
 from core.utils.retry import retry
 import time
 
-# Note: This file contains helper functions used by Temporal activities
-# The actual worker entry point is now in core/temporal/worker.py
+from core.services.redis import get_redis_config as _get_redis_config
+import os
+
+redis_config = _get_redis_config()
+redis_host = redis_config["host"]
+redis_port = redis_config["port"]
+redis_password = redis_config["password"]
+redis_username = redis_config["username"]
+
+# Get queue prefix from environment (for preview deployments)
+QUEUE_PREFIX = os.getenv("DRAMATIQ_QUEUE_PREFIX", "")
+
+def get_queue_name(base_name: str) -> str:
+    """Get queue name with optional prefix for preview deployments."""
+    if QUEUE_PREFIX:
+        return f"{QUEUE_PREFIX}{base_name}"
+    return base_name
+
+if redis_config["url"]:
+    auth_info = f" (user={redis_username})" if redis_username else ""
+    queue_info = f" (queue prefix: '{QUEUE_PREFIX}')" if QUEUE_PREFIX else ""
+    logger.info(f"🔧 Configuring Dramatiq broker with Redis at {redis_host}:{redis_port}{auth_info}{queue_info}")
+    redis_broker = RedisBroker(url=redis_config["url"], middleware=[dramatiq.middleware.AsyncIO()])
+else:
+    queue_info = f" (queue prefix: '{QUEUE_PREFIX}')" if QUEUE_PREFIX else ""
+    logger.info(f"🔧 Configuring Dramatiq broker with Redis at {redis_host}:{redis_port}{queue_info}")
+    redis_broker = RedisBroker(host=redis_host, port=redis_port, middleware=[dramatiq.middleware.AsyncIO()])
+
+dramatiq.set_broker(redis_broker)
+
+from core.memory import background_jobs as memory_jobs
+from core.categorization import background_jobs as categorization_jobs
+
+# CRITICAL: Import thread_init_service at module level so Dramatiq discovers its actors
+# Without this, the worker won't consume messages for initialize_thread_background
+from core import thread_init_service
+
+warm_up_tools_cache()
+logger.info("✅ Worker process ready, tool cache warmed")
 
 _initialized = False
 db = DBConnection()
@@ -68,7 +107,7 @@ async def initialize():
     if not instance_id:
         instance_id = str(uuid.uuid4())[:8]
     
-    logger.info(f"Initializing worker async resources (instance: {instance_id})")
+    logger.info(f"Initializing worker async resources with Redis at {redis_host}:{redis_port}")
     await retry(lambda: redis.initialize_async())
     
     await redis.verify_connection()
@@ -95,7 +134,10 @@ async def initialize():
     _initialized = True
     logger.info(f"✅ Worker async resources initialized successfully (instance: {instance_id})")
 
-# check_health function removed - health checks now handled by worker_health.py
+@dramatiq.actor(queue_name=get_queue_name("default"))
+async def check_health(key: str):
+    structlog.contextvars.clear_contextvars()
+    await redis.set(key, "healthy", ex=redis.REDIS_KEY_TTL)
 
 
 async def acquire_run_lock(agent_run_id: str, instance_id: str, client) -> bool:
@@ -309,27 +351,23 @@ async def process_agent_responses(
         # Write to stream directly - no fire-and-forget, no pubsub
         if redis_streaming_enabled:
             try:
-                entry_id = await redis.stream_add(
+                await redis.stream_add(
                     stream_key,
                     {"data": response_json},
                     maxlen=200,
                     approximate=True
                 )
                 
-                # Log first few writes to verify Redis is working
-                if total_responses < 3:
-                    logger.info(f"[REDIS STREAM] ✅ Written response {total_responses + 1} to stream {stream_key} (entry_id: {entry_id})")
-                
                 # Set initial TTL on stream after first entry is added (safety net if cleanup fails)
                 if not stream_ttl_set:
                     try:
                         await asyncio.wait_for(redis.expire(stream_key, REDIS_STREAM_TTL_SECONDS), timeout=2.0)
                         stream_ttl_set = True
-                        logger.info(f"[REDIS STREAM] ✅ Set initial TTL ({REDIS_STREAM_TTL_SECONDS}s) on stream {stream_key}")
+                        logger.debug(f"Set initial TTL ({REDIS_STREAM_TTL_SECONDS}s) on stream {stream_key}")
                     except (asyncio.TimeoutError, Exception) as e:
-                        logger.warning(f"[REDIS STREAM] ⚠️ Failed to set initial TTL on stream (non-critical): {e}")
+                        logger.debug(f"Failed to set initial TTL on stream (non-critical): {e}")
             except Exception as e:
-                logger.error(f"[REDIS STREAM] ❌ Failed to write to stream {stream_key} for {agent_run_id}: {e}", exc_info=True)
+                logger.warning(f"Failed to write to stream for {agent_run_id}: {e}")
                 # Don't disable streaming on single failure - redis-py will retry
         
         total_responses += 1
@@ -411,9 +449,10 @@ async def publish_final_control_signal(agent_run_id: str, final_status: str, sto
 
 
 
+from core import thread_init_service
 from core.tool_output_streaming_context import set_tool_output_streaming_context, clear_tool_output_streaming_context
 
-
+@dramatiq.actor(queue_name=get_queue_name("default"), priority=0)  # Priority 0 = highest priority
 async def run_agent_background(
     agent_run_id: str,
     thread_id: str,
@@ -623,24 +662,18 @@ async def run_agent_background(
 
         if final_status == "completed" and account_id:
             try:
-                from core.temporal.client import get_temporal_client
-                from core.temporal.workflows import MemoryExtractionWorkflow
+                from core.memory.background_jobs import extract_memories_from_conversation
                 messages_result = await client.table('messages').select('message_id').eq('thread_id', thread_id).order('created_at', desc=False).execute()
                 if messages_result.data:
                     message_ids = [m['message_id'] for m in messages_result.data]
-                    temporal_client = await get_temporal_client()
-                    # Temporal SDK requires multiple args passed via 'args' parameter
-                    # Use background queue for memory extraction (lower priority)
-                    from core.temporal.workflows import MemoryExtractionWorkflow, TASK_QUEUE_BACKGROUND
-                    await temporal_client.start_workflow(
-                        MemoryExtractionWorkflow.run,
-                        args=[thread_id, account_id, message_ids],
-                        id=f"memory-extraction-{thread_id}",
-                        task_queue=TASK_QUEUE_BACKGROUND,
+                    extract_memories_from_conversation.send(
+                        thread_id=thread_id,
+                        account_id=account_id,
+                        message_ids=message_ids
                     )
-                    logger.debug(f"Started memory extraction workflow for thread {thread_id}")
+                    logger.debug(f"Queued memory extraction for thread {thread_id}")
             except Exception as mem_error:
-                logger.warning(f"Failed to start memory extraction workflow: {mem_error}")
+                logger.warning(f"Failed to queue memory extraction: {mem_error}")
 
         # MEMORY CLEANUP: Explicitly release memory after agent run completes
         try:

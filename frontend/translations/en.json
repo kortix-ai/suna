@@ -22,7 +22,7 @@
     "update": "Update",
     "remove": "Remove",
     "confirm": "Confirm",
-    "processing": "Working",
+    "processing": "Processing...",
     "keep": "Keep",
     "active": "Active",
     "inactive": "Inactive",
@@ -791,7 +791,7 @@
     "skip": "Skip"
   },
   "tools": {
-    "executeCommand": "Running Command",
+    "executeCommand": "Executing Command",
     "checkCommandOutput": "Checking Command Output",
     "terminateCommand": "Terminating Command",
     "listCommands": "Listing Commands",
