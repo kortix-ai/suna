@@ -1,6 +1,6 @@
 <div align="center">
 
-# Kortix
+# Xera
 
 **The complete platform for creating autonomous AI agents that work for you**
 
@@ -29,11 +29,11 @@ Build, manage, and train sophisticated AI agents for any use case. Create powerf
 
 ## 🌟 What Makes Kortix Special
 
-### 🤖 Includes Kortix Super Worker – Flagship Generalist AI Worker
-Meet Kortix Super Worker, our showcase agent that demonstrates the full power of the Kortix platform. Through natural conversation, Kortix Super Worker handles research, data analysis, browser automation, file management, and complex workflows – showing you what's possible when you build with Kortix.
+### 🤖 Includes Xera Super Worker – Flagship Generalist AI Worker
+Meet Xera Super Worker, our showcase agent that demonstrates the full power of the Xera platform. Through natural conversation, Xera Super Worker handles research, data analysis, browser automation, file management, and complex workflows – showing you what's possible when you build with Xera.
 
-### 🔧 Build Custom Kortix Super Worker-Type Agents
-Create your own specialized agents tailored to specific domains, workflows, or business needs. Whether you need agents for customer service, data processing, content creation, or industry-specific tasks, Kortix provides the infrastructure and tools to build, deploy, and scale them.
+### 🔧 Build Custom Xera Super Worker-Type Agents
+Create your own specialized agents tailored to specific domains, workflows, or business needs. Whether you need agents for customer service, data processing, content creation, or industry-specific tasks, Xera provides the infrastructure and tools to build, deploy, and scale them.
 
 ### 🚀 Complete Platform Capabilities
 - **Browser Automation**: Navigate websites, extract data, fill forms, automate web workflows
@@ -169,6 +169,16 @@ That's it! Your Kortix platform will be running with Kortix Super Worker ready t
 ## 🏠 Self-Hosting
 
 Just use "setup.py". Ty mate.
+
+## 🧱 Supabase-only Setup
+
+If you skipped the database migration step in `setup.py` or want to reapply the schema without rerunning the entire wizard, run:
+
+```bash
+python supabase_setup.py --target cloud --token $SUPABASE_ACCESS_TOKEN
+```
+
+By default the helper guesses whether you are targeting a cloud project (any `https://*.supabase.co` URL) or a local Supabase instance. Use `--target local` for `npx supabase start` setups. Refer to `python supabase_setup.py --help` for flags that skip the login/link steps, override the project ref, or point at a non-standard backend directory.
 
 
 ---

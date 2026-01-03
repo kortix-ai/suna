@@ -4,7 +4,7 @@ import { motion, useMotionValue, useTransform } from 'framer-motion';
 import type { TargetAndTransition } from 'framer-motion';
 import { useEffect, useState, useId, useMemo } from 'react';
 
-type Tone = 'light' | 'medium' | 'dark';
+type Tone = 'light' | 'medium' | 'dark' | 'accent' | 'glow';
 
 const LeftArc = ({
     size,
@@ -25,11 +25,13 @@ const LeftArc = ({
     const sw = 542;
     const sh = 520;
 
-    const { c1, c2, c3 } =
+    const { c1, c2, c3, glow } =
         {
-            light: { c1: '#D9D9D9', c2: '#DEDEDE', c3: '#3B3B3B' },
-            medium: { c1: '#C9C9C9', c2: '#D4D4D4', c3: '#2F2F2F' },
-            dark: { c1: '#B9B9B9', c2: '#C8C8C8', c3: '#232323' },
+            light: { c1: '#E8F4FD', c2: '#F0F9FF', c3: '#0EA5E9', glow: false },
+            medium: { c1: '#DCFCE7', c2: '#F0FDF4', c3: '#10B981', glow: false },
+            dark: { c1: '#F3E8FF', c2: '#FAF5FF', c3: '#8B5CF6', glow: false },
+            accent: { c1: '#FEF3C7', c2: '#FFFBEB', c3: '#F59E0B', glow: true },
+            glow: { c1: '#E0F2FE', c2: '#F0F9FF', c3: '#0284C7', glow: true },
         }[tone];
 
     const d =
@@ -63,6 +65,16 @@ const LeftArc = ({
                     <feGaussianBlur stdDeviation="3" />
                 </filter>
 
+                {glow && (
+                    <filter id={`Lglow_${uid}`} x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+                        <feMerge> 
+                            <feMergeNode in="coloredBlur"/>
+                            <feMergeNode in="SourceGraphic"/>
+                        </feMerge>
+                    </filter>
+                )}
+
                 <mask id={`Lmask_${uid}`} maskUnits="userSpaceOnUse">
                     <g filter={`url(#Ledge_${uid})`}>
                         <path d={d} fill="#fff" />
@@ -75,7 +87,9 @@ const LeftArc = ({
             </defs>
 
             <g opacity={opacity}>
-                <g style={{ filter: blurAmount && blurAmount > 0 ? `blur(${blurAmount}px)` : undefined }}>
+                <g style={{ 
+                    filter: `${blurAmount && blurAmount > 0 ? `blur(${blurAmount}px)` : ''} ${glow ? `url(#Lglow_${uid})` : ''}`.trim()
+                }}>
                     <path d={d} fill={`url(#L0_${tone}_${uid})`} />
                     <path d={d} fill={`url(#L1_${tone}_${uid})`} />
                 </g>
@@ -106,7 +120,13 @@ const RightArc = ({
     const uid = useId();
     const sw = 532;
     const sh = 657;
-    const c = { light: '#D9D9D9', medium: '#C9C9C9', dark: '#B9B9B9' }[tone];
+    const { c, glow } = { 
+        light: { c: '#E8F4FD', glow: false },
+        medium: { c: '#DCFCE7', glow: false },
+        dark: { c: '#F3E8FF', glow: false },
+        accent: { c: '#FEF3C7', glow: true },
+        glow: { c: '#E0F2FE', glow: true }
+    }[tone];
 
     const d =
         'M3.50098 155.457C378.985 155.457 683.375 459.847 683.375 835.331H834.934C834.934 376.144 462.688 3.89844 3.50098 3.89844V155.457Z';
@@ -135,6 +155,16 @@ const RightArc = ({
                     <feGaussianBlur stdDeviation="3" />
                 </filter>
 
+                {glow && (
+                    <filter id={`Rglow_${uid}`} x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+                        <feMerge> 
+                            <feMergeNode in="coloredBlur"/>
+                            <feMergeNode in="SourceGraphic"/>
+                        </feMerge>
+                    </filter>
+                )}
+
                 <mask id={`Rmask_${uid}`} maskUnits="userSpaceOnUse">
                     <g filter={`url(#Redge_${uid})`}>
                         <path d={d} fill="#fff" />
@@ -147,7 +177,9 @@ const RightArc = ({
             </defs>
 
             <g opacity={opacity}>
-                <g style={{ filter: blurAmount && blurAmount > 0 ? `blur(${blurAmount}px)` : undefined }}>
+                <g style={{ 
+                    filter: `${blurAmount && blurAmount > 0 ? `blur(${blurAmount}px)` : ''} ${glow ? `url(#Rglow_${uid})` : ''}`.trim()
+                }}>
                     <path d={d} fill={`url(#R0_${tone}_${uid})`} />
                 </g>
 
@@ -299,8 +331,8 @@ export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplie
         {
             pos: { left: -190, top: 20 },
             size: 400,
-            tone: 'light',
-            opacity: 0.1,
+            tone: 'accent',
+            opacity: 0.12,
             delay: 0.02,
             x: [0, 20, -10, 0],
             y: [0, 15, -8, 0],
@@ -310,8 +342,8 @@ export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplie
         {
             pos: { left: -60, top: 240 },
             size: 600,
-            tone: 'dark',
-            opacity: 0.22,
+            tone: 'glow',
+            opacity: 0.18,
             delay: 1.1,
             x: [0, 22, -14, 0],
             y: [0, 16, -12, 0],
@@ -324,8 +356,8 @@ export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplie
         {
             pos: { right: -85, top: 100 },
             size: 620,
-            tone: 'dark',
-            opacity: 0.23,
+            tone: 'light',
+            opacity: 0.15,
             delay: 1.5,
             x: [0, -25, 15, 0],
             y: [0, 18, -12, 0],
@@ -335,8 +367,8 @@ export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplie
         {
             pos: { right: -0, top: 570 },
             size: 220,
-            tone: 'light',
-            opacity: 0.08,
+            tone: 'accent',
+            opacity: 0.1,
             delay: 0.3,
             x: [0, -20, 10, 0],
             y: [0, 15, -8, 0],
@@ -361,7 +393,7 @@ export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplie
         {
             pos: { left: -40, top: 100 },
             size: adjustSize(520),
-            tone: 'medium',
+            tone: 'accent',
             opacity: 0.25,
             delay: 0.8,
             x: [0, 18, -10, 0],
@@ -375,7 +407,7 @@ export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplie
         {
             pos: { right: -140, top: -50 },
             size: adjustSize(550),
-            tone: 'dark',
+            tone: 'glow',
             opacity: 0.28,
             delay: 1.2,
             x: [0, -20, 12, 0],
@@ -386,7 +418,7 @@ export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplie
         {
             pos: { right: 300, top: 140 },
             size: adjustSize(280),
-            tone: 'light',
+            tone: 'dark',
             opacity: 0.18,
             delay: 0.4,
             x: [0, -15, 8, 0],

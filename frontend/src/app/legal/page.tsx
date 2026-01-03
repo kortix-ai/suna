@@ -109,10 +109,10 @@ function LegalContent() {
                         <p>
                           Email:{' '}
                           <a
-                            href="mailto:info@kortix.com"
+                            href="mailto:info@xera.cc"
                             className="text-primary hover:underline"
                           >
-                            info@kortix.com
+                            info@xera.cc
                           </a>
                         </p>
                       </div>
@@ -216,7 +216,7 @@ function LegalContent() {
                         </li>
                         <li>
                           "Notice Address" refers to the contact address for the
-                          Company, specifically legal@kortix.com
+                          Company, specifically legal@xera.cc
                         </li>
                         <li>
                           "Privacy Policy" refers to the document outlining how
@@ -387,7 +387,7 @@ function LegalContent() {
                         held by others. We respect rights holders internationally,
                         and we ask our users to do the same. If you believe your
                         copyright or trademark is being infringed by the Service,
-                        please write to info@kortix.com and we will process and
+                        please write to info@xera.cc and we will process and
                         investigate your request and take appropriate actions
                         under the Digital Millennium Copyright Act and other
                         applicable intellectual property laws with respect to any
@@ -403,7 +403,7 @@ function LegalContent() {
                         subscription, payable in U.S. dollars, that will
                         automatically renew. You can stop using the Service and
                         cancel your subscription at any time through the website
-                        or by emailing us at info@kortix.com. If you cancel
+                        or by emailing us at info@xera.cc. If you cancel
                         your subscription, you may not receive a refund or credit
                         for any amounts that have already been billed or paid. The
                         Company reserves the right to change its prices at any
@@ -681,10 +681,10 @@ function LegalContent() {
                         For questions regarding the Service, you can get in touch
                         by emailing us at{' '}
                         <a
-                          href="mailto:info@kortix.com"
+                          href="mailto:info@xera.cc"
                           className="text-primary hover:underline"
                         >
-                          info@kortix.com
+                          info@xera.cc
                         </a>
                         .
                       </p>
@@ -905,10 +905,10 @@ function LegalContent() {
                       <p className="text-muted-foreground text-balance">
                         You can get in touch by emailing us at{' '}
                         <a
-                          href="mailto:info@kortix.com"
+                          href="mailto:info@xera.cc"
                           className="text-primary hover:underline"
                         >
-                          info@kortix.com
+                          info@xera.cc
                         </a>
                         .
                       </p>

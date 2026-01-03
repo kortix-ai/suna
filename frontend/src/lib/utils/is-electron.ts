@@ -25,8 +25,8 @@ export function isElectron(): boolean {
 
 /**
  * Gets the auth callback URL for the current environment
- * - Web: returns the web URL (https://kortix.com/auth/callback)
- * - Electron: returns the custom protocol URL (kortix://auth/callback)
+ * - Web: returns the web URL (https://xera.cc/auth/callback)
+ * - Electron: returns the custom protocol URL (xera://auth/callback)
  */
 export function getAuthCallbackUrl(returnUrl?: string, termsAccepted?: boolean): string {
   const params = new URLSearchParams();

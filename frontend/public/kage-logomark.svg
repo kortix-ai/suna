@@ -1,0 +1,13 @@
+<svg width="80" height="24" viewBox="0 0 80 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- K -->
+  <path d="M4 4h3v7.5L11.5 4h3l-5 8 5 8h-3l-4.5-7.5V20H4V4z" fill="#000000"/>
+  <!-- A -->
+  <path d="M16 20h2.5l1.5-4.5h4L25.5 20H28l-5-16h-2l-5 16zm3.5-6.5L22 8l2.5 5.5h-5z" fill="#000000"/>
+  <!-- G -->
+  <path d="M32 8c0-1.1.9-2 2-2h6v2h-6v4h4c1.1 0 2 .9 2 2v4c0 1.1-.9 2-2 2h-6V8zm2 6h4v-4h-4v4z" fill="#000000"/>
+  <!-- E -->
+  <path d="M48 6h6v2h-4v4h4v2h-4v4h6v2h-8V6z" fill="#000000"/>
+  <!-- Shadow accent line -->
+  <rect x="0" y="22" width="80" height="1" fill="#FF6B35" opacity="0.6"/>
+</svg></content>
+<parameter name="filePath">/Users/macbookpro/kage/suna/frontend/public/kage-logomark.svg

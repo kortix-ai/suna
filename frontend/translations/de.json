@@ -416,7 +416,7 @@
     "running": "Läuft",
     "minimizeToFloatingPreview": "Auf schwebende Vorschau minimieren",
     "close": "Schließen",
-    "noActionsYet": "Kortix Computer",
+    "noActionsYet": "Xera Computer",
     "workerActionsDescription": "Ergebnisse werden hier angezeigt, während Kortix arbeitet",
     "toolIsRunning": "Tool läuft",
     "toolCurrentlyExecuting": "{toolName} wird derzeit ausgeführt. Ergebnisse werden hier angezeigt, wenn sie abgeschlossen sind.",
@@ -825,10 +825,10 @@
     "heroPlaceholder": "Beschreibe die Aufgabe, die dein Worker erledigen soll..."
   },
   "showcase": {
-    "title": "Kortix: Dein autonomer KI-Worker",
+    "title": "Xera: Dein autonomer KI-Worker",
     "subtitle": "Gebaut für komplexe Aufgaben, entwickelt für alles. Der ultimative KI-Assistent, der alles bewältigt—von einfachen Anfragen bis hin zu mega-komplexen Projekten.",
     "tryItOut": "Ausprobieren",
-    "kortixComputer": "Kortix Computer",
+    "kortixComputer": "Xera Computer",
     "running": "Läuft",
     "workers": {
       "images": {

@@ -46,7 +46,7 @@ export const metadata: Metadata = {
   },
   description: siteMetadata.description,
   keywords: siteMetadata.keywords,
-  authors: [{ name: 'Kortix Team', url: 'https://www.kortix.com' }],
+  authors: [{ name: 'Xera Team', url: 'https://www.xera.cc' }],
   creator: 'Kortix Team',
   publisher: 'Kortix Team',
   applicationName: siteMetadata.name,
@@ -81,8 +81,8 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: siteMetadata.title,
     description: siteMetadata.description,
-    creator: '@kortix',
-    site: '@kortix',
+    creator: '@xera',
+    site: '@xera',
     images: ['/banner.png'],
   },
   icons: {
@@ -91,7 +91,7 @@ export const metadata: Metadata = {
       { url: '/favicon-light.png', sizes: '32x32', media: '(prefers-color-scheme: dark)' },
     ],
     shortcut: '/favicon.png',
-    apple: [{ url: '/logo_black.png', sizes: '180x180' }],
+    apple: [{ url: '/kage-logo.png', sizes: '180x180' }],
   },
   manifest: '/manifest.json',
   alternates: {
@@ -168,21 +168,24 @@ export default function RootLayout({
         />
         
         {/* Static SEO meta tags - rendered in initial HTML */}
-        <title>Kortix: Your Autonomous AI Worker</title>
-        <meta name="description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
-        <meta name="keywords" content="Kortix, AI Worker, Agentic AI, Autonomous AI Worker, AI Automation, AI Workflow Automation, AI Assistant, Task Automation" />
-        <meta property="og:title" content="Kortix: Your Autonomous AI Worker" />
-        <meta property="og:description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
-        <meta property="og:image" content="https://kortix.com/banner.png" />
-        <meta property="og:url" content="https://kortix.com" />
+        {/* <title>Kortix: Your Autonomous AI Worker</title> */}
+        <title>{siteMetadata.title}</title>
+        <meta name="description" content={siteMetadata.description} />
+        <meta name="keywords" content={siteMetadata.keywords} />
+        {/* <meta property="og:title" content="Kortix: Your Autonomous AI Worker" /> */}
+        <meta property="og:title" content={siteMetadata.title} />
+        <meta property="og:description" content={siteMetadata.description} />
+        <meta property="og:image" content="https://xera.cc/banner.png" />
+        <meta property="og:url" content="https://xera.cc" />
         <meta property="og:type" content="website" />
-        <meta property="og:site_name" content="Kortix" />
+        <meta property="og:site_name" content={siteMetadata.name} />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Kortix: Your Autonomous AI Worker" />
-        <meta name="twitter:description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
-        <meta name="twitter:image" content="https://kortix.com/banner.png" />
-        <meta name="twitter:site" content="@kortix" />
-        <link rel="canonical" href="https://kortix.com" />
+        {/* <meta name="twitter:title" content="Kortix: Your Autonomous AI Worker" /> */}
+        <meta name="twitter:title" content={siteMetadata.title} />
+        <meta name="twitter:description" content={siteMetadata.description} />
+        <meta name="twitter:image" content="https://xera.cc/banner.png" />
+        <meta name="twitter:site" content="@xera" />
+        <link rel="canonical" href="https://xera.cc" />
         
         {/* iOS Smart App Banner - shows native install banner in Safari */}
         {!featureFlags.disableMobileAdvertising ? (
@@ -226,7 +229,7 @@ export default function RootLayout({
               '@context': 'https://schema.org',
               '@type': 'Organization',
               name: siteMetadata.name,
-              alternateName: ['Kortix', 'Kortix AI', 'Kortix: Your Autonomous AI Worker'],
+              alternateName: ['Xera', 'Xera AI'],
               url: siteMetadata.url,
               logo: `${siteMetadata.url}/favicon.png`,
               description: siteMetadata.description,

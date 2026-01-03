@@ -23,24 +23,23 @@ export function KortixLogo({ size = 24, variant = 'symbol', className }: KortixL
     theme === 'dark' || (theme === 'system' && systemTheme === 'dark')
   );
 
-  // For logomark variant, use logomark-white.svg which is already white
-  // and invert it for light mode instead
+  // For logomark variant, use kage-themed logo
   if (variant === 'logomark') {
     return (
       <img
-        src="/logomark-white.svg"
-        alt="Kortix"
+        src="/kage-logomark.svg"
+        alt="Kage"
         className={cn(`${shouldInvert ? '' : 'invert'} flex-shrink-0`, className)}
         style={{ height: `${size}px`, width: 'auto' }}
       />
     );
   }
 
-  // Default symbol variant behavior
+  // Default symbol variant - kage shadow/fire symbol
   return (
     <img
-      src="/kortix-symbol.svg"
-      alt="Kortix"
+      src="/kage-symbol.svg"
+      alt="Kage"
       className={cn(`${shouldInvert ? 'invert' : ''} flex-shrink-0`, className)}
       style={{ width: `${size}px`, height: `${size}px` }}
     />

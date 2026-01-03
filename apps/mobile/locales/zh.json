@@ -128,7 +128,7 @@
     "skip": "跳过",
     "next": "下一步",
     "getStarted": "开始使用",
-    "kortixComputer": "Kortix Computer",
+    "kortixComputer": "Xera's Computer",
     "ready": "就绪",
     "examples": {
       "presentations": {
@@ -266,7 +266,7 @@
     "newWorker": "新建 Worker",
     "myWorkers": "我的 Workers",
     "searchAgents": "搜索 workers",
-    "defaultAgent": "Kortix",
+    "defaultAgent": "X",
     "defaultDescription": "适用于所有任务的通用 AI",
     "superWorker": "Super Worker",
     "coder": "Coder",

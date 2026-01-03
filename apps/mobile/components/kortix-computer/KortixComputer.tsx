@@ -4,6 +4,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { ViewToggle } from './ViewToggle';
@@ -55,6 +56,7 @@ export function KortixComputer({
   sandboxId,
 }: KortixComputerProps) {
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
 
   const {
     isOpen,
@@ -169,7 +171,7 @@ export function KortixComputer({
         >
           <View className="flex-row items-center gap-3">
             <Text className="text-lg font-roobert-semibold text-primary">
-              Kortix Computer
+              {t('onboarding.kortixComputer')}
             </Text>
             {isStreaming && activeView === 'tools' && (
               <View className="px-2.5 py-0.5 rounded-full bg-card border border-border flex-row items-center gap-1.5">

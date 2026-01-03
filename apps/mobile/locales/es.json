@@ -128,7 +128,7 @@
     "skip": "Saltar",
     "next": "Siguiente",
     "getStarted": "Comenzar",
-    "kortixComputer": "Kortix Computer",
+    "kortixComputer": "Xera's Computer",
     "ready": "Listo",
     "examples": {
       "presentations": {
@@ -266,7 +266,7 @@
     "newWorker": "Nuevo Worker",
     "myWorkers": "Mis Workers",
     "searchAgents": "Buscar workers",
-    "defaultAgent": "Kortix",
+    "defaultAgent": "X",
     "defaultDescription": "IA para todo tipo de tareas",
     "superWorker": "Super Worker",
     "coder": "Coder",

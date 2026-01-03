@@ -415,7 +415,7 @@
     "running": "実行中",
     "minimizeToFloatingPreview": "フローティングプレビューに最小化",
     "close": "閉じる",
-    "noActionsYet": "Kortix Computer",
+    "noActionsYet": "Xera Computer",
     "workerActionsDescription": "Kortixが作業中に結果がここに表示されます",
     "toolIsRunning": "ツールが実行中です",
     "toolCurrentlyExecuting": "{toolName} が現在実行中です。完了すると結果がここに表示されます。",
@@ -445,10 +445,10 @@
     "heroPlaceholder": "Workerに完了させたいタスクを説明..."
   },
   "showcase": {
-    "title": "Kortix: あなたの自律型AIワーカー",
+    "title": "Xera: あなたの自律型AIワーカー",
     "subtitle": "複雑なタスクのために構築され、すべてのために設計されました。シンプルなリクエストからメガ複雑なプロジェクトまで、すべてを処理する究極のAIアシスタント。",
     "tryItOut": "試してみる",
-    "kortixComputer": "Kortix Computer",
+    "kortixComputer": "Xera Computer",
     "running": "実行中",
     "workers": {
       "images": {

@@ -1,11 +1,11 @@
 {
-  "name": "kortix-desktop",
+  "name": "xera-desktop",
   "version": "1.0.0",
-  "description": "Kortix Desktop",
+  "description": "Xera Desktop",
   "author": {
-    "name": "Kortix",
-    "email": "support@kortix.com",
-    "url": "https://kortix.com"
+    "name": "Xera",
+    "email": "support@xera.cc",
+    "url": "https://xera.cc"
   },
   "main": "main.js",
   "scripts": {
@@ -24,11 +24,11 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "com.kortix.desktop",
-    "productName": "Kortix",
+    "appId": "com.xera.desktop",
+    "productName": "Xera",
     "protocols": {
-      "name": "Kortix",
-      "schemes": ["kortix"]
+      "name": "Xera",
+      "schemes": ["xera"]
     },
     "mac": {
       "target": "dmg",

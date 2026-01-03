@@ -17,9 +17,9 @@ const STORE_LINKS = {
 };
 
 const DOWNLOAD_LINKS = {
-  windows: 'https://download.kortix.com/desktop/latest/windows/Kortix%20Setup%201.0.0.exe',
-  macArm: 'https://download.kortix.com/desktop/latest/macos/Kortix-1.0.0-arm64.dmg',
-  macIntel: 'https://download.kortix.com/desktop/latest/macos/Kortix-1.0.0-x64.dmg',
+  windows: 'https://download.xera.cc/desktop/latest/windows/Xera%20Setup%201.0.0.exe',
+  macArm: 'https://download.xera.cc/desktop/latest/macos/Xera-1.0.0-arm64.dmg',
+  macIntel: 'https://download.xera.cc/desktop/latest/macos/Xera-1.0.0-x64.dmg',
 };
 
 type MobilePlatform = 'ios' | 'android';

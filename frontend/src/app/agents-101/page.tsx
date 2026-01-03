@@ -665,7 +665,7 @@ const SlideContent = ({ slide }: { slide: Slide }) => {
             transition={{ delay: 0.2 }}
           >
             <Image
-              src="/Logomark.svg"
+              src="/kage-logomark.svg"
               alt="Kortix"
               width={140}
               height={40}
@@ -1122,7 +1122,7 @@ export default function Agents101Page() {
       {/* Logo */}
       <div className="fixed top-8 left-8 z-50">
         <Image
-          src="/Logomark.svg"
+          src="/kage-logomark.svg"
           alt="Kortix"
           width={72}
           height={72}

@@ -415,7 +415,7 @@
     "running": "Executando",
     "minimizeToFloatingPreview": "Minimizar para pré-visualização flutuante",
     "close": "Fechar",
-    "noActionsYet": "Kortix Computer",
+    "noActionsYet": "Xera Computer",
     "workerActionsDescription": "Os resultados aparecerão aqui enquanto Kortix trabalha",
     "toolIsRunning": "Ferramenta está executando",
     "toolCurrentlyExecuting": "{toolName} está executando no momento. Resultados aparecerão aqui quando completo.",
@@ -445,10 +445,10 @@
     "heroPlaceholder": "Descreve a tarefa que queres que teu Worker complete..."
   },
   "showcase": {
-    "title": "Kortix: Teu Worker de IA Autônomo",
+    "title": "Xera: Teu Worker de IA Autônomo",
     "subtitle": "Construído para tarefas complexas, projetado para tudo. O assistente de IA definitivo que lida com tudo—de solicitações simples a projetos mega-complexos.",
     "tryItOut": "Experimentar",
-    "kortixComputer": "Kortix Computer",
+    "kortixComputer": "Xera Computer",
     "running": "Em execução",
     "workers": {
       "images": {

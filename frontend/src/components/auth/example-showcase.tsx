@@ -331,7 +331,7 @@ export function ExampleShowcase() {
                       <div className="max-w-[90%] space-y-1">
                         <div className="flex items-center gap-1 mb-1">
                           <KortixLogo size={10} />
-                          <span className="text-[10px] font-medium">Kortix</span>
+                          <span className="text-[10px] font-medium">X</span>
                         </div>
                         <p className="text-[9px] leading-relaxed text-foreground">
                           {displayText}
@@ -417,7 +417,7 @@ export function ExampleShowcase() {
                   {/* Right buttons */}
                   <div className="flex gap-1 items-center flex-shrink-0">
                     <button className="px-2 py-1 rounded-lg border bg-background flex items-center gap-1">
-                      <span className="text-[8px] font-medium">Kortix</span>
+                      <span className="text-[8px] font-medium">X</span>
                       <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
@@ -441,7 +441,7 @@ export function ExampleShowcase() {
               <div className="border-b px-3 py-2 flex items-center justify-between bg-card shrink-0">
                 <div className="flex items-center gap-1.5">
                   <KortixLogo size={12} />
-                  <span className="text-xs font-medium">Kortix Computer</span>
+                  <span className="text-xs font-medium">Xera's Computer</span>
                 </div>
                 <div className="flex items-center gap-0.5 border rounded-full bg-card p-1 relative">
                   <div className="p-1 relative z-10 pointer-events-none">

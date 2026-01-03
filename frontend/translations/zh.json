@@ -415,7 +415,7 @@
     "running": "运行中",
     "minimizeToFloatingPreview": "最小化到浮动预览",
     "close": "关闭",
-    "noActionsYet": "Kortix Computer",
+    "noActionsYet": "Xera Computer",
     "workerActionsDescription": "Kortix 工作时，结果将在此处显示",
     "toolIsRunning": "工具正在运行",
     "toolCurrentlyExecuting": "{toolName} 正在执行。完成后结果将显示在这里。",
@@ -445,10 +445,10 @@
     "heroPlaceholder": "描述你想让你的 Worker 完成的任务..."
   },
   "showcase": {
-    "title": "Kortix：您的自主AI工作器",
+    "title": "Xera：您的自主AI工作器",
     "subtitle": "为复杂任务而构建，为一切而设计。终极AI助手，处理一切——从简单请求到超级复杂的项目。",
     "tryItOut": "试试看",
-    "kortixComputer": "Kortix Computer",
+    "kortixComputer": "Xera Computer",
     "running": "运行中",
     "workers": {
       "images": {

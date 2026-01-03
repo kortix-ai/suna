@@ -726,7 +726,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
     streamHookStatus = 'idle',
     sandboxId,
     sandboxUrl,
-    agentName = 'Kortix',
+    agentName = 'X',
     onPromptFill,
   }) => {
     const { colorScheme } = useColorScheme();

@@ -123,7 +123,7 @@
     "skip": "スキップ",
     "next": "次へ",
     "getStarted": "始める",
-    "kortixComputer": "Kortix Computer",
+    "kortixComputer": "Xera's Computer",
     "ready": "準備完了",
     "examples": {
       "presentations": {
@@ -259,7 +259,7 @@
     "newWorker": "新しいWorker",
     "myWorkers": "マイWorkers",
     "searchAgents": "Worker検索",
-    "defaultAgent": "Kortix",
+    "defaultAgent": "X",
     "defaultDescription": "すべてのタスクに対応する汎用AI",
     "superWorker": "Super Worker",
     "coder": "Coder",

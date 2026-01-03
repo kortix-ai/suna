@@ -1,0 +1,8 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Shadow silhouette -->
+  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#000000"/>
+  <!-- Fire accent -->
+  <path d="M12 6c-1.1 0-2 .9-2 2 0 .74.4 1.38 1 1.72V14h2v-4.28c.6-.34 1-.98 1-1.72 0-1.1-.9-2-2-2z" fill="#FF6B35"/>
+  <circle cx="12" cy="16" r="1" fill="#FF6B35"/>
+</svg></content>
+<parameter name="filePath">/Users/macbookpro/kage/suna/frontend/public/kage-symbol.svg

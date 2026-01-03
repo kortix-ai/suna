@@ -4,7 +4,7 @@
  * Handles opening checkout URLs (provided by our backend) in an in-app browser.
  * Our backend handles the actual Stripe integration and returns masked/proxied URLs.
  * 
- * Note: The backend should return kortix.com URLs that wrap/proxy Stripe,
+ * Note: The backend should return xera.cc URLs that wrap/proxy Stripe,
  * not direct stripe.com URLs for compliance.
  */
 
@@ -55,7 +55,7 @@ async function fetchApi<T>(
 // Backend API Functions
 // 
 // These call our backend, which handles Stripe integration and returns
-// checkout URLs (should be kortix.com masked URLs, not direct stripe.com)
+// checkout URLs (should be xera.cc masked URLs, not direct stripe.com)
 // ============================================================================
 
 const checkoutApi = {
@@ -111,7 +111,7 @@ function buildCancelUrl(): string {
  * Open checkout URL in in-app browser
  * 
  * The checkout URL is provided by our backend, which should return
- * a kortix.com masked URL (not direct stripe.com for compliance)
+ * a xera.cc masked URL (not direct stripe.com for compliance)
  */
 async function openCheckoutInBrowser(
   checkoutUrl: string,
@@ -282,7 +282,7 @@ export async function openBillingPortal(returnUrl?: string): Promise<void> {
     // Direct users to the web app's billing management page
     const webBillingUrl = process.env.EXPO_PUBLIC_WEB_APP_URL 
       ? `${process.env.EXPO_PUBLIC_WEB_APP_URL}/subscription`
-      : 'https://www.kortix.com/subscription';
+      : 'https://www.xera.cc/subscription';
 
     await openExternalUrl(webBillingUrl);
   } catch (error) {
