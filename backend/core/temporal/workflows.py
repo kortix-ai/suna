@@ -65,9 +65,11 @@ class AgentRunWorkflow:
         account_id: Optional[str] = None,
         request_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        workflow.logger.info(f"AgentRunWorkflow starting: {agent_run_id}")
+        workflow.logger.info(f"🚀 [WORKFLOW] AgentRunWorkflow STARTING: agent_run_id={agent_run_id}, thread_id={thread_id}, instance_id={instance_id}, task_queue=agent-runs")
+        workflow.logger.info(f"📋 [WORKFLOW] Parameters: project_id={project_id}, model_name={model_name}, agent_id={agent_id}, account_id={account_id}")
         
         try:
+            workflow.logger.info(f"⚙️ [WORKFLOW] Executing run_agent_activity for {agent_run_id}")
             result = await workflow.execute_activity(
                 run_agent_activity,
                 args=[agent_run_id, thread_id, instance_id, project_id, model_name, agent_id, account_id, request_id],
@@ -75,14 +77,17 @@ class AgentRunWorkflow:
                 heartbeat_timeout=timedelta(minutes=5),
                 retry_policy=RETRY_STANDARD,
             )
+            workflow.logger.info(f"✅ [WORKFLOW] Activity completed: {agent_run_id}, result status: {result.get('status', 'unknown')}")
             self._result = result
             self._status = result.get("status", "completed")
             return result
             
         except asyncio.CancelledError:
+            workflow.logger.warning(f"⚠️ [WORKFLOW] Cancelled: {agent_run_id}")
             self._status = "cancelled"
             raise
         except Exception as e:
+            workflow.logger.error(f"❌ [WORKFLOW] Error: {agent_run_id}, error: {e}", exc_info=True)
             self._status = "failed"
             self._error = str(e)
             raise ApplicationError(f"Agent run failed: {e}", non_retryable=True)

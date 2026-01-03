@@ -26,7 +26,6 @@ from core.temporal.workflows import (
 )
 from core.temporal.activities import (
     run_agent_activity,
-    initialize_thread_activity,
     extract_memories_activity,
     embed_and_store_memories_activity,
     consolidate_memories_activity,
@@ -99,7 +98,7 @@ async def run_worker():
     
     # Shared activities and workflows for both queues
     activities = [
-        run_agent_activity, initialize_thread_activity,
+        run_agent_activity,
         extract_memories_activity, embed_and_store_memories_activity,
         consolidate_memories_activity, find_stale_projects_activity,
         categorize_project_activity,
@@ -127,22 +126,61 @@ async def run_worker():
     
     logger.info(f"✅ Workers ready: {TASK_QUEUE_AGENT_RUNS}={concurrency['agent_runs']['max_concurrent_activities']}, {TASK_QUEUE_BACKGROUND}={concurrency['background']['max_concurrent_activities']}")
     
-    async def run_until_shutdown(worker: Worker):
+    async def run_until_shutdown(worker: Worker, task_queue: str):
         """Run worker until shutdown signal."""
-        worker_task = asyncio.create_task(worker.run())
-        shutdown_task = asyncio.create_task(shutdown_event.wait())
-        
-        done, _ = await asyncio.wait([worker_task, shutdown_task], return_when=asyncio.FIRST_COMPLETED)
-        
-        if shutdown_task in done:
-            worker_task.cancel()
-            try:
-                await worker_task
-            except asyncio.CancelledError:
-                pass
+        logger.info(f"🔄 Starting worker for task queue: {task_queue}")
+        try:
+            logger.info(f"📡 Starting polling loop for {task_queue} worker...")
+            
+            async def run_with_logging():
+                """Wrapper to log when worker.run() actually starts executing."""
+                try:
+                    logger.info(f"🔄 [WORKER] {task_queue}: Calling worker.run()...")
+                    await worker.run()
+                    logger.warning(f"⚠️ [WORKER] {task_queue}: worker.run() returned (should run forever!)")
+                except Exception as e:
+                    logger.error(f"❌ [WORKER] {task_queue}: worker.run() raised exception: {e}", exc_info=True)
+                    raise
+            
+            worker_task = asyncio.create_task(run_with_logging())
+            shutdown_task = asyncio.create_task(shutdown_event.wait())
+            
+            # Give it a moment to start polling
+            await asyncio.sleep(0.5)
+            if worker_task.done():
+                logger.error(f"❌ [WORKER] {task_queue}: worker.run() completed immediately (should run forever!)")
+                try:
+                    await worker_task
+                except Exception as e:
+                    logger.error(f"❌ [WORKER] {task_queue}: Exception: {e}", exc_info=True)
+            else:
+                logger.info(f"✅ [WORKER] {task_queue}: Polling loop started successfully")
+            
+            done, _ = await asyncio.wait([worker_task, shutdown_task], return_when=asyncio.FIRST_COMPLETED)
+            
+            if shutdown_task in done:
+                logger.info(f"📴 Shutdown signal received for {task_queue} worker")
+                worker_task.cancel()
+                try:
+                    await worker_task
+                except asyncio.CancelledError:
+                    pass
+            else:
+                # Worker task completed unexpectedly
+                logger.error(f"❌ Worker for {task_queue} stopped unexpectedly!")
+                try:
+                    await worker_task
+                except Exception as e:
+                    logger.error(f"❌ Worker {task_queue} error: {e}", exc_info=True)
+        except Exception as e:
+            logger.critical(f"💥 Fatal error in {task_queue} worker: {e}", exc_info=True)
+            raise
     
     try:
-        await asyncio.gather(*[run_until_shutdown(w) for w in workers])
+        await asyncio.gather(
+            run_until_shutdown(workers[0], TASK_QUEUE_AGENT_RUNS),
+            run_until_shutdown(workers[1], TASK_QUEUE_BACKGROUND),
+        )
     finally:
         logger.info("👋 Worker shutdown complete")
 

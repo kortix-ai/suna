@@ -48,40 +48,41 @@ async def run_agent_activity(
     """Execute an agent run with heartbeating and cancellation support."""
     bind_context(agent_run_id=agent_run_id, thread_id=thread_id, request_id=request_id)
     worker_start = time.time()
-    # #region agent log
-    try:
-        import urllib.request as _ur; _ur.urlopen(_ur.Request('http://host.docker.internal:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',data=__import__('json').dumps({"location":"activities.py:run_agent:start","message":"run_agent STARTED","data":{"agent_run_id":agent_run_id,"thread_id":thread_id,"instance_id":instance_id},"timestamp":time.time()*1000,"sessionId":"debug-session","hypothesisId":"A,C,E"}).encode(),headers={'Content-Type':'application/json'}),timeout=1)
-    except: pass
-    # #endregion
+    
+    logger.info(f"[AGENT_FLOW] ACTIVITY: Starting run_agent_activity (agent_run_id: {agent_run_id}, thread_id: {thread_id}, instance_id: {instance_id})")
     
     try:
+        logger.debug(f"[AGENT_FLOW] ACTIVITY STEP 1: Initializing worker")
         await initialize()
+        logger.debug(f"[AGENT_FLOW] ACTIVITY STEP 1: Worker initialized")
     except Exception as e:
+        logger.error(f"[AGENT_FLOW] ACTIVITY: Worker init failed: {e}")
         raise ActivityError(f"Worker init failed: {e}")
     
     client = await db.client
     
     # Acquire lock
+    logger.info(f"[AGENT_FLOW] ACTIVITY STEP 2: Acquiring run lock")
     if not await acquire_run_lock(agent_run_id, instance_id, client):
+        logger.warning(f"[AGENT_FLOW] ACTIVITY: Lock not acquired, skipping (agent_run_id: {agent_run_id})")
         return {"status": "skipped", "reason": "lock_not_acquired"}
+    logger.info(f"[AGENT_FLOW] ACTIVITY STEP 2: Run lock acquired")
     
     sentry.sentry.set_tag("thread_id", thread_id)
-    logger.info(f"Starting agent run: {agent_run_id} (thread: {thread_id})")
+    logger.info(f"[AGENT_FLOW] ACTIVITY: Starting agent run execution (agent_run_id: {agent_run_id}, thread: {thread_id})")
     
     from core.ai_models import model_manager
+    logger.debug(f"[AGENT_FLOW] ACTIVITY STEP 3: Resolving model name")
     effective_model = model_manager.resolve_model_id(model_name)
+    logger.debug(f"[AGENT_FLOW] ACTIVITY STEP 3: Effective model: {effective_model}")
     
     start_time = datetime.now(timezone.utc)
     cancellation_event = asyncio.Event()
     redis_keys = create_redis_keys(agent_run_id, instance_id)
     
-    # #region agent log
-    try:
-        import urllib.request as _ur; _ur.urlopen(_ur.Request('http://host.docker.internal:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',data=__import__('json').dumps({"location":"activities.py:run_agent:redis_keys","message":"Redis keys created","data":{"agent_run_id":agent_run_id,"stream_key":redis_keys['response_stream']},"timestamp":time.time()*1000,"sessionId":"debug-session","hypothesisId":"B"}).encode(),headers={'Content-Type':'application/json'}),timeout=1)
-    except: pass
-    # #endregion
-    
+    logger.info(f"[AGENT_FLOW] ACTIVITY STEP 4: Verifying Redis stream writable (stream_key: {redis_keys['response_stream']})")
     await redis.verify_stream_writable(redis_keys['response_stream'])
+    logger.debug(f"[AGENT_FLOW] ACTIVITY STEP 4: Redis stream verified")
     
     trace = langfuse.trace(
         name="agent_run", id=agent_run_id, session_id=thread_id,
@@ -122,33 +123,40 @@ async def run_agent_activity(
     error_message = None
     
     try:
+        logger.info(f"[AGENT_FLOW] ACTIVITY STEP 5: Starting agent execution (ready for LLM in {(time.time() - worker_start) * 1000:.0f}ms)")
         agent_gen = run_agent(
             thread_id=thread_id, project_id=project_id, model_name=effective_model,
             agent_config=agent_config, trace=trace, cancellation_event=cancellation_event,
             account_id=account_id,
         )
         
-        logger.info(f"⏱️ Ready for LLM: {(time.time() - worker_start) * 1000:.0f}ms")
-        
+        logger.info(f"[AGENT_FLOW] ACTIVITY STEP 6: Processing agent responses")
         final_status, error_message, complete_tool_called, total_responses = await process_agent_responses(
             agent_gen, agent_run_id, redis_keys, trace, worker_start, state
         )
+        logger.info(f"[AGENT_FLOW] ACTIVITY STEP 6: Agent responses processed (status: {final_status}, responses: {total_responses})")
         
         if final_status == "running":
+            logger.info(f"[AGENT_FLOW] ACTIVITY STEP 7: Marking as completed")
             final_status = "completed"
             await handle_normal_completion(agent_run_id, start_time, total_responses, redis_keys, trace)
             await send_completion_notification(client, thread_id, agent_config, complete_tool_called)
+            logger.debug(f"[AGENT_FLOW] ACTIVITY STEP 7: Completion handled")
         
+        logger.info(f"[AGENT_FLOW] ACTIVITY STEP 8: Updating agent_run status to '{final_status}'")
         await update_agent_run_status(client, agent_run_id, final_status, error=error_message, account_id=account_id)
+        logger.debug(f"[AGENT_FLOW] ACTIVITY STEP 8: Status updated")
         
         if final_status == "failed" and error_message:
+            logger.info(f"[AGENT_FLOW] ACTIVITY STEP 9: Sending failure notification")
             await send_failure_notification(client, thread_id, error_message)
         
+        logger.info(f"[AGENT_FLOW] ACTIVITY COMPLETE: Agent run finished (agent_run_id: {agent_run_id}, status: {final_status}, responses: {total_responses}, total time: {(time.time() - worker_start) * 1000:.0f}ms)")
         return {"status": final_status, "error": error_message, "total_responses": total_responses}
         
     except Exception as e:
         error_message = str(e)
-        logger.error(f"Agent run {agent_run_id} failed: {error_message}")
+        logger.error(f"[AGENT_FLOW] ACTIVITY ERROR: Agent run failed (agent_run_id: {agent_run_id}, error: {error_message})")
         trace.span(name="agent_run_failed").end(status_message=error_message, level="ERROR")
         await send_failure_notification(client, thread_id, error_message)
         
@@ -172,78 +180,6 @@ async def run_agent_activity(
         await cleanup_redis_keys_for_agent_run(agent_run_id, instance_id)
 
 
-@activity.defn(name="initialize_thread")
-async def initialize_thread_activity(
-    thread_id: str,
-    project_id: str,
-    account_id: str,
-    prompt: str,
-    agent_id: Optional[str] = None,
-    model_name: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Initialize thread and create agent run record."""
-    bind_context(thread_id=thread_id, project_id=project_id, account_id=account_id)
-    logger.info(f"Initializing thread {thread_id}")
-    # #region agent log
-    try:
-        import urllib.request as _ur; _ur.urlopen(_ur.Request('http://host.docker.internal:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',data=__import__('json').dumps({"location":"activities.py:initialize_thread:start","message":"initialize_thread STARTED","data":{"thread_id":thread_id},"timestamp":time.time()*1000,"sessionId":"debug-session","hypothesisId":"A,D"}).encode(),headers={'Content-Type':'application/json'}),timeout=1)
-    except: pass
-    # #endregion
-    
-    await db.initialize()
-    client = await db.client
-    
-    try:
-        from core.utils.retry import retry_db_operation
-        from core.ai_models import model_manager
-        from core.agent_runs import _load_agent_config, _get_effective_model, _create_agent_run_record
-        
-        # Mark thread initializing
-        await client.table('threads').update({
-            "status": "initializing",
-            "initialization_started_at": datetime.now(timezone.utc).isoformat()
-        }).eq('thread_id', thread_id).execute()
-        
-        # Get model
-        if model_name is None:
-            model_name = await model_manager.get_default_model_for_user(client, account_id)
-        else:
-            model_name = model_manager.resolve_model_id(model_name)
-        
-        # Load config and create run
-        agent_config = await _load_agent_config(client, agent_id, account_id, account_id, is_new_thread=False)
-        effective_model = await _get_effective_model(model_name, agent_config, client, account_id)
-        agent_run_id = await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id)
-        
-        # Mark ready
-        await client.table('threads').update({
-            "status": "ready",
-            "initialization_completed_at": datetime.now(timezone.utc).isoformat()
-        }).eq('thread_id', thread_id).execute()
-        
-        # Pre-create the stream so frontend can subscribe immediately
-        stream_key = f"agent_run:{agent_run_id}:stream"
-        await redis.verify_stream_writable(stream_key)
-        
-        # #region agent log
-        try:
-            import urllib.request as _ur; _ur.urlopen(_ur.Request('http://host.docker.internal:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',data=__import__('json').dumps({"location":"activities.py:initialize_thread:stream_created","message":"Stream pre-created","data":{"thread_id":thread_id,"agent_run_id":agent_run_id,"stream_key":stream_key},"timestamp":time.time()*1000,"sessionId":"debug-session","hypothesisId":"B,D"}).encode(),headers={'Content-Type':'application/json'}),timeout=1)
-        except: pass
-        # #endregion
-        
-        logger.info(f"Thread {thread_id} ready, agent_run_id: {agent_run_id}")
-        return {"agent_run_id": agent_run_id, "effective_model": effective_model, "agent_config": agent_config}
-        
-    except Exception as e:
-        logger.error(f"Thread init failed: {e}")
-        try:
-            await client.table('threads').update({
-                "status": "error",
-                "initialization_error": str(e)[:1000],
-            }).eq('thread_id', thread_id).execute()
-        except Exception:
-            pass
-        raise ActivityError(f"Thread init failed: {e}")
 
 
 @activity.defn(name="extract_memories")

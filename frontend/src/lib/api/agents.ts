@@ -551,11 +551,18 @@ export const startAgentOnThread = async (
 };
 
 /**
- * Connect to agent run stream.
+ * Connect to agent run stream with retry logic and proper connection handling.
  * 
- * SIMPLIFIED: No pre-check status call - connect directly to stream.
- * Backend sends 'connected' message immediately, then streams data.
- * This eliminates race conditions where status changes between check and connect.
+ * The backend now:
+ * 1. Pre-creates the Redis stream when agent_run is created
+ * 2. Sends 'connected' message immediately upon stream connection
+ * 3. Streams all agent responses via SSE
+ * 
+ * This function handles:
+ * - Connection retries with exponential backoff
+ * - Proper connection state tracking
+ * - Error recovery
+ * - Status verification
  */
 export const streamAgent = (
   agentRunId: string,
@@ -578,45 +585,110 @@ export const streamAgent = (
     cleanupEventSource(agentRunId, 'replacing existing stream');
   }
 
-  const setupStream = async () => {
+  let retryCount = 0;
+  const MAX_RETRIES = 3;
+  const INITIAL_RETRY_DELAY = 1000; // 1 second
+  let connectionTimeoutId: NodeJS.Timeout | null = null;
+  let retryTimeoutId: NodeJS.Timeout | null = null;
+  let isCleanedUp = false;
+
+  const cleanup = () => {
+    isCleanedUp = true;
+    if (connectionTimeoutId) {
+      clearTimeout(connectionTimeoutId);
+      connectionTimeoutId = null;
+    }
+    if (retryTimeoutId) {
+      clearTimeout(retryTimeoutId);
+      retryTimeoutId = null;
+    }
+    cleanupEventSource(agentRunId, 'cleanup');
+  };
+
+  const setupStream = async (attempt: number = 0): Promise<void> => {
+    if (isCleanedUp) return;
+
+    console.log(`[AGENT_FLOW] FRONTEND: Setting up stream (agent_run_id: ${agentRunId}, attempt: ${attempt + 1}/${MAX_RETRIES + 1})`);
+
     try {
+      console.log(`[AGENT_FLOW] FRONTEND STEP 1: Getting auth session`);
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!session?.access_token) {
+        console.error(`[AGENT_FLOW] FRONTEND: No access token available`);
         callbacks.onError(new NoAccessTokenAvailableError());
         callbacks.onClose();
+        cleanup();
         return;
       }
+      console.log(`[AGENT_FLOW] FRONTEND STEP 1: Auth session obtained`);
 
       const url = new URL(`${API_URL}/agent-run/${agentRunId}/stream`);
       url.searchParams.append('token', session.access_token);
+      console.log(`[AGENT_FLOW] FRONTEND STEP 2: Creating EventSource (url: ${url.toString().replace(session.access_token, 'TOKEN')})`);
 
       const eventSource = new EventSource(url.toString());
-      activeStreams.set(agentRunId, eventSource);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'agents.ts:streamAgent:eventSourceCreated',message:'EventSource created',data:{agentRunId,url:url.toString()},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,D'})}).catch(()=>{});
-      // #endregion
+      
+      if (isCleanedUp) {
+        eventSource.close();
+        return;
+      }
 
+      activeStreams.set(agentRunId, eventSource);
+      console.log(`[AGENT_FLOW] FRONTEND STEP 2: EventSource created and registered`);
+
+      let hasReceivedConnected = false;
       let hasReceivedData = false;
+      let connectionEstablished = false;
+
+      // Connection timeout: if we don't get 'connected' within 10 seconds, retry
+      connectionTimeoutId = setTimeout(() => {
+        if (!hasReceivedConnected && !isCleanedUp) {
+          console.warn(`[AGENT_FLOW] FRONTEND: Connection timeout (no 'connected' message after 10s, agent_run_id: ${agentRunId})`);
+          eventSource.close();
+          activeStreams.delete(agentRunId);
+          
+          if (attempt < MAX_RETRIES) {
+            const delay = INITIAL_RETRY_DELAY * Math.pow(2, attempt);
+            console.log(`[AGENT_FLOW] FRONTEND: Retrying connection in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+            retryTimeoutId = setTimeout(() => {
+              setupStream(attempt + 1);
+            }, delay);
+          } else {
+            console.error(`[AGENT_FLOW] FRONTEND: Max retries reached (agent_run_id: ${agentRunId})`);
+            callbacks.onError('Failed to connect to agent stream after multiple attempts');
+            callbacks.onClose();
+            cleanup();
+          }
+        }
+      }, 10000);
+
+      eventSource.onopen = () => {
+        connectionEstablished = true;
+        console.log(`[AGENT_FLOW] FRONTEND STEP 3: EventSource opened (agent_run_id: ${agentRunId})`);
+      };
 
       eventSource.onmessage = (event) => {
         try {
           const rawData = event.data;
           if (!rawData || rawData.trim() === '') return;
 
+          // Handle 'connected' message - confirms stream is ready
+          if (rawData.includes('"type": "connected"')) {
+            hasReceivedConnected = true;
+            hasReceivedData = true;
+            if (connectionTimeoutId) {
+              clearTimeout(connectionTimeoutId);
+              connectionTimeoutId = null;
+            }
+            console.log(`[AGENT_FLOW] FRONTEND STEP 4: Received 'connected' message (agent_run_id: ${agentRunId})`);
+            return;
+          }
+
           // Skip pings but note we're connected
           if (rawData.includes('"type": "ping"')) {
             hasReceivedData = true;
-            return;
-          }
-          
-          // Skip connected messages (just for connection confirmation)
-          if (rawData.includes('"type": "connected"')) {
-            hasReceivedData = true;
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'agents.ts:streamAgent:connected',message:'CONNECTED message received',data:{agentRunId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,D'})}).catch(()=>{});
-            // #endregion
             return;
           }
 
@@ -628,22 +700,20 @@ export const streamAgent = (
             
             // Handle error status
             if (jsonData.type === 'status' && jsonData.status === 'error') {
-              console.error(`[STREAM] Error status for ${agentRunId}:`, jsonData);
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'agents.ts:streamAgent:errorStatus',message:'ERROR STATUS received',data:{agentRunId,status:jsonData.status,errorMessage:jsonData.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,E'})}).catch(()=>{});
-              // #endregion
+              console.error(`[AGENT_FLOW] FRONTEND: Error status received (agent_run_id: ${agentRunId}):`, jsonData);
               callbacks.onError(jsonData.message || 'Unknown error');
               nonRunningAgentRuns.add(agentRunId);
-              cleanupEventSource(agentRunId, 'error status');
+              cleanup();
               callbacks.onClose();
               return;
             }
 
             // Handle completion states - mark as done and close
             if (jsonData.type === 'status' && ['completed', 'failed', 'stopped'].includes(jsonData.status)) {
+              console.log(`[AGENT_FLOW] FRONTEND: Terminal status received (agent_run_id: ${agentRunId}, status: ${jsonData.status})`);
               nonRunningAgentRuns.add(agentRunId);
               callbacks.onMessage(rawData);
-              cleanupEventSource(agentRunId, `status: ${jsonData.status}`);
+              cleanup();
               callbacks.onClose();
               return;
             }
@@ -659,37 +729,87 @@ export const streamAgent = (
       };
 
       eventSource.onerror = () => {
-        // On error, check if we ever got data
-        if (!hasReceivedData) {
-          // Never got data - might be a connection issue, don't mark as non-running
-          console.warn(`[STREAM] Connection error for ${agentRunId} (no data received)`);
+        if (isCleanedUp) return;
+
+        // Clear connection timeout since we're handling the error
+        if (connectionTimeoutId) {
+          clearTimeout(connectionTimeoutId);
+          connectionTimeoutId = null;
         }
-        
-        // Check actual status before giving up
-        getAgentStatus(agentRunId)
-          .then((status) => {
-            if (['completed', 'failed', 'stopped'].includes(status.status)) {
-              nonRunningAgentRuns.add(agentRunId);
-            }
-            cleanupEventSource(agentRunId, `onerror - status: ${status.status}`);
-            callbacks.onClose();
-          })
-          .catch(() => {
-            cleanupEventSource(agentRunId, 'onerror - status check failed');
-            callbacks.onClose();
-          });
+
+        // If we got 'connected' but then error, check status
+        if (hasReceivedConnected) {
+          console.warn(`[AGENT_FLOW] FRONTEND: Stream error after connection (agent_run_id: ${agentRunId}), checking status`);
+          getAgentStatus(agentRunId)
+            .then((status) => {
+              console.log(`[AGENT_FLOW] FRONTEND: Status check result (agent_run_id: ${agentRunId}, status: ${status.status})`);
+              if (['completed', 'failed', 'stopped'].includes(status.status)) {
+                nonRunningAgentRuns.add(agentRunId);
+                callbacks.onMessage(JSON.stringify({ type: 'status', status: status.status }));
+              }
+              cleanup();
+              callbacks.onClose();
+            })
+            .catch(() => {
+              console.error(`[AGENT_FLOW] FRONTEND: Status check failed (agent_run_id: ${agentRunId})`);
+              cleanup();
+              callbacks.onClose();
+            });
+          return;
+        }
+
+        // Never got 'connected' - might be connection issue
+        console.warn(`[AGENT_FLOW] FRONTEND: Connection error (no 'connected' message, agent_run_id: ${agentRunId})`);
+        eventSource.close();
+        activeStreams.delete(agentRunId);
+
+        // Retry if we haven't exceeded max retries
+        if (attempt < MAX_RETRIES) {
+          const delay = INITIAL_RETRY_DELAY * Math.pow(2, attempt);
+          console.log(`[STREAM] Retrying connection for ${agentRunId} in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          retryTimeoutId = setTimeout(() => {
+            setupStream(attempt + 1);
+          }, delay);
+        } else {
+          // Check status one more time before giving up
+          getAgentStatus(agentRunId)
+            .then((status) => {
+              if (['completed', 'failed', 'stopped'].includes(status.status)) {
+                nonRunningAgentRuns.add(agentRunId);
+                callbacks.onMessage(JSON.stringify({ type: 'status', status: status.status }));
+              } else {
+                callbacks.onError('Failed to connect to agent stream after multiple attempts');
+              }
+              cleanup();
+              callbacks.onClose();
+            })
+            .catch(() => {
+              callbacks.onError('Failed to connect to agent stream and could not verify status');
+              cleanup();
+              callbacks.onClose();
+            });
+        }
       };
     } catch (error) {
       console.error(`[STREAM] Setup error for ${agentRunId}:`, error);
-      callbacks.onError(error instanceof Error ? error : String(error));
-      callbacks.onClose();
+      
+      if (attempt < MAX_RETRIES) {
+        const delay = INITIAL_RETRY_DELAY * Math.pow(2, attempt);
+        retryTimeoutId = setTimeout(() => {
+          setupStream(attempt + 1);
+        }, delay);
+      } else {
+        callbacks.onError(error instanceof Error ? error : String(error));
+        callbacks.onClose();
+        cleanup();
+      }
     }
   };
 
   setupStream();
 
   return () => {
-    cleanupEventSource(agentRunId, 'manual cleanup');
+    cleanup();
   };
 };
 

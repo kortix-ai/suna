@@ -309,23 +309,27 @@ async def process_agent_responses(
         # Write to stream directly - no fire-and-forget, no pubsub
         if redis_streaming_enabled:
             try:
-                await redis.stream_add(
+                entry_id = await redis.stream_add(
                     stream_key,
                     {"data": response_json},
                     maxlen=200,
                     approximate=True
                 )
                 
+                # Log first few writes to verify Redis is working
+                if total_responses < 3:
+                    logger.info(f"[REDIS STREAM] ✅ Written response {total_responses + 1} to stream {stream_key} (entry_id: {entry_id})")
+                
                 # Set initial TTL on stream after first entry is added (safety net if cleanup fails)
                 if not stream_ttl_set:
                     try:
                         await asyncio.wait_for(redis.expire(stream_key, REDIS_STREAM_TTL_SECONDS), timeout=2.0)
                         stream_ttl_set = True
-                        logger.debug(f"Set initial TTL ({REDIS_STREAM_TTL_SECONDS}s) on stream {stream_key}")
+                        logger.info(f"[REDIS STREAM] ✅ Set initial TTL ({REDIS_STREAM_TTL_SECONDS}s) on stream {stream_key}")
                     except (asyncio.TimeoutError, Exception) as e:
-                        logger.debug(f"Failed to set initial TTL on stream (non-critical): {e}")
+                        logger.warning(f"[REDIS STREAM] ⚠️ Failed to set initial TTL on stream (non-critical): {e}")
             except Exception as e:
-                logger.warning(f"Failed to write to stream for {agent_run_id}: {e}")
+                logger.error(f"[REDIS STREAM] ❌ Failed to write to stream {stream_key} for {agent_run_id}: {e}", exc_info=True)
                 # Don't disable streaming on single failure - redis-py will retry
         
         total_responses += 1

@@ -24,13 +24,12 @@ async def initialize_thread_background(
     model_name: Optional[str] = None,
 ):
     """
-    Initialize thread and start agent run directly.
+    Initialize thread and start agent run using unified agent service.
     
-    This is a simplified flow that:
-    1. Creates agent_run record (quick DB operation)
-    2. Starts AgentRunWorkflow via Temporal (for the long-running agent execution)
-    
-    No need for a separate ThreadInitWorkflow - that was over-engineered.
+    This function:
+    1. Updates thread status to initializing
+    2. Calls unified agent_service.start_agent() to handle agent run creation
+    3. Updates thread status to ready
     """
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(
@@ -39,74 +38,51 @@ async def initialize_thread_background(
         account_id=account_id,
     )
     
-    logger.info(f"Initializing thread and starting agent: {thread_id}")
+    import time
+    t_start = time.time()
+    
+    logger.info(f"[AGENT_FLOW] THREAD_INIT: Starting thread initialization (thread_id: {thread_id}, project_id: {project_id})")
     
     try:
-        from core.temporal.workflows import AgentRunWorkflow, TASK_QUEUE_AGENT_RUNS
-        from core.agent_runs import _load_agent_config, _get_effective_model, _create_agent_run_record
-        from core.ai_models import model_manager
-        from core.services import redis
-        import time
+        from core.agent_service import start_agent
         
         # Initialize DB
+        logger.debug(f"[AGENT_FLOW] THREAD_INIT STEP 1: Initializing DB connection")
         if not db._client:
             await db.initialize()
         client = await db.client
+        logger.debug(f"[AGENT_FLOW] THREAD_INIT STEP 1: DB connection ready")
         
         # Update thread status to initializing
+        logger.info(f"[AGENT_FLOW] THREAD_INIT STEP 2: Updating thread status to 'initializing'")
         await client.table('threads').update({
             "status": "initializing",
             "initialization_started_at": datetime.now(timezone.utc).isoformat()
         }).eq('thread_id', thread_id).execute()
+        logger.debug(f"[AGENT_FLOW] THREAD_INIT STEP 2: Thread status updated to 'initializing'")
         
-        # Get effective model
-        if model_name is None:
-            model_name = await model_manager.get_default_model_for_user(client, account_id)
-        else:
-            model_name = model_manager.resolve_model_id(model_name)
-        
-        # Load agent config and create agent run record
-        agent_config = await _load_agent_config(client, agent_id, account_id, account_id, is_new_thread=False)
-        effective_model = await _get_effective_model(model_name, agent_config, client, account_id)
-        agent_run_id = await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id)
+        # Use unified agent service to start agent run
+        logger.info(f"[AGENT_FLOW] THREAD_INIT STEP 3: Calling agent_service.start_agent()")
+        agent_run_id = await start_agent(
+            thread_id=thread_id,
+            project_id=project_id,
+            account_id=account_id,
+            model_name=model_name,
+            agent_id=agent_id,
+            is_new_thread=False,
+        )
+        logger.info(f"[AGENT_FLOW] THREAD_INIT STEP 3: Agent service returned agent_run_id: {agent_run_id}")
         
         # Update thread status to ready
+        logger.info(f"[AGENT_FLOW] THREAD_INIT STEP 4: Updating thread status to 'ready'")
         await client.table('threads').update({
             "status": "ready",
             "initialization_completed_at": datetime.now(timezone.utc).isoformat()
         }).eq('thread_id', thread_id).execute()
+        logger.debug(f"[AGENT_FLOW] THREAD_INIT STEP 4: Thread status updated to 'ready'")
         
-        # Pre-create Redis stream so frontend can subscribe immediately
-        stream_key = f"agent_run:{agent_run_id}:stream"
-        await redis.verify_stream_writable(stream_key)
-        
-        # #region agent log
-        try:
-            import urllib.request as _ur; _ur.urlopen(_ur.Request('http://host.docker.internal:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',data=__import__('json').dumps({"location":"thread_init_service.py:init_done","message":"Thread init complete, starting AgentRunWorkflow","data":{"thread_id":thread_id,"agent_run_id":agent_run_id},"timestamp":time.time()*1000,"sessionId":"debug-session","hypothesisId":"FIX"}).encode(),headers={'Content-Type':'application/json'}),timeout=1)
-        except: pass
-        # #endregion
-        
-        logger.info(f"Thread {thread_id} initialized, agent_run_id: {agent_run_id}")
-        
-        # Start AgentRunWorkflow directly via Temporal
-        temporal_client = await get_temporal_client()
-        worker_instance_id = str(uuid.uuid4())[:8]
-        
-        agent_handle = await temporal_client.start_workflow(
-            AgentRunWorkflow.run,
-            args=[agent_run_id, thread_id, worker_instance_id, project_id, effective_model, agent_id, account_id, None],
-            id=f"agent-run-{agent_run_id}",
-            task_queue=TASK_QUEUE_AGENT_RUNS,
-        )
-        
-        # #region agent log
-        try:
-            import urllib.request as _ur; _ur.urlopen(_ur.Request('http://host.docker.internal:7242/ingest/8574b837-03d2-4ece-8422-988bb17343e8',data=__import__('json').dumps({"location":"thread_init_service.py:workflow_started","message":"AgentRunWorkflow STARTED","data":{"agent_run_id":agent_run_id,"workflow_id":agent_handle.id},"timestamp":time.time()*1000,"sessionId":"debug-session","hypothesisId":"FIX"}).encode(),headers={'Content-Type':'application/json'}),timeout=1)
-        except: pass
-        # #endregion
-        
-        logger.info(f"Started AgentRunWorkflow: {agent_handle.id}")
-        return agent_handle
+        logger.info(f"[AGENT_FLOW] THREAD_INIT COMPLETE: Thread {thread_id} initialized successfully (agent_run_id: {agent_run_id}, total time: {(time.time() - t_start)*1000:.1f}ms)")
+        return agent_run_id
         
     except Exception as e:
         logger.error(f"Thread initialization failed for {thread_id}: {str(e)}\n{traceback.format_exc()}")
