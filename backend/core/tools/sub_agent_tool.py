@@ -27,9 +27,34 @@ MAX_SUB_AGENT_DEPTH = 1
     color="bg-indigo-100 dark:bg-indigo-800/50",
     is_core=True,
     usage_guide="""
-### SUB-AGENT ORCHESTRATION - CRITICAL PATTERNS
+### 🚨🚨🚨 SUB-AGENT PRIORITY OVERRIDE 🚨🚨🚨
 
-You are the ORCHESTRATOR. Your job is to DELEGATE, not DO. Sub-agents do the actual work.
+**IF USER MENTIONS "sub-agent", "delegate", "parallel" OR SIMILAR:**
+→ ALL substantive work MUST be delegated to sub-agents
+→ Main thread ONLY does: spawn, wait, collect, present
+→ Main thread NEVER does: web_search, create_file, create_slide, image_generate
+→ This OVERRIDES any other tool guides (including presentation tool guide)
+
+**🔴 FORBIDDEN IN MAIN THREAD WHEN SUB-AGENTS REQUESTED:**
+- ❌ web_search (delegate to sub-agent)
+- ❌ image_search (delegate to sub-agent)
+- ❌ create_slide (delegate to sub-agent)
+- ❌ create_file (delegate to sub-agent)
+- ❌ execute_command for content (delegate to sub-agent)
+- ❌ Any research/content creation work
+
+**✅ ALLOWED IN MAIN THREAD:**
+- spawn_sub_agent (spawning workers)
+- wait_for_sub_agents (waiting for workers)
+- get_sub_agent_result (collecting results)
+- complete (presenting final output)
+- ask (if clarification needed)
+
+---
+
+### SUB-AGENT ORCHESTRATION PATTERNS
+
+You are the ORCHESTRATOR. Your ONLY job is to DELEGATE. Sub-agents do ALL actual work.
 
 **🚨 GOLDEN RULE: MAIN THREAD = ORCHESTRATION ONLY**
 - NEVER do substantive work in main thread when sub-agents can do it
@@ -321,7 +346,7 @@ Respond in this EXACT JSON format:
         "type": "function",
         "function": {
             "name": "spawn_sub_agent",
-            "description": "Spawn a sub-agent to execute a task asynchronously. 🚨 CRITICAL: Call MULTIPLE spawn_sub_agent in PARALLEL (same tool call batch) for efficiency - don't spawn sequentially! Sub-agent runs independently in same sandbox. Returns immediately - use wait_for_sub_agents (NOT manual polling) to wait for completion. You are ORCHESTRATOR - delegate work to sub-agents, don't do it yourself. **PARAMS**: `task` (REQUIRED), `context` (optional), `validation_level` (optional 1-3).",
+            "description": "🚨 DELEGATE ALL WORK HERE! Spawn a sub-agent for: web_search, research, create_file, create_slide, image_generate, any content work. Call MULTIPLE in PARALLEL (same tool call batch). If user said 'use sub-agents' or 'delegate', you MUST spawn sub-agents for ALL research/creation - NEVER do web_search or create_slide yourself. Returns immediately - use wait_for_sub_agents to wait. **PARAMS**: `task` (REQUIRED), `context` (optional), `validation_level` (optional 1-3).",
             "parameters": {
                 "type": "object",
                 "properties": {
