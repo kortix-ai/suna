@@ -60,6 +60,12 @@ export interface CategoryDistribution {
   date: string;
 }
 
+export interface TierDistribution {
+  distribution: Record<string, number>;
+  total_threads: number;
+  date: string;
+}
+
 export interface VisitorStats {
   total_visitors: number;
   unique_visitors: number;
@@ -109,6 +115,7 @@ export interface ThreadBrowseParams {
   max_messages?: number;
   search_email?: string;
   category?: string;
+  tier?: string;
   date_from?: string;
   date_to?: string;
   sort_by?: string;
@@ -152,6 +159,7 @@ export function useThreadBrowser(params: ThreadBrowseParams = {}) {
       if (params.max_messages !== undefined) searchParams.append('max_messages', params.max_messages.toString());
       if (params.search_email) searchParams.append('search_email', params.search_email);
       if (params.category) searchParams.append('category', params.category);
+      if (params.tier) searchParams.append('tier', params.tier);
       if (params.date_from) searchParams.append('date_from', params.date_from);
       if (params.date_to) searchParams.append('date_to', params.date_to);
       if (params.sort_by) searchParams.append('sort_by', params.sort_by);
@@ -185,13 +193,35 @@ export function useMessageDistribution(date?: string) {
   });
 }
 
-export function useCategoryDistribution(date?: string) {
+export function useCategoryDistribution(date?: string, tier?: string | null) {
   return useQuery({
-    queryKey: ['admin', 'analytics', 'category-distribution', date],
+    queryKey: ['admin', 'analytics', 'category-distribution', date, tier],
     queryFn: async (): Promise<CategoryDistribution> => {
-      const url = date
-        ? `/admin/analytics/projects/category-distribution?date=${date}`
+      const params = new URLSearchParams();
+      if (date) params.append('date', date);
+      if (tier) params.append('tier', tier);
+      const queryString = params.toString();
+      const url = queryString
+        ? `/admin/analytics/projects/category-distribution?${queryString}`
         : '/admin/analytics/projects/category-distribution';
+      const response = await backendApi.get(url);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 300000, // 5 minutes
+    placeholderData: (previousData) => previousData,
+  });
+}
+
+export function useTierDistribution(date?: string) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'tier-distribution', date],
+    queryFn: async (): Promise<TierDistribution> => {
+      const url = date
+        ? `/admin/analytics/threads/tier-distribution?date=${date}`
+        : '/admin/analytics/threads/tier-distribution';
       const response = await backendApi.get(url);
       if (response.error) {
         throw new Error(response.error.message);
