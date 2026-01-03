@@ -1107,34 +1107,24 @@ export function PricingSection({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, currentSubscription?.subscription.tier_key, currentSubscription?.tier?.name]);
 
-  // Track view_item when pricing section mounts (modal opens)
-  const hasTrackedViewRef = React.useRef(false);
-  React.useEffect(() => {
-    if (!hasTrackedViewRef.current && selectedPaidTier) {
-      const priceAmount = parsePriceAmount(selectedPaidTier.price || '$0');
-      const billingLabel = sharedBillingPeriod === 'monthly' ? 'Monthly' : 'Yearly';
-      const itemData: PlanItemData = {
-        item_id: `${selectedPaidTier.tierKey}_${sharedBillingPeriod}`,
-        item_name: `${selectedPaidTier.name} ${billingLabel}`,
-        item_brand: 'Kortix AI',
-        item_category: 'Plans',
-        item_list_id: 'plans_listing',
-        item_list_name: 'Plans Listing',
-        price: priceAmount,
-        quantity: 1,
-      };
-      trackViewItem(itemData, currency, priceAmount);
-      hasTrackedViewRef.current = true;
-    }
-  }, [selectedPaidTier, sharedBillingPeriod, currency]);
-
   const handlePlanSelect = (planId: string) => {
     setPlanLoadingStates((prev) => ({ ...prev, [planId]: true }));
   };
 
+  // Helper to calculate price based on billing period (matches displayed price)
+  const calculatePriceForBillingPeriod = useCallback((tier: PricingTier, billingPeriod: string): number => {
+    const basePrice = parsePriceAmount(tier.price || '$0');
+    if (billingPeriod === 'yearly_commitment') {
+      return Math.round(basePrice * 0.85); // 15% discount
+    } else if (billingPeriod === 'yearly' && tier.yearlyPrice) {
+      return Math.round(parsePriceAmount(tier.yearlyPrice) / 12); // Monthly equivalent
+    }
+    return basePrice;
+  }, []);
+
   // Helper to build plan item data for GTM tracking
   const buildPlanItemData = useCallback((tier: PricingTier, billingPeriod: string): PlanItemData => {
-    const priceAmount = parsePriceAmount(tier.price || '$0');
+    const priceAmount = calculatePriceForBillingPeriod(tier, billingPeriod);
     const billingLabel = billingPeriod === 'monthly' ? 'Monthly' : 'Yearly';
     return {
       item_id: `${tier.tierKey}_${billingPeriod}`,
@@ -1146,7 +1136,18 @@ export function PricingSection({
       price: priceAmount,
       quantity: 1,
     };
-  }, []);
+  }, [calculatePriceForBillingPeriod]);
+
+  // Track view_item when pricing section mounts (modal opens)
+  const hasTrackedViewRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!hasTrackedViewRef.current && selectedPaidTier) {
+      const itemData = buildPlanItemData(selectedPaidTier, sharedBillingPeriod);
+      const priceAmount = calculatePriceForBillingPeriod(selectedPaidTier, sharedBillingPeriod);
+      trackViewItem(itemData, currency, priceAmount);
+      hasTrackedViewRef.current = true;
+    }
+  }, [selectedPaidTier, sharedBillingPeriod, currency, buildPlanItemData, calculatePriceForBillingPeriod]);
 
   // Handler for plan tab selection with tracking
   const handlePlanTabClick = useCallback((index: number, tier: PricingTier) => {
@@ -1160,10 +1161,10 @@ export function PricingSection({
     setSharedBillingPeriod(period);
     if (selectedPaidTier) {
       const itemData = buildPlanItemData(selectedPaidTier, period);
-      const priceAmount = parsePriceAmount(selectedPaidTier.price || '$0');
+      const priceAmount = calculatePriceForBillingPeriod(selectedPaidTier, period);
       trackViewItem(itemData, currency, priceAmount);
     }
-  }, [selectedPaidTier, currency, buildPlanItemData]);
+  }, [selectedPaidTier, currency, buildPlanItemData, calculatePriceForBillingPeriod]);
 
   const handlePromoCopy = useCallback(async () => {
     if (!promo?.isActive || !promo.promoCode) {
