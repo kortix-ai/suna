@@ -22,6 +22,10 @@ export { useMessagesQuery, useAddUserMessageMutation } from '../messages';
 // Agent runs
 export { useAgentRunsQuery, useStartAgentMutation, useStopAgentMutation } from './use-agent-run';
 
+// Sub-agents
+export { useSubAgentThreads, useParentThread } from './use-sub-agents';
+export type { SubAgentThread, ParentThreadInfo } from './use-sub-agents';
+
 // Optimistic agent start
 export { useOptimisticAgentStart } from './use-optimistic-agent-start';
 export type { 

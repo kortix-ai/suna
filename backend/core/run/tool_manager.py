@@ -5,6 +5,7 @@ from core.tools.web_search_tool import SandboxWebSearchTool
 from core.tools.image_search_tool import SandboxImageSearchTool
 from core.tools.expand_msg_tool import ExpandMessageTool
 from core.tools.task_list_tool import TaskListTool
+from core.tools.sub_agent_tool import SubAgentTool
 from core.tools.people_search_tool import PeopleSearchTool
 from core.tools.company_search_tool import CompanySearchTool
 from core.tools.paper_search_tool import PaperSearchTool
@@ -78,6 +79,7 @@ class ToolManager:
         self.thread_manager.add_tool(ExpandMessageTool, thread_id=self.thread_id, thread_manager=self.thread_manager)
         self.thread_manager.add_tool(MessageTool)
         self.thread_manager.add_tool(TaskListTool, project_id=self.project_id, thread_manager=self.thread_manager, thread_id=self.thread_id)
+        self.thread_manager.add_tool(SubAgentTool, project_id=self.project_id, thread_manager=self.thread_manager, thread_id=self.thread_id)
         
         if config.TAVILY_API_KEY or config.FIRECRAWL_API_KEY:
             enabled_methods = self._get_enabled_methods_for_tool('web_search_tool')

@@ -20,6 +20,7 @@ import { SharePopover } from "@/components/sidebar/share-modal"
 import { useQueryClient } from "@tanstack/react-query";
 import { projectKeys } from "@/hooks/threads/keys";
 import { threadKeys } from "@/hooks/threads/keys";
+import { SubAgentSwitcher } from "./SubAgentSwitcher";
 
 interface ThreadSiteHeaderProps {
   threadId?: string;
@@ -167,6 +168,15 @@ export function SiteHeader({
           >
             {projectName}
           </div>
+        )}
+        
+        {/* Sub-agent switcher - shows when thread has sub-agents or is a sub-agent */}
+        {threadId && projectId && !isSharedVariant && (
+          <SubAgentSwitcher 
+            threadId={threadId} 
+            projectId={projectId}
+            className="ml-2"
+          />
         )}
       </div>
 

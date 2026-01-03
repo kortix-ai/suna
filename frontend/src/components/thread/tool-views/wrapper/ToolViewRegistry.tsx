@@ -84,6 +84,7 @@ import { ExpandMessageToolView } from '../expand-message-tool/ExpandMessageToolV
 import { RealityDefenderToolView } from '../reality-defender-tool/RealityDefenderToolView';
 import { ApifyToolView } from '../apify-tool/ToolView';
 import { FileReaderToolView } from '../file-reader-tool/FileReaderToolView';
+import { SubAgentToolView } from '../sub-agent/SubAgentToolView';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;
@@ -281,6 +282,16 @@ const defaultRegistry: ToolViewRegistryType = {
 
   'detect-deepfake': RealityDefenderToolView,
   'detect_deepfake': RealityDefenderToolView,
+
+  // Sub-Agent tools
+  'spawn-sub-agent': SubAgentToolView,
+  'spawn_sub_agent': SubAgentToolView,
+  'list-sub-agents': SubAgentToolView,
+  'list_sub_agents': SubAgentToolView,
+  'get-sub-agent-result': SubAgentToolView,
+  'get_sub_agent_result': SubAgentToolView,
+  'wait-for-sub-agents': SubAgentToolView,
+  'wait_for_sub_agents': SubAgentToolView,
 };
 
 class ToolViewRegistry {
