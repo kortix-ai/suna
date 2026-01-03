@@ -127,7 +127,7 @@ class FreeTierService:
                 'last_grant_date': datetime.now().isoformat()
             }).eq('account_id', account_id).execute()
             
-            from core.credits import credit_service
+            from core.services.credits import credit_service
             refreshed, amount = await credit_service.check_and_refresh_daily_credits(account_id)
             if refreshed:
                 logger.info(f"[FREE TIER] ✅ Triggered initial daily refresh: ${amount} credits granted to {account_id}")

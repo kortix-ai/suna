@@ -6,7 +6,9 @@ from pydantic import BaseModel
 
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
-from . import core_utils as utils
+from core.services.supabase import DBConnection
+
+db = DBConnection()
 
 router = APIRouter(tags=["feedback"])
 
@@ -42,7 +44,7 @@ async def submit_feedback(
 ):
     """Submit feedback (rating and optional text). Can be associated with a thread/message or standalone."""
     logger.debug(f"Submitting feedback from user {user_id}")
-    client = await utils.db.client
+    client = await db.client
     
     try:
         # Validate rating (0.5 to 5.0 in 0.5 increments)
@@ -117,7 +119,7 @@ async def get_feedback(
 ):
     """Get feedback. Can filter by thread_id and/or message_id. Returns user's own feedback."""
     logger.debug(f"Getting feedback for user {user_id}")
-    client = await utils.db.client
+    client = await db.client
     
     try:
         query = client.table('feedback').select('*').eq('account_id', user_id)
@@ -149,7 +151,7 @@ async def get_feedback_by_id(
 ):
     """Get a specific feedback by ID (only if it belongs to the current user)."""
     logger.debug(f"Getting feedback {feedback_id} for user {user_id}")
-    client = await utils.db.client
+    client = await db.client
     
     try:
         feedback_result = await client.table('feedback').select('*').eq('feedback_id', feedback_id).eq('account_id', user_id).execute()

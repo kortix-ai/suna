@@ -7,8 +7,10 @@ from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
 from core.templates.template_service import MCPRequirementValue, ConfigType, ProfileId, QualifiedName
 
-from .api_models import JsonAnalysisRequest, JsonAnalysisResponse, JsonImportRequestModel, JsonImportResponse
-from . import core_utils as utils
+from core.api_models import JsonAnalysisRequest, JsonAnalysisResponse, JsonImportRequestModel, JsonImportResponse
+from core.services.supabase import DBConnection
+
+db = DBConnection()
 
 router = APIRouter(tags=["agents"])
 
@@ -339,7 +341,7 @@ async def export_agent(agent_id: str, user_id: str = Depends(verify_and_get_user
     logger.debug(f"Exporting agent {agent_id} for user: {user_id}")
     
     try:
-        client = await utils.db.client
+        client = await db.client
         
         # Get agent data
         agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', user_id).execute()
@@ -359,7 +361,7 @@ async def export_agent(agent_id: str, user_id: str = Depends(verify_and_get_user
         config = extract_agent_config(agent, current_version)
         
         from core.templates.template_service import TemplateService
-        template_service = TemplateService(utils.db)
+        template_service = TemplateService(db)
         
         full_config = {
             'system_prompt': config.get('system_prompt', ''),
@@ -406,7 +408,7 @@ async def analyze_json_for_import(
     
     
     try:
-        import_service = JsonImportService(utils.db)
+        import_service = JsonImportService(db)
         
         analysis = await import_service.analyze_json(request.json_data, user_id)
         
@@ -424,8 +426,8 @@ async def import_agent_from_json(
     logger.debug(f"Importing agent from JSON - user: {user_id}")
     
     
-    client = await utils.db.client
-    from .core_utils import check_agent_count_limit
+    client = await db.client
+    from core.utils.limits_checker import check_agent_count_limit
     limit_check = await check_agent_count_limit(client, user_id)
     
     if not limit_check['can_create']:
@@ -440,7 +442,7 @@ async def import_agent_from_json(
         raise HTTPException(status_code=402, detail=error_detail)
     
     try:
-        import_service = JsonImportService(utils.db)
+        import_service = JsonImportService(db)
         
         result = await import_service.import_json(request, user_id)
         

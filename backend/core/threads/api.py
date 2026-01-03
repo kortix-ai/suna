@@ -10,8 +10,10 @@ from core.utils.logger import logger
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
 from core.utils.config import config, EnvMode
 
-from .api_models import CreateThreadResponse, MessageCreateRequest
-from . import core_utils as utils
+from core.api_models import CreateThreadResponse, MessageCreateRequest
+from core.services.supabase import DBConnection
+
+db = DBConnection()
 
 router = APIRouter(tags=["threads"])
 
@@ -23,7 +25,7 @@ async def get_user_threads(
     limit: Optional[int] = Query(100, ge=1, le=1000, description="Number of items per page (max 1000)")
 ):
     logger.debug(f"Fetching threads with project data for user: {user_id} (page={page}, limit={limit})")
-    client = await utils.db.client
+    client = await db.client
     try:
         offset = (page - 1) * limit
         
@@ -129,7 +131,7 @@ async def get_project(
     """Get a specific project by ID with complete data.
     Supports both authenticated and anonymous access (for public projects)."""
     logger.debug(f"Fetching project: {project_id}")
-    client = await utils.db.client
+    client = await db.client
     
     # Try to get user_id from JWT (optional for public projects)
     user_id = await get_optional_user_id(request)
@@ -216,7 +218,7 @@ async def get_project_threads(
 ):
     """List all threads for a specific project."""
     logger.debug(f"Fetching threads for project: {project_id} (page={page}, limit={limit})")
-    client = await utils.db.client
+    client = await db.client
     
     try:
         # Verify project access
@@ -309,7 +311,7 @@ async def create_thread_in_project(
 ):
     """Create a new thread within an existing project. Shares the project's sandbox resource."""
     logger.debug(f"Creating new thread in project: {project_id}")
-    client = await utils.db.client
+    client = await db.client
     account_id = user_id
     
     try:
@@ -364,7 +366,7 @@ async def create_thread_in_project(
         
         # Increment thread count cache (fire-and-forget)
         try:
-            from core.runtime_cache import increment_thread_count_cache
+            from core.cache.runtime_cache import increment_thread_count_cache
             asyncio.create_task(increment_thread_count_cache(account_id))
         except Exception:
             pass
@@ -385,7 +387,7 @@ async def delete_project(
 ):
     """Delete a project and all its threads, messages, agent runs, and associated resources."""
     logger.debug(f"Deleting project: {project_id}")
-    client = await utils.db.client
+    client = await db.client
     
     try:
         # Verify project exists and user has access
@@ -446,7 +448,7 @@ async def delete_project(
         
         # Invalidate caches
         try:
-            from core.runtime_cache import invalidate_thread_count_cache, invalidate_project_cache
+            from core.cache.runtime_cache import invalidate_thread_count_cache, invalidate_project_cache
             await invalidate_thread_count_cache(user_id)
             await invalidate_project_cache(project_id)
         except Exception:
@@ -467,7 +469,7 @@ async def get_thread(
     request: Request
 ):
     logger.debug(f"Fetching thread: {thread_id}")
-    client = await utils.db.client
+    client = await db.client
     
     from core.utils.auth_utils import get_optional_user_id
     user_id = await get_optional_user_id(request)
@@ -575,7 +577,7 @@ async def create_thread(
     if not name:
         name = "New Project"
     logger.debug(f"Creating new thread with name: {name}")
-    client = await utils.db.client
+    client = await db.client
     account_id = user_id
     
     try:
@@ -684,7 +686,7 @@ async def create_thread(
 
         # Update project metadata cache with sandbox data (instead of invalidate)
         try:
-            from core.runtime_cache import set_cached_project_metadata
+            from core.cache.runtime_cache import set_cached_project_metadata
             sandbox_cache_data = {
                 'id': sandbox_id,
                 'pass': sandbox_pass,
@@ -718,7 +720,7 @@ async def create_thread(
 
         # Increment thread count cache (fire-and-forget)
         try:
-            from core.runtime_cache import increment_thread_count_cache
+            from core.cache.runtime_cache import increment_thread_count_cache
             asyncio.create_task(increment_thread_count_cache(account_id))
         except Exception:
             pass
@@ -738,7 +740,7 @@ async def get_thread_messages(
     optimized: bool = Query(True, description="Return optimized messages (filtered types, minimal fields) or full messages (all types, all fields)"),
 ):
     logger.debug(f"Fetching all messages for thread: {thread_id}, order={order}")
-    client = await utils.db.client
+    client = await db.client
     
     from core.utils.auth_utils import get_optional_user_id
     user_id = await get_optional_user_id(request)
@@ -834,7 +836,7 @@ async def add_message_to_thread(
     if not message or not message.strip():
         raise HTTPException(status_code=400, detail="Message content cannot be empty")
     
-    client = await utils.db.client
+    client = await db.client
     
     thread_result = await client.table('threads').select('account_id').eq('thread_id', thread_id).execute()
     if not thread_result.data:
@@ -881,7 +883,7 @@ async def create_message(
     if message_data.type == "user" and (not message_data.content or not message_data.content.strip()):
         raise HTTPException(status_code=400, detail="Message content cannot be empty")
     
-    client = await utils.db.client
+    client = await db.client
     
     try:
         await verify_and_authorize_thread_access(client, thread_id, user_id)
@@ -921,7 +923,7 @@ async def delete_message(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     logger.debug(f"Deleting message from thread: {thread_id}")
-    client = await utils.db.client
+    client = await db.client
     await verify_and_authorize_thread_access(client, thread_id, user_id)
     try:
         await client.table('messages').delete().eq('message_id', message_id).eq('is_llm_message', True).eq('thread_id', thread_id).execute()
@@ -939,7 +941,7 @@ async def update_thread(
     auth: AuthorizedThreadAccess = Depends(require_thread_access)
 ):
     logger.debug(f"Updating thread: {thread_id}")
-    client = await utils.db.client
+    client = await db.client
     
     try:
         if title is None and is_public is None:
@@ -1047,7 +1049,7 @@ async def delete_thread(
 ):
     """Delete a thread. Only deletes the project if this is the last thread in the project."""
     logger.debug(f"Deleting thread: {thread_id}")
-    client = await utils.db.client
+    client = await db.client
     
     try:
         thread_result = await client.table('threads').select('project_id').eq('thread_id', thread_id).execute()
@@ -1074,7 +1076,7 @@ async def delete_thread(
         
         # Invalidate thread count cache for this user
         try:
-            from core.runtime_cache import invalidate_thread_count_cache
+            from core.cache.runtime_cache import invalidate_thread_count_cache
             await invalidate_thread_count_cache(auth.user_id)
         except Exception:
             pass
@@ -1108,7 +1110,7 @@ async def delete_thread(
                 
                 # Invalidate project cache
                 try:
-                    from core.runtime_cache import invalidate_project_cache
+                    from core.cache.runtime_cache import invalidate_project_cache
                     await invalidate_project_cache(project_id)
                 except Exception:
                     pass

@@ -8,8 +8,13 @@ from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
 from core.utils.config import config, EnvMode
 
-from . import core_utils as utils
-from .core_utils import _get_version_service
+from core.services.supabase import DBConnection
+
+db = DBConnection()
+async def _get_version_service():
+    """Get the version service instance."""
+    from core.versioning.version_service import get_version_service
+    return await get_version_service()
 
 router = APIRouter(tags=["agent-tools"])
 
@@ -21,7 +26,7 @@ async def get_custom_mcp_tools_for_agent(
 ):
     logger.debug(f"Getting custom MCP tools for agent {agent_id}, user {user_id}")
     try:
-        client = await utils.db.client
+        client = await db.client
         agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).eq('account_id', user_id).execute()
         if not agent_result.data:
             raise HTTPException(status_code=404, detail="Worker not found")
@@ -107,7 +112,7 @@ async def update_custom_mcp_tools_for_agent(
     logger.debug(f"Updating custom MCP tools for agent {agent_id}, user {user_id}")
     
     try:
-        client = await utils.db.client
+        client = await db.client
         
         agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).eq('account_id', user_id).execute()
         if not agent_result.data:
@@ -233,7 +238,7 @@ async def update_agent_custom_mcps(
     logger.debug(f"Updating agent {agent_id} custom MCPs for user {user_id}")
     
     try:
-        client = await utils.db.client
+        client = await db.client
         agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).eq('account_id', user_id).execute()
         if not agent_result.data:
             raise HTTPException(status_code=404, detail="Worker not found")
@@ -362,7 +367,7 @@ async def get_agent_tools(
 ):
         
     logger.debug(f"Fetching enabled tools for agent: {agent_id} by user: {user_id}")
-    client = await utils.db.client
+    client = await db.client
 
     agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).execute()
     if not agent_result.data:

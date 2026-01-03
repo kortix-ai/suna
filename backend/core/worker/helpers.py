@@ -49,7 +49,7 @@ async def initialize() -> str:
     warm_up_tools_cache()
     
     try:
-        from core.runtime_cache import warm_up_suna_config_cache
+        from core.cache.runtime_cache import warm_up_suna_config_cache
         await warm_up_suna_config_cache()
     except Exception as e:
         logger.warning(f"Failed to pre-cache Suna configs (non-fatal): {e}")
@@ -144,7 +144,7 @@ async def load_agent_config(agent_id: Optional[str], account_id: Optional[str]) 
     
     t = time.time()
     try:
-        from core.runtime_cache import (
+        from core.cache.runtime_cache import (
             get_static_suna_config, 
             get_cached_user_mcps,
             get_cached_agent_config
@@ -174,13 +174,13 @@ async def load_agent_config(agent_id: Optional[str], account_id: Optional[str]) 
                 agent_config = cached_config
                 logger.debug(f"Agent config from cache: {(time.time() - t) * 1000:.1f}ms")
             elif account_id:
-                from core.agent_loader import get_agent_loader
+                from core.agents.agent_loader import get_agent_loader
                 loader = await get_agent_loader()
                 agent_data = await loader.load_agent(agent_id, account_id, load_config=True)
                 agent_config = agent_data.to_dict()
                 logger.debug(f"Agent config from DB: {(time.time() - t) * 1000:.1f}ms")
             else:
-                from core.agent_loader import get_agent_loader
+                from core.agents.agent_loader import get_agent_loader
                 loader = await get_agent_loader()
                 agent_data = await loader.load_agent(agent_id, agent_id, load_config=True)
                 agent_config = agent_data.to_dict()
@@ -443,7 +443,7 @@ async def update_agent_run_status(
                 if hasattr(update_result, 'data') and update_result.data:
                     if account_id:
                         try:
-                            from core.runtime_cache import invalidate_running_runs_cache
+                            from core.cache.runtime_cache import invalidate_running_runs_cache
                             await invalidate_running_runs_cache(account_id)
                         except:
                             pass

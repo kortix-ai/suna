@@ -14,6 +14,7 @@ from redis.backoff import ExponentialBackoff
 from redis.retry import Retry
 import os
 import threading
+import asyncio
 from typing import Optional, Dict, List, Any
 from dotenv import load_dotenv
 from core.utils.logger import logger
@@ -39,7 +40,8 @@ class RedisClient:
         """Get Redis configuration from environment."""
         load_dotenv()
         
-        redis_host = os.getenv("REDIS_HOST", "redis")
+        # Default to localhost for local dev, redis for Docker
+        redis_host = os.getenv("REDIS_HOST", "localhost")
         redis_port = int(os.getenv("REDIS_PORT", 6379))
         redis_password = os.getenv("REDIS_PASSWORD", "")
         redis_username = os.getenv("REDIS_USERNAME", None)
@@ -99,10 +101,17 @@ class RedisClient:
                 retry_on_error=[BusyLoadingError, RedisConnectionError]
             )
             
-            # Verify connection
-            await self._client.ping()
-            self._initialized = True
-            logger.info("Successfully connected to Redis")
+            # Verify connection with timeout
+            try:
+                await asyncio.wait_for(self._client.ping(), timeout=5.0)
+                self._initialized = True
+                logger.info("Successfully connected to Redis")
+            except asyncio.TimeoutError:
+                logger.error("Redis ping timed out after 5 seconds")
+                raise ConnectionError("Redis connection timeout - is Redis running?")
+            except Exception as e:
+                logger.error(f"Redis ping failed: {e}")
+                raise ConnectionError(f"Redis connection failed: {e}")
             
             return self._client
     

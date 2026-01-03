@@ -3,7 +3,7 @@ from fastapi import Request, HTTPException
 from core.utils.logger import logger
 from core.services.supabase import DBConnection
 from core.billing.shared.config import TOKEN_PRICE_MULTIPLIER
-from core.vapi_config import vapi_config
+from core.config.vapi_config import vapi_config
 from decimal import Decimal
 import json
 import hmac

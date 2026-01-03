@@ -11,11 +11,13 @@ from core.utils.icon_generator import generate_icon_and_colors
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.versioning.version_service import get_version_service as _get_version_service
 from core.utils.core_tools_helper import ensure_core_tools_enabled
-from core.config_helper import _get_default_agentpress_tools
+from core.config.config_helper import _get_default_agentpress_tools
 from core.ai_models import model_manager
 
-from . import core_utils as utils
-from .api_models import AgentResponse
+from core.services.supabase import DBConnection
+
+db = DBConnection()
+from core.api_models import AgentResponse
 
 router = APIRouter(tags=["agents"])
 
@@ -173,10 +175,10 @@ async def setup_agent_from_chat(
     if not request.description.strip():
         raise HTTPException(status_code=400, detail="Description cannot be empty")
     
-    client = await utils.db.client
+    client = await db.client
     
     # Check agent count limit
-    from .core_utils import check_agent_count_limit
+    from core.utils.limits_checker import check_agent_count_limit
     limit_check = await check_agent_count_limit(client, user_id)
     
     if not limit_check['can_create']:

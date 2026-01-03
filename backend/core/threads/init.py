@@ -64,7 +64,7 @@ async def create_thread_optimistically(
     # Handle staged files
     if staged_files and len(staged_files) > 0:
         try:
-            from core.agent_runs import _upload_staged_files_to_sandbox_background
+            from core.agents.runs import _upload_staged_files_to_sandbox_background
             from core.services import redis
             import json
             
@@ -111,7 +111,7 @@ async def create_thread_optimistically(
     # Handle uploaded files
     elif files and len(files) > 0:
         try:
-            from core.agent_runs import _handle_file_uploads_fast
+            from core.agents.runs import _handle_file_uploads_fast
             
             logger.info(f"Processing {len(files)} files for thread {thread_id}")
             message_content = await _handle_file_uploads_fast(files, project_id, prompt, thread_id)
@@ -188,7 +188,7 @@ async def create_thread_optimistically(
             logger.warning(f"Failed to inject image context: {e}")
     
     # Dispatch via Redis Streams
-    from core.services.stream_worker import dispatch_thread_init
+    from core.worker import dispatch_thread_init
     await dispatch_thread_init(
         thread_id=thread_id,
         project_id=project_id,

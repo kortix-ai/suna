@@ -37,8 +37,8 @@ def load_static_suna_config() -> Dict[str, Any]:
     if _SUNA_STATIC_LOADED:
         return _SUNA_STATIC_CONFIG
     
-    from core.suna_config import SUNA_CONFIG
-    from core.config_helper import _extract_agentpress_tools_for_run
+    from core.config.suna_config import SUNA_CONFIG
+    from core.config.config_helper import _extract_agentpress_tools_for_run
     
     _SUNA_STATIC_CONFIG = {
         'system_prompt': SUNA_CONFIG['system_prompt'],

@@ -25,7 +25,8 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
     logger.warning(f"🛑 Stopping agent run: {agent_run_id} (source: {stop_source}, error: {error_message or 'none'})")
     
     # Import here to avoid circular dependency
-    from ..core_utils import db
+    from core.services.supabase import DBConnection
+    db = DBConnection()
     
     client = await db.client
     final_status = "failed" if error_message else "stopped"

@@ -20,7 +20,7 @@ redis-server
 The worker processes background tasks (agent runs, memory extraction, etc.) using Redis Streams.
 
 ```bash
-uv run python run_stream_worker.py --concurrency 48
+uv run python run_worker.py --concurrency 8
 ```
 
 You should see:
@@ -50,3 +50,15 @@ npm run dev
 ```
 
 Access the app at `http://localhost:3000`
+
+## Build Verification
+
+Run `make verify` or `uv run python core/utils/scripts/verify_build.py` to check:
+- All imports work
+- No syntax errors
+- No undefined names
+- API can be imported
+- Worker can be imported
+
+See `core/utils/scripts/README.md` for more details on available scripts.
+

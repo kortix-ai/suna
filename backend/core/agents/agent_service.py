@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional
 from core.utils.pagination import PaginationService, PaginationParams, PaginatedResponse
 from core.utils.logger import logger
-from .agent_loader import AgentLoader
+from core.agents.agent_loader import AgentLoader
 from core.utils.query_utils import batch_query_in
 
 

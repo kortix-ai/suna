@@ -8,13 +8,20 @@ from core.utils.pagination import PaginationParams
 from core.utils.core_tools_helper import ensure_core_tools_enabled
 from core.ai_models import model_manager
 
-from .api_models import (
+from core.api_models import (
     AgentUpdateRequest, AgentResponse, AgentVersionResponse, AgentsResponse, 
     PaginationInfo, AgentCreateRequest, AgentIconGenerationRequest, AgentIconGenerationResponse
 )
-from . import core_utils as utils
-from .core_utils import _get_version_service, merge_custom_mcps
-from .config_helper import build_unified_config
+from core.services.supabase import DBConnection
+
+db = DBConnection()
+from core.utils.mcp_helpers import merge_custom_mcps
+
+async def _get_version_service():
+    """Get the version service instance."""
+    from core.versioning.version_service import get_version_service
+    return await get_version_service()
+from core.config.config_helper import build_unified_config
 
 router = APIRouter(tags=["agents"])
 
@@ -30,7 +37,7 @@ async def update_agent(
     if config.ENV_MODE == EnvMode.STAGING:
         print(f"[DEBUG] update_agent: Received icon fields - icon_name={agent_data.icon_name}, icon_color={agent_data.icon_color}, icon_background={agent_data.icon_background}")
     
-    client = await utils.db.client
+    client = await db.client
     
     try:
         existing_agent = await client.table('agents').select('*').eq("agent_id", agent_id).eq("account_id", user_id).maybe_single().execute()
@@ -380,7 +387,7 @@ async def update_agent(
 @router.delete("/agents/{agent_id}", summary="Delete Agent", operation_id="delete_agent")
 async def delete_agent(agent_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     logger.debug(f"Deleting agent: {agent_id}")
-    client = await utils.db.client
+    client = await db.client
     
     try:
         agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).execute()
@@ -400,7 +407,7 @@ async def delete_agent(agent_id: str, user_id: str = Depends(verify_and_get_user
         # Clean up triggers before deleting agent to ensure proper remote cleanup
         try:
             from core.triggers.trigger_service import get_trigger_service
-            trigger_service = get_trigger_service(utils.db)
+            trigger_service = get_trigger_service(db)
             
             # Get all triggers for this agent
             triggers_result = await client.table('agent_triggers').select('trigger_id').eq('agent_id', agent_id).execute()
@@ -483,7 +490,7 @@ async def get_agents(
             sort_order=sort_order
         )
         
-        client = await utils.db.client
+        client = await db.client
         agent_service = AgentService(client)
         paginated_result = await agent_service.get_agents_paginated(
             user_id=user_id,
@@ -542,9 +549,9 @@ async def create_agent(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     logger.debug(f"Creating new agent for user: {user_id}")
-    client = await utils.db.client
+    client = await db.client
     
-    from .core_utils import check_agent_count_limit
+    from core.utils.limits_checker import check_agent_count_limit
     limit_check = await check_agent_count_limit(client, user_id)
     
     if not limit_check['can_create']:
@@ -657,7 +664,7 @@ async def generate_agent_icon(
     logger.debug(f"Generating icon and colors for agent: {request.name}")
     
     try:
-        from .core_utils import generate_agent_icon_and_colors
+        from core.utils.icon_generator import generate_icon_and_colors as generate_agent_icon_and_colors
         
         result = await generate_agent_icon_and_colors(
             name=request.name

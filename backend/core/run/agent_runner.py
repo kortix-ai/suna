@@ -18,7 +18,7 @@ from core.run.config import AgentConfig
 from core.run.tool_manager import ToolManager
 from core.run.mcp_manager import MCPManager
 from core.run.prompt_manager import PromptManager
-from core.tool_output_streaming_context import get_tool_output_streaming_context
+from core.worker.tool_output_streaming_context import get_tool_output_streaming_context
 
 load_dotenv()
 
@@ -131,7 +131,7 @@ class AgentRunner:
                 logger.info("⚠️ [ENRICHMENT] Cancelled before starting")
                 return
             
-            from core.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
+            from core.cache.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
             
             cached_project = await get_cached_project_metadata(self.config.project_id)
             if not cached_project:
@@ -240,7 +240,7 @@ class AgentRunner:
             self.account_id = self.config.account_id
             
             q_start = time.time()
-            from core.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
+            from core.cache.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
             
             cached_project = await get_cached_project_metadata(self.config.project_id)
             if cached_project:
@@ -277,7 +277,7 @@ class AgentRunner:
         else:
             parallel_start = time.time()
             
-            from core.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
+            from core.cache.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
             
             thread_query = self.client.table('threads').select('account_id').eq('thread_id', self.config.thread_id).execute()
             project_query = self.client.table('projects').select('project_id, sandbox_resource_id').eq('project_id', self.config.project_id).execute()

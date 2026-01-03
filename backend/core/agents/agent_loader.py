@@ -197,7 +197,7 @@ class AgentLoader:
         
         # Check cache first (if loading config and not skipping cache)
         if load_config and not skip_cache:
-            from core.runtime_cache import get_cached_agent_config
+            from core.cache.runtime_cache import get_cached_agent_config
             cached = await get_cached_agent_config(agent_id)
             if cached:
                 logger.debug(f"⚡ Using cached config for agent {agent_id} ({(time.time() - t_start)*1000:.1f}ms)")
@@ -225,7 +225,7 @@ class AgentLoader:
             await self._load_agent_config(agent_data, user_id)
             
             # Cache the result
-            from core.runtime_cache import set_cached_agent_config
+            from core.cache.runtime_cache import set_cached_agent_config
             await set_cached_agent_config(
                 agent_id,
                 agent_data.to_dict(),
@@ -376,7 +376,7 @@ class AgentLoader:
         
         # For Suna agents, always use name from SUNA_CONFIG (never DB value)
         if is_suna_default:
-            from core.suna_config import SUNA_CONFIG
+            from core.config.suna_config import SUNA_CONFIG
             name = SUNA_CONFIG['name']
             description = SUNA_CONFIG.get('description')
         else:
@@ -424,8 +424,8 @@ class AgentLoader:
         t_start = time.time()
         
         # 1. Load static config from memory (instant, no DB)
-        from core.runtime_cache import get_static_suna_config, load_static_suna_config
-        from core.suna_config import SUNA_CONFIG
+        from core.cache.runtime_cache import get_static_suna_config, load_static_suna_config
+        from core.config.suna_config import SUNA_CONFIG
         
         static_config = get_static_suna_config()
         if not static_config:
@@ -442,7 +442,7 @@ class AgentLoader:
         
         # 2. Load user-specific MCPs (check cache first)
         if agent.current_version_id and user_id:
-            from core.runtime_cache import get_cached_user_mcps, set_cached_user_mcps
+            from core.cache.runtime_cache import get_cached_user_mcps, set_cached_user_mcps
             
             # Try cache first
             cached_mcps = await get_cached_user_mcps(agent.agent_id)
@@ -525,7 +525,7 @@ class AgentLoader:
                 agent.configured_mcps = tools.get('mcp', [])
                 agent.custom_mcps = tools.get('custom_mcp', [])
                 
-                from core.config_helper import _extract_agentpress_tools_for_run
+                from core.config.config_helper import _extract_agentpress_tools_for_run
                 agent.agentpress_tools = _extract_agentpress_tools_for_run(tools.get('agentpress', {}))
                 
                 agent.triggers = config.get('triggers', [])
@@ -536,7 +536,7 @@ class AgentLoader:
                 agent.configured_mcps = version_dict.get('configured_mcps', [])
                 agent.custom_mcps = version_dict.get('custom_mcps', [])
                 
-                from core.config_helper import _extract_agentpress_tools_for_run
+                from core.config.config_helper import _extract_agentpress_tools_for_run
                 agent.agentpress_tools = _extract_agentpress_tools_for_run(
                     version_dict.get('agentpress_tools', {})
                 )
@@ -556,7 +556,7 @@ class AgentLoader:
     
     def _load_fallback_config(self, agent: AgentData):
         """Load safe fallback configuration."""
-        from core.config_helper import _get_default_agentpress_tools, _extract_agentpress_tools_for_run
+        from core.config.config_helper import _get_default_agentpress_tools, _extract_agentpress_tools_for_run
         
         agent.system_prompt = 'You are a helpful AI assistant.'
         agent.model = None
@@ -625,7 +625,7 @@ class AgentLoader:
         config = version_row.get('config') or {}
         tools = config.get('tools', {})
         
-        from core.config_helper import _extract_agentpress_tools_for_run
+        from core.config.config_helper import _extract_agentpress_tools_for_run
         
         agent.system_prompt = config.get('system_prompt', '')
         agent.model = config.get('model')

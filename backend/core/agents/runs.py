@@ -14,18 +14,26 @@ from core.utils.config import config, EnvMode
 from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox, get_or_start_sandbox
 from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
-from core.services.stream_worker import dispatch_agent_run
+from core.worker import dispatch_agent_run
 
 from core.ai_models import model_manager
 
-from .api_models import AgentVersionResponse, AgentResponse, UnifiedAgentStartResponse
-from . import core_utils as utils
+from core.api_models import AgentVersionResponse, AgentResponse, UnifiedAgentStartResponse
+from core.services.supabase import DBConnection
 
-from .core_utils import (
-    stop_agent_run_with_helpers as stop_agent_run,
-    _get_version_service, generate_and_update_project_name,
-    check_agent_run_limit, check_project_count_limit
-)
+db = DBConnection()
+
+# Instance ID for distributed locking - unique per process
+instance_id = str(uuid.uuid4())[:8]
+
+from core.utils.run_management import stop_agent_run_with_helpers as stop_agent_run
+from core.utils.project_helpers import generate_and_update_project_name
+from core.utils.limits_checker import check_agent_run_limit, check_project_count_limit
+
+async def _get_version_service():
+    """Get the version service instance."""
+    from core.versioning.version_service import get_version_service
+    return await get_version_service()
 
 router = APIRouter(tags=["agent-runs"])
 
@@ -94,13 +102,13 @@ async def _load_agent_config(client, agent_id: Optional[str], account_id: str, u
     logger.debug(f"[AGENT LOAD] Loading agent: {agent_id or 'default'}")
 
     if agent_id:
-        from core.runtime_cache import get_static_suna_config, get_cached_user_mcps
+        from core.cache.runtime_cache import get_static_suna_config, get_cached_user_mcps
         
         static_config = get_static_suna_config()
         cached_mcps = await get_cached_user_mcps(agent_id)
         
         if static_config and cached_mcps is not None:
-            from core.agent_loader import AgentData
+            from .agent_loader import AgentData
             agent_data = AgentData(
                 agent_id=agent_id,
                 name="Kortix",
@@ -298,7 +306,7 @@ async def _create_agent_run_record(
     logger.debug(f"Created new agent run: {agent_run_id}")
 
     try:
-        from core.runtime_cache import invalidate_running_runs_cache
+        from core.cache.runtime_cache import invalidate_running_runs_cache
         await invalidate_running_runs_cache(actual_user_id)
     except Exception as cache_error:
         logger.warning(f"Failed to invalidate running runs cache: {cache_error}")
@@ -328,7 +336,7 @@ async def _trigger_agent_background(
         entry_id = await dispatch_agent_run(
             agent_run_id=agent_run_id,
             thread_id=thread_id,
-            instance_id=utils.instance_id,
+            instance_id=instance_id,
             project_id=project_id,
             model_name=effective_model,
             agent_id=agent_id,
@@ -413,7 +421,7 @@ async def _upload_files_to_sandbox_background(
     logger.info(f"🔄 Background sandbox activity starting for project {project_id} ({len(files_data)} files)")
     
     try:
-        client = await utils.db.client
+        client = await db.client
         
         sandbox, sandbox_id = await _ensure_sandbox_for_thread(client, project_id, files_data)
         
@@ -459,7 +467,7 @@ async def _upload_staged_files_to_sandbox_background(
     try:
         from core.files import get_staged_file_content
         
-        client = await utils.db.client
+        client = await db.client
         
         files_data = []
         for sf in staged_files:
@@ -719,7 +727,7 @@ async def _ensure_sandbox_for_thread(client, project_id: str, files: Optional[Li
             raise Exception(f"Failed to create sandbox resource: {str(e)}")
         
         try:
-            from core.runtime_cache import set_cached_project_metadata
+            from core.cache.runtime_cache import set_cached_project_metadata
             sandbox_cache_data = {
                 'id': sandbox_id,
                 'pass': sandbox_pass,
@@ -752,7 +760,7 @@ async def start_agent_run(
     import time
     t_start = time.time()
     
-    client = await utils.db.client
+    client = await db.client
     is_new_thread = thread_id is None
     
     final_message_content = message_content or prompt
@@ -794,7 +802,7 @@ async def start_agent_run(
             logger.debug(f"⏱️ [TIMING] Project created: {(time.time() - t_project) * 1000:.1f}ms")
             
             try:
-                from core.runtime_cache import set_cached_project_metadata
+                from core.cache.runtime_cache import set_cached_project_metadata
                 await set_cached_project_metadata(project_id, {})
             except Exception:
                 pass
@@ -843,7 +851,7 @@ async def start_agent_run(
         structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id, account_id=account_id)
         
         try:
-            from core.runtime_cache import increment_thread_count_cache
+            from core.cache.runtime_cache import increment_thread_count_cache
             asyncio.create_task(increment_thread_count_cache(account_id))
         except Exception:
             pass
@@ -905,10 +913,10 @@ async def unified_agent_start(
     import time
     api_request_start = time.time()
     
-    if not utils.instance_id:
+    if not instance_id:
         raise HTTPException(status_code=500, detail="Worker API not initialized with instance ID")
     
-    client = await utils.db.client
+    client = await db.client
     account_id = user_id
     
     is_optimistic = optimistic and optimistic.lower() == 'true'
@@ -951,7 +959,7 @@ async def unified_agent_start(
             
             structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id, account_id=account_id)
             
-            from core.thread_init_service import create_thread_optimistically
+            from core.threads import create_thread_optimistically
             
             memory_enabled_bool = None
             if memory_enabled is not None:
@@ -1080,7 +1088,7 @@ async def unified_agent_start(
                 }).execute()
                 
                 try:
-                    from core.runtime_cache import set_cached_project_metadata
+                    from core.cache.runtime_cache import set_cached_project_metadata
                     await set_cached_project_metadata(project_id, {})
                 except Exception:
                     pass
@@ -1145,10 +1153,10 @@ async def start_agent_on_thread(
     import time
     api_request_start = time.time()
     
-    if not utils.instance_id:
+    if not instance_id:
         raise HTTPException(status_code=500, detail="Worker API not initialized with instance ID")
     
-    client = await utils.db.client
+    client = await db.client
     account_id = user_id
     
     try:
@@ -1208,7 +1216,7 @@ async def stop_agent(agent_run_id: str, user_id: str = Depends(verify_and_get_us
         agent_run_id=agent_run_id,
     )
     logger.debug(f"Received request to stop agent run: {agent_run_id}")
-    client = await utils.db.client
+    client = await db.client
     await _get_agent_run_with_access_check(client, agent_run_id, user_id)
     await stop_agent_run(agent_run_id)
     return {"status": "stopped"}
@@ -1217,7 +1225,7 @@ async def stop_agent(agent_run_id: str, user_id: str = Depends(verify_and_get_us
 async def get_active_agent_runs(user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     try:
         logger.debug(f"Fetching all active agent runs for user: {user_id}")
-        client = await utils.db.client
+        client = await db.client
         
         try:
             user_threads = await client.table('threads').select('thread_id').eq('account_id', user_id).execute()
@@ -1284,7 +1292,7 @@ async def get_agent_runs(thread_id: str, user_id: str = Depends(verify_and_get_u
         thread_id=thread_id,
     )
     logger.debug(f"Fetching agent runs for thread: {thread_id}")
-    client = await utils.db.client
+    client = await db.client
     await verify_and_authorize_thread_access(client, thread_id, user_id)
     agent_runs = await client.table('agent_runs').select('id, thread_id, status, started_at, completed_at, error, created_at, updated_at').eq("thread_id", thread_id).order('created_at', desc=True).execute()
     logger.debug(f"Found {len(agent_runs.data)} agent runs for thread: {thread_id}")
@@ -1296,7 +1304,7 @@ async def get_agent_run(agent_run_id: str, user_id: str = Depends(verify_and_get
         agent_run_id=agent_run_id,
     )
     logger.debug(f"Fetching agent run details: {agent_run_id}")
-    client = await utils.db.client
+    client = await db.client
     agent_run_data = await _get_agent_run_with_access_check(client, agent_run_id, user_id)
     return {
         "id": agent_run_data['id'],
@@ -1314,7 +1322,7 @@ async def stream_agent_run(
     request: Request = None
 ):
     logger.debug(f"🔐 Stream auth check - agent_run: {agent_run_id}, has_token: {bool(token)}")
-    client = await utils.db.client
+    client = await db.client
 
     user_id = await get_user_id_from_stream_auth(request, token)
     agent_run_data = await _get_agent_run_with_access_check(client, agent_run_id, user_id)

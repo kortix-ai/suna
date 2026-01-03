@@ -1,31 +1,14 @@
-#!/usr/bin/env python3
 """
-Redis Streams-based worker for ALL background tasks.
+Task handlers for Redis Streams worker.
 
-This completely replaces Dramatiq, providing:
-- Near-zero latency message pickup (XREADGROUP blocks until message)
-- Horizontal scaling via Consumer Groups
-- Long-running task support (hours)
-- Crash recovery via pending message reclaim
-
-Usage:
-    uv run python run_stream_worker.py --concurrency 48
+All handlers for processing background tasks.
 """
 
-import dotenv
-dotenv.load_dotenv(".env")
-
-import sentry
 import asyncio
-import argparse
-import signal
-import os
 import time
-import json
-import traceback
 import uuid
 import gc
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from core.utils.logger import logger, structlog
@@ -33,8 +16,7 @@ from core.utils.tool_discovery import warm_up_tools_cache
 from core.services.supabase import DBConnection
 from core.services import redis
 from core.services.langfuse import langfuse
-from core.services.stream_worker import (
-    StreamWorker,
+from .tasks import (
     AgentRunTask,
     ThreadInitTask,
     MemoryExtractionTask,
@@ -42,10 +24,9 @@ from core.services.stream_worker import (
     MemoryConsolidationTask,
     CategorizationTask,
     StaleProjectsTask,
-    dispatch_agent_run,
-    dispatch_memory_extraction,
 )
-from core.worker import (
+from .dispatcher import dispatch_agent_run, dispatch_memory_extraction, dispatch_memory_embedding, dispatch_categorization
+from .helpers import (
     initialize,
     acquire_run_lock,
     create_redis_keys,
@@ -60,17 +41,13 @@ from core.worker import (
     cleanup_redis_keys,
 )
 from core.run import run_agent
-from core.tool_output_streaming_context import (
+from core.worker.tool_output_streaming_context import (
     set_tool_output_streaming_context,
     clear_tool_output_streaming_context,
 )
 
 db = DBConnection()
 
-
-# ============================================================================
-# TASK HANDLERS
-# ============================================================================
 
 async def handle_agent_run(task: AgentRunTask):
     """Handle agent run task (can take hours)."""
@@ -107,8 +84,6 @@ async def handle_agent_run(task: AgentRunTask):
         if not lock_acquired:
             logger.warning(f"🔒 Lock not acquired for {agent_run_id}")
             return
-        
-        sentry.sentry.set_tag("thread_id", thread_id)
         
         start_time = datetime.now(timezone.utc)
         cancellation_event = asyncio.Event()
@@ -233,8 +208,6 @@ async def handle_thread_init(task: ThreadInitTask):
     
     await initialize()
     
-    from core.utils.retry import retry_db_operation
-    
     try:
         client = await db.client
         
@@ -253,7 +226,7 @@ async def handle_thread_init(task: ThreadInitTask):
             effective_model = model_manager.resolve_model_id(effective_model)
         
         # Load agent config
-        from core.agent_runs import _load_agent_config, _get_effective_model, _create_agent_run_record
+        from core.agents.runs import _load_agent_config, _get_effective_model, _create_agent_run_record
         agent_config = await _load_agent_config(client, agent_id, account_id, account_id, is_new_thread=False)
         effective_model = await _get_effective_model(model_name, agent_config, client, account_id)
         agent_run_id = await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id)
@@ -306,7 +279,6 @@ async def handle_memory_extraction(task: MemoryExtractionTask):
     
     try:
         from core.memory.extraction_service import MemoryExtractionService
-        from core.memory.models import ExtractionQueueStatus
         from core.billing import subscription_service
         from core.billing.shared.config import is_memory_enabled
         
@@ -335,7 +307,6 @@ async def handle_memory_extraction(task: MemoryExtractionTask):
         )
         
         if extracted:
-            from core.services.stream_worker import dispatch_memory_embedding
             await dispatch_memory_embedding(
                 account_id, 
                 thread_id, 
@@ -464,9 +435,6 @@ async def handle_stale_projects(task: StaleProjectsTask):
     await initialize()
     
     try:
-        from core.services.stream_worker import dispatch_categorization
-        from datetime import timedelta
-        
         client = await db.client
         
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
@@ -485,19 +453,9 @@ async def handle_stale_projects(task: StaleProjectsTask):
         logger.error(f"Stale projects processing failed: {e}", exc_info=True)
 
 
-# ============================================================================
-# MAIN
-# ============================================================================
-
-async def main(concurrency: int = 48):
-    """Main entry point."""
-    logger.info("=" * 60)
-    logger.info("🚀 Starting Redis Streams Worker")
-    logger.info("=" * 60)
-    
-    warm_up_tools_cache()
-    
-    handlers = {
+def get_handlers():
+    """Get all task handlers."""
+    return {
         "agent_run": handle_agent_run,
         "thread_init": handle_thread_init,
         "memory_extraction": handle_memory_extraction,
@@ -506,29 +464,4 @@ async def main(concurrency: int = 48):
         "categorization": handle_categorization,
         "stale_projects": handle_stale_projects,
     }
-    
-    worker = StreamWorker(handlers=handlers, concurrency=concurrency)
-    
-    loop = asyncio.get_event_loop()
-    
-    def signal_handler():
-        logger.info("Shutdown signal received")
-        asyncio.create_task(worker.stop())
-    
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, signal_handler)
-    
-    try:
-        await worker.start()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        await worker.stop()
 
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Redis Streams Worker")
-    parser.add_argument("--concurrency", "-c", type=int, default=int(os.getenv("STREAM_WORKER_CONCURRENCY", "48")))
-    args = parser.parse_args()
-    
-    asyncio.run(main(concurrency=args.concurrency))

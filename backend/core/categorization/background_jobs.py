@@ -3,13 +3,13 @@
 
 async def categorize(project_id: str):
     """Dispatch project categorization task."""
-    from core.services.stream_worker import dispatch_categorization
+    from core.worker import dispatch_categorization
     await dispatch_categorization(project_id)
 
 
 async def process_stale():
     """Dispatch stale projects processing task."""
-    from core.services.stream_worker import dispatch_stale_projects
+    from core.worker import dispatch_stale_projects
     await dispatch_stale_projects()
 
 
@@ -33,9 +33,9 @@ class _DispatchWrapper:
 
 
 categorize_project = _DispatchWrapper(
-    lambda project_id: __import__('core.services.stream_worker', fromlist=['dispatch_categorization']).dispatch_categorization(project_id)
+    lambda project_id: __import__('core.worker', fromlist=['dispatch_categorization']).dispatch_categorization(project_id)
 )
 
 process_stale_projects = _DispatchWrapper(
-    lambda: __import__('core.services.stream_worker', fromlist=['dispatch_stale_projects']).dispatch_stale_projects()
+    lambda: __import__('core.worker', fromlist=['dispatch_stale_projects']).dispatch_stale_projects()
 )

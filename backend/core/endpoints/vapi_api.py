@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, HTTPException, Depends
-from core.vapi_webhooks import VapiWebhookHandler
+from core.endpoints.vapi_webhooks import VapiWebhookHandler
 from core.utils.logger import logger
 from core.utils.config import config
 from typing import Dict, Any
