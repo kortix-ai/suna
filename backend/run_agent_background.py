@@ -462,6 +462,317 @@ async def handle_normal_completion(
     return completion_message
 
 
+MAX_VALIDATION_ATTEMPTS = 3  # Prevent infinite loops
+
+
+async def check_and_run_sub_agent_validation(
+    client,
+    agent_run_id: str,
+    thread_id: str,
+    project_id: str,
+    account_id: Optional[str],
+    model_name: str,
+) -> Tuple[bool, Optional[str]]:
+    """
+    Check if this sub-agent needs validation and run it if configured.
+    
+    Returns:
+        (should_complete, restart_message)
+        - (True, None) = proceed with normal completion
+        - (False, feedback) = validation failed, need to restart with feedback
+    """
+    try:
+        # Get agent_run metadata
+        run_result = await client.table('agent_runs').select('metadata').eq('id', agent_run_id).maybe_single().execute()
+        
+        if not run_result.data:
+            return (True, None)
+        
+        metadata = run_result.data.get('metadata') or {}
+        
+        # Check if this is a sub-agent with validation
+        if not metadata.get('spawned_as_sub_agent'):
+            return (True, None)
+        
+        validation_level = metadata.get('validation_level')
+        if not validation_level:
+            return (True, None)
+        
+        validation_attempts = metadata.get('validation_attempts', 0)
+        
+        # Prevent infinite loops
+        if validation_attempts >= MAX_VALIDATION_ATTEMPTS:
+            logger.warning(f"Sub-agent {agent_run_id} exceeded max validation attempts ({MAX_VALIDATION_ATTEMPTS})")
+            return (True, None)
+        
+        # Get task and context from metadata
+        task = metadata.get('task_description', '')
+        context = metadata.get('full_context')
+        
+        if not task:
+            logger.warning(f"Sub-agent {agent_run_id} has validation but no task - skipping")
+            return (True, None)
+        
+        # Get sub-agent output (last assistant messages)
+        output = await _get_sub_agent_output(client, thread_id)
+        
+        if not output:
+            logger.warning(f"Sub-agent {agent_run_id} has no output to validate")
+            return (True, None)
+        
+        # Run validation
+        logger.info(f"🔍 Running validation (level {validation_level}, attempt {validation_attempts + 1}) for sub-agent {agent_run_id}")
+        
+        validation_result = await _run_validation(
+            task=task,
+            context=context,
+            output=output,
+            validation_level=validation_level,
+            account_id=account_id or metadata.get('actual_user_id'),
+            client=client
+        )
+        
+        # Update validation attempts
+        metadata['validation_attempts'] = validation_attempts + 1
+        metadata['last_validation_result'] = {
+            "passed": validation_result['passed'],
+            "score": validation_result['score'],
+            "summary": validation_result.get('summary', ''),
+        }
+        
+        await client.table('agent_runs').update({'metadata': metadata}).eq('id', agent_run_id).execute()
+        
+        if validation_result['passed']:
+            logger.info(f"✅ Sub-agent {agent_run_id} passed validation (score: {validation_result['score']}/10)")
+            return (True, None)
+        
+        # Validation failed - prepare feedback for re-prompting
+        feedback = validation_result.get('feedback', 'The output did not meet quality standards.')
+        issues = validation_result.get('issues', [])
+        
+        level_names = {1: "Basic", 2: "Good", 3: "Top-notch"}
+        reprompt_message = f"""⚠️ **Quality Check Failed** (Attempt {validation_attempts + 1}/{MAX_VALIDATION_ATTEMPTS})
+
+Your previous output did not meet the required quality standard ({level_names.get(validation_level, 'Level')} - {validation_level}/3).
+
+**Score:** {validation_result['score']}/10
+
+**Issues Found:**
+{chr(10).join(f'- {issue}' for issue in issues) if issues else '- Quality below threshold'}
+
+**Feedback:**
+{feedback}
+
+Please address these issues and try again. Focus on:
+1. Fully completing the original task
+2. Addressing each issue listed above
+3. Improving overall quality
+
+**Original Task:** {task[:500]}"""
+        
+        logger.warning(f"❌ Sub-agent {agent_run_id} failed validation (score: {validation_result['score']}/10) - will re-prompt")
+        
+        return (False, reprompt_message)
+        
+    except Exception as e:
+        logger.error(f"Validation check failed for {agent_run_id}: {e}", exc_info=True)
+        # On error, don't block completion
+        return (True, None)
+
+
+async def _get_sub_agent_output(client, thread_id: str) -> str:
+    """Get the sub-agent's output (last assistant messages)."""
+    try:
+        messages = await client.table('messages').select(
+            'content, metadata'
+        ).eq('thread_id', thread_id).eq('type', 'assistant').order('created_at', desc=True).limit(5).execute()
+        
+        if not messages.data:
+            return ""
+        
+        output_parts = []
+        for msg in reversed(messages.data):
+            text = None
+            if msg.get('metadata') and isinstance(msg['metadata'], dict):
+                text = msg['metadata'].get('text_content')
+            if not text and msg.get('content') and isinstance(msg['content'], dict):
+                text = msg['content'].get('content')
+            if text:
+                output_parts.append(text)
+        
+        return "\n\n".join(output_parts)
+    except Exception as e:
+        logger.error(f"Failed to get sub-agent output: {e}")
+        return ""
+
+
+async def _run_validation(
+    task: str,
+    context: Optional[str],
+    output: str,
+    validation_level: int,
+    account_id: Optional[str],
+    client
+) -> Dict[str, Any]:
+    """Run LLM validation on sub-agent output."""
+    try:
+        import litellm
+        from core.billing.credits import bill_llm_completion
+        
+        level = max(1, min(3, validation_level))
+        
+        level_descriptions = {
+            1: "BASIC (1/3) - Pass if output EXISTS and is not garbage. Only fail if empty, nonsensical, or completely off-topic.",
+            2: "GOOD (2/3) - Pass if output properly addresses task with reasonable quality. Fail if significant gaps or major errors.",
+            3: "TOP-NOTCH (3/3) - Pass ONLY if EXCELLENT and production-ready. Be SUPER CRITICAL. Fail if anything is less than perfect."
+        }
+        
+        prompt = f"""You are a quality evaluator for AI agent outputs.
+
+## TASK GIVEN:
+{task}
+
+{f"## CONTEXT:{chr(10)}{context}" if context else ""}
+
+## OUTPUT TO EVALUATE:
+{output[:8000]}
+
+## VALIDATION LEVEL: {level}/3
+{level_descriptions.get(level, level_descriptions[2])}
+
+{"Be lenient - only fail if output is garbage." if level == 1 else "Be balanced - fail if significant issues." if level == 2 else "Be SUPER CRITICAL - only pass if PERFECT."}
+
+Respond in JSON:
+{{
+  "passed": true/false,
+  "score": <1-10>,
+  "summary": "<one line>",
+  "issues": ["issue1", "issue2"],
+  "feedback": "<specific feedback if failed>"
+}}"""
+
+        # Use fast model for validation
+        validation_model = "openrouter/google/gemini-2.0-flash-001"
+        
+        logger.info(f"🔍 Calling validation LLM ({validation_model})")
+        
+        response = await litellm.acompletion(
+            model=validation_model,
+            messages=[
+                {"role": "system", "content": "You are a critical evaluator. Respond only with valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=800,
+            response_format={"type": "json_object"}
+        )
+        
+        # Bill user
+        if response.usage and account_id:
+            try:
+                await bill_llm_completion(
+                    client=client,
+                    account_id=account_id,
+                    model=validation_model,
+                    input_tokens=response.usage.prompt_tokens,
+                    output_tokens=response.usage.completion_tokens,
+                    metadata={"type": "sub_agent_validation", "level": level}
+                )
+                logger.info(f"💰 Billed validation: {response.usage.prompt_tokens}+{response.usage.completion_tokens} tokens")
+            except Exception as e:
+                logger.warning(f"Failed to bill validation: {e}")
+        
+        # Parse response
+        result_text = response.choices[0].message.content
+        try:
+            result = json.loads(result_text)
+        except json.JSONDecodeError:
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', result_text)
+            if json_match:
+                result = json.loads(json_match.group())
+            else:
+                return {"passed": True, "score": 5, "feedback": "Parsing failed", "issues": []}
+        
+        return {
+            "passed": result.get("passed", True),
+            "score": result.get("score", 5),
+            "summary": result.get("summary", ""),
+            "issues": result.get("issues", []),
+            "feedback": result.get("feedback", "")
+        }
+        
+    except Exception as e:
+        logger.error(f"Validation LLM call failed: {e}", exc_info=True)
+        return {"passed": True, "score": 5, "feedback": f"Error: {str(e)}", "issues": []}
+
+
+async def restart_sub_agent_with_feedback(
+    client,
+    agent_run_id: str,
+    thread_id: str,
+    project_id: str,
+    model_name: str,
+    account_id: Optional[str],
+    feedback_message: str,
+    redis_keys: Dict[str, str],
+) -> bool:
+    """
+    Add feedback message to sub-agent thread and restart it.
+    Returns True if restart was successful.
+    """
+    try:
+        # Add feedback as user message
+        await client.table('messages').insert({
+            "message_id": str(uuid.uuid4()),
+            "thread_id": thread_id,
+            "type": "user",
+            "is_llm_message": True,
+            "content": {"role": "user", "content": feedback_message},
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }).execute()
+        
+        # Get original metadata
+        run_result = await client.table('agent_runs').select('metadata').eq('id', agent_run_id).maybe_single().execute()
+        original_metadata = (run_result.data or {}).get('metadata', {})
+        
+        # Create new agent run with preserved metadata
+        new_run_id = str(uuid.uuid4())
+        new_metadata = {
+            **original_metadata,
+            "restarted_from": agent_run_id,
+            "restart_reason": "validation_failed"
+        }
+        
+        await client.table('agent_runs').insert({
+            "id": new_run_id,
+            "thread_id": thread_id,
+            "status": "pending",
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "metadata": new_metadata
+        }).execute()
+        
+        # Queue new execution
+        instance_id = f"val-retry-{str(uuid.uuid4())[:8]}"
+        
+        run_agent_background.send(
+            agent_run_id=new_run_id,
+            thread_id=thread_id,
+            instance_id=instance_id,
+            project_id=project_id,
+            model_name=model_name,
+            agent_id=None,
+            account_id=account_id,
+        )
+        
+        logger.info(f"🔄 Restarted sub-agent with validation feedback: {agent_run_id} -> {new_run_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to restart sub-agent: {e}", exc_info=True)
+        return False
+
+
 async def publish_final_control_signal(agent_run_id: str, final_status: str, stop_reason: Optional[str] = None):
     """Set final control signal via stop signal key (no longer using pubsub)."""
     # For completed/failed, we don't need a control signal - the status in the stream is enough
@@ -653,11 +964,41 @@ async def run_agent_background(
         )
 
         if final_status == "running":
-            final_status = "completed"
-            await handle_normal_completion(agent_run_id, start_time, total_responses, redis_keys, trace)
-            await send_completion_notification(client, thread_id, agent_config, complete_tool_called)
-            if not complete_tool_called:
-                logger.info(f"Agent run {agent_run_id} completed without explicit complete tool call - skipping notification")
+            # Check for sub-agent validation before completing
+            should_complete, restart_feedback = await check_and_run_sub_agent_validation(
+                client=client,
+                agent_run_id=agent_run_id,
+                thread_id=thread_id,
+                project_id=project_id,
+                account_id=account_id,
+                model_name=effective_model,
+            )
+            
+            if not should_complete and restart_feedback:
+                # Validation failed - restart with feedback
+                logger.info(f"🔄 Sub-agent {agent_run_id} failed validation - restarting with feedback")
+                final_status = "completed"  # Mark this run as completed (new run will handle retry)
+                
+                await restart_sub_agent_with_feedback(
+                    client=client,
+                    agent_run_id=agent_run_id,
+                    thread_id=thread_id,
+                    project_id=project_id,
+                    model_name=effective_model,
+                    account_id=account_id,
+                    feedback_message=restart_feedback,
+                    redis_keys=redis_keys,
+                )
+                
+                # Still complete this run normally (the retry is a new run)
+                await handle_normal_completion(agent_run_id, start_time, total_responses, redis_keys, trace)
+            else:
+                # Normal completion (passed validation or no validation needed)
+                final_status = "completed"
+                await handle_normal_completion(agent_run_id, start_time, total_responses, redis_keys, trace)
+                await send_completion_notification(client, thread_id, agent_config, complete_tool_called)
+                if not complete_tool_called:
+                    logger.info(f"Agent run {agent_run_id} completed without explicit complete tool call - skipping notification")
 
         await update_agent_run_status(client, agent_run_id, final_status, error=error_message, account_id=account_id)
 

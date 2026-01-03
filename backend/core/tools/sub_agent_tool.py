@@ -100,11 +100,165 @@ class SubAgentTool(SandboxToolsBase):
             logger.warning(f"Failed to get account_id: {e}")
             return None
 
+    @staticmethod
+    def _get_validation_prompt(task: str, context: Optional[str], output: str, level: int) -> str:
+        """Generate validation prompt based on strictness level (1-3)."""
+        level_descriptions = {
+            1: "BASIC (Level 1/3) - Pass if the output EXISTS and is not completely broken garbage. The bar is low: just needs to be functional output that somewhat relates to the task. Only fail if output is empty, nonsensical, or completely off-topic.",
+            2: "GOOD (Level 2/3) - Pass if the output properly addresses the task with reasonable quality. Should cover the main requirements. Fail if there are significant gaps, major errors, or the task is only partially completed.",
+            3: "TOP-NOTCH (Level 3/3) - Pass ONLY if the output is EXCELLENT and production-ready. Must be comprehensive, well-structured, accurate, and thoroughly address every aspect of the task. Be SUPER CRITICAL. Fail if anything is less than perfect."
+        }
+        
+        level_desc = level_descriptions.get(level, level_descriptions[2])
+        
+        return f"""You are a quality evaluator for AI agent outputs. Evaluate if the sub-agent's output meets the required standard.
+
+## TASK GIVEN TO SUB-AGENT:
+{task}
+
+{f"## ADDITIONAL CONTEXT PROVIDED:{chr(10)}{context}" if context else ""}
+
+## SUB-AGENT'S OUTPUT:
+{output}
+
+## VALIDATION LEVEL: {level}/3
+{level_desc}
+
+## YOUR EVALUATION:
+Analyze the output against the task requirements:
+1. Does it accomplish what was asked?
+2. Is the output complete or are there gaps?
+3. Is the quality appropriate for validation level {level}?
+4. Are there errors, hallucinations, or issues?
+
+Respond in this EXACT JSON format:
+{{
+  "passed": true/false,
+  "score": <1-10 numeric score>,
+  "summary": "<one-line summary>",
+  "issues": ["<issue 1>", "<issue 2>", ...],
+  "feedback": "<specific feedback if retry needed>"
+}}
+
+{"Be lenient - only fail if output is garbage." if level == 1 else "Be balanced - fail if significant issues." if level == 2 else "Be SUPER CRITICAL - only pass if PERFECT."}"""""
+
+    async def _run_validation(
+        self, 
+        task: str, 
+        context: Optional[str], 
+        output: str, 
+        validation_level: int,
+        account_id: str
+    ) -> Dict[str, Any]:
+        """
+        Run LLM validation on sub-agent output.
+        Returns: {"passed": bool, "score": int, "feedback": str, "issues": list}
+        """
+        try:
+            import litellm
+            from core.billing.credits import bill_llm_completion
+            
+            # Clamp validation level
+            level = max(1, min(5, validation_level))
+            
+            # Generate validation prompt
+            prompt = self._get_validation_prompt(task, context, output, level)
+            
+            # Use a fast, cheap model for validation
+            validation_model = "openrouter/google/gemini-2.0-flash-001"
+            
+            logger.info(f"🔍 Running validation (level {level}) with {validation_model}")
+            
+            # Call LLM for validation
+            response = await litellm.acompletion(
+                model=validation_model,
+                messages=[
+                    {"role": "system", "content": "You are a critical quality evaluator. Respond only with valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,  # Low temp for consistent evaluation
+                max_tokens=1000,
+                response_format={"type": "json_object"}
+            )
+            
+            # Bill the user for validation call
+            if response.usage:
+                try:
+                    client = await self.thread_manager.db.client
+                    await bill_llm_completion(
+                        client=client,
+                        account_id=account_id,
+                        model=validation_model,
+                        input_tokens=response.usage.prompt_tokens,
+                        output_tokens=response.usage.completion_tokens,
+                        metadata={"type": "sub_agent_validation", "level": level}
+                    )
+                    logger.info(f"💰 Billed validation: {response.usage.prompt_tokens}+{response.usage.completion_tokens} tokens")
+                except Exception as bill_err:
+                    logger.warning(f"Failed to bill validation: {bill_err}")
+            
+            # Parse response
+            result_text = response.choices[0].message.content
+            try:
+                result = json.loads(result_text)
+            except json.JSONDecodeError:
+                # Try to extract JSON from response
+                import re
+                json_match = re.search(r'\{[\s\S]*\}', result_text)
+                if json_match:
+                    result = json.loads(json_match.group())
+                else:
+                    logger.warning(f"Failed to parse validation response: {result_text[:200]}")
+                    return {"passed": True, "score": 5, "feedback": "Validation parsing failed, assuming pass", "issues": []}
+            
+            return {
+                "passed": result.get("passed", True),
+                "score": result.get("score", 5),
+                "summary": result.get("summary", ""),
+                "issues": result.get("issues", []),
+                "feedback": result.get("feedback", "")
+            }
+            
+        except Exception as e:
+            logger.error(f"Validation failed: {e}", exc_info=True)
+            # On error, don't block - assume pass
+            return {"passed": True, "score": 5, "feedback": f"Validation error: {str(e)}", "issues": []}
+
+    async def _get_sub_agent_output(self, thread_id: str) -> str:
+        """Get the sub-agent's output (last assistant messages)."""
+        try:
+            client = await self.thread_manager.db.client
+            
+            # Get last few assistant messages
+            messages = await client.table('messages').select(
+                'content, metadata'
+            ).eq('thread_id', thread_id).eq('type', 'assistant').order('created_at', desc=True).limit(5).execute()
+            
+            if not messages.data:
+                return ""
+            
+            output_parts = []
+            for msg in reversed(messages.data):
+                # Get text content
+                text = None
+                if msg.get('metadata') and isinstance(msg['metadata'], dict):
+                    text = msg['metadata'].get('text_content')
+                if not text and msg.get('content') and isinstance(msg['content'], dict):
+                    text = msg['content'].get('content')
+                if text:
+                    output_parts.append(text)
+            
+            return "\n\n".join(output_parts)
+            
+        except Exception as e:
+            logger.error(f"Failed to get sub-agent output: {e}")
+            return ""
+
     @openapi_schema({
         "type": "function",
         "function": {
             "name": "spawn_sub_agent",
-            "description": "Spawn a sub-agent to execute a task asynchronously in parallel. The sub-agent runs independently, sharing the same project sandbox (files, environment). Returns immediately - use list_sub_agents or wait_for_sub_agents to track progress. Sub-agents cannot spawn their own sub-agents. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `task` (REQUIRED), `context` (optional).",
+            "description": "Spawn a sub-agent to execute a task asynchronously in parallel. The sub-agent runs independently, sharing the same project sandbox (files, environment). Returns immediately - use list_sub_agents or wait_for_sub_agents to track progress. Sub-agents cannot spawn their own sub-agents. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `task` (REQUIRED), `context` (optional), `validation_level` (optional).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -115,6 +269,12 @@ class SubAgentTool(SandboxToolsBase):
                     "context": {
                         "type": "string",
                         "description": "**OPTIONAL** - Additional context to help the sub-agent. Include: 1) Relevant file paths to read, 2) Background information, 3) Format requirements for output. Keep concise but comprehensive."
+                    },
+                    "validation_level": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3,
+                        "description": "**OPTIONAL** - Quality validation strictness (1-3). 1=basic (has output, not broken), 2=good (properly addresses task), 3=top-notch (perfect, production-ready). When set, a separate LLM evaluates the output. If validation fails, sub-agent is re-prompted until it passes."
                     }
                 },
                 "required": ["task"],
@@ -122,7 +282,7 @@ class SubAgentTool(SandboxToolsBase):
             }
         }
     })
-    async def spawn_sub_agent(self, task: str, context: Optional[str] = None) -> ToolResult:
+    async def spawn_sub_agent(self, task: str, context: Optional[str] = None, validation_level: Optional[int] = None) -> ToolResult:
         """Spawn a sub-agent to execute a task asynchronously."""
         try:
             # Check depth limit
@@ -174,7 +334,10 @@ class SubAgentTool(SandboxToolsBase):
                 "task_description": task[:500],  # Store for UI display
                 "parent_thread_id": self.thread_id,
                 "spawned_as_sub_agent": True,
-                "actual_user_id": account_id
+                "actual_user_id": account_id,
+                "validation_level": validation_level if validation_level and 1 <= validation_level <= 3 else None,
+                "validation_attempts": 0,
+                "full_context": context[:2000] if context else None  # Store for validation
             }
             
             await client.table('agent_runs').insert({
@@ -214,17 +377,35 @@ class SubAgentTool(SandboxToolsBase):
                 await client.table('threads').delete().eq('thread_id', sub_thread_id).execute()
                 return ToolResult(success=False, output=f"Failed to queue sub-agent: {str(e)}")
             
-            logger.info(f"🚀 Spawned sub-agent {agent_run_id} for task: {task[:100]}...")
+            validation_info = ""
+            if validation_level and 1 <= validation_level <= 3:
+                validation_info = f" with quality validation (level {validation_level}/3)"
+                logger.info(f"🚀 Spawned sub-agent {agent_run_id}{validation_info} for task: {task[:100]}...")
+            else:
+                logger.info(f"🚀 Spawned sub-agent {agent_run_id} for task: {task[:100]}...")
+            
+            result_data = {
+                "sub_agent_id": agent_run_id,
+                "thread_id": sub_thread_id,
+                "task": task[:200],
+                "status": "spawned",
+                "message": f"Sub-agent spawned successfully{validation_info}. Use list_sub_agents to track progress."
+            }
+            
+            if validation_level and 1 <= validation_level <= 3:
+                result_data["validation"] = {
+                    "enabled": True,
+                    "level": validation_level,
+                    "description": {
+                        1: "Basic - has output, not broken",
+                        2: "Good - properly addresses task",
+                        3: "Top-notch - perfect, production-ready"
+                    }.get(validation_level, "Unknown")
+                }
             
             return ToolResult(
                 success=True,
-                output=json.dumps({
-                    "sub_agent_id": agent_run_id,
-                    "thread_id": sub_thread_id,
-                    "task": task[:200],
-                    "status": "spawned",
-                    "message": "Sub-agent spawned successfully. Use list_sub_agents to track progress."
-                }, indent=2)
+                output=json.dumps(result_data, indent=2)
             )
             
         except Exception as e:
@@ -284,7 +465,7 @@ class SubAgentTool(SandboxToolsBase):
                 run = runs_by_thread.get(tid, {})
                 metadata = run.get('metadata', {}) or {}
                 
-                sub_agents.append({
+                sa_info = {
                     "sub_agent_id": run.get('id'),
                     "thread_id": tid,
                     "task": metadata.get('task_description', thread.get('name', 'Unknown task')),
@@ -292,7 +473,18 @@ class SubAgentTool(SandboxToolsBase):
                     "started_at": run.get('started_at'),
                     "completed_at": run.get('completed_at'),
                     "error": run.get('error')
-                })
+                }
+                
+                # Include validation info if configured
+                validation_level = metadata.get('validation_level')
+                if validation_level:
+                    sa_info["validation"] = {
+                        "level": validation_level,
+                        "attempts": metadata.get('validation_attempts', 0),
+                        "last_result": metadata.get('last_validation_result')
+                    }
+                
+                sub_agents.append(sa_info)
             
             # Summary counts
             status_counts = {}
