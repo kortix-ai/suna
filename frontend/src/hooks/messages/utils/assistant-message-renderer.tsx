@@ -17,6 +17,7 @@ import type { Project } from '@/lib/api/threads';
 import { AppIcon } from '@/components/thread/tool-views/shared/AppIcon';
 import { ApifyApprovalInline } from '@/components/thread/content/ApifyApprovalInline';
 import { MediaGenerationInline } from '@/components/thread/content/MediaGenerationInline';
+import { SubAgentInline } from '@/components/thread/content/SubAgentInline';
 
 export interface AssistantMessageRendererProps {
   message: UnifiedMessage;
@@ -330,6 +331,27 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
           onToolClick={() => props.onToolClick(message.message_id, toolName, toolCall.tool_call_id)}
           sandboxId={props.sandboxId}
           project={props.project}
+        />
+      );
+    } else if (toolName === 'spawn-sub-agent') {
+      // Render sub-agent spawning inline in chat
+      const toolResult = toolResults.find(tr => {
+        const trMeta = safeJsonParse<ParsedMetadata>(tr.metadata, {});
+        return trMeta.tool_call_id === toolCall.tool_call_id;
+      });
+      
+      const resultMeta = toolResult ? safeJsonParse<ParsedMetadata>(toolResult.metadata, {}) : null;
+      const resultData = resultMeta?.result;
+      const isStreaming = !toolResult; // If no result yet, we're still streaming
+      
+      contentParts.push(
+        <SubAgentInline
+          key={`sub-agent-${index}`}
+          toolCall={normalizedToolCall}
+          toolResult={resultData}
+          isStreaming={isStreaming}
+          project={props.project}
+          onToolClick={() => props.onToolClick(message.message_id, toolName, toolCall.tool_call_id)}
         />
       );
     } else {

@@ -1,4 +1,4 @@
-import type React from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { 
   Users, 
   CheckCircle, 
@@ -7,8 +7,9 @@ import {
   Loader2, 
   ChevronRight, 
   XCircle,
-  PlayCircle,
-  Circle
+  ExternalLink,
+  Circle,
+  GitBranch
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { 
@@ -26,7 +27,32 @@ import type { ToolViewProps } from "../types";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { UnifiedMarkdown } from '@/components/markdown';
 import Link from "next/link";
+
+/**
+ * Parse streaming JSON to extract task/context during streaming
+ */
+function parseStreamingArgs(rawArgs: string | undefined): { task?: string; context?: string } {
+  if (!rawArgs) return {};
+  
+  try {
+    const parsed = JSON.parse(rawArgs);
+    return {
+      task: parsed.task,
+      context: parsed.context
+    };
+  } catch {
+    // Partial JSON - try to extract task and context with regex
+    const taskMatch = rawArgs.match(/"task"\s*:\s*"([^"]*)/);
+    const contextMatch = rawArgs.match(/"context"\s*:\s*"([^"]*)/);
+    
+    return {
+      task: taskMatch?.[1]?.replace(/\\n/g, '\n').replace(/\\"/g, '"'),
+      context: contextMatch?.[1]?.replace(/\\n/g, '\n').replace(/\\"/g, '"')
+    };
+  }
+}
 
 /**
  * Status icon component
@@ -90,62 +116,115 @@ const SubAgentCard: React.FC<{ agent: SubAgentInfo; projectId?: string }> = ({ a
 };
 
 /**
- * Spawn sub-agent view - shows single spawned agent
+ * Spawn sub-agent view - file streaming style with markdown
  */
-const SpawnView: React.FC<{ data: SubAgentSpawnData; isStreaming: boolean; projectId?: string }> = ({ 
-  data, 
-  isStreaming,
-  projectId 
-}) => {
-  const linkHref = projectId && data.thread_id 
+const SpawnView: React.FC<{ 
+  data: SubAgentSpawnData | null;
+  streamingArgs: { task?: string; context?: string };
+  isStreaming: boolean; 
+  projectId?: string;
+  context?: string;
+}> = ({ data, streamingArgs, isStreaming, projectId, context }) => {
+  // Use streaming args if available, otherwise fall back to parsed data
+  const displayTask = streamingArgs.task || data?.task || '';
+  const displayContext = streamingArgs.context || context || '';
+  
+  const linkHref = projectId && data?.thread_id 
     ? `/projects/${projectId}?threadId=${data.thread_id}` 
     : null;
 
+  const isSpawning = isStreaming || data?.status === 'spawning' || !data?.sub_agent_id;
+  const hasThreadId = data?.thread_id && data.thread_id.length > 0;
+
   return (
-    <div className="p-4">
-      <div className={cn(
-        "rounded-lg border border-zinc-200 dark:border-zinc-700 p-4",
-        "bg-gradient-to-br from-indigo-50/50 to-purple-50/50 dark:from-indigo-900/20 dark:to-purple-900/20"
-      )}>
-        <div className="flex items-start gap-3">
-          <div className="relative p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/50">
-            {isStreaming || data.status === 'spawning' ? (
-              <Loader2 className="h-5 w-5 text-indigo-600 dark:text-indigo-400 animate-spin" />
-            ) : (
-              <PlayCircle className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+    <div className="h-full flex flex-col bg-white dark:bg-zinc-950">
+      {/* File-like header bar */}
+      <div className="flex items-center justify-between px-4 py-2 bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <GitBranch className="h-4 w-4 text-indigo-500 flex-shrink-0" />
+          <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400 truncate">
+            {hasThreadId ? `sub-agent-${data?.sub_agent_id?.slice(0, 8)}` : 'spawning...'}
+          </span>
+          <Badge 
+            variant="outline" 
+            className={cn(
+              "text-[10px] h-4 px-1.5 ml-auto flex-shrink-0",
+              isSpawning 
+                ? "bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800" 
+                : "bg-green-50 text-green-600 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800"
             )}
-          </div>
-          
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <h4 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                Sub-Agent Spawned
-              </h4>
-              <Badge variant="outline" className={cn("text-xs", getStatusColor(data.status))}>
-                {data.status}
-              </Badge>
+          >
+            {isSpawning ? (
+              <>
+                <Loader2 className="h-2.5 w-2.5 mr-1 animate-spin" />
+                spawning
+              </>
+            ) : (
+              <>
+                <CheckCircle className="h-2.5 w-2.5 mr-1" />
+                spawned
+              </>
+            )}
+          </Badge>
+        </div>
+        {linkHref && !isSpawning && (
+          <Link 
+            href={linkHref}
+            className="ml-2 p-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+            title="Open sub-agent thread"
+          >
+            <ExternalLink className="h-3.5 w-3.5 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300" />
+          </Link>
+        )}
+      </div>
+
+      {/* Content area - markdown rendered task */}
+      <ScrollArea className="flex-1">
+        <div className="p-4">
+          {/* Task section */}
+          <div className="mb-4">
+            <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-2">
+              Task
             </div>
-            
-            <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-2">
-              {data.task}
-            </p>
-            
-            {data.sub_agent_id && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-zinc-500">ID: {data.sub_agent_id.slice(0, 8)}...</span>
-                {linkHref && (
-                  <Link 
-                    href={linkHref}
-                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
-                  >
-                    View thread <ChevronRight className="h-3 w-3" />
-                  </Link>
+            <div className="bg-zinc-50 dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
+              {displayTask ? (
+                <>
+                  <UnifiedMarkdown 
+                    content={displayTask} 
+                    className="text-sm text-zinc-800 dark:text-zinc-200 prose-sm prose-zinc dark:prose-invert max-w-none" 
+                  />
+                  {isSpawning && (
+                    <span className="inline-block h-4 w-0.5 bg-indigo-500 ml-0.5 -mb-1 animate-pulse" />
+                  )}
+                </>
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-zinc-500">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Receiving task...</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Context section (if provided) */}
+          {displayContext && (
+            <div>
+              <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-2">
+                Context
+              </div>
+              <div className="bg-zinc-50/50 dark:bg-zinc-900/50 rounded-lg border border-zinc-100 dark:border-zinc-800/50 p-3">
+                <UnifiedMarkdown 
+                  content={displayContext} 
+                  className="text-xs text-zinc-600 dark:text-zinc-400 prose-xs prose-zinc dark:prose-invert max-w-none" 
+                />
+                {isSpawning && displayContext && (
+                  <span className="inline-block h-3 w-0.5 bg-indigo-400 ml-0.5 -mb-0.5 animate-pulse" />
                 )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
-      </div>
+      </ScrollArea>
     </div>
   );
 };
@@ -171,44 +250,56 @@ const ListView: React.FC<{ data: SubAgentListData; projectId?: string }> = ({ da
 };
 
 /**
- * Result view - shows completed sub-agent result
+ * Result view - shows completed sub-agent result with markdown
  */
 const ResultView: React.FC<{ data: SubAgentResultData }> = ({ data }) => {
   return (
-    <div className="p-4">
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">
-        <div className="px-4 py-3 bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <StatusIcon status={data.status} />
-              <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                {data.task}
-              </span>
-            </div>
-            <Badge variant="outline" className={cn("text-xs", getStatusColor(data.status))}>
-              {data.status}
-            </Badge>
-          </div>
+    <div className="h-full flex flex-col bg-white dark:bg-zinc-950">
+      {/* Header bar */}
+      <div className="flex items-center justify-between px-4 py-2 bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <StatusIcon status={data.status} className="flex-shrink-0" />
+          <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400 truncate">
+            {data.task.slice(0, 50)}{data.task.length > 50 ? '...' : ''}
+          </span>
         </div>
-        
-        <div className="p-4 bg-white dark:bg-zinc-950">
+        <Badge variant="outline" className={cn("text-[10px] h-4 px-1.5", getStatusColor(data.status))}>
+          {data.status}
+        </Badge>
+      </div>
+
+      {/* Result content */}
+      <ScrollArea className="flex-1">
+        <div className="p-4">
           {data.error ? (
-            <div className="text-sm text-red-600 dark:text-red-400">
-              <strong>Error:</strong> {data.error}
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+              <div className="text-[11px] font-medium text-red-600 dark:text-red-400 uppercase tracking-wider mb-1">
+                Error
+              </div>
+              <p className="text-sm text-red-700 dark:text-red-300">{data.error}</p>
             </div>
           ) : (
-            <div className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap">
-              {data.result}
+            <div>
+              <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-2">
+                Result
+              </div>
+              <div className="bg-zinc-50 dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
+                <UnifiedMarkdown 
+                  content={data.result} 
+                  className="text-sm text-zinc-800 dark:text-zinc-200 prose-sm prose-zinc dark:prose-invert max-w-none" 
+                />
+              </div>
+            </div>
+          )}
+          
+          {data.completed_at && (
+            <div className="mt-3 text-[10px] text-zinc-400 flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              Completed: {new Date(data.completed_at).toLocaleString()}
             </div>
           )}
         </div>
-        
-        {data.completed_at && (
-          <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500">
-            Completed: {new Date(data.completed_at).toLocaleString()}
-          </div>
-        )}
-      </div>
+      </ScrollArea>
     </div>
   );
 };
@@ -223,10 +314,58 @@ export const SubAgentToolView: React.FC<ToolViewProps> = ({
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
-  project
+  project,
+  streamingText
 }) => {
   const functionName = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const toolTitle = getToolTitle(functionName);
+  const args = toolCall.arguments || {};
+  
+  // Get streaming content from rawArguments or streamingText
+  const rawStreamingSource = toolCall.rawArguments || streamingText;
+  
+  // Throttle streaming updates for performance
+  const [throttledStreamingSource, setThrottledStreamingSource] = useState(rawStreamingSource);
+  const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastUpdateRef = useRef<number>(0);
+  
+  useEffect(() => {
+    if (!isStreaming) {
+      setThrottledStreamingSource(rawStreamingSource);
+      return;
+    }
+    
+    const now = Date.now();
+    const timeSinceLastUpdate = now - lastUpdateRef.current;
+    const THROTTLE_MS = 50; // Update every 50ms max
+    
+    if (timeSinceLastUpdate >= THROTTLE_MS) {
+      setThrottledStreamingSource(rawStreamingSource);
+      lastUpdateRef.current = now;
+    } else {
+      if (throttleTimeoutRef.current) {
+        clearTimeout(throttleTimeoutRef.current);
+      }
+      throttleTimeoutRef.current = setTimeout(() => {
+        setThrottledStreamingSource(rawStreamingSource);
+        lastUpdateRef.current = Date.now();
+      }, THROTTLE_MS - timeSinceLastUpdate);
+    }
+    
+    return () => {
+      if (throttleTimeoutRef.current) {
+        clearTimeout(throttleTimeoutRef.current);
+      }
+    };
+  }, [rawStreamingSource, isStreaming]);
+  
+  // Parse streaming args for spawn_sub_agent
+  const streamingArgs = useMemo(() => {
+    if (functionName === 'spawn-sub-agent' && isStreaming && throttledStreamingSource) {
+      return parseStreamingArgs(throttledStreamingSource);
+    }
+    return {};
+  }, [functionName, isStreaming, throttledStreamingSource]);
   
   // Extract data based on function type
   const spawnData = functionName === 'spawn-sub-agent' 
@@ -241,7 +380,9 @@ export const SubAgentToolView: React.FC<ToolViewProps> = ({
     ? extractResultData(toolCall.arguments, toolResult?.output)
     : null;
 
-  const hasData = spawnData || listData || resultData;
+  // For spawn, show content even during streaming if we have streaming args
+  const hasSpawnContent = spawnData || (functionName === 'spawn-sub-agent' && (streamingArgs.task || args.task));
+  const hasData = hasSpawnContent || listData || resultData;
   
   // Status summary for header
   const statusSummary = listData?.status_summary || {};
@@ -321,11 +462,23 @@ export const SubAgentToolView: React.FC<ToolViewProps> = ({
             </p>
           </div>
         ) : hasData ? (
-          <ScrollArea className="h-full w-full">
-            {spawnData && <SpawnView data={spawnData} isStreaming={isStreaming} projectId={project?.project_id} />}
-            {listData && <ListView data={listData} projectId={project?.project_id} />}
+          <>
+            {(hasSpawnContent && functionName === 'spawn-sub-agent') && (
+              <SpawnView 
+                data={spawnData}
+                streamingArgs={streamingArgs}
+                isStreaming={isStreaming} 
+                projectId={project?.project_id}
+                context={args.context}
+              />
+            )}
+            {listData && (
+              <ScrollArea className="h-full w-full">
+                <ListView data={listData} projectId={project?.project_id} />
+              </ScrollArea>
+            )}
             {resultData && <ResultView data={resultData} />}
-          </ScrollArea>
+          </>
         ) : (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
@@ -369,4 +522,3 @@ export const SubAgentToolView: React.FC<ToolViewProps> = ({
 };
 
 export default SubAgentToolView;
-
