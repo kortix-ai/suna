@@ -774,10 +774,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   const signupsDateFrom = '2025-12-15';
   const signupsDateTo = '2026-06-15';
   
-  // Calculate current week number and month index for filtering chart data
+  // Calculate current week number and month index for filtering chart data (Berlin timezone)
   const { currentWeekNumber, currentMonthIndex } = useMemo(() => {
     const startDate = new Date(2025, 11, 15); // Dec 15, 2025
-    const today = new Date();
+    const today = getBerlinToday();
     const daysSinceStart = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
     const weekNum = Math.max(1, Math.floor(daysSinceStart / 7) + 1);
     
@@ -1110,7 +1110,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     // Map field names for API
     const apiData: WeeklyActualData = {
       week_number: week,
-      week_start_date: new Date(2025, 11, 15 + (week - 1) * 7).toISOString().split('T')[0],
+      week_start_date: formatDateBerlin(new Date(2025, 11, 15 + (week - 1) * 7)),
       platform: platform,
       views: updatedData.views,
       signups: updatedData.signups,
@@ -1502,7 +1502,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     
     const currentDate = new Date(startDate);
     while (currentDate <= endDate) {
-      const dateStr = currentDate.toISOString().split('T')[0];
+      const dateStr = formatDateBerlin(currentDate);
       
       // For Dec 1-14, use hardcoded daily averages; for Dec 15+, use API data
       let dayNewPaid: number;
@@ -3162,14 +3162,22 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
 // MAIN PAGE COMPONENT
 // ============================================================================
 
-// Get current date in UTC
-function getUTCToday(): Date {
+// Get current date in Berlin timezone
+function getBerlinToday(): Date {
   const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  // Format in Berlin timezone to get the correct date
+  const berlinDate = now.toLocaleDateString('en-CA', { timeZone: 'Europe/Berlin' }); // YYYY-MM-DD format
+  const [year, month, day] = berlinDate.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+// Format a date as YYYY-MM-DD in Berlin timezone (avoids toISOString UTC conversion)
+function formatDateBerlin(date: Date): string {
+  return date.toLocaleDateString('en-CA', { timeZone: 'Europe/Berlin' });
 }
 
 export default function AdminAnalyticsPage() {
-  const [distributionDate, setDistributionDate] = useState<Date>(getUTCToday);
+  const [distributionDate, setDistributionDate] = useState<Date>(getBerlinToday);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [tierFilter, setTierFilter] = useState<string | null>(null);
@@ -3227,7 +3235,7 @@ export default function AdminAnalyticsPage() {
     refreshUserStats();
   };
   
-  const utcToday = getUTCToday();
+  const berlinToday = getBerlinToday();
   const dateString = format(distributionDate, 'yyyy-MM-dd');
   
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
@@ -3308,7 +3316,7 @@ export default function AdminAnalyticsPage() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5" />
-                Daily Analytics (UTC)
+                Daily Analytics (Berlin)
               </CardTitle>
               <CardDescription>
                 Conversion funnel, threads, and categories
@@ -3344,7 +3352,7 @@ export default function AdminAnalyticsPage() {
                         setCalendarOpen(false);
                       }
                     }}
-                    disabled={(date) => date > utcToday}
+                    disabled={(date) => date > berlinToday}
                     initialFocus
                   />
                 </PopoverContent>
@@ -3353,7 +3361,7 @@ export default function AdminAnalyticsPage() {
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
-                disabled={format(distributionDate, 'yyyy-MM-dd') === format(utcToday, 'yyyy-MM-dd')}
+                disabled={format(distributionDate, 'yyyy-MM-dd') === format(berlinToday, 'yyyy-MM-dd')}
                 onClick={() => {
                   const next = new Date(distributionDate);
                   next.setDate(next.getDate() + 1);
