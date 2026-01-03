@@ -41,12 +41,9 @@ async def initialize_thread_background(
     
     logger.info(f"Starting background thread initialization for thread {thread_id}")
     
-    # Initialize DB connection with retry
     await retry_db_operation(
         lambda: db.initialize(),
         f"DB initialization for thread {thread_id}",
-        max_retries=3,
-        initial_delay=1.0,
         reset_connection_on_error=True,
     )
     
@@ -86,13 +83,9 @@ async def initialize_thread_background(
         }).eq('thread_id', thread_id).execute()
     
     try:
-        # Update thread status to initializing with retry
-        # Get fresh client inside function to avoid stale reference after connection reset
         await retry_db_operation(
             update_thread_initializing,
             f"Update thread {thread_id} to initializing",
-            max_retries=3,
-            initial_delay=1.0,
             reset_connection_on_error=True,
         )
         
@@ -107,8 +100,6 @@ async def initialize_thread_background(
             model_name = await retry_db_operation(
                 get_default_model,
                 f"Get default model for user {account_id}",
-                max_retries=3,
-                initial_delay=1.0,
             )
         else:
             model_name = model_manager.resolve_model_id(model_name)
@@ -116,29 +107,19 @@ async def initialize_thread_background(
         agent_config = await retry_db_operation(
             load_agent_config,
             f"Load agent config for thread {thread_id}",
-            max_retries=3,
-            initial_delay=1.0,
         )
         effective_model = await retry_db_operation(
             lambda: get_effective_model(agent_config),
             f"Get effective model for thread {thread_id}",
-            max_retries=3,
-            initial_delay=1.0,
         )
         agent_run_id = await retry_db_operation(
             lambda: create_agent_run_record(agent_config, effective_model),
             f"Create agent run record for thread {thread_id}",
-            max_retries=3,
-            initial_delay=1.0,
         )
         
-        # Update thread status to ready with retry
-        # Get fresh client inside function to avoid stale reference after connection reset
         await retry_db_operation(
             update_thread_ready,
             f"Update thread {thread_id} to ready",
-            max_retries=3,
-            initial_delay=1.0,
             reset_connection_on_error=True,
         )
         
@@ -175,8 +156,7 @@ async def initialize_thread_background(
             await retry_db_operation(
                 update_thread_error,
                 f"Update thread {thread_id} to error status",
-                max_retries=2,  # Fewer retries for error updates
-                initial_delay=0.5,
+                max_retries=3,
             )
         except Exception as update_error:
             logger.error(f"Failed to update thread status to error after retries: {str(update_error)}")
