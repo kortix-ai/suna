@@ -38,12 +38,10 @@ export function BackgroundAALChecker({
     if (!authLoading && user && enabled && aalData) {
       const { action_required, current_level, next_level, verification_required } = aalData;
 
-      // Only redirect if the user is trying to access protected routes
-      // Allow users to stay on the home page "/" even if phone verification fails
-      const isProtectedRoute = pathname.startsWith('/dashboard') || 
-                              pathname.startsWith('/agents') || 
-                              pathname.startsWith('/projects') ||
-                              pathname.startsWith('/settings');
+      const isProtectedRoute = pathname?.startsWith('/dashboard') || 
+                              pathname?.startsWith('/agents') || 
+                              pathname?.startsWith('/projects') ||
+                              pathname?.startsWith('/settings');
       
       if (!isProtectedRoute) {
         return;

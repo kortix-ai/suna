@@ -18,7 +18,7 @@ export function TechnicalIssueBanner({
   const [isDismissed, setIsDismissed] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const pathname = usePathname();
-  const isDashboardPage = pathname.startsWith('/dashboard')
+  const isDashboardPage = pathname?.startsWith('/dashboard') ?? false
 
   const dismissKey = `technical-issue-dismissed-${message}`;
 
