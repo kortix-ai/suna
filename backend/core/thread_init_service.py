@@ -2,6 +2,7 @@ import asyncio
 import uuid
 import traceback
 import os
+import time
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from fastapi import UploadFile
@@ -32,6 +33,26 @@ async def initialize_thread_background(
     agent_id: Optional[str] = None,
     model_name: Optional[str] = None,
 ):
+    actor_start = time.time()
+    
+    # Measure end-to-end latency from enqueue to actor start
+    current_message = dramatiq.get_current_message()
+    if current_message:
+        enqueue_ts = current_message.options.get("enqueue_ts")
+        consumer_ts = current_message.options.get("consumer_ts")
+        if enqueue_ts:
+            total_delay_ms = (actor_start - enqueue_ts) * 1000
+            redis_delay_ms = (consumer_ts - enqueue_ts) * 1000 if consumer_ts else 0
+            internal_delay_ms = (actor_start - consumer_ts) * 1000 if consumer_ts else 0
+            
+            logger.info(
+                f"📊 [LATENCY] initialize_thread_background | "
+                f"total={total_delay_ms:.0f}ms | "
+                f"redis_poll={redis_delay_ms:.0f}ms | "
+                f"internal_queue={internal_delay_ms:.0f}ms | "
+                f"thread_id={thread_id}"
+            )
+    
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(
         thread_id=thread_id,

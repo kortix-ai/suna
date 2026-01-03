@@ -12,7 +12,7 @@ from core.run import run_agent
 from core.utils.logger import logger, structlog
 from core.utils.tool_discovery import warm_up_tools_cache
 import dramatiq
-from dramatiq import Worker as _OriginalWorker
+from dramatiq import Worker as _OriginalWorker, Middleware
 import uuid
 from core.services.supabase import DBConnection
 from dramatiq.brokers.redis import RedisBroker
@@ -33,6 +33,49 @@ def _patched_worker_init(self, broker, *, queues=None, worker_timeout=_WORKER_TI
 _OriginalWorker.__init__ = _patched_worker_init
 logger.info(f"⚡ Dramatiq worker_timeout patched to {_WORKER_TIMEOUT}ms (faster message pickup)")
 
+
+class MessageLatencyMiddleware(Middleware):
+    """
+    Tracks message latency through the Dramatiq pipeline to diagnose delays.
+    
+    Measures:
+    - enqueue_ts: When .send() is called (set by caller in message options)
+    - consumer_ts: When consumer fetches from Redis (before_process_message)
+    - actor_ts: When actor starts executing (logged in actor)
+    
+    Gaps:
+    - enqueue → consumer = Redis polling delay (Dramatiq backoff issue)
+    - consumer → actor = Internal work queue delay
+    """
+    
+    def before_enqueue(self, broker, message, delay):
+        # Add timestamp when message is being enqueued
+        message.options["enqueue_ts"] = time.time()
+        message.options["enqueue_iso"] = datetime.now(timezone.utc).isoformat()
+    
+    def before_process_message(self, broker, message):
+        # This is called when consumer picks up message from Redis
+        consumer_ts = time.time()
+        enqueue_ts = message.options.get("enqueue_ts")
+        
+        if enqueue_ts:
+            redis_delay_ms = (consumer_ts - enqueue_ts) * 1000
+            # Log if delay > 500ms (significant)
+            if redis_delay_ms > 500:
+                logger.warning(
+                    f"🐌 [LATENCY] Redis polling delay: {redis_delay_ms:.0f}ms | "
+                    f"actor={message.actor_name} | message_id={message.message_id} | "
+                    f"enqueued={message.options.get('enqueue_iso')}"
+                )
+            elif redis_delay_ms > 100:
+                logger.info(
+                    f"⏱️ [LATENCY] Redis polling delay: {redis_delay_ms:.0f}ms | "
+                    f"actor={message.actor_name}"
+                )
+        
+        # Store consumer timestamp for actor to measure internal delay
+        message.options["consumer_ts"] = consumer_ts
+
 redis_config = _get_redis_config()
 redis_host = redis_config["host"]
 redis_port = redis_config["port"]
@@ -52,11 +95,18 @@ if redis_config["url"]:
     auth_info = f" (user={redis_username})" if redis_username else ""
     queue_info = f" (queue prefix: '{QUEUE_PREFIX}')" if QUEUE_PREFIX else ""
     logger.info(f"🔧 Configuring Dramatiq broker with Redis at {redis_host}:{redis_port}{auth_info}{queue_info}")
-    redis_broker = RedisBroker(url=redis_config["url"], middleware=[dramatiq.middleware.AsyncIO()])
+    redis_broker = RedisBroker(
+        url=redis_config["url"], 
+        middleware=[MessageLatencyMiddleware(), dramatiq.middleware.AsyncIO()]
+    )
 else:
     queue_info = f" (queue prefix: '{QUEUE_PREFIX}')" if QUEUE_PREFIX else ""
     logger.info(f"🔧 Configuring Dramatiq broker with Redis at {redis_host}:{redis_port}{queue_info}")
-    redis_broker = RedisBroker(host=redis_host, port=redis_port, middleware=[dramatiq.middleware.AsyncIO()])
+    redis_broker = RedisBroker(
+        host=redis_host, 
+        port=redis_port, 
+        middleware=[MessageLatencyMiddleware(), dramatiq.middleware.AsyncIO()]
+    )
 
 dramatiq.set_broker(redis_broker)
 
@@ -505,8 +555,27 @@ async def run_agent_background(
     account_id: Optional[str] = None,
     request_id: Optional[str] = None
 ):
-    worker_start = time.time()
+    actor_start = time.time()
     timings = {}
+    
+    # Measure end-to-end latency from enqueue to actor start
+    current_message = dramatiq.get_current_message()
+    if current_message:
+        enqueue_ts = current_message.options.get("enqueue_ts")
+        consumer_ts = current_message.options.get("consumer_ts")
+        if enqueue_ts:
+            total_delay_ms = (actor_start - enqueue_ts) * 1000
+            redis_delay_ms = (consumer_ts - enqueue_ts) * 1000 if consumer_ts else 0
+            internal_delay_ms = (actor_start - consumer_ts) * 1000 if consumer_ts else 0
+            
+            # Always log for run_agent_background since it's critical
+            logger.info(
+                f"📊 [LATENCY] run_agent_background | "
+                f"total={total_delay_ms:.0f}ms | "
+                f"redis_poll={redis_delay_ms:.0f}ms | "
+                f"internal_queue={internal_delay_ms:.0f}ms | "
+                f"agent_run_id={agent_run_id}"
+            )
     
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(
@@ -515,7 +584,8 @@ async def run_agent_background(
         request_id=request_id,
     )
     
-    logger.info(f"⏱️ [TIMING] Worker received job at {worker_start}")
+    worker_start = actor_start  # Keep for backward compatibility with timing code
+    logger.info(f"⏱️ [TIMING] Worker received job at {actor_start}")
 
     t = time.time()
     try:
