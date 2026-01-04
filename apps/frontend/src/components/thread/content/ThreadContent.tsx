@@ -27,6 +27,7 @@ import {
   extractTextFromStreamingAskComplete,
 } from "@/hooks/messages/utils";
 import { AppIcon } from "../tool-views/shared/AppIcon";
+import { useSmoothText } from "@/hooks/messages/useSmoothText";
 
 export function renderAttachments(
   attachments: string[],
@@ -166,6 +167,19 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   threadId?: string;
   onPromptFill?: (message: string) => void;
 }) {
+  // Apply smooth typewriter effect to streaming text (120 chars/sec for snappy feel)
+  // Returns { text, isAnimating } - we continue rendering while animation is in progress
+  const { text: smoothStreamingText, isAnimating: isSmoothAnimating } = useSmoothText(
+    streamingTextContent || "",
+    120,
+    true
+  );
+
+  // Debug logging for smooth text effect
+  if (streamingTextContent && isLastGroup) {
+    console.log('[SmoothText] Raw length:', streamingTextContent.length, '| Displayed:', smoothStreamingText.length, '| Animating:', isSmoothAnimating);
+  }
+
   const toolResultsMap = useMemo(() => {
     const map = new Map<string | null, UnifiedMessage[]>();
     group.messages.forEach((msg) => {
@@ -242,20 +256,21 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   ]);
 
   const streamingContent = useMemo(() => {
-    if (
-      !isLastGroup ||
-      readOnly ||
-      !streamingTextContent ||
-      (streamHookStatus !== "streaming" && streamHookStatus !== "connecting")
-    ) {
+    // Continue rendering if:
+    // 1. Currently streaming, OR
+    // 2. Animation is still in progress (let it finish even after stream ends)
+    const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
+    const shouldRender = isLastGroup && !readOnly && smoothStreamingText && (isStreaming || isSmoothAnimating);
+    
+    if (!shouldRender) {
       return null;
     }
 
     let detectedTag: string | null = null;
     let tagStartIndex = -1;
 
-    const askIndex = streamingTextContent.indexOf("<ask");
-    const completeIndex = streamingTextContent.indexOf("<complete");
+    const askIndex = smoothStreamingText.indexOf("<ask");
+    const completeIndex = smoothStreamingText.indexOf("<complete");
     if (askIndex !== -1 && (completeIndex === -1 || askIndex < completeIndex)) {
       detectedTag = "ask";
       tagStartIndex = askIndex;
@@ -264,10 +279,10 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       tagStartIndex = completeIndex;
     } else {
       const functionCallsIndex =
-        streamingTextContent.indexOf("<function_calls>");
+        smoothStreamingText.indexOf("<function_calls>");
       if (functionCallsIndex !== -1) {
         const functionCallsContent =
-          streamingTextContent.substring(functionCallsIndex);
+          smoothStreamingText.substring(functionCallsIndex);
         if (
           functionCallsContent.includes('<invoke name="ask"') ||
           functionCallsContent.includes("<invoke name='ask'")
@@ -288,7 +303,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
         for (const tag of HIDE_STREAMING_XML_TAGS) {
           if (tag === "ask" || tag === "complete") continue;
           const openingTagPattern = `<${tag}`;
-          const index = streamingTextContent.indexOf(openingTagPattern);
+          const index = smoothStreamingText.indexOf(openingTagPattern);
           if (index !== -1) {
             detectedTag = tag;
             tagStartIndex = index;
@@ -298,13 +313,14 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       }
     }
 
-    const textToRender = streamingTextContent;
+    const textToRender = smoothStreamingText;
     const textBeforeTag = detectedTag
       ? textToRender.substring(0, tagStartIndex)
       : textToRender;
     const isAskOrComplete = detectedTag === "ask" || detectedTag === "complete";
+    // Show streaming indicator while streaming OR while animation is still completing
     const isCurrentlyStreaming =
-      streamHookStatus === "streaming" || streamHookStatus === "connecting";
+      streamHookStatus === "streaming" || streamHookStatus === "connecting" || isSmoothAnimating;
 
     return (
       <div className="mt-1.5">
@@ -346,7 +362,8 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   }, [
     isLastGroup,
     readOnly,
-    streamingTextContent,
+    smoothStreamingText,
+    isSmoothAnimating,
     streamHookStatus,
     visibleMessages,
     handleToolClick,

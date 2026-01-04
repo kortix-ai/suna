@@ -22,14 +22,15 @@ import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { IframePreview } from '../iframe-preview';
 
 // Helper function to check if a filepath is a presentation attachment
+// Matches paths like: presentations/name/slide_01.html, /workspace/presentations/name/slide_01.html, etc.
 function isPresentationAttachment(filepath: string): boolean {
-    const presentationPattern = /^presentations\/([^\/]+)\/(slide_\d+\.html|metadata\.json)$/i;
+    const presentationPattern = /presentations\/([^\/]+)\/slide_(\d+)\.html$/i;
     return presentationPattern.test(filepath);
 }
 
 // Helper function to extract presentation name from filepath
 function extractPresentationName(filepath: string): string | null {
-    const match = filepath.match(/^presentations\/([^\/]+)\//i);
+    const match = filepath.match(/presentations\/([^\/]+)\/slide_\d+\.html$/i);
     return match ? match[1] : null;
 }
 
@@ -395,7 +396,7 @@ export function FileAttachmentGrid({
                                         className="cursor-pointer p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10"
                                         title="Open in new tab"
                                     >
-                                        <ExternalLink size={14} />
+                                        <svg className="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
                                     </button>
                                 </div>
                             </div>
