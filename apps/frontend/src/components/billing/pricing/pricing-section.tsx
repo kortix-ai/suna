@@ -160,6 +160,20 @@ function PricingTier({
 
   const displayPrice = getDisplayPrice();
 
+  // Calculate actual price for GTM tracking (not monthly equivalent)
+  const getActualPrice = (): number => {
+    const basePrice = parsePriceAmount(tier.price || '$0');
+    if (effectiveBillingPeriod === 'yearly_commitment') {
+      // Yearly commitment: base monthly * 12 * 0.85 (15% discount)
+      return Math.round(basePrice * 12 * 0.85);
+    } else if (effectiveBillingPeriod === 'yearly' && tier.yearlyPrice) {
+      // Yearly: actual yearly price (e.g., 2040)
+      return Math.round(parsePriceAmount(tier.yearlyPrice));
+    }
+    // Monthly: base monthly price
+    return basePrice;
+  };
+
   const scheduleDowngradeMutation = useScheduleDowngrade();
 
   // Confirmation modal state for downgrades
@@ -195,7 +209,8 @@ function PricingTier({
     }
 
     // Track add_to_cart event when user clicks upgrade/subscribe button
-    const priceAmount = parsePriceAmount(displayPrice);
+    // Use actual price (e.g., 2040 for yearly), not monthly equivalent (170)
+    const actualPrice = getActualPrice();
     const billingLabel = effectiveBillingPeriod === 'monthly' ? 'Monthly' : 'Yearly';
     const itemData: PlanItemData = {
       item_id: `${tier.tierKey}_${effectiveBillingPeriod}`,
@@ -204,10 +219,10 @@ function PricingTier({
       item_category: 'Plans',
       item_list_id: 'plans_listing',
       item_list_name: 'Plans Listing',
-      price: priceAmount,
+      price: actualPrice,
       quantity: 1,
     };
-    trackAddToCart(itemData, currency, priceAmount);
+    trackAddToCart(itemData, currency, actualPrice);
 
     try {
       onPlanSelect?.(tierKey);
@@ -251,11 +266,11 @@ function PricingTier({
         case 'commitment_created':
           if (checkoutUrl) {
             // Store checkout data for GTM purchase tracking after Stripe redirect
-            const priceAmount = parsePriceAmount(displayPrice);
+            // Use actual price (e.g., 2040 for yearly), not monthly equivalent
             storeCheckoutData({
               tier_key: tierKey,
               tier_name: tier.name,
-              price: priceAmount,
+              price: getActualPrice(),
               currency: currency,
               billing_period: effectiveBillingPeriod,
             });
@@ -271,11 +286,11 @@ function PricingTier({
         case 'upgraded':
         case 'updated':
           // Store checkout data for GTM purchase tracking
-          const upgradePriceAmount = parsePriceAmount(displayPrice);
+          // Use actual price (e.g., 2040 for yearly), not monthly equivalent
           storeCheckoutData({
             tier_key: tierKey,
             tier_name: tier.name,
-            price: upgradePriceAmount,
+            price: getActualPrice(),
             currency: currency,
             billing_period: effectiveBillingPeriod,
           });
