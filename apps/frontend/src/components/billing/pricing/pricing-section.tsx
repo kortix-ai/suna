@@ -160,6 +160,20 @@ function PricingTier({
 
   const displayPrice = getDisplayPrice();
 
+  // Calculate actual price for GTM tracking (not monthly equivalent)
+  const getActualPrice = (): number => {
+    const basePrice = parsePriceAmount(tier.price || '$0');
+    if (effectiveBillingPeriod === 'yearly_commitment') {
+      // Yearly commitment: base monthly * 12 * 0.85 (15% discount)
+      return Math.round(basePrice * 12 * 0.85);
+    } else if (effectiveBillingPeriod === 'yearly' && tier.yearlyPrice) {
+      // Yearly: actual yearly price (e.g., 2040)
+      return Math.round(parsePriceAmount(tier.yearlyPrice));
+    }
+    // Monthly: base monthly price
+    return basePrice;
+  };
+
   const scheduleDowngradeMutation = useScheduleDowngrade();
 
   // Confirmation modal state for downgrades
@@ -195,7 +209,8 @@ function PricingTier({
     }
 
     // Track add_to_cart event when user clicks upgrade/subscribe button
-    const priceAmount = parsePriceAmount(displayPrice);
+    // Use actual price (e.g., 2040 for yearly), not monthly equivalent (170)
+    const actualPrice = getActualPrice();
     const billingLabel = effectiveBillingPeriod === 'monthly' ? 'Monthly' : 'Yearly';
     const itemData: PlanItemData = {
       item_id: `${tier.tierKey}_${effectiveBillingPeriod}`,
@@ -204,10 +219,10 @@ function PricingTier({
       item_category: 'Plans',
       item_list_id: 'plans_listing',
       item_list_name: 'Plans Listing',
-      price: priceAmount,
+      price: actualPrice,
       quantity: 1,
     };
-    trackAddToCart(itemData, currency, priceAmount);
+    trackAddToCart(itemData, currency, actualPrice);
 
     try {
       onPlanSelect?.(tierKey);
@@ -251,11 +266,11 @@ function PricingTier({
         case 'commitment_created':
           if (checkoutUrl) {
             // Store checkout data for GTM purchase tracking after Stripe redirect
-            const priceAmount = parsePriceAmount(displayPrice);
+            // Use actual price (e.g., 2040 for yearly), not monthly equivalent
             storeCheckoutData({
               tier_key: tierKey,
               tier_name: tier.name,
-              price: priceAmount,
+              price: getActualPrice(),
               currency: currency,
               billing_period: effectiveBillingPeriod,
             });
@@ -271,11 +286,11 @@ function PricingTier({
         case 'upgraded':
         case 'updated':
           // Store checkout data for GTM purchase tracking
-          const upgradePriceAmount = parsePriceAmount(displayPrice);
+          // Use actual price (e.g., 2040 for yearly), not monthly equivalent
           storeCheckoutData({
             tier_key: tierKey,
             tier_name: tier.name,
-            price: upgradePriceAmount,
+            price: getActualPrice(),
             currency: currency,
             billing_period: effectiveBillingPeriod,
           });
@@ -1111,14 +1126,17 @@ export function PricingSection({
     setPlanLoadingStates((prev) => ({ ...prev, [planId]: true }));
   };
 
-  // Helper to calculate price based on billing period (matches displayed price)
+  // Helper to calculate actual price for GTM tracking (not monthly equivalent)
   const calculatePriceForBillingPeriod = useCallback((tier: PricingTier, billingPeriod: string): number => {
     const basePrice = parsePriceAmount(tier.price || '$0');
     if (billingPeriod === 'yearly_commitment') {
-      return Math.round(basePrice * 0.85); // 15% discount
+      // Yearly commitment: base monthly * 12 * 0.85 (15% discount)
+      return Math.round(basePrice * 12 * 0.85);
     } else if (billingPeriod === 'yearly' && tier.yearlyPrice) {
-      return Math.round(parsePriceAmount(tier.yearlyPrice) / 12); // Monthly equivalent
+      // Yearly: actual yearly price (e.g., 2040, not 170)
+      return Math.round(parsePriceAmount(tier.yearlyPrice));
     }
+    // Monthly: base monthly price
     return basePrice;
   }, []);
 
@@ -1150,18 +1168,23 @@ export function PricingSection({
   }, [selectedPaidTier, sharedBillingPeriod, currency, buildPlanItemData, calculatePriceForBillingPeriod]);
 
   // Handler for plan tab selection with tracking
+  // Trigger order: select_item > view_item (per data dictionary)
   const handlePlanTabClick = useCallback((index: number, tier: PricingTier) => {
     setSelectedPaidTierIndex(index);
     const itemData = buildPlanItemData(tier, sharedBillingPeriod);
+    const priceAmount = calculatePriceForBillingPeriod(tier, sharedBillingPeriod);
     trackSelectItem(itemData);
-  }, [sharedBillingPeriod, buildPlanItemData]);
+    trackViewItem(itemData, currency, priceAmount);
+  }, [sharedBillingPeriod, currency, buildPlanItemData, calculatePriceForBillingPeriod]);
 
   // Handler for billing period change with tracking
+  // Trigger order: select_item > view_item (per data dictionary)
   const handleBillingPeriodChange = useCallback((period: 'monthly' | 'yearly' | 'yearly_commitment') => {
     setSharedBillingPeriod(period);
     if (selectedPaidTier) {
       const itemData = buildPlanItemData(selectedPaidTier, period);
       const priceAmount = calculatePriceForBillingPeriod(selectedPaidTier, period);
+      trackSelectItem(itemData);
       trackViewItem(itemData, currency, priceAmount);
     }
   }, [selectedPaidTier, currency, buildPlanItemData, calculatePriceForBillingPeriod]);
