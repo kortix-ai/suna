@@ -42,7 +42,7 @@ def check_imports():
         "from core.worker.handlers import get_handlers",
         "from core.agents.runs import _load_agent_config",
         "from core.agents.agent_loader import get_agent_loader",
-        "from core.threads import create_thread_optimistically",
+        "from core.agents.runs import start_agent_run",
     ]
     
     errors = []

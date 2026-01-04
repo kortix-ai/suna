@@ -1,6 +1,5 @@
 """Thread domain logic."""
 
-from .init import create_thread_optimistically
-
-__all__ = ['create_thread_optimistically']
+# Thread initialization logic has been consolidated into core.agents.runs.start_agent_run()
+# This module is kept for potential future thread-related utilities
 

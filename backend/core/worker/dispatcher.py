@@ -12,7 +12,6 @@ from .tasks import (
     StreamName,
     TaskMessage,
     AgentRunTask,
-    ThreadInitTask,
     MemoryExtractionTask,
     MemoryEmbeddingTask,
     MemoryConsolidationTask,
@@ -43,28 +42,6 @@ async def dispatch_agent_run(
         request_id=request_id,
     )
     return await _dispatch_task(StreamName.AGENT_RUNS, task)
-
-
-async def dispatch_thread_init(
-    thread_id: str,
-    project_id: str,
-    account_id: str,
-    prompt: str,
-    agent_id: Optional[str] = None,
-    model_name: Optional[str] = None,
-    agent_run_id: Optional[str] = None,
-) -> str:
-    """Dispatch a thread initialization task."""
-    task = ThreadInitTask(
-        thread_id=thread_id,
-        project_id=project_id,
-        account_id=account_id,
-        prompt=prompt,
-        agent_id=agent_id,
-        model_name=model_name,
-        agent_run_id=agent_run_id,
-    )
-    return await _dispatch_task(StreamName.THREAD_INIT, task)
 
 
 async def dispatch_memory_extraction(
