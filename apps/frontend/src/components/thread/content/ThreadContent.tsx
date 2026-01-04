@@ -1,5 +1,8 @@
 import React, { useRef, useState, useEffect, memo, useMemo } from "react";
-import { CircleDashed } from "lucide-react";
+import { CircleDashed as CircleDashedIcon } from "lucide-react";
+
+// Cast to fix React types version conflict in monorepo
+const CircleDashed = CircleDashedIcon as React.FC<React.SVGProps<SVGSVGElement>>;
 import { useTranslations } from "next-intl";
 import {
   UnifiedMessage,
@@ -17,15 +20,12 @@ import {
 import { KortixLogo } from "@/components/sidebar/kortix-logo";
 import { AgentLoader } from "./loader";
 import { ShowToolStream } from "./ShowToolStream";
-import { ThinkingCollapsible } from "./ThinkingCollapsible";
 import { ComposioUrlDetector } from "./composio-url-detector";
 import {
-  renderAssistantTextContent,
-  renderAssistantToolCalls,
+  renderAssistantMessage,
   extractTextFromPartialJson,
   extractTextFromStreamingAskComplete,
 } from "@/hooks/messages/utils";
-import { useSmoothText } from "@/hooks/messages/useSmoothText";
 import { AppIcon } from "../tool-views/shared/AppIcon";
 
 export function renderAttachments(
@@ -59,7 +59,6 @@ type MessageGroup = {
 interface AgentInfo {
   name: string;
   avatar: React.ReactNode;
-  useLogomark?: boolean;
 }
 
 const UserMessageRow = memo(function UserMessageRow({
@@ -167,14 +166,6 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   threadId?: string;
   onPromptFill?: (message: string) => void;
 }) {
-  // Apply smooth typewriter effect to streaming text (120 chars/sec for snappy feel)
-  // Returns { text, isAnimating } - we continue rendering while animation is in progress
-  const { text: smoothStreamingText, isAnimating: isSmoothAnimating } = useSmoothText(
-    streamingTextContent || "",
-    120,
-    true
-  );
-
   const toolResultsMap = useMemo(() => {
     const map = new Map<string | null, UnifiedMessage[]>();
     group.messages.forEach((msg) => {
@@ -200,10 +191,8 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       ? assistantMessages[assistantMessages.length - 1].message_id
       : null;
 
-  // Render text content (visible) and tool calls (collapsible) separately
-  const { renderedTextContent, renderedToolCalls } = useMemo(() => {
-    const textElements: React.ReactNode[] = [];
-    const toolElements: React.ReactNode[] = [];
+  const renderedMessages = useMemo(() => {
+    const elements: React.ReactNode[] = [];
     let assistantMessageCount = 0;
 
     group.messages.forEach((message, msgIndex) => {
@@ -213,7 +202,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
           isLastGroup && message.message_id === lastAssistantMessageId;
         const toolResults = toolResultsMap.get(message.message_id) || [];
 
-        const renderProps = {
+        const renderedContent = renderAssistantMessage({
           message,
           toolResults,
           onToolClick: handleToolClick,
@@ -224,35 +213,20 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
           t,
           threadId,
           onPromptFill,
-        };
+        });
 
-        // Text content (visible to user)
-        const textContent = renderAssistantTextContent(renderProps);
-        if (textContent) {
-          textElements.push(
-            <div key={`text-${msgKey}`} className={assistantMessageCount > 0 ? "mt-3" : ""}>
-              <div className="break-words overflow-hidden">{textContent}</div>
-            </div>,
-          );
-        }
+        if (!renderedContent) return;
 
-        // Tool calls (go in collapsible)
-        const toolCallContent = renderAssistantToolCalls(renderProps);
-        if (toolCallContent) {
-          toolElements.push(
-            <div key={`tools-${msgKey}`} className="flex flex-col gap-2">
-              {toolCallContent}
-            </div>,
-          );
-        }
-
-        if (textContent || toolCallContent) {
-          assistantMessageCount++;
-        }
+        elements.push(
+          <div key={msgKey} className={assistantMessageCount > 0 ? "mt-3" : ""}>
+            <div className="break-words overflow-hidden">{renderedContent}</div>
+          </div>,
+        );
+        assistantMessageCount++;
       }
     });
 
-    return { renderedTextContent: textElements, renderedToolCalls: toolElements };
+    return elements;
   }, [
     group.messages,
     isLastGroup,
@@ -268,21 +242,20 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   ]);
 
   const streamingContent = useMemo(() => {
-    // Continue rendering if:
-    // 1. Currently streaming, OR
-    // 2. Animation is still in progress (let it finish even after stream ends)
-    const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
-    const shouldRender = isLastGroup && !readOnly && smoothStreamingText && (isStreaming || isSmoothAnimating);
-    
-    if (!shouldRender) {
+    if (
+      !isLastGroup ||
+      readOnly ||
+      !streamingTextContent ||
+      (streamHookStatus !== "streaming" && streamHookStatus !== "connecting")
+    ) {
       return null;
     }
 
     let detectedTag: string | null = null;
     let tagStartIndex = -1;
 
-    const askIndex = smoothStreamingText.indexOf("<ask");
-    const completeIndex = smoothStreamingText.indexOf("<complete");
+    const askIndex = streamingTextContent.indexOf("<ask");
+    const completeIndex = streamingTextContent.indexOf("<complete");
     if (askIndex !== -1 && (completeIndex === -1 || askIndex < completeIndex)) {
       detectedTag = "ask";
       tagStartIndex = askIndex;
@@ -291,10 +264,10 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       tagStartIndex = completeIndex;
     } else {
       const functionCallsIndex =
-        smoothStreamingText.indexOf("<function_calls>");
+        streamingTextContent.indexOf("<function_calls>");
       if (functionCallsIndex !== -1) {
         const functionCallsContent =
-          smoothStreamingText.substring(functionCallsIndex);
+          streamingTextContent.substring(functionCallsIndex);
         if (
           functionCallsContent.includes('<invoke name="ask"') ||
           functionCallsContent.includes("<invoke name='ask'")
@@ -315,7 +288,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
         for (const tag of HIDE_STREAMING_XML_TAGS) {
           if (tag === "ask" || tag === "complete") continue;
           const openingTagPattern = `<${tag}`;
-          const index = smoothStreamingText.indexOf(openingTagPattern);
+          const index = streamingTextContent.indexOf(openingTagPattern);
           if (index !== -1) {
             detectedTag = tag;
             tagStartIndex = index;
@@ -325,14 +298,13 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       }
     }
 
-    const textToRender = smoothStreamingText;
+    const textToRender = streamingTextContent;
     const textBeforeTag = detectedTag
       ? textToRender.substring(0, tagStartIndex)
       : textToRender;
     const isAskOrComplete = detectedTag === "ask" || detectedTag === "complete";
-    // Show streaming indicator while streaming OR while animation is still completing
     const isCurrentlyStreaming =
-      streamHookStatus === "streaming" || streamHookStatus === "connecting" || isSmoothAnimating;
+      streamHookStatus === "streaming" || streamHookStatus === "connecting";
 
     return (
       <div className="mt-1.5">
@@ -374,8 +346,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   }, [
     isLastGroup,
     readOnly,
-    smoothStreamingText,
-    isSmoothAnimating,
+    streamingTextContent,
     streamHookStatus,
     visibleMessages,
     handleToolClick,
@@ -466,11 +437,8 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     );
   }, [readOnly, isLastGroup, isStreamingText, streamingText, handleToolClick]);
 
-  // Split streaming tool calls into: previous (collapsible), current (visible), and ask/complete (visible as text)
-  const { previousToolCallsContent, currentToolCallContent, askCompleteContent } = useMemo(() => {
-    if (!isLastGroup || readOnly || !streamingToolCall) {
-      return { previousToolCallsContent: null, currentToolCallContent: null, askCompleteContent: null };
-    }
+  const streamingToolCallContent = useMemo(() => {
+    if (!isLastGroup || readOnly || !streamingToolCall) return null;
 
     const parsedMetadata = safeJsonParse<ParsedMetadata>(
       streamingToolCall.metadata,
@@ -478,7 +446,6 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     );
     const toolCalls = parsedMetadata.tool_calls || [];
 
-    // Check for ask/complete tool
     const askOrCompleteTool = toolCalls.find((tc: any) => {
       const toolName = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
       return toolName === "ask" || toolName === "complete";
@@ -508,7 +475,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
           hasAskOrCompleteInLastMsg &&
           lastMsgMetadata.stream_status === "complete"
         ) {
-          return { previousToolCallsContent: null, currentToolCallContent: null, askCompleteContent: null };
+          return null;
         }
       }
 
@@ -534,55 +501,47 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       const isCurrentlyStreaming =
         streamHookStatus === "streaming" || streamHookStatus === "connecting";
 
-      // Filter out ask/complete from regular tools for previous calls
-      const regularTools = toolCalls.filter((tc: any) => {
-        const tn = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
-        return tn !== "ask" && tn !== "complete";
-      });
-
-      const previousContent = regularTools.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          {regularTools.map((tc: any, tcIndex: number) => {
-            const tn = tc.function_name?.replace(/_/g, "-") || "";
-            const toolCallContent = JSON.stringify({
-              function: { name: tn },
-              tool_name: tn,
-              arguments: tc.arguments || {},
-            });
-            return (
-              <ShowToolStream
-                key={tc.tool_call_id || `streaming-tool-${tcIndex}`}
-                content={toolCallContent}
-                messageId={streamingToolCall.message_id || null}
-                onToolClick={handleToolClick}
-                showExpanded={false}
-                toolCall={tc}
-              />
-            );
-          })}
+      return (
+        <div className="mt-1.5">
+          <ComposioUrlDetector
+            content={textToShow}
+            isStreaming={isCurrentlyStreaming}
+          />
         </div>
-      ) : null;
-
-      return {
-        previousToolCallsContent: previousContent,
-        currentToolCallContent: null,
-        askCompleteContent: (
-          <div className="mt-1.5">
-            <ComposioUrlDetector
-              content={textToShow}
-              isStreaming={isCurrentlyStreaming}
-            />
-          </div>
-        ),
-      };
+      );
     }
 
-    // No ask/complete tool - split regular tools into previous and current
-    if (toolCalls.length === 0) {
-      return {
-        previousToolCallsContent: null,
-        currentToolCallContent: (
-          <div className="mt-1.5">
+    const isAskOrComplete = toolCalls.some((tc: any) => {
+      const toolName = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
+      return toolName === "ask" || toolName === "complete";
+    });
+
+    if (isAskOrComplete) return null;
+
+    return (
+      <div className="mt-1.5">
+        <div className="flex flex-col gap-2">
+          {toolCalls.length > 0 ? (
+            toolCalls.map((tc: any, tcIndex: number) => {
+              const toolName = tc.function_name?.replace(/_/g, "-") || "";
+              const toolCallContent = JSON.stringify({
+                function: { name: toolName },
+                tool_name: toolName,
+                arguments: tc.arguments || {},
+              });
+
+              return (
+                <ShowToolStream
+                  key={tc.tool_call_id || `streaming-tool-${tcIndex}`}
+                  content={toolCallContent}
+                  messageId={streamingToolCall.message_id || null}
+                  onToolClick={handleToolClick}
+                  showExpanded={false}
+                  toolCall={tc}
+                />
+              );
+            })
+          ) : (
             <button
               onClick={() =>
                 handleToolClick(streamingToolCall.message_id || null, "unknown")
@@ -594,64 +553,10 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
                 Using Tool
               </span>
             </button>
-          </div>
-        ),
-        askCompleteContent: null,
-      };
-    }
-
-    // Split: all except last go to previous, last one stays visible
-    const previousTools = toolCalls.slice(0, -1);
-    const lastTool = toolCalls[toolCalls.length - 1];
-
-    const previousContent = previousTools.length > 0 ? (
-      <div className="flex flex-col gap-2">
-        {previousTools.map((tc: any, tcIndex: number) => {
-          const toolName = tc.function_name?.replace(/_/g, "-") || "";
-          const toolCallContent = JSON.stringify({
-            function: { name: toolName },
-            tool_name: toolName,
-            arguments: tc.arguments || {},
-          });
-          return (
-            <ShowToolStream
-              key={tc.tool_call_id || `streaming-tool-prev-${tcIndex}`}
-              content={toolCallContent}
-              messageId={streamingToolCall.message_id || null}
-              onToolClick={handleToolClick}
-              showExpanded={false}
-              toolCall={tc}
-            />
-          );
-        })}
-      </div>
-    ) : null;
-
-    const lastToolName = lastTool.function_name?.replace(/_/g, "-") || "";
-    const lastToolContent = JSON.stringify({
-      function: { name: lastToolName },
-      tool_name: lastToolName,
-      arguments: lastTool.arguments || {},
-    });
-
-    const currentContent = (
-      <div className="mt-1.5">
-        <ShowToolStream
-          key={lastTool.tool_call_id || `streaming-tool-current`}
-          content={lastToolContent}
-          messageId={streamingToolCall.message_id || null}
-          onToolClick={handleToolClick}
-          showExpanded={true}
-          toolCall={lastTool}
-        />
+          )}
+        </div>
       </div>
     );
-
-    return {
-      previousToolCallsContent: previousContent,
-      currentToolCallContent: currentContent,
-      askCompleteContent: null,
-    };
   }, [
     isLastGroup,
     readOnly,
@@ -660,15 +565,6 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     streamHookStatus,
     handleToolClick,
   ]);
-
-  // Legacy: keep for backward compatibility in non-collapsible paths
-  const streamingToolCallContent = previousToolCallsContent || currentToolCallContent || askCompleteContent ? (
-    <>
-      {previousToolCallsContent}
-      {currentToolCallContent}
-      {askCompleteContent}
-    </>
-  ) : null;
 
   const showLoader = useMemo(() => {
     if (!isLastGroup || readOnly) return false;
@@ -701,81 +597,25 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     group.messages,
   ]);
 
-  // Track thinking start time
-  const thinkingStartTimeRef = useRef<number | null>(null);
-  
-  // Determine if we're in a "thinking" state (streaming tools or waiting)
-  const isThinking = useMemo(() => {
-    if (!isLastGroup || readOnly) return false;
-    const isActiveAgent = agentStatus === "running" || agentStatus === "connecting";
-    const isActiveStream = streamHookStatus === "streaming" || streamHookStatus === "connecting";
-    return isActiveAgent && isActiveStream;
-  }, [isLastGroup, readOnly, agentStatus, streamHookStatus]);
-
-  // Check if we have any tool content to show in collapsible (streaming + completed)
-  const hasToolsToCollapse = useMemo(() => {
-    return !!(streamingContent || previousToolCallsContent || currentToolCallContent || showLoader || renderedToolCalls.length > 0);
-  }, [streamingContent, previousToolCallsContent, currentToolCallContent, showLoader, renderedToolCalls]);
-
-  // Initialize/reset thinking start time
-  useEffect(() => {
-    if (isThinking && hasToolsToCollapse && !thinkingStartTimeRef.current) {
-      thinkingStartTimeRef.current = Date.now();
-    }
-    if (!isThinking) {
-      thinkingStartTimeRef.current = null;
-    }
-  }, [isThinking, hasToolsToCollapse]);
-
-  // Show the thinking collapsible when: 1) thinking + tools, OR 2) we have completed tool calls
-  const showThinkingCollapsible = (isThinking && hasToolsToCollapse) || renderedToolCalls.length > 0;
-
   return (
     <div key={group.key} ref={isLastGroup ? latestMessageRef : null}>
       <div className="flex flex-col gap-2">
         <div className="flex items-center">
-          {agentInfo.useLogomark ? (
-            <KortixLogo variant="logomark" size={12} />
-          ) : (
-            <>
-              <div className="rounded-md flex items-center justify-center relative">
-                {agentInfo.avatar}
-              </div>
-              <p className="ml-2 text-sm text-muted-foreground">{agentInfo.name}</p>
-            </>
-          )}
+          <div className="rounded-md flex items-center justify-center relative">
+            {agentInfo.avatar}
+          </div>
+          <p className="ml-2 text-sm text-muted-foreground">{agentInfo.name}</p>
         </div>
         <div className="flex w-full break-words">
           <div className="space-y-1.5 min-w-0 flex-1">
-            {/* Text content is always visible (ask/complete responses, text_content) */}
-            {renderedTextContent}
+            {renderedMessages}
+            {streamingContent}
             {playbackStreamingContent}
-            
-            {/* All tool calls go inside collapsible (collapsed by default like ChatGPT) */}
-            {showThinkingCollapsible && (
-              <ThinkingCollapsible
-                isThinking={isThinking}
-                startTime={thinkingStartTimeRef.current || undefined}
-                defaultOpen={false}
-              >
-                {/* Completed tool calls from previous messages */}
-                {renderedToolCalls}
-                {/* Streaming content */}
-                {streamingContent}
-                {previousToolCallsContent}
-                {currentToolCallContent}
-              </ThinkingCollapsible>
-            )}
-            
-            {/* Only ask/complete final response text stays visible */}
-            {askCompleteContent}
-            
-            {/* Show basic loader when waiting and no tools yet */}
-            {!showThinkingCollapsible && !askCompleteContent && isThinking && showLoader && (
-              <ThinkingCollapsible
-                isThinking={true}
-                defaultOpen={false}
-              />
+            {streamingToolCallContent}
+            {showLoader && (
+              <div className="mt-1.5">
+                <AgentLoader />
+              </div>
             )}
           </div>
         </div>
@@ -881,7 +721,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
         const rawName = recentAssistantWithAgent.agents.name;
         const name =
           typeof rawName === "string" ? rawName : String(rawName || "Kortix");
-        const isKortix = name === "Kortix";
         return {
           name,
           avatar: (
@@ -889,15 +728,12 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
               <KortixLogo size={14} />
             </div>
           ),
-          useLogomark: isKortix,
         };
       }
       const fallbackName = typeof agentName === "string" ? agentName : "Kortix";
-      const isKortix = fallbackName === "Kortix" || !fallbackName;
       return {
         name: fallbackName || "Kortix",
         avatar: agentAvatar,
-        useLogomark: isKortix,
       };
     }, [threadMetadata, displayMessages, agentName, agentAvatar]);
 
@@ -1219,27 +1055,18 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
           </div>
 
           {showNewGroupLoader && (
-            <div ref={latestMessageRef} className="w-full rounded mt-6">
+            <div ref={latestMessageRef} className="w-full h-22 rounded mt-6">
               <div className="flex flex-col gap-2">
                 <div className="flex items-center">
-                  {agentInfo.useLogomark ? (
-                    <KortixLogo variant="logomark" size={12} />
-                  ) : (
-                    <>
-                      <div className="rounded-md flex items-center justify-center">
-                        {agentInfo.avatar}
-                      </div>
-                      <p className="ml-2 text-sm text-muted-foreground">
-                        {agentInfo.name}
-                      </p>
-                    </>
-                  )}
+                  <div className="rounded-md flex items-center justify-center">
+                    {agentInfo.avatar}
+                  </div>
+                  <p className="ml-2 text-sm text-muted-foreground">
+                    {agentInfo.name}
+                  </p>
                 </div>
-                <div className="space-y-2 w-full">
-                  <ThinkingCollapsible
-                    isThinking={true}
-                    defaultOpen={false}
-                  />
+                <div className="space-y-2 w-full h-12">
+                  <AgentLoader />
                 </div>
               </div>
             </div>
@@ -1249,36 +1076,25 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
             <div ref={latestMessageRef} className="mt-6">
               <div className="flex flex-col gap-2">
                 <div className="flex justify-start">
-                  {agentInfo.useLogomark ? (
-                    <KortixLogo variant="logomark" size={12} />
-                  ) : (
-                    <>
-                      <div className="rounded-md flex items-center justify-center">
-                        {agentInfo.avatar}
-                      </div>
-                      <p className="ml-2 text-sm text-muted-foreground">
-                        {agentInfo.name}
-                      </p>
-                    </>
-                  )}
+                  <div className="rounded-md flex items-center justify-center">
+                    {agentInfo.avatar}
+                  </div>
+                  <p className="ml-2 text-sm text-muted-foreground">
+                    {agentInfo.name}
+                  </p>
                 </div>
                 <div className="space-y-2">
-                  <ThinkingCollapsible
-                    isThinking={true}
-                    defaultOpen={false}
-                  >
-                    <div className="animate-shimmer inline-flex items-center gap-1.5 py-1.5 px-3 text-xs font-medium text-primary bg-primary/10 rounded-md border border-primary/20">
-                      <AppIcon
-                        toolCall={currentToolCall}
-                        size={14}
-                        className="h-3.5 w-3.5 text-primary flex-shrink-0"
-                      />
-                      <span className="font-mono text-xs text-primary">
-                        {currentToolCall.name || "Using Tool"}
-                      </span>
-                      <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000 ml-auto" />
-                    </div>
-                  </ThinkingCollapsible>
+                  <div className="animate-shimmer inline-flex items-center gap-1.5 py-1.5 px-3 text-xs font-medium text-primary bg-primary/10 rounded-md border border-primary/20">
+                    <AppIcon
+                      toolCall={currentToolCall}
+                      size={14}
+                      className="h-3.5 w-3.5 text-primary flex-shrink-0"
+                    />
+                    <span className="font-mono text-xs text-primary">
+                      {currentToolCall.name || "Using Tool"}
+                    </span>
+                    <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000 ml-auto" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1291,18 +1107,12 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
               <div ref={latestMessageRef} className="mt-6">
                 <div className="flex flex-col gap-2">
                   <div className="flex justify-start">
-                    {agentInfo.useLogomark ? (
-                      <KortixLogo variant="logomark" size={12} />
-                    ) : (
-                      <>
-                        <div className="rounded-md flex items-center justify-center">
-                          {agentInfo.avatar}
-                        </div>
-                        <p className="ml-2 text-sm text-muted-foreground">
-                          {agentInfo.name}
-                        </p>
-                      </>
-                    )}
+                    <div className="rounded-md flex items-center justify-center">
+                      {agentInfo.avatar}
+                    </div>
+                    <p className="ml-2 text-sm text-muted-foreground">
+                      {agentInfo.name}
+                    </p>
                   </div>
                   <div className="max-w-[90%] px-4 py-3 text-sm">
                     <div className="flex items-center gap-1.5 py-1">

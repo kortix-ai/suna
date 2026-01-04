@@ -185,10 +185,7 @@ function renderRegularToolCall(
   );
 }
 
-/**
- * Renders ONLY text content, ask, and complete tool calls (visible to user)
- */
-export function renderAssistantTextContent(props: AssistantMessageRendererProps): React.ReactNode {
+export function renderAssistantMessage(props: AssistantMessageRendererProps): React.ReactNode {
   const { message, threadId, toolResults = [] } = props;
   const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
   
@@ -238,7 +235,7 @@ export function renderAssistantTextContent(props: AssistantMessageRendererProps)
     }
   });
   
-  // Render ONLY ask/complete tool calls (user-visible content)
+  // Render tool calls
   toolCalls.forEach((toolCall, index) => {
     const toolName = toolCall.function_name.replace(/_/g, '-');
     
@@ -265,57 +262,7 @@ export function renderAssistantTextContent(props: AssistantMessageRendererProps)
       contentParts.push(renderAskToolCall(normalizedToolCall, index, props));
     } else if (toolName === 'complete') {
       contentParts.push(renderCompleteToolCall(normalizedToolCall, index, props));
-    }
-    // Skip all other tool calls - they go in the collapsible
-  });
-  
-  return contentParts.length > 0 ? contentParts : null;
-}
-
-/**
- * Renders ONLY regular tool calls (hidden in collapsible)
- */
-export function renderAssistantToolCalls(props: AssistantMessageRendererProps): React.ReactNode {
-  const { message, toolResults = [] } = props;
-  const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
-  
-  const toolCalls = metadata.tool_calls || [];
-  const contentParts: React.ReactNode[] = [];
-  
-  // Render ONLY regular tool calls (not ask/complete)
-  toolCalls.forEach((toolCall, index) => {
-    const toolName = toolCall.function_name.replace(/_/g, '-');
-    
-    // Skip ask/complete - they are rendered in text content
-    if (toolName === 'ask' || toolName === 'complete') {
-      return;
-    }
-    
-    // Skip approval requests - they are rendered inline with text
-    if (toolName === 'request-apify-approval' || toolName === 'request_apify_approval') {
-      return;
-    }
-    
-    // Normalize arguments - handle both string and object types
-    let normalizedArguments: Record<string, any> = {};
-    if (toolCall.arguments) {
-      if (typeof toolCall.arguments === 'object' && toolCall.arguments !== null) {
-        normalizedArguments = toolCall.arguments;
-      } else if (typeof toolCall.arguments === 'string') {
-        try {
-          normalizedArguments = JSON.parse(toolCall.arguments);
-        } catch {
-          normalizedArguments = {};
-        }
-      }
-    }
-    
-    const normalizedToolCall = {
-      ...toolCall,
-      arguments: normalizedArguments
-    };
-    
-    if (toolName === 'image-edit-or-generate') {
+    } else if (toolName === 'image-edit-or-generate') {
       // Find matching tool result for this call
       const toolResult = toolResults.find(tr => {
         const trMeta = safeJsonParse<ParsedMetadata>(tr.metadata, {});
@@ -343,22 +290,3 @@ export function renderAssistantToolCalls(props: AssistantMessageRendererProps): 
   
   return contentParts.length > 0 ? contentParts : null;
 }
-
-/**
- * Legacy function - renders all content (text + tool calls together)
- * @deprecated Use renderAssistantTextContent and renderAssistantToolCalls instead
- */
-export function renderAssistantMessage(props: AssistantMessageRendererProps): React.ReactNode {
-  const textContent = renderAssistantTextContent(props);
-  const toolCalls = renderAssistantToolCalls(props);
-  
-  if (!textContent && !toolCalls) return null;
-  
-  return (
-    <>
-      {textContent}
-      {toolCalls}
-    </>
-  );
-}
-
