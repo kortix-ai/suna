@@ -125,10 +125,14 @@ export function useSmoothToolField(
 ): SmoothToolFieldResult {
   const [displayedLength, setDisplayedLength] = useState(0);
   
-  // Extract the field value
+  // Extract the field value - ensure it's always a string
   const fieldValue = useMemo(() => {
-    return extractFieldFromArguments(rawArguments, fieldPath);
+    const extracted = extractFieldFromArguments(rawArguments, fieldPath);
+    return extracted ?? '';
   }, [rawArguments, fieldPath]);
+
+  // Compute field length safely
+  const fieldLength = fieldValue?.length ?? 0;
 
   const animationConfig: SmoothAnimationConfig = useMemo(() => ({
     charsPerSecond,
@@ -140,31 +144,31 @@ export function useSmoothToolField(
 
   // Handle content reset
   useEffect(() => {
-    if (didTargetShrink(fieldValue.length)) {
+    if (didTargetShrink(fieldLength)) {
       reset();
       setDisplayedLength(0);
     }
-  }, [fieldValue.length, didTargetShrink, reset]);
+  }, [fieldLength, didTargetShrink, reset]);
 
   // Handle animation
   useEffect(() => {
     if (!enabled || !fieldValue) {
-      setDisplayedLength(fieldValue.length);
-      stateRef.current.displayedLength = fieldValue.length;
+      setDisplayedLength(fieldLength);
+      stateRef.current.displayedLength = fieldLength;
       return;
     }
 
-    if (stateRef.current.displayedLength >= fieldValue.length) {
+    if (stateRef.current.displayedLength >= fieldLength) {
       return;
     }
 
     animate(
-      fieldValue.length,
+      fieldLength,
       (newLength) => setDisplayedLength(newLength)
     );
 
     return () => stop();
-  }, [fieldValue, enabled, animate, stop, stateRef]);
+  }, [fieldValue, fieldLength, enabled, animate, stop, stateRef]);
 
   // Sync state with ref
   useEffect(() => {
@@ -172,16 +176,17 @@ export function useSmoothToolField(
   }, [displayedLength, stateRef]);
 
   const result = useMemo((): SmoothToolFieldResult => {
-    const displayedValue = enabled ? fieldValue.slice(0, displayedLength) : fieldValue;
-    const isAnimating = enabled && displayedLength < fieldValue.length;
+    const safeFieldValue = fieldValue ?? '';
+    const displayedValue = enabled ? safeFieldValue.slice(0, displayedLength) : safeFieldValue;
+    const isAnimating = enabled && displayedLength < fieldLength;
     
     // Debug logging for smooth tool field
-    if (enabled && fieldValue.length > 0) {
-      console.log('[SmoothToolField]', fieldPath, '| Raw length:', fieldValue.length, '| Displayed:', displayedLength, '| Animating:', isAnimating);
+    if (enabled && fieldLength > 0) {
+      console.log('[SmoothToolField]', fieldPath, '| Raw length:', fieldLength, '| Displayed:', displayedLength, '| Animating:', isAnimating);
     }
     
     return { displayedValue, isAnimating };
-  }, [enabled, fieldValue, displayedLength, fieldPath]);
+  }, [enabled, fieldValue, fieldLength, displayedLength, fieldPath]);
 
   return result;
 }
