@@ -353,7 +353,19 @@ class AgentRunner:
     
     async def _setup_tools_async(self):
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self.setup_tools)
+        submit_time = time.time()
+        
+        def setup_tools_with_timing():
+            queue_wait = (time.time() - submit_time) * 1000
+            logger.info(f"⏱️ [EXECUTOR] Queue wait: {queue_wait:.1f}ms")
+            exec_start = time.time()
+            self.setup_tools()
+            exec_time = (time.time() - exec_start) * 1000
+            logger.info(f"⏱️ [EXECUTOR] Execution: {exec_time:.1f}ms")
+        
+        await loop.run_in_executor(None, setup_tools_with_timing)
+        total_time = (time.time() - submit_time) * 1000
+        logger.info(f"⏱️ [EXECUTOR] Total: {total_time:.1f}ms")
     
     def _get_migrated_tools_config(self) -> dict:
         if not self.config.agent_config or 'agentpress_tools' not in self.config.agent_config:
