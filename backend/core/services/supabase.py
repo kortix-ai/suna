@@ -8,6 +8,8 @@ import os
 from datetime import datetime
 import threading
 import httpx
+import time
+import asyncio
 
 # =============================================================================
 # Connection Pool Configuration
@@ -46,6 +48,7 @@ SUPABASE_RETRIES = int(os.getenv("SUPABASE_RETRIES", "3"))  # Transport-level re
 class DBConnection:
     _instance: Optional['DBConnection'] = None
     _lock = threading.Lock()
+    _async_lock: Optional[asyncio.Lock] = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -55,10 +58,36 @@ class DBConnection:
                     cls._instance._initialized = False
                     cls._instance._client = None
                     cls._instance._http_client = None
+                    cls._instance._last_reset_time = 0
+                    cls._instance._consecutive_errors = 0
         return cls._instance
 
     def __init__(self):
         pass
+    
+    @classmethod
+    def is_route_not_found_error(cls, error) -> bool:
+        """Check if an error is a PostgREST 'Route not found' error indicating stale connection."""
+        error_str = str(error).lower()
+        return (
+            'route' in error_str and 'not found' in error_str
+        ) or (
+            'statuscode' in error_str and '404' in error_str and 'route' in error_str
+        )
+    
+    async def force_reconnect(self):
+        """Force reconnection - call this when you detect route-not-found errors."""
+        current_time = time.time()
+        # Prevent reconnection spam (max once per 5 seconds)
+        if current_time - self._last_reset_time < 5:
+            logger.debug("Skipping reconnect - too soon since last reset")
+            return
+        
+        logger.warning("🔄 Forcing Supabase reconnection due to connection issues...")
+        self._last_reset_time = current_time
+        await self.reset_connection()
+        await self.initialize()
+        logger.info("✅ Supabase connection re-established")
 
     def _create_http_client(self) -> httpx.AsyncClient:
         """
@@ -179,3 +208,45 @@ class DBConnection:
             logger.error("Database client is None after initialization")
             raise RuntimeError("Database not initialized")
         return self._client
+    
+    async def get_client_with_retry(self, max_retries: int = 2) -> AsyncClient:
+        """
+        Get client with automatic reconnection on route-not-found errors.
+        Use this for critical operations that need resilience.
+        """
+        for attempt in range(max_retries + 1):
+            try:
+                if not self._initialized:
+                    await self.initialize()
+                if not self._client:
+                    raise RuntimeError("Database not initialized")
+                return self._client
+            except Exception as e:
+                if self.is_route_not_found_error(e) and attempt < max_retries:
+                    logger.warning(f"🔄 DB connection error (attempt {attempt + 1}/{max_retries + 1}), forcing reconnect...")
+                    await self.force_reconnect()
+                else:
+                    raise
+        return self._client
+
+
+async def execute_with_reconnect(db: DBConnection, operation, max_retries: int = 2):
+    """
+    Execute a database operation with automatic reconnection on route-not-found errors.
+    
+    Usage:
+        result = await execute_with_reconnect(db, lambda client: client.table('x').select('*').execute())
+    """
+    last_error = None
+    for attempt in range(max_retries + 1):
+        try:
+            client = await db.client
+            return await operation(client)
+        except Exception as e:
+            last_error = e
+            if DBConnection.is_route_not_found_error(e) and attempt < max_retries:
+                logger.warning(f"🔄 Route-not-found error (attempt {attempt + 1}/{max_retries + 1}), reconnecting...")
+                await db.force_reconnect()
+            else:
+                raise
+    raise last_error

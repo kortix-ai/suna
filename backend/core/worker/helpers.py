@@ -439,6 +439,8 @@ async def update_agent_run_status(
     account_id: Optional[str] = None,
 ) -> bool:
     """Update agent run status in database."""
+    from core.services.supabase import DBConnection
+    
     try:
         update_data = {
             "status": status,
@@ -447,9 +449,12 @@ async def update_agent_run_status(
         if error:
             update_data["error"] = error
 
+        db = DBConnection()
+        current_client = client
+        
         for retry_num in range(3):
             try:
-                update_result = await client.table('agent_runs').update(update_data).eq("id", agent_run_id).execute()
+                update_result = await current_client.table('agent_runs').update(update_data).eq("id", agent_run_id).execute()
 
                 if hasattr(update_result, 'data') and update_result.data:
                     if account_id:
@@ -472,7 +477,12 @@ async def update_agent_run_status(
                         return False
             except Exception as db_error:
                 logger.error(f"Database error on retry {retry_num} for {agent_run_id}: {db_error}")
-                if retry_num < 2:
+                # Check if this is a route-not-found error and try reconnecting
+                if DBConnection.is_route_not_found_error(db_error) and retry_num < 2:
+                    logger.warning(f"🔄 Route-not-found error, forcing reconnection...")
+                    await db.force_reconnect()
+                    current_client = await db.client
+                elif retry_num < 2:
                     await asyncio.sleep(0.5 * (2 ** retry_num))
                 else:
                     return False

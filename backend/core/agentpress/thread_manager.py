@@ -115,30 +115,48 @@ class ThreadManager:
         if agent_version_id:
             data_to_insert['agent_version_id'] = agent_version_id
 
-        try:
-            result = await client.table('messages').insert(data_to_insert).execute()
+        max_retries = 2
+        last_error = None
+        
+        for attempt in range(max_retries + 1):
+            try:
+                # Re-fetch client on retry in case of reconnection
+                if attempt > 0:
+                    client = await self.db.client
+                    
+                result = await client.table('messages').insert(data_to_insert).execute()
 
-            if result.data and len(result.data) > 0 and 'message_id' in result.data[0]:
-                saved_message = result.data[0]
-                
-                # Invalidate message history cache when new message is added
-                if is_llm_message:
-                    try:
-                        from core.cache.runtime_cache import invalidate_message_history_cache
-                        await invalidate_message_history_cache(thread_id)
-                    except Exception as e:
-                        logger.debug(f"Failed to invalidate message history cache: {e}")
-                
-                if type == "llm_response_end" and isinstance(content, dict):
-                    await self._handle_billing(thread_id, content, saved_message)
-                
-                return saved_message
-            else:
-                logger.error(f"Insert operation failed for thread {thread_id}")
-                return None
-        except Exception as e:
-            logger.error(f"Failed to add message to thread {thread_id}: {str(e)}", exc_info=True)
-            raise
+                if result.data and len(result.data) > 0 and 'message_id' in result.data[0]:
+                    saved_message = result.data[0]
+                    
+                    # Invalidate message history cache when new message is added
+                    if is_llm_message:
+                        try:
+                            from core.cache.runtime_cache import invalidate_message_history_cache
+                            await invalidate_message_history_cache(thread_id)
+                        except Exception as e:
+                            logger.debug(f"Failed to invalidate message history cache: {e}")
+                    
+                    if type == "llm_response_end" and isinstance(content, dict):
+                        await self._handle_billing(thread_id, content, saved_message)
+                    
+                    return saved_message
+                else:
+                    logger.error(f"Insert operation failed for thread {thread_id}")
+                    return None
+            except Exception as e:
+                last_error = e
+                # Check if this is a route-not-found error (stale connection)
+                from core.services.supabase import DBConnection
+                if DBConnection.is_route_not_found_error(e) and attempt < max_retries:
+                    logger.warning(f"🔄 Route-not-found error in add_message (attempt {attempt + 1}/{max_retries + 1}), reconnecting...")
+                    await self.db.force_reconnect()
+                    continue
+                logger.error(f"Failed to add message to thread {thread_id}: {str(e)}", exc_info=True)
+                raise
+        
+        if last_error:
+            raise last_error
 
     async def _handle_billing(self, thread_id: str, content: dict, saved_message: dict):
         try:
