@@ -23,15 +23,23 @@ class PromptManager:
                                   use_dynamic_tools: bool = True,
                                   mcp_loader=None) -> Tuple[dict, Optional[dict]]:
         
+        build_start = time.time()
+        
         if agent_config and agent_config.get('system_prompt'):
             system_content = agent_config['system_prompt'].strip()
         else:
             from core.prompts.core_prompt import get_core_system_prompt
             system_content = get_core_system_prompt()
         
+        t1 = time.time()
         system_content = PromptManager._build_base_prompt(system_content, use_dynamic_tools)
-        system_content = await PromptManager._append_builder_tools_prompt(system_content, agent_config)
+        logger.debug(f"⏱️ [PROMPT TIMING] _build_base_prompt: {(time.time() - t1) * 1000:.1f}ms")
         
+        t2 = time.time()
+        system_content = await PromptManager._append_builder_tools_prompt(system_content, agent_config)
+        logger.debug(f"⏱️ [PROMPT TIMING] _append_builder_tools_prompt: {(time.time() - t2) * 1000:.1f}ms")
+        
+        # Start parallel fetch tasks
         kb_task = PromptManager._fetch_knowledge_base(agent_config, client)
         user_context_task = PromptManager._fetch_user_context_data(user_id, client)
         memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
@@ -40,12 +48,22 @@ class PromptManager:
         # Get agent_id for fresh config loading
         agent_id = agent_config.get('agent_id') if agent_config else None
         
+        t3 = time.time()
         system_content = await PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance, agent_id, user_id)
+        logger.debug(f"⏱️ [PROMPT TIMING] _append_mcp_tools_info: {(time.time() - t3) * 1000:.1f}ms")
+        
+        t4 = time.time()
         system_content = await PromptManager._append_jit_mcp_info(system_content, mcp_loader, agent_id, user_id)
+        logger.debug(f"⏱️ [PROMPT TIMING] _append_jit_mcp_info: {(time.time() - t4) * 1000:.1f}ms")
+        
         system_content = PromptManager._append_xml_tool_calling_instructions(system_content, xml_tool_calling, tool_registry)
         system_content = PromptManager._append_datetime_info(system_content)
         
+        t5 = time.time()
         kb_data, user_context_data, memory_data, file_data = await asyncio.gather(kb_task, user_context_task, memory_task, file_task)
+        logger.debug(f"⏱️ [PROMPT TIMING] parallel fetches (kb/user_context/memory/file): {(time.time() - t5) * 1000:.1f}ms")
+        
+        logger.info(f"⏱️ [PROMPT TIMING] Total build_system_prompt: {(time.time() - build_start) * 1000:.1f}ms")
         
         if kb_data:
             system_content += kb_data

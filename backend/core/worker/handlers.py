@@ -124,7 +124,9 @@ async def handle_agent_run(task: AgentRunTask):
         except:
             pass
         
+        t_agent_config = time.time()
         agent_config = await load_agent_config(agent_id, account_id)
+        logger.info(f"⏱️ [HANDLER TIMING] load_agent_config: {(time.time() - t_agent_config) * 1000:.1f}ms")
         
         set_tool_output_streaming_context(
             agent_run_id=agent_run_id,

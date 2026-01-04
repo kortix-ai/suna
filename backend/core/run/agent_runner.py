@@ -50,9 +50,8 @@ class AgentRunner:
             self.config.trace = langfuse.trace(name="run_agent", session_id=self.config.thread_id, metadata={"project_id": self.config.project_id})
         
         from core.jit.config import JITConfig
-        # Get disabled tools via ToolManager
-        temp_tool_manager = ToolManager(self.thread_manager, self.config.project_id, self.config.thread_id, self.config.agent_config)
-        disabled_tools = temp_tool_manager.get_disabled_tools_from_config()
+        # Get disabled tools from config (before ThreadManager is created)
+        disabled_tools = self._get_disabled_tools_from_config()
         jit_config = JITConfig.from_run_context(
             agent_config=self.config.agent_config,
             disabled_tools=disabled_tools
@@ -87,12 +86,16 @@ class AgentRunner:
         
         # Initialize MCP with cache_only=True (fast, no network calls)
         await stream_status_message("initializing", "Setting up MCP tools...")
+        mcp_start = time.time()
         if self.config.agent_config:
             mcp_manager = MCPManager(self.thread_manager, self.account_id)
             await mcp_manager.initialize_jit_loader(self.config.agent_config, cache_only=True)
+        logger.info(f"⏱️ [SETUP TIMING] MCP initialize_jit_loader: {(time.time() - mcp_start) * 1000:.1f}ms")
         
         # Ensure project metadata is cached (non-blocking if already cached)
+        project_meta_start = time.time()
         await ensure_project_metadata_cached(self.config.project_id, self.client)
+        logger.info(f"⏱️ [SETUP TIMING] ensure_project_metadata_cached: {(time.time() - project_meta_start) * 1000:.1f}ms")
         
         # Warm tool cache in background (non-blocking)
         from core.jit.tool_cache import get_tool_cache
@@ -106,6 +109,50 @@ class AgentRunner:
         
         elapsed_ms = (time.time() - setup_start) * 1000
         logger.info(f"✅ [SETUP] Complete in {elapsed_ms:.1f}ms")
+    
+    def _get_disabled_tools_from_config(self) -> List[str]:
+        """Get list of disabled tools from agent config."""
+        disabled_tools = []
+        
+        if not self.config.agent_config or 'agentpress_tools' not in self.config.agent_config:
+            return disabled_tools
+        
+        raw_tools = self.config.agent_config['agentpress_tools']
+        
+        if not isinstance(raw_tools, dict):
+            return disabled_tools
+        
+        if self.config.agent_config.get('is_suna_default', False) and not raw_tools:
+            return disabled_tools
+        
+        def is_tool_enabled(tool_name: str) -> bool:
+            try:
+                tool_config = raw_tools.get(tool_name, True)
+                if isinstance(tool_config, bool):
+                    return tool_config
+                elif isinstance(tool_config, dict):
+                    return tool_config.get('enabled', True)
+                else:
+                    return True
+            except Exception:
+                return True
+        
+        all_tools = [
+            'sb_shell_tool', 'sb_files_tool', 'sb_expose_tool',
+            'web_search_tool', 'image_search_tool', 'sb_vision_tool', 'sb_presentation_tool', 'sb_image_edit_tool',
+            'sb_kb_tool', 'sb_design_tool', 'sb_upload_file_tool',
+            'browser_tool', 'people_search_tool', 'company_search_tool', 
+            'apify_tool', 'reality_defender_tool', 'vapi_voice_tool', 'paper_search_tool',
+            'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool',
+            'agent_creation_tool'
+        ]
+        
+        for tool_name in all_tools:
+            if not is_tool_enabled(tool_name):
+                disabled_tools.append(tool_name)
+                
+        logger.debug(f"Disabled tools from config: {disabled_tools}")
+        return disabled_tools
     
     def setup_tools(self):
         start = time.time()
@@ -182,9 +229,13 @@ class AgentRunner:
         await stream_status_message("initializing", "Registering tools...")
         setup_tools_task = asyncio.create_task(self._setup_tools_async())
         await setup_tools_task
+        logger.info(f"⏱️ [PREPARE TIMING] _setup_tools_async: {(time.time() - parallel_start) * 1000:.1f}ms")
 
+        restore_start = time.time()
         await self._restore_dynamic_tools()
+        logger.info(f"⏱️ [PREPARE TIMING] _restore_dynamic_tools: {(time.time() - restore_start) * 1000:.1f}ms")
         
+        mcp_clean_start = time.time()
         if (hasattr(self.thread_manager, 'mcp_loader') and 
             self.config.agent_config and 
             (self.config.agent_config.get("custom_mcps") or self.config.agent_config.get("configured_mcps"))):
@@ -193,12 +244,14 @@ class AgentRunner:
             mcp_manager.clean_legacy_mcp_tools()
         else:
             logger.info("⚠️ [MCP] No MCP configs, skipping")
+        logger.info(f"⏱️ [PREPARE TIMING] MCP cleanup: {(time.time() - mcp_clean_start) * 1000:.1f}ms")
         
         tools_elapsed = (time.time() - parallel_start) * 1000
-        logger.info(f"⏱️ [TIMING] Tool setup: {tools_elapsed:.1f}ms")
+        logger.info(f"⏱️ [TIMING] Tool setup total: {tools_elapsed:.1f}ms")
         
         await stream_status_message("initializing", "Building system prompt...")
         prompt_start = time.time()
+        logger.info(f"⏱️ [PREPARE TIMING] About to call build_system_prompt...")
         
         system_message, memory_context = await PromptManager.build_system_prompt(
             self.config.model_name, self.config.agent_config, 
@@ -209,7 +262,7 @@ class AgentRunner:
             user_id=self.account_id,
             mcp_loader=getattr(self.thread_manager, 'mcp_loader', None)
         )
-        logger.info(f"⏱️ [TIMING] build_system_prompt() in {(time.time() - prompt_start) * 1000:.1f}ms ({len(str(system_message.get('content', '')))} chars)")
+        logger.info(f"⏱️ [PREPARE TIMING] build_system_prompt: {(time.time() - prompt_start) * 1000:.1f}ms ({len(str(system_message.get('content', '')))} chars)")
         
         if memory_context:
             self.thread_manager.set_memory_context(memory_context)
@@ -270,6 +323,13 @@ class AgentRunner:
         if latest_message.data and len(latest_message.data) > 0:
             message_type = latest_message.data[0].get('type')
             if message_type == 'assistant':
+                # No new user message after assistant response - stop the loop
+                logger.debug(f"Last message is assistant, no new input - stopping execution for {self.config.thread_id}")
+                yield {
+                    "type": "status",
+                    "status": "stopped",
+                    "message": "Execution complete - awaiting user input"
+                }
                 return
 
         temporary_message = None
@@ -357,8 +417,14 @@ class AgentRunner:
                 return
                 
             if agent_should_terminate or last_tool_call in ['ask', 'complete']:
+                logger.debug(f"Agent termination signal: terminate={agent_should_terminate}, tool_call={last_tool_call}")
                 if generation:
                     generation.end(status_message="agent_stopped")
+                yield {
+                    "type": "status",
+                    "status": "stopped",
+                    "message": f"Agent completed (tool_call={last_tool_call})"
+                }
 
         except Exception as e:
             processed_error = ErrorProcessor.process_system_error(e, context={"thread_id": self.config.thread_id})

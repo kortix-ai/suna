@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { LoadingState } from '../shared/LoadingState';
 import { extractWebSearchData } from './_utils';
+import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
 
 export function WebSearchToolView({
   toolCall,
@@ -34,6 +35,15 @@ export function WebSearchToolView({
 }: ToolViewProps) {
   const [expandedResults, setExpandedResults] = useState<Record<number, boolean>>({});
   const [currentQueryIndex, setCurrentQueryIndex] = useState(0);
+
+  // Apply smooth text streaming for query field
+  const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
+  const { displayedValue: smoothQuery, isAnimating: isQueryAnimating } = useSmoothToolField(
+    rawArguments,
+    'query',
+    120,
+    isStreaming && !toolResult
+  );
 
   const {
     query,
@@ -52,6 +62,9 @@ export function WebSearchToolView({
     toolTimestamp,
     assistantTimestamp
   );
+
+  // Use smooth query when streaming
+  const displayQuery = isStreaming && smoothQuery ? smoothQuery : query;
 
   // Reset to first query when batch results change
   useEffect(() => {
@@ -149,7 +162,7 @@ export function WebSearchToolView({
             iconColor="text-blue-500 dark:text-blue-400"
             bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
             title={name === 'image-search' ? "Searching for images" : "Searching the web"}
-            filePath={typeof query === 'string' ? query : undefined}
+            filePath={typeof displayQuery === 'string' ? displayQuery : undefined}
             showProgress={true}
           />
         ) : searchResults.length > 0 || answer || images.length > 0 ? (

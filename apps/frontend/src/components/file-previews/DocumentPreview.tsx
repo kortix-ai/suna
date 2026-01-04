@@ -62,7 +62,7 @@ export function DocumentPreview({
     // Markdown Preview
     if (isMarkdown) {
         return (
-            <div className={cn(className || "h-full w-full overflow-auto p-4")}>
+            <div className={cn("h-full w-full overflow-auto px-6 py-4", className)}>
                 <UnifiedMarkdown content={fileContent} />
             </div>
         );

@@ -24,6 +24,8 @@ import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import Image from 'next/image';
+import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
+import { useSmoothText } from '@/hooks/messages/useSmoothText';
 
 export function WebCrawlToolView({
   toolCall,
@@ -63,6 +65,15 @@ export function WebCrawlToolView({
 
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
 
+  // Apply smooth text streaming for URL field
+  const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
+  const { displayedValue: smoothUrl, isAnimating: isUrlAnimating } = useSmoothToolField(
+    rawArguments,
+    'url',
+    120,
+    isStreaming && !toolResult
+  );
+
   // Extract data directly from structured props
   const url = toolCall.arguments?.url || toolCall.arguments?.target_url || null;
   
@@ -77,6 +88,19 @@ export function WebCrawlToolView({
     }
   }
 
+  // Apply smooth text streaming for content
+  const { text: smoothContent, isAnimating: isContentAnimating } = useSmoothText(
+    webpageContent?.text || '',
+    120,
+    isStreaming && !toolResult && !!webpageContent?.text
+  );
+
+  // Use smooth URL when streaming
+  const displayUrl = isStreaming && smoothUrl ? smoothUrl : url;
+  
+  // Use smooth content when streaming
+  const displayContent = isStreaming && smoothContent ? smoothContent : webpageContent?.text;
+
   const toolTitle = getToolTitle(name);
 
   // Format domain for display
@@ -89,7 +113,7 @@ export function WebCrawlToolView({
     }
   };
 
-  const domain = url ? formatDomain(url) : 'Unknown';
+  const domain = displayUrl ? formatDomain(displayUrl) : 'Unknown';
 
   // Get favicon
   const getFavicon = (url: string) => {
@@ -101,13 +125,14 @@ export function WebCrawlToolView({
     }
   };
 
-  const favicon = url ? getFavicon(url) : null;
+  const favicon = displayUrl || url ? getFavicon(displayUrl || url) : null;
 
   const copyContent = async () => {
-    if (!webpageContent?.text) return;
+    const contentToCopy = displayContent || webpageContent?.text;
+    if (!contentToCopy) return;
 
     try {
-      await navigator.clipboard.writeText(webpageContent.text);
+      await navigator.clipboard.writeText(contentToCopy);
       setCopiedContent(true);
       setTimeout(() => setCopiedContent(false), 2000);
     } catch (err) {
@@ -126,7 +151,7 @@ export function WebCrawlToolView({
     return { wordCount, charCount, lineCount };
   };
 
-  const contentStats = webpageContent?.text ? getContentStats(webpageContent.text) : null;
+  const contentStats = displayContent || webpageContent?.text ? getContentStats(displayContent || webpageContent?.text || '') : null;
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
@@ -175,13 +200,14 @@ export function WebCrawlToolView({
                 Crawling Webpage
               </h3>
               <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">
-                Fetching content from <span className="font-mono text-xs break-all">{domain}</span>
+                Fetching content from <span className="font-mono text-xs break-all">{displayUrl || domain}</span>
+                {isUrlAnimating && <span className="animate-pulse text-muted-foreground ml-1">▌</span>}
               </p>
               <Progress value={progress} className="w-full h-1" />
               <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-2">{progress}% complete</p>
             </div>
           </div>
-        ) : url ? (
+        ) : (displayUrl || url) ? (
           // Results State
           <ScrollArea className="h-full w-full">
             <div className="p-4 py-0 my-4">
@@ -207,8 +233,9 @@ export function WebCrawlToolView({
                       />
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="font-mono text-sm text-zinc-900 dark:text-zinc-100 truncate">{truncateString(url, 70)}</p>
+                      <p className="font-mono text-sm text-zinc-900 dark:text-zinc-100 truncate">{truncateString(displayUrl || '', 70)}</p>
                       <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{domain}</p>
+                      {isUrlAnimating && <span className="animate-pulse text-muted-foreground ml-1">▌</span>}
                     </div>
                     <Button
                       variant="ghost"
@@ -216,7 +243,7 @@ export function WebCrawlToolView({
                       className="opacity-70 group-hover:opacity-100 transition-opacity"
                       asChild
                     >
-                      <a href={url} target="_blank" rel="noopener noreferrer">
+                      <a href={displayUrl || url} target="_blank" rel="noopener noreferrer">
                         <ArrowUpRight className="w-4 h-4" />
                       </a>
                     </Button>
@@ -243,7 +270,7 @@ export function WebCrawlToolView({
                   )}
                 </div>
 
-                {webpageContent?.text ? (
+                {(displayContent || webpageContent?.text) ? (
                   <div className="group relative bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-200 hover:shadow-sm">
                     {/* Content Header */}
                     <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-700">
@@ -294,7 +321,8 @@ export function WebCrawlToolView({
                     {/* Content Body */}
                     <div className="p-4 max-h-96 overflow-auto">
                       <pre className="text-xs font-mono text-zinc-800 dark:text-zinc-300 whitespace-pre-wrap leading-relaxed">
-                        {webpageContent.text}
+                        {displayContent || webpageContent?.text}
+                        {isContentAnimating && <span className="animate-pulse text-muted-foreground">▌</span>}
                       </pre>
                     </div>
                   </div>
