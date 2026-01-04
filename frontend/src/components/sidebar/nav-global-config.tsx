@@ -48,50 +48,54 @@ export function NavGlobalConfig() {
             {/* Triggers Option */}
             <SpotlightCard
                 className={cn(
-                    "transition-all cursor-pointer rounded-2xl",
-                    isTriggersActive ? "border-[1.5px] bg-background dark:bg-card" : "bg-transparent"
+                    "transition-colors cursor-pointer",
+                    isTriggersActive ? "bg-muted" : "bg-transparent"
                 )}
             >
                 <div
-                    className="flex items-center gap-2.5 py-2 px-2 text-sm"
+                    className="flex items-center gap-3 p-2.5 text-sm"
                     onClick={() => handleNavigation('/triggers')}
                 >
-                    <Zap className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
+                        <Zap className="h-4 w-4 text-muted-foreground" />
+                    </div>
                     <span className="flex-1 truncate">All Triggers</span>
-                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                 </div>
             </SpotlightCard>
 
             {/* Individual Triggers List */}
             {isLoading ? (
-                <div className="space-y-1 mt-1">
+                <div className="space-y-1 mt-2">
                     {Array.from({ length: 2 }).map((_, index) => (
-                        <div key={`skeleton-${index}`} className="flex items-center gap-2.5 px-2 py-2">
-                            <div className="h-4 w-4 bg-muted/30 rounded animate-pulse"></div>
-                            <div className="h-3.5 bg-muted/30 rounded flex-1 animate-pulse"></div>
+                        <div key={`skeleton-${index}`} className="flex items-center gap-3 px-2 py-2">
+                            <div className="h-10 w-10 bg-muted/10 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
+                            <div className="h-4 bg-muted rounded flex-1 animate-pulse"></div>
                         </div>
                     ))}
                 </div>
             ) : triggers.length > 0 ? (
-                <div className="space-y-1 mt-1">
+                <div className="space-y-1 mt-2">
                     {triggers.slice(0, 5).map((trigger) => {
                         const isActive = activeTriggerIdFromUrl === trigger.trigger_id;
                         return (
                             <SpotlightCard
                                 key={trigger.trigger_id}
                                 className={cn(
-                                    "transition-all cursor-pointer rounded-2xl",
-                                    isActive ? "border-[1.5px] bg-background dark:bg-card" : "bg-transparent"
+                                    "transition-colors cursor-pointer",
+                                    isActive ? "bg-muted" : "bg-transparent"
                                 )}
                             >
                                 <div
-                                    className="flex items-center gap-2.5 py-2 px-2 text-sm"
+                                    className="flex items-center gap-3 p-2.5 text-sm"
                                     onClick={() => {
                                         router.push(`/triggers?trigger_id=${trigger.trigger_id}`);
                                         if (isMobile) setOpenMobile(false);
                                     }}
                                 >
-                                    <Zap className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                    <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
+                                        <Zap className="h-4 w-4 text-muted-foreground" />
+                                    </div>
                                     <span className="flex-1 truncate text-muted-foreground">{trigger.name}</span>
                                 </div>
                             </SpotlightCard>
@@ -105,9 +109,9 @@ export function NavGlobalConfig() {
                     <Button
                         variant="outline"
                         size="sm"
-                        className="w-full shadow-none justify-center items-center h-8 px-3 bg-background mt-2 text-xs"
+                        className="w-full shadow-none justify-start items-center h-10 px-4 bg-background mt-3"
                     >
-                        <Plus className="h-3.5 w-3.5" />
+                        <Plus className="h-4 w-4" />
                         Add Trigger
                     </Button>
                 </DropdownMenuTrigger>
