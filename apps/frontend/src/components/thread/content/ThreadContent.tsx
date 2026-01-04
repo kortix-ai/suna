@@ -618,10 +618,21 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     <div key={group.key} ref={isLastGroup ? latestMessageRef : null}>
       <div className="flex flex-col gap-2">
         <div className="flex items-center">
-          <div className="rounded-md flex items-center justify-center relative">
-            {agentInfo.avatar}
-          </div>
-          <p className="ml-2 text-sm text-muted-foreground">{agentInfo.name}</p>
+          {agentInfo.name === "Kortix" ? (
+            <img
+              src="/kortix-logomark-white.svg"
+              alt="Kortix"
+              className="dark:invert-0 invert flex-shrink-0"
+              style={{ height: '12px', width: 'auto' }}
+            />
+          ) : (
+            <>
+              <div className="rounded-md flex items-center justify-center relative">
+                {agentInfo.avatar}
+              </div>
+              <p className="ml-2 text-sm text-muted-foreground">{agentInfo.name}</p>
+            </>
+          )}
         </div>
         <div className="flex w-full break-words">
           <div className="space-y-1.5 min-w-0 flex-1">
