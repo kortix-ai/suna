@@ -5,7 +5,7 @@ on:
     branches:
       - main      # Staging environment → main EAS branch/channel
       - staging   # Staging environment → main EAS branch/channel
-      - PRODUCTION # Production environment → production EAS branch/channel
+      # PRODUCTION requires manual trigger via workflow_dispatch
     paths:
       - 'apps/mobile/**'
       - '.github/workflows/mobile-eas-update.yml'
