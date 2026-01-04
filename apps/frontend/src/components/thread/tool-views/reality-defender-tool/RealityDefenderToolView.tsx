@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   HelpCircle,
-  Loader2,
   Image as ImageIcon,
   Music,
   Video,
@@ -117,25 +116,6 @@ export function RealityDefenderToolView({
             </div>
           </div>
 
-          {!isStreaming && (
-            <Badge
-              variant="secondary"
-              className={
-                actualIsSuccess
-                  ? "bg-linear-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                  : "bg-linear-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              }
-            >
-              {actualIsSuccess ? 'Analysis complete' : 'Analysis failed'}
-            </Badge>
-          )}
-
-          {isStreaming && (
-            <Badge className="bg-linear-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300">
-              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-              Analyzing
-            </Badge>
-          )}
         </div>
       </CardHeader>
 

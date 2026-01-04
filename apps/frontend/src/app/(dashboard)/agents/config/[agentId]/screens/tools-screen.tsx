@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAgent, useUpdateAgent } from '@/hooks/agents/use-agents';
 import { GranularToolConfiguration } from '@/components/agents/tools/granular-tool-configuration';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface ToolsScreenProps {

@@ -15,7 +15,6 @@ import {
   DialogFooter
 } from '@/components/ui/dialog';
 import { 
-  Loader2, 
   CheckCircle2, 
   XCircle, 
   Zap, 
@@ -23,6 +22,7 @@ import {
   RefreshCw,
   Save
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
 
 import { useCustomMCPToolsData } from '@/hooks/agents/use-custom-mcp-tools';
@@ -323,7 +323,7 @@ export const ToolsManager: React.FC<ToolsManagerProps> = (props) => {
                 >
                   {isUpdating ? (
                     <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      <KortixLoader customSize={16} className="mr-2" />
                       Saving...
                     </>
                   ) : saveMode === 'callback' ? (

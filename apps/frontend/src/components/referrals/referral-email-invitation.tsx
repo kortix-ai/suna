@@ -7,7 +7,7 @@ import { Mail, X, Loader2, Check } from 'lucide-react';
 import { useSendReferralEmails } from '@/hooks/referrals/use-referrals';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 interface ReferralEmailProps {
   className?: string;

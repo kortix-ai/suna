@@ -222,6 +222,24 @@ export const HIDE_STREAMING_XML_TAGS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Tools that should be hidden from non-technical users
+ * These are internal/initialization tools that don't provide meaningful user feedback
+ */
+export const HIDDEN_TOOLS: ReadonlySet<string> = new Set([
+  'initialize-tools',
+  'initialize_tools',
+]);
+
+/**
+ * Check if a tool should be hidden from the user
+ */
+export function isHiddenTool(toolName: string): boolean {
+  if (!toolName) return false;
+  const normalizedName = toolName.toLowerCase().replace(/_/g, '-');
+  return HIDDEN_TOOLS.has(normalizedName) || HIDDEN_TOOLS.has(toolName);
+}
+
+/**
  * Tools that support streaming content display
  * These tools show real-time content updates during execution
  */

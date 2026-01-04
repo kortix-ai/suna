@@ -9,7 +9,6 @@ import {
   ImagePlus,
   Maximize,
   Save,
-  Loader2,
   AlertCircle,
   Trash2,
   Copy,
@@ -25,6 +24,7 @@ import {
   Frame,
   Palette,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -52,7 +52,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useAuth } from '@/components/AuthProvider';
 
 // OCR detected text region with polygon bounding box
@@ -1557,7 +1557,7 @@ function FloatingToolbar({
                   Cancel
                 </Button>
                 <Button onClick={applyTextReplacement} disabled={!newTextContent.trim() || isProcessing}>
-                  {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  {isProcessing ? <KortixLoader size="small" className="mr-2" /> : null}
                   {isLowQualityOcr ? 'Apply' : 'Replace'}
                 </Button>
               </div>
@@ -1598,7 +1598,7 @@ function FloatingToolbar({
             onClick={applyCrop}
             disabled={isCropping}
           >
-            {isCropping ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+            {isCropping ? <KortixLoader size="small" className="mr-1" /> : null}
             Create
           </Button>
         </div>
@@ -1636,7 +1636,7 @@ function FloatingToolbar({
                 disabled={isProcessing}
               >
                 {activeAction === 'upscale' ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <KortixLoader size="small" />
                 ) : (
                   <span className="text-[10px] font-bold border border-current rounded px-0.5">HD</span>
                 )}
@@ -1657,7 +1657,7 @@ function FloatingToolbar({
                 disabled={isProcessing}
               >
                 {activeAction === 'remove_bg' ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <KortixLoader size="small" />
                 ) : (
                   <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                     <rect x="1" y="1" width="6" height="6" />
@@ -1682,7 +1682,7 @@ function FloatingToolbar({
                 onClick={startTextEditMode}
                 disabled={isProcessing || textEditMode}
               >
-                {isDetectingText ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Type className="h-3.5 w-3.5" />}
+                {isDetectingText ? <KortixLoader size="small" /> : <Type className="h-3.5 w-3.5" />}
                 Edit text
               </Button>
             </TooltipTrigger>
@@ -1718,7 +1718,7 @@ function FloatingToolbar({
                     disabled={isProcessing}
                   >
                     {activeAction === 'mark_edit' ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <KortixLoader size="small" />
                     ) : (
                       <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                         <rect x="2" y="2" width="12" height="12" strokeDasharray="3 2" rx="1" />
@@ -1753,7 +1753,7 @@ function FloatingToolbar({
                 >
                   {isProcessing ? (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      <KortixLoader size="small" className="mr-2" />
                       Generating...
                     </>
                   ) : (
@@ -2117,7 +2117,7 @@ function FrameFloatingToolbar({
                 onClick={onExportFrame}
                 disabled={isExporting}
               >
-                {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                {isExporting ? <KortixLoader size="small" /> : <Download className="h-3.5 w-3.5" />}
                 Export
               </Button>
             </TooltipTrigger>
@@ -2322,7 +2322,7 @@ function MultiSelectToolbar({
                 onClick={openMergeDialog}
               >
                 {isProcessing ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <KortixLoader size="small" />
                 ) : (
                   <Layers className="h-3.5 w-3.5" />
                 )}
@@ -2421,7 +2421,7 @@ function MultiSelectToolbar({
                 onClick={() => { setShowMergeDialog(false); handleMerge(); }}
                 disabled={!mergePrompt.trim() || isProcessing}
               >
-                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                {isProcessing ? <KortixLoader size="small" className="mr-2" /> : null}
                 Create
               </Button>
             </div>
@@ -3384,7 +3384,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   };
 
   if (!isMounted) {
-    return <div className="flex items-center justify-center h-full w-full bg-card"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
+    return <div className="flex items-center justify-center h-full w-full bg-card"><KortixLoader size="medium" /></div>;
   }
 
   // If no content AND no canvasData yet, show loading state
@@ -3392,7 +3392,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   if (!content && !canvasData) {
     return (
       <div className="flex flex-col items-center justify-center h-full w-full gap-4 bg-background">
-        <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
+        <KortixLoader size="medium" />
         <div className="text-muted-foreground text-center text-sm">
           Loading canvas...
         </div>
@@ -3430,7 +3430,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             </div>
 
             <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleResetView}><Maximize className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Reset View</TooltipContent></Tooltip>
-            <Tooltip><TooltipTrigger asChild><Button id="canvas-save-btn" variant="ghost" size="icon" className={cn("h-8 w-8 relative", hasUnsavedChanges && "text-primary")} onClick={handleSave} disabled={isSaving || !onSave}>{isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{hasUnsavedChanges && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-primary rounded-full" />}</Button></TooltipTrigger><TooltipContent>{isSaving ? 'Saving...' : hasUnsavedChanges ? 'Save changes (⌘S)' : 'No changes'}</TooltipContent></Tooltip>
+            <Tooltip><TooltipTrigger asChild><Button id="canvas-save-btn" variant="ghost" size="icon" className={cn("h-8 w-8 relative", hasUnsavedChanges && "text-primary")} onClick={handleSave} disabled={isSaving || !onSave}>{isSaving ? <KortixLoader size="small" /> : <Save className="h-4 w-4" />}{hasUnsavedChanges && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-primary rounded-full" />}</Button></TooltipTrigger><TooltipContent>{isSaving ? 'Saving...' : hasUnsavedChanges ? 'Save changes (⌘S)' : 'No changes'}</TooltipContent></Tooltip>
             <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleUploadClick}><ImagePlus className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Add Image</TooltipContent></Tooltip>
             {/* Add Frame with presets */}
             <Popover>
@@ -3507,7 +3507,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                   >
                     {isGenerating ? (
                       <>
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        <KortixLoader size="small" className="mr-2" />
                         Generating...
                       </>
                     ) : (

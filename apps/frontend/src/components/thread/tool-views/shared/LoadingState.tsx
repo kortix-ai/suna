@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, LucideIcon } from 'lucide-react';
+import { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 
 interface LoadingStateProps {
   icon?: LucideIcon;
@@ -14,10 +15,12 @@ interface LoadingStateProps {
   progressText?: string;
   autoProgress?: boolean;
   initialProgress?: number;
+  /** If true, uses KortixLoader instead of the icon */
+  useKortixLoader?: boolean;
 }
 
 export function LoadingState({
-  icon: Icon = Loader2,
+  icon: Icon,
   iconColor = 'text-purple-500 dark:text-purple-400',
   bgColor = 'bg-gradient-to-b from-purple-100 to-purple-50 shadow-inner dark:from-purple-800/40 dark:to-purple-900/60 dark:shadow-purple-950/20',
   title,
@@ -27,6 +30,7 @@ export function LoadingState({
   progressText,
   autoProgress = true,
   initialProgress = 0,
+  useKortixLoader = true,
 }: LoadingStateProps): React.JSX.Element {
   const [progress, setProgress] = useState(initialProgress);
 
@@ -49,7 +53,13 @@ export function LoadingState({
     <div className="flex flex-col items-center justify-center h-full min-h-[400px] overflow-hidden scrollbar-hide py-12 px-6">
       <div className="text-center w-full max-w-sm">
         <div className={cn("w-16 h-16 rounded-full mx-auto mb-6 flex items-center justify-center", bgColor)}>
-          <Icon className={cn("h-8 w-8", iconColor, Icon === Loader2 && "animate-spin")} />
+          {useKortixLoader ? (
+            <KortixLoader customSize={32} />
+          ) : Icon ? (
+            <Icon className={cn("h-8 w-8", iconColor)} />
+          ) : (
+            <KortixLoader customSize={32} />
+          )}
         </div>
         
         <h3 className="text-xl font-semibold mb-4 text-zinc-900 dark:text-zinc-100">

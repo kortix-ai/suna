@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Loader2, Info } from 'lucide-react';
+import { Info } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -206,7 +207,7 @@ export const TriggerConfigStep: React.FC<TriggerConfigStepProps> = ({
       <h4 className="font-medium mb-3">Trigger Configuration</h4>
       {isLoadingFields ? (
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <KortixLoader customSize={24} />
           <span className="ml-2 text-sm text-muted-foreground">Loading configuration fields...</span>
         </div>
       ) : error ? (

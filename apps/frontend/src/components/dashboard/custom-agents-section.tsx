@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useRouter } from 'next/navigation';
 import { MarketplaceAgentPreviewDialog } from '@/components/agents/marketplace-agent-preview-dialog';
 import { StreamlinedInstallDialog } from '@/components/agents/installation/streamlined-install-dialog';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import type { MarketplaceTemplate } from '@/components/agents/installation/types';
 import { AgentCountLimitError } from '@/lib/api/errors';
 import { UnifiedAgentCard } from '@/components/ui/unified-agent-card';

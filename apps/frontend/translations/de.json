@@ -417,7 +417,7 @@
     "minimizeToFloatingPreview": "Auf schwebende Vorschau minimieren",
     "close": "Schließen",
     "noActionsYet": "Kortix Computer",
-    "workerActionsDescription": "Ergebnisse werden hier angezeigt, während Kortix arbeitet",
+    "workerActionsDescription": "Wird gestartet",
     "toolIsRunning": "Tool läuft",
     "toolCurrentlyExecuting": "{toolName} wird derzeit ausgeführt. Ergebnisse werden hier angezeigt, wenn sie abgeschlossen sind.",
     "rateThisResult": "Dieses Ergebnis bewerten",

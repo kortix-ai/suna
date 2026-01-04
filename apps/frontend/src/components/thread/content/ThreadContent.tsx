@@ -28,6 +28,7 @@ import {
 } from "@/hooks/messages/utils";
 import { AppIcon } from "../tool-views/shared/AppIcon";
 import { useSmoothText } from "@/hooks/messages/useSmoothText";
+import { isHiddenTool } from "@agentpress/shared/tools";
 
 export function renderAttachments(
   attachments: string[],
@@ -535,11 +536,22 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
 
     if (isAskOrComplete) return null;
 
+    // Filter out hidden tools (internal/initialization tools)
+    const visibleToolCalls = toolCalls.filter((tc: any) => {
+      const toolName = tc.function_name?.replace(/_/g, "-") || "";
+      return !isHiddenTool(toolName);
+    });
+
+    // If all tools were hidden, don't render anything
+    if (visibleToolCalls.length === 0 && toolCalls.length > 0) {
+      return null;
+    }
+
     return (
       <div className="mt-1.5">
         <div className="flex flex-col gap-2">
-          {toolCalls.length > 0 ? (
-            toolCalls.map((tc: any, tcIndex: number) => {
+          {visibleToolCalls.length > 0 ? (
+            visibleToolCalls.map((tc: any, tcIndex: number) => {
               const toolName = tc.function_name?.replace(/_/g, "-") || "";
               const toolCallContent = JSON.stringify({
                 function: { name: toolName },

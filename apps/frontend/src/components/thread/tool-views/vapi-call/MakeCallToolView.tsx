@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Phone, CheckCircle, Clock, User, Mic, Brain, Loader2, AlertTriangle } from 'lucide-react';
+import { Phone, CheckCircle, Clock, User, Mic, Brain, AlertTriangle } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ToolViewProps } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -187,7 +188,7 @@ export function MakeCallToolView({
               isActive && "animate-pulse"
             )}>
               {isActive ? (
-                <Loader2 className="w-5 h-5 text-green-500 animate-spin" />
+                <KortixLoader customSize={20} />
               ) : (
                 <Phone className="w-5 h-5 text-green-500" />
               )}
@@ -204,18 +205,6 @@ export function MakeCallToolView({
               )}
             </div>
           </div>
-          {!isStreaming && (
-            <Badge
-              variant={isSuccess ? "default" : "destructive"}
-            >
-              {isSuccess ? (
-                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-              ) : (
-                <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-              )}
-              {isSuccess ? 'Call initiated successfully' : 'Failed to initiate call'}
-            </Badge>
-          )}
         </div>
       </CardHeader>
 
@@ -374,7 +363,7 @@ export function MakeCallToolView({
               )}
               {isActive && liveTranscript.length === 0 && (
                 <div className="text-center py-8">
-                  <Loader2 className="h-6 w-6 mx-auto mb-2 text-muted-foreground animate-spin" />
+                  <KortixLoader customSize={24} className="mx-auto mb-2" />
                   <p className="text-sm text-muted-foreground">Waiting for conversation to start...</p>
                 </div>
               )}

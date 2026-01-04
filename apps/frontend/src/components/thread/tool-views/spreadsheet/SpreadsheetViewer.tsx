@@ -3,13 +3,13 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { SpreadsheetComponent } from '@syncfusion/ej2-react-spreadsheet';
 import { registerLicense } from '@syncfusion/ej2-base';
-import { Loader2, FileSpreadsheet, Download, RefreshCw, Cloud, CloudOff, AlertCircle } from 'lucide-react';
+import { FileSpreadsheet, Download, RefreshCw, Cloud, CloudOff, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSpreadsheetSync } from './useSpreadsheetSync';
 import { SyncStatusIndicator } from './SyncStatusIndicator';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/AuthProvider';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useDownloadRestriction } from '@/hooks/billing';
 import { SpreadsheetLoader } from './SpreadsheetLoader';
 

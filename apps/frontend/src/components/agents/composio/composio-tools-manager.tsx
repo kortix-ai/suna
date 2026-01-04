@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useComposioProfiles } from '@/hooks/composio/use-composio-profiles';
 import { useComposioToolkitIcon } from '@/hooks/composio/use-composio';
 import { backendApi } from '@/lib/api-client';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { composioApi } from '@/hooks/composio/utils';

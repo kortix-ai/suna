@@ -1,7 +1,8 @@
 import { ToolViewProps } from '../types';
 import { getToolTitle } from '../utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, Loader2, Download, RefreshCw } from 'lucide-react';
+import { Table, Download, RefreshCw } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useMemo, useState, useCallback } from 'react';
 import { SpreadsheetSimulation } from './SpreadsheetSimulation';
 import { SpreadsheetViewer, SyncState } from './SpreadsheetViewer';
@@ -89,7 +90,7 @@ export function SpreadsheetToolView({
           <div className="flex items-center gap-2">
             <div className="relative p-2 rounded-lg border flex-shrink-0 bg-green-100 dark:bg-green-900/50 border-green-300 dark:border-green-700">
               {isStreaming || isLoading ? (
-                <Loader2 className="w-5 h-5 text-green-600 dark:text-green-400 animate-spin" />
+                <KortixLoader customSize={20} />
               ) : (
                 <Table className="w-5 h-5 text-green-600 dark:text-green-400" />
               )}
@@ -123,7 +124,7 @@ export function SpreadsheetToolView({
                   title="Download file"
                 >
                   {isDownloading ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <KortixLoader customSize={12} />
                   ) : (
                     <Download className="w-3 h-3" />
                   )}
@@ -135,7 +136,7 @@ export function SpreadsheetToolView({
                   disabled={isLoading || syncState.status === 'syncing'}
                   className="h-7 px-2"
                 >
-                  <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
+                  {isLoading ? <KortixLoader customSize={12} /> : <RefreshCw className="w-3 h-3" />}
                 </Button>
               </>
             )}

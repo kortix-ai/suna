@@ -18,7 +18,8 @@ import {
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Search, Check, ChevronDown, Plus, Loader2, Plug, Brain, LibraryBig, Zap, Lock, Sparkles, ChevronLeft } from 'lucide-react';
+import { Search, Check, ChevronDown, Plus, Plug, Brain, LibraryBig, Zap, Lock, Sparkles, ChevronLeft } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useAgents } from '@/hooks/agents/use-agents';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import type { ModelOption } from '@/hooks/agents';
@@ -274,7 +275,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                             >
                                 {isFetching ? (
                                     <>
-                                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                        <KortixLoader size="small" className="mr-2" />
                                         Loading...
                                     </>
                                 ) : (
@@ -545,6 +546,9 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
         ) : null
     ), [onAgentSelect, selectedAgentId, displayAgent?.agent_id, handleQuickAction]);
 
+    // Check if current agent is Kortix (used in multiple places)
+    const isKortixAgent = !displayAgent?.name || displayAgent?.name === 'Kortix';
+
     // Mobile Sheet Content
     const MobileSheetContent = useCallback(() => {
         if (mobileSection === 'agents') {
@@ -607,12 +611,23 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                 onClick={() => setMobileSection('agents')}
                                 className="w-full flex items-center gap-3 p-3 rounded-2xl border border-border bg-card hover:bg-muted/50 active:bg-muted/70 transition-colors"
                             >
-                                <div className="flex items-center justify-center w-10 h-10 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
-                                    {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent, 40)}
-                                </div>
-                                <span className="flex-1 truncate text-base font-medium text-left min-w-0">
-                                    {displayAgent?.name || 'Kortix'}
-                                </span>
+                                {isKortixAgent ? (
+                                    <img
+                                        src="/kortix-logomark-white.svg"
+                                        alt="Kortix"
+                                        className="dark:invert-0 invert flex-shrink-0 ml-1"
+                                        style={{ height: '14px', width: 'auto' }}
+                                    />
+                                ) : (
+                                    <>
+                                        <div className="flex items-center justify-center w-10 h-10 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
+                                            {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent, 40)}
+                                        </div>
+                                        <span className="flex-1 truncate text-base font-medium text-left min-w-0">
+                                            {displayAgent?.name}
+                                        </span>
+                                    </>
+                                )}
                                 <ChevronDown className="h-5 w-5 text-muted-foreground rotate-[-90deg] flex-shrink-0" />
                             </button>
                         </div>
@@ -635,7 +650,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                 )}
             </div>
         );
-    }, [mobileSection, searchQuery, onAgentSelect, displayAgent, isLoading, placeholderSunaAgent, renderAgentIcon, selectedAgentId, AgentsList, CreateWorkerButton, ModeToggle, WorkerSettingsButtons]);
+    }, [mobileSection, searchQuery, onAgentSelect, displayAgent, isLoading, placeholderSunaAgent, renderAgentIcon, selectedAgentId, AgentsList, CreateWorkerButton, ModeToggle, WorkerSettingsButtons, isKortixAgent]);
 
     // Trigger button
     const TriggerButton = (
@@ -648,10 +663,21 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
         >
             {onAgentSelect ? (
                 <div className="flex items-center gap-2 min-w-0 max-w-[180px]">
-                    {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent, 24)}
-                    <span className="truncate text-sm font-medium">
-                        {displayAgent?.name || 'Kortix'}
-                    </span>
+                    {isKortixAgent ? (
+                        <img
+                            src="/kortix-logomark-white.svg"
+                            alt="Kortix"
+                            className="dark:invert-0 invert flex-shrink-0 ml-1"
+                            style={{ height: '12px', width: 'auto' }}
+                        />
+                    ) : (
+                        <>
+                            {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent, 24)}
+                            <span className="truncate text-sm font-medium">
+                                {displayAgent?.name}
+                            </span>
+                        </>
+                    )}
                     <ChevronDown size={12} className="opacity-60 flex-shrink-0" />
                 </div>
             ) : (
@@ -719,10 +745,21 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                         <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
                                             <DropdownMenuSub>
                                                 <DropdownMenuSubTrigger className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 hover:bg-transparent focus:bg-transparent data-[state=open]:bg-transparent w-full">
-                                                    <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
-                                                        {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent)}
-                                                    </div>
-                                                    <span className="flex-1 truncate font-medium text-left">{displayAgent?.name || 'Kortix'}</span>
+                                                    {isKortixAgent ? (
+                                                        <img
+                                                            src="/kortix-logomark-white.svg"
+                                                            alt="Kortix"
+                                                            className="dark:invert-0 invert flex-shrink-0"
+                                                            style={{ height: '12px', width: 'auto' }}
+                                                        />
+                                                    ) : (
+                                                        <>
+                                                            <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
+                                                                {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent)}
+                                                            </div>
+                                                            <span className="flex-1 truncate font-medium text-left">{displayAgent?.name}</span>
+                                                        </>
+                                                    )}
                                                 </DropdownMenuSubTrigger>
                                                 <DropdownMenuPortal>
                                                     <DropdownMenuSubContent className="w-[320px] px-0 py-3 border-[1.5px] border-border rounded-2xl max-h-[500px] overflow-hidden" sideOffset={8}>

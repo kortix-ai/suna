@@ -42,7 +42,7 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { createClient } from '@/lib/supabase/client';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { isLocalMode, isProductionMode } from '@/lib/config';
 import { backendApi } from '@/lib/api-client';
 import { useQuery, useMutation } from '@tanstack/react-query';
@@ -92,6 +92,7 @@ import { getPlanName, getPlanIcon } from '../billing/plan-utils';
 import { TierBadge } from '../billing/tier-badge';
 import { siteConfig } from '@/lib/site-config';
 import ThreadUsage from '@/components/billing/thread-usage';
+import { UsageLimitsCard } from '@/components/billing/usage-limits-card';
 import { formatCredits } from '@/lib/utils/credit-formatter';
 import { LanguageSwitcher } from './language-switcher';
 import { useTranslations } from 'next-intl';
@@ -1327,6 +1328,7 @@ function CreditsHelpAlert() {
 function UsageTab() {
   return (
       <div className="p-4 sm:p-6 space-y-5 sm:space-y-6 min-w-0 max-w-full overflow-x-hidden">
+        <UsageLimitsCard />
         <ThreadUsage />
       </div>
   );

@@ -28,6 +28,7 @@ import {
   isNewXmlFormat,
   parseToolMessage,
   formatToolOutput,
+  isHiddenTool,
 } from '@agentpress/shared/tools';
 import { HIDE_STREAMING_XML_TAGS } from '@agentpress/shared/tools';
 import { groupMessagesWithStreaming } from '@agentpress/shared/utils';
@@ -1364,7 +1365,19 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                       // For other tools, render tool call indicators with spinning icon
                       // Render ALL tool calls (streaming + completed) - don't filter out completed ones
                       // The StreamingToolCallIndicator component handles completed state correctly
-                      if (toolCalls.length > 0) {
+                      
+                      // Filter out hidden tools (internal/initialization tools)
+                      const visibleToolCalls = toolCalls.filter((tc: any) => {
+                        const toolName = tc.function_name?.replace(/_/g, '-') || '';
+                        return !isHiddenTool(toolName);
+                      });
+
+                      // If all tools were hidden, don't render anything
+                      if (visibleToolCalls.length === 0 && toolCalls.length > 0) {
+                        return null;
+                      }
+
+                      if (visibleToolCalls.length > 0) {
                         // Get assistant message ID from streamingToolCall or find from group
                         const assistantMsgId = streamingToolCall?.message_id || 
                           group.messages.find(m => m.type === 'assistant')?.message_id || 
@@ -1372,7 +1385,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                         
                         return (
                           <View className="flex-col gap-2">
-                            {toolCalls.map((tc: any, tcIndex: number) => {
+                            {visibleToolCalls.map((tc: any, tcIndex: number) => {
                               const toolName = tc.function_name?.replace(/_/g, '-') || '';
                               const isCompleted = tc.completed === true || 
                                 (tc.tool_result !== undefined && 

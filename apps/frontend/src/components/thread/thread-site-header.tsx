@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button"
 import { FolderOpen, Upload, PanelRightOpen, PanelRightClose, Copy, Check } from "lucide-react"
 import { usePathname } from "next/navigation"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import {
   Tooltip,
   TooltipContent,

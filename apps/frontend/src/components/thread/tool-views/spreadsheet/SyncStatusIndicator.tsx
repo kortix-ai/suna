@@ -1,4 +1,5 @@
-import { Cloud, CloudOff, Check, AlertCircle, RefreshCw, Loader2 } from 'lucide-react';
+import { Cloud, CloudOff, Check, AlertCircle, RefreshCw } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -44,7 +45,7 @@ export function SyncStatusIndicator({
     switch (status) {
       case 'syncing':
         return {
-          icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
+          icon: <KortixLoader customSize={14} />,
           label: 'Saving...',
           color: 'text-blue-500',
           bgColor: 'bg-blue-500/10',

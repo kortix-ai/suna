@@ -4,7 +4,6 @@ import {
   Globe,
   CheckCircle,
   AlertTriangle,
-  Loader2,
   Search,
   Info,
   Play,
@@ -19,6 +18,7 @@ import {
   Download,
   ExternalLink,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ToolViewProps } from '../types';
 import { formatTimestamp } from '../utils';
 import { cn } from '@/lib/utils';
@@ -227,24 +227,6 @@ export function ApifyToolView({
             </div>
           </div>
 
-          {!isStreaming && (
-            <Badge
-              variant="secondary"
-              className={cn(
-                "text-xs font-medium",
-                actualIsSuccess
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800"
-                  : "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800"
-              )}
-            >
-              {actualIsSuccess ? (
-                <CheckCircle className="h-3 w-3 mr-1" />
-              ) : (
-                <AlertTriangle className="h-3 w-3 mr-1" />
-              )}
-              {actualIsSuccess ? 'Success' : 'Failed'}
-            </Badge>
-          )}
         </div>
       </CardHeader>
 
@@ -257,7 +239,7 @@ export function ApifyToolView({
                 `bg-gradient-to-br ${config.color}`,
                 "border-white/20"
               )}>
-                <Loader2 className="h-10 w-10 animate-spin text-white drop-shadow-sm" />
+                <KortixLoader size="medium" variant="white" />
               </div>
               
               {viewType === 'run' ? (

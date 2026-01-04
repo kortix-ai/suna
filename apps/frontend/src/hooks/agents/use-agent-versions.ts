@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { versionKeys } from './keys';
 import { getAgentVersions, getAgentVersion, createAgentVersion, activateAgentVersion, updateAgentVersionDetails, AgentVersion, AgentVersionCreateRequest } from './utils';
 

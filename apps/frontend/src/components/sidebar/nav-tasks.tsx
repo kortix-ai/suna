@@ -5,11 +5,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   MoreHorizontal,
   Trash2,
-  Loader2,
   Frown,
 } from "lucide-react";
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ThreadIcon } from "./thread-icon";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from '@/lib/utils';
 import {
@@ -65,7 +65,7 @@ const TaskItem: React.FC<{
       {/* Icon with optional running indicator */}
       <div className="relative flex-shrink-0">
         {isLoading ? (
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          <KortixLoader size="small" />
         ) : (
           <ThreadIcon
             iconName={thread.iconName}

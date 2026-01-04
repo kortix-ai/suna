@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { ToolCallInput } from '@/components/thread/kortix-computer';
 import { UnifiedMessage, ParsedMetadata, AgentStatus } from '@/components/thread/types';
 import { safeJsonParse } from '@/components/thread/utils';
 import { useIsMobile } from '@/hooks/utils';
 import { isAskOrCompleteTool } from './utils';
+import { isHiddenTool } from '@agentpress/shared/tools';
 import { useKortixComputerStore, useIsSidePanelOpen, useSetIsSidePanelOpen } from '@/stores/kortix-computer-store';
 import { getOrAssignToolNumber, getToolNumber } from './tool-tracking';
 
@@ -30,7 +31,8 @@ interface UseThreadToolCallsReturn {
 // Uses the shared utility from streaming-utils
 function shouldFilterTool(toolName: string): boolean {
   // Always filter out ask and complete tools - they're rendered inline in ThreadContent
-  return isAskOrCompleteTool(toolName);
+  // Also filter out hidden tools (internal/initialization tools that don't provide meaningful user feedback)
+  return isAskOrCompleteTool(toolName) || isHiddenTool(toolName);
 }
 
 export function useThreadToolCalls(
@@ -334,10 +336,10 @@ export function useThreadToolCalls(
 
       if (toolCallsFromMetadata.length === 0) return;
 
-      // Filter out ask and complete tools
+      // Filter out ask and complete tools, and hidden tools (internal/initialization tools)
       const filteredToolCalls = toolCallsFromMetadata.filter(tc => {
         const toolName = tc.function_name.replace(/_/g, '-').toLowerCase();
-        return toolName !== 'ask' && toolName !== 'complete';
+        return toolName !== 'ask' && toolName !== 'complete' && !isHiddenTool(toolName);
       });
 
       if (filteredToolCalls.length === 0) return;

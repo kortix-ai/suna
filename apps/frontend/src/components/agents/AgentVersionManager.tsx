@@ -15,6 +15,7 @@ import {
   History,
   Plus
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { formatDistanceToNow } from 'date-fns';
 import { useAgentVersions, useActivateAgentVersion } from '@/hooks/agents/use-agent-versions';
 import { Agent } from '@/hooks/agents/utils';
@@ -36,7 +37,7 @@ export function AgentVersionManager({ agent, onCreateVersion }: AgentVersionMana
       <Card>
         <CardContent className="p-6">
           <div className="flex items-center justify-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            <KortixLoader size="large" />
           </div>
         </CardContent>
       </Card>

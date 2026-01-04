@@ -8,7 +8,6 @@ import {
   Wrench,
   Copy,
   Check,
-  Loader2,
 } from 'lucide-react';
 import { ToolViewProps } from './types';
 import { formatTimestamp, getToolTitle } from './utils';
@@ -17,7 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from '@/components/ui/button';
 import { LoadingState } from './shared/LoadingState';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { AppIcon } from './shared/AppIcon';
 import { SmartJsonViewer } from './shared/SmartJsonViewer';
 
@@ -181,30 +180,6 @@ export function GenericToolView({
             </div>
           </div>
 
-          {!isStreaming && (
-            <Badge
-              variant="secondary"
-              className={
-                isSuccess
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                  : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              }
-            >
-              {isSuccess ? (
-                <CheckCircle className="h-3.5 w-3.5" />
-              ) : (
-                <AlertTriangle className="h-3.5 w-3.5" />
-              )}
-              {isSuccess ? 'Tool executed successfully' : 'Tool execution failed'}
-            </Badge>
-          )}
-
-          {isStreaming && (
-            <Badge className="bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300">
-              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-              Executing
-            </Badge>
-          )}
         </div>
       </CardHeader>
 

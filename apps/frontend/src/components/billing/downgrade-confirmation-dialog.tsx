@@ -12,7 +12,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { backendApi } from '@/lib/api-client';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 export type DowngradeReason =
   | 'tooExpensive'

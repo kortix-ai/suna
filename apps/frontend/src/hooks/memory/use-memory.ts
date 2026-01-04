@@ -13,7 +13,7 @@ import {
   type MemoryStats,
   type CreateMemoryRequest,
 } from '@/lib/api/memory';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 export function useMemoryStats() {
   return useQuery({

@@ -8,7 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { PromptExamples, PromptExample } from '@/components/shared/prompt-examples';
 import { backendApi } from '@/lib/api-client';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 // Flag to control whether to show prompt examples
 const SHOW_PROMPT_EXAMPLES = true;

@@ -4,10 +4,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
-  Loader2,
   Download,
   AlertTriangle,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import DocViewer, { DocViewerRenderers } from '@cyntler/react-doc-viewer';
 import '@cyntler/react-doc-viewer/dist/index.css';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
@@ -92,7 +92,7 @@ export function PptxRenderer({
   if (isLoading) {
     return (
       <div className={cn('w-full h-full flex items-center justify-center', className)}>
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <KortixLoader size="medium" />
       </div>
     );
   }
@@ -108,7 +108,7 @@ export function PptxRenderer({
           </p>
           {onDownload && (
             <Button size="sm" onClick={onDownload} disabled={isDownloading}>
-              {isDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+              {isDownloading ? <KortixLoader size="small" /> : <Download className="h-4 w-4 mr-2" />}
               Download
             </Button>
           )}

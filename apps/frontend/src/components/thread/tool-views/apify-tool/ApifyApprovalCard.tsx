@@ -2,7 +2,8 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, CheckCircle2, XCircle, Clock, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
 import { ApifyApproval } from '@/hooks/apify/use-apify-approvals';
 import { useApproveApifyRequest, useGetApifyApprovalStatus } from '@/hooks/apify/use-apify-approvals';
@@ -119,7 +120,7 @@ export function ApifyApprovalCard({ approval, threadId, onApproved }: ApifyAppro
             >
               {approveMutation.isPending ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <KortixLoader customSize={16} className="mr-2" />
                   Approving...
                 </>
               ) : (

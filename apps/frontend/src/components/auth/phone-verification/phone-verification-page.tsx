@@ -18,7 +18,8 @@ import { signOut } from '@/app/auth/actions';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { LogOut, Loader2, Shield } from 'lucide-react';
+import { LogOut, Shield } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useMutation } from '@tanstack/react-query';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
@@ -261,7 +262,7 @@ export function PhoneVerificationPage({
           className="flex items-center gap-2 text-muted-foreground hover:text-foreground"
         >
           {signOutMutation.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <KortixLoader size="small" />
           ) : (
             <LogOut className="h-4 w-4" />
           )}

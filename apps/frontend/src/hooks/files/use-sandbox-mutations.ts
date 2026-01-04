@@ -5,7 +5,7 @@ import {
   createSandboxFile,
   createSandboxFileJson
 } from '@/lib/api/sandbox';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { handleApiError } from '@/lib/error-handler';
 
 export const useCreateSandboxFile = () => {

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Search, Plus, Check, ChevronDown, Loader2 } from 'lucide-react';
+import { Search, Plus, Check, ChevronDown } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -252,7 +253,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
               >
                 {isFetching ? (
                   <>
-                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                    <KortixLoader customSize={12} className="mr-1" />
                     Loading...
                   </>
                 ) : (

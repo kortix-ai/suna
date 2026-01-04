@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { threadKeys, projectKeys } from "./keys";
 import { getProject, updateProject, deleteProject, type Project } from "@/lib/api/threads";
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { handleApiError } from '@/lib/error-handler';
 import { useMemo } from 'react';
 import { ThreadsResponse } from '@/lib/api/threads';

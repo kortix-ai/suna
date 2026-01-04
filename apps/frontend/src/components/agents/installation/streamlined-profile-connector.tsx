@@ -6,11 +6,11 @@ import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   Plus, 
-  Loader2,
   Shield,
   Settings
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { KortixLoader } from '@/components/ui/kortix-loader';
+import { toast } from '@/lib/toast';
 import { ComposioCredentialProfileSelector } from '@/components/agents/composio/composio-credential-profile-selector';
 import { ComposioConnector } from '@/components/agents/composio/composio-connector';
 import { useCreateCredentialProfile, useCredentialProfiles, type CreateCredentialProfileRequest } from '@/hooks/mcp/use-credential-profiles';
@@ -320,7 +320,7 @@ export const ProfileConnector: React.FC<ProfileConnectorProps> = ({
         >
           {isCreatingProfile ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <KortixLoader customSize={16} className="mr-1" />
               Creating...
             </>
           ) : (

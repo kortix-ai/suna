@@ -16,7 +16,7 @@ import { motion } from 'framer-motion';
 import { getFileIconByName } from './Icons';
 import { FileContextMenu } from './FileContextMenu';
 import { ContextMenuTrigger } from '@/components/ui/context-menu';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 interface FileItem {
   name: string;

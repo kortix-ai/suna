@@ -416,7 +416,7 @@
     "minimizeToFloatingPreview": "最小化到浮动预览",
     "close": "关闭",
     "noActionsYet": "Kortix Computer",
-    "workerActionsDescription": "Kortix 工作时，结果将在此处显示",
+    "workerActionsDescription": "正在启动",
     "toolIsRunning": "工具正在运行",
     "toolCurrentlyExecuting": "{toolName} 正在执行。完成后结果将显示在这里。",
     "rateThisResult": "评价此结果",

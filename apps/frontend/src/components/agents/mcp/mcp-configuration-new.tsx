@@ -8,7 +8,7 @@ import { CustomMCPDialog } from './custom-mcp-dialog';
 import { ComposioRegistry } from '../composio/composio-registry';
 import { ComposioToolsManager } from '../composio/composio-tools-manager';
 import { ToolsManager } from './tools-manager';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAccountState } from '@/hooks/billing';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';

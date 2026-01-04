@@ -7,10 +7,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Search, ChevronDown, ChevronRight, Settings2, Wrench, Loader2 } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, Settings2, Wrench } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { icons } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useToolsMetadata } from '@/hooks/tools/use-tools-metadata';
 import {
   getToolGroup,
@@ -258,7 +259,7 @@ export const GranularToolConfiguration = ({
   if (isLoadingTools) {
     return (
       <div className="flex items-center justify-center h-full">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <KortixLoader size="large" />
         <span className="ml-2 text-muted-foreground">Loading tools...</span>
       </div>
     );

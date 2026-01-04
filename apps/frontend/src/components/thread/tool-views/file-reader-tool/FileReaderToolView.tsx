@@ -250,51 +250,11 @@ export function FileReaderToolView({
             </div>
           </div>
 
-          {!isStreaming && (
-            <div className="flex items-center gap-2">
-              {isSearch && searchData ? (
-                <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                  <Search className="h-3 w-3 mr-1" />
-                  {searchData.totalHits} results
-                </Badge>
-              ) : isBatch && results.length > 0 ? (
-                <div className="flex items-center gap-1.5 text-xs">
-                  {successCount > 0 && (
-                    <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
-                      <CheckCircle className="h-3 w-3 mr-1" />
-                      {successCount}
-                    </Badge>
-                  )}
-                  {failCount > 0 && (
-                    <Badge variant="secondary" className="bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
-                      <AlertTriangle className="h-3 w-3 mr-1" />
-                      {failCount}
-                    </Badge>
-                  )}
-                </div>
-              ) : !isBatch && (
-                <Badge
-                  variant="secondary"
-                  className={
-                    actualIsSuccess
-                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-                      : "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"
-                  }
-                >
-                  {actualIsSuccess ? (
-                    <>
-                      <CheckCircle className="h-3.5 w-3.5 mr-1" />
-                      Read
-                    </>
-                  ) : (
-                    <>
-                      <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-                      Failed
-                    </>
-                  )}
-                </Badge>
-              )}
-            </div>
+          {!isStreaming && isSearch && searchData && (
+            <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+              <Search className="h-3 w-3 mr-1" />
+              {searchData.totalHits} results
+            </Badge>
           )}
         </div>
       </CardHeader>

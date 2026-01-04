@@ -46,18 +46,6 @@ export function CallStatusToolView({
               </CardTitle>
             </div>
           </div>
-          {!isStreaming && (
-            <Badge
-              variant={isSuccess ? "default" : "destructive"}
-            >
-              {isSuccess ? (
-                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-              ) : (
-                <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-              )}
-              {isSuccess ? 'Call details retrieved' : 'Failed to get call details'}
-            </Badge>
-          )}
         </div>
       </CardHeader>
 

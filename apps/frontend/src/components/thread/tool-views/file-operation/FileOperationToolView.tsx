@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   ExternalLink,
-  Loader2,
   Code,
   Eye,
   File,
@@ -13,6 +12,7 @@ import {
   Minus,
   Plus,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import {
   formatTimestamp,
   getToolTitle,
@@ -67,7 +67,7 @@ import {
 } from './_utils';
 import { ToolViewProps } from '../types';
 import { LoadingState } from '../shared/LoadingState';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { PresentationSlidePreview } from '../presentation-tools/PresentationSlidePreview';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
@@ -611,7 +611,7 @@ export function FileOperationToolView({
               {presentationName}{slideNumber ? ` - Slide ${slideNumber}` : ''}
             </p>
             <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400">
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <KortixLoader customSize={16} />
               <span>Writing slide content...</span>
             </div>
           </div>
@@ -959,7 +959,7 @@ export function FileOperationToolView({
               ) : !fileContent && isStreaming ? (
                 <div className="flex items-center justify-center h-full p-12 bg-white dark:bg-zinc-900">
                   <div className="text-center">
-                    <Loader2 className="h-8 w-8 mx-auto mb-4 text-zinc-400 animate-spin" />
+                    <KortixLoader customSize={32} className="mx-auto mb-4" />
                     <p className="text-sm text-zinc-500 dark:text-zinc-400">Waiting for content...</p>
                   </div>
                 </div>
@@ -1011,7 +1011,7 @@ export function FileOperationToolView({
                 ) : !fileContent && isStreaming ? (
                   <div className="flex items-center justify-center h-full p-12 bg-white dark:bg-zinc-900">
                     <div className="text-center">
-                      <Loader2 className="h-8 w-8 mx-auto mb-4 text-zinc-400 animate-spin" />
+                      <KortixLoader customSize={32} className="mx-auto mb-4" />
                       <p className="text-sm text-zinc-500 dark:text-zinc-400">Waiting for content...</p>
                     </div>
                   </div>
@@ -1087,7 +1087,7 @@ export function FileOperationToolView({
                   </ScrollArea>
                   {isStreaming && oldStr && newStr && (
                     <div className="px-4 py-2 bg-violet-50 dark:bg-violet-950/30 border-t border-violet-200 dark:border-violet-800 flex items-center gap-2">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-500" />
+                      <KortixLoader customSize={14} />
                       <span className="text-xs text-violet-600 dark:text-violet-400">Streaming changes...</span>
                     </div>
                   )}

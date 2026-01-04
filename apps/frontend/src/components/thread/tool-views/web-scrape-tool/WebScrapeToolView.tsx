@@ -3,7 +3,6 @@ import {
   Globe,
   CheckCircle,
   AlertTriangle,
-  Loader2,
   FileText,
   Copy,
   Calendar,
@@ -11,6 +10,7 @@ import {
   ArrowUpRight,
   Zap
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ToolViewProps } from '../types';
 import {
   formatTimestamp,
@@ -140,23 +140,6 @@ export function WebScrapeToolView({
             </div>
           </div>
 
-          {!isStreaming && (
-            <Badge
-              variant="secondary"
-              className={
-                actualIsSuccess
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                  : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              }
-            >
-              {actualIsSuccess ? (
-                <CheckCircle className="h-3.5 w-3.5" />
-              ) : (
-                <AlertTriangle className="h-3.5 w-3.5" />
-              )}
-              {actualIsSuccess ? 'Scraping completed' : 'Scraping failed'}
-            </Badge>
-          )}
         </div>
       </CardHeader>
 
@@ -165,7 +148,7 @@ export function WebScrapeToolView({
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="text-center w-full max-w-xs">
               <div className="w-16 h-16 rounded-full mx-auto mb-6 flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/10 border border-primary/20">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <KortixLoader customSize={32} />
               </div>
               <h3 className="text-lg font-medium text-zinc-900 dark:text-zinc-100 mb-2">
                 Extracting Content

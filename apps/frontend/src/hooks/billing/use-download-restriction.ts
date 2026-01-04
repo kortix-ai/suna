@@ -4,7 +4,7 @@ import { useCallback } from 'react';
 import { useSubscriptionStore } from '@/stores/subscription-store';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { isLocalMode } from '@/lib/config';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 interface UseDownloadRestrictionOptions {
   /** Custom feature name for the toast message (e.g., "files", "presentations", "images") */

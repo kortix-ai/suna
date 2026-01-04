@@ -1,6 +1,7 @@
 import type React from "react"
 import { Check, Clock, CheckCircle, AlertTriangle, ListTodo, X, Circle, CircleCheck } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { KortixLoader } from "@/components/ui/kortix-loader"
 import { extractTaskListData, type Task, type Section } from "./_utils"
 import { getToolTitle } from "../utils"
 import type { ToolViewProps } from "../types"
@@ -116,26 +117,9 @@ export const TaskListToolView: React.FC<ToolViewProps> = ({
           </div>
 
           {!isStreaming && (
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-xs font-normal">
-                {completedTasks} / {totalTasks} tasks
-              </Badge>
-              <Badge
-                variant="secondary"
-                className={
-                  isSuccess
-                    ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                    : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-                }
-              >
-                {isSuccess ? (
-                  <CheckCircle className="h-3.5 w-3.5" />
-                ) : (
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                )}
-                {isSuccess ? 'Tasks loaded' : 'Failed to load'}
-              </Badge>
-            </div>
+            <Badge variant="outline" className="text-xs font-normal">
+              {completedTasks} / {totalTasks} tasks
+            </Badge>
           )}
         </div>
       </CardHeader>
@@ -144,7 +128,7 @@ export const TaskListToolView: React.FC<ToolViewProps> = ({
         {isStreaming && !hasData ? (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-green-100 to-green-50 shadow-inner dark:from-green-800/40 dark:to-green-900/60">
-              <Clock className="h-10 w-10 text-green-500 dark:text-green-400 animate-spin" />
+              <KortixLoader size="medium" />
             </div>
             <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
               Loading Tasks

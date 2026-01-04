@@ -31,13 +31,13 @@ import {
     X,
     CheckCircle,
     AlertCircle,
-    Loader2,
     Upload,
     Check,
     FileIcon,
     Folder,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { KortixLoader } from '@/components/ui/kortix-loader';
+import { toast } from '@/lib/toast';
 import { createClient } from '@/lib/supabase/client';
 import { useNameValidation } from '@/lib/validation';
 import { cn } from '@/lib/utils';
@@ -474,7 +474,7 @@ export function UnifiedKbEntryModal({
                                     disabled={!folderValidation.isValid || isCreatingFolder}
                                 >
                                     {isCreatingFolder ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        <KortixLoader size="small" />
                                     ) : (
                                         <Check className="h-4 w-4" />
                                     )}
@@ -583,7 +583,7 @@ export function UnifiedKbEntryModal({
                                                 <p className="text-xs text-muted-foreground">{formatFileSize(status.file.size)}</p>
                                             </div>
                                             <div className="flex items-center gap-2 shrink-0">
-                                                {status.status === 'uploading' && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                                                {status.status === 'uploading' && <KortixLoader size="small" />}
                                                 {status.status === 'success' && <CheckCircle className="h-4 w-4 text-green-500" />}
                                                 {status.status === 'error' && <AlertCircle className="h-4 w-4 text-destructive" />}
                                                 {status.status === 'queued' && !isUploading && (
@@ -670,7 +670,7 @@ export function UnifiedKbEntryModal({
                         >
                             {isUploading ? (
                                 <>
-                                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                    <KortixLoader size="small" className="mr-2" />
                                     Uploading...
                                 </>
                             ) : (
@@ -688,7 +688,7 @@ export function UnifiedKbEntryModal({
                         >
                             {isCreatingText ? (
                                 <>
-                                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                    <KortixLoader size="small" className="mr-2" />
                                     Creating...
                                 </>
                             ) : (
@@ -706,7 +706,7 @@ export function UnifiedKbEntryModal({
                         >
                             {isCloning ? (
                                 <>
-                                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                    <KortixLoader size="small" className="mr-2" />
                                     Cloning...
                                 </>
                             ) : (

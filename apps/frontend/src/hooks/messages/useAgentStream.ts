@@ -5,7 +5,7 @@ import {
   getAgentStatus,
   stopAgent,
 } from '@/lib/api/agents';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import {
   UnifiedMessage,
   ParsedContent,
