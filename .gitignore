@@ -215,7 +215,7 @@ dump.rdb
 # Node.js dependencies
 node_modules/
 **/node_modules/
-
+.pnpm-store/**
 # mobile specific
 apps/mobile/node_modules/
 apps/mobile/.expo/
