@@ -24,16 +24,6 @@ const getEndOfCurrentMonthUTC = (): number => {
 
 const PROMOS: PromoConfig[] = [
   {
-    id: 'end-of-year-2025',
-    promoCode: 'KORTIX26',
-    badgeLabel: 'End of Year Offer',
-    description: 'Use code {code} to get {discount} for the first three months + 2X credits as welcome bonus',
-    // Active from now until Jan 2, 2026 23:59:59 UTC
-    startDate: Date.UTC(2025, 11, 1, 0, 0, 0), // Dec 1, 2025 00:00:00 UTC (start showing now)
-    endDate: Date.UTC(2026, 0, 2, 23, 59, 59), // Jan 2, 2026 23:59:59 UTC
-    priority: 200, // Highest priority
-  },
-  {
     id: 'welcome-bonus',
     promoCode: 'WELCOME2X',
     badgeLabel: 'Welcome Bonus',

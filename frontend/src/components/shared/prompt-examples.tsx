@@ -5,13 +5,15 @@ import { motion } from 'framer-motion';
 import { ArrowUpRight } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import Image from 'next/image';
 
 export interface PromptExample {
   text: string;
   icon?: React.ComponentType<{ className?: string }>;
+  thumbnail?: string;
 }
 
-type Variant = 'text' | 'card';
+type Variant = 'text' | 'card' | 'visual';
 
 interface PromptExamplesProps {
   prompts: PromptExample[];
@@ -19,7 +21,7 @@ interface PromptExamplesProps {
   className?: string;
   title?: string;
   showTitle?: boolean;
-  columns?: 1 | 2;
+  columns?: 1 | 2 | 3 | 4;
   variant?: Variant;
 }
 
@@ -63,6 +65,69 @@ export function PromptExamples({
                 </p>
                 <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-foreground/60 shrink-0 transition-all duration-150 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
               </div>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Visual variant (grid with thumbnails for visual modes like slides, image, video)
+  if (variant === 'visual') {
+    return (
+      <div className={cn('space-y-3', className)}>
+        {showTitle && (
+          <p className="text-xs text-muted-foreground/60">
+            {title}
+          </p>
+        )}
+        <div className={cn(
+          'grid gap-3',
+          columns === 1 ? 'grid-cols-1' : 
+          columns === 3 ? 'grid-cols-2 sm:grid-cols-3' :
+          columns === 4 ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4' :
+          'grid-cols-1 sm:grid-cols-2'
+        )}>
+          {prompts.map((prompt, index) => (
+            <motion.div
+              key={`${prompt.text}-${index}`}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{
+                duration: 0.25,
+                delay: index * 0.04,
+                ease: 'easeOut',
+              }}
+            >
+              <Card
+                className="flex flex-col gap-2 cursor-pointer p-2 hover:bg-accent/30 transition-all duration-200 group border border-border hover:border-border/80 rounded-xl"
+                onClick={() => onPromptClick?.(prompt.text)}
+              >
+                {/* Thumbnail - matches template thumbnail styling */}
+                <div className="relative w-full aspect-video bg-muted/30 overflow-hidden rounded-lg border border-border/50 group-hover:border-primary/30 group-hover:scale-[1.02] transition-all duration-200">
+                  {prompt.thumbnail ? (
+                    <Image
+                      src={prompt.thumbnail}
+                      alt={prompt.text}
+                      fill
+                      sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 25vw"
+                      className="object-contain"
+                      loading="lazy"
+                    />
+                  ) : (
+                    // Gradient placeholder with pattern
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5">
+                      <div className="absolute inset-0 opacity-30" style={{
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%239C92AC' fill-opacity='0.1' fill-rule='evenodd'%3E%3Ccircle cx='3' cy='3' r='3'/%3E%3Ccircle cx='13' cy='13' r='3'/%3E%3C/g%3E%3C/svg%3E")`,
+                      }} />
+                    </div>
+                  )}
+                </div>
+                {/* Text */}
+                <p className="text-xs text-foreground/70 group-hover:text-foreground leading-relaxed line-clamp-2 transition-colors duration-200 px-0.5">
+                  {prompt.text}
+                </p>
+              </Card>
             </motion.div>
           ))}
         </div>

@@ -48,6 +48,8 @@ export {
 
 // Assistant message renderer (web-specific due to React components)
 export { 
-  renderAssistantMessage, 
+  renderAssistantMessage,
+  renderAssistantTextContent,
+  renderAssistantToolCalls,
   type AssistantMessageRendererProps 
 } from './assistant-message-renderer';

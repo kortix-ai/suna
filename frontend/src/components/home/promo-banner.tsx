@@ -30,9 +30,9 @@ export function PromoBanner({ className }: PromoBannerProps) {
         <div className="flex items-center gap-2">
           <Gift className="w-4 h-4 text-primary" />
           <span className="text-sm font-medium text-foreground">
-            <span className="font-semibold">End of Year Offer</span>
+            <span className="font-semibold">{promo.badgeLabel}</span>
             <span className="text-muted-foreground mx-1.5">·</span>
-            <span className="text-primary font-semibold">{promo.promoCode}</span> for 30% off + 2X credits
+            <span className="text-primary font-semibold">{promo.promoCode}</span> · {promo.description}
           </span>
         </div>
         <div className="flex items-center gap-1 text-xs text-muted-foreground">

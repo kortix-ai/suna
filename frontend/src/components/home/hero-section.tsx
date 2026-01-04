@@ -43,7 +43,6 @@ import { useTranslations } from 'next-intl';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useAccountState } from '@/hooks/billing';
 import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
-import { PromoBanner } from '@/components/home/promo-banner';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
@@ -272,7 +271,6 @@ export function HeroSection() {
                 <div className="relative z-10 pt-20 sm:pt-24 md:pt-32 mx-auto h-full w-full max-w-6xl flex flex-col items-center justify-center min-h-[60vh] sm:min-h-0">
 
                     <div className="flex flex-col items-center justify-center gap-4 sm:gap-5 pt-12 sm:pt-20 max-w-4xl mx-auto pb-4 sm:pb-5">
-                        <PromoBanner />
                         <DynamicGreeting className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium text-balance text-center px-4 sm:px-2" />
                     </div>
 
