@@ -155,8 +155,25 @@ async def create_thread_optimistically(
                 pass
             raise
     
-    # Create user message AND dispatch to worker in parallel for faster TTFT
+    # Create user message, agent_run record, AND dispatch to worker in parallel for faster TTFT
+    # Creating agent_run synchronously ensures frontend can poll it immediately
     from core.worker import dispatch_thread_init
+    from core.agents.runs import _load_agent_config, _get_effective_model, _create_agent_run_record
+    from core.ai_models import model_manager
+    
+    # Resolve model and get agent config first
+    effective_model = model_name
+    if not effective_model:
+        effective_model = await model_manager.get_default_model_for_user(client, account_id)
+    else:
+        effective_model = model_manager.resolve_model_id(effective_model)
+    
+    agent_config = await _load_agent_config(client, agent_id, account_id, account_id, is_new_thread=True)
+    effective_model = await _get_effective_model(model_name, agent_config, client, account_id)
+    
+    # Create agent_run record synchronously so frontend can poll it immediately
+    agent_run_id = await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id)
+    logger.info(f"📝 Created agent_run {agent_run_id} synchronously for optimistic thread {thread_id}")
     
     async def insert_user_message():
         await client.table('messages').insert({
@@ -169,6 +186,7 @@ async def create_thread_optimistically(
         }).execute()
     
     async def dispatch_to_worker():
+        # Pass agent_run_id so worker doesn't create duplicate
         await dispatch_thread_init(
             thread_id=thread_id,
             project_id=project_id,
@@ -176,6 +194,7 @@ async def create_thread_optimistically(
             prompt=prompt,
             agent_id=agent_id,
             model_name=model_name,
+            agent_run_id=agent_run_id,
         )
     
     t_parallel = time.time()
@@ -215,5 +234,6 @@ async def create_thread_optimistically(
     return {
         "thread_id": thread_id,
         "project_id": project_id,
-        "status": "pending"
+        "agent_run_id": agent_run_id,
+        "status": "running"
     }

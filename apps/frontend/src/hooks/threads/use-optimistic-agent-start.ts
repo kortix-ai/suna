@@ -198,6 +198,13 @@ export function useOptimisticAgentStart(
         agent_id: agentId || undefined,
       }).then((response) => {
         console.log('[OptimisticAgentStart] API succeeded, response:', response);
+        
+        // Store agent_run_id so thread page can use it immediately (no polling needed)
+        if (response.agent_run_id) {
+          sessionStorage.setItem('optimistic_agent_run_id', response.agent_run_id);
+          sessionStorage.setItem('optimistic_agent_run_thread', threadId);
+        }
+        
         // Invalidate all relevant queries so the thread page picks up the new data
         queryClient.invalidateQueries({ queryKey: ['threads', 'list'] });
         queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });

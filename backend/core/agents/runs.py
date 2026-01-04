@@ -982,8 +982,8 @@ async def unified_agent_start(
             return {
                 "thread_id": result["thread_id"],
                 "project_id": result["project_id"],
-                "agent_run_id": None,
-                "status": "pending"
+                "agent_run_id": result.get("agent_run_id"),
+                "status": result.get("status", "running")
             }
         
         except HTTPException:

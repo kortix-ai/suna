@@ -38,6 +38,12 @@ importers:
       '@codemirror/commands':
         specifier: ^6.10.1
         version: 6.10.1
+      '@codemirror/language':
+        specifier: ^6.12.1
+        version: 6.12.1
+      '@codemirror/state':
+        specifier: ^6.5.3
+        version: 6.5.3
       '@codemirror/view':
         specifier: ^6.38.1
         version: 6.39.8
@@ -59,6 +65,18 @@ importers:
       '@emoji-mart/react':
         specifier: ^1.1.1
         version: 1.1.1(emoji-mart@5.6.0)(react@18.3.1)
+      '@floating-ui/dom':
+        specifier: ^1.7.4
+        version: 1.7.4
+      '@floating-ui/react-dom':
+        specifier: ^2.1.6
+        version: 2.1.6(react-dom@18.3.1)(react@18.3.1)
+      '@formatjs/fast-memoize':
+        specifier: ^3.0.2
+        version: 3.0.2
+      '@formatjs/icu-messageformat-parser':
+        specifier: ^3.2.1
+        version: 3.2.1
       '@hookform/resolvers':
         specifier: ^5.2.1
         version: 5.2.2(react-hook-form@7.70.0)
@@ -3362,8 +3380,23 @@ packages:
       tslib: 2.8.1
     dev: false
 
+  /@formatjs/ecma402-abstract@3.0.7:
+    resolution: {integrity: sha512-U55Yulf37vBXN0C7gHm7hrxULVrcrhpQBcdLmIN2rpYpLfC5eIpa1JRX9efjU74gfzjK/MSmSG3Lxv3E4ZNZIw==}
+    dependencies:
+      '@formatjs/fast-memoize': 3.0.2
+      '@formatjs/intl-localematcher': 0.7.4
+      decimal.js: 10.6.0
+      tslib: 2.8.1
+    dev: false
+
   /@formatjs/fast-memoize@2.2.7:
     resolution: {integrity: sha512-Yabmi9nSvyOMrlSeGGWDiH7rf3a7sIwplbvo/dlz9WCIjzIQAfy1RMf4S0X3yG724n5Ghu2GmEl5NJIV6O9sZQ==}
+    dependencies:
+      tslib: 2.8.1
+    dev: false
+
+  /@formatjs/fast-memoize@3.0.2:
+    resolution: {integrity: sha512-YFApUDWFmjpPwAE7VcY7PYVjm6JaLZOAo0UfCQj1/OGi/1QtduG9kIBHmVC551M6AI01qvuP5kjbDebrZOT4Vg==}
     dependencies:
       tslib: 2.8.1
     dev: false
@@ -3376,10 +3409,25 @@ packages:
       tslib: 2.8.1
     dev: false
 
+  /@formatjs/icu-messageformat-parser@3.2.1:
+    resolution: {integrity: sha512-DEECn8HEHtI4dvfKtTfvDOZ9nCTAJ2ESXGPRGKe4dkn/RE9w/G0NjgP/kFAQJbwIKWHo+BRxpee1bQKJ4lF6pg==}
+    dependencies:
+      '@formatjs/ecma402-abstract': 3.0.7
+      '@formatjs/icu-skeleton-parser': 2.0.7
+      tslib: 2.8.1
+    dev: false
+
   /@formatjs/icu-skeleton-parser@1.8.16:
     resolution: {integrity: sha512-H13E9Xl+PxBd8D5/6TVUluSpxGNvFSlN/b3coUp0e0JpuWXXnQDiavIpY3NnvSp4xhEMoXyyBvVfdFX8jglOHQ==}
     dependencies:
       '@formatjs/ecma402-abstract': 2.3.6
+      tslib: 2.8.1
+    dev: false
+
+  /@formatjs/icu-skeleton-parser@2.0.7:
+    resolution: {integrity: sha512-/LEeQ2gOU7ujm7LJk07OYYOpsOtIH/6ma78vTHvZNGZ6m0wn3gxQqU39HEpXZfez6aIhGh7Psde2H2ILj5wb0Q==}
+    dependencies:
+      '@formatjs/ecma402-abstract': 3.0.7
       tslib: 2.8.1
     dev: false
 
@@ -3392,6 +3440,13 @@ packages:
   /@formatjs/intl-localematcher@0.6.2:
     resolution: {integrity: sha512-XOMO2Hupl0wdd172Y06h6kLpBz6Dv+J4okPLl4LPtzbr8f66WbIoy4ev98EBuZ6ZK4h5ydTN6XneT4QVpD7cdA==}
     dependencies:
+      tslib: 2.8.1
+    dev: false
+
+  /@formatjs/intl-localematcher@0.7.4:
+    resolution: {integrity: sha512-AWsSZupIBMU/y04Nj24CjohyNVyfItMJPxSzX5OJwedDEIbGLOHkPxCjAeLeiLF2dw4xmQA8psktdi9MaebBQw==}
+    dependencies:
+      '@formatjs/fast-memoize': 3.0.2
       tslib: 2.8.1
     dev: false
 

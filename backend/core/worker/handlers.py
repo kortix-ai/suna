@@ -203,11 +203,12 @@ async def handle_thread_init(task: ThreadInitTask):
     account_id = task.account_id
     agent_id = task.agent_id
     model_name = task.model_name
+    agent_run_id = task.agent_run_id  # May be pre-created by optimistic path
     
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id)
     
-    logger.info(f"🧵 Initializing thread: {thread_id}")
+    logger.info(f"🧵 Initializing thread: {thread_id} (pre-created agent_run: {agent_run_id is not None})")
     
     await initialize()
     
@@ -226,12 +227,17 @@ async def handle_thread_init(task: ThreadInitTask):
         else:
             effective_model = model_manager.resolve_model_id(effective_model)
         
-        # Load agent config and create agent_run record (can be done before status update)
+        # Load agent config and create agent_run record (skip if already provided)
         t_config = time.time()
         agent_config = await _load_agent_config(client, agent_id, account_id, account_id, is_new_thread=False)
         effective_model = await _get_effective_model(model_name, agent_config, client, account_id)
-        agent_run_id = await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id)
-        logger.debug(f"⏱️ [TIMING] Agent config + run record: {(time.time() - t_config) * 1000:.1f}ms")
+        
+        if not agent_run_id:
+            # Only create agent_run if not pre-created by optimistic path
+            agent_run_id = await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id)
+            logger.debug(f"⏱️ [TIMING] Agent config + run record: {(time.time() - t_config) * 1000:.1f}ms")
+        else:
+            logger.debug(f"⏱️ [TIMING] Agent config (run pre-created): {(time.time() - t_config) * 1000:.1f}ms")
         
         # Update thread status and dispatch agent run in parallel
         worker_instance_id = str(uuid.uuid4())[:8]

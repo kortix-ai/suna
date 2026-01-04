@@ -32,8 +32,8 @@ export interface UnifiedAgentStartResponse {
 export interface OptimisticAgentStartResponse {
   thread_id: string;
   project_id: string;
-  agent_run_id: null;
-  status: 'pending';
+  agent_run_id: string | null;  // Now synchronously created, so usually non-null
+  status: 'pending' | 'running';
 }
 
 export interface AgentIconGenerationRequest {

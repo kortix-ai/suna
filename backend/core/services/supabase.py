@@ -9,13 +9,38 @@ from datetime import datetime
 import threading
 import httpx
 
-SUPABASE_MAX_CONNECTIONS = 500
-SUPABASE_MAX_KEEPALIVE = 100
+# =============================================================================
+# Connection Pool Configuration
+# =============================================================================
+# Tuned for Supabase 2XL tier:
+#   - Max client connections: 1500
+#   - Pool size: 250 (per user+db combination)
+#
+# With 12 workers x 48 concurrency = 576 max concurrent operations
+# We allocate ~120 connections per worker (12 * 120 = 1440, within 1500 limit)
+#
+# Key considerations:
+# - Each worker has its own connection pool (singleton per process)
+# - HTTP/2 multiplexes many requests over fewer TCP connections
+# - Pool timeout should be generous to avoid failures during traffic spikes
+# - Keepalive prevents connection churn under sustained load
+# =============================================================================
 
-SUPABASE_CONNECT_TIMEOUT = 5.0
-SUPABASE_READ_TIMEOUT = 30.0
-SUPABASE_POOL_TIMEOUT = 10.0
-SUPABASE_WRITE_TIMEOUT = 30.0
+# Connection limits (per worker process)
+# With 12 workers: 12 * 120 = 1440 max connections (within Supabase 1500 limit)
+SUPABASE_MAX_CONNECTIONS = int(os.getenv("SUPABASE_MAX_CONNECTIONS", "120"))
+SUPABASE_MAX_KEEPALIVE = int(os.getenv("SUPABASE_MAX_KEEPALIVE", "60"))
+SUPABASE_KEEPALIVE_EXPIRY = float(os.getenv("SUPABASE_KEEPALIVE_EXPIRY", "120.0"))  # 2 min keepalive
+
+# Timeout settings (in seconds)
+SUPABASE_CONNECT_TIMEOUT = float(os.getenv("SUPABASE_CONNECT_TIMEOUT", "10.0"))  # TCP connect
+SUPABASE_READ_TIMEOUT = float(os.getenv("SUPABASE_READ_TIMEOUT", "30.0"))        # Response read
+SUPABASE_WRITE_TIMEOUT = float(os.getenv("SUPABASE_WRITE_TIMEOUT", "30.0"))      # Request write
+SUPABASE_POOL_TIMEOUT = float(os.getenv("SUPABASE_POOL_TIMEOUT", "30.0"))        # Wait for pool slot
+
+# HTTP transport settings
+SUPABASE_HTTP2_ENABLED = os.getenv("SUPABASE_HTTP2_ENABLED", "true").lower() == "true"
+SUPABASE_RETRIES = int(os.getenv("SUPABASE_RETRIES", "3"))  # Transport-level retries
 
 
 class DBConnection:
@@ -36,10 +61,19 @@ class DBConnection:
         pass
 
     def _create_http_client(self) -> httpx.AsyncClient:
+        """
+        Create an HTTP client with optimized settings for high-concurrency workloads.
+        
+        Features:
+        - Connection pooling with keepalive
+        - Transport-level retries for transient failures
+        - HTTP/2 multiplexing (configurable)
+        - Generous timeouts for stability under load
+        """
         limits = httpx.Limits(
             max_connections=SUPABASE_MAX_CONNECTIONS,
             max_keepalive_connections=SUPABASE_MAX_KEEPALIVE,
-            keepalive_expiry=30.0,
+            keepalive_expiry=SUPABASE_KEEPALIVE_EXPIRY,
         )
         
         timeout = httpx.Timeout(
@@ -49,10 +83,17 @@ class DBConnection:
             pool=SUPABASE_POOL_TIMEOUT,
         )
         
+        # Create transport with retries for connection-level failures
+        # This handles TCP connect failures, TLS handshake failures, etc.
+        transport = httpx.AsyncHTTPTransport(
+            retries=SUPABASE_RETRIES,
+            http2=SUPABASE_HTTP2_ENABLED,
+        )
+        
         return httpx.AsyncClient(
             limits=limits,
             timeout=timeout,
-            http2=True,
+            transport=transport,
         )
 
     async def initialize(self):
@@ -69,10 +110,16 @@ class DBConnection:
 
             from supabase.lib.client_options import AsyncClientOptions
             
+            # Create our custom HTTP client with optimized settings
             self._http_client = self._create_http_client()
             
+            # Pass the custom httpx client directly to the Supabase SDK
+            # This ensures ALL Supabase operations use our pooled/optimized client
             options = AsyncClientOptions(
+                httpx_client=self._http_client,  # <-- KEY FIX: Use our custom client
                 postgrest_client_timeout=SUPABASE_READ_TIMEOUT,
+                storage_client_timeout=SUPABASE_READ_TIMEOUT,
+                function_client_timeout=SUPABASE_READ_TIMEOUT,
             )
             
             self._client = await create_async_client(
@@ -81,14 +128,13 @@ class DBConnection:
                 options=options
             )
             
-            if hasattr(self._client, 'postgrest') and hasattr(self._client.postgrest, '_session'):
-                self._client.postgrest._session = self._http_client
-            
             self._initialized = True
             key_type = "SERVICE_ROLE_KEY" if config.SUPABASE_SERVICE_ROLE_KEY else "ANON_KEY"
             logger.info(
-                f"Database connection initialized with Supabase using {key_type} "
-                f"(max_conn={SUPABASE_MAX_CONNECTIONS}, connect_timeout={SUPABASE_CONNECT_TIMEOUT}s)"
+                f"Database connection initialized with Supabase using {key_type} | "
+                f"pool(max={SUPABASE_MAX_CONNECTIONS}, keepalive={SUPABASE_MAX_KEEPALIVE}) | "
+                f"timeout(connect={SUPABASE_CONNECT_TIMEOUT}s, pool={SUPABASE_POOL_TIMEOUT}s) | "
+                f"transport(http2={SUPABASE_HTTP2_ENABLED}, retries={SUPABASE_RETRIES})"
             )
             
         except Exception as e:

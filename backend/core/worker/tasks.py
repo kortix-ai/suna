@@ -81,6 +81,7 @@ class ThreadInitTask(TaskMessage):
     prompt: str = ""
     agent_id: Optional[str] = None
     model_name: Optional[str] = None
+    agent_run_id: Optional[str] = None  # If provided, skip creating agent_run record
     
     @classmethod
     def from_dict(cls, data: Dict[str, str]) -> "ThreadInitTask":
@@ -91,6 +92,7 @@ class ThreadInitTask(TaskMessage):
             prompt=data.get("prompt", ""),
             agent_id=data.get("agent_id") or None,
             model_name=data.get("model_name") or None,
+            agent_run_id=data.get("agent_run_id") or None,
             enqueued_at=float(data.get("enqueued_at", 0)),
         )
 

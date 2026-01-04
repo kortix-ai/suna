@@ -52,6 +52,7 @@ async def dispatch_thread_init(
     prompt: str,
     agent_id: Optional[str] = None,
     model_name: Optional[str] = None,
+    agent_run_id: Optional[str] = None,
 ) -> str:
     """Dispatch a thread initialization task."""
     task = ThreadInitTask(
@@ -61,6 +62,7 @@ async def dispatch_thread_init(
         prompt=prompt,
         agent_id=agent_id,
         model_name=model_name,
+        agent_run_id=agent_run_id,
     )
     return await _dispatch_task(StreamName.THREAD_INIT, task)
 
