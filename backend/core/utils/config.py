@@ -51,20 +51,9 @@ class Configuration:
     AGENT_TOOL_EXECUTION_STRATEGY: str = "parallel"  # "parallel" or "sequential"
     # ============================================
     
-
-    ENABLE_BOOTSTRAP_MODE: bool = True        # Use two-phase bootstrap+enrichment (faster startup)
-    ENABLE_MINIMAL_PROMPT: bool = True        # Use minimal prompt for first turn (no DB queries)
-    BOOTSTRAP_SLO_WARNING_MS: int = 750       # Emit warning if Phase A exceeds this threshold
-    BOOTSTRAP_SLO_CRITICAL_MS: int = 1500     # Hard timeout for Phase A (fail if exceeded)
-    # =========================================
-    
     # ===== PRESENCE CONFIGURATION =====
     DISABLE_PRESENCE: bool = False  # Disable presence tracking entirely
     # ==================================
-    
-    # ===== MEMORY CONFIGURATION =====
-    ENABLE_MEMORY: bool = False  # Disable memory feature entirely
-    # ================================
     
     SYSTEM_ADMIN_USER_ID: Optional[str] = None  # User ID that owns shared/fallback agents
 
@@ -297,7 +286,6 @@ class Configuration:
     VOYAGE_API_KEY: Optional[str] = None
     GROQ_API_KEY: Optional[str] = None
     OPENROUTER_API_KEY: Optional[str] = None
-    MINIMAX_API_KEY: Optional[str] = None
     XAI_API_KEY: Optional[str] = None
     MORPH_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None

@@ -61,119 +61,6 @@ async def _get_agent_run_with_access_check(client, agent_run_id: str, user_id: s
     return agent_run_data
 
 
-async def _find_shared_suna_agent(client):
-    from .agent_loader import get_agent_loader
-    from core.utils.config import config
-    
-    admin_user_id = config.SYSTEM_ADMIN_USER_ID
-    
-    if admin_user_id:
-        admin_suna = await client.table('agents').select('agent_id').eq('account_id', admin_user_id).eq('metadata->>is_suna_default', 'true').maybe_single().execute()
-        
-        if admin_suna and admin_suna.data:
-            loader = await get_agent_loader()
-            agent_data = await loader.load_agent(admin_suna.data['agent_id'], admin_user_id, load_config=True)
-            logger.info(f"✅ Using system Suna agent from admin user: {agent_data.name} ({agent_data.agent_id})")
-            return agent_data
-        else:
-            logger.warning(f"⚠️ SYSTEM_ADMIN_USER_ID configured but no Suna agent found for user {admin_user_id}")
-    
-    any_suna = await client.table('agents').select('agent_id, account_id').eq('metadata->>is_suna_default', 'true').limit(1).maybe_single().execute()
-    
-    if any_suna and any_suna.data:
-        loader = await get_agent_loader()
-        agent_data = await loader.load_agent(any_suna.data['agent_id'], any_suna.data['account_id'], load_config=True)
-        logger.info(f"Using shared Suna agent: {agent_data.name} ({agent_data.agent_id})")
-        return agent_data
-    
-    logger.error("❌ No Suna agent found! Set SYSTEM_ADMIN_USER_ID in .env")
-    return None
-
-
-async def _load_agent_config(client, agent_id: Optional[str], account_id: str, user_id: str, is_new_thread: bool = False):
-    import time
-    t_start = time.time()
-    
-    from .agent_loader import get_agent_loader
-    loader = await get_agent_loader()
-    
-    agent_data = None
-    
-    logger.debug(f"[AGENT LOAD] Loading agent: {agent_id or 'default'}")
-
-    if agent_id:
-        from core.cache.runtime_cache import get_static_suna_config, get_cached_user_mcps
-        
-        static_config = get_static_suna_config()
-        cached_mcps = await get_cached_user_mcps(agent_id)
-        
-        if static_config and cached_mcps is not None:
-            from .agent_loader import AgentData
-            agent_data = AgentData(
-                agent_id=agent_id,
-                name="Kortix",
-                description=None,
-                account_id=account_id,
-                is_default=True,
-                is_public=False,
-                tags=[],
-                icon_name=None,
-                icon_color=None,
-                icon_background=None,
-                created_at="",
-                updated_at="",
-                current_version_id=None,
-                version_count=1,
-                metadata={'is_suna_default': True},
-                system_prompt=static_config['system_prompt'],
-                model=static_config['model'],
-                agentpress_tools=static_config['agentpress_tools'],
-                configured_mcps=cached_mcps.get('configured_mcps', []),
-                custom_mcps=cached_mcps.get('custom_mcps', []),
-                triggers=cached_mcps.get('triggers', []),
-                is_suna_default=True,
-                centrally_managed=True,
-                config_loaded=True,
-                restrictions=static_config['restrictions']
-            )
-            logger.info(f"⚡ [FAST PATH] Suna config from memory + Redis MCPs: {(time.time() - t_start)*1000:.1f}ms (zero DB calls)")
-        else:
-            t_loader = time.time()
-            agent_data = await loader.load_agent(agent_id, user_id, load_config=True)
-            logger.info(f"⏱️ [TIMING] Agent loader (DB path): {(time.time() - t_loader)*1000:.1f}ms | Total: {(time.time() - t_start)*1000:.1f}ms")
-            logger.debug(f"Using agent {agent_data.name} ({agent_id}) version {agent_data.version_name}")
-    else:
-        logger.debug(f"[AGENT LOAD] Loading default agent")
-        
-        if is_new_thread:
-            from core.utils.ensure_suna import ensure_suna_installed
-            await ensure_suna_installed(account_id)
-        
-        default_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('metadata->>is_suna_default', 'true').maybe_single().execute()
-        
-        if default_agent and default_agent.data:
-            agent_data = await loader.load_agent(default_agent.data['agent_id'], user_id, load_config=True)
-            logger.debug(f"Using default agent: {agent_data.name} ({agent_data.agent_id}) version {agent_data.version_name}")
-        else:
-            logger.warning(f"[AGENT LOAD] No default agent found for account {account_id}, searching for shared Suna")
-            agent_data = await _find_shared_suna_agent(client)
-            
-            if not agent_data:
-                any_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).limit(1).maybe_single().execute()
-                
-                if any_agent and any_agent.data:
-                    agent_data = await loader.load_agent(any_agent.data['agent_id'], user_id, load_config=True)
-                    logger.info(f"[AGENT LOAD] Using fallback agent: {agent_data.name} ({agent_data.agent_id})")
-                else:
-                    logger.error(f"[AGENT LOAD] No agents found for account {account_id}")
-                    raise HTTPException(status_code=404, detail="No agents available. Please create an agent first.")
-    
-    agent_config = agent_data.to_dict() if agent_data else None
-    
-    if agent_config:
-        logger.debug(f"Using agent {agent_config['agent_id']} for this agent run")
-    
-    return agent_config
 
 
 async def _check_billing_and_limits(client, account_id: str, model_name: Optional[str], check_project_limit: bool = False, check_thread_limit: bool = False):
@@ -753,7 +640,8 @@ async def start_agent_run(
     t_parallel = time.time()
     
     async def load_config():
-        return await _load_agent_config(client, agent_id, account_id, account_id, is_new_thread=is_new_thread)
+        from core.worker.helpers import load_agent_config
+        return await load_agent_config(agent_id, account_id, user_id=account_id, client=client, is_new_thread=is_new_thread)
     
     async def check_limits():
         if skip_limits_check:

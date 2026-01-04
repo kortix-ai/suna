@@ -39,8 +39,8 @@ async def ensure_consumer_groups(redis) -> None:
                 logger.warning(f"Failed to create consumer group for {stream.value}: {e}")
 
 
-async def reclaim_pending_messages(redis, consumer_name: str, stream: str) -> int:
-    """Reclaim messages from dead consumers."""
+async def reclaim_pending_messages(redis, consumer_name: str, stream: str, handlers: Optional[Dict[str, Callable]] = None) -> int:
+    """Reclaim messages from dead consumers and optionally process them."""
     try:
         result = await redis.xautoclaim(
             stream,
@@ -52,11 +52,47 @@ async def reclaim_pending_messages(redis, consumer_name: str, stream: str) -> in
         )
         
         if result and len(result) > 1 and result[1]:
-            reclaimed_count = len(result[1])
+            reclaimed_messages = result[1]
+            reclaimed_count = len(reclaimed_messages)
             if reclaimed_count > 0:
                 logger.warning(
                     f"🔄 Reclaimed {reclaimed_count} pending messages from {stream}"
                 )
+                
+                # Process reclaimed messages if handlers provided
+                if handlers:
+                    for entry_id, fields in reclaimed_messages:
+                        try:
+                            task_message = parse_task_message(fields)
+                            handler = handlers.get(task_message.task_type)
+                            if handler:
+                                logger.info(f"🔄 Processing reclaimed message: {task_message.task_type} | entry_id={entry_id}")
+                                await handler(task_message)
+                                await redis.xack(stream, CONSUMER_GROUP, entry_id)
+                                logger.info(f"✅ Processed reclaimed message: {entry_id}")
+                            else:
+                                # No handler - acknowledge to prevent infinite reclaim
+                                logger.warning(f"⚠️ No handler for reclaimed {task_message.task_type}, acknowledging to clear")
+                                await redis.xack(stream, CONSUMER_GROUP, entry_id)
+                        except Exception as e:
+                            # Message failed to process - log and acknowledge to prevent infinite reclaim
+                            # This acts as a simple dead letter mechanism
+                            logger.error(f"❌ Reclaimed message {entry_id} failed, moving to DLQ: {e}")
+                            await redis.xack(stream, CONSUMER_GROUP, entry_id)
+                            # Store failed message in DLQ stream for investigation
+                            try:
+                                await redis.xadd(
+                                    f"{stream}:dlq",
+                                    {
+                                        "original_entry_id": str(entry_id),
+                                        "error": str(e)[:500],  # Truncate error
+                                        "stream": stream,
+                                        "timestamp": str(time.time())
+                                    }
+                                )
+                            except Exception as dlq_err:
+                                logger.debug(f"Failed to write to DLQ: {dlq_err}")
+                                
             return reclaimed_count
         return 0
         
@@ -150,12 +186,18 @@ class StreamWorker:
         logger.info(f"✅ StreamWorker stopped")
     
     async def _reclaim_loop(self):
-        """Periodically reclaim dead messages from all streams."""
+        """Periodically reclaim dead messages from all streams and process them."""
         while self._running:
             try:
                 await asyncio.sleep(PENDING_RECLAIM_INTERVAL)
                 for stream in self.streams:
-                    await reclaim_pending_messages(self._redis, self.consumer_name, stream.value)
+                    # Pass handlers so reclaimed messages actually get processed
+                    await reclaim_pending_messages(
+                        self._redis, 
+                        self.consumer_name, 
+                        stream.value,
+                        handlers=self.handlers
+                    )
             except asyncio.CancelledError:
                 break
             except Exception as e:

@@ -19,7 +19,7 @@ from core.run.config import AgentConfig
 from core.run.tool_manager import ToolManager
 from core.run.mcp_manager import MCPManager
 from core.run.prompt_manager import PromptManager
-from core.worker.tool_output_streaming_context import get_tool_output_streaming_context
+from core.worker.helpers import stream_status_message, ensure_project_metadata_cached
 
 load_dotenv()
 
@@ -28,65 +28,38 @@ load_dotenv()
 # Separation is the key fix; thread count can be tuned based on monitoring
 _SETUP_TOOLS_EXECUTOR = ThreadPoolExecutor(max_workers=16, thread_name_prefix="setup_tools")
 
-async def _stream_status_message(status: str, message: str, metadata: Optional[Dict[str, Any]] = None) -> None:
-    """Helper function to write status messages to Redis stream via streaming context."""
-    ctx = get_tool_output_streaming_context()
-    if not ctx:
-        return  # No streaming context available
-    
-    try:
-        from core.services import redis
-        
-        status_msg = {
-            "type": "status",
-            "status": status,
-            "message": message
-        }
-        if metadata:
-            status_msg["metadata"] = metadata
-        
-        status_json = json.dumps(status_msg)
-        await asyncio.wait_for(
-            redis.stream_add(
-                ctx.stream_key,
-                {"data": status_json},
-                maxlen=200,
-                approximate=True
-            ),
-            timeout=2.0
-        )
-    except (asyncio.TimeoutError, Exception):
-        pass  # Non-critical, don't log
+# Status streaming now handled by core.worker.helpers.stream_status_message
 
 class AgentRunner:
     def __init__(self, config: AgentConfig):
         self.config = config
-        self.enrichment_complete = False
-        self.enrichment_task = None
         self.cancellation_event = None
         self.turn_number = 0
         self.mcp_wrapper_instance = None
     
-    async def setup_bootstrap(self):
-        from core.utils.config import config
+    async def setup(self):
+        """Unified setup method - single clean path, no bootstrap/enrichment split."""
         setup_start = time.time()
         
-        await _stream_status_message("initializing", "Starting bootstrap setup...")
+        await stream_status_message("initializing", "Starting setup...")
         
         if self.cancellation_event and self.cancellation_event.is_set():
-            raise asyncio.CancelledError("Cancelled before bootstrap")
+            raise asyncio.CancelledError("Cancelled before setup")
         
         if not self.config.trace:
             self.config.trace = langfuse.trace(name="run_agent", session_id=self.config.thread_id, metadata={"project_id": self.config.project_id})
         
         from core.jit.config import JITConfig
-        disabled_tools = []
+        # Get disabled tools via ToolManager
+        temp_tool_manager = ToolManager(self.thread_manager, self.config.project_id, self.config.thread_id, self.config.agent_config)
+        disabled_tools = temp_tool_manager.get_disabled_tools_from_config()
         jit_config = JITConfig.from_run_context(
             agent_config=self.config.agent_config,
             disabled_tools=disabled_tools
         )
         
-        await _stream_status_message("initializing", "Creating thread manager...")
+        await stream_status_message("initializing", "Creating thread manager...")
+        tm_start = time.time()
         self.thread_manager = ThreadManager(
             trace=self.config.trace,
             agent_config=self.config.agent_config,
@@ -95,9 +68,13 @@ class AgentRunner:
             account_id=self.config.account_id,
             jit_config=jit_config
         )
+        logger.debug(f"⏱️ [TIMING] ThreadManager init: {(time.time() - tm_start) * 1000:.1f}ms")
         
+        db_start = time.time()
         self.client = await self.thread_manager.db.client
+        logger.debug(f"⏱️ [TIMING] DB client acquire: {(time.time() - db_start) * 1000:.1f}ms")
         
+        # Get account_id if not provided
         if not self.config.account_id:
             response = await self.client.table('threads').select('account_id').eq('thread_id', self.config.thread_id).maybe_single().execute()
             if not response.data:
@@ -108,116 +85,17 @@ class AgentRunner:
         else:
             self.account_id = self.config.account_id
         
-        await _stream_status_message("initializing", "Setting up MCP tools...")
-        await self._initialize_mcp_jit_loader(cache_only=False)
+        # Initialize MCP with cache_only=True (fast, no network calls)
+        await stream_status_message("initializing", "Setting up MCP tools...")
+        if self.config.agent_config:
+            mcp_manager = MCPManager(self.thread_manager, self.account_id)
+            await mcp_manager.initialize_jit_loader(self.config.agent_config, cache_only=True)
         
-        elapsed_ms = (time.time() - setup_start) * 1000
+        # Ensure project metadata is cached (non-blocking if already cached)
+        await ensure_project_metadata_cached(self.config.project_id, self.client)
         
-        await _stream_status_message("initializing", "Bootstrap setup complete, initializing tools...")
-        
-        if config.ENABLE_BOOTSTRAP_MODE:
-            if elapsed_ms > config.BOOTSTRAP_SLO_CRITICAL_MS:
-                logger.warning(f"⚠️ [SLO_WARNING] Bootstrap took {elapsed_ms:.1f}ms (limit: {config.BOOTSTRAP_SLO_CRITICAL_MS}ms) - MCP discovery may have been slow")
-            elif elapsed_ms > config.BOOTSTRAP_SLO_WARNING_MS:
-                logger.warning(f"⚠️ [SLO_VIOLATION] Bootstrap took {elapsed_ms:.1f}ms (target: ≤500ms, warning: {config.BOOTSTRAP_SLO_WARNING_MS}ms)")
-                if self.config.trace:
-                    self.config.trace.event(name="bootstrap_slow", metadata={"duration_ms": elapsed_ms})
-            else:
-                logger.info(f"✅ [BOOTSTRAP] Phase A: {elapsed_ms:.1f}ms (under SLO)")
-        
-        if config.ENABLE_BOOTSTRAP_MODE:
-            self.enrichment_task = asyncio.create_task(self.setup_enrichment())
-        
-        logger.debug(f"⏱️ [TIMING] setup_bootstrap() total: {elapsed_ms:.1f}ms")
-    
-    async def setup_enrichment(self):
-        enrichment_start = time.time()
-        try:
-            if self.cancellation_event and self.cancellation_event.is_set():
-                logger.info("⚠️ [ENRICHMENT] Cancelled before starting")
-                return
-            
-            from core.cache.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
-            
-            cached_project = await get_cached_project_metadata(self.config.project_id)
-            if not cached_project:
-                project = await self.client.table('projects').select('project_id, sandbox_resource_id').eq('project_id', self.config.project_id).execute()
-                if project.data:
-                    project_data = project.data[0]
-                    sandbox_resource_id = project_data.get('sandbox_resource_id')
-                    
-                    # Get sandbox info from resource if it exists
-                    sandbox_info = {}
-                    if sandbox_resource_id:
-                        from core.resources import ResourceService
-                        resource_service = ResourceService(self.client)
-                        resource = await resource_service.get_resource_by_id(sandbox_resource_id)
-                        if resource:
-                            sandbox_info = {
-                                'id': resource.get('external_id'),
-                                **resource.get('config', {})
-                            }
-                    
-                    await set_cached_project_metadata(self.config.project_id, sandbox_info)
-            
-            if hasattr(self.thread_manager, 'mcp_loader') and self.thread_manager.mcp_loader:
-                if len(self.thread_manager.mcp_loader.tool_map) == 0:
-                    mcp_jit_start = time.time()
-                    await self._initialize_mcp_jit_loader(cache_only=False)
-                    logger.info(f"⏱️ [ENRICHMENT] MCP JIT retry discovery: {(time.time() - mcp_jit_start) * 1000:.1f}ms")
-                else:
-                    logger.debug(f"⚡ [ENRICHMENT] MCP JIT already has {len(self.thread_manager.mcp_loader.tool_map)} tools, skipping")
-            
-            if self.config.agent_config and (self.config.agent_config.get("custom_mcps") or self.config.agent_config.get("configured_mcps")):
-                if not (hasattr(self.thread_manager, 'mcp_loader') and self.thread_manager.mcp_loader):
-                    mcp_start = time.time()
-                    logger.info("⚠️ [ENRICHMENT] Setting up legacy MCP in background")
-                    self.mcp_wrapper_instance = await self.setup_mcp_tools()
-                    logger.info(f"⏱️ [ENRICHMENT] MCP setup: {(time.time() - mcp_start) * 1000:.1f}ms")
-            
-            from core.jit.tool_cache import get_tool_cache
-            tool_cache = get_tool_cache()
-            if tool_cache.enabled:
-                from core.jit.config import JITConfig
-                disabled_tools = self._get_disabled_tools_from_config()
-                jit_config = JITConfig.from_run_context(
-                    agent_config=self.config.agent_config,
-                    disabled_tools=disabled_tools
-                )
-                allowed_tools = list(jit_config.get_allowed_tools())
-                cache_stats = await tool_cache.get_stats()
-                if cache_stats.get('cached_tools', 0) < len(allowed_tools) // 2:
-                    logger.info(f"🔥 [CACHE WARM] Warming cache for {len(allowed_tools)} tools...")
-                    asyncio.create_task(tool_cache.warm_cache(allowed_tools))
-            
-            self.enrichment_complete = True
-            elapsed = (time.time() - enrichment_start) * 1000
-            logger.info(f"✅ [ENRICHMENT] Phase B complete in {elapsed:.1f}ms - full capabilities now available")
-        
-        except asyncio.CancelledError:
-            logger.info("⚠️ [ENRICHMENT] Phase B cancelled (run stopped)")
-            raise
-        except Exception as e:
-            logger.warning(f"⚠️ [ENRICHMENT] Phase B failed (non-fatal): {e}")
-            self.enrichment_complete = False
-    
-    async def setup(self):
-        setup_start = time.time()
-        
-        if not self.config.trace:
-            self.config.trace = langfuse.trace(name="run_agent", session_id=self.config.thread_id, metadata={"project_id": self.config.project_id})
-        
-        tm_start = time.time()
-
-        from core.jit.config import JITConfig
+        # Warm tool cache in background (non-blocking)
         from core.jit.tool_cache import get_tool_cache
-        
-        disabled_tools = self._get_disabled_tools_from_config()
-        jit_config = JITConfig.from_run_context(
-            agent_config=self.config.agent_config,
-            disabled_tools=disabled_tools
-        )
-        
         tool_cache = get_tool_cache()
         if tool_cache.enabled:
             allowed_tools = list(jit_config.get_allowed_tools())
@@ -226,103 +104,8 @@ class AgentRunner:
                 logger.info(f"🔥 [CACHE WARM] Warming cache for {len(allowed_tools)} tools...")
                 asyncio.create_task(tool_cache.warm_cache(allowed_tools))
         
-        self.thread_manager = ThreadManager(
-            trace=self.config.trace, 
-            agent_config=self.config.agent_config,
-            project_id=self.config.project_id,
-            thread_id=self.config.thread_id,
-            account_id=self.config.account_id,
-            jit_config=jit_config
-        )
-        logger.debug(f"⏱️ [TIMING] ThreadManager init: {(time.time() - tm_start) * 1000:.1f}ms")
-
-        await self._initialize_mcp_jit_loader()
-        
-        db_start = time.time()
-        self.client = await self.thread_manager.db.client
-        logger.debug(f"⏱️ [TIMING] DB client acquire: {(time.time() - db_start) * 1000:.1f}ms")
-        
-        if self.config.account_id:
-            self.account_id = self.config.account_id
-            
-            q_start = time.time()
-            from core.cache.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
-            
-            cached_project = await get_cached_project_metadata(self.config.project_id)
-            if cached_project:
-                project_data = cached_project
-                sandbox_info = cached_project  # Cache stores sandbox metadata directly
-                logger.debug(f"⏱️ [TIMING] ⚡ Project from cache: {(time.time() - q_start) * 1000:.1f}ms")
-            else:
-                from core.resources import ResourceService
-                resource_service = ResourceService(self.client)
-                
-                # Lazy migration: Migrate sandbox JSONB to resources table if needed
-                await resource_service.migrate_project_sandbox_if_needed(self.config.project_id)
-                
-                project = await self.client.table('projects').select('project_id, sandbox_resource_id').eq('project_id', self.config.project_id).execute()
-                
-                if not project.data or len(project.data) == 0:
-                    raise ValueError(f"Project {self.config.project_id} not found")
-                
-                project_data = project.data[0]
-                sandbox_resource_id = project_data.get('sandbox_resource_id')
-                
-                # Get sandbox info from resource if it exists
-                sandbox_info = {}
-                if sandbox_resource_id:
-                    resource = await resource_service.get_resource_by_id(sandbox_resource_id)
-                    if resource:
-                        sandbox_info = {
-                            'id': resource.get('external_id'),
-                            **resource.get('config', {})
-                        }
-                
-                await set_cached_project_metadata(self.config.project_id, sandbox_info)
-                logger.debug(f"⏱️ [TIMING] Project query + cache set: {(time.time() - q_start) * 1000:.1f}ms")
-        else:
-            parallel_start = time.time()
-            
-            from core.cache.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
-            
-            thread_query = self.client.table('threads').select('account_id').eq('thread_id', self.config.thread_id).execute()
-            project_query = self.client.table('projects').select('project_id, sandbox_resource_id').eq('project_id', self.config.project_id).execute()
-            
-            response, project = await asyncio.gather(thread_query, project_query)
-            logger.debug(f"⏱️ [TIMING] Parallel DB queries (thread + project): {(time.time() - parallel_start) * 1000:.1f}ms")
-            
-            if not response.data or len(response.data) == 0:
-                raise ValueError(f"Thread {self.config.thread_id} not found")
-            
-            self.account_id = response.data[0].get('account_id')
-            
-            if not self.account_id:
-                raise ValueError(f"Thread {self.config.thread_id} has no associated account")
-            
-            if not project.data or len(project.data) == 0:
-                raise ValueError(f"Project {self.config.project_id} not found")
-
-            project_data = project.data[0]
-            sandbox_resource_id = project_data.get('sandbox_resource_id')
-            
-            # Get sandbox info from resource if it exists
-            sandbox_info = {}
-            if sandbox_resource_id:
-                from core.resources import ResourceService
-                resource_service = ResourceService(self.client)
-                resource = await resource_service.get_resource_by_id(sandbox_resource_id)
-                if resource:
-                    sandbox_info = {
-                        'id': resource.get('external_id'),
-                        **resource.get('config', {})
-                    }
-            
-            await set_cached_project_metadata(self.config.project_id, sandbox_info)
-        
-        if not sandbox_info.get('id'):
-            logger.debug(f"No sandbox found for project {self.config.project_id}; will create lazily when needed")
-        
-        logger.debug(f"⏱️ [TIMING] setup() total: {(time.time() - setup_start) * 1000:.1f}ms")
+        elapsed_ms = (time.time() - setup_start) * 1000
+        logger.info(f"✅ [SETUP] Complete in {elapsed_ms:.1f}ms")
     
     def setup_tools(self):
         start = time.time()
@@ -333,11 +116,7 @@ class AgentRunner:
         if self.config.agent_config:
             agent_id = self.config.agent_config.get('agent_id')
         
-        disabled_tools = self._get_disabled_tools_from_config()
-        
-        migrate_start = time.time()
-        self.migrated_tools = self._get_migrated_tools_config()
-        logger.debug(f"⏱️ [TIMING] Tool config migration: {(time.time() - migrate_start) * 1000:.1f}ms")
+        disabled_tools = tool_manager.get_disabled_tools_from_config()
         
         register_start = time.time()
         use_spark = True
@@ -350,7 +129,7 @@ class AgentRunner:
         if is_suna_agent:
             suna_start = time.time()
             logger.debug("Registering Suna-specific tools...")
-            self._register_suna_specific_tools(disabled_tools)
+            tool_manager.register_suna_specific_tools(disabled_tools, account_id=self.account_id)
             logger.debug(f"⏱️ [TIMING] Suna-specific tools: {(time.time() - suna_start) * 1000:.1f}ms")
         else:
             logger.debug("Not a Suna agent, skipping Suna-specific tool registration")
@@ -373,86 +152,6 @@ class AgentRunner:
         total_time = (time.time() - submit_time) * 1000
         logger.info(f"⏱️ [EXECUTOR] Total: {total_time:.1f}ms")
     
-    def _get_migrated_tools_config(self) -> dict:
-        if not self.config.agent_config or 'agentpress_tools' not in self.config.agent_config:
-            return {}
-        
-        from core.utils.tool_migration import migrate_legacy_tool_config
-        
-        raw_tools = self.config.agent_config['agentpress_tools']
-        
-        if not isinstance(raw_tools, dict):
-            return {}
-        
-        return migrate_legacy_tool_config(raw_tools)
-    
-    def _get_enabled_methods_for_tool(self, tool_name: str) -> Optional[List[str]]:
-        if not hasattr(self, 'migrated_tools') or not self.migrated_tools:
-            return None
-        
-        from core.utils.tool_discovery import get_enabled_methods_for_tool
-        
-        return get_enabled_methods_for_tool(tool_name, self.migrated_tools)
-    
-    def _register_suna_specific_tools(self, disabled_tools: List[str]):
-        if 'agent_creation_tool' not in disabled_tools:
-            from core.tools.agent_creation_tool import AgentCreationTool
-            from core.services.supabase import DBConnection
-            
-            db = DBConnection()
-            
-            if hasattr(self, 'account_id') and self.account_id:
-                enabled_methods = self._get_enabled_methods_for_tool('agent_creation_tool')
-                if enabled_methods is not None:
-                    self.thread_manager.add_tool(AgentCreationTool, function_names=enabled_methods, thread_manager=self.thread_manager, db_connection=db, account_id=self.account_id)
-                else:
-                    self.thread_manager.add_tool(AgentCreationTool, thread_manager=self.thread_manager, db_connection=db, account_id=self.account_id)
-            else:
-                logger.warning("Could not register agent_creation_tool: account_id not available")
-    
-    def _get_disabled_tools_from_config(self) -> List[str]:
-        disabled_tools = []
-        
-        if not self.config.agent_config or 'agentpress_tools' not in self.config.agent_config:
-            return disabled_tools
-        
-        raw_tools = self.config.agent_config['agentpress_tools']
-        
-        if not isinstance(raw_tools, dict):
-            return disabled_tools
-        
-        if self.config.agent_config.get('is_suna_default', False) and not raw_tools:
-            return disabled_tools
-        
-        def is_tool_enabled(tool_name: str) -> bool:
-            try:
-                tool_config = raw_tools.get(tool_name, True)
-                if isinstance(tool_config, bool):
-                    return tool_config
-                elif isinstance(tool_config, dict):
-                    return tool_config.get('enabled', True)
-                else:
-                    return True
-            except Exception:
-                return True
-        
-        all_tools = [
-            'sb_shell_tool', 'sb_files_tool', 'sb_expose_tool',
-            'web_search_tool', 'image_search_tool', 'sb_vision_tool', 'sb_presentation_tool', 'sb_image_edit_tool',
-            'sb_kb_tool', 'sb_design_tool', 'sb_upload_file_tool',
-            'browser_tool', 'people_search_tool', 'company_search_tool', 
-            'apify_tool', 'reality_defender_tool', 'vapi_voice_tool', 'paper_search_tool',
-            'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool',
-            'agent_creation_tool'
-        ]
-        
-        for tool_name in all_tools:
-            if not is_tool_enabled(tool_name):
-                disabled_tools.append(tool_name)
-                
-        logger.debug(f"Disabled tools from config: {disabled_tools}")
-        return disabled_tools
-    
     async def setup_mcp_tools(self) -> Optional[MCPToolWrapper]:
         if not self.config.agent_config:
             return None
@@ -461,362 +160,273 @@ class AgentRunner:
         return await mcp_manager.register_mcp_tools(self.config.agent_config)
     
     async def run(self, cancellation_event: Optional[asyncio.Event] = None) -> AsyncGenerator[Dict[str, Any], None]:
-        from core.utils.config import config
-        run_start = time.time()
         self.cancellation_event = cancellation_event
         
         try:
-            setup_start = time.time()
-            if config.ENABLE_BOOTSTRAP_MODE:
-                await self.setup_bootstrap()
-                logger.info(f"⏱️ [TIMING] AgentRunner.setup_bootstrap() completed in {(time.time() - setup_start) * 1000:.1f}ms")
-            else:
-                await self.setup()
-                logger.info(f"⏱️ [TIMING] AgentRunner.setup() completed in {(time.time() - setup_start) * 1000:.1f}ms")
-            
-            parallel_start = time.time()
-            await _stream_status_message("initializing", "Registering tools...")
-            setup_tools_task = asyncio.create_task(self._setup_tools_async())
-            await setup_tools_task
-
-            await self._restore_dynamic_tools()
-            
-            if (hasattr(self.thread_manager, 'mcp_loader') and 
-                self.config.agent_config and 
-                (self.config.agent_config.get("custom_mcps") or self.config.agent_config.get("configured_mcps"))):
-                logger.info("⚡ [MCP JIT] Using JIT MCP system, legacy MCP deferred to enrichment")
-                self._clean_legacy_mcp_tools()
-                mcp_wrapper_instance = None
-            else:
-                logger.info("⚠️ [MCP] No MCP configs, skipping")
-                mcp_wrapper_instance = None
-            
-            tools_elapsed = (time.time() - parallel_start) * 1000
-            logger.info(f"⏱️ [TIMING] Tool setup: {tools_elapsed:.1f}ms (MCP deferred to enrichment)")
-            
-            await _stream_status_message("initializing", "Building system prompt...")
-            prompt_start = time.time()
-            
-            logger.debug(f"⚡ [PROMPT_CHECK] ENABLE_MINIMAL={config.ENABLE_MINIMAL_PROMPT}, ENABLE_BOOTSTRAP={config.ENABLE_BOOTSTRAP_MODE}, enrichment_complete={self.enrichment_complete}")
-            
-            memory_context = None
-            if config.ENABLE_MINIMAL_PROMPT and config.ENABLE_BOOTSTRAP_MODE and not self.enrichment_complete:
-                system_message, memory_context = await PromptManager.build_minimal_prompt(
-                    self.config.agent_config,
-                    tool_registry=self.thread_manager.tool_registry,
-                    mcp_loader=getattr(self.thread_manager, 'mcp_loader', None),
-                    user_id=self.account_id,
-                    thread_id=self.config.thread_id,
-                    client=self.client
-                )
-                logger.info(f"⏱️ [TIMING] build_minimal_prompt() in {(time.time() - prompt_start) * 1000:.1f}ms ({len(str(system_message.get('content', '')))} chars) [BOOTSTRAP MODE]")
-            else:
-                if self.enrichment_complete:
-                    logger.info("⚡ [PROMPT] Using FULL prompt (enrichment complete)")
-                else:
-                    logger.warning(f"⚠️ [PROMPT] Using FULL prompt despite incomplete enrichment (flags: minimal={config.ENABLE_MINIMAL_PROMPT}, bootstrap={config.ENABLE_BOOTSTRAP_MODE})")
-                system_message, memory_context = await PromptManager.build_system_prompt(
-                    self.config.model_name, self.config.agent_config, 
-                    self.config.thread_id, 
-                    getattr(self, 'mcp_wrapper_instance', None), self.client,
-                    tool_registry=self.thread_manager.tool_registry,
-                    xml_tool_calling=config.AGENT_XML_TOOL_CALLING,
-                    user_id=self.account_id,
-                    mcp_loader=getattr(self.thread_manager, 'mcp_loader', None)
-                )
-                logger.info(f"⏱️ [TIMING] build_system_prompt() in {(time.time() - prompt_start) * 1000:.1f}ms ({len(str(system_message.get('content', '')))} chars)")
-            
-            if memory_context:
-                self.thread_manager.set_memory_context(memory_context)
-            
-            logger.debug(f"model_name received: {self.config.model_name}")
-            iteration_count = 0
-            continue_execution = True
-
-            latest_user_message_content = None
-            
-            total_setup = (time.time() - run_start) * 1000
-            logger.info(f"⏱️ [TIMING] 🚀 TOTAL AgentRunner setup: {total_setup:.1f}ms (ready for first LLM call) [Message query deferred]")
-            
-            await _stream_status_message("ready", "Agent ready, starting execution...")
-
-            while continue_execution and iteration_count < self.config.max_iterations:
-                self.turn_number += 1
-                iteration_count += 1
-                
-                if self.turn_number > 1 and config.ENABLE_MINIMAL_PROMPT and not self.enrichment_complete:
-                    logger.debug(f"⏱️ Turn {self.turn_number}: Enrichment still pending, continuing with current prompt")
-                elif self.turn_number > 1 and config.ENABLE_MINIMAL_PROMPT and self.enrichment_complete:
-                    logger.info(f"⏱️ Turn {self.turn_number}: Enrichment complete, upgrading to full prompt")
-                    prompt_upgrade_start = time.time()
-                    system_message, new_memory_context = await PromptManager.build_system_prompt(
-                        self.config.model_name, self.config.agent_config, 
-                        self.config.thread_id, 
-                        mcp_wrapper_instance, self.client,
-                        tool_registry=self.thread_manager.tool_registry,
-                        xml_tool_calling=config.AGENT_XML_TOOL_CALLING,
-                        user_id=self.account_id,
-                        mcp_loader=getattr(self.thread_manager, 'mcp_loader', None)
-                    )
-                    logger.info(f"⏱️ [TIMING] Upgraded to full prompt in {(time.time() - prompt_upgrade_start) * 1000:.1f}ms ({len(str(system_message.get('content', '')))} chars)")
-                    self.thread_manager._system_prompt = system_message
-
-                if cancellation_event and cancellation_event.is_set():
-                    logger.info(f"Cancellation signal received - stopping agent execution for thread {self.config.thread_id}")
-                    yield {
-                        "type": "status",
-                        "status": "stopped",
-                        "message": "Worker execution cancelled"
-                    }
-                    break
-
-                can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(self.account_id)
-                if not can_run:
-                    error_msg = f"Insufficient credits: {message}"
-                    logger.warning(f"Stopping agent - balance is negative: {error_msg}")
-                    yield {
-                        "type": "status",
-                        "status": "stopped",
-                        "message": error_msg
-                    }
-                    break
-
-                latest_message = await self.client.table('messages').select('type').eq('thread_id', self.config.thread_id).in_('type', ['assistant', 'tool', 'user']).order('created_at', desc=True).limit(1).execute()
-                if latest_message.data and len(latest_message.data) > 0:
-                    message_type = latest_message.data[0].get('type')
-                    if message_type == 'assistant':
-                        continue_execution = False
-                        break
-
-                temporary_message = None
-                max_tokens = None
-                logger.debug(f"max_tokens: {max_tokens} (using provider defaults)")
-                generation = self.config.trace.generation(name="thread_manager.run_thread") if self.config.trace else None
-                try:
-                    logger.debug(f"Starting thread execution for {self.config.thread_id}")
-                    response = await self.thread_manager.run_thread(
-                        thread_id=self.config.thread_id,
-                        system_prompt=system_message,
-                        stream=True, 
-                        llm_model=self.config.model_name,
-                        llm_temperature=0,
-                        llm_max_tokens=max_tokens,
-                        tool_choice="auto",
-                        temporary_message=temporary_message,
-                        latest_user_message_content=latest_user_message_content,
-                        processor_config=ProcessorConfig(
-                            xml_tool_calling=config.AGENT_XML_TOOL_CALLING,
-                            native_tool_calling=config.AGENT_NATIVE_TOOL_CALLING, 
-                            execute_tools=True,
-                            execute_on_stream=config.AGENT_EXECUTE_ON_STREAM,
-                            tool_execution_strategy=config.AGENT_TOOL_EXECUTION_STRATEGY
-                        ),
-                        native_max_auto_continues=self.config.native_max_auto_continues,
-                        generation=generation,
-                        cancellation_event=cancellation_event
-                    )
-
-                    last_tool_call = None
-                    agent_should_terminate = False
-                    error_detected = False
-
-                    try:
-                        if hasattr(response, '__aiter__') and not isinstance(response, dict):
-                            async for chunk in response:
-                                if cancellation_event and cancellation_event.is_set():
-                                    logger.info(f"Cancellation signal received during stream processing - stopping for thread {self.config.thread_id}")
-                                    break
-                                
-                                if isinstance(chunk, dict) and chunk.get('type') == 'status' and chunk.get('status') == 'error':
-                                    logger.error(f"Error in thread execution: {chunk.get('message', 'Unknown error')}")
-                                    error_detected = True
-                                    yield chunk
-                                    continue
-
-                                if isinstance(chunk, dict) and chunk.get('type') == 'status':
-                                    try:
-                                        content = chunk.get('content', {})
-                                        if isinstance(content, str):
-                                            content = json.loads(content)
-                                        
-                                        if content.get('status_type') == 'error':
-                                            error_detected = True
-                                            yield chunk
-                                            continue
-                                        
-                                        metadata = chunk.get('metadata', {})
-                                        if isinstance(metadata, str):
-                                            metadata = json.loads(metadata)
-                                        
-                                        if metadata.get('agent_should_terminate'):
-                                            agent_should_terminate = True
-                                            
-                                            if content.get('function_name'):
-                                                last_tool_call = content['function_name']
-                                                
-                                    except Exception:
-                                        pass
-                                
-                                if chunk.get('type') == 'assistant' and 'content' in chunk:
-                                    try:
-                                        content = chunk.get('content', '{}')
-                                        if isinstance(content, str):
-                                            assistant_content_json = json.loads(content)
-                                        else:
-                                            assistant_content_json = content
-
-                                        assistant_text = assistant_content_json.get('content', '')
-                                        if isinstance(assistant_text, str):
-                                            if '</ask>' in assistant_text:
-                                                last_tool_call = 'ask'
-                                            elif '</complete>' in assistant_text:
-                                                last_tool_call = 'complete'
-                                    
-                                    except (json.JSONDecodeError, Exception):
-                                        pass
-
-                                yield chunk
-                        else:
-                            if isinstance(response, dict) and response.get('type') == 'status' and response.get('status') == 'error':
-                                logger.error(f"Thread returned error: {response.get('message', 'Unknown error')}")
-                                error_detected = True
-                                yield response
-                            else:
-                                logger.warning(f"Unexpected response type: {type(response)}")
-                                error_detected = True
-
-                        if error_detected:
-                            if generation:
-                                generation.end(status_message="error_detected", level="ERROR")
-                            break
-                            
-                        if agent_should_terminate or last_tool_call in ['ask', 'complete']:
-                            if generation:
-                                generation.end(status_message="agent_stopped")
-                            continue_execution = False
-
-                    except Exception as e:
-                        processed_error = ErrorProcessor.process_system_error(e, context={"thread_id": self.config.thread_id})
-                        ErrorProcessor.log_error(processed_error)
-                        if generation:
-                            generation.end(status_message=processed_error.message, level="ERROR")
-                        yield processed_error.to_stream_dict()
-                        break
-                        
-                except Exception as e:
-                    processed_error = ErrorProcessor.process_system_error(e, context={"thread_id": self.config.thread_id})
-                    ErrorProcessor.log_error(processed_error)
-                    yield processed_error.to_stream_dict()
-                    break
-                
-                if generation:
-                    generation.end()
-
+            system_message = await self._prepare_execution()
+            async for chunk in self._run_loop(system_message, cancellation_event):
+                yield chunk
         finally:
-            if self.enrichment_task and not self.enrichment_task.done():
-                logger.info("⚠️ [ENRICHMENT] Cancelling Phase B (run ending)")
-                self.enrichment_task.cancel()
-                try:
-                    await self.enrichment_task
-                except asyncio.CancelledError:
-                    pass
-                except Exception as e:
-                    logger.warning(f"Error during enrichment cancellation: {e}")
-            
-            try:
-                if hasattr(self, 'thread_manager') and self.thread_manager:
-                    await self.thread_manager.cleanup()
-            except Exception as e:
-                logger.warning(f"Failed to cleanup ThreadManager: {e}")
-
-            try:
-                asyncio.create_task(asyncio.to_thread(lambda: langfuse.flush()))
-            except Exception as e:
-                logger.warning(f"Failed to flush Langfuse: {e}")
+            await self._cleanup()
     
-    async def _initialize_mcp_jit_loader(self, cache_only: bool = False) -> None:
-        if not self.config.agent_config:
+    async def _prepare_execution(self) -> dict:
+        """Prepare execution: setup, tools, prompt building."""
+        from core.utils.config import config
+        run_start = time.time()
+        
+        setup_start = time.time()
+        await self.setup()
+        logger.info(f"⏱️ [TIMING] AgentRunner.setup() completed in {(time.time() - setup_start) * 1000:.1f}ms")
+        
+        parallel_start = time.time()
+        await stream_status_message("initializing", "Registering tools...")
+        setup_tools_task = asyncio.create_task(self._setup_tools_async())
+        await setup_tools_task
+
+        await self._restore_dynamic_tools()
+        
+        if (hasattr(self.thread_manager, 'mcp_loader') and 
+            self.config.agent_config and 
+            (self.config.agent_config.get("custom_mcps") or self.config.agent_config.get("configured_mcps"))):
+            logger.info("⚡ [MCP JIT] Using JIT MCP system")
+            mcp_manager = MCPManager(self.thread_manager, self.account_id)
+            mcp_manager.clean_legacy_mcp_tools()
+        else:
+            logger.info("⚠️ [MCP] No MCP configs, skipping")
+        
+        tools_elapsed = (time.time() - parallel_start) * 1000
+        logger.info(f"⏱️ [TIMING] Tool setup: {tools_elapsed:.1f}ms")
+        
+        await stream_status_message("initializing", "Building system prompt...")
+        prompt_start = time.time()
+        
+        system_message, memory_context = await PromptManager.build_system_prompt(
+            self.config.model_name, self.config.agent_config, 
+            self.config.thread_id, 
+            getattr(self, 'mcp_wrapper_instance', None), self.client,
+            tool_registry=self.thread_manager.tool_registry,
+            xml_tool_calling=config.AGENT_XML_TOOL_CALLING,
+            user_id=self.account_id,
+            mcp_loader=getattr(self.thread_manager, 'mcp_loader', None)
+        )
+        logger.info(f"⏱️ [TIMING] build_system_prompt() in {(time.time() - prompt_start) * 1000:.1f}ms ({len(str(system_message.get('content', '')))} chars)")
+        
+        if memory_context:
+            self.thread_manager.set_memory_context(memory_context)
+        
+        total_setup = (time.time() - run_start) * 1000
+        logger.info(f"⏱️ [TIMING] 🚀 TOTAL AgentRunner setup: {total_setup:.1f}ms (ready for first LLM call)")
+        
+        await stream_status_message("ready", "Agent ready, starting execution...")
+        
+        return system_message
+    
+    async def _run_loop(self, system_message: dict, cancellation_event: Optional[asyncio.Event]) -> AsyncGenerator[Dict[str, Any], None]:
+        """Main execution loop."""
+        iteration_count = 0
+        continue_execution = True
+        
+        while continue_execution and iteration_count < self.config.max_iterations:
+            self.turn_number += 1
+            iteration_count += 1
+            
+            should_continue = True
+            async for chunk in self._execute_single_turn(system_message, cancellation_event):
+                yield chunk
+                # Check if chunk indicates we should stop
+                if isinstance(chunk, dict) and chunk.get('type') == 'status' and chunk.get('status') == 'stopped':
+                    should_continue = False
+                    break
+            
+            if not should_continue:
+                continue_execution = False
+                break
+    
+    async def _execute_single_turn(self, system_message: dict, cancellation_event: Optional[asyncio.Event]) -> AsyncGenerator[Dict[str, Any], None]:
+        """Execute a single turn: billing check, LLM call, process response."""
+        from core.utils.config import config
+        
+        if cancellation_event and cancellation_event.is_set():
+            logger.info(f"Cancellation signal received - stopping agent execution for thread {self.config.thread_id}")
+            yield {
+                "type": "status",
+                "status": "stopped",
+                "message": "Worker execution cancelled"
+            }
             return
+
+        can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(self.account_id)
+        if not can_run:
+            error_msg = f"Insufficient credits: {message}"
+            logger.warning(f"Stopping agent - balance is negative: {error_msg}")
+            yield {
+                "type": "status",
+                "status": "stopped",
+                "message": error_msg
+            }
+            return
+
+        latest_message = await self.client.table('messages').select('type').eq('thread_id', self.config.thread_id).in_('type', ['assistant', 'tool', 'user']).order('created_at', desc=True).limit(1).execute()
+        if latest_message.data and len(latest_message.data) > 0:
+            message_type = latest_message.data[0].get('type')
+            if message_type == 'assistant':
+                return
+
+        temporary_message = None
+        max_tokens = None
+        logger.debug(f"max_tokens: {max_tokens} (using provider defaults)")
+        generation = self.config.trace.generation(name="thread_manager.run_thread") if self.config.trace else None
         
         try:
-            agent_id = self.config.agent_config.get('agent_id')
-            
-            from core.versioning.version_service import get_version_service
-            version_service = await get_version_service()
-            fresh_config = await version_service.get_current_mcp_config(agent_id, self.account_id)
-                
-        except Exception as e:
-            logger.error(f"❌ Failed to load fresh config via version service: {e}", exc_info=True)
-            fresh_config = None
-        
-        if fresh_config:
-            agent_config_update = {
-                'custom_mcps': fresh_config.get('custom_mcp', []),
-                'configured_mcps': fresh_config.get('configured_mcps', [])
-            }
-            self.config.agent_config.update(agent_config_update)
-            self.thread_manager.tool_registry.invalidate_mcp_cache()
-        
-        custom_mcps = self.config.agent_config.get("custom_mcps", [])
-        configured_mcps = self.config.agent_config.get("configured_mcps", [])
-        
-        logger.debug(f"⚡ [MCP JIT] Loading MCPs: {len(custom_mcps)} custom, {len(configured_mcps)} configured")
-        
-        if custom_mcps or configured_mcps:
-            try:
-                from core.jit.mcp_loader import MCPJITLoader
-                
-                mcp_config = {
-                    'custom_mcp': custom_mcps,
-                    'configured_mcps': configured_mcps,
-                    'account_id': self.config.account_id or self.config.agent_config.get('account_id')
-                }
-                
-                if not hasattr(self.thread_manager, 'mcp_loader') or self.thread_manager.mcp_loader is None:
-                    self.thread_manager.mcp_loader = MCPJITLoader(mcp_config)
-                    await self.thread_manager.mcp_loader.build_tool_map(cache_only=cache_only)
-                else:
-                    if fresh_config:
-                        await self.thread_manager.mcp_loader.rebuild_tool_map(fresh_config)
-                    if cache_only:
-                        await self.thread_manager.mcp_loader.build_tool_map(cache_only=cache_only)
-                
-                stats = self.thread_manager.mcp_loader.get_activation_stats()
-                toolkits = await self.thread_manager.mcp_loader.get_toolkits()
-                
-                mode_str = "cache-only" if cache_only else "full discovery"
-                logger.info(f"⚡ [MCP JIT] Initialized: {stats['total_tools']} tools from {len(toolkits)} toolkits ({mode_str})")
-                
-                if not cache_only:
-                    from core.jit.mcp_registry import warm_cache_for_agent_toolkits
-                    asyncio.create_task(warm_cache_for_agent_toolkits(mcp_config))
-                
-            except Exception as e:
-                logger.error(f"❌ [MCP JIT] Initialization failed: {e}")
-                if not hasattr(self.thread_manager, 'mcp_loader'):
-                    self.thread_manager.mcp_loader = None
-    
-    def _clean_legacy_mcp_tools(self) -> None:
-        tools_before = len(self.thread_manager.tool_registry.tools)
-        
-        for tool_name in list(self.thread_manager.tool_registry.tools.keys()):
-            tool_info = self.thread_manager.tool_registry.tools[tool_name]
-            instance = tool_info.get('instance')
-            
-            should_remove = (
-                (hasattr(instance, '__class__') and 'MCPToolWrapper' in instance.__class__.__name__) or
-                len(tool_name) > 64
+            logger.debug(f"Starting thread execution for {self.config.thread_id}")
+            response = await self.thread_manager.run_thread(
+                thread_id=self.config.thread_id,
+                system_prompt=system_message,
+                stream=True, 
+                llm_model=self.config.model_name,
+                llm_temperature=0,
+                llm_max_tokens=max_tokens,
+                tool_choice="auto",
+                temporary_message=temporary_message,
+                latest_user_message_content=None,
+                processor_config=ProcessorConfig(
+                    xml_tool_calling=config.AGENT_XML_TOOL_CALLING,
+                    native_tool_calling=config.AGENT_NATIVE_TOOL_CALLING, 
+                    execute_tools=True,
+                    execute_on_stream=config.AGENT_EXECUTE_ON_STREAM,
+                    tool_execution_strategy=config.AGENT_TOOL_EXECUTION_STRATEGY
+                ),
+                native_max_auto_continues=self.config.native_max_auto_continues,
+                generation=generation,
+                cancellation_event=cancellation_event
             )
-            
-            if should_remove:
-                del self.thread_manager.tool_registry.tools[tool_name]
-        
-        tools_after = len(self.thread_manager.tool_registry.tools)
-        removed_count = tools_before - tools_after
-        
-        if removed_count > 0:
-            logger.info(f"⚡ [MCP JIT] Registry cleaned: {tools_before} → {tools_after} tools ({removed_count} legacy tools removed)")
 
+            async for chunk in self._process_response(response, generation, cancellation_event):
+                yield chunk
+                        
+        except Exception as e:
+            processed_error = ErrorProcessor.process_system_error(e, context={"thread_id": self.config.thread_id})
+            ErrorProcessor.log_error(processed_error)
+            if generation:
+                generation.end(status_message=processed_error.message, level="ERROR")
+            yield processed_error.to_stream_dict()
+        finally:
+            if generation:
+                generation.end()
+    
+    async def _process_response(self, response, generation, cancellation_event: Optional[asyncio.Event]) -> AsyncGenerator[Dict[str, Any], None]:
+        """Process LLM response stream and yield chunks."""
+        last_tool_call = None
+        agent_should_terminate = False
+        error_detected = False
+        
+        try:
+            if hasattr(response, '__aiter__') and not isinstance(response, dict):
+                async for chunk in response:
+                    if cancellation_event and cancellation_event.is_set():
+                        logger.info(f"Cancellation signal received during stream processing - stopping for thread {self.config.thread_id}")
+                        break
+                    
+                    should_terminate, error, tool_call = self._process_chunk(chunk)
+                    
+                    if error:
+                        error_detected = True
+                        yield chunk
+                        if should_terminate:
+                            break
+                        continue
+                    
+                    if should_terminate:
+                        agent_should_terminate = True
+                        if tool_call:
+                            last_tool_call = tool_call
+                    
+                    yield chunk
+            else:
+                if isinstance(response, dict) and response.get('type') == 'status' and response.get('status') == 'error':
+                    logger.error(f"Thread returned error: {response.get('message', 'Unknown error')}")
+                    error_detected = True
+                    yield response
+                else:
+                    logger.warning(f"Unexpected response type: {type(response)}")
+                    error_detected = True
+
+            if error_detected:
+                if generation:
+                    generation.end(status_message="error_detected", level="ERROR")
+                return
+                
+            if agent_should_terminate or last_tool_call in ['ask', 'complete']:
+                if generation:
+                    generation.end(status_message="agent_stopped")
+
+        except Exception as e:
+            processed_error = ErrorProcessor.process_system_error(e, context={"thread_id": self.config.thread_id})
+            ErrorProcessor.log_error(processed_error)
+            if generation:
+                generation.end(status_message=processed_error.message, level="ERROR")
+            yield processed_error.to_stream_dict()
+    
+    def _process_chunk(self, chunk: Dict[str, Any]) -> tuple[bool, bool, Optional[str]]:
+        """Process a single chunk from the stream. Returns (should_terminate, error_detected, last_tool_call)."""
+        if isinstance(chunk, dict) and chunk.get('type') == 'status' and chunk.get('status') == 'error':
+            logger.error(f"Error in thread execution: {chunk.get('message', 'Unknown error')}")
+            return True, True, None
+
+        if isinstance(chunk, dict) and chunk.get('type') == 'status':
+            try:
+                content = chunk.get('content', {})
+                if isinstance(content, str):
+                    content = json.loads(content)
+                
+                if content.get('status_type') == 'error':
+                    return True, True, None
+                
+                metadata = chunk.get('metadata', {})
+                if isinstance(metadata, str):
+                    metadata = json.loads(metadata)
+                
+                if metadata.get('agent_should_terminate'):
+                    tool_call = content.get('function_name') if content.get('function_name') else None
+                    return True, False, tool_call
+                    
+            except Exception:
+                pass
+        
+        if chunk.get('type') == 'assistant' and 'content' in chunk:
+            try:
+                content = chunk.get('content', '{}')
+                if isinstance(content, str):
+                    assistant_content_json = json.loads(content)
+                else:
+                    assistant_content_json = content
+
+                assistant_text = assistant_content_json.get('content', '')
+                if isinstance(assistant_text, str):
+                    if '</ask>' in assistant_text:
+                        return True, False, 'ask'
+                    elif '</complete>' in assistant_text:
+                        return True, False, 'complete'
+            
+            except (json.JSONDecodeError, Exception):
+                pass
+        
+        return False, False, None
+    
+    async def _cleanup(self) -> None:
+        """Cleanup resources after execution."""
+
+        try:
+            if hasattr(self, 'thread_manager') and self.thread_manager:
+                await self.thread_manager.cleanup()
+        except Exception as e:
+            logger.warning(f"Failed to cleanup ThreadManager: {e}")
+
+        try:
+            asyncio.create_task(asyncio.to_thread(lambda: langfuse.flush()))
+        except Exception as e:
+            logger.warning(f"Failed to flush Langfuse: {e}")
+    
     async def _restore_dynamic_tools(self) -> None:
         """Restore dynamically loaded tools from previous turns"""
         try:

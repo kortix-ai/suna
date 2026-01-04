@@ -137,13 +137,66 @@ async def acquire_run_lock(agent_run_id: str, instance_id: str, client) -> bool:
     return True
 
 
-async def load_agent_config(agent_id: Optional[str], account_id: Optional[str]) -> Optional[Dict[str, Any]]:
-    """Load agent configuration from cache or database."""
-    if not agent_id:
-        return None
+async def load_agent_config(
+    agent_id: Optional[str], 
+    account_id: Optional[str], 
+    user_id: Optional[str] = None,
+    client = None,
+    is_new_thread: bool = False
+) -> Optional[Dict[str, Any]]:
+    """Load agent configuration from cache or database.
     
+    Args:
+        agent_id: Agent ID to load, or None for default agent
+        account_id: Account ID for the agent
+        user_id: User ID (defaults to account_id if not provided)
+        client: Database client (required for default agent loading)
+        is_new_thread: Whether this is a new thread (triggers Suna install check)
+    """
     t = time.time()
+    logger.info(f"⏱️ [AGENT CONFIG] Starting load_agent_config for agent_id={agent_id}")
+    user_id = user_id or account_id
+    
     try:
+        # Handle default agent loading (agent_id is None)
+        if not agent_id:
+            if not client:
+                logger.warning("Cannot load default agent: client not provided")
+                return None
+                
+            logger.debug(f"[AGENT LOAD] Loading default agent")
+            
+            if is_new_thread:
+                from core.utils.ensure_suna import ensure_suna_installed
+                await ensure_suna_installed(account_id)
+            
+            from core.agents.agent_loader import get_agent_loader
+            loader = await get_agent_loader()
+            
+            default_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('metadata->>is_suna_default', 'true').maybe_single().execute()
+            
+            if default_agent and default_agent.data:
+                agent_data = await loader.load_agent(default_agent.data['agent_id'], user_id, load_config=True)
+                logger.debug(f"Using default agent: {agent_data.name} ({agent_data.agent_id}) version {agent_data.version_name}")
+                return agent_data.to_dict()
+            else:
+                logger.warning(f"[AGENT LOAD] No default agent found for account {account_id}, searching for shared Suna")
+                agent_data = await _find_shared_suna_agent(client)
+                
+                if not agent_data:
+                    any_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).limit(1).maybe_single().execute()
+                    
+                    if any_agent and any_agent.data:
+                        agent_data = await loader.load_agent(any_agent.data['agent_id'], user_id, load_config=True)
+                        logger.info(f"[AGENT LOAD] Using fallback agent: {agent_data.name} ({agent_data.agent_id})")
+                        return agent_data.to_dict()
+                    else:
+                        logger.error(f"[AGENT LOAD] No agents found for account {account_id}")
+                        from fastapi import HTTPException
+                        raise HTTPException(status_code=404, detail="No agents available. Please create an agent first.")
+                return agent_data.to_dict()
+        
+        # Handle specific agent loading
         from core.cache.runtime_cache import (
             get_static_suna_config, 
             get_cached_user_mcps,
@@ -166,29 +219,67 @@ async def load_agent_config(agent_id: Optional[str], account_id: Optional[str]) 
                 'custom_mcps': cached_mcps.get('custom_mcps', []),
                 'triggers': cached_mcps.get('triggers', []),
             }
-            logger.debug(f"Agent config from memory + Redis MCPs: {(time.time() - t) * 1000:.1f}ms")
+            logger.info(f"⏱️ [AGENT CONFIG] memory + Redis MCPs: {(time.time() - t) * 1000:.1f}ms (CACHE HIT)")
         else:
+            t_cache = time.time()
             cached_config = await get_cached_agent_config(agent_id)
             
             if cached_config:
                 agent_config = cached_config
-                logger.debug(f"Agent config from cache: {(time.time() - t) * 1000:.1f}ms")
+                logger.info(f"⏱️ [AGENT CONFIG] get_cached_agent_config: {(time.time() - t_cache) * 1000:.1f}ms (CACHE HIT)")
             elif account_id:
+                logger.info(f"⏱️ [AGENT CONFIG] Cache miss, loading from DB...")
+                t_db = time.time()
                 from core.agents.agent_loader import get_agent_loader
                 loader = await get_agent_loader()
                 agent_data = await loader.load_agent(agent_id, account_id, load_config=True)
                 agent_config = agent_data.to_dict()
-                logger.debug(f"Agent config from DB: {(time.time() - t) * 1000:.1f}ms")
+                logger.info(f"⏱️ [AGENT CONFIG] DB load: {(time.time() - t_db) * 1000:.1f}ms (CACHE MISS)")
             else:
+                t_db = time.time()
                 from core.agents.agent_loader import get_agent_loader
                 loader = await get_agent_loader()
                 agent_data = await loader.load_agent(agent_id, agent_id, load_config=True)
                 agent_config = agent_data.to_dict()
+                logger.info(f"⏱️ [AGENT CONFIG] DB load (no account): {(time.time() - t_db) * 1000:.1f}ms")
+        
+        if agent_config:
+            logger.debug(f"Using agent {agent_config.get('agent_id')} for this agent run")
         
         return agent_config
     except Exception as e:
         logger.warning(f"Failed to fetch agent config for {agent_id}: {e}")
         return None
+
+
+async def _find_shared_suna_agent(client):
+    """Find shared Suna agent (helper for default agent loading)."""
+    from core.agents.agent_loader import get_agent_loader
+    from core.utils.config import config
+    
+    admin_user_id = config.SYSTEM_ADMIN_USER_ID
+    
+    if admin_user_id:
+        admin_suna = await client.table('agents').select('agent_id').eq('account_id', admin_user_id).eq('metadata->>is_suna_default', 'true').maybe_single().execute()
+        
+        if admin_suna and admin_suna.data:
+            loader = await get_agent_loader()
+            agent_data = await loader.load_agent(admin_suna.data['agent_id'], admin_user_id, load_config=True)
+            logger.info(f"✅ Using system Suna agent from admin user: {agent_data.name} ({agent_data.agent_id})")
+            return agent_data
+        else:
+            logger.warning(f"⚠️ SYSTEM_ADMIN_USER_ID configured but no Suna agent found for user {admin_user_id}")
+    
+    any_suna = await client.table('agents').select('agent_id, account_id').eq('metadata->>is_suna_default', 'true').limit(1).maybe_single().execute()
+    
+    if any_suna and any_suna.data:
+        loader = await get_agent_loader()
+        agent_data = await loader.load_agent(any_suna.data['agent_id'], any_suna.data['account_id'], load_config=True)
+        logger.info(f"Using shared Suna agent: {agent_data.name} ({agent_data.agent_id})")
+        return agent_data
+    
+    logger.error("❌ No Suna agent found! Set SYSTEM_ADMIN_USER_ID in .env")
+    return None
 
 
 def create_redis_keys(agent_run_id: str, instance_id: str) -> Dict[str, str]:
@@ -200,12 +291,28 @@ def create_redis_keys(agent_run_id: str, instance_id: str) -> Dict[str, str]:
 
 
 async def stream_status_message(
-    stream_key: str,
     status: str,
     message: str,
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None,
+    stream_key: Optional[str] = None
 ) -> None:
-    """Write a status message to Redis stream."""
+    """Write a status message to Redis stream.
+    
+    Args:
+        status: Status type (e.g., "initializing", "ready")
+        message: Status message text
+        metadata: Optional metadata dict
+        stream_key: Optional explicit stream key. If not provided, uses streaming context.
+    """
+    # Try to get stream key from context if not provided
+    if not stream_key:
+        from core.worker.tool_output_streaming_context import get_tool_output_streaming_context
+        ctx = get_tool_output_streaming_context()
+        if ctx:
+            stream_key = ctx.stream_key
+        else:
+            return  # No streaming context available
+    
     try:
         status_msg = {"type": "status", "status": status, "message": message}
         if metadata:
@@ -292,9 +399,12 @@ async def process_agent_responses(
             if status_val in ['completed', 'failed', 'stopped', 'error']:
                 logger.info(f"Agent run {agent_run_id} finished: {status_val}")
                 final_status = status_val if status_val != 'error' else 'failed'
-                if status_val in ['failed', 'stopped', 'error']:
+                if status_val in ['failed', 'error']:
                     error_message = response.get('message', f"Run ended: {status_val}")
                     logger.error(f"Agent run failed: {error_message}")
+                elif status_val == 'stopped':
+                    # 'stopped' is a normal state (agent awaiting user input, or task complete)
+                    logger.debug(f"Agent run stopped: {response.get('message', 'Normal stop')}")
                 break
     
     return final_status, error_message, complete_tool_called, total_responses
@@ -481,6 +591,8 @@ async def update_agent_run_status(
                 if DBConnection.is_route_not_found_error(db_error) and retry_num < 2:
                     logger.warning(f"🔄 Route-not-found error, forcing reconnection...")
                     await db.force_reconnect()
+                    # Wait for reconnection to stabilize before retrying
+                    await asyncio.sleep(1.0)
                     current_client = await db.client
                 elif retry_num < 2:
                     await asyncio.sleep(0.5 * (2 ** retry_num))
@@ -491,4 +603,40 @@ async def update_agent_run_status(
         return False
 
     return False
+
+
+async def ensure_project_metadata_cached(project_id: str, client) -> None:
+    """Ensure project metadata (sandbox info) is cached. Non-blocking if already cached."""
+    from core.cache.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
+    
+    cached_project = await get_cached_project_metadata(project_id)
+    if cached_project:
+        return  # Already cached
+    
+    # Cache miss - fetch and cache
+    from core.resources import ResourceService
+    resource_service = ResourceService(client)
+    
+    # Lazy migration: Migrate sandbox JSONB to resources table if needed
+    await resource_service.migrate_project_sandbox_if_needed(project_id)
+    
+    project = await client.table('projects').select('project_id, sandbox_resource_id').eq('project_id', project_id).execute()
+    
+    if not project.data or len(project.data) == 0:
+        raise ValueError(f"Project {project_id} not found")
+    
+    project_data = project.data[0]
+    sandbox_resource_id = project_data.get('sandbox_resource_id')
+    
+    # Get sandbox info from resource if it exists
+    sandbox_info = {}
+    if sandbox_resource_id:
+        resource = await resource_service.get_resource_by_id(sandbox_resource_id)
+        if resource:
+            sandbox_info = {
+                'id': resource.get('external_id'),
+                **resource.get('config', {})
+            }
+    
+    await set_cached_project_metadata(project_id, sandbox_info)
 
