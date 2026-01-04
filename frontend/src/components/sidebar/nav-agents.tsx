@@ -6,6 +6,8 @@ import {
   MoreHorizontal,
   Trash2,
   Loader2,
+  ChevronRight,
+  ChevronLeft,
   Frown,
   Plus,
   ChevronDown
@@ -86,8 +88,8 @@ const SingleChatCard: React.FC<{
   return (
     <SpotlightCard
       className={cn(
-        "transition-all cursor-pointer rounded-2xl",
-        isActive ? "border-[1.5px] bg-background dark:bg-card" : "bg-transparent"
+        "transition-colors cursor-pointer",
+        isActive ? "bg-muted" : "bg-transparent"
       )}
     >
       <Link
@@ -97,23 +99,23 @@ const SingleChatCard: React.FC<{
         className="block"
       >
         <div
-          className="flex items-center gap-2.5 py-2 px-2 text-sm"
+          className="flex items-center gap-3 p-2.5 text-sm"
           onMouseEnter={() => setIsHoveringCard(true)}
           onMouseLeave={() => setIsHoveringCard(false)}
         >
           {/* Icon */}
-          <div className="relative flex items-center justify-center w-5 h-5 flex-shrink-0">
+          <div className="relative flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
             {isThreadLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             ) : (
               <ThreadIcon
                 iconName={projectGroup.iconName}
                 className="text-muted-foreground"
-                size={16}
+                size={14}
               />
             )}
             {isAgentRunning && (
-              <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-500 rounded-full border border-background animate-pulse" />
+              <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 rounded-full border border-background animate-pulse" />
             )}
           </div>
           
@@ -200,6 +202,9 @@ export function NavAgents() {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [isCreatingChat, setIsCreatingChat] = useState(false);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageLimit = 20; // Reduced from 50 to 20 to reduce API response size
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -208,13 +213,15 @@ export function NavAgents() {
     error: projectsError
   } = useProjects();
 
-  // Use unified threads hook - fetch all threads without pagination
+  // Use unified paginated threads hook - returns full ThreadsResponse with pagination
   const {
     data: threadsResponse,
     isLoading: isThreadsLoading,
+    isFetching: isThreadsFetching,
     error: threadsError
   } = useThreads({
-    limit: 500, // Fetch all threads
+    page: currentPage,
+    limit: pageLimit,
   });
 
   const { mutate: deleteThreadMutation, isPending: isDeletingSingle } = useDeleteThread();
@@ -225,6 +232,23 @@ export function NavAgents() {
 
   // Use threads directly from response
   const currentThreads = threadsResponse?.threads || [];
+
+  // Reset pagination when total thread count changes (e.g., after deletion)
+  const previousTotalRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (threadsResponse?.pagination) {
+      const currentTotal = threadsResponse.pagination.total;
+
+      // If the total decreased (threads were deleted), reset to page 1
+      if (previousTotalRef.current !== undefined &&
+        currentTotal < previousTotalRef.current &&
+        currentPage > 1) {
+        setCurrentPage(1);
+      }
+
+      previousTotalRef.current = currentTotal;
+    }
+  }, [threadsResponse?.pagination, currentPage]);
 
   // Process threads directly - backend already provides project data!
   // No need to map threads to projects, just transform the data structure
@@ -318,6 +342,27 @@ export function NavAgents() {
       setTimeout(() => setIsCreatingChat(false), 1000);
     }
   };
+
+  // Pagination helpers
+  const pagination = threadsResponse?.pagination;
+  const totalPages = pagination?.pages || 1;
+  const canGoPrevious = currentPage > 1;
+  const canGoNext = currentPage < totalPages;
+
+  const handlePreviousPage = () => {
+    if (canGoPrevious) {
+      setCurrentPage(prev => prev - 1);
+      scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleNextPage = () => {
+    if (canGoNext) {
+      setCurrentPage(prev => prev + 1);
+      scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
 
   // Track agent running status for all threads
   const threadIds = combinedThreads.map(thread => thread.threadId);
@@ -646,20 +691,17 @@ export function NavAgents() {
         </>
       )}
 
-      <div className="relative">
-        {/* Top fade gradient overlay */}
-        <div className="pointer-events-none absolute top-0 left-0 right-0 h-6 bg-gradient-to-b from-background to-transparent z-20" />
-      <div ref={scrollContainerRef} className="overflow-y-auto max-h-[calc(100vh-280px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] pb-16 pt-1">
+      <div ref={scrollContainerRef} className="overflow-y-auto max-h-[calc(100vh-280px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] pb-16">
         {(state !== 'collapsed' || isMobile) && (
           <>
             {isLoading ? (
               // Show skeleton loaders while loading
               <div className="space-y-1">
-                {Array.from({ length: 5 }).map((_, index) => (
-                  <div key={`skeleton-${index}`} className="flex items-center gap-2.5 px-2 py-2">
-                    <div className="h-4 w-4 bg-muted/30 rounded animate-pulse"></div>
-                    <div className="h-3.5 bg-muted/30 rounded flex-1 animate-pulse"></div>
-                    <div className="h-3 w-6 bg-muted/20 rounded animate-pulse"></div>
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div key={`skeleton-${index}`} className="flex items-center gap-3 px-2 py-2">
+                    <div className="h-10 w-10 bg-muted/10 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
+                    <div className="h-4 bg-muted rounded flex-1 animate-pulse"></div>
+                    <div className="h-3 w-8 bg-muted rounded animate-pulse"></div>
                   </div>
                 ))}
               </div>
@@ -711,35 +753,35 @@ export function NavAgents() {
                       >
                         <CollapsibleTrigger asChild>
                           <div className={cn(
-                            "flex items-center gap-2.5 px-2 py-2 cursor-pointer group/project rounded-2xl transition-all",
-                            hasActiveThread ? "border-[1.5px] bg-background dark:bg-card" : "hover:bg-muted/30"
+                            "flex items-center gap-2.5 px-2.5 py-2.5 cursor-pointer group/project rounded-xl transition-colors",
+                            hasActiveThread ? "bg-muted" : "hover:bg-muted/30"
                           )}>
                             {/* Project Icon */}
-                            <div className="flex items-center justify-center w-5 h-5 flex-shrink-0">
+                            <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
                               <ThreadIcon
                                 iconName={projectGroup.iconName}
                                 className="text-muted-foreground"
-                                size={16}
+                                size={14}
                               />
                             </div>
                             
                             {/* Project Name & Chat Count */}
-                            <div className="flex-1 min-w-0 flex items-center gap-2">
-                              <span className="text-sm truncate text-foreground/90">
+                            <div className="flex-1 min-w-0">
+                              <span className="block text-sm truncate text-foreground/90">
                                 {projectGroup.projectName}
                               </span>
                               <span className="text-[11px] text-muted-foreground">
-                                ({projectThreads.length})
+                                {projectThreads.length} chats
                               </span>
                             </div>
                             
                             {/* Actions */}
-                            <div className="flex items-center gap-0.5 flex-shrink-0">
+                            <div className="flex items-center gap-1 flex-shrink-0">
                               {/* New chat button */}
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <button
-                                    className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground opacity-0 group-hover/project:opacity-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                                    className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground opacity-0 group-hover/project:opacity-100 disabled:opacity-30 disabled:cursor-not-allowed"
                                     disabled={isCreatingChat}
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -760,7 +802,7 @@ export function NavAgents() {
                               
                               {/* Chevron */}
                               <ChevronDown className={cn(
-                                "h-3.5 w-3.5 text-muted-foreground transition-transform duration-200",
+                                "h-4 w-4 text-muted-foreground transition-transform duration-200",
                                 isExpanded ? "rotate-0" : "-rotate-90"
                               )} />
                             </div>
@@ -780,9 +822,9 @@ export function NavAgents() {
                                   onClick={(e) => handleThreadClick(e, thread.threadId, thread.url)}
                                   prefetch={false}
                                   className={cn(
-                                    "flex items-center gap-2 px-2 py-1.5 text-sm rounded-2xl transition-all group/chat",
+                                    "flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg transition-colors group/chat",
                                     isThreadActive 
-                                      ? "border-[1.5px] bg-background dark:bg-card text-foreground font-medium" 
+                                      ? "bg-muted text-foreground font-medium" 
                                       : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                                   )}
                                 >
@@ -839,6 +881,47 @@ export function NavAgents() {
                   </div>
                 ))}
 
+              {/* Minimal pagination controls */}
+              {pagination && totalPages > 1 && (
+                <div className="px-3 py-3 mt-2">
+                  <div className="flex items-center justify-center gap-4">
+                    <button
+                      onClick={handlePreviousPage}
+                      disabled={!canGoPrevious || isThreadsFetching}
+                      className={cn(
+                        "p-1.5 rounded-md transition-all",
+                        canGoPrevious && !isThreadsFetching
+                          ? "text-muted-foreground hover:text-foreground hover:bg-muted"
+                          : "text-muted-foreground/30 cursor-not-allowed"
+                      )}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    
+                    <span className="text-xs text-muted-foreground flex items-center gap-1.5 tabular-nums">
+                      {isThreadsFetching && (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      )}
+                      <span className="font-medium">{currentPage}</span>
+                      <span>/</span>
+                      <span>{totalPages}</span>
+                    </span>
+                    
+                    <button
+                      onClick={handleNextPage}
+                      disabled={!canGoNext || isThreadsFetching}
+                      className={cn(
+                        "p-1.5 rounded-md transition-all",
+                        canGoNext && !isThreadsFetching
+                          ? "text-muted-foreground hover:text-foreground hover:bg-muted"
+                          : "text-muted-foreground/30 cursor-not-allowed"
+                      )}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
               </>
             ) : (
               <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
@@ -855,7 +938,6 @@ export function NavAgents() {
             )}
           </>
         )}
-      </div>
       </div>
 
       {(isDeletingSingle || isDeletingMultiple) && totalToDelete > 0 && (

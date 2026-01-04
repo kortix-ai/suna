@@ -46,12 +46,12 @@ const AgentItem: React.FC<{
     return (
         <SpotlightCard
             className={cn(
-                "transition-all cursor-pointer rounded-2xl",
-                isActive ? "border-[1.5px] bg-background dark:bg-card" : "bg-transparent"
+                "transition-colors cursor-pointer",
+                isActive ? "bg-muted" : "bg-transparent"
             )}
         >
             <div
-                className="flex items-center gap-2.5 py-2 px-2 text-sm"
+                className="flex items-center gap-3 p-2.5 text-sm"
                 onClick={() => onAgentClick(agent.agent_id)}
                 onMouseEnter={() => setIsHoveringCard(true)}
                 onMouseLeave={() => setIsHoveringCard(false)}
@@ -60,7 +60,7 @@ const AgentItem: React.FC<{
                     <AgentAvatar
                         agent={agent}
                         agentId={agent.agent_id}
-                        size={20}
+                        size={40}
                     />
                 </div>
                 <span className="flex-1 truncate">{agent.name}</span>
@@ -189,11 +189,11 @@ export function NavAgentsView() {
                         {isAgentsLoading ? (
                             // Show skeleton loaders while loading
                             <div className="space-y-1">
-                                {Array.from({ length: 5 }).map((_, index) => (
-                                    <div key={`skeleton-${index}`} className="flex items-center gap-2.5 px-2 py-2">
-                                        <div className="h-4 w-4 bg-muted/30 rounded animate-pulse"></div>
-                                        <div className="h-3.5 bg-muted/30 rounded flex-1 animate-pulse"></div>
-                                        <div className="h-3 w-6 bg-muted/20 rounded animate-pulse"></div>
+                                {Array.from({ length: 3 }).map((_, index) => (
+                                    <div key={`skeleton-${index}`} className="flex items-center gap-3 px-2 py-2">
+                                        <div className="h-10 w-10 bg-muted/10 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
+                                        <div className="h-4 bg-muted rounded flex-1 animate-pulse"></div>
+                                        <div className="h-3 w-8 bg-muted rounded animate-pulse"></div>
                                     </div>
                                 ))}
                             </div>
@@ -220,11 +220,11 @@ export function NavAgentsView() {
                         <Button
                             variant="outline"
                             size="sm"
-                            className="w-full shadow-none justify-center items-center h-8 px-3 bg-background mt-2 text-xs"
+                            className="w-full shadow-none justify-center items-center h-10 px-4 bg-background mt-3"
                             onClick={() => setShowNewAgentDialog(true)}
                         >
-                            <div className="flex items-center gap-1.5">
-                                <Plus className="h-3.5 w-3.5" />
+                            <div className="flex items-center gap-2">
+                                <Plus className="h-4 w-4" />
                                 Add Workers
                             </div>
                         </Button>

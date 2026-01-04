@@ -2,10 +2,11 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Menu, Plus, Zap, MessageCircle, PanelLeftOpen, PanelLeftClose, Search } from 'lucide-react';
+import { Bot, Menu, Plus, Zap, MessageCircle, PanelLeftOpen, PanelLeftClose, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
+import { NavAgentsView } from '@/components/sidebar/nav-agents-view';
 import { NavGlobalConfig } from '@/components/sidebar/nav-global-config';
 import { NavTriggerRuns } from '@/components/sidebar/nav-trigger-runs';
 import { NavUserWithTeams } from '@/components/sidebar/nav-user-with-teams';
@@ -306,6 +307,7 @@ export function SidebarLeft({
               <div className="w-full flex flex-col items-center space-y-3">
                 {[
                   { view: 'chats' as const, icon: MessageCircle },
+                  { view: 'agents' as const, icon: Bot },
                   { view: 'starred' as const, icon: Zap },
                 ].map(({ view, icon: Icon }) => (
                   <Button
@@ -336,7 +338,7 @@ export function SidebarLeft({
               transition={{ duration: 0.15, ease: "easeOut" }}
               className="flex flex-col h-full"
             >
-              <div className="px-6 pt-3 space-y-3">
+              <div className="px-6 pt-4 space-y-4">
                 {/* New Chat button */}
                 <div className="w-full">
                   <Button
@@ -367,23 +369,23 @@ export function SidebarLeft({
                 </div>
 
                 {/* State buttons horizontally */}
-                <div className="flex items-center gap-2 w-full">
+                <div className="flex justify-between items-center gap-2">
                   {[
                     { view: 'chats' as const, icon: MessageCircle, label: t('chats') },
+                    { view: 'agents' as const, icon: Bot, label: t('workers') },
                     { view: 'starred' as const, icon: Zap, label: t('triggers') }
                   ].map(({ view, icon: Icon, label }) => (
                     <button
                       key={view}
                       className={cn(
-                        "flex-1 flex items-center justify-center gap-1.5 h-10 rounded-2xl cursor-pointer transition-all text-sm",
-                        activeView === view 
-                          ? 'border-[1.5px] bg-background dark:bg-card text-foreground font-medium hover:bg-accent hover:text-accent-foreground dark:hover:bg-card/50' 
-                          : 'text-muted-foreground hover:bg-muted/60'
+                        "flex flex-col items-center justify-center gap-1.5 p-1.5 rounded-2xl cursor-pointer transition-colors w-[64px] h-[64px]",
+                        "hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
+                        activeView === view ? 'bg-card border-[1.5px] border-border' : 'border-[1.5px] border-transparent'
                       )}
                       onClick={() => setActiveView(view)}
                     >
-                      <Icon className="!h-3.5 !w-3.5" />
-                      <span className="whitespace-nowrap">
+                      <Icon className="!h-4 !w-4" />
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
                         {label}
                       </span>
                     </button>
@@ -394,6 +396,7 @@ export function SidebarLeft({
               {/* Content area */}
               <div className="px-6 flex-1 overflow-hidden">
                 {activeView === 'chats' && <NavAgents />}
+                {activeView === 'agents' && <NavAgentsView />}
                 {activeView === 'starred' && (
                   <>
                     <NavGlobalConfig />
