@@ -81,6 +81,23 @@ export function BrowserToolView({
   const [isImageLoading, setIsImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
 
+  // Prepare raw arguments for hooks - must be done before hooks are called
+  const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
+
+  // Apply smooth text streaming for URL/instruction fields - MUST be called unconditionally
+  const { displayedValue: smoothUrl, isAnimating: isUrlAnimating } = useSmoothToolField(
+    rawArguments,
+    'url',
+    120,
+    isStreaming && !toolResult && !!toolCall
+  );
+  const { displayedValue: smoothInstruction, isAnimating: isInstructionAnimating } = useSmoothToolField(
+    rawArguments,
+    'instruction',
+    120,
+    isStreaming && !toolResult && !!toolCall
+  );
+
   React.useEffect(() => {
     if (isRunning) {
       setProgress(0);
@@ -210,21 +227,6 @@ export function BrowserToolView({
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const operation = extractBrowserOperation(name);
   const toolTitle = getToolTitle(name);
-
-  // Apply smooth text streaming for URL/instruction fields
-  const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
-  const { displayedValue: smoothUrl, isAnimating: isUrlAnimating } = useSmoothToolField(
-    rawArguments,
-    'url',
-    120,
-    isStreaming && !toolResult
-  );
-  const { displayedValue: smoothInstruction, isAnimating: isInstructionAnimating } = useSmoothToolField(
-    rawArguments,
-    'instruction',
-    120,
-    isStreaming && !toolResult
-  );
 
   // Extract data directly from structured props
   const url = toolCall.arguments?.url || toolCall.arguments?.target_url || null;

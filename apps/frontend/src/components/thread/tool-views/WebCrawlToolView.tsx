@@ -40,6 +40,36 @@ export function WebCrawlToolView({
   const [progress, setProgress] = useState(0);
   const [copiedContent, setCopiedContent] = useState(false);
 
+  // Prepare data for hooks - must be done before hooks are called
+  const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
+  
+  // Extract webpage content from toolResult for hook
+  const webpageContentText = React.useMemo(() => {
+    if (!toolResult?.output) return '';
+    const output = toolResult.output;
+    if (typeof output === 'string') {
+      return output;
+    } else if (typeof output === 'object' && output !== null && 'text' in output) {
+      return (output as { text?: string }).text || '';
+    }
+    return '';
+  }, [toolResult?.output]);
+
+  // Apply smooth text streaming for URL field - MUST be called unconditionally
+  const { displayedValue: smoothUrl, isAnimating: isUrlAnimating } = useSmoothToolField(
+    rawArguments,
+    'url',
+    120,
+    isStreaming && !toolResult && !!toolCall
+  );
+
+  // Apply smooth text streaming for content - MUST be called unconditionally
+  const { text: smoothContent, isAnimating: isContentAnimating } = useSmoothText(
+    webpageContentText,
+    120,
+    isStreaming && !toolResult && !!webpageContentText
+  );
+
   useEffect(() => {
     if (isStreaming) {
       const timer = setInterval(() => {
@@ -65,15 +95,6 @@ export function WebCrawlToolView({
 
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
 
-  // Apply smooth text streaming for URL field
-  const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
-  const { displayedValue: smoothUrl, isAnimating: isUrlAnimating } = useSmoothToolField(
-    rawArguments,
-    'url',
-    120,
-    isStreaming && !toolResult
-  );
-
   // Extract data directly from structured props
   const url = toolCall.arguments?.url || toolCall.arguments?.target_url || null;
   
@@ -87,13 +108,6 @@ export function WebCrawlToolView({
       webpageContent = output as { text?: string };
     }
   }
-
-  // Apply smooth text streaming for content
-  const { text: smoothContent, isAnimating: isContentAnimating } = useSmoothText(
-    webpageContent?.text || '',
-    120,
-    isStreaming && !toolResult && !!webpageContent?.text
-  );
 
   // Use smooth URL when streaming
   const displayUrl = isStreaming && smoothUrl ? smoothUrl : url;

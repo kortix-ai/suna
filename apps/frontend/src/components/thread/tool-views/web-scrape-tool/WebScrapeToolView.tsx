@@ -40,6 +40,17 @@ export function WebScrapeToolView({
   const [progress, setProgress] = useState(0);
   const [copiedFile, setCopiedFile] = useState<string | null>(null);
 
+  // Prepare raw arguments for hooks - must be done before hooks are called
+  const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
+
+  // Apply smooth text streaming for URL field - MUST be called unconditionally
+  const { displayedValue: smoothUrl, isAnimating: isUrlAnimating } = useSmoothToolField(
+    rawArguments,
+    'url',
+    120,
+    isStreaming && !toolResult && !!toolCall
+  );
+
   useEffect(() => {
     if (isStreaming) {
       const timer = setInterval(() => {
@@ -64,15 +75,6 @@ export function WebScrapeToolView({
   }
 
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
-
-  // Apply smooth text streaming for URL field
-  const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
-  const { displayedValue: smoothUrl, isAnimating: isUrlAnimating } = useSmoothToolField(
-    rawArguments,
-    'url',
-    120,
-    isStreaming && !toolResult
-  );
 
   const {
     url,
