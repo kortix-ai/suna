@@ -66,17 +66,13 @@ async def create_thread_optimistically(
         "created_at": now_iso
     }
     
-    # Create project and thread in PARALLEL
+    # Create project first, then thread (FK constraint requires project to exist)
     try:
-        async def insert_project():
-            await client.table('projects').insert(project_data).execute()
-            logger.debug(f"Created project {project_id}")
+        await client.table('projects').insert(project_data).execute()
+        logger.debug(f"Created project {project_id}")
         
-        async def insert_thread():
-            await client.table('threads').insert(thread_data).execute()
-            logger.debug(f"Created thread {thread_id}")
-        
-        await asyncio.gather(insert_project(), insert_thread())
+        await client.table('threads').insert(thread_data).execute()
+        logger.debug(f"Created thread {thread_id}")
         
         # Fire-and-forget name generation (don't block)
         asyncio.create_task(generate_and_update_project_name(project_id=project_id, prompt=prompt))
@@ -84,7 +80,7 @@ async def create_thread_optimistically(
             from core.utils.thread_name_generator import generate_and_update_thread_name
             asyncio.create_task(generate_and_update_thread_name(thread_id=thread_id, prompt=prompt))
         
-        logger.debug(f"⏱️ [TIMING] Parallel project+thread insert: {(time.time() - t_start) * 1000:.1f}ms")
+        logger.debug(f"⏱️ [TIMING] Sequential project+thread insert: {(time.time() - t_start) * 1000:.1f}ms")
         
     except Exception as e:
         logger.error(f"Failed to create project/thread: {e}")

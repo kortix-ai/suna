@@ -212,9 +212,7 @@ export function useAgentStream(
       setAgentRunId(null);
       currentRunIdRef.current = null;
       // Clear accumulated tool call deltas and previous state
-      accumulatedToolCallsRef.current.clear();
-      completedToolCallIdsRef.current.clear();
-      toolResultsRef.current.clear();
+      clearAccumulator(accumulatorRef.current);
       previousToolCallStateRef.current = null;
       lastToolCallUpdateTimeRef.current = 0;
       // Clear tool tracking when thread changes

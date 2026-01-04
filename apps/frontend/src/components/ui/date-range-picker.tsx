@@ -57,7 +57,7 @@ export const DateRangePicker: FC<DateRangePickerProps> = ({
   onUpdate,
   align = 'end',
   locale = 'en-US',
-}): JSX.Element => {
+}): React.JSX.Element => {
   const [isOpen, setIsOpen] = useState(false)
 
   const [range, setRange] = useState<DateRange>({
@@ -192,7 +192,7 @@ export const DateRangePicker: FC<DateRangePickerProps> = ({
     preset: string
     label: string
     isSelected: boolean
-  }): JSX.Element => (
+  }): React.JSX.Element => (
     <Button
       className={cn(isSelected && 'pointer-events-none')}
       variant="ghost"
