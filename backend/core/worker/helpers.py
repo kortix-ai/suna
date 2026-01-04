@@ -1,8 +1,8 @@
 """
 Helper functions for agent run processing.
 
-This module contains all the logic for running agents, extracted from
-the old Dramatiq-based worker.
+This module contains all the logic for running agents, used by
+the Redis Streams-based worker.
 """
 
 import asyncio
