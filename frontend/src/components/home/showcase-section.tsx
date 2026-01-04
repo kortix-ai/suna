@@ -161,7 +161,7 @@ export function ShowCaseSection() {
                             )}
                         >
                         <Card
-                            className="cursor-pointer !rounded-[20px] sm:!rounded-[24px] !p-4 sm:!p-6 shadow-lg transition-shadow hover:shadow-xl"
+                            className="cursor-pointer !rounded-[20px] sm:!rounded-[24px] !p-4 sm:!p-6"
                             onMouseEnter={() => !isMobile && setActiveWorker(worker.id)}
                             onClick={() => isMobile && setActiveWorker(worker.id)}
                         >
