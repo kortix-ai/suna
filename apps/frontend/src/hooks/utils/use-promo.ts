@@ -25,8 +25,8 @@ const getEndOfCurrentMonthUTC = (): number => {
 const PROMOS: PromoConfig[] = [
   {
     id: 'welcome-bonus',
-    promoCode: 'WELCOME2X',
-    badgeLabel: 'Welcome Bonus',
+    promoCode: 'KORTIX2026',
+    badgeLabel: 'Happy New Year Offer',
     description: '2X Credits',
     // Active from now until end of current month
     startDate: Date.UTC(2025, 0, 1, 0, 0, 0), // Always active (start from beginning of 2025)
