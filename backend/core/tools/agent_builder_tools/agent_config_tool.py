@@ -281,7 +281,7 @@ class AgentConfigTool(AgentBuilderBaseTool):
                 except Exception as e:
                     logger.warning(f"Failed to get version data for agent config tool: {e}")
 
-            from core.config_helper import extract_agent_config
+            from core.config.config_helper import extract_agent_config
             agent_config = extract_agent_config(agent_data, version_data)
             
             config_summary = {

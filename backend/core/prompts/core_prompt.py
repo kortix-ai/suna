@@ -475,9 +475,9 @@ CRITICAL: NEVER delete files without user confirmation:
 
 def get_core_system_prompt() -> str:
     try:
-        import run_agent_background
-        if run_agent_background._STATIC_CORE_PROMPT:
-            return run_agent_background._STATIC_CORE_PROMPT
+        from core.worker.helpers import _STATIC_CORE_PROMPT
+        if _STATIC_CORE_PROMPT:
+            return _STATIC_CORE_PROMPT
     except (ImportError, AttributeError):
         pass
     

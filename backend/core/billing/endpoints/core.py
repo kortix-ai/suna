@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import Dict
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
-from core.credits import credit_service
+from core.services.credits import credit_service
 from core.services.supabase import DBConnection
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.config import config, EnvMode

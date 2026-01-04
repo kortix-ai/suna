@@ -4,7 +4,7 @@ from typing import Optional, List
 from fastapi import HTTPException
 from core.services import redis
 from ..utils.logger import logger
-from run_agent_background import update_agent_run_status, cleanup_redis_keys_for_agent_run
+from core.worker import update_agent_run_status, cleanup_redis_keys
 
 
 async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional[str] = None, stop_source: str = "api_request"):
@@ -25,7 +25,8 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
     logger.warning(f"🛑 Stopping agent run: {agent_run_id} (source: {stop_source}, error: {error_message or 'none'})")
     
     # Import here to avoid circular dependency
-    from ..core_utils import db
+    from core.services.supabase import DBConnection
+    db = DBConnection()
     
     client = await db.client
     final_status = "failed" if error_message else "stopped"
@@ -57,7 +58,7 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
         logger.error(f"Failed to set STOP signal for agent run {agent_run_id}: {str(e)}")
 
         # Comprehensive cleanup of all Redis keys for this agent run
-        await cleanup_redis_keys_for_agent_run(agent_run_id)
+        await cleanup_redis_keys(agent_run_id)
 
     except Exception as e:
         logger.error(f"Failed to find or signal active instances for {agent_run_id}: {str(e)}")

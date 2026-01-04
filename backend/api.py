@@ -6,7 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from core.services import redis
 from core.utils.openapi_config import configure_openapi
-import sentry
 from contextlib import asynccontextmanager
 from core.agentpress.thread_manager import ThreadManager
 from core.services.supabase import DBConnection
@@ -29,7 +28,15 @@ from core.utils.rate_limiter import (
     get_client_identifier,
 )
 
-from core import api as core_api
+from core.versioning.api import router as versioning_router
+from core.agents.runs import router as agent_runs_router
+from core.agents.agent_crud import router as agent_crud_router
+from core.agents.agent_tools import router as agent_tools_router
+from core.agents.agent_json import router as agent_json_router
+from core.agents.agent_setup import router as agent_setup_router
+from core.threads.api import router as threads_router
+from core.categorization.api import router as categorization_router
+from core.endpoints import router as endpoints_router
 
 from core.sandbox import api as sandbox_api
 from core.billing.api import router as billing_router
@@ -81,14 +88,8 @@ async def lifespan(app: FastAPI):
         warm_up_tools_cache()
         
         # Pre-load static Suna config for fast path in API requests
-        from core.runtime_cache import load_static_suna_config
+        from core.cache.runtime_cache import load_static_suna_config
         load_static_suna_config()
-        
-        core_api.initialize(
-            db,
-            instance_id
-        )
-        
         
         sandbox_api.initialize(db)
         
@@ -131,8 +132,7 @@ async def lifespan(app: FastAPI):
         # This ensures no new traffic is routed to this pod
         await asyncio.sleep(2)
         
-        logger.debug("Cleaning up agent resources")
-        await core_api.cleanup()
+        logger.debug("Cleaning up resources")
         
         # Stop CloudWatch queue metrics task
         if _queue_metrics_task is not None:
@@ -281,7 +281,16 @@ app.add_middleware(
 api_router = APIRouter()
 
 # Include all API routers without individual prefixes
-api_router.include_router(core_api.router)
+# Core routers
+api_router.include_router(versioning_router)
+api_router.include_router(agent_runs_router)
+api_router.include_router(agent_crud_router)
+api_router.include_router(agent_tools_router)
+api_router.include_router(agent_json_router)
+api_router.include_router(agent_setup_router)
+api_router.include_router(threads_router)
+api_router.include_router(categorization_router)
+api_router.include_router(endpoints_router)
 api_router.include_router(sandbox_api.router)
 api_router.include_router(billing_router)
 api_router.include_router(setup_router)
@@ -457,6 +466,28 @@ async def debug_queue_status():
         return {
             "error": str(e),
             "redis_connected": False,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+@api_router.get("/debug/stream-worker", summary="Stream Worker Status", operation_id="debug_stream_worker", tags=["system"])
+async def debug_stream_worker_status():
+    """
+    Monitor Redis Streams worker for agent runs.
+    Shows stream length, pending messages, and consumer status.
+    """
+    try:
+        from core.worker import get_stream_info
+        info = await get_stream_info()
+        return {
+            "status": "healthy" if not info.get("error") else "error",
+            **info,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Stream worker status failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
