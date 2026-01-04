@@ -3,7 +3,6 @@ import {
   Expand,
   CheckCircle,
   AlertTriangle,
-  Loader2,
   Clock,
   MessageSquareText,
   Copy,
@@ -16,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from '@/components/ui/button';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { UnifiedMarkdown } from '@/components/markdown';
 
 export function ExpandMessageToolView({
@@ -102,30 +101,6 @@ export function ExpandMessageToolView({
             </div>
           </div>
 
-          {!isStreaming && (
-            <Badge
-              variant="secondary"
-              className={
-                actualIsSuccess
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                  : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              }
-            >
-              {actualIsSuccess ? (
-                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-              ) : (
-                <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-              )}
-              {actualIsSuccess ? 'Expanded' : 'Failed'}
-            </Badge>
-          )}
-
-          {isStreaming && (
-            <Badge className="bg-gradient-to-b from-purple-200 to-purple-100 text-purple-700 dark:from-purple-800/50 dark:to-purple-900/60 dark:text-purple-300">
-              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-              Expanding
-            </Badge>
-          )}
         </div>
       </CardHeader>
 

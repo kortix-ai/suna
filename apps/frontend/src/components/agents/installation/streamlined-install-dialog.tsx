@@ -11,13 +11,13 @@ import {
   DialogDescription 
 } from '@/components/ui/dialog';
 import { 
-  Loader2, 
   Shield, 
   Download,
   ArrowRight,
   CheckCircle,
   Zap
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
 import { ProfileConnector } from './streamlined-profile-connector';
 import { CustomServerStep } from './custom-server-step';
@@ -25,7 +25,7 @@ import type { MarketplaceTemplate, SetupStep } from './types';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 import { TriggerConfigStep } from './trigger-config-step';
 import { TriggerVariablesStep, type TriggerVariable } from './trigger-variables-step';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 interface StreamlinedInstallDialogProps {
   item: MarketplaceTemplate | null;
@@ -337,7 +337,7 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <div className="flex items-center gap-2">
-                <Loader2 className="h-5 w-5 animate-spin" />
+                <KortixLoader customSize={20} />
                 <span className="text-sm">Preparing installation...</span>
               </div>
             </div>
@@ -496,7 +496,7 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
             >
               {isInstalling ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <KortixLoader customSize={16} />
                   Installing...
                 </>
               ) : (
@@ -514,7 +514,7 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
             >
               {isInstalling ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <KortixLoader customSize={16} />
                   Installing...
                 </>
               ) : (

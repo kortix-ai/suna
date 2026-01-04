@@ -14,7 +14,7 @@ import {
   useToggleTrigger,
   useTriggerProviders 
 } from '@/hooks/triggers';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { OneClickIntegrations } from './one-click-integrations';
 
 interface AgentTriggersConfigurationProps {

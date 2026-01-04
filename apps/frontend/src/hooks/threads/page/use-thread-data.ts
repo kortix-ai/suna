@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Project } from '@/lib/api/threads';
 import { useThreadQuery } from '@/hooks/threads/use-threads';
 import { useMessagesQuery } from '@/hooks/messages';

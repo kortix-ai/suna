@@ -14,7 +14,7 @@ import { EventBasedTriggerDialog } from '@/components/agents/triggers/event-base
 import { SimplifiedScheduleConfig } from '@/components/agents/triggers/providers/simplified-schedule-config';
 import { ScheduleTriggerConfig } from '@/components/agents/triggers/types';
 import { useCreateTrigger, useUpdateTrigger } from '@/hooks/triggers';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { AgentSelector } from '@/components/agents/agent-selector';
 import { TriggerLimitError } from '@/lib/api/errors';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';

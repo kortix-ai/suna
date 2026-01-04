@@ -45,23 +45,6 @@ export function WaitForCallCompletionToolView({
               </CardTitle>
             </div>
           </div>
-          {!isStreaming && (
-            <Badge
-              variant="secondary"
-              className={
-                isSuccess
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                  : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              }
-            >
-              {isSuccess ? (
-                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-              ) : (
-                <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-              )}
-              {isSuccess ? 'Call completed successfully' : 'Call completion failed'}
-            </Badge>
-          )}
         </div>
       </CardHeader>
 

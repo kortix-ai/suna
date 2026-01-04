@@ -11,12 +11,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Search, ArrowLeft, Info, Zap, ChevronRight, Plus, Sparkles, CheckCircle2, Link2, Activity } from 'lucide-react';
+import { Search, ArrowLeft, Info, Zap, ChevronRight, Plus, Sparkles, CheckCircle2, Link2, Activity } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useComposioAppsWithTriggers, useComposioAppTriggers, useCreateComposioEventTrigger, ComposioTriggerType } from '@/hooks/composio/use-composio-triggers';
 import { useUpdateTrigger } from '@/hooks/triggers';
 import { useComposioProfiles } from '@/hooks/composio/use-composio-profiles';
 import { useComposioToolkitDetails } from '@/hooks/composio/use-composio';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { cn, truncateString } from '@/lib/utils';
 import { ComposioConnector } from '@/components/agents/composio/composio-connector';
 import { UnifiedMarkdown } from '@/components/markdown';
@@ -683,7 +684,7 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                                     {isEditMode && !selectedTrigger && (loadingTriggers || !selectedApp) ? (
                                         <div className="flex-1 flex items-center justify-center p-6">
                                             <div className="text-center space-y-3">
-                                                <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+                                                <KortixLoader size="large" className="mx-auto" />
                                                 <p className="text-sm text-muted-foreground">Loading trigger configuration...</p>
                                                 {triggersError && (
                                                     <p className="text-xs text-destructive">Error: {String(triggersError)}</p>
@@ -771,7 +772,7 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                                                                         {loadingProfiles ? (
                                                                             <SelectItem value="__loading__" disabled>
                                                                                 <div className="flex items-center gap-2">
-                                                                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                                                                    <KortixLoader customSize={12} />
                                                                                     <span>Loading...</span>
                                                                                 </div>
                                                                             </SelectItem>
@@ -844,7 +845,7 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                                                         >
                                                             {(isEditMode ? updateTrigger.isPending : createTrigger.isPending) ? (
                                                                 <>
-                                                                    <Loader2 className="h-3 w-3 animate-spin mr-2" />
+                                                                    <KortixLoader customSize={12} className="mr-2" />
                                                                     {isEditMode ? 'Updating...' : 'Creating...'}
                                                                 </>
                                                             ) : (

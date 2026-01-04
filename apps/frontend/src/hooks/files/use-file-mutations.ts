@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
 import { fileQueryKeys } from './use-file-queries';
 import { FileCache } from '@/hooks/files';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 // Import the normalizePath function from use-file-queries
 function normalizePath(path: string): string {
   if (!path) return '/';

@@ -21,7 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from '@/components/ui/button';
 import { LoadingState } from './shared/LoadingState';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 interface KbOperation {
   type: 'search' | 'sync' | 'list' | 'create' | 'upload' | 'delete' | 'enable' | 'cleanup' | 'init';
@@ -622,33 +622,19 @@ export function KbToolView({
             </div>
           </div>
 
-          {!isStreaming && (
-            <div className="flex items-center gap-2">
-              <Badge
-                variant="secondary"
-                className={
-                  isSuccess
-                    ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                    : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-                }
-              >
-                {isSuccess ? 'Success' : 'Failed'}
-              </Badge>
-              {toolResult?.output && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={copyContent}
-                  className="h-7 px-2"
-                >
-                  {copied ? (
-                    <Check className="h-3.5 w-3.5" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                </Button>
+          {!isStreaming && toolResult?.output && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={copyContent}
+              className="h-7 px-2"
+            >
+              {copied ? (
+                <Check className="h-3.5 w-3.5" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
               )}
-            </div>
+            </Button>
           )}
         </div>
       </CardHeader>

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { referralsApi, ReferralCodeResponse, ReferralStats, ReferralListResponse, ValidateReferralCodeResponse, ReferralEmailResponse } from '@/lib/api/referrals';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useTranslations } from 'next-intl';
 
 export const REFERRALS_QUERY_KEYS = {

@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { AlertCircle, RefreshCw } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useVncPreloader } from '@/hooks/files';
 
 interface HealthCheckedVncIframeProps {
@@ -51,7 +52,7 @@ export function HealthCheckedVncIframe({ sandbox, className }: HealthCheckedVncI
       <div className={`overflow-hidden m-2 sm:m-4 relative ${className || ''}`}>
         <Card className="p-0 overflow-hidden border">
           <div className='relative w-full aspect-[4/3] sm:aspect-[5/3] md:aspect-[16/11] overflow-hidden bg-background flex flex-col items-center justify-center'>
-            <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+            <KortixLoader size="medium" className="mb-3" />
             <p className="text-sm font-medium text-center mb-2 text-foreground">Connecting to browser...</p>
             <p className="text-xs text-muted-foreground mb-2 text-center">
               Testing VNC connection
@@ -106,7 +107,7 @@ export function HealthCheckedVncIframe({ sandbox, className }: HealthCheckedVncI
             {isBrowserLoading && (
               <div className="absolute inset-0 bg-background/95 backdrop-blur-sm flex flex-col items-center justify-center z-10">
                 <div className="flex flex-col items-center space-y-3">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <KortixLoader size="medium" />
                   <p className="text-sm font-medium text-foreground">
                     Initializing browser...
                   </p>

@@ -36,7 +36,7 @@ import {
   type FileInfo,
 } from '@/lib/api/sandbox';
 import { Project } from '@/lib/api/threads';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/components/AuthProvider';
 import {

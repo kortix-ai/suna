@@ -18,7 +18,6 @@ import {
 import {
   Presentation,
   Clock,
-  Loader2,
   CheckCircle,
   AlertTriangle,
   FileText,
@@ -28,15 +27,16 @@ import {
   ExternalLink,
   ChevronDown,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ToolViewProps } from '../types';
 import { formatTimestamp, getToolTitle } from '../utils';
 import { downloadPresentation, handleGoogleSlidesUpload } from '../utils/presentation-utils';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { CodeBlockCode } from '@/components/ui/code-block';
-import { LoadingState } from '../shared/LoadingState';
 import { FullScreenPresentationViewer } from './FullScreenPresentationViewer';
 import { DownloadFormat } from '../utils/presentation-utils';
 import { PresentationSlideCard } from './PresentationSlideCard';
+import { PresentationSlideSkeleton } from './PresentationSlideSkeleton';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { backendApi } from '@/lib/api-client';
 import { useDownloadRestriction } from '@/hooks/billing';
@@ -104,6 +104,26 @@ export function PresentationViewer({
   const sanitizeFilename = (name: string): string => {
     return name.replace(/[^a-zA-Z0-9\-_]/g, '').toLowerCase();
   };
+
+  // Extract presentation info from toolCall.arguments (available during streaming)
+  const streamingSlideNumber = toolCall?.arguments?.slide_number as number | undefined;
+  const streamingPresentationName = toolCall?.arguments?.presentation_name as string | undefined;
+  const streamingSlideTitle = toolCall?.arguments?.slide_title as string | undefined;
+  // Extract the HTML content being streamed for real-time preview
+  const streamingContent = toolCall?.arguments?.content as string | undefined;
+
+  // Default number of skeleton slides to show (typical presentation length)
+  const DEFAULT_SKELETON_SLIDES = 8;
+  
+  // Track the expected total slides based on the highest slide number we see
+  const [expectedTotalSlides, setExpectedTotalSlides] = useState(DEFAULT_SKELETON_SLIDES);
+  
+  // Update expected total when we see a higher slide number during streaming
+  useEffect(() => {
+    if (streamingSlideNumber && streamingSlideNumber > expectedTotalSlides) {
+      setExpectedTotalSlides(streamingSlideNumber);
+    }
+  }, [streamingSlideNumber, expectedTotalSlides]);
 
   // Extract presentation info from toolResult.output (from metadata)
   let extractedPresentationName: string | undefined;
@@ -412,6 +432,59 @@ export function PresentationViewer({
     };
   }, []);
 
+  // Poll for metadata updates during streaming to replace skeletons with real slides
+  const streamingPollingRef = useRef<NodeJS.Timeout | null>(null);
+  
+  useEffect(() => {
+    // Only poll during streaming when we have a presentation name and sandbox URL
+    const presentationToLoad = streamingPresentationName || extractedPresentationName;
+    
+    if (isStreaming && presentationToLoad && project?.sandbox?.sandbox_url) {
+      // Poll every 2 seconds during streaming
+      const pollMetadata = async () => {
+        const sanitizedName = sanitizeFilename(presentationToLoad);
+        const metadataUrl = constructHtmlPreviewUrl(
+          project.sandbox!.sandbox_url!, 
+          `presentations/${sanitizedName}/metadata.json`
+        );
+        
+        try {
+          const response = await fetch(`${metadataUrl}?t=${Date.now()}`, {
+            cache: 'no-cache',
+            headers: { 'Cache-Control': 'no-cache' }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            // Update metadata and cache
+            metadataCacheRef.current.set(sanitizedName, data);
+            setMetadata(data);
+            hasLoadedRef.current = true;
+          }
+        } catch (err) {
+          // Silently ignore errors during polling - will retry
+        }
+      };
+      
+      // Initial load
+      pollMetadata();
+      
+      // Poll every 2 seconds
+      streamingPollingRef.current = setInterval(pollMetadata, 2000);
+      
+      return () => {
+        if (streamingPollingRef.current) {
+          clearInterval(streamingPollingRef.current);
+          streamingPollingRef.current = null;
+        }
+      };
+    } else if (!isStreaming && streamingPollingRef.current) {
+      // Stop polling when streaming ends
+      clearInterval(streamingPollingRef.current);
+      streamingPollingRef.current = null;
+    }
+  }, [isStreaming, streamingPresentationName, extractedPresentationName, project?.sandbox?.sandbox_url]);
+
   // Create a unique key for this tool call to track scroll state
   const toolCallKey = useMemo(() => {
     return `${toolCall?.tool_call_id || ''}-${currentSlideNumber || ''}-${extractedPresentationName || ''}`;
@@ -579,10 +652,13 @@ export function PresentationViewer({
             <div className="relative p-2 rounded-lg border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700">
               <Presentation className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
-            <div>
+            <div className="flex items-center gap-2">
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-                {metadata?.title || metadata?.presentation_name || toolTitle}
+                {metadata?.title || metadata?.presentation_name || streamingPresentationName || toolTitle}
               </CardTitle>
+              {isStreaming && (
+                <span className="inline-block h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+              )}
             </div>
           </div>
 
@@ -618,7 +694,7 @@ export function PresentationViewer({
                       disabled={isDownloading}
                     >
                       {isDownloading ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <KortixLoader customSize={14} />
                       ) : (
                         <Download className="h-3.5 w-3.5" />
                       )}
@@ -654,22 +730,6 @@ export function PresentationViewer({
               </>
             )}
 
-            {!isStreaming && (
-              <Badge
-                variant="secondary"
-                className="bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-              >
-                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-                Success
-              </Badge>
-            )}
-
-            {isStreaming && (
-              <Badge className="bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300">
-                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                Loading
-              </Badge>
-            )}
           </div>
         </div>
       </CardHeader>}
@@ -677,15 +737,49 @@ export function PresentationViewer({
 
 
       <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
-        {(isStreaming || (isLoadingMetadata && !metadata) || (!metadata && !toolExecutionError && extractedPresentationName)) ? (
-          <LoadingState
-            icon={Presentation}
-            iconColor="text-blue-500 dark:text-blue-400"
-            bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
-            title="Loading presentation"
-            filePath={retryAttempt > 0 ? `Retrying... (attempt ${retryAttempt + 1})` : "Loading slides..."}
-            showProgress={true}
-          />
+        {/* Show skeleton slides during streaming for immediate visual feedback */}
+        {isStreaming && (streamingPresentationName || extractedPresentationName) ? (
+          <ScrollArea className="h-full">
+            <div className="space-y-4 p-4">
+              {/* Show skeleton slides immediately when streaming starts */}
+              {Array.from({ length: expectedTotalSlides }, (_, i) => i + 1).map((slideNum) => {
+                // Check if we have real slide data for this slot
+                const realSlide = slides.find(s => s.number === slideNum);
+                const isCurrentlyGenerating = slideNum === streamingSlideNumber;
+                
+                if (realSlide) {
+                  // Show real slide if already created
+                  return (
+                    <div key={slideNum} id={`slide-${slideNum}`}>
+                      <PresentationSlideCard
+                        slide={realSlide}
+                        project={project}
+                        onFullScreenClick={(slideNumber) => {
+                          if (openPresentation && project?.sandbox?.sandbox_url && (extractedPresentationName || streamingPresentationName)) {
+                            openPresentation(extractedPresentationName || streamingPresentationName!, project.sandbox.sandbox_url, slideNumber);
+                          }
+                        }}
+                        className={currentSlideNumber === realSlide.number ? 'ring-2 ring-blue-500/20 shadow-md' : ''}
+                        refreshTimestamp={metadata?.updated_at ? new Date(metadata.updated_at).getTime() : undefined}
+                      />
+                    </div>
+                  );
+                }
+                
+                // Show empty slide frame (with streaming content if generating)
+                return (
+                  <div key={slideNum} id={`slide-${slideNum}`}>
+                    <PresentationSlideSkeleton
+                      slideNumber={slideNum}
+                      isGenerating={isCurrentlyGenerating}
+                      slideTitle={isCurrentlyGenerating ? streamingSlideTitle : undefined}
+                      streamingContent={isCurrentlyGenerating ? streamingContent : undefined}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </ScrollArea>
         ) : toolExecutionError ? (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-rose-100 to-rose-50 shadow-inner dark:from-rose-800/40 dark:to-rose-900/60">
@@ -741,12 +835,12 @@ export function PresentationViewer({
       </CardContent>
 
       <div className="px-4 py-2 h-9 bg-muted/20 border-t border-border/40 flex justify-between items-center">
-        <div className="text-xs text-muted-foreground">
-          {slides.length > 0 && visibleSlide && (
-            <span className="font-mono">
-              {visibleSlide}/{slides.length}
-            </span>
-          )}
+        <div className="text-xs text-muted-foreground font-mono">
+          {isStreaming ? (
+            <span>{slides.length}/{expectedTotalSlides}</span>
+          ) : slides.length > 0 && visibleSlide ? (
+            <span>{visibleSlide}/{slides.length}</span>
+          ) : null}
         </div>
         <div className="text-xs text-muted-foreground">
           {formatTimestamp(toolTimestamp)}

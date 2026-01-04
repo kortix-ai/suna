@@ -16,7 +16,7 @@ import { KnowledgeScreen } from './screens/knowledge-screen';
 import { ToolsScreen } from './screens/tools-screen';
 import { IntegrationsScreen } from './screens/integrations-screen';
 import { useUpdateAgent } from '@/hooks/agents/use-agents';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useQueryClient } from '@tanstack/react-query';
 
 type ConfigView = 'instructions' | 'knowledge' | 'triggers' | 'tools' | 'integrations';

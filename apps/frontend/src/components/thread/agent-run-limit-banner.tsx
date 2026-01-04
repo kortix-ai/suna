@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import { AlertTriangle, ExternalLink, Square, Loader2, Zap, X } from 'lucide-react';
+import { AlertTriangle, ExternalLink, Square, Zap, X } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -14,7 +15,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import Link from 'next/link';
 import { useStopAgentMutation } from '@/hooks/threads/use-agent-run';
 import { AgentRun, getAgentRuns } from '@/lib/api/agents';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { getThread } from '@/hooks/threads/utils';
 import { getProject } from '@/lib/api/threads';
@@ -160,7 +161,7 @@ export const AgentRunLimitBanner: React.FC<AgentRunLimitBannerProps> = ({
           {/* Running agent info */}
           {isAnyLoading ? (
             <div className="flex items-center justify-center py-6">
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <KortixLoader size="small" />
               <span className="ml-2 text-sm text-muted-foreground">Loading active worker...</span>
             </div>
           ) : firstRunningAgent?.agentRun ? (
@@ -192,7 +193,7 @@ export const AgentRunLimitBanner: React.FC<AgentRunLimitBannerProps> = ({
                         disabled={stopAgentMutation.isPending}
                       >
                         {stopAgentMutation.isPending ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <KortixLoader size="small" />
                         ) : (
                           <Square className="h-3 w-3" />
                         )}

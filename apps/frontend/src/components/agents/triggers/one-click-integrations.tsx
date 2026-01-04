@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Loader2, AlertCircle, Clock, PlugZap, Lock, Zap } from 'lucide-react';
+import { AlertCircle, Clock, PlugZap, Lock, Zap } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { SimplifiedScheduleConfig } from './providers/simplified-schedule-config';
 import { TriggerProvider, ScheduleTriggerConfig } from './types';
 
@@ -16,7 +17,7 @@ import {
   useCreateTrigger,
   useDeleteTrigger
 } from '@/hooks/triggers';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { EventBasedTriggerDialog } from './event-based-trigger-dialog';
 import { config, EnvMode, isLocalMode } from '@/lib/config';
 import { useAccountState } from '@/hooks/billing';
@@ -228,7 +229,7 @@ export const OneClickIntegrations: React.FC<OneClickIntegrationsProps> = ({
                 className="flex items-center"
               >
                 {isLoading ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <KortixLoader customSize={16} className="mr-2" />
                 ) : (
                   config.icon
                 )}

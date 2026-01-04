@@ -20,7 +20,7 @@ import { Linking } from 'react-native';
 import { FileAttachmentsGrid } from './FileAttachmentRenderer';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { PromptExamples } from '@/components/shared';
-import { parseXmlToolCalls, preprocessTextOnlyTools } from '@agentpress/shared/tools';
+import { parseXmlToolCalls, preprocessTextOnlyTools, isHiddenTool } from '@agentpress/shared/tools';
 import { normalizeArrayValue, normalizeAttachments } from '@agentpress/shared/utils';
 
 export interface AssistantMessageRendererProps {
@@ -290,6 +290,11 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
   // Only render ask/complete tools inline - regular tool calls are rendered via ToolCard components
   toolCalls.forEach((toolCall, index) => {
     const toolName = toolCall.function_name?.replace(/_/g, '-') || '';
+
+    // Skip hidden tools (internal/initialization tools that don't provide meaningful user feedback)
+    if (isHiddenTool(toolName)) {
+      return;
+    }
 
     if (toolName === 'ask') {
       contentParts.push(renderAskToolCall(toolCall, index, props));

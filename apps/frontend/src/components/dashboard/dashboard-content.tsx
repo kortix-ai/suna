@@ -18,13 +18,12 @@ import { useAgents } from '@/hooks/agents/use-agents';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useAgentSelection } from '@/stores/agent-selection-store';
 import { useThreadQuery } from '@/hooks/threads/use-threads';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { Button } from '../ui/button';
 import { X, ChevronRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { NotificationDropdown } from '../notifications/notification-dropdown';
-import { UsageLimitsPopover } from './usage-limits-popover';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useWelcomeBannerStore } from '@/stores/welcome-banner-store';
 import { cn } from '@/lib/utils';
@@ -403,7 +402,6 @@ export function DashboardContent() {
           <Suspense fallback={<div className="h-8 w-20 bg-muted/30 rounded animate-pulse" />}>
             <CreditsDisplay />
           </Suspense>
-          <UsageLimitsPopover />
         </div>
 
         <div className="flex-1 overflow-y-auto">

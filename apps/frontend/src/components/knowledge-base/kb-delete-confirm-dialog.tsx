@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Loader2 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 
 import {
   AlertDialog,
@@ -57,7 +57,7 @@ export function KBDeleteConfirmDialog({
           >
             {isDeleting ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <KortixLoader size="small" className="mr-2" />
                 Deleting...
               </>
             ) : (

@@ -13,7 +13,7 @@ import {
   ProjectLimitError, 
   BillingError 
 } from '@/lib/api/errors';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { ChatInput, ChatInputHandles } from '@/components/thread/chat-input/chat-input';
 import { SidebarContext } from '@/components/ui/sidebar';
 import { useAgentStream } from '@/hooks/messages';

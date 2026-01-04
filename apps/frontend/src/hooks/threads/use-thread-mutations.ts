@@ -5,7 +5,7 @@ import {
   createThread, 
   addUserMessage 
 } from '@/lib/api/threads';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { handleApiError } from '@/lib/error-handler';
 import { deleteThread } from './utils';
 import { threadKeys } from './keys';

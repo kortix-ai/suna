@@ -4,7 +4,7 @@ import { memo, useState } from 'react';
 import { Folder, File, Calendar, MapPin, Copy, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getFileIconByName } from './Icons';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 export interface FileInfo {
   name: string;

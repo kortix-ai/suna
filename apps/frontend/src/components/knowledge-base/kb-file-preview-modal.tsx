@@ -10,8 +10,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { FileIcon, Edit, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { FileIcon, Edit } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
+import { toast } from '@/lib/toast';
 
 interface KBFilePreviewModalProps {
     isOpen: boolean;
@@ -119,7 +120,7 @@ export function KBFilePreviewModal({ isOpen, onClose, file, onEditSummary }: KBF
                         >
                             {isSaving ? (
                                 <>
-                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    <KortixLoader size="small" />
                                     Saving...
                                 </>
                             ) : (

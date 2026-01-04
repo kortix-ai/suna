@@ -46,7 +46,7 @@ import type {
   ComposioProfile,
   AuthConfigField,
 } from '@/hooks/composio/utils';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { AnimatePresence, motion } from 'framer-motion';

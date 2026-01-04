@@ -17,6 +17,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Clock, Calendar, ChevronDown, Activity, Zap, AlertCircle } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Badge } from '@/components/ui/badge';
 import { useAgentUpcomingRuns, type UpcomingRun } from '@/hooks/agents/use-agent-upcoming-runs';
 import { formatDistanceToNow, parseISO } from 'date-fns';
@@ -131,7 +132,7 @@ export const UpcomingRunsDropdown: React.FC<UpcomingRunsDropdownProps> = ({ agen
         {isLoading && (
           <DropdownMenuItem disabled className="flex items-center justify-center py-4">
             <div className="flex items-center space-x-2">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary" />
+              <KortixLoader customSize={16} />
               <span>Loading...</span>
             </div>
           </DropdownMenuItem>

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
-import { Download, Loader2, FileType, FileText, FileCode } from 'lucide-react';
+import { Download, FileType, FileText, FileCode } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -11,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { exportDocument, type ExportFormat } from '@/lib/utils/document-export';
 import { useDownloadRestriction } from '@/hooks/billing';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { marked } from 'marked';
 
 interface FileDownloadButtonProps {
@@ -137,7 +138,7 @@ export function FileDownloadButton({
             title="Export file"
           >
             {isExporting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <KortixLoader customSize={16} />
             ) : (
               <Download className="h-4 w-4" />
             )}
@@ -176,7 +177,7 @@ export function FileDownloadButton({
       title="Download file"
     >
       {isExporting ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
+        <KortixLoader customSize={16} />
       ) : (
         <Download className="h-4 w-4" />
       )}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ToolResultData } from '../types';
-import { Phone, Loader2, User, PhoneCall, PhoneMissed, CheckCircle2, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Phone, User, PhoneCall, PhoneMissed, CheckCircle2, CheckCircle, AlertTriangle } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ToolViewProps } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -300,7 +301,7 @@ export function MonitorCallToolView({
               isActive && "animate-pulse"
             )}>
               {isActive ? (
-                <Loader2 className="w-5 h-5 text-indigo-500 dark:text-indigo-400 animate-spin" />
+                <KortixLoader customSize={20} />
               ) : (
                 <StatusIcon className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
               )}
@@ -317,23 +318,6 @@ export function MonitorCallToolView({
               )}
             </div>
           </div>
-          {!isStreaming && (
-            <Badge
-              variant="secondary"
-              className={
-                isSuccess
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                  : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              }
-            >
-              {isSuccess ? (
-                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-              ) : (
-                <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-              )}
-              {isSuccess ? 'Call monitoring active' : 'Failed to monitor call'}
-            </Badge>
-          )}
         </div>
       </CardHeader>
 
@@ -390,7 +374,7 @@ export function MonitorCallToolView({
           </div>
         ) : isActive ? (
           <div className="text-center py-8">
-            <Loader2 className="h-6 w-6 mx-auto mb-2 text-muted-foreground animate-spin" />
+            <KortixLoader customSize={24} className="mx-auto mb-2" />
             <p className="text-sm text-muted-foreground">Waiting for conversation to start...</p>
           </div>
         ) : (

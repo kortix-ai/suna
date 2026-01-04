@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Plus, Calendar, User } from 'lucide-react';
+import { Plus, Calendar, User } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { formatDistanceToNow } from 'date-fns';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import type { ComposioToolkit, ComposioProfile } from '@/hooks/composio/utils';
 
 interface ComposioProfileSelectorProps {
@@ -117,7 +118,7 @@ export const ComposioProfileSelector: React.FC<ComposioProfileSelectorProps> = (
           >
             {isLoading ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <KortixLoader customSize={16} className="mr-2" />
                 Loading...
               </>
             ) : selectedProfileId === 'new' ? (

@@ -5,7 +5,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
-import { Search, Zap, X, Settings, ChevronDown, ChevronUp, Loader2, Server, Lock } from 'lucide-react';
+import { Search, Zap, X, Settings, ChevronDown, ChevronUp, Server, Lock } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useComposioCategories, useComposioToolkitsInfinite } from '@/hooks/composio/use-composio';
 import { useComposioProfiles } from '@/hooks/composio/use-composio-profiles';
 import { useAgent } from '@/hooks/agents/use-agents';
@@ -13,7 +14,7 @@ import { useUpdateAgentMCPs } from '@/hooks/agents/use-update-agent-mcps';
 import { ComposioConnector } from './composio-connector';
 import { ComposioToolsManager } from './composio-tools-manager';
 import type { ComposioToolkit, ComposioProfile } from '@/hooks/composio/utils';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { useQueryClient } from '@tanstack/react-query';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -709,7 +710,7 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
                           >
                             {isFetchingNextPage ? (
                               <>
-                                <Loader2 className="animate-spin h-4 w-4 " />
+                                <KortixLoader customSize={16} className="mr-1" />
                                 Loading more...
                               </>
                             ) : (

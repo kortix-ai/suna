@@ -27,7 +27,7 @@ import { getFileIconByName } from './Icons';
 import { SystemInfoContent } from './SystemInfoContent';
 import { FileInfoContent, FileInfo } from './FileInfoContent';
 import dynamic from 'next/dynamic';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 // Lazy load SpreadsheetApp as it imports Syncfusion (~1-2 MB)
 const SpreadsheetApp = dynamic(

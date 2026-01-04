@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { getFileIcon, FolderIcon } from './Icons';
 import { FileContextMenu } from './FileContextMenu';
 import { ContextMenuTrigger } from '@/components/ui/context-menu';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 interface DesktopFile {
   name: string;

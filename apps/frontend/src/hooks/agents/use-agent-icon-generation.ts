@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { generateAgentIcon, AgentIconGenerationRequest, AgentIconGenerationResponse } from '@/lib/api/agents';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 export const useGenerateAgentIcon = () => {
   return useMutation<AgentIconGenerationResponse, Error, AgentIconGenerationRequest>({

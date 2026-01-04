@@ -424,7 +424,7 @@
     "minimizeToFloatingPreview": "Minimize to floating preview",
     "close": "Close",
     "noActionsYet": "Kortix Computer",
-    "workerActionsDescription": "Results will appear here as Kortix works",
+    "workerActionsDescription": "Starting",
     "toolIsRunning": "Tool is running",
     "toolCurrentlyExecuting": "{toolName} is currently executing. Results will appear here when complete.",
     "rateThisResult": "Rate this result",

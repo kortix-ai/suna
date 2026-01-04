@@ -3,7 +3,8 @@ import Image from "next/image"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Palette, Sparkles, CheckCircle, Loader2, AlertTriangle, ArrowLeft, X } from "lucide-react"
+import { Palette, Sparkles, CheckCircle, AlertTriangle, ArrowLeft, X } from "lucide-react"
+import { KortixLoader } from "@/components/ui/kortix-loader"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { ToolViewProps } from "../types"
 import { getToolTitle, formatTimestamp } from "../utils"
@@ -158,24 +159,6 @@ export function ListPresentationTemplatesToolView({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {!isStreaming && (
-              <Badge
-                variant="secondary"
-                className="bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-              >
-                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-                Success
-              </Badge>
-            )}
-
-            {isStreaming && (
-              <Badge className="bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300">
-                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                Loading
-              </Badge>
-            )}
-          </div>
         </div>
       </CardHeader>
 
@@ -222,7 +205,7 @@ export function ListPresentationTemplatesToolView({
                             {!isLoaded && (
                               <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 animate-pulse">
                                 <div className="flex flex-col items-center gap-2">
-                                  <Loader2 className="h-8 w-8 text-zinc-400 dark:text-zinc-600 animate-spin" />
+                                  <KortixLoader customSize={32} />
                                   <span className="text-xs text-zinc-400 dark:text-zinc-600">Loading...</span>
                                 </div>
                               </div>

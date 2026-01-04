@@ -50,7 +50,7 @@ import { useComposioCredentialsProfiles, useComposioMcpUrl } from '@/hooks/compo
 import { useDeleteProfile, useBulkDeleteProfiles, useSetDefaultProfile } from '@/hooks/composio/use-composio-mutations';
 import { ComposioRegistry } from './composio-registry';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ComposioProfileSummary, ComposioToolkitGroup } from '@/hooks/composio/utils';
 import { useAccountState } from '@/hooks/billing';

@@ -12,7 +12,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { MailCheck, Clock, ExternalLink } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { useAuthMethodTracking } from '@/stores/auth-tracking';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useTranslations } from 'next-intl';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { ReferralCodeDialog } from '@/components/referrals/referral-code-dialog';

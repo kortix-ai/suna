@@ -193,36 +193,6 @@ export function CommandToolView({
             </div>
           </div>
 
-          {!isStreaming && (
-            <Badge
-              variant="secondary"
-              className={
-                actualIsSuccess
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                  : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              }
-            >
-              {actualIsSuccess ? (
-                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-              ) : (
-                <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-              )}
-              {actualIsSuccess ?
-                'Success' :
-                (name === 'check-command-output' ? 'Failed to retrieve output' : 'Command failed')
-              }
-            </Badge>
-          )}
-
-          {isStreaming && (
-            <Badge className="bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300">
-              <span className="relative flex h-2 w-2 mr-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-              </span>
-              Live
-            </Badge>
-          )}
         </div>
       </CardHeader>
 
@@ -234,13 +204,13 @@ export function CommandToolView({
               <div className="p-4 space-y-4">
                 {command && (
                   <div className="bg-card border border-border rounded-lg overflow-hidden">
-                    <div className="flex-shrink-0 p-3.5 pb-2 border-b border-border">
-                      <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal">
+                    <div className="flex-shrink-0 px-4 py-2.5 border-b border-border">
+                      <Badge variant="outline" className="text-xs px-2.5 py-0.5 h-5 font-normal">
                         <TerminalIcon className="h-2.5 w-2.5 mr-1 opacity-70" />
                         Command
                       </Badge>
                     </div>
-                    <div className="p-3.5 pt-2 overflow-x-auto">
+                    <div className="p-4 overflow-x-auto">
                       <pre className="text-xs text-foreground font-mono whitespace-pre-wrap break-words">
                         <span className="text-green-500 dark:text-green-400 font-semibold">{displayPrefix} </span>
                         <span className="text-foreground">{displayCommand}</span>
@@ -252,9 +222,9 @@ export function CommandToolView({
                 
                 {streamingOutput && (
                   <div className="bg-card border border-border rounded-lg flex flex-col overflow-hidden">
-                    <div className="flex-shrink-0 p-3.5 pb-2 border-b border-border">
-                      <div className="flex items-center justify-between gap-2">
-                        <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal">
+                    <div className="flex-shrink-0 px-4 py-2.5 border-b border-border">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs px-2.5 py-0.5 h-5 font-normal">
                           <TerminalIcon className="h-2.5 w-2.5 mr-1 opacity-70" />
                           Output
                         </Badge>
@@ -267,7 +237,7 @@ export function CommandToolView({
                         </span>
                       </div>
                     </div>
-                    <div className="p-3.5 pt-2">
+                    <div className="p-4">
                       <pre className="text-xs text-foreground font-mono whitespace-pre-wrap break-words">
                         {displayOutput}
                         {isOutputAnimating && <span className="animate-pulse text-muted-foreground">▌</span>}
@@ -299,13 +269,13 @@ export function CommandToolView({
                 {/* Command section */}
                 {command && (
                   <div className="bg-card border border-border rounded-lg overflow-hidden">
-                    <div className="flex-shrink-0 p-3.5 pb-2 border-b border-border">
-                      <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal">
+                    <div className="flex-shrink-0 px-4 py-2.5 border-b border-border">
+                      <Badge variant="outline" className="text-xs px-2.5 py-0.5 h-5 font-normal">
                         <TerminalIcon className="h-2.5 w-2.5 mr-1 opacity-70" />
                         Command
                       </Badge>
                     </div>
-                    <div className="p-3.5 pt-2 overflow-x-auto">
+                    <div className="p-4 overflow-x-auto">
                       <pre className="text-xs text-foreground font-mono whitespace-pre-wrap break-words">
                         <span className="text-green-500 dark:text-green-400 font-semibold">{displayPrefix} </span>
                         <span className="text-foreground">{displayCommand}</span>
@@ -316,9 +286,9 @@ export function CommandToolView({
 
                 {/* Show status message for non-blocking commands */}
                 {isNonBlockingCommand && displayOutput && (
-                  <div className="bg-card border border-border rounded-lg p-3.5">
+                  <div className="bg-card border border-border rounded-lg p-4">
                     <div className="flex items-center gap-2 mb-2">
-                      <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal">
+                      <Badge variant="outline" className="text-xs px-2.5 py-0.5 h-5 font-normal">
                         <CircleDashed className="h-2.5 w-2.5 mr-1 opacity-70 text-blue-500" />
                         Status
                       </Badge>
@@ -330,21 +300,21 @@ export function CommandToolView({
                 {/* Output section */}
                 {formattedOutput.length > 0 ? (
                   <div className="bg-card border border-border rounded-lg overflow-hidden">
-                    <div className="flex-shrink-0 p-3.5 pb-2 border-b border-border">
+                    <div className="flex-shrink-0 px-4 py-2.5 border-b border-border">
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal">
+                        <Badge variant="outline" className="text-xs px-2.5 py-0.5 h-5 font-normal">
                           <TerminalIcon className="h-2.5 w-2.5 mr-1 opacity-70" />
                           Output
                         </Badge>
                         {exitCode !== null && exitCode !== 0 && (
-                          <Badge variant="outline" className="text-xs h-4 px-1.5 border-red-700/30 text-red-400">
+                          <Badge variant="outline" className="text-xs h-5 px-2.5 py-0.5 border-red-700/30 text-red-400">
                             <AlertTriangle className="h-2.5 w-2.5 mr-1" />
                             Error
                           </Badge>
                         )}
                       </div>
                     </div>
-                    <div className="p-3.5 pt-2 overflow-x-auto">
+                    <div className="p-4 overflow-x-auto">
                       <pre className="text-xs text-foreground font-mono whitespace-pre-wrap break-words">
                         {formattedOutput.map((line, idx) => (
                           <span key={idx}>

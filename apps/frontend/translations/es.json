@@ -416,7 +416,7 @@
     "minimizeToFloatingPreview": "Minimizar a vista previa flotante",
     "close": "Cerrar",
     "noActionsYet": "Kortix Computer",
-    "workerActionsDescription": "Los resultados aparecerán aquí mientras Kortix trabaja",
+    "workerActionsDescription": "Iniciando",
     "toolIsRunning": "La herramienta está ejecutando",
     "toolCurrentlyExecuting": "{toolName} está ejecutando actualmente. Los resultados aparecerán aquí cuando se complete.",
     "rateThisResult": "Califica este resultado",

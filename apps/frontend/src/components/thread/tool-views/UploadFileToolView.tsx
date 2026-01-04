@@ -22,6 +22,7 @@ import {
   Table,
   RefreshCw,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ToolViewProps } from './types';
 import { formatTimestamp, getToolTitle } from './utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,7 +31,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { LoadingState } from './shared/LoadingState';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { backendApi } from '@/lib/api-client';
 
 interface UploadResult {
@@ -245,23 +246,6 @@ export function UploadFileToolView({
             </div>
           </div>
 
-          {!isStreaming && (
-            <Badge
-              variant="secondary"
-              className={
-                actualIsSuccess
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                  : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              }
-            >
-              {actualIsSuccess ? (
-                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-              ) : (
-                <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-              )}
-              {actualIsSuccess ? 'Upload successful' : 'Upload failed'}
-            </Badge>
-          )}
         </div>
       </CardHeader>
 
@@ -356,7 +340,7 @@ export function UploadFileToolView({
                               disabled={isRegenerating}
                               className="flex-1"
                             >
-                              <RefreshCw className={cn("h-3.5 w-3.5", isRegenerating && "animate-spin")} />
+                              {isRegenerating ? <KortixLoader customSize={14} /> : <RefreshCw className="h-3.5 w-3.5" />}
                               {isRegenerating ? 'Regenerating...' : 'Regenerate Link'}
                             </Button>
                           )}

@@ -21,7 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AccountState } from '@/lib/api/billing';
 import { createCheckoutSession, CreateCheckoutSessionRequest, CreateCheckoutSessionResponse } from '@/lib/api/billing';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { isLocalMode } from '@/lib/config';
 import { useAccountState, useScheduleDowngrade, accountStateKeys, accountStateSelectors } from '@/hooks/billing';
 import { useAuth } from '@/components/AuthProvider';

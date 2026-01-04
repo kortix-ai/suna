@@ -29,7 +29,7 @@ import { TriggerWithAgent } from '@/hooks/triggers/use-all-triggers';
 import { useDeleteTrigger, useToggleTrigger, useUpdateTrigger } from '@/hooks/triggers';
 import { useTriggerExecutions, type TriggerExecution } from '@/hooks/triggers/use-trigger-executions';
 import { TriggerCreationDialog } from './trigger-creation-dialog';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 import {

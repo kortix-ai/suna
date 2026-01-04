@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTheme } from 'next-themes';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Icons } from './home/icons';
 // Using proper GitHub brand icon from Icons component
 import { useAuthMethodTracking } from '@/stores/auth-tracking';

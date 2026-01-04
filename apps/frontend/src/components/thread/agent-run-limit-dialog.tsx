@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { AlertTriangle, ExternalLink, X, Square, Loader2, Zap, Rocket } from 'lucide-react';
+import { AlertTriangle, ExternalLink, X, Square, Zap, Rocket } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,7 +12,7 @@ import { UpgradeDialog } from '@/components/ui/upgrade-dialog';
 import Link from 'next/link';
 import { useStopAgentMutation } from '@/hooks/threads/use-agent-run';
 import { AgentRun, getAgentRuns } from '@/lib/api/agents';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { getThread } from '@/hooks/threads/utils';
 import { getProject } from '@/lib/api/threads';
@@ -106,7 +107,7 @@ const RunningThreadItem: React.FC<RunningThreadItemProps> = ({
                 disabled={stopAgentMutation.isPending || threadInfo.isLoading}
               >
                 {stopAgentMutation.isPending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <KortixLoader size="small" />
                 ) : (
                   <Square className="h-3 w-3" />
                 )}
@@ -291,7 +292,7 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
           
           {isLoadingThreads ? (
             <div className="flex items-center justify-center py-4">
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <KortixLoader size="small" />
               <span className="ml-2 text-sm text-muted-foreground">Loading threads...</span>
             </div>
           ) : runningThreadIds.length === 0 ? (

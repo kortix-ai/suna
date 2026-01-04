@@ -5,13 +5,13 @@ import {
   Download,
   CheckCircle,
   AlertTriangle,
-  Loader2,
   LucideIcon,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ToolViewProps } from '../types';
 import { formatTimestamp } from '../utils';
 import { downloadPresentation, DownloadFormat } from '../utils/presentation-utils';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -214,7 +214,7 @@ export function ExportToolView({
       >
         <div className="w-9 h-9 rounded-md bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center flex-shrink-0">
           {isLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin text-foreground" />
+            <KortixLoader customSize={16} />
           ) : (
             <Icon className="h-4 w-4 text-foreground" />
           )}
@@ -247,14 +247,14 @@ export function ExportToolView({
               </CardTitle>
             </div>
             <Badge className="h-6 bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300 border-0">
-              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+              <KortixLoader customSize={12} className="mr-1" />
               Exporting
             </Badge>
           </div>
         </CardHeader>
         <CardContent className="p-6">
           <div className="flex items-center justify-center gap-3 py-4">
-            <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
+            <KortixLoader customSize={20} />
             <span className="text-sm text-muted-foreground">
               {presentationName || 'Processing...'}
             </span>
@@ -276,21 +276,6 @@ export function ExportToolView({
               {presentationName || 'Export Presentation'}
             </CardTitle>
           </div>
-          <Badge
-            className={cn(
-              "h-6 border-0",
-              isSuccess
-                ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-            )}
-          >
-            {isSuccess ? (
-              <CheckCircle className="h-3 w-3 mr-1" />
-            ) : (
-              <AlertTriangle className="h-3 w-3 mr-1" />
-            )}
-            {partialSuccess ? 'Partial' : (isSuccess ? 'Exported' : 'Failed')}
-          </Badge>
         </div>
       </CardHeader>
 

@@ -14,9 +14,9 @@ import {
     TrashIcon,
     Pen,
     GripVerticalIcon,
-    Loader2,
     FileTextIcon
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -272,7 +272,7 @@ export function SharedTreeItem({
                                             <p className="text-sm text-muted-foreground truncate">
                                                 {uploadStatus?.isUploading ? (
                                                     <>
-                                                        <Loader2 className="h-3 w-3 animate-spin text-primary inline mr-1.5" />
+                                                        <KortixLoader size="small" className="inline mr-1.5" />
                                                         <span>
                                                             Uploading {uploadStatus.currentFile}... ({uploadStatus.completedFiles || 0}/{uploadStatus.totalFiles || 0})
                                                         </span>
@@ -348,7 +348,7 @@ export function SharedTreeItem({
                         <div className="flex flex-col mt-2">
                             {isLoadingEntries ? (
                                 <div className="flex items-center gap-3 px-4 py-4 text-sm text-muted-foreground bg-muted/20 rounded-lg mx-4 mb-2" style={{ paddingLeft: `${level * 20 + 32}px` }}>
-                                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                                    <KortixLoader size="small" />
                                     <span>Loading files...</span>
                                 </div>
                             ) : item.children && item.children.length > 0 ? (
@@ -428,7 +428,7 @@ export function SharedTreeItem({
                                     <p className="text-sm text-muted-foreground truncate">
                                         {itemIsMoving ? (
                                             <>
-                                                <Loader2 className="h-3 w-3 animate-spin text-primary inline mr-1.5" />
+                                                <KortixLoader size="small" className="inline mr-1.5" />
                                                 Moving...
                                             </>
                                         ) : (

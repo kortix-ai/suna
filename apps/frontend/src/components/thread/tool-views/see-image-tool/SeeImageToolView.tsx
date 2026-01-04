@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Image as ImageIcon, ImageOff, CheckCircle, AlertTriangle, Loader2, Download, ZoomIn, ZoomOut, Trash2 } from 'lucide-react';
+import { Image as ImageIcon, ImageOff, CheckCircle, AlertTriangle, Download, ZoomIn, ZoomOut, Trash2 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ToolViewProps } from '../types';
 import {
   formatTimestamp,
@@ -99,7 +100,7 @@ function SafeImage({ src, alt, filePath, className, sandboxId, project }: {
   if (waitingForSandbox || isLoading) {
     return (
       <div className="flex py-8 flex-col items-center justify-center w-full h-64 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-900/50 dark:to-zinc-800/30 rounded-lg border-zinc-200 dark:border-zinc-700/50 shadow-inner">
-        <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+        <KortixLoader size="large" className="mb-4" />
         <p className="text-xs text-muted-foreground">
           {waitingForSandbox ? 'Connecting to sandbox...' : 'Loading image...'}
         </p>
@@ -131,7 +132,7 @@ function SafeImage({ src, alt, filePath, className, sandboxId, project }: {
   if (!finalImageUrl) {
     return (
       <div className="flex py-8 flex-col items-center justify-center w-full h-64 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-900/50 dark:to-zinc-800/30 rounded-lg border-zinc-200 dark:border-zinc-700/50 shadow-inner">
-        <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+        <KortixLoader size="large" className="mb-4" />
         <p className="text-xs text-muted-foreground">Preparing image...</p>
       </div>
     );
@@ -310,31 +311,6 @@ export function SeeImageToolView({
             </div>
           </div>
 
-          {!isStreaming ? (
-            <Badge variant="secondary" className={cn(
-              "px-2.5 py-1 transition-colors flex items-center gap-1.5",
-              actualIsSuccess
-                ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-            )}>
-              {actualIsSuccess ? (
-                <>
-                  <CheckCircle className="h-3.5 w-3.5" />
-                  {isClearTool ? 'Cleared' : 'Success'}
-                </>
-              ) : (
-                <>
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  Failed
-                </>
-              )}
-            </Badge>
-          ) : (
-            <Badge variant="secondary" className="bg-gradient-to-b from-green-50 to-green-100 text-green-700 border border-green-200/50 dark:from-green-900/30 dark:to-green-800/20 dark:text-green-400 dark:border-green-800/30 px-2.5 py-1 flex items-center gap-1.5">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              {isClearTool ? "Clearing..." : "Loading image..."}
-            </Badge>
-          )}
         </div>
       </CardHeader>
 

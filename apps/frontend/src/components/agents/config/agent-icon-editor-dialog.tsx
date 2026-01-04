@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { Sparkles, Wand2, Loader2 } from 'lucide-react';
+import { Sparkles, Wand2 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { 
   Dialog, 
   DialogContent, 
@@ -12,7 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { IconPicker } from './icon-picker';
 import { AgentAvatar } from '../../thread/content/agent-avatar';
 import { Separator } from '@/components/ui/separator';
@@ -371,7 +372,7 @@ Customize Worker Icon
               className="gap-2"
             >
               {generateIconMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <KortixLoader customSize={16} />
               ) : (
                 <Wand2 className="h-4 w-4" />
               )}

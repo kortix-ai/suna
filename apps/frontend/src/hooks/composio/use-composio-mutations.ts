@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { composioApi } from './utils';
 import { composioKeys } from './keys';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 export const useDeleteProfile = () => {
   const queryClient = useQueryClient();

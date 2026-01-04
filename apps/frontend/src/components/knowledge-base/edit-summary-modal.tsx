@@ -11,7 +11,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, FileText, Sparkles, Save, X, Info } from 'lucide-react';
+import { FileText, Sparkles, Save, X, Info } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 
 interface EditSummaryModalProps {
     isOpen: boolean;
@@ -138,7 +139,7 @@ export function EditSummaryModal({
                     >
                         {isLoading ? (
                             <>
-                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <KortixLoader size="small" />
                                 Saving...
                             </>
                         ) : (

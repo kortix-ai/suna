@@ -14,8 +14,8 @@ import {
   RotateCcw,
   Info,
   Download,
-  Loader2,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 
 interface VideoRendererProps {
   url: string;
@@ -191,7 +191,7 @@ export function VideoRenderer({
       <div className={cn('relative rounded-2xl overflow-hidden bg-black/5 dark:bg-black/20', className)}>
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-muted/50">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <KortixLoader size="medium" />
           </div>
         )}
         {hasError ? (
@@ -255,7 +255,7 @@ export function VideoRenderer({
       {/* Loading state */}
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
-          <Loader2 className="h-10 w-10 animate-spin text-white/50" />
+          <KortixLoader size="large" variant="white" />
         </div>
       )}
 

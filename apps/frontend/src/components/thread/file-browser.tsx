@@ -23,7 +23,7 @@ import {
   getSandboxFileContent,
   type FileInfo,
 } from '@/lib/api/sandbox';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useDownloadRestriction } from '@/hooks/billing';
 import { useDraggable } from '@dnd-kit/core';
 import { cn } from '@/lib/utils';

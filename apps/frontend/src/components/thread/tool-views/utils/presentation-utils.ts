@@ -1,6 +1,6 @@
 import { backendApi } from "@/lib/api-client";
 import { createClient } from "@/lib/supabase/client";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 export enum DownloadFormat {
   PDF = 'pdf',

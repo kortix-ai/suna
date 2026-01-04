@@ -1,7 +1,8 @@
 'use client';
 
 import React from 'react';
-import { Clock, CheckCircle, AlertTriangle, Loader2, Timer } from 'lucide-react';
+import { Clock, CheckCircle, AlertTriangle, Timer } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ToolViewProps } from '../types';
 import { formatTimestamp, getToolTitle } from '../utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -126,46 +127,18 @@ export function WaitToolView({
             </div>
           </div>
 
-          {!isStreaming && (
-            <Badge
-              variant="secondary"
-              className={
-                actualIsSuccess
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                  : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              }
-            >
-              {actualIsSuccess ? (
-                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-              ) : (
-                <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-              )}
-              {actualIsSuccess ? 'Completed' : 'Failed'}
-            </Badge>
-          )}
-
-          {isStreaming && (
-            <Badge className="bg-gradient-to-b from-orange-200 to-orange-100 text-orange-700 dark:from-orange-800/50 dark:to-orange-900/60 dark:text-orange-300">
-              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-              Waiting
-            </Badge>
-          )}
         </div>
       </CardHeader>
 
       <CardContent className="p-0 flex-1 overflow-hidden relative">
         <div className="h-full flex items-center justify-center p-8">
           <div className="flex flex-col items-center text-center max-w-md">
-            {/* Timer icon with spinning animation when streaming */}
+            {/* Timer icon with KortixLoader animation when streaming */}
             <div className="relative mb-6">
-              <Timer className={cn(
-                "h-24 w-24",
-                isStreaming ? "text-orange-500 dark:text-orange-400" : "text-muted-foreground"
-              )} />
-              {isStreaming && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="h-20 w-20 rounded-full border-4 border-orange-500/30 border-t-orange-500 animate-spin" />
-                </div>
+              {isStreaming ? (
+                <KortixLoader customSize={96} />
+              ) : (
+                <Timer className="h-24 w-24 text-muted-foreground" />
               )}
             </div>
             
@@ -190,7 +163,7 @@ export function WaitToolView({
               )}>
                 {isStreaming ? (
                   <span className="flex items-center gap-2">
-                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <KortixLoader customSize={12} />
                     Waiting in progress...
                   </span>
                 ) : (
