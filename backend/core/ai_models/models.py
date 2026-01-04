@@ -11,6 +11,7 @@ class ModelProvider(Enum):
     GOOGLE = "google"
     XAI = "xai"
     MOONSHOTAI = "moonshotai"
+    MINIMAX = "minimax"
 
 
 class ModelCapability(Enum):

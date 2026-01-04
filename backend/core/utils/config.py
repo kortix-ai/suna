@@ -62,6 +62,10 @@ class Configuration:
     DISABLE_PRESENCE: bool = False  # Disable presence tracking entirely
     # ==================================
     
+    # ===== MEMORY CONFIGURATION =====
+    ENABLE_MEMORY: bool = False  # Disable memory feature entirely
+    # ================================
+    
     SYSTEM_ADMIN_USER_ID: Optional[str] = None  # User ID that owns shared/fallback agents
 
     # Subscription tier IDs - Production
@@ -293,6 +297,7 @@ class Configuration:
     VOYAGE_API_KEY: Optional[str] = None
     GROQ_API_KEY: Optional[str] = None
     OPENROUTER_API_KEY: Optional[str] = None
+    MINIMAX_API_KEY: Optional[str] = None
     XAI_API_KEY: Optional[str] = None
     MORPH_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None

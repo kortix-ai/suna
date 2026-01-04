@@ -23,6 +23,16 @@ class CreditAccountRepository(BaseRepository):
             .update(update_data)\
             .eq('account_id', account_id)\
             .execute()
+        
+        # Invalidate tier cache if tier is being updated
+        if 'tier' in update_data or 'trial_status' in update_data:
+            try:
+                from core.cache.runtime_cache import invalidate_tier_info_cache
+                from core.utils.cache import Cache
+                await invalidate_tier_info_cache(account_id)
+                await Cache.invalidate(f"subscription_tier:{account_id}")
+            except Exception:
+                pass  # Non-critical - cache will expire naturally
     
     async def get_subscription_details(self, account_id: str) -> Optional[Dict]:
         fields = 'stripe_subscription_id, tier, commitment_type, commitment_end_date'

@@ -194,7 +194,10 @@ async def handle_agent_run(task: AgentRunTask):
 
 
 async def handle_thread_init(task: ThreadInitTask):
-    """Handle thread initialization task."""
+    """Handle thread initialization task - optimized for TTFT."""
+    import time
+    t_start = time.time()
+    
     thread_id = task.thread_id
     project_id = task.project_id
     account_id = task.account_id
@@ -210,46 +213,52 @@ async def handle_thread_init(task: ThreadInitTask):
     
     try:
         client = await db.client
+        now_iso = datetime.now(timezone.utc).isoformat()
         
-        # Update thread status
-        await client.table('threads').update({
-            "status": "initializing",
-            "initialization_started_at": datetime.now(timezone.utc).isoformat()
-        }).eq('thread_id', thread_id).execute()
-        
-        # Get model
+        # Import early to avoid import overhead during parallel execution
         from core.ai_models import model_manager
+        from core.agents.runs import _load_agent_config, _get_effective_model, _create_agent_run_record
+        
+        # Resolve model (usually a quick sync operation)
         effective_model = model_name
         if not effective_model:
             effective_model = await model_manager.get_default_model_for_user(client, account_id)
         else:
             effective_model = model_manager.resolve_model_id(effective_model)
         
-        # Load agent config
-        from core.agents.runs import _load_agent_config, _get_effective_model, _create_agent_run_record
+        # Load agent config and create agent_run record (can be done before status update)
+        t_config = time.time()
         agent_config = await _load_agent_config(client, agent_id, account_id, account_id, is_new_thread=False)
         effective_model = await _get_effective_model(model_name, agent_config, client, account_id)
         agent_run_id = await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id)
+        logger.debug(f"⏱️ [TIMING] Agent config + run record: {(time.time() - t_config) * 1000:.1f}ms")
         
-        # Update thread to ready
-        await client.table('threads').update({
-            "status": "ready",
-            "initialization_completed_at": datetime.now(timezone.utc).isoformat()
-        }).eq('thread_id', thread_id).execute()
-        
-        # Dispatch agent run
+        # Update thread status and dispatch agent run in parallel
         worker_instance_id = str(uuid.uuid4())[:8]
-        await dispatch_agent_run(
-            agent_run_id=agent_run_id,
-            thread_id=thread_id,
-            instance_id=worker_instance_id,
-            project_id=project_id,
-            model_name=effective_model,
-            agent_id=agent_id,
-            account_id=account_id,
-        )
         
-        logger.info(f"✅ Thread initialized: {thread_id} → {agent_run_id}")
+        async def update_status():
+            await client.table('threads').update({
+                "status": "ready",
+                "initialization_started_at": now_iso,
+                "initialization_completed_at": now_iso
+            }).eq('thread_id', thread_id).execute()
+        
+        async def dispatch():
+            await dispatch_agent_run(
+                agent_run_id=agent_run_id,
+                thread_id=thread_id,
+                instance_id=worker_instance_id,
+                project_id=project_id,
+                model_name=effective_model,
+                agent_id=agent_id,
+                account_id=account_id,
+            )
+        
+        t_parallel = time.time()
+        await asyncio.gather(update_status(), dispatch())
+        logger.debug(f"⏱️ [TIMING] Parallel status+dispatch: {(time.time() - t_parallel) * 1000:.1f}ms")
+        
+        logger.info(f"✅ Thread init complete: {thread_id} → {agent_run_id} ({(time.time() - t_start) * 1000:.1f}ms)")
         
     except Exception as e:
         logger.error(f"Thread init failed for {thread_id}: {e}", exc_info=True)

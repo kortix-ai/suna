@@ -2,10 +2,7 @@ import { TextClassContext } from '@/components/ui/text';
 import { cn } from '@/lib/utils';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Platform, Pressable } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import * as React from 'react';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 // Android hit slop for better touch targets
 const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 8, bottom: 8, left: 8, right: 8 } : undefined;
@@ -101,40 +98,24 @@ type ButtonProps = React.ComponentProps<typeof Pressable> &
   React.RefAttributes<typeof Pressable> &
   VariantProps<typeof buttonVariants>;
 
-function Button({ className, variant, size, onPressIn, onPressOut, ...props }: ButtonProps) {
-  const scale = useSharedValue(1);
-  const opacity = useSharedValue(1);
+function Button({ className, variant, size, ...props }: ButtonProps) {
+  // Memoize computed values to prevent re-computation during render
+  const textClassValue = React.useMemo(
+    () => buttonTextVariants({ variant, size }),
+    [variant, size]
+  );
 
-  // Initialize opacity based on disabled state
-  React.useEffect(() => {
-    opacity.value = props.disabled ? 0.5 : 1;
-  }, [props.disabled, opacity]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-    opacity: opacity.value,
-  }));
-
-  const handlePressIn = (e: any) => {
-    if (!props.disabled) {
-      scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-    }
-    onPressIn?.(e);
-  };
-
-  const handlePressOut = (e: any) => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-    onPressOut?.(e);
-  };
+  const buttonClassName = React.useMemo(
+    () => cn(buttonVariants({ variant, size }), className),
+    [variant, size, className]
+  );
 
   return (
-    <TextClassContext.Provider value={buttonTextVariants({ variant, size })}>
-      <AnimatedPressable
-        className={cn(buttonVariants({ variant, size }), className)}
+    <TextClassContext.Provider value={textClassValue}>
+      <Pressable
+        className={buttonClassName}
         role="button"
-        style={animatedStyle}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
+        style={props.disabled ? { opacity: 0.5 } : undefined}
         hitSlop={ANDROID_HIT_SLOP}
         android_ripple={{ 
           color: 'rgba(0, 0, 0, 0.1)', 
