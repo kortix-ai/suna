@@ -1111,14 +1111,17 @@ export function PricingSection({
     setPlanLoadingStates((prev) => ({ ...prev, [planId]: true }));
   };
 
-  // Helper to calculate price based on billing period (matches displayed price)
+  // Helper to calculate actual price for GTM tracking (not monthly equivalent)
   const calculatePriceForBillingPeriod = useCallback((tier: PricingTier, billingPeriod: string): number => {
     const basePrice = parsePriceAmount(tier.price || '$0');
     if (billingPeriod === 'yearly_commitment') {
-      return Math.round(basePrice * 0.85); // 15% discount
+      // Yearly commitment: base monthly * 12 * 0.85 (15% discount)
+      return Math.round(basePrice * 12 * 0.85);
     } else if (billingPeriod === 'yearly' && tier.yearlyPrice) {
-      return Math.round(parsePriceAmount(tier.yearlyPrice) / 12); // Monthly equivalent
+      // Yearly: actual yearly price (e.g., 2040, not 170)
+      return Math.round(parsePriceAmount(tier.yearlyPrice));
     }
+    // Monthly: base monthly price
     return basePrice;
   }, []);
 
@@ -1150,11 +1153,14 @@ export function PricingSection({
   }, [selectedPaidTier, sharedBillingPeriod, currency, buildPlanItemData, calculatePriceForBillingPeriod]);
 
   // Handler for plan tab selection with tracking
+  // Trigger order: select_item > view_item (per data dictionary)
   const handlePlanTabClick = useCallback((index: number, tier: PricingTier) => {
     setSelectedPaidTierIndex(index);
     const itemData = buildPlanItemData(tier, sharedBillingPeriod);
+    const priceAmount = calculatePriceForBillingPeriod(tier, sharedBillingPeriod);
     trackSelectItem(itemData);
-  }, [sharedBillingPeriod, buildPlanItemData]);
+    trackViewItem(itemData, currency, priceAmount);
+  }, [sharedBillingPeriod, currency, buildPlanItemData, calculatePriceForBillingPeriod]);
 
   // Handler for billing period change with tracking
   const handleBillingPeriodChange = useCallback((period: 'monthly' | 'yearly' | 'yearly_commitment') => {
