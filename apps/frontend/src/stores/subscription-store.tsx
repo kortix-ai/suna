@@ -94,7 +94,7 @@ export function useSubscriptionContext() {
   const store = useSubscriptionStore();
   
   return {
-    subscriptionData: store.accountState ? {
+    subscriptionData: store.accountState?.subscription ? {
       status: store.accountState.subscription.status,
       plan_name: store.accountState.subscription.tier_display_name,
       tier_key: store.accountState.subscription.tier_key,
@@ -108,28 +108,28 @@ export function useSubscriptionContext() {
       } : null,
       tier: {
         name: store.accountState.subscription.tier_key,
-        credits: store.accountState.tier.monthly_credits,
+        credits: store.accountState.tier?.monthly_credits ?? 0,
       },
       credits: {
-        balance: store.accountState.credits.total,
-        tier_credits: store.accountState.tier.monthly_credits,
+        balance: store.accountState.credits?.total ?? 0,
+        tier_credits: store.accountState.tier?.monthly_credits ?? 0,
         lifetime_granted: 0,
         lifetime_purchased: 0,
         lifetime_used: 0,
         can_purchase_credits: store.accountState.subscription.can_purchase_credits,
       },
     } : null,
-    creditBalance: store.accountState ? {
-      balance: store.accountState.credits.total,
-      expiring_credits: store.accountState.credits.daily + store.accountState.credits.monthly,
-      non_expiring_credits: store.accountState.credits.extra,
+    creditBalance: store.accountState?.subscription ? {
+      balance: store.accountState.credits?.total ?? 0,
+      expiring_credits: (store.accountState.credits?.daily ?? 0) + (store.accountState.credits?.monthly ?? 0),
+      non_expiring_credits: store.accountState.credits?.extra ?? 0,
       tier: store.accountState.subscription.tier_key,
       can_purchase_credits: store.accountState.subscription.can_purchase_credits,
     } : null,
     isLoading: store.isLoading,
     error: store.error,
     refetch: store.refetch,
-    refetchBalance: store.refetch, // Same as refetch now
+    refetchBalance: store.refetch,
   };
 }
 
@@ -151,10 +151,9 @@ export function useSubscriptionData() {
   
   const { data: accountState, isLoading, error, refetch } = useAccountState({ enabled: !!user });
   
-  // Use store data if available, otherwise direct query
   const state = store.accountState || accountState;
   
-  if (!state) {
+  if (!state?.subscription) {
     return {
       data: null,
       isLoading: store.isLoading || isLoading,
@@ -180,50 +179,44 @@ export function useSubscriptionData() {
       } : null,
       tier: {
         name: state.subscription.tier_key,
-        credits: state.tier.monthly_credits,
+        credits: state.tier?.monthly_credits ?? 0,
         display_name: state.subscription.tier_display_name,
       },
       credits: {
-        balance: state.credits.total,
-        tier_credits: state.tier.monthly_credits,
+        balance: state.credits?.total ?? 0,
+        tier_credits: state.tier?.monthly_credits ?? 0,
         lifetime_granted: 0,
         lifetime_purchased: 0,
         lifetime_used: 0,
         can_purchase_credits: state.subscription.can_purchase_credits,
       },
-      // Calculate usage based on tier type
       current_usage: (() => {
         const isFreeTier = state.subscription.tier_key === 'free' || 
                           state.subscription.tier_key === 'none' ||
-                          state.tier.monthly_credits === 0;
+                          (state.tier?.monthly_credits ?? 0) === 0;
         
-        // For free tier with daily credits, use daily credits
-        if (isFreeTier && state.credits.daily_refresh?.enabled) {
+        if (isFreeTier && state.credits?.daily_refresh?.enabled) {
           const dailyAmount = state.credits.daily_refresh.daily_amount || 0;
-          const dailyRemaining = state.credits.daily || 0;
+          const dailyRemaining = state.credits?.daily || 0;
           return Math.max(0, dailyAmount - dailyRemaining);
         }
         
-        // For paid tiers, use monthly credits
-        const monthlyCreditsGranted = state.tier.monthly_credits || 0;
-        const monthlyCreditsRemaining = state.credits.monthly || 0;
+        const monthlyCreditsGranted = state.tier?.monthly_credits || 0;
+        const monthlyCreditsRemaining = state.credits?.monthly || 0;
         return Math.max(0, monthlyCreditsGranted - monthlyCreditsRemaining);
       })(),
-      // Set cost limit based on tier type
       cost_limit: (() => {
         const isFreeTier = state.subscription.tier_key === 'free' || 
                           state.subscription.tier_key === 'none' ||
-                          state.tier.monthly_credits === 0;
+                          (state.tier?.monthly_credits ?? 0) === 0;
         
-        // For free tier with daily credits, use daily amount
-        if (isFreeTier && state.credits.daily_refresh?.enabled) {
+        if (isFreeTier && state.credits?.daily_refresh?.enabled) {
           return state.credits.daily_refresh.daily_amount || 0;
         }
         
-        // For paid tiers, use monthly credits
-        return state.tier.monthly_credits || 0;
+        return state.tier?.monthly_credits || 0;
       })(),
-      credit_balance: state.credits.total,
+      credit_balance: state.credits?.total ?? 0,
       can_purchase_credits: state.subscription.can_purchase_credits,
       is_trial: state.subscription.is_trial,
       trial_status: state.subscription.trial_status,

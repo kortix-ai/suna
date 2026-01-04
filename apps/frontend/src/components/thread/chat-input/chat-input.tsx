@@ -799,16 +799,14 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const deleteFileMutation = useFileDelete();
     const queryClient = useQueryClient();
     
-    // Transform accountState to subscriptionData format for backward compatibility
-    const subscriptionData = accountState ? (() => {
+    const subscriptionData = accountState?.subscription ? (() => {
       const isFreeTier = accountState.subscription.tier_key === 'free' || 
                          accountState.subscription.tier_key === 'none' ||
-                         accountState.tier.monthly_credits === 0;
+                         (accountState.tier?.monthly_credits ?? 0) === 0;
       
-      // For free tier with daily credits, use daily credits
-      if (isFreeTier && accountState.credits.daily_refresh?.enabled) {
+      if (isFreeTier && accountState.credits?.daily_refresh?.enabled) {
         const dailyAmount = accountState.credits.daily_refresh.daily_amount || 0;
-        const dailyRemaining = accountState.credits.daily || 0;
+        const dailyRemaining = accountState.credits?.daily || 0;
         const currentUsage = Math.max(0, dailyAmount - dailyRemaining);
         
         return {
@@ -822,15 +820,14 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           current_usage: currentUsage,
           cost_limit: dailyAmount,
           credits: {
-            balance: accountState.credits.total,
+            balance: accountState.credits?.total ?? 0,
             tier_credits: dailyAmount,
           },
         };
       }
       
-      // For paid tiers, use monthly credits
-      const monthlyCreditsGranted = accountState.tier.monthly_credits || 0;
-      const monthlyCreditsRemaining = accountState.credits.monthly || 0;
+      const monthlyCreditsGranted = accountState.tier?.monthly_credits || 0;
+      const monthlyCreditsRemaining = accountState.credits?.monthly || 0;
       const currentUsage = Math.max(0, monthlyCreditsGranted - monthlyCreditsRemaining);
       
       return {
@@ -844,14 +841,13 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         current_usage: currentUsage,
         cost_limit: monthlyCreditsGranted,
         credits: {
-          balance: accountState.credits.total,
-          tier_credits: accountState.tier.monthly_credits,
+          balance: accountState.credits?.total ?? 0,
+          tier_credits: accountState.tier?.monthly_credits ?? 0,
         },
       };
     })() : null;
     
-    // Check if user is on free tier
-    const isFreeTier = accountState && (
+    const isFreeTier = accountState?.subscription && (
       accountState.subscription.tier_key === 'free' ||
       accountState.subscription.tier_key === 'none' ||
       !accountState.subscription.tier_key

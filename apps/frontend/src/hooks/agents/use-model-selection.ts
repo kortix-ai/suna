@@ -52,10 +52,9 @@ export const useModelSelection = () => {
   // Track previous tier to detect upgrades
   const prevTierKey = useRef<string | null>(null);
 
-  // Check if user has paid subscription based on tier_key (not status!)
   const hasPaidSubscription = useMemo(() => {
-    return isPaidTier(accountState?.subscription.tier_key);
-  }, [accountState?.subscription.tier_key]);
+    return isPaidTier(accountState?.subscription?.tier_key);
+  }, [accountState?.subscription?.tier_key]);
 
   // Transform API data to ModelOption format
   // The backend's `allowed` field is the source of truth!
@@ -97,23 +96,20 @@ export const useModelSelection = () => {
       const defaultModelId = getDefaultModel(accessibleModels);
 
       if (defaultModelId && defaultModelId !== selectedModel) {
-        console.log('🔧 useModelSelection: Setting default model:', defaultModelId, '(tier:', accountState?.subscription.tier_key, ')');
+        console.log('🔧 useModelSelection: Setting default model:', defaultModelId, '(tier:', accountState?.subscription?.tier_key, ')');
         setSelectedModel(defaultModelId);
       }
     }
-  }, [selectedModel, accessibleModels, isLoading, setSelectedModel, accountState?.subscription.tier_key]);
+  }, [selectedModel, accessibleModels, isLoading, setSelectedModel, accountState?.subscription?.tier_key]);
 
-  // Auto-switch to Advanced mode when user upgrades to paid tier
   useEffect(() => {
     if (isLoading || !availableModels.length) return;
 
-    const currentTier = accountState?.subscription.tier_key;
+    const currentTier = accountState?.subscription?.tier_key;
     const wasFree = prevTierKey.current === 'free' || prevTierKey.current === 'none';
     const isNowPaid = isPaidTier(currentTier);
 
-    // Detect upgrade: was free, now paid
     if (wasFree && isNowPaid && prevTierKey.current !== null) {
-      // Check if power model is now accessible
       const powerModel = availableModels.find(m => m.id === 'kortix/power' && !m.requiresSubscription);
       if (powerModel) {
         console.log('🚀 useModelSelection: Upgraded to paid tier! Switching to kortix/power');
@@ -121,9 +117,8 @@ export const useModelSelection = () => {
       }
     }
 
-    // Update ref for next comparison
     prevTierKey.current = currentTier || null;
-  }, [accountState?.subscription.tier_key, availableModels, isLoading, setSelectedModel]);
+  }, [accountState?.subscription?.tier_key, availableModels, isLoading, setSelectedModel]);
 
   const handleModelChange = useCallback((modelId: string) => {
     const model = accessibleModels.find(m => m.id === modelId);
@@ -165,7 +160,7 @@ export const useModelSelection = () => {
     availableModels: accessibleModels,
     allModels: availableModels,
     isLoading,
-    modelsData: accountState ? { models: accountState.models, tier: accountState.subscription.tier_key } : undefined,
+    modelsData: accountState?.subscription ? { models: accountState.models, tier: accountState.subscription.tier_key } : undefined,
     subscriptionStatus,
     canAccessModel,
     isSubscriptionRequired,
