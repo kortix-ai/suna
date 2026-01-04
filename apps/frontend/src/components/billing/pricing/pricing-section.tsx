@@ -1163,11 +1163,13 @@ export function PricingSection({
   }, [sharedBillingPeriod, currency, buildPlanItemData, calculatePriceForBillingPeriod]);
 
   // Handler for billing period change with tracking
+  // Trigger order: select_item > view_item (per data dictionary)
   const handleBillingPeriodChange = useCallback((period: 'monthly' | 'yearly' | 'yearly_commitment') => {
     setSharedBillingPeriod(period);
     if (selectedPaidTier) {
       const itemData = buildPlanItemData(selectedPaidTier, period);
       const priceAmount = calculatePriceForBillingPeriod(selectedPaidTier, period);
+      trackSelectItem(itemData);
       trackViewItem(itemData, currency, priceAmount);
     }
   }, [selectedPaidTier, currency, buildPlanItemData, calculatePriceForBillingPeriod]);
