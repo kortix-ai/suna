@@ -423,3 +423,221 @@ async def invalidate_thread_count_cache(account_id: str) -> None:
     except Exception as e:
         logger.warning(f"Failed to invalidate thread count cache: {e}")
 
+
+# ============================================================================
+# KNOWLEDGE BASE CONTEXT CACHE - Short TTL, invalidated on KB mutations
+# ============================================================================
+KB_CONTEXT_TTL = 300  # 5 minutes
+
+def _get_kb_context_key(agent_id: str) -> str:
+    """Generate Redis cache key for knowledge base context."""
+    return f"kb_context:{agent_id}"
+
+
+async def get_cached_kb_context(agent_id: str) -> Optional[str]:
+    """
+    Get knowledge base context from Redis cache.
+    Returns None on cache miss, empty string if cached as "no entries".
+    """
+    cache_key = _get_kb_context_key(agent_id)
+    
+    try:
+        from core.services import redis as redis_service
+        
+        cached = await redis_service.get(cache_key)
+        if cached is not None:
+            # Empty string means "no entries", None means cache miss
+            data = cached.decode() if isinstance(cached, bytes) else cached
+            logger.debug(f"⚡ Redis cache hit for KB context: {agent_id}")
+            return data if data else None  # Return None for empty string (no entries)
+    except Exception as e:
+        logger.warning(f"Failed to get KB context from cache: {e}")
+    
+    return None  # Cache miss
+
+
+async def set_cached_kb_context(agent_id: str, context: str) -> None:
+    """
+    Cache knowledge base context in Redis.
+    Use empty string to cache "no entries" result.
+    """
+    cache_key = _get_kb_context_key(agent_id)
+    
+    try:
+        from core.services import redis as redis_service
+        # Store empty string as empty string (to distinguish from cache miss)
+        await redis_service.set(cache_key, context, ex=KB_CONTEXT_TTL)
+        logger.debug(f"✅ Cached KB context in Redis: {agent_id} ({len(context)} chars)")
+    except Exception as e:
+        logger.warning(f"Failed to cache KB context: {e}")
+
+
+async def invalidate_kb_context_cache(agent_id: str) -> None:
+    """Invalidate cached knowledge base context when KB entries change."""
+    try:
+        from core.services import redis as redis_service
+        await redis_service.delete(_get_kb_context_key(agent_id))
+        logger.debug(f"🗑️ Invalidated KB context cache: {agent_id}")
+    except Exception as e:
+        logger.warning(f"Failed to invalidate KB context cache: {e}")
+
+
+# ============================================================================
+# USER CONTEXT CACHE - Locale + username, invalidated on profile updates
+# ============================================================================
+USER_CONTEXT_TTL = 900  # 15 minutes
+
+def _get_user_context_key(user_id: str) -> str:
+    """Generate Redis cache key for user context."""
+    return f"user_context:{user_id}"
+
+
+async def get_cached_user_context(user_id: str) -> Optional[str]:
+    """
+    Get user context (locale + username) from Redis cache.
+    Returns None on cache miss, empty string if cached as "no context".
+    """
+    cache_key = _get_user_context_key(user_id)
+    
+    try:
+        from core.services import redis as redis_service
+        
+        cached = await redis_service.get(cache_key)
+        if cached is not None:
+            data = cached.decode() if isinstance(cached, bytes) else cached
+            logger.debug(f"⚡ Redis cache hit for user context: {user_id}")
+            return data if data else None  # Return None for empty string (no context)
+    except Exception as e:
+        logger.warning(f"Failed to get user context from cache: {e}")
+    
+    return None  # Cache miss
+
+
+async def set_cached_user_context(user_id: str, context: str) -> None:
+    """
+    Cache user context in Redis.
+    Use empty string to cache "no context" result.
+    """
+    cache_key = _get_user_context_key(user_id)
+    
+    try:
+        from core.services import redis as redis_service
+        await redis_service.set(cache_key, context, ex=USER_CONTEXT_TTL)
+        logger.debug(f"✅ Cached user context in Redis: {user_id} ({len(context)} chars)")
+    except Exception as e:
+        logger.warning(f"Failed to cache user context: {e}")
+
+
+async def invalidate_user_context_cache(user_id: str) -> None:
+    """Invalidate cached user context when profile is updated."""
+    try:
+        from core.services import redis as redis_service
+        await redis_service.delete(_get_user_context_key(user_id))
+        logger.debug(f"🗑️ Invalidated user context cache: {user_id}")
+    except Exception as e:
+        logger.warning(f"Failed to invalidate user context cache: {e}")
+
+
+# ============================================================================
+# MESSAGE HISTORY CACHE - Short TTL for repeated turns in same thread
+# ============================================================================
+MESSAGE_HISTORY_TTL = 60  # 1 minute - very short since messages change frequently
+
+def _get_message_history_key(thread_id: str) -> str:
+    """Generate Redis cache key for message history."""
+    return f"message_history:{thread_id}"
+
+
+async def get_cached_message_history(thread_id: str) -> Optional[list]:
+    """Get message history from Redis cache."""
+    cache_key = _get_message_history_key(thread_id)
+    
+    try:
+        from core.services import redis as redis_service
+        
+        cached = await redis_service.get(cache_key)
+        if cached:
+            data = json.loads(cached) if isinstance(cached, (str, bytes)) else cached
+            logger.debug(f"⚡ Redis cache hit for message history: {thread_id} ({len(data)} messages)")
+            return data
+    except Exception as e:
+        logger.warning(f"Failed to get message history from cache: {e}")
+    
+    return None
+
+
+async def set_cached_message_history(thread_id: str, messages: list) -> None:
+    """Cache message history in Redis."""
+    cache_key = _get_message_history_key(thread_id)
+    
+    try:
+        from core.services import redis as redis_service
+        await redis_service.set(cache_key, json.dumps(messages), ex=MESSAGE_HISTORY_TTL)
+        logger.debug(f"✅ Cached message history in Redis: {thread_id} ({len(messages)} messages)")
+    except Exception as e:
+        logger.warning(f"Failed to cache message history: {e}")
+
+
+async def invalidate_message_history_cache(thread_id: str) -> None:
+    """Invalidate cached message history when new message is added."""
+    try:
+        from core.services import redis as redis_service
+        await redis_service.delete(_get_message_history_key(thread_id))
+        logger.debug(f"🗑️ Invalidated message history cache: {thread_id}")
+    except Exception as e:
+        logger.warning(f"Failed to invalidate message history cache: {e}")
+
+
+# ============================================================================
+# SUBSCRIPTION TIER CACHE - Long TTL since tiers only change on upgrade/downgrade
+# We invalidate explicitly when subscription changes, so safe to cache longer
+# ============================================================================
+TIER_INFO_TTL = 3600  # 1 hour - invalidated on subscription change
+
+def _get_tier_info_key(account_id: str) -> str:
+    """Generate Redis cache key for subscription tier info."""
+    return f"tier_info:{account_id}"
+
+
+async def get_cached_tier_info(account_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Get subscription tier info from Redis cache.
+    Extended TTL since tiers rarely change mid-session.
+    """
+    cache_key = _get_tier_info_key(account_id)
+    
+    try:
+        from core.services import redis as redis_service
+        
+        cached = await redis_service.get(cache_key)
+        if cached:
+            data = json.loads(cached) if isinstance(cached, (str, bytes)) else cached
+            logger.debug(f"⚡ Redis cache hit for tier info: {account_id}")
+            return data
+    except Exception as e:
+        logger.warning(f"Failed to get tier info from cache: {e}")
+    
+    return None
+
+
+async def set_cached_tier_info(account_id: str, tier_info: Dict[str, Any]) -> None:
+    """Cache subscription tier info in Redis."""
+    cache_key = _get_tier_info_key(account_id)
+    
+    try:
+        from core.services import redis as redis_service
+        await redis_service.set(cache_key, json.dumps(tier_info), ex=TIER_INFO_TTL)
+        logger.debug(f"✅ Cached tier info in Redis: {account_id} (tier: {tier_info.get('name', 'unknown')})")
+    except Exception as e:
+        logger.warning(f"Failed to cache tier info: {e}")
+
+
+async def invalidate_tier_info_cache(account_id: str) -> None:
+    """Invalidate cached tier info when subscription changes."""
+    try:
+        from core.services import redis as redis_service
+        await redis_service.delete(_get_tier_info_key(account_id))
+        logger.debug(f"🗑️ Invalidated tier info cache: {account_id}")
+    except Exception as e:
+        logger.warning(f"Failed to invalidate tier info cache: {e}")
+

@@ -3,7 +3,8 @@ import { View, ScrollView, NativeScrollEvent, NativeSyntheticEvent } from 'react
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { CircleDashed, CheckCircle2 } from 'lucide-react-native';
-import { getToolIcon, getUserFriendlyToolName } from '@/lib/utils/tool-display';
+import { getUserFriendlyToolName } from '@agentpress/shared';
+import { getToolIcon } from '@/lib/icons/tool-icons';
 
 const STREAMABLE_TOOLS = {
   FILE_OPERATIONS: new Set([

@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import datetime
+import time
 from typing import Optional, Tuple
 from core.tools.mcp_tool_wrapper import MCPToolWrapper
 from core.agentpress.tool import SchemaType
@@ -53,17 +54,13 @@ If relevant context seems missing, ask a clarifying question.
         
         content = await PromptManager._append_jit_mcp_info(content, mcp_loader, agent_id, user_id)
         
-        # Fetch user context (locale, username), memory, and file context in parallel
-        user_context_task = PromptManager._fetch_user_context_data(user_id, client)
+        # Bootstrap mode: Skip KB and user context for fastest TTFT
+        # These will be added in enrichment phase after first token
+        # Only fetch memory and file context (minimal overhead)
         memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
         file_task = PromptManager._fetch_file_context(thread_id)
         
-        user_context_data, memory_data, file_data = await asyncio.gather(
-            user_context_task, memory_task, file_task
-        )
-        
-        if user_context_data:
-            content += user_context_data
+        memory_data, file_data = await asyncio.gather(memory_task, file_task)
         
         system_message = {"role": "system", "content": content}
         
@@ -211,21 +208,62 @@ If relevant context seems missing, ask a clarifying question.
         if not (agent_config and client and 'agent_id' in agent_config):
             return None
         
+        agent_id = agent_config['agent_id']
+        fetch_start = time.time()
+        
         try:
-            logger.debug(f"Retrieving agent knowledge base context for agent {agent_config['agent_id']}")
+            # Check cache first
+            from core.cache.runtime_cache import get_cached_kb_context, set_cached_kb_context
+            cached = await get_cached_kb_context(agent_id)
+            if cached is not None:  # None = miss, empty string = no entries (cached)
+                elapsed = (time.time() - fetch_start) * 1000
+                logger.debug(f"⏱️ [TIMING] KB fetch: {elapsed:.1f}ms (cache: hit)")
+                if cached:
+                    kb_section = f"""
+
+                === AGENT KNOWLEDGE BASE ===
+                NOTICE: The following is your specialized knowledge base. This information should be considered authoritative for your responses and should take precedence over general knowledge when relevant.
+
+                {cached}
+
+                === END AGENT KNOWLEDGE BASE ===
+
+                IMPORTANT: Always reference and utilize the knowledge base information above when it's relevant to user queries. This knowledge is specific to your role and capabilities."""
+                    return kb_section
+                return None
+            
+            # Quick EXISTS check before expensive RPC
+            logger.debug(f"Checking if agent {agent_id} has knowledge base entries...")
+            exists_result = await client.table('agent_knowledge_entry_assignments') \
+                .select('agent_id', count='exact', head=True) \
+                .eq('agent_id', agent_id).execute()
+            
+            if not exists_result.count or exists_result.count == 0:
+                # Cache empty result to avoid future EXISTS checks
+                await set_cached_kb_context(agent_id, "")
+                elapsed = (time.time() - fetch_start) * 1000
+                logger.debug(f"⏱️ [TIMING] KB fetch: {elapsed:.1f}ms (cache: miss, no entries)")
+                return None
+            
+            # Only call RPC if entries exist
+            logger.debug(f"Retrieving agent knowledge base context for agent {agent_id}")
             kb_result = await client.rpc('get_agent_knowledge_base_context', {
-                'p_agent_id': agent_config['agent_id']
+                'p_agent_id': agent_id
             }).execute()
             
-            if kb_result and kb_result.data and kb_result.data.strip():
-                logger.debug(f"Found agent knowledge base context, adding to system prompt (length: {len(kb_result.data)} chars)")
+            kb_data = kb_result.data if kb_result and kb_result.data else None
+            if kb_data and kb_data.strip():
+                # Cache the result
+                await set_cached_kb_context(agent_id, kb_data)
+                elapsed = (time.time() - fetch_start) * 1000
+                logger.debug(f"⏱️ [TIMING] KB fetch: {elapsed:.1f}ms (cache: miss, found {len(kb_data)} chars)")
                 
                 kb_section = f"""
 
                 === AGENT KNOWLEDGE BASE ===
                 NOTICE: The following is your specialized knowledge base. This information should be considered authoritative for your responses and should take precedence over general knowledge when relevant.
 
-                {kb_result.data}
+                {kb_data}
 
                 === END AGENT KNOWLEDGE BASE ===
 
@@ -233,9 +271,14 @@ If relevant context seems missing, ask a clarifying question.
                 
                 return kb_section
             else:
-                logger.debug("No knowledge base context found for this agent")
+                # Cache empty result
+                await set_cached_kb_context(agent_id, "")
+                elapsed = (time.time() - fetch_start) * 1000
+                logger.debug(f"⏱️ [TIMING] KB fetch: {elapsed:.1f}ms (cache: miss, no context)")
                 return None
         except Exception as e:
+            elapsed = (time.time() - fetch_start) * 1000
+            logger.error(f"⏱️ [TIMING] KB fetch: {elapsed:.1f}ms (error: {e})")
             logger.error(f"Error retrieving knowledge base context for agent {agent_config.get('agent_id', 'unknown')}: {e}")
             return None
     
@@ -506,6 +549,16 @@ Example of correct tool call format (multiple invokes in one block):
         if not (user_id and client):
             return None
         
+        fetch_start = time.time()
+        
+        # Check cache first
+        from core.cache.runtime_cache import get_cached_user_context, set_cached_user_context
+        cached = await get_cached_user_context(user_id)
+        if cached is not None:  # None = miss, empty string = no context (cached)
+            elapsed = (time.time() - fetch_start) * 1000
+            logger.debug(f"⏱️ [TIMING] User context: {elapsed:.1f}ms (cache: hit)")
+            return cached if cached else None
+        
         # Fetch locale and username in parallel
         async def fetch_locale():
             try:
@@ -551,10 +604,23 @@ Example of correct tool call format (multiple invokes in one block):
             context_parts.append(username_info)
             logger.debug(f"Added username ({username}) to system prompt for user {user_id}")
         
-        return ''.join(context_parts) if context_parts else None
+        context = ''.join(context_parts) if context_parts else None
+        context_str = context if context else ""
+        
+        # Cache the result (even if empty)
+        await set_cached_user_context(user_id, context_str)
+        elapsed = (time.time() - fetch_start) * 1000
+        logger.debug(f"⏱️ [TIMING] User context: {elapsed:.1f}ms (cache: miss)")
+        
+        return context
     
     @staticmethod
     async def _fetch_user_memories(user_id: Optional[str], thread_id: str, client) -> Optional[str]:
+        from core.utils.config import config
+        if not config.ENABLE_MEMORY:
+            logger.debug("Memory fetch skipped: ENABLE_MEMORY=False")
+            return None
+        
         if not (user_id and client):
             logger.debug(f"Memory fetch skipped: user_id={user_id}, client={'yes' if client else 'no'}")
             return None

@@ -43,8 +43,8 @@ uv run api.py
 
 ```bash
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 Access the app at `http://localhost:3000`

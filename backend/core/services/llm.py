@@ -67,7 +67,33 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
                 "api_base": openai_compatible_api_base or getattr(config, 'OPENAI_COMPATIBLE_API_BASE', None),
             },
         },
-        # Configure minimax-m2.1 model group with fallback to glm-4.6v
+        # Direct MiniMax API - requires MINIMAX_API_KEY env var
+        # Docs: https://docs.litellm.ai/docs/providers/minimax
+        {
+            "model_name": "minimax/MiniMax-M2.1",
+            "litellm_params": {
+                "model": "openai/MiniMax-M2.1",
+                "api_key": getattr(config, 'MINIMAX_API_KEY', None) or os.environ.get("MINIMAX_API_KEY"),
+                "api_base": "https://api.minimax.io/v1",
+            },
+        },
+        {
+            "model_name": "minimax/MiniMax-M2.1-lightning",
+            "litellm_params": {
+                "model": "openai/MiniMax-M2.1-lightning",
+                "api_key": getattr(config, 'MINIMAX_API_KEY', None) or os.environ.get("MINIMAX_API_KEY"),
+                "api_base": "https://api.minimax.io/v1",
+            },
+        },
+        {
+            "model_name": "minimax/MiniMax-M2",
+            "litellm_params": {
+                "model": "openai/MiniMax-M2",
+                "api_key": getattr(config, 'MINIMAX_API_KEY', None) or os.environ.get("MINIMAX_API_KEY"),
+                "api_base": "https://api.minimax.io/v1",
+            },
+        },
+        # Configure openrouter minimax-m2.1 model group with fallback to glm-4.6v
         {
             "model_name": "openrouter/minimax/minimax-m2.1",
             "litellm_params": {
@@ -83,10 +109,12 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
         {"model_name": "*", "litellm_params": {"model": "*"}},
     ]
     
-    # Configure fallbacks: minimax-m2.1 falls back to glm-4.6v
-    # This handles cases where minimax doesn't support image input
+    # Configure fallbacks: minimax models fall back to glm-4.6v for image input
     fallbacks = [
-        {"openrouter/minimax/minimax-m2.1": ["openrouter/z-ai/glm-4.6v"]}
+        {"openrouter/minimax/minimax-m2.1": ["openrouter/z-ai/glm-4.6v"]},
+        {"minimax/MiniMax-M2.1": ["openrouter/z-ai/glm-4.6v"]},
+        {"minimax/MiniMax-M2.1-lightning": ["openrouter/z-ai/glm-4.6v"]},
+        {"minimax/MiniMax-M2": ["openrouter/z-ai/glm-4.6v"]},
     ]
     
     # Use configured num_retries or default to 1
@@ -98,7 +126,7 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
         fallbacks=fallbacks,
     )
     
-    logger.info("LiteLLM Router configured with fallbacks: minimax-m2.1 -> glm-4.6v")
+    logger.info("LiteLLM Router configured with fallbacks: minimax -> glm-4.6v")
 
 def _configure_openai_compatible(model_name: str, api_key: Optional[str], api_base: Optional[str]) -> None:
     """Configure OpenAI-compatible provider if needed."""
@@ -290,7 +318,9 @@ async def make_llm_api_call(
         params["stream_options"] = {"include_usage": True}
 
     actual_model_id = params.get("model", "")
-    if actual_model_id.startswith("openrouter/") and "minimax" in actual_model_id.lower():
+    # Handle MiniMax models (both direct API and OpenRouter)
+    is_minimax = "minimax" in actual_model_id.lower()
+    if is_minimax:
         params["reasoning"] = {"enabled": True}
         params["reasoning_split"] = True
         # avoid showing reasoning tokens in plain content

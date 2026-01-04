@@ -6,6 +6,7 @@ from core.utils.logger import logger
 from core.services.supabase import DBConnection
 from core.billing import subscription_service
 from core.billing.shared.config import is_memory_enabled, get_memory_config
+from core.utils.config import config
 from .retrieval_service import memory_retrieval_service
 from .models import MemoryType
 
@@ -59,6 +60,15 @@ async def list_memories(
     limit: int = Query(50, ge=1, le=200),
     memory_type: Optional[str] = Query(None)
 ):
+    if not config.ENABLE_MEMORY:
+        return MemoryListResponse(
+            memories=[],
+            total=0,
+            page=page,
+            limit=limit,
+            pages=0
+        )
+    
     try:
         tier_info = await subscription_service.get_user_subscription_tier(user_id)
         tier_name = tier_info['name']
@@ -122,6 +132,24 @@ async def list_memories(
 async def get_memory_stats(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
+    if not config.ENABLE_MEMORY:
+        try:
+            tier_info = await subscription_service.get_user_subscription_tier(user_id)
+            tier_name = tier_info['name']
+        except:
+            tier_name = 'free'
+        
+        return MemoryStatsResponse(
+            total_memories=0,
+            memories_by_type={},
+            oldest_memory=None,
+            newest_memory=None,
+            max_memories=0,
+            retrieval_limit=0,
+            tier_name=tier_name,
+            memory_enabled=False
+        )
+    
     try:
         tier_info = await subscription_service.get_user_subscription_tier(user_id)
         tier_name = tier_info['name']
@@ -158,6 +186,9 @@ async def delete_memory(
     memory_id: str,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
+    if not config.ENABLE_MEMORY:
+        raise HTTPException(status_code=503, detail="Memory feature is currently disabled")
+    
     try:
         tier_info = await subscription_service.get_user_subscription_tier(user_id)
         tier_name = tier_info['name']
@@ -183,6 +214,9 @@ async def delete_all_memories(
     user_id: str = Depends(verify_and_get_user_id_from_jwt),
     confirm: bool = Query(False, description="Confirm deletion of all memories")
 ):
+    if not config.ENABLE_MEMORY:
+        raise HTTPException(status_code=503, detail="Memory feature is currently disabled")
+    
     try:
         if not confirm:
             raise HTTPException(status_code=400, detail="Confirmation required to delete all memories. Set confirm=true query parameter.")
@@ -211,6 +245,9 @@ async def create_memory(
     memory_data: CreateMemoryRequest,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
+    if not config.ENABLE_MEMORY:
+        raise HTTPException(status_code=503, detail="Memory feature is currently disabled")
+    
     try:
         tier_info = await subscription_service.get_user_subscription_tier(user_id)
         tier_name = tier_info['name']
@@ -276,6 +313,9 @@ async def create_memory(
 async def get_memory_settings(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
+    if not config.ENABLE_MEMORY:
+        return MemorySettingsResponse(memory_enabled=False)
+    
     try:
         await db.initialize()
         client = await db.client
@@ -294,6 +334,9 @@ async def update_memory_settings(
     enabled: bool = Body(..., embed=True),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
+    if not config.ENABLE_MEMORY:
+        raise HTTPException(status_code=503, detail="Memory feature is currently disabled")
+    
     try:
         await db.initialize()
         client = await db.client
@@ -316,6 +359,9 @@ async def get_thread_memory_settings(
     thread_id: str,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
+    if not config.ENABLE_MEMORY:
+        return ThreadMemorySettingsResponse(thread_id=thread_id, memory_enabled=False)
+    
     try:
         await db.initialize()
         client = await db.client
@@ -335,6 +381,9 @@ async def update_thread_memory_settings(
     enabled: bool = Body(..., embed=True),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
+    if not config.ENABLE_MEMORY:
+        raise HTTPException(status_code=503, detail="Memory feature is currently disabled")
+    
     try:
         await db.initialize()
         client = await db.client

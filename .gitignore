@@ -212,6 +212,9 @@ dump.rdb
 # CodeWebChat state and logs (auto-added)
 .cwc/
 
+# Node.js dependencies
+node_modules/
+**/node_modules/
 
 # mobile specific
 apps/mobile/node_modules/

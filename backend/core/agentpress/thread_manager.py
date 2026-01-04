@@ -121,6 +121,14 @@ class ThreadManager:
             if result.data and len(result.data) > 0 and 'message_id' in result.data[0]:
                 saved_message = result.data[0]
                 
+                # Invalidate message history cache when new message is added
+                if is_llm_message:
+                    try:
+                        from core.cache.runtime_cache import invalidate_message_history_cache
+                        await invalidate_message_history_cache(thread_id)
+                    except Exception as e:
+                        logger.debug(f"Failed to invalidate message history cache: {e}")
+                
                 if type == "llm_response_end" and isinstance(content, dict):
                     await self._handle_billing(thread_id, content, saved_message)
                 
@@ -241,6 +249,15 @@ class ThreadManager:
             lightweight: If True, fetch only recent messages with minimal payload (for bootstrap)
         """
         logger.debug(f"Getting messages for thread {thread_id} (lightweight={lightweight})")
+        
+        # Check cache first (only for non-lightweight mode)
+        if not lightweight:
+            from core.cache.runtime_cache import get_cached_message_history
+            cached = await get_cached_message_history(thread_id)
+            if cached is not None:
+                logger.debug(f"⏱️ [TIMING] Message history: cache hit ({len(cached)} messages)")
+                return cached
+        
         client = await self.db.client
 
         try:
@@ -325,6 +342,11 @@ class ThreadManager:
                         'content': str(content),
                         'message_id': item['message_id']
                     })
+
+            # Cache the result (only for non-lightweight mode)
+            if not lightweight:
+                from core.cache.runtime_cache import set_cached_message_history
+                await set_cached_message_history(thread_id, messages)
 
             return messages
 

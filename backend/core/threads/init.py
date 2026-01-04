@@ -36,27 +36,58 @@ async def create_thread_optimistically(
     
     Returns immediately with thread_id while initialization happens in background.
     """
+    import time
+    t_start = time.time()
+    
     if not db._client:
         await db.initialize()
     client = await db.client
     
     placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt
     message_content = prompt
+    now_iso = datetime.now(timezone.utc).isoformat()
     
-    # Create project
+    # Prepare thread data early
+    thread_data = {
+        "thread_id": thread_id,
+        "project_id": project_id,
+        "account_id": account_id,
+        "name": "New Chat",
+        "status": "pending",
+        "created_at": now_iso
+    }
+    if memory_enabled is not None:
+        thread_data["memory_enabled"] = memory_enabled
+    
+    project_data = {
+        "project_id": project_id,
+        "account_id": account_id,
+        "name": placeholder_name,
+        "created_at": now_iso
+    }
+    
+    # Create project and thread in PARALLEL
     try:
-        await client.table('projects').insert({
-            "project_id": project_id,
-            "account_id": account_id,
-            "name": placeholder_name,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }).execute()
+        async def insert_project():
+            await client.table('projects').insert(project_data).execute()
+            logger.debug(f"Created project {project_id}")
         
-        logger.debug(f"Created project {project_id}")
+        async def insert_thread():
+            await client.table('threads').insert(thread_data).execute()
+            logger.debug(f"Created thread {thread_id}")
+        
+        await asyncio.gather(insert_project(), insert_thread())
+        
+        # Fire-and-forget name generation (don't block)
         asyncio.create_task(generate_and_update_project_name(project_id=project_id, prompt=prompt))
+        if prompt:
+            from core.utils.thread_name_generator import generate_and_update_thread_name
+            asyncio.create_task(generate_and_update_thread_name(thread_id=thread_id, prompt=prompt))
+        
+        logger.debug(f"⏱️ [TIMING] Parallel project+thread insert: {(time.time() - t_start) * 1000:.1f}ms")
         
     except Exception as e:
-        logger.error(f"Failed to create project: {e}")
+        logger.error(f"Failed to create project/thread: {e}")
         raise
     
     image_urls_for_context = []
@@ -117,88 +148,73 @@ async def create_thread_optimistically(
             message_content = await _handle_file_uploads_fast(files, project_id, prompt, thread_id)
         except Exception as e:
             logger.error(f"Error processing files: {e}\n{traceback.format_exc()}")
+            # Cleanup both project and thread on failure
             try:
-                await client.table('projects').delete().eq('project_id', project_id).execute()
+                await asyncio.gather(
+                    client.table('projects').delete().eq('project_id', project_id).execute(),
+                    client.table('threads').delete().eq('thread_id', thread_id).execute(),
+                    return_exceptions=True
+                )
             except:
                 pass
             raise
     
-    # Create thread
-    try:
-        thread_data = {
-            "thread_id": thread_id,
-            "project_id": project_id,
-            "account_id": account_id,
-            "name": "New Chat",
-            "status": "pending",
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-        if memory_enabled is not None:
-            thread_data["memory_enabled"] = memory_enabled
-        
-        await client.table('threads').insert(thread_data).execute()
-        
-        logger.debug(f"Created thread {thread_id}")
-        
-        if prompt:
-            from core.utils.thread_name_generator import generate_and_update_thread_name
-            asyncio.create_task(generate_and_update_thread_name(thread_id=thread_id, prompt=prompt))
-        
-    except Exception as e:
-        logger.error(f"Failed to create thread: {e}")
-        try:
-            await client.table('projects').delete().eq('project_id', project_id).execute()
-        except:
-            pass
-        raise
-    
-    # Create user message
-    await client.table('messages').insert({
-        "message_id": str(uuid.uuid4()),
-        "thread_id": thread_id,
-        "type": "user",
-        "is_llm_message": True,
-        "content": {"role": "user", "content": message_content},
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }).execute()
-    
-    # Add image context messages
-    for img_info in image_urls_for_context:
-        try:
-            await client.table('messages').insert({
-                "message_id": str(uuid.uuid4()),
-                "thread_id": thread_id,
-                "type": "image_context",
-                "is_llm_message": True,
-                "content": {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": f"[Image: {img_info['filename']}]"},
-                        {"type": "image_url", "image_url": {"url": img_info['url']}}
-                    ]
-                },
-                "metadata": {
-                    "file_path": img_info['filename'],
-                    "mime_type": img_info['mime_type'],
-                    "source": "user_upload"
-                },
-                "created_at": datetime.now(timezone.utc).isoformat()
-            }).execute()
-        except Exception as e:
-            logger.warning(f"Failed to inject image context: {e}")
-    
-    # Dispatch via Redis Streams
+    # Create user message AND dispatch to worker in parallel for faster TTFT
     from core.worker import dispatch_thread_init
-    await dispatch_thread_init(
-        thread_id=thread_id,
-        project_id=project_id,
-        account_id=account_id,
-        prompt=prompt,
-        agent_id=agent_id,
-        model_name=model_name,
-    )
     
-    logger.info(f"Dispatched initialization for thread {thread_id}")
+    async def insert_user_message():
+        await client.table('messages').insert({
+            "message_id": str(uuid.uuid4()),
+            "thread_id": thread_id,
+            "type": "user",
+            "is_llm_message": True,
+            "content": {"role": "user", "content": message_content},
+            "created_at": now_iso
+        }).execute()
+    
+    async def dispatch_to_worker():
+        await dispatch_thread_init(
+            thread_id=thread_id,
+            project_id=project_id,
+            account_id=account_id,
+            prompt=prompt,
+            agent_id=agent_id,
+            model_name=model_name,
+        )
+    
+    t_parallel = time.time()
+    await asyncio.gather(insert_user_message(), dispatch_to_worker())
+    logger.debug(f"⏱️ [TIMING] Parallel msg+dispatch: {(time.time() - t_parallel) * 1000:.1f}ms")
+    
+    # Add image context messages in background (don't block return)
+    if image_urls_for_context:
+        async def insert_image_contexts():
+            for img_info in image_urls_for_context:
+                try:
+                    await client.table('messages').insert({
+                        "message_id": str(uuid.uuid4()),
+                        "thread_id": thread_id,
+                        "type": "image_context",
+                        "is_llm_message": True,
+                        "content": {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": f"[Image: {img_info['filename']}]"},
+                                {"type": "image_url", "image_url": {"url": img_info['url']}}
+                            ]
+                        },
+                        "metadata": {
+                            "file_path": img_info['filename'],
+                            "mime_type": img_info['mime_type'],
+                            "source": "user_upload"
+                        },
+                        "created_at": now_iso
+                    }).execute()
+                except Exception as e:
+                    logger.warning(f"Failed to inject image context: {e}")
+        asyncio.create_task(insert_image_contexts())
+    
+    logger.info(f"⏱️ [TIMING] Thread init total: {(time.time() - t_start) * 1000:.1f}ms")
     
     return {
         "thread_id": thread_id,
