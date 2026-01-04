@@ -223,7 +223,7 @@ apps/mobile/dist/
 apps/mobile/web-build/
 apps/mobile/expo-env.d.ts
 apps/mobile/.metro-health-check*
-apps/mobile/npm-debug.*
+apps/mobile/npm-debug.*apps/mobile/npm-debug.*
 apps/mobile/yarn-debug.*
 apps/mobile/yarn-error.*
 apps/mobile/*.tsbuildinfo
