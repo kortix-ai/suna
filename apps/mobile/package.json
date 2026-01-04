@@ -19,7 +19,7 @@
   "dependencies": {
     "@agentpress/shared": "workspace:*",
     "@bacons/apple-targets": "^3.0.5",
-    "@expensify/react-native-live-markdown": "^0.1.317",
+    "@expensify/react-native-live-markdown": "0.1.317",
     "@gorhom/bottom-sheet": "^5.2.6",
     "@lottiefiles/dotlottie-react": "^0.13.5",
     "@react-native-async-storage/async-storage": "^2.2.0",

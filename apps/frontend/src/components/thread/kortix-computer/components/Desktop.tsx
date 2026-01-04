@@ -27,6 +27,7 @@ import { getFileIconByName } from './Icons';
 import { SystemInfoContent } from './SystemInfoContent';
 import { FileInfoContent, FileInfo } from './FileInfoContent';
 import dynamic from 'next/dynamic';
+import Image from 'next/image';
 import { toast } from '@/lib/toast';
 
 // Lazy load SpreadsheetApp as it imports Syncfusion (~1-2 MB)
@@ -449,19 +450,19 @@ export const SandboxDesktop = memo(function SandboxDesktop({
     if (toolCalls.length > 0 && openWindows.length === 0) {
       openToolWindow(currentIndex);
     }
-  }, []);
+  }, [toolCalls.length, openWindows.length, currentIndex, openToolWindow]);
 
   useEffect(() => {
     if (toolCalls.length > 0 && currentIndex >= 0 && currentIndex < toolCalls.length) {
       openToolWindow(currentIndex);
     }
-  }, [currentIndex]);
+  }, [currentIndex, toolCalls.length, openToolWindow]);
 
   useEffect(() => {
     if (toolCalls.length > 0 && latestIndex >= 0) {
       openToolWindow(latestIndex);
     }
-  }, [latestIndex, toolCalls.length]);
+  }, [latestIndex, toolCalls.length, openToolWindow]);
 
   // When activeView changes externally (e.g., clicking Edit in FileOperationToolView), open the corresponding window
   const previousViewRef = useRef(currentView);
@@ -1079,16 +1080,24 @@ export const SandboxDesktop = memo(function SandboxDesktop({
         />
         
         <div className="absolute inset-0">
-          <img 
-            src="https://heprlhlltebrxydgtsjs.supabase.co/storage/v1/object/public/image-uploads/backgrounds/computer-bg-dark.jpg"
-            alt="Desktop wallpaper"
-            className="absolute inset-0 w-full h-full object-cover dark:block"
-          />
-          <img 
-            src="https://heprlhlltebrxydgtsjs.supabase.co/storage/v1/object/public/image-uploads/backgrounds/computer-bg-light.jpg"
-            alt="Desktop wallpaper"
-            className="absolute inset-0 w-full h-full object-cover dark:hidden"
-          />
+          <div className="absolute inset-0 dark:block hidden">
+            <Image 
+              src="https://heprlhlltebrxydgtsjs.supabase.co/storage/v1/object/public/image-uploads/backgrounds/computer-bg-dark.jpg"
+              alt="Desktop wallpaper"
+              fill
+              className="object-cover"
+              unoptimized
+            />
+          </div>
+          <div className="absolute inset-0 dark:hidden">
+            <Image 
+              src="https://heprlhlltebrxydgtsjs.supabase.co/storage/v1/object/public/image-uploads/backgrounds/computer-bg-light.jpg"
+              alt="Desktop wallpaper"
+              fill
+              className="object-cover"
+              unoptimized
+            />
+          </div>
           <div className="absolute inset-0 bg-black/10" />
         </div>
 

@@ -7,7 +7,7 @@ import React, { memo, useMemo, useCallback, useState, useEffect, useRef } from '
 import { createPortal } from 'react-dom';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiMessageType } from '@/components/thread/types';
-import { Globe } from 'lucide-react';
+import { Globe, CircleDashed } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useIsMobile } from '@/hooks/utils';
 import { ToolView } from '../tool-views/wrapper';
@@ -260,7 +260,7 @@ export const KortixComputer = memo(function KortixComputer({
       index,
       timestamp: Date.now(),
     }));
-  }, [visibleToolCalls, isOpen]);
+  }, [visibleToolCalls]);
 
   useEffect(() => {
     const hadSnapshots = toolCallSnapshots.length > 0;
@@ -339,7 +339,7 @@ export const KortixComputer = memo(function KortixComputer({
       completedToolCalls: completed,
       totalCompletedCalls: completedCount
     };
-  }, [internalIndex, toolCallSnapshots, isOpen, currentIndex]);
+  }, [internalIndex, toolCallSnapshots]);
 
   let displayToolCall = currentToolCall;
   let displayIndex = safeInternalIndex;
