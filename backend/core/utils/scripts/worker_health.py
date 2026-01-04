@@ -1,14 +1,13 @@
 """
 Worker health check script.
 
-This performs a simple Redis connectivity check rather than sending a task through
-the Dramatiq queue. This ensures health checks pass even when the queue is under load.
+This performs a simple Redis connectivity check to ensure the worker can connect
+to Redis and perform basic operations. This ensures health checks pass even when
+the worker is under load processing Redis Streams messages.
 
-The old approach (sending a Dramatiq task) could fail under load because:
-1. All worker threads busy processing agent runs
-2. Health check task waits in queue behind other tasks
-3. Times out after 20s → ECS kills the worker
-4. Creates a vicious cycle where workers can't start
+The health check is independent of Redis Streams load and verifies:
+1. Redis connection is working
+2. Can read/write to Redis
 """
 import dotenv
 dotenv.load_dotenv()
@@ -25,7 +24,7 @@ async def main():
     1. Redis connection is working
     2. Can read/write to Redis
     
-    This is independent of Dramatiq queue load.
+    This is independent of Redis Streams load.
     """
     try:
         # Initialize Redis connection

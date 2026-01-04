@@ -320,7 +320,6 @@ class Configuration:
     REDIS_PASSWORD: Optional[str] = None
     REDIS_USERNAME: Optional[str] = None  # Required for Redis Cloud
     REDIS_MAX_CONNECTIONS: Optional[int] = 10  # Max connections per process (default 10)
-    REDIS_DRAMATIQ_MAX_CONNECTIONS: Optional[int] = 5  # Max connections for Dramatiq broker per process (default 5)
     REDIS_SSL: Optional[bool] = True
     
     # Daytona sandbox configuration (optional - sandbox features disabled if not configured)

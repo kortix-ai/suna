@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Request, HTTPException, Response, Depends, APIRouter
+from fastapi import FastAPI, Request, HTTPException, Response, Depends, APIRouter, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from core.services import redis
@@ -370,124 +370,101 @@ async def health_check():
         "instance_id": instance_id,
     }
 
-@api_router.get("/metrics/queue", summary="Queue Metrics", operation_id="queue_metrics", tags=["system"])
-async def queue_metrics_endpoint():
-    """Get Dramatiq queue depth for monitoring and auto-scaling."""
-    from core.services import queue_metrics
-    try:
-        return await queue_metrics.get_queue_metrics()
-    except Exception as e:
-        logger.error(f"Failed to get queue metrics: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get queue metrics")
-
-@api_router.get("/metrics/workers", summary="Worker Metrics", operation_id="worker_metrics", tags=["system"])
-async def worker_metrics_endpoint():
-    """Get active Dramatiq worker count and thread utilization for monitoring."""
-    from core.services import worker_metrics
-    try:
-        return await worker_metrics.get_worker_metrics()
-    except Exception as e:
-        logger.error(f"Failed to get worker metrics: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get worker metrics")
-
-@api_router.get("/metrics", summary="All Metrics", operation_id="all_metrics", tags=["system"])
-async def all_metrics_endpoint():
-    """Get combined queue and worker metrics for monitoring."""
+@api_router.get("/metrics", summary="System Metrics", operation_id="metrics", tags=["system"])
+async def metrics_endpoint(
+    type: str = Query("all", description="Metrics type: 'queue', 'workers', or 'all'")
+):
+    """
+    Get system metrics for monitoring and auto-scaling.
+    
+    - **queue**: Redis Streams pending messages (for auto-scaling)
+    - **workers**: Worker count and task utilization
+    - **all**: Combined queue and worker metrics (default)
+    """
     from core.services import queue_metrics, worker_metrics
+    
     try:
-        queue_data = await queue_metrics.get_queue_metrics()
-        worker_data = await worker_metrics.get_worker_metrics()
-        
-        return {
-            "queue": queue_data,
-            "workers": worker_data,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+        if type == "queue":
+            return await queue_metrics.get_queue_metrics()
+        elif type == "workers":
+            return await worker_metrics.get_worker_metrics()
+        else:  # type == "all" or default
+            queue_data = await queue_metrics.get_queue_metrics()
+            worker_data = await worker_metrics.get_worker_metrics()
+            return {
+                "queue": queue_data,
+                "workers": worker_data,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
     except Exception as e:
         logger.error(f"Failed to get metrics: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get metrics")
+        raise HTTPException(status_code=500, detail=f"Failed to get metrics: {str(e)}")
 
-@api_router.get("/debug/queue", summary="Debug Queue Status", operation_id="debug_queue", tags=["system"])
-async def debug_queue_status():
+@api_router.get("/debug", summary="Debug Information", operation_id="debug", tags=["system"])
+async def debug_endpoint(
+    type: str = Query("streams", description="Debug type: 'streams' (queue) or 'worker'")
+):
     """
-    Detailed debug endpoint for queue issues.
-    Shows all Dramatiq-related keys in Redis.
-    """
-    import os
-    try:
-        client = await redis.get_client()
-        
-        # Get all dramatiq-related keys
-        queue_prefix = os.getenv("DRAMATIQ_QUEUE_PREFIX", "")
-        queue_name = f"{queue_prefix}default" if queue_prefix else "default"
-        
-        # Check various queue states
-        main_queue = await client.llen(f"dramatiq:{queue_name}")
-        delay_queue = await client.llen(f"dramatiq:{queue_name}.DQ")
-        dead_letter = await client.llen(f"dramatiq:{queue_name}.XQ")
-        
-        # Also check the non-prefixed queue (in case of mismatch)
-        main_queue_default = await client.llen("dramatiq:default")
-        delay_queue_default = await client.llen("dramatiq:default.DQ")
-        dead_letter_default = await client.llen("dramatiq:default.XQ")
-        
-        # Get all dramatiq keys
-        all_dramatiq_keys = await client.keys("dramatiq:*")
-        
-        # Sample dead letter messages (first 3)
-        dead_letter_samples = []
-        if dead_letter > 0:
-            samples = await client.lrange(f"dramatiq:{queue_name}.XQ", 0, 2)
-            dead_letter_samples = [s[:500] if isinstance(s, str) else str(s)[:500] for s in samples]
-        elif dead_letter_default > 0:
-            samples = await client.lrange("dramatiq:default.XQ", 0, 2)
-            dead_letter_samples = [s[:500] if isinstance(s, str) else str(s)[:500] for s in samples]
-        
-        return {
-            "queue_prefix": queue_prefix or "(none)",
-            "expected_queue_name": queue_name,
-            "prefixed_queue": {
-                "main": main_queue,
-                "delay": delay_queue,
-                "dead_letter": dead_letter,
-            },
-            "default_queue": {
-                "main": main_queue_default,
-                "delay": delay_queue_default,
-                "dead_letter": dead_letter_default,
-            },
-            "all_dramatiq_keys": [k if isinstance(k, str) else k.decode() for k in all_dramatiq_keys[:20]],
-            "dead_letter_samples": dead_letter_samples,
-            "redis_connected": True,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Debug queue failed: {e}")
-        return {
-            "error": str(e),
-            "redis_connected": False,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-
-@api_router.get("/debug/stream-worker", summary="Stream Worker Status", operation_id="debug_stream_worker", tags=["system"])
-async def debug_stream_worker_status():
-    """
-    Monitor Redis Streams worker for agent runs.
-    Shows stream length, pending messages, and consumer status.
+    Get detailed debug information for troubleshooting.
+    
+    - **streams**: Detailed Redis Streams status with all consumer groups and keys
+    - **worker**: Stream worker status and health check
     """
     try:
-        from core.worker import get_stream_info
-        info = await get_stream_info()
-        return {
-            "status": "healthy" if not info.get("error") else "error",
-            **info,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+        from core.worker.consumer import get_stream_info, CONSUMER_GROUP
+        from core.worker.tasks import StreamName
+        
+        if type == "worker":
+            # Worker status (simplified)
+            info = await get_stream_info()
+            return {
+                "status": "healthy" if not info.get("error") else "error",
+                **info,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        else:  # type == "streams" or default
+            # Detailed queue debug info
+            client = await redis.get_client()
+            stream_info = await get_stream_info()
+            
+            # Get all stream-related keys for debugging
+            all_stream_keys = await client.keys("suna:*")
+            
+            # Get pending messages summary
+            streams_summary = {}
+            total_pending = 0
+            total_length = 0
+            
+            for stream_name in StreamName:
+                stream_data = stream_info.get("streams", {}).get(stream_name.value, {})
+                pending = stream_data.get("pending_count", 0)
+                length = stream_data.get("length", 0)
+                total_pending += pending
+                total_length += length
+                
+                streams_summary[stream_name.value] = {
+                    "length": length,
+                    "pending": pending,
+                    "consumers": stream_data.get("consumers", []),
+                }
+            
+            return {
+                "consumer_group": CONSUMER_GROUP,
+                "streams": streams_summary,
+                "totals": {
+                    "pending_messages": total_pending,
+                    "total_stream_length": total_length,
+                },
+                "all_stream_keys": [k if isinstance(k, str) else k.decode() for k in all_stream_keys[:20]],
+                "redis_connected": True,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
     except Exception as e:
-        logger.error(f"Stream worker status failed: {e}")
+        logger.error(f"Debug endpoint failed: {e}")
         return {
             "status": "error",
             "error": str(e),
+            "redis_connected": False,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
 

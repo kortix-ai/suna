@@ -254,12 +254,15 @@ async def get_stream_info() -> Dict[str, Any]:
             info = await redis.xinfo_stream(stream.value)
             
             pending_count = 0
+            lag = 0  # Messages waiting to be delivered (queue backlog)
             consumers = []
             try:
                 groups = await redis.xinfo_groups(stream.value)
                 for group in groups:
                     if group.get("name") == CONSUMER_GROUP:
                         pending_count = group.get("pending", 0)
+                        # 'lag' is available in Redis 7+ and represents undelivered messages
+                        lag = group.get("lag", 0) or 0
                         try:
                             consumer_info = await redis.xinfo_consumers(stream.value, CONSUMER_GROUP)
                             consumers = [
@@ -277,7 +280,8 @@ async def get_stream_info() -> Dict[str, Any]:
             
             result["streams"][stream.value] = {
                 "length": info.get("length", 0),
-                "pending_count": pending_count,
+                "pending_count": pending_count,  # Tasks being processed
+                "lag": lag,  # Tasks waiting in queue (for scaling)
                 "consumers": consumers,
             }
         except Exception as e:

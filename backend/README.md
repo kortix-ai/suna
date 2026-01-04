@@ -30,8 +30,6 @@ You should see:
 📡 Consumer loop started
 ```
 
-> **Note**: The worker uses Redis Streams instead of Dramatiq for near-zero latency message pickup.
-> Adjust concurrency via `--concurrency` flag or `STREAM_WORKER_CONCURRENCY` env var.
 
 **1.3 Running the API**
 

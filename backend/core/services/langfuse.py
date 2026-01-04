@@ -11,14 +11,9 @@ host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
 # Determine if Langfuse should be enabled
 enabled = bool(public_key and secret_key)
 
-logger.debug(f"🔍 Langfuse Environment Check:")
-logger.debug(f"  - Public Key: {'✅ Set' if public_key else '❌ Missing'}")
-logger.debug(f"  - Secret Key: {'✅ Set' if secret_key else '❌ Missing'}")
-logger.debug(f"  - Host: {host}")
-logger.debug(f"  - Enabled: {enabled}")
-
 # Initialize client using singleton pattern
 if enabled:
+    logger.debug(f"🔍 Langfuse Environment Check: Public Key: Set, Secret Key: Set, Host: {host}")
     logger.debug(f"🔍 Initializing Langfuse with host: {host}")
     try:
         # Initialize with constructor arguments (recommended approach)
@@ -142,7 +137,7 @@ if enabled:
             langfuse = MockLangfuse()
         enabled = False
 else:
-    logger.debug("⚠️ Langfuse disabled - missing LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY")
+    # Langfuse disabled - missing LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY
     # Create mock client for disabled state
     class MockLangfuse:
         def __init__(self):
