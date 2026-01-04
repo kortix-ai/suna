@@ -1,6 +1,13 @@
 import { useCallback, useRef } from "react";
-import { validateMessage, ChunkMessage, StatusMessage, ToolCallMessage, ToolOutputMessage, MessageType } from "./types";
-import { UnifiedMessage } from "@/components/thread/types";
+import {
+  validateStreamMessage,
+  StreamMessageType,
+  type ChunkMessage,
+  type StatusMessage,
+  type ToolCallStreamMessage,
+  type ToolOutputMessage,
+  type UnifiedMessage,
+} from "@agentpress/shared";
 import { UseStreamStateResult } from "./use-stream-state";
 import { UseToolCallAccumulatorResult } from "./use-tool-call-accumulator";
 
@@ -31,23 +38,24 @@ export function useStreamMessages(
   
   const handleMessage = useCallback((data: string) => {
     try {
-      let jsonData: any;
+      let jsonData: unknown;
       if (data.startsWith("data: ")) {
         jsonData = JSON.parse(data.slice(6));
       } else {
         jsonData = JSON.parse(data);
       }
       
-      const message = validateMessage(jsonData);
+      const message = validateStreamMessage(jsonData);
       if (!message) {
-        if (jsonData.type === "assistant" && jsonData.content) {
-          const contentObj = typeof jsonData.content === "string" ? JSON.parse(jsonData.content) : jsonData.content;
+        const obj = jsonData as Record<string, unknown>;
+        if (obj.type === "assistant" && obj.content) {
+          const contentObj = typeof obj.content === "string" ? JSON.parse(obj.content) : obj.content;
           if (contentObj.content) {
             const chunk: ChunkMessage = {
-              type: MessageType.CHUNK,
+              type: StreamMessageType.CHUNK,
               content: contentObj.content,
-              thread_id: jsonData.thread_id || "",
-              sequence: jsonData.sequence,
+              thread_id: (obj.thread_id as string) || "",
+              sequence: obj.sequence as number | undefined,
             };
             state.appendChunk(chunk);
             callbacksRef.current.onAssistantChunk?.({ content: contentObj.content });
@@ -57,14 +65,14 @@ export function useStreamMessages(
       }
       
       switch (message.type) {
-        case MessageType.CHUNK:
+        case StreamMessageType.CHUNK:
           const chunk = message as ChunkMessage;
           state.appendChunk(chunk);
           callbacksRef.current.onAssistantChunk?.({ content: chunk.content });
           state.setStatus("streaming");
           break;
           
-        case MessageType.STATUS:
+        case StreamMessageType.STATUS:
           const statusMsg = message as StatusMessage;
           state.setStatus(statusMsg.status);
           callbacksRef.current.onStatusChange?.(statusMsg.status);
@@ -74,15 +82,15 @@ export function useStreamMessages(
           }
           break;
           
-        case MessageType.TOOL_CALL:
-          const toolCallMsg = message as ToolCallMessage;
+        case StreamMessageType.TOOL_CALL:
+          const toolCallMsg = message as ToolCallStreamMessage;
           toolCalls.handleToolCallDelta(toolCallMsg);
           if (toolCalls.current) {
             callbacksRef.current.onToolCallChunk?.(toolCalls.current);
           }
           break;
           
-        case MessageType.TOOL_OUTPUT:
+        case StreamMessageType.TOOL_OUTPUT:
           const toolOutputMsg = message as ToolOutputMessage;
           toolCalls.handleToolOutput(toolOutputMsg);
           callbacksRef.current.onToolOutputStream?.({
@@ -93,18 +101,18 @@ export function useStreamMessages(
           });
           break;
           
-        case MessageType.LLM_RESPONSE_START:
+        case StreamMessageType.LLM_RESPONSE_START:
           callbacksRef.current.onAssistantStart?.();
           break;
           
-        case MessageType.ERROR:
-          const errorMsg = message as any;
+        case StreamMessageType.ERROR:
+          const errorMsg = message as { error?: string; message?: string };
           state.setError(errorMsg.error || errorMsg.message || "Unknown error");
           state.setStatus("error");
           callbacksRef.current.onError?.(errorMsg.error || errorMsg.message || "Unknown error");
           break;
           
-        case MessageType.PING:
+        case StreamMessageType.PING:
           break;
       }
     } catch (error) {

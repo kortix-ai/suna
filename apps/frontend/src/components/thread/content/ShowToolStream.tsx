@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { CircleDashed } from 'lucide-react';
 import { getToolIcon, getUserFriendlyToolName, extractPrimaryParam } from '@/components/thread/utils';
 import { AppIcon } from '../tool-views/shared/AppIcon';
+import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
 
 // Media generation tools that show shimmer preview
 const MEDIA_GENERATION_TOOLS = new Set([
@@ -199,6 +200,38 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
         return { html: rawContent, plainText: rawContent };
     };
 
+    // Determine which field to extract for smooth animation based on tool type
+    const smoothFieldPath = useMemo(() => {
+        if (isEditFile) return 'code_edit';
+        if (isCreateFile || isFullFileRewrite) return 'file_contents';
+        if (STREAMABLE_TOOLS.COMMAND_TOOLS.has(toolName || '')) return 'command';
+        if (STREAMABLE_TOOLS.BROWSER_TOOLS.has(toolName || '')) return 'url';
+        if (STREAMABLE_TOOLS.WEB_TOOLS.has(toolName || '')) return 'query';
+        return 'content';
+    }, [toolName, isEditFile, isCreateFile, isFullFileRewrite]);
+
+    // Get raw arguments from tool call for smooth animation
+    const rawToolArguments = useMemo(() => {
+        if (effectiveToolCall?.arguments) {
+            return effectiveToolCall.arguments;
+        }
+        // Fallback to parsing from content
+        try {
+            const parsed = JSON.parse(throttledContent);
+            return parsed.arguments || parsed;
+        } catch {
+            return throttledContent;
+        }
+    }, [effectiveToolCall, throttledContent]);
+
+    // Apply smooth animation to tool content (120 chars/sec for snappy code display)
+    const { displayedValue: smoothFieldValue, isAnimating: isFieldAnimating } = useSmoothToolField(
+        rawToolArguments,
+        smoothFieldPath,
+        120,
+        !isCompleted // Only animate while streaming (not completed)
+    );
+
     // Extract streaming content from JSON or plain text
     const streamingContent = useMemo(() => {
         if (!throttledContent) return { html: '', plainText: '' };
@@ -210,18 +243,23 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
             // For file operations, extract file_contents or code_edit
             if (STREAMABLE_TOOLS.FILE_OPERATIONS.has(toolName || '')) {
                 if (isEditFile && parsed.code_edit) {
-                    return { html: parsed.code_edit, plainText: parsed.code_edit };
+                    // Use smooth value if available and animating
+                    const value = isFieldAnimating ? smoothFieldValue : parsed.code_edit;
+                    return { html: value, plainText: value };
                 }
                 if ((isCreateFile || isFullFileRewrite) && parsed.file_contents) {
-                    return { html: parsed.file_contents, plainText: parsed.file_contents };
+                    const value = isFieldAnimating ? smoothFieldValue : parsed.file_contents;
+                    return { html: value, plainText: value };
                 }
                 if (parsed.arguments) {
                     const args = typeof parsed.arguments === 'string' ? JSON.parse(parsed.arguments) : parsed.arguments;
                     if (isEditFile && args.code_edit) {
-                        return { html: args.code_edit, plainText: args.code_edit };
+                        const value = isFieldAnimating ? smoothFieldValue : args.code_edit;
+                        return { html: value, plainText: value };
                     }
                     if ((isCreateFile || isFullFileRewrite) && args.file_contents) {
-                        return { html: args.file_contents, plainText: args.file_contents };
+                        const value = isFieldAnimating ? smoothFieldValue : args.file_contents;
+                        return { html: value, plainText: value };
                     }
                 }
             }
@@ -229,17 +267,20 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
             // Command tools - extract command
             if (STREAMABLE_TOOLS.COMMAND_TOOLS.has(toolName || '')) {
                 if (parsed.command) {
-                    return { html: `<strong>command:</strong> ${parsed.command}`, plainText: `command: ${parsed.command}` };
+                    const value = isFieldAnimating ? smoothFieldValue : parsed.command;
+                    return { html: `<strong>command:</strong> ${value}`, plainText: `command: ${value}` };
                 }
                 if (parsed.arguments?.command) {
-                    return { html: `<strong>command:</strong> ${parsed.arguments.command}`, plainText: `command: ${parsed.arguments.command}` };
+                    const value = isFieldAnimating ? smoothFieldValue : parsed.arguments.command;
+                    return { html: `<strong>command:</strong> ${value}`, plainText: `command: ${value}` };
                 }
             }
 
             // Browser tools
             if (STREAMABLE_TOOLS.BROWSER_TOOLS.has(toolName || '')) {
                 if (parsed.url) {
-                    return { html: `<strong>url:</strong> ${parsed.url}`, plainText: `url: ${parsed.url}` };
+                    const value = isFieldAnimating ? smoothFieldValue : parsed.url;
+                    return { html: `<strong>url:</strong> ${value}`, plainText: `url: ${value}` };
                 }
                 if (parsed.action) {
                     return { html: `<strong>action:</strong> ${parsed.action}`, plainText: `action: ${parsed.action}` };
@@ -252,7 +293,8 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
             // Web tools
             if (STREAMABLE_TOOLS.WEB_TOOLS.has(toolName || '')) {
                 if (parsed.query) {
-                    return { html: `<strong>query:</strong> ${parsed.query}`, plainText: `query: ${parsed.query}` };
+                    const value = isFieldAnimating ? smoothFieldValue : parsed.query;
+                    return { html: `<strong>query:</strong> ${value}`, plainText: `query: ${value}` };
                 }
                 if (parsed.url) {
                     return { html: `<strong>url:</strong> ${parsed.url}`, plainText: `url: ${parsed.url}` };
@@ -273,7 +315,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
 
         // Fallback: return content as-is
         return { html: throttledContent, plainText: throttledContent };
-    }, [throttledContent, toolName, isEditFile, isCreateFile, isFullFileRewrite]);
+    }, [throttledContent, toolName, isEditFile, isCreateFile, isFullFileRewrite, smoothFieldValue, isFieldAnimating]);
 
     // Show streaming content for all streamable tools with delayed transitions
     useEffect(() => {

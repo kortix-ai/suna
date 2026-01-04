@@ -1,7 +1,5 @@
 import { useState, useRef, useCallback, useMemo } from "react";
-import { ChunkMessage } from "./types";
-
-type StreamStatus = "idle" | "connecting" | "streaming" | "completed" | "stopped" | "failed" | "error";
+import type { ChunkMessage, StreamStatus } from "@agentpress/shared";
 
 export interface UseStreamStateResult {
   status: StreamStatus;

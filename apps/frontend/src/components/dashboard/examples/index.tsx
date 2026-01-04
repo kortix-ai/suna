@@ -168,7 +168,7 @@ export const Examples = ({
               >
                 <div className="flex items-center gap-2">
                   <div className="flex-shrink-0">
-                    {React.cloneElement(prompt.icon as React.ReactElement, { size: 14 })}
+                    {React.cloneElement(prompt.icon as React.ReactElement<{ size?: number }>, { size: 14 })}
                   </div>
                   <span className="whitespace-nowrap">{prompt.title}</span>
                 </div>
