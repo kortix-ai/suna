@@ -1,68 +1,17 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
 import Image from 'next/image';
-import { cn } from '@/lib/utils';
-import { useIsMobile } from '@/hooks/utils';
 
 export function WordmarkFooter() {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
-    const [isHovered, setIsHovered] = useState(false);
-    const isMobile = useIsMobile();
-
-    useEffect(() => {
-        if (isMobile) return; // Skip mouse tracking on mobile
-
-        const handleGlobalMouseMove = (e: MouseEvent) => {
-            if (!containerRef.current) return;
-            const rect = containerRef.current.getBoundingClientRect();
-            setMousePosition({
-                x: e.clientX - rect.left,
-                y: e.clientY - rect.top,
-            });
-        };
-
-        window.addEventListener('mousemove', handleGlobalMouseMove);
-        return () => window.removeEventListener('mousemove', handleGlobalMouseMove);
-    }, [isMobile]);
 
     return (
-        <section className="w-full px-6 animate-in fade-in-0 duration-700 fill-mode-both">
-            <div
-                ref={containerRef}
-                onMouseEnter={() => !isMobile && setIsHovered(true)}
-                onMouseLeave={() => !isMobile && setIsHovered(false)}
-                className="relative w-full mx-auto overflow-hidden md:px-12 lg:px-16 md:pt-32"
-                style={{
-                    // @ts-expect-error - CSS custom properties are not in CSSProperties type
-                    '--mouse-x': `${mousePosition.x}px`,
-                    '--mouse-y': `${mousePosition.y}px`,
-                }}
-            >
-                {/* Background */}
-                <div className="absolute inset-0 bg-background" />
-
-                {/* Wordmark - hidden by spotlight on hover (desktop) or static gradient (mobile) */}
-                <div className="relative w-full md:aspect-[1150/344] aspect-square p-0 sm:p-8 md:p-12 lg:p-16">
-                    <div
-                        className="absolute inset-0 sm:p-8 md:p-12 lg:p-16"
-                        style={{
-                            maskImage: isMobile
-                                ? 'linear-gradient(to bottom, black 0%, black 20%, transparent 100%, transparent 50%, black 100%, black 10%)'
-                                : isHovered
-                                    ? `radial-gradient(1500px circle at var(--mouse-x) var(--mouse-y), transparent, black 40%)`
-                                    : 'none',
-                            WebkitMaskImage: isMobile
-                                ? 'linear-gradient(to bottom, black 0%, black 20%, transparent 100%, transparent 50%, black 100%, black 10%)'
-                                : isHovered
-                                    ? `radial-gradient(1500px circle at var(--mouse-x) var(--mouse-y), transparent, black 40%)`
-                                    : 'none',
-                            transition: isMobile ? 'none' : 'mask-image 0.3s, -webkit-mask-image 0.3s',
-                        }}
-                    >
+        <section className="w-full animate-in fade-in-0 duration-700 fill-mode-both">
+            <div className="max-w-7xl mx-auto px-6 pt-16 md:pt-24">
+                {/* Wordmark */}
+                <div className="relative w-full md:aspect-[1150/344] aspect-square">
+                    <div className="absolute inset-0">
                         <div className="relative w-full h-full" style={{ isolation: 'isolate' }}>
-                            {/* Base wordmark - symbol for mobile, wordmark for desktop */}
+                            {/* Mobile: Symbol */}
                             <div className="md:hidden absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" style={{ width: '280px', height: '280px' }}>
                                 <Image
                                     src="/kortix-symbol.svg"
@@ -72,7 +21,7 @@ export function WordmarkFooter() {
                                     priority
                                     style={{ mixBlendMode: 'normal' }}
                                 />
-                                {/* Grain texture overlay - clipped to symbol shape */}
+                                {/* Grain texture overlay */}
                                 <div
                                     className="absolute inset-0 pointer-events-none"
                                     style={{
@@ -92,6 +41,7 @@ export function WordmarkFooter() {
                                     }}
                                 />
                             </div>
+                            {/* Desktop: Full wordmark */}
                             <Image
                                 src="/wordmark.svg"
                                 alt="Kortix"
@@ -100,7 +50,7 @@ export function WordmarkFooter() {
                                 priority
                                 style={{ mixBlendMode: 'normal' }}
                             />
-                            {/* Grain texture overlay - clipped to wordmark shape */}
+                            {/* Grain texture overlay for desktop */}
                             <div
                                 className="absolute inset-0 pointer-events-none md:block hidden"
                                 style={{
@@ -146,4 +96,3 @@ export function WordmarkFooter() {
         </section>
     );
 }
-

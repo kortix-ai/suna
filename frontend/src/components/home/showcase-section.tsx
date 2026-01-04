@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
@@ -15,6 +15,37 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { Computer } from 'lucide-react';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
+
+// Hook for scroll-triggered visibility
+function useScrollReveal() {
+    const [visibleCards, setVisibleCards] = useState<Set<number>>(new Set());
+    const refs = useRef<(HTMLDivElement | null)[]>([]);
+
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    const index = Number(entry.target.getAttribute('data-index'));
+                    if (entry.isIntersecting) {
+                        setVisibleCards((prev) => new Set([...prev, index]));
+                    }
+                });
+            },
+            {
+                threshold: 0.15,
+                rootMargin: '0px 0px -10% 0px',
+            }
+        );
+
+        refs.current.forEach((ref) => {
+            if (ref) observer.observe(ref);
+        });
+
+        return () => observer.disconnect();
+    }, []);
+
+    return { visibleCards, refs };
+}
 
 interface WorkerType {
     id: string;
@@ -82,6 +113,7 @@ export function ShowCaseSection() {
     const t = useTranslations('showcase');
     const [activeWorker, setActiveWorker] = useState<string>(workerConfigs[0].id);
     const isMobile = useIsMobile();
+    const { visibleCards, refs } = useScrollReveal();
 
     const workers: WorkerType[] = workerConfigs.map((config) => ({
         ...config,
@@ -114,13 +146,22 @@ export function ShowCaseSection() {
                     </h2>
                 </div>
 
-                {/* Workers Grid */}
-                <div className="space-y-4 sm:space-y-6">
+                {/* Workers Grid - Scroll reveal cards */}
+                <div className="space-y-6 sm:space-y-8">
                     {workers.map((worker, index) => (
-                        <Card
+                        <div
                             key={worker.id}
-                            className="transition-all cursor-pointer !rounded-[20px] sm:!rounded-[24px] !p-4 sm:!p-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both"
-                            style={{ animationDelay: `${100 + index * 100}ms` }}
+                            ref={(el) => { refs.current[index] = el; }}
+                            data-index={index}
+                            className={cn(
+                                "transition-all duration-700 ease-out",
+                                visibleCards.has(index)
+                                    ? "opacity-100 translate-y-0"
+                                    : "opacity-0 translate-y-16"
+                            )}
+                        >
+                        <Card
+                            className="cursor-pointer !rounded-[20px] sm:!rounded-[24px] !p-4 sm:!p-6 shadow-lg transition-shadow hover:shadow-xl"
                             onMouseEnter={() => !isMobile && setActiveWorker(worker.id)}
                             onClick={() => isMobile && setActiveWorker(worker.id)}
                         >
@@ -221,6 +262,7 @@ export function ShowCaseSection() {
                                 </div>
                             </div>
                         </Card>
+                        </div>
                     ))}
                 </div>
             </div>

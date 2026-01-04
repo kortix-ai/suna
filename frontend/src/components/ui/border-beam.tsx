@@ -6,15 +6,15 @@ import { cn } from "@/lib/utils"
 
 interface BorderBeamProps {
     /**
-     * The size of the border beam.
+     * The size of the border beam (length of the glowing trail).
      */
     size?: number
     /**
-     * The duration of the border beam.
+     * The duration of the border beam animation in seconds.
      */
     duration?: number
     /**
-     * The delay of the border beam.
+     * The delay before starting the animation.
      */
     delay?: number
     /**
@@ -49,6 +49,11 @@ interface BorderBeamProps {
      * The border width of the beam.
      */
     borderWidth?: number
+    /**
+     * The border radius for the path. Should match the parent element's border radius.
+     * Defaults to 12 (matches rounded-xl).
+     */
+    borderRadius?: number
 }
 
 export const BorderBeam = ({
@@ -63,6 +68,7 @@ export const BorderBeam = ({
     reverse = false,
     initialOffset = 0,
     borderWidth = 1,
+    borderRadius = 12,
 }: BorderBeamProps) => {
     return (
         <div
@@ -75,17 +81,19 @@ export const BorderBeam = ({
         >
             <motion.div
                 className={cn(
-                    "absolute aspect-square will-change-transform",
+                    "absolute will-change-transform",
                     "bg-gradient-to-l from-[var(--color-from)] via-[var(--color-to)] to-transparent",
                     className
                 )}
                 style={
                     {
                         width: size,
-                        offsetPath: `rect(0 auto auto 0 round ${size}px)`,
+                        height: size,
+                        offsetPath: `rect(0 auto auto 0 round ${borderRadius}px)`,
                         "--color-from": colorFrom,
                         "--color-to": colorTo,
                         transform: "translateZ(0)", // Force GPU acceleration
+                        backfaceVisibility: "hidden",
                         ...style,
                     } as MotionStyle
                 }

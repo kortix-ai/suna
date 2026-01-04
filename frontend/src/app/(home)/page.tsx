@@ -11,6 +11,9 @@ const ShowCaseSection = lazy(() =>
 const WordmarkFooter = lazy(() => 
   import('@/components/home/wordmark-footer').then(mod => ({ default: mod.WordmarkFooter }))
 );
+const SimpleFooter = lazy(() => 
+  import('@/components/home/simple-footer').then(mod => ({ default: mod.SimpleFooter }))
+);
 
 // Skeleton placeholder for ShowCaseSection while loading
 function ShowCaseSkeleton() {
@@ -40,6 +43,9 @@ export default function Home() {
       </Suspense>
       <Suspense fallback={null}>
         <WordmarkFooter />
+      </Suspense>
+      <Suspense fallback={null}>
+        <SimpleFooter />
       </Suspense>
     </BackgroundAALChecker>
   );

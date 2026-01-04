@@ -3,6 +3,62 @@ import { ChevronRight } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 
+// Circular progress bar that estimates completion
+const CircularProgressBar: React.FC<{ 
+  elapsedSeconds: number; 
+  size?: number; 
+  className?: string;
+}> = ({ 
+  elapsedSeconds,
+  size = 18, 
+  className 
+}) => {
+  // Estimate progress using asymptotic curve
+  // Assumes most tasks complete within 30-60 seconds
+  // Progress approaches 95% asymptotically, leaving room for actual completion
+  const expectedDuration = 45; // seconds for "average" task
+  const progress = Math.min(0.95, 1 - Math.exp(-elapsedSeconds / expectedDuration));
+  
+  const strokeWidth = 2.5;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference * (1 - progress);
+  
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      className={cn("shrink-0", className)}
+      style={{ transform: 'rotate(-90deg)' }}
+    >
+      {/* Background circle track */}
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        className="opacity-25"
+      />
+      {/* Progress arc that fills up */}
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeDasharray={circumference}
+        strokeDashoffset={strokeDashoffset}
+        className="transition-all duration-1000 ease-out"
+      />
+    </svg>
+  );
+};
+
 interface ThinkingCollapsibleProps {
   children?: React.ReactNode;
   isThinking: boolean;
@@ -14,7 +70,7 @@ export const ThinkingCollapsible: React.FC<ThinkingCollapsibleProps> = ({
   children,
   isThinking,
   startTime,
-  defaultOpen = true,
+  defaultOpen = false,
 }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -69,7 +125,7 @@ export const ThinkingCollapsible: React.FC<ThinkingCollapsibleProps> = ({
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <CollapsibleTrigger asChild>
         <button
-          className="flex items-center gap-1.5 py-1.5 group cursor-pointer hover:opacity-80 transition-opacity"
+          className="flex items-center gap-2 py-1.5 group cursor-pointer hover:opacity-80 transition-opacity"
           aria-expanded={isOpen}
         >
           <ChevronRight
@@ -78,23 +134,17 @@ export const ThinkingCollapsible: React.FC<ThinkingCollapsibleProps> = ({
               isOpen && "rotate-90"
             )}
           />
+          {isThinking && (
+            <CircularProgressBar 
+              elapsedSeconds={elapsedSeconds} 
+              size={18} 
+              className="text-muted-foreground" 
+            />
+          )}
           <span className="text-sm text-muted-foreground">
             Thinking for{' '}
             <span className="font-mono tabular-nums">{formatTime(elapsedSeconds)}</span>
           </span>
-          {isThinking && (
-            <span className="flex items-center gap-0.5 ml-1">
-              <span className="h-1 w-1 rounded-full bg-muted-foreground/60 animate-pulse" />
-              <span 
-                className="h-1 w-1 rounded-full bg-muted-foreground/60 animate-pulse" 
-                style={{ animationDelay: '150ms' }} 
-              />
-              <span 
-                className="h-1 w-1 rounded-full bg-muted-foreground/60 animate-pulse" 
-                style={{ animationDelay: '300ms' }} 
-              />
-            </span>
-          )}
         </button>
       </CollapsibleTrigger>
       

@@ -48,11 +48,67 @@ interface SunaModesPanelProps {
 
 type ModeType = 'image' | 'slides' | 'data' | 'docs' | 'canvas' | 'video' | 'research';
 
+// Color themes for each mode - carefully chosen for meaning and visual distinction
+// Slides: Warm orange - spotlight, stage, presentation energy
+// Data: Teal - analytical, growth, trust in numbers
+// Docs: Sky blue - clarity, documentation, professional
+// Canvas: Fuchsia - creative, artistic expression
+// Video: Rose/coral - record button, energy, motion
+// Research: Indigo - depth, knowledge, exploration
+// Image: Violet - imagination, visual creativity
+const modeColors: Record<ModeType, { 
+  accent: string; 
+  bg: string; 
+  border: string;
+}> = {
+  slides: { 
+    accent: 'text-orange-500', 
+    bg: 'bg-orange-500/10',
+    border: 'border-orange-500/40',
+  },
+  data: { 
+    accent: 'text-teal-500', 
+    bg: 'bg-teal-500/10',
+    border: 'border-teal-500/40',
+  },
+  docs: { 
+    accent: 'text-sky-500', 
+    bg: 'bg-sky-500/10',
+    border: 'border-sky-500/40',
+  },
+  canvas: { 
+    accent: 'text-fuchsia-500', 
+    bg: 'bg-fuchsia-500/10',
+    border: 'border-fuchsia-500/40',
+  },
+  video: { 
+    accent: 'text-rose-500', 
+    bg: 'bg-rose-500/10',
+    border: 'border-rose-500/40',
+  },
+  research: { 
+    accent: 'text-indigo-500', 
+    bg: 'bg-indigo-500/10',
+    border: 'border-indigo-500/40',
+  },
+  image: { 
+    accent: 'text-violet-500', 
+    bg: 'bg-violet-500/10',
+    border: 'border-violet-500/40',
+  },
+};
+
+interface SamplePrompt {
+  text: string;
+  thumbnail?: string;
+}
+
 interface Mode {
   id: ModeType;
   label: string;
   icon: React.ReactNode;
-  samplePrompts: string[];
+  samplePrompts: SamplePrompt[];
+  isVisual?: boolean; // If true, show prompts with thumbnail grid
   options?: {
     title: string;
     items: Array<{
@@ -77,17 +133,18 @@ const modes: Mode[] = [
     id: 'slides',
     label: 'Slides',
     icon: <Presentation className="w-4 h-4" />,
+    isVisual: true,
     samplePrompts: [
-      'Create a Series A pitch deck with market size, traction, and financial projections',
-      'Build a Q4 business review showcasing KPIs, wins, and strategic initiatives',
-      'Design a product launch presentation with demo videos and customer testimonials',
-      'Develop a sales enablement deck explaining our value prop and competitive advantages',
-      'Create an investor update highlighting key metrics and upcoming milestones',
-      'Build a customer case study presentation showing ROI and success metrics',
-      'Design an all-hands presentation covering company updates and vision',
-      'Develop a training deck for new product features and workflows',
-      'Create a conference talk about scaling engineering teams',
-      'Build a board meeting presentation with strategic recommendations',
+      { text: 'Create a Series A pitch deck with market size, traction, and financial projections', thumbnail: '/images/presentation-templates/startup-min.png' },
+      { text: 'Build a Q4 business review showcasing KPIs, wins, and strategic initiatives', thumbnail: '/images/presentation-templates/numbers_colorful-min.png' },
+      { text: 'Design a product launch presentation with demo videos and customer testimonials', thumbnail: '/images/presentation-templates/colorful-min.png' },
+      { text: 'Develop a sales enablement deck explaining our value prop and competitive advantages', thumbnail: '/images/presentation-templates/minimalist-min.png' },
+      { text: 'Create an investor update highlighting key metrics and upcoming milestones', thumbnail: '/images/presentation-templates/numbers_clean-min.png' },
+      { text: 'Build a customer case study presentation showing ROI and success metrics', thumbnail: '/images/presentation-templates/competitor_analysis_blue-min.png' },
+      { text: 'Design an all-hands presentation covering company updates and vision', thumbnail: '/images/presentation-templates/premium_black-min.png' },
+      { text: 'Develop a training deck for new product features and workflows', thumbnail: '/images/presentation-templates/textbook-min.png' },
+      { text: 'Create a conference talk about scaling engineering teams', thumbnail: '/images/presentation-templates/architect-min.png' },
+      { text: 'Build a board meeting presentation with strategic recommendations', thumbnail: '/images/presentation-templates/professor_gray-min.png' },
     ],
     options: {
       title: 'Choose a template',
@@ -117,17 +174,18 @@ const modes: Mode[] = [
     id: 'data',
     label: 'Data',
     icon: <BarChart3 className="w-4 h-4" />,
+    isVisual: true,
     samplePrompts: [
-      'Build a financial model projecting ARR growth with different pricing scenarios',
-      'Create an interactive sales dashboard tracking metrics by region and quarter',
-      'Analyze 50K customer reviews and visualize sentiment trends over time',
-      'Design a content calendar tracking campaigns with ROI and engagement charts',
-      'Build a cohort analysis showing user retention and churn patterns',
-      'Create a marketing attribution model comparing channel performance',
-      'Develop a hiring tracker with pipeline metrics and time-to-fill analysis',
-      'Build a budget planning spreadsheet with scenario modeling',
-      'Analyze website traffic data and visualize conversion funnels',
-      'Create an inventory management system with automated reorder alerts',
+      { text: 'Build a financial model projecting ARR growth with different pricing scenarios', thumbnail: '/images/landing-showcase/data.png' },
+      { text: 'Create an interactive sales dashboard tracking metrics by region and quarter', thumbnail: '/images/landing-showcase/data.png' },
+      { text: 'Analyze 50K customer reviews and visualize sentiment trends over time', thumbnail: '/images/landing-showcase/data.png' },
+      { text: 'Design a content calendar tracking campaigns with ROI and engagement charts', thumbnail: '/images/landing-showcase/data.png' },
+      { text: 'Build a cohort analysis showing user retention and churn patterns', thumbnail: '/images/landing-showcase/data.png' },
+      { text: 'Create a marketing attribution model comparing channel performance', thumbnail: '/images/landing-showcase/data.png' },
+      { text: 'Develop a hiring tracker with pipeline metrics and time-to-fill analysis', thumbnail: '/images/landing-showcase/data.png' },
+      { text: 'Build a budget planning spreadsheet with scenario modeling', thumbnail: '/images/landing-showcase/data.png' },
+      { text: 'Analyze website traffic data and visualize conversion funnels', thumbnail: '/images/landing-showcase/data.png' },
+      { text: 'Create an inventory management system with automated reorder alerts', thumbnail: '/images/landing-showcase/data.png' },
     ],
     options: {
       title: 'Choose output format',
@@ -157,17 +215,18 @@ const modes: Mode[] = [
     id: 'docs',
     label: 'Docs',
     icon: <FileText className="w-4 h-4" />,
+    isVisual: true,
     samplePrompts: [
-      'Write a comprehensive PRD for an AI-powered recommendation engine',
-      'Draft a technical architecture document for a scalable microservices platform',
-      'Create a go-to-market strategy document for our Q2 product launch',
-      'Develop a 90-day onboarding playbook for engineering managers',
-      'Write an API documentation guide with examples and best practices',
-      'Create a company handbook covering culture, policies, and benefits',
-      'Draft a data privacy policy compliant with GDPR and CCPA',
-      'Develop a customer success playbook for SaaS enterprise accounts',
-      'Write a security incident response plan with escalation procedures',
-      'Create a comprehensive style guide for brand and content',
+      { text: 'Write a comprehensive PRD for an AI-powered recommendation engine', thumbnail: '/images/landing-showcase/docs.png' },
+      { text: 'Draft a technical architecture document for a scalable microservices platform', thumbnail: '/images/landing-showcase/docs.png' },
+      { text: 'Create a go-to-market strategy document for our Q2 product launch', thumbnail: '/images/landing-showcase/docs.png' },
+      { text: 'Develop a 90-day onboarding playbook for engineering managers', thumbnail: '/images/landing-showcase/docs.png' },
+      { text: 'Write an API documentation guide with examples and best practices', thumbnail: '/images/landing-showcase/docs.png' },
+      { text: 'Create a company handbook covering culture, policies, and benefits', thumbnail: '/images/landing-showcase/docs.png' },
+      { text: 'Draft a data privacy policy compliant with GDPR and CCPA', thumbnail: '/images/landing-showcase/docs.png' },
+      { text: 'Develop a customer success playbook for SaaS enterprise accounts', thumbnail: '/images/landing-showcase/docs.png' },
+      { text: 'Write a security incident response plan with escalation procedures', thumbnail: '/images/landing-showcase/docs.png' },
+      { text: 'Create a comprehensive style guide for brand and content', thumbnail: '/images/landing-showcase/docs.png' },
     ],
     options: {
       title: 'Choose a template',
@@ -187,17 +246,18 @@ const modes: Mode[] = [
     id: 'canvas',
     label: 'Canvas',
     icon: <Palette className="w-4 h-4" />,
+    isVisual: true,
     samplePrompts: [
-      'Add a tech startup banner to canvas with futuristic city skyline',
-      'Create a coffee brand logo on canvas using earthy minimalist style',
-      'Add my product photo to canvas and remove its background',
-      'Design a renewable energy infographic on canvas with flat icons',
-      'Create a sci-fi book cover on canvas with cyberpunk aesthetics',
-      'Add a YouTube thumbnail to canvas for productivity tips video',
-      'Build a luxury fashion mood board on canvas for millennials',
-      'Design an elegant wedding invitation on canvas with floral patterns',
-      'Add my portrait to canvas and apply vintage film effect',
-      'Create a music festival poster on canvas with psychedelic vibes',
+      { text: 'Add a tech startup banner to canvas with futuristic city skyline', thumbnail: '/images/image-styles/digital_art_cyberpunk-min.png' },
+      { text: 'Create a coffee brand logo on canvas using earthy minimalist style', thumbnail: '/images/image-styles/minimalist_coffee-min.png' },
+      { text: 'Add my product photo to canvas and remove its background', thumbnail: '/images/canvas/remove-bg.png' },
+      { text: 'Design a renewable energy infographic on canvas with flat icons', thumbnail: '/images/image-styles/geometric_crystal-min.png' },
+      { text: 'Create a sci-fi book cover on canvas with cyberpunk aesthetics', thumbnail: '/images/image-styles/neon_jellyfish-min.png' },
+      { text: 'Add a YouTube thumbnail to canvas for productivity tips video', thumbnail: '/images/canvas/create.png' },
+      { text: 'Build a luxury fashion mood board on canvas for millennials', thumbnail: '/images/image-styles/pastel_landscape-min.png' },
+      { text: 'Design an elegant wedding invitation on canvas with floral patterns', thumbnail: '/images/image-styles/watercolor_garden-min.png' },
+      { text: 'Add my portrait to canvas and apply vintage film effect', thumbnail: '/images/image-styles/vintage_diner-min.png' },
+      { text: 'Create a music festival poster on canvas with psychedelic vibes', thumbnail: '/images/image-styles/abstract_organic-min.png' },
     ],
     options: {
       title: 'Choose canvas action',
@@ -213,17 +273,18 @@ const modes: Mode[] = [
     id: 'video',
     label: 'Video',
     icon: <Video className="w-4 h-4" />,
+    isVisual: true,
     samplePrompts: [
-      'Animate my product photo rotating smoothly with studio lighting',
-      'Transform my portrait into a cinematic scene with camera movement',
-      'Generate a peaceful nature video of cherry blossoms falling slowly',
-      'Create abstract glowing particles swirling together in slow motion',
-      'Make my product float and rotate with soft shadows and reflections',
-      'Add dramatic cinematic lighting and color grading to my portrait',
-      'Generate a smooth drone shot flying through foggy mountain peaks',
-      'Create a looping video of liquid metal flowing into organic shapes',
-      'Transform my photo background into an underwater scene with light rays',
-      'Generate a futuristic cityscape video with neon lights and reflections',
+      { text: 'Animate my product photo rotating smoothly with studio lighting', thumbnail: '/images/video-styles/product.png' },
+      { text: 'Transform my portrait into a cinematic scene with camera movement', thumbnail: '/images/video-styles/cinematic.png' },
+      { text: 'Generate a peaceful nature video of cherry blossoms falling slowly', thumbnail: '/images/video-styles/nature.png' },
+      { text: 'Create abstract glowing particles swirling together in slow motion', thumbnail: '/images/video-styles/abstract.png' },
+      { text: 'Make my product float and rotate with soft shadows and reflections', thumbnail: '/images/video-styles/product.png' },
+      { text: 'Add dramatic cinematic lighting and color grading to my portrait', thumbnail: '/images/video-styles/person.png' },
+      { text: 'Generate a smooth drone shot flying through foggy mountain peaks', thumbnail: '/images/video-styles/nature.png' },
+      { text: 'Create a looping video of liquid metal flowing into organic shapes', thumbnail: '/images/video-styles/abstract.png' },
+      { text: 'Transform my photo background into an underwater scene with light rays', thumbnail: '/images/video-styles/animation.png' },
+      { text: 'Generate a futuristic cityscape video with neon lights and reflections', thumbnail: '/images/video-styles/cinematic.png' },
     ],
     options: {
       title: 'Choose video style',
@@ -241,39 +302,41 @@ const modes: Mode[] = [
     id: 'research',
     label: 'Research',
     icon: <Search className="w-4 h-4" />,
+    isVisual: true,
     samplePrompts: [
-      'Analyze emerging trends in quantum computing and potential business applications',
-      'Research top 10 competitors in the AI-powered CRM space with feature comparison',
-      'Investigate regulatory requirements for launching a fintech app in the EU',
-      'Compile market analysis on electric vehicle adoption rates across major markets',
-      'Study the impact of remote work on commercial real estate demand in major cities',
-      'Research Web3 adoption patterns among Fortune 500 companies',
-      'Analyze consumer sentiment towards sustainable fashion brands',
-      'Investigate the latest developments in gene therapy for rare diseases',
-      'Study pricing strategies of successful D2C subscription box companies',
-      'Research the competitive landscape of AI-powered cybersecurity solutions',
+      { text: 'Analyze emerging trends in quantum computing and potential business applications', thumbnail: '/images/landing-showcase/research.png' },
+      { text: 'Research top 10 competitors in the AI-powered CRM space with feature comparison', thumbnail: '/images/landing-showcase/research.png' },
+      { text: 'Investigate regulatory requirements for launching a fintech app in the EU', thumbnail: '/images/landing-showcase/research.png' },
+      { text: 'Compile market analysis on electric vehicle adoption rates across major markets', thumbnail: '/images/landing-showcase/research.png' },
+      { text: 'Study the impact of remote work on commercial real estate demand in major cities', thumbnail: '/images/landing-showcase/research.png' },
+      { text: 'Research Web3 adoption patterns among Fortune 500 companies', thumbnail: '/images/landing-showcase/research.png' },
+      { text: 'Analyze consumer sentiment towards sustainable fashion brands', thumbnail: '/images/landing-showcase/research.png' },
+      { text: 'Investigate the latest developments in gene therapy for rare diseases', thumbnail: '/images/landing-showcase/research.png' },
+      { text: 'Study pricing strategies of successful D2C subscription box companies', thumbnail: '/images/landing-showcase/research.png' },
+      { text: 'Research the competitive landscape of AI-powered cybersecurity solutions', thumbnail: '/images/landing-showcase/research.png' },
     ],
   },
   {
     id: 'image',
     label: 'Image',
     icon: <ImageIcon className="w-4 h-4" />,
+    isVisual: true,
     samplePrompts: [
-      'A majestic golden eagle soaring through misty mountain peaks at sunrise with dramatic lighting',
-      'Close-up portrait of a fashion model with avant-garde makeup, studio lighting, high contrast shadows',
-      'Cozy Scandinavian living room with natural wood furniture, indoor plants, and soft morning sunlight',
-      'Futuristic cyberpunk street market at night with neon signs, rain-slicked pavement, and holographic displays',
-      'Elegant product photography of luxury perfume bottle on marble surface with soft reflections',
-      'Whimsical floating islands connected by rope bridges in a pastel sky with dreamy clouds',
-      'Macro close-up of morning dew drops on vibrant flower petals with bokeh background',
-      'Modern workspace desk setup with laptop, coffee, notebook, and succulent plants from above',
-      'Mystical forest path with ancient trees, glowing fireflies, and ethereal light beams through fog',
-      'Architectural detail of contemporary glass building facade with geometric patterns and reflections',
-      'Vibrant street food vendor stall with colorful ingredients, steam rising, and warm lighting',
-      'Serene Japanese zen garden with raked sand, moss-covered stones, and cherry blossom petals',
-      'Dynamic action shot of athlete mid-jump against dramatic sunset sky, silhouette effect',
-      'Rustic farmhouse kitchen with copper pots, fresh herbs, wooden cutting boards, and natural textures',
-      'Abstract fluid art with swirling metallic gold, deep blue, and emerald green organic patterns',
+      { text: 'A majestic golden eagle soaring through misty mountain peaks at sunrise with dramatic lighting', thumbnail: '/images/image-styles/photorealistic_eagle-min.png' },
+      { text: 'Close-up portrait of a fashion model with avant-garde makeup, studio lighting, high contrast shadows', thumbnail: '/images/image-styles/vintage_diner-min.png' },
+      { text: 'Cozy Scandinavian living room with natural wood furniture, indoor plants, and soft morning sunlight', thumbnail: '/images/image-styles/isometric_bedroom-min.png' },
+      { text: 'Futuristic cyberpunk street market at night with neon signs, rain-slicked pavement, and holographic displays', thumbnail: '/images/image-styles/digital_art_cyberpunk-min.png' },
+      { text: 'Elegant product photography of luxury perfume bottle on marble surface with soft reflections', thumbnail: '/images/image-styles/minimalist_coffee-min.png' },
+      { text: 'Whimsical floating islands connected by rope bridges in a pastel sky with dreamy clouds', thumbnail: '/images/image-styles/surreal_islands-min.png' },
+      { text: 'Macro close-up of morning dew drops on vibrant flower petals with bokeh background', thumbnail: '/images/image-styles/watercolor_garden-min.png' },
+      { text: 'Modern workspace desk setup with laptop, coffee, notebook, and succulent plants from above', thumbnail: '/images/image-styles/minimalist_coffee-min.png' },
+      { text: 'Mystical forest path with ancient trees, glowing fireflies, and ethereal light beams through fog', thumbnail: '/images/image-styles/anime_forest-min.png' },
+      { text: 'Architectural detail of contemporary glass building facade with geometric patterns and reflections', thumbnail: '/images/image-styles/geometric_crystal-min.png' },
+      { text: 'Vibrant street food vendor stall with colorful ingredients, steam rising, and warm lighting', thumbnail: '/images/image-styles/oil_painting_villa-min.png' },
+      { text: 'Serene Japanese zen garden with raked sand, moss-covered stones, and cherry blossom petals', thumbnail: '/images/image-styles/impressionist_garden-min.png' },
+      { text: 'Dynamic action shot of athlete mid-jump against dramatic sunset sky, silhouette effect', thumbnail: '/images/image-styles/comic_book_robot-min.png' },
+      { text: 'Rustic farmhouse kitchen with copper pots, fresh herbs, wooden cutting boards, and natural textures', thumbnail: '/images/image-styles/oil_painting_villa-min.png' },
+      { text: 'Abstract fluid art with swirling metallic gold, deep blue, and emerald green organic patterns', thumbnail: '/images/image-styles/abstract_organic-min.png' },
     ],
     options: {
       title: 'Choose a style',
@@ -299,7 +362,7 @@ const modes: Mode[] = [
 ];
 
 // Helper function to get random prompts
-const getRandomPrompts = (prompts: string[], count: number): string[] => {
+const getRandomPrompts = (prompts: SamplePrompt[], count: number): SamplePrompt[] => {
   const shuffled = [...prompts].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, count);
 };
@@ -1154,29 +1217,31 @@ export function SunaModesPanel({
   const currentMode = selectedMode ? modes.find((m) => m.id === selectedMode) : null;
   const promptCount = isMobile ? 2 : 4;
   
-  // Get translated prompts for a mode
-  const getTranslatedPrompts = (modeId: string): string[] => {
+  // Get translated prompts for a mode (preserving thumbnails)
+  const getTranslatedPrompts = (modeId: string): SamplePrompt[] => {
     const mode = modes.find((m) => m.id === modeId);
     if (!mode) return [];
     
     // Use the hardcoded prompts length as the limit to avoid accessing non-existent translations
     const maxPrompts = mode.samplePrompts.length;
-    const prompts: string[] = [];
+    const prompts: SamplePrompt[] = [];
     
     for (let index = 0; index < maxPrompts; index++) {
+      const originalPrompt = mode.samplePrompts[index];
       try {
         const key = `prompts.${modeId}.${index}` as any;
-        const prompt = t(key);
+        const translatedText = t(key);
         // Check if translation exists (next-intl returns the key if missing)
-        if (!prompt || prompt === `suna.${key}` || prompt.startsWith('suna.prompts.') || prompt.includes(modeId)) {
-          // If translation is missing, use the hardcoded prompt instead
-          prompts.push(mode.samplePrompts[index]);
+        if (!translatedText || translatedText === `suna.${key}` || translatedText.startsWith('suna.prompts.') || translatedText.includes(modeId)) {
+          // If translation is missing, use the hardcoded prompt
+          prompts.push(originalPrompt);
         } else {
-          prompts.push(prompt);
+          // Use translated text but keep the original thumbnail
+          prompts.push({ text: translatedText, thumbnail: originalPrompt.thumbnail });
         }
       } catch {
         // Fallback to hardcoded prompt on error
-        prompts.push(mode.samplePrompts[index]);
+        prompts.push(originalPrompt);
       }
     }
     
@@ -1184,7 +1249,7 @@ export function SunaModesPanel({
   };
   
   // State to track current random selection of prompts
-  const [randomizedPrompts, setRandomizedPrompts] = useState<string[]>([]);
+  const [randomizedPrompts, setRandomizedPrompts] = useState<SamplePrompt[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   
   // State for PDF preview modal
@@ -1289,58 +1354,59 @@ export function SunaModesPanel({
         <div className="grid grid-cols-3 gap-2 sm:inline-flex sm:gap-2">
           {modes.map((mode) => {
             const isActive = selectedMode === mode.id;
+            const colors = modeColors[mode.id];
             return (
-              <Button
+              <motion.button
                 key={mode.id}
-                variant="outline"
-                size="sm"
                 onClick={() => onModeSelect(isActive ? null : mode.id)}
+                whileHover={{ scale: 1.03, y: -2 }}
+                whileTap={{ scale: 0.97 }}
+                transition={{ type: "spring", stiffness: 400, damping: 17 }}
                 className={cn(
-                  "h-10 flex items-center justify-center sm:justify-start gap-2 shrink-0 transition-all duration-200 rounded-xl cursor-pointer relative",
+                  // Base button styles
+                  "inline-flex items-center justify-center whitespace-nowrap text-sm font-medium",
+                  "outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+                  // Custom styles
+                  "group relative h-10 px-3 sm:px-4 gap-2 shrink-0 rounded-xl cursor-pointer overflow-hidden",
+                  "border transition-all duration-200",
                   isActive
-                    ? "bg-primary/10 text-primary border-primary hover:bg-primary/15 hover:text-primary shadow-sm"
-                    : "bg-background hover:bg-accent text-muted-foreground hover:text-foreground border-border"
+                    ? cn(
+                        colors.bg,
+                        colors.accent,
+                        colors.border
+                      )
+                    : "bg-background/80 border-border/60 text-muted-foreground hover:text-foreground hover:border-border hover:bg-accent/50"
                 )}
               >
-                {mode.icon}
-                <span>{mode.label}</span>
-              </Button>
+                {/* Subtle inner glow on hover */}
+                <div className={cn(
+                  "absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none",
+                  "bg-gradient-to-br from-white/[0.08] via-transparent to-transparent"
+                )} />
+                
+                {/* Icon with color */}
+                <span className={cn(
+                  "relative z-10 transition-colors duration-200 [&>svg]:w-4 [&>svg]:h-4",
+                  isActive ? colors.accent : "group-hover:text-foreground"
+                )}>
+                  {mode.icon}
+                </span>
+                
+                {/* Label */}
+                <span className={cn(
+                  "relative z-10 transition-colors duration-200",
+                  isActive ? colors.accent : ""
+                )}>
+                  {mode.label}
+                </span>
+              </motion.button>
             );
           })}
         </div>
       </div>
 
-      {/* Sample Prompts - Google List Style (for research only) */}
-      {selectedMode && displayedPrompts && ['research'].includes(selectedMode) && (
-        <div className="animate-in fade-in-0 zoom-in-95 duration-300">
-          <div className="flex items-center justify-between px-1 mb-2">
-            <span></span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleRefreshPrompts}
-              className="h-7 px-2 text-muted-foreground hover:text-foreground transition-colors duration-200"
-            >
-              <motion.div
-                animate={{ rotate: isRefreshing ? 360 : 0 }}
-                transition={{ duration: 0.3, ease: "easeInOut" }}
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-              </motion.div>
-            </Button>
-          </div>
-          <PromptExamples
-            prompts={displayedPrompts.map(p => ({ text: p }))}
-            onPromptClick={handlePromptSelect}
-            title={t('samplePrompts')}
-            variant="text"
-            showTitle={true}
-          />
-        </div>
-      )}
-
-      {/* Sample Prompts - Card Grid Style (for image, slides, data, docs, canvas, video) */}
-      {selectedMode && displayedPrompts && !['research'].includes(selectedMode) && (
+      {/* Sample Prompts - Visual Grid with Thumbnails */}
+      {selectedMode && displayedPrompts && displayedPrompts.length > 0 && (
         <div className="animate-in fade-in-0 zoom-in-95 duration-300">
           {/* Upgrade Banner for Video Mode - Free Users */}
           {selectedMode === 'video' && isFreeTier && (
@@ -1386,11 +1452,11 @@ export function SunaModesPanel({
               </Button>
             </div>
             <PromptExamples
-              prompts={displayedPrompts.map(p => ({ text: p }))}
+              prompts={displayedPrompts}
               onPromptClick={handlePromptSelect}
               title={t('samplePrompts')}
-              variant="card"
-              columns={2}
+              variant="visual"
+              columns={4}
               showTitle={true}
             />
           </div>
@@ -1454,7 +1520,7 @@ export function SunaModesPanel({
                     )}
                     onClick={() => handleTemplateSelect(item.id)}
                   >
-                    <div className="w-full bg-transparent rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-105 transition-all duration-200 overflow-hidden relative aspect-[4/3]">
+                    <div className="w-full bg-muted/30 rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-[1.02] transition-all duration-200 overflow-hidden relative aspect-video">
                       {item.image ? (
                         <Image 
                           src={item.image} 
