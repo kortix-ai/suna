@@ -3,6 +3,7 @@ import json
 import asyncio
 import time
 from typing import Optional, Dict, List, Any, AsyncGenerator
+from concurrent.futures import ThreadPoolExecutor
 
 from dotenv import load_dotenv
 from core.utils.config import config
@@ -21,6 +22,11 @@ from core.run.prompt_manager import PromptManager
 from core.worker.tool_output_streaming_context import get_tool_output_streaming_context
 
 load_dotenv()
+
+# Dedicated executor for setup_tools to prevent queue saturation
+# Production showed 1-6 minute queue waits when sharing default executor with other tasks
+# Separation is the key fix; thread count can be tuned based on monitoring
+_SETUP_TOOLS_EXECUTOR = ThreadPoolExecutor(max_workers=16, thread_name_prefix="setup_tools")
 
 async def _stream_status_message(status: str, message: str, metadata: Optional[Dict[str, Any]] = None) -> None:
     """Helper function to write status messages to Redis stream via streaming context."""
@@ -363,7 +369,7 @@ class AgentRunner:
             exec_time = (time.time() - exec_start) * 1000
             logger.info(f"⏱️ [EXECUTOR] Execution: {exec_time:.1f}ms")
         
-        await loop.run_in_executor(None, setup_tools_with_timing)
+        await loop.run_in_executor(_SETUP_TOOLS_EXECUTOR, setup_tools_with_timing)
         total_time = (time.time() - submit_time) * 1000
         logger.info(f"⏱️ [EXECUTOR] Total: {total_time:.1f}ms")
     
