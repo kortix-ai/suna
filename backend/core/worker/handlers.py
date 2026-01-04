@@ -124,7 +124,9 @@ async def handle_agent_run(task: AgentRunTask):
         except:
             pass
         
+        t_agent_config = time.time()
         agent_config = await load_agent_config(agent_id, account_id)
+        logger.info(f"⏱️ [HANDLER TIMING] load_agent_config: {(time.time() - t_agent_config) * 1000:.1f}ms")
         
         set_tool_output_streaming_context(
             agent_run_id=agent_run_id,
@@ -178,15 +180,19 @@ async def handle_agent_run(task: AgentRunTask):
         if redis_keys:
             await cleanup_redis_keys(agent_run_id, instance_id)
         
-        # Queue memory extraction on success
+        # Queue memory extraction on success (only if memory is enabled)
         if final_status == "completed" and account_id and client:
-            try:
-                messages_result = await client.table('messages').select('message_id').eq('thread_id', thread_id).execute()
-                if messages_result.data:
-                    message_ids = [m['message_id'] for m in messages_result.data]
-                    await dispatch_memory_extraction(thread_id, account_id, message_ids)
-            except Exception as e:
-                logger.warning(f"Failed to queue memory extraction: {e}")
+            from core.utils.config import config
+            if config.ENABLE_MEMORY:
+                try:
+                    messages_result = await client.table('messages').select('message_id').eq('thread_id', thread_id).execute()
+                    if messages_result.data:
+                        message_ids = [m['message_id'] for m in messages_result.data]
+                        await dispatch_memory_extraction(thread_id, account_id, message_ids)
+                except Exception as e:
+                    logger.warning(f"Failed to queue memory extraction: {e}")
+            else:
+                logger.debug("Memory extraction skipped: ENABLE_MEMORY is False")
         
         # Force GC
         gc.collect()
@@ -194,6 +200,13 @@ async def handle_agent_run(task: AgentRunTask):
 
 async def handle_memory_extraction(task: MemoryExtractionTask):
     """Handle memory extraction task."""
+    from core.utils.config import config
+    
+    # Early return if memory is globally disabled
+    if not config.ENABLE_MEMORY:
+        logger.debug("Memory extraction skipped: ENABLE_MEMORY is False")
+        return
+    
     thread_id = task.thread_id
     account_id = task.account_id
     message_ids = task.message_ids
@@ -249,6 +262,13 @@ async def handle_memory_extraction(task: MemoryExtractionTask):
 
 async def handle_memory_embedding(task: MemoryEmbeddingTask):
     """Handle memory embedding task."""
+    from core.utils.config import config
+    
+    # Early return if memory is globally disabled
+    if not config.ENABLE_MEMORY:
+        logger.debug("Memory embedding skipped: ENABLE_MEMORY is False")
+        return
+    
     account_id = task.account_id
     thread_id = task.thread_id
     memories = task.extracted_memories
@@ -310,6 +330,13 @@ async def handle_memory_embedding(task: MemoryEmbeddingTask):
 
 async def handle_memory_consolidation(task: MemoryConsolidationTask):
     """Handle memory consolidation."""
+    from core.utils.config import config
+    
+    # Early return if memory is globally disabled
+    if not config.ENABLE_MEMORY:
+        logger.debug("Memory consolidation skipped: ENABLE_MEMORY is False")
+        return
+    
     logger.info(f"🔄 Consolidating memories for {task.account_id}")
     # Placeholder - implement if needed
 

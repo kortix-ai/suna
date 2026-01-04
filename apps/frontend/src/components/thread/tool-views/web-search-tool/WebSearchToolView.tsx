@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { WebSearchLoadingState } from './WebSearchLoadingState';
 import { extractWebSearchData } from './_utils';
+import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
 
 export function WebSearchToolView({
   toolCall,
@@ -33,6 +34,15 @@ export function WebSearchToolView({
 }: ToolViewProps) {
   const [expandedResults, setExpandedResults] = useState<Record<number, boolean>>({});
   const [currentQueryIndex, setCurrentQueryIndex] = useState(0);
+
+  // Apply smooth text streaming for query field
+  const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
+  const { displayedValue: smoothQuery, isAnimating: isQueryAnimating } = useSmoothToolField(
+    rawArguments,
+    'query',
+    120,
+    isStreaming && !toolResult
+  );
 
   const {
     query,
@@ -51,6 +61,9 @@ export function WebSearchToolView({
     toolTimestamp,
     assistantTimestamp
   );
+
+  // Use smooth query when streaming
+  const displayQuery = isStreaming && smoothQuery ? smoothQuery : query;
 
   // Reset to first query when batch results change
   useEffect(() => {

@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
 
 export function WebScrapeToolView({
   toolCall,
@@ -64,6 +65,15 @@ export function WebScrapeToolView({
 
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
 
+  // Apply smooth text streaming for URL field
+  const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
+  const { displayedValue: smoothUrl, isAnimating: isUrlAnimating } = useSmoothToolField(
+    rawArguments,
+    'url',
+    120,
+    isStreaming && !toolResult
+  );
+
   const {
     url,
     files,
@@ -78,6 +88,9 @@ export function WebScrapeToolView({
     assistantTimestamp
   );
 
+  // Use smooth URL when streaming
+  const displayUrl = isStreaming && smoothUrl ? smoothUrl : url;
+
   const toolTitle = getToolTitle(name);
   const formatDomain = (url: string): string => {
     try {
@@ -88,7 +101,7 @@ export function WebScrapeToolView({
     }
   };
 
-  const domain = url ? formatDomain(url) : 'Unknown';
+  const domain = displayUrl ? formatDomain(displayUrl) : 'Unknown';
 
   const getFavicon = (url: string) => {
     try {
@@ -99,7 +112,7 @@ export function WebScrapeToolView({
     }
   };
 
-  const favicon = url ? getFavicon(url) : null;
+  const favicon = displayUrl || url ? getFavicon(displayUrl || url) : null;
 
   const copyFilePath = async (filePath: string) => {
     try {
@@ -154,13 +167,14 @@ export function WebScrapeToolView({
                 Extracting Content
               </h3>
               <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">
-                Analyzing and processing <span className="font-mono text-xs break-all">{domain}</span>
+                Analyzing and processing <span className="font-mono text-xs break-all">{displayUrl || domain}</span>
+                {isUrlAnimating && <span className="animate-pulse text-muted-foreground ml-1">▌</span>}
               </p>
               <Progress value={progress} className="w-full h-1" />
               <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-2">{progress}% complete</p>
             </div>
           </div>
-        ) : url ? (
+        ) : displayUrl || url ? (
           // Results State
           <ScrollArea className="h-full w-full">
             <div className="p-4 py-0 my-4">
@@ -183,8 +197,9 @@ export function WebScrapeToolView({
                       />
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="font-mono text-sm text-zinc-900 dark:text-zinc-100 truncate">{truncateString(url, 70)}</p>
+                      <p className="font-mono text-sm text-zinc-900 dark:text-zinc-100 truncate">{truncateString(displayUrl || '', 70)}</p>
                       <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{domain}</p>
+                      {isUrlAnimating && <span className="animate-pulse text-muted-foreground ml-1">▌</span>}
                     </div>
                     <Button
                       variant="ghost"
@@ -192,7 +207,7 @@ export function WebScrapeToolView({
                       className="opacity-70 group-hover:opacity-100 transition-opacity"
                       asChild
                     >
-                      <a href={url} target="_blank" rel="noopener noreferrer">
+                      <a href={displayUrl || url} target="_blank" rel="noopener noreferrer">
                         <ArrowUpRight className="w-4 h-4" />
                       </a>
                     </Button>

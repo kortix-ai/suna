@@ -14,6 +14,8 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingState } from '../shared/LoadingState';
 import { extractCommandData } from './_utils';
 import { useToolStreamStore } from '@/stores/tool-stream-store';
+import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
+import { useSmoothText } from '@/hooks/messages/useSmoothText';
 
 export function CommandToolView({
   toolCall,
@@ -45,9 +47,30 @@ export function CommandToolView({
     toolTimestamp,
     assistantTimestamp
   );
+
+  // Apply smooth text streaming for command field
+  const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
+  const { displayedValue: smoothCommand, isAnimating: isCommandAnimating } = useSmoothToolField(
+    rawArguments,
+    'command',
+    120,
+    isStreaming && !toolResult
+  );
+
+  // Apply smooth text streaming for output (use useSmoothText since output is a plain string)
+  const { text: smoothOutput, isAnimating: isOutputAnimating } = useSmoothText(
+    streamingOutput || output || '',
+    120,
+    isStreaming && isOutputStreaming && !toolResult
+  );
   
-  // Use streaming output if available during streaming, otherwise use result output
-  const displayOutput = isStreaming && streamingOutput ? streamingOutput : output;
+  // Use smooth streaming output when available, otherwise use regular streaming output or result output
+  const displayOutput = isStreaming && isOutputStreaming && smoothOutput 
+    ? smoothOutput 
+    : (isStreaming && streamingOutput ? streamingOutput : output);
+  
+  // Use smooth command when streaming
+  const displayCommand = isStreaming && smoothCommand ? smoothCommand : command;
   
   // Auto-scroll to bottom when streaming output updates
   useEffect(() => {
@@ -59,7 +82,7 @@ export function CommandToolView({
   const actualAssistantTimestamp = assistantTimestamp;
   const name = toolCall.function_name.replace(/_/g, '-');
 
-  const displayText = name === 'check-command-output' ? sessionName : command;
+  const displayText = name === 'check-command-output' ? sessionName : displayCommand;
   const displayLabel = name === 'check-command-output' ? 'Session' : 'Command';
   const displayPrefix = name === 'check-command-output' ? 'tmux:' : '$';
 
@@ -190,7 +213,8 @@ export function CommandToolView({
                     <div className="p-4 overflow-x-auto">
                       <pre className="text-xs text-foreground font-mono whitespace-pre-wrap break-words">
                         <span className="text-green-500 dark:text-green-400 font-semibold">{displayPrefix} </span>
-                        <span className="text-foreground">{command}</span>
+                        <span className="text-foreground">{displayCommand}</span>
+                        {isCommandAnimating && <span className="animate-pulse text-muted-foreground">▌</span>}
                       </pre>
                     </div>
                   </div>
@@ -215,8 +239,8 @@ export function CommandToolView({
                     </div>
                     <div className="p-4">
                       <pre className="text-xs text-foreground font-mono whitespace-pre-wrap break-words">
-                        {streamingOutput}
-                        <span className="animate-pulse text-muted-foreground">▌</span>
+                        {displayOutput}
+                        {isOutputAnimating && <span className="animate-pulse text-muted-foreground">▌</span>}
                       </pre>
                     </div>
                   </div>
@@ -254,7 +278,7 @@ export function CommandToolView({
                     <div className="p-4 overflow-x-auto">
                       <pre className="text-xs text-foreground font-mono whitespace-pre-wrap break-words">
                         <span className="text-green-500 dark:text-green-400 font-semibold">{displayPrefix} </span>
-                        <span className="text-foreground">{command}</span>
+                        <span className="text-foreground">{displayCommand}</span>
                       </pre>
                     </div>
                   </div>

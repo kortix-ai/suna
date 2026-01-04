@@ -19,6 +19,7 @@ import { LoadingState } from './shared/LoadingState';
 import { toast } from '@/lib/toast';
 import { AppIcon } from './shared/AppIcon';
 import { SmartJsonViewer } from './shared/SmartJsonViewer';
+import { useSmoothText } from '@/hooks/messages/useSmoothText';
 
 export function GenericToolView({
   toolCall,
@@ -92,10 +93,19 @@ export function GenericToolView({
     return String(content);
   };
 
-  const formattedAssistantContent = React.useMemo(
+  const rawAssistantContent = React.useMemo(
     () => parsedAssistantContent ? formatAsString(parsedAssistantContent) : null,
     [parsedAssistantContent]
   );
+
+  // Apply smooth text streaming for arguments when streaming
+  const { text: smoothAssistantContent, isAnimating: isAssistantAnimating } = useSmoothText(
+    rawAssistantContent || '',
+    120,
+    isStreaming && !toolResult && !!rawAssistantContent
+  );
+
+  const formattedAssistantContent = isStreaming && smoothAssistantContent ? smoothAssistantContent : rawAssistantContent;
 
   const formattedToolContent = React.useMemo(
     () => parsedToolContent ? formatAsString(parsedToolContent) : null,
@@ -224,6 +234,7 @@ export function GenericToolView({
                       ) : (
                         <pre className="text-xs text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words font-mono">
                           {formattedAssistantContent}
+                          {isAssistantAnimating && <span className="animate-pulse text-muted-foreground">▌</span>}
                         </pre>
                       )}
                     </div>

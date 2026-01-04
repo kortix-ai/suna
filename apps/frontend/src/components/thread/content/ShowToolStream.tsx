@@ -108,25 +108,32 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
     const stableStartTimeRef = useRef<number | null>(null);
 
+    // Throttle content updates to allow smooth streaming even when chunks arrive rapidly
+    // Increased throttle time to 150ms to better handle rapid tool call chunks
     const [throttledContent, setThrottledContent] = useState(content);
     const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const lastUpdateRef = useRef<number>(0);
+    const pendingContentRef = useRef<string>(content);
 
     useEffect(() => {
+        // Always update pending content immediately
+        pendingContentRef.current = content;
+        
         const now = Date.now();
         const timeSinceLastUpdate = now - lastUpdateRef.current;
+        const THROTTLE_MS = 150; // Increased from 100ms to allow smoother streaming
 
-        if (timeSinceLastUpdate >= 100) {
-            setThrottledContent(content);
+        if (timeSinceLastUpdate >= THROTTLE_MS) {
+            setThrottledContent(pendingContentRef.current);
             lastUpdateRef.current = now;
         } else {
             if (throttleTimeoutRef.current) {
                 clearTimeout(throttleTimeoutRef.current);
             }
             throttleTimeoutRef.current = setTimeout(() => {
-                setThrottledContent(content);
+                setThrottledContent(pendingContentRef.current);
                 lastUpdateRef.current = Date.now();
-            }, 100 - timeSinceLastUpdate);
+            }, THROTTLE_MS - timeSinceLastUpdate);
         }
 
         return () => {

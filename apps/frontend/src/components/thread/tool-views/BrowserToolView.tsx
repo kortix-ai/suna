@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { ImageLoader } from './shared/ImageLoader';
 import { JsonViewer } from './shared/JsonViewer';
 import { KortixComputerHeader } from '../kortix-computer/KortixComputerHeader';
+import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
 
 interface BrowserHeaderProps {
   isConnected: boolean;
@@ -210,9 +211,28 @@ export function BrowserToolView({
   const operation = extractBrowserOperation(name);
   const toolTitle = getToolTitle(name);
 
+  // Apply smooth text streaming for URL/instruction fields
+  const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
+  const { displayedValue: smoothUrl, isAnimating: isUrlAnimating } = useSmoothToolField(
+    rawArguments,
+    'url',
+    120,
+    isStreaming && !toolResult
+  );
+  const { displayedValue: smoothInstruction, isAnimating: isInstructionAnimating } = useSmoothToolField(
+    rawArguments,
+    'instruction',
+    120,
+    isStreaming && !toolResult
+  );
+
   // Extract data directly from structured props
   const url = toolCall.arguments?.url || toolCall.arguments?.target_url || null;
   const parameters = toolCall.arguments || null;
+
+  // Use smooth URL/instruction when streaming
+  const displayUrl = isStreaming && smoothUrl ? smoothUrl : url;
+  const displayInstruction = isStreaming && smoothInstruction ? smoothInstruction : parameters?.instruction;
 
   // Use computed values from useMemo
   const screenshotUrlFinal = computedValues.screenshotUrlFinal;
@@ -328,19 +348,32 @@ export function BrowserToolView({
                   ? 'Browser action in progress...'
                   : 'Screenshot will appear here when available.'}
               </p>
-              {url && (
+              {(displayUrl || url) && (
                 <div className="mt-4">
+                  <div className="mb-2">
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 font-mono break-all">
+                      {displayUrl || url}
+                      {isUrlAnimating && <span className="animate-pulse text-muted-foreground ml-1">▌</span>}
+                    </p>
+                  </div>
                   <Button
                     variant="outline"
                     size="sm"
                     className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 shadow-sm hover:shadow-md transition-shadow"
                     asChild
                   >
-                    <a href={url} target="_blank" rel="noopener noreferrer">
+                    <a href={displayUrl || url} target="_blank" rel="noopener noreferrer">
                       <ExternalLink className="h-3.5 w-3.5 mr-2" />
                       Visit URL
                     </a>
                   </Button>
+                </div>
+              )}
+              {displayInstruction && (
+                <div className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                  <span className="font-medium">Instruction: </span>
+                  <span className="font-mono">{displayInstruction}</span>
+                  {isInstructionAnimating && <span className="animate-pulse text-muted-foreground ml-1">▌</span>}
                 </div>
               )}
             </div>
@@ -356,9 +389,10 @@ export function BrowserToolView({
               {operation}
             </Badge>
           )}
-          {url && (
+          {(displayUrl || url) && (
             <span className="text-xs truncate max-w-[200px] hidden sm:inline-block">
-              {url}
+              {displayUrl || url}
+              {isUrlAnimating && <span className="animate-pulse text-muted-foreground ml-1">▌</span>}
             </span>
           )}
         </div>

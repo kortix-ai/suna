@@ -13,69 +13,6 @@ from core.utils.logger import logger
 
 class PromptManager:
     @staticmethod
-    async def build_minimal_prompt(agent_config: Optional[dict], tool_registry=None, mcp_loader=None, user_id: Optional[str] = None, thread_id: Optional[str] = None, client=None) -> Tuple[dict, Optional[dict]]:
-        if agent_config and agent_config.get('system_prompt'):
-            content = agent_config['system_prompt'].strip()
-        else:
-            from core.prompts.core_prompt import get_core_system_prompt
-            content = get_core_system_prompt()
-        
-        content = PromptManager._append_datetime_info(content)
-        
-        content += """
-
-⚠️ BOOTSTRAP MODE - FAST START:
-You are currently in fast-start mode with all core tools preloaded and ready NOW:
-
-✅ Ready immediately (no initialize_tools needed):
-   • Files & Shell: sb_files_tool, sb_shell_tool, sb_git_sync
-   • Search: web_search_tool, image_search_tool
-   • Images: sb_vision_tool (view/analyze), sb_image_edit_tool (generate/edit)
-   • Web: browser_tool (interactive browsing)
-   • Deployment: sb_upload_file_tool, sb_expose_tool
-   • Communication: message_tool, task_list_tool, expand_msg_tool
-
-⏳ Advanced tools available via initialize_tools():
-   • Content: sb_presentation_tool, sb_canvas_tool
-   • Research: people_search_tool, company_search_tool, paper_search_tool
-   • Data: apify_tool, sb_kb_tool
-
-If you need specialized tools, use initialize_tools() to load them.
-If relevant context seems missing, ask a clarifying question.
-
-"""
-        
-        preloaded_guides = PromptManager._get_preloaded_tool_guides()
-        if preloaded_guides:
-            content += preloaded_guides
-        
-        # Get agent_id for fresh config loading
-        agent_id = agent_config.get('agent_id') if agent_config else None
-        
-        content = await PromptManager._append_jit_mcp_info(content, mcp_loader, agent_id, user_id)
-        
-        # Bootstrap mode: Skip KB and user context for fastest TTFT
-        # These will be added in enrichment phase after first token
-        # Only fetch memory and file context (minimal overhead)
-        memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
-        file_task = PromptManager._fetch_file_context(thread_id)
-        
-        memory_data, file_data = await asyncio.gather(memory_task, file_task)
-        
-        system_message = {"role": "system", "content": content}
-        
-        context_parts = []
-        if memory_data:
-            context_parts.append(f"[CONTEXT - User Memory]\n{memory_data}\n[END CONTEXT]")
-        if file_data:
-            context_parts.append(f"[CONTEXT - Attached Files]\n{file_data}\n[END CONTEXT]")
-        
-        if context_parts:
-            return system_message, {"role": "user", "content": "\n\n".join(context_parts)}
-        
-        return system_message, None
-    
-    @staticmethod
     async def build_system_prompt(model_name: str, agent_config: Optional[dict], 
                                   thread_id: str, 
                                   mcp_wrapper_instance: Optional[MCPToolWrapper],
@@ -86,15 +23,23 @@ If relevant context seems missing, ask a clarifying question.
                                   use_dynamic_tools: bool = True,
                                   mcp_loader=None) -> Tuple[dict, Optional[dict]]:
         
+        build_start = time.time()
+        
         if agent_config and agent_config.get('system_prompt'):
             system_content = agent_config['system_prompt'].strip()
         else:
             from core.prompts.core_prompt import get_core_system_prompt
             system_content = get_core_system_prompt()
         
+        t1 = time.time()
         system_content = PromptManager._build_base_prompt(system_content, use_dynamic_tools)
-        system_content = await PromptManager._append_builder_tools_prompt(system_content, agent_config)
+        logger.debug(f"⏱️ [PROMPT TIMING] _build_base_prompt: {(time.time() - t1) * 1000:.1f}ms")
         
+        t2 = time.time()
+        system_content = await PromptManager._append_builder_tools_prompt(system_content, agent_config)
+        logger.debug(f"⏱️ [PROMPT TIMING] _append_builder_tools_prompt: {(time.time() - t2) * 1000:.1f}ms")
+        
+        # Start parallel fetch tasks
         kb_task = PromptManager._fetch_knowledge_base(agent_config, client)
         user_context_task = PromptManager._fetch_user_context_data(user_id, client)
         memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
@@ -103,12 +48,22 @@ If relevant context seems missing, ask a clarifying question.
         # Get agent_id for fresh config loading
         agent_id = agent_config.get('agent_id') if agent_config else None
         
+        t3 = time.time()
         system_content = await PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance, agent_id, user_id)
+        logger.debug(f"⏱️ [PROMPT TIMING] _append_mcp_tools_info: {(time.time() - t3) * 1000:.1f}ms")
+        
+        t4 = time.time()
         system_content = await PromptManager._append_jit_mcp_info(system_content, mcp_loader, agent_id, user_id)
+        logger.debug(f"⏱️ [PROMPT TIMING] _append_jit_mcp_info: {(time.time() - t4) * 1000:.1f}ms")
+        
         system_content = PromptManager._append_xml_tool_calling_instructions(system_content, xml_tool_calling, tool_registry)
         system_content = PromptManager._append_datetime_info(system_content)
         
+        t5 = time.time()
         kb_data, user_context_data, memory_data, file_data = await asyncio.gather(kb_task, user_context_task, memory_task, file_task)
+        logger.debug(f"⏱️ [PROMPT TIMING] parallel fetches (kb/user_context/memory/file): {(time.time() - t5) * 1000:.1f}ms")
+        
+        logger.info(f"⏱️ [PROMPT TIMING] Total build_system_prompt: {(time.time() - build_start) * 1000:.1f}ms")
         
         if kb_data:
             system_content += kb_data
