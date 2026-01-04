@@ -1,17 +1,21 @@
 """
-Queue metrics service for monitoring Temporal workflows.
+Queue metrics service for monitoring Redis Streams queue backlog.
 
 Provides:
-- Workflow metrics from Temporal Cloud
+- Queue backlog (lag) metrics from Redis Streams consumer groups
 - CloudWatch publishing for ECS auto-scaling
+
+Key metrics:
+- lag: Messages waiting to be delivered (queue backlog) - USE FOR SCALING
+- pending: Messages being processed (not yet acknowledged)
 """
 import asyncio
+import os
 from datetime import datetime, timezone
 from typing import Optional
 
 from core.utils.logger import logger
 from core.utils.config import config, EnvMode
-from core.temporal.client import get_temporal_client
 
 # CloudWatch client (lazy initialized)
 _cloudwatch_client = None
@@ -37,39 +41,59 @@ def _get_cloudwatch_client():
 
 async def get_queue_metrics() -> dict:
     """
-    Get Temporal workflow metrics.
+    Get Redis Streams queue metrics from consumer groups.
     
     Returns:
-        dict with running_workflows, pending_activities, timestamp
+        dict with:
+        - queue_backlog: Messages waiting to be delivered (lag) - USE FOR SCALING
+        - in_progress: Messages being processed (pending)
+        - per-stream details
     """
+    from core.services import redis
+    from core.worker.consumer import get_stream_info, CONSUMER_GROUP
+    from core.worker.tasks import StreamName
+    
     try:
-        client = await get_temporal_client()
+        stream_info = await get_stream_info()
         
-        # List running workflows (approximate count)
-        # Note: Temporal Cloud provides metrics via their UI, but we can query workflows
-        # For now, we'll return a simplified metric structure
-        # In production, you might want to use Temporal's metrics API or CloudWatch integration
+        total_lag = 0  # Queue backlog - waiting to be picked up
+        total_pending = 0  # In progress - being processed
+        stream_details = {}
         
-        # This is a placeholder - Temporal Cloud has built-in metrics
-        # You can query workflows if needed, but it's more efficient to use Temporal's metrics
+        for stream_name in StreamName:
+            stream_data = stream_info.get("streams", {}).get(stream_name.value, {})
+            lag = stream_data.get("lag", 0)
+            pending = stream_data.get("pending_count", 0)
+            
+            total_lag += lag
+            total_pending += pending
+            
+            stream_details[stream_name.value] = {
+                "lag": lag,  # Waiting in queue
+                "pending": pending,  # Being processed
+                "length": stream_data.get("length", 0),
+            }
+        
         return {
-            "queue_name": "default",
-            "running_workflows": 0,  # Placeholder - use Temporal Cloud metrics in production
-            "pending_activities": 0,  # Placeholder
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "note": "Use Temporal Cloud metrics dashboard for accurate metrics"
+            "queue_backlog": total_lag,  # USE FOR SCALING - messages waiting
+            "in_progress": total_pending,  # Messages being processed
+            "pending_messages": total_pending,  # Deprecated alias
+            "streams": stream_details,
+            "consumer_group": CONSUMER_GROUP,
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
-        logger.error(f"Failed to get Temporal metrics: {e}")
+        logger.error(f"Failed to get Redis Streams metrics: {e}")
         raise
 
 
-async def publish_to_cloudwatch(workflow_count: int) -> bool:
+async def publish_to_cloudwatch(queue_backlog: int, in_progress: int) -> bool:
     """
-    Publish workflow count metric to CloudWatch for ECS auto-scaling.
+    Publish Redis Streams metrics to CloudWatch for ECS auto-scaling.
     
     Args:
-        workflow_count: Number of running workflows (approximate)
+        queue_backlog: Number of messages waiting to be processed (lag) - PRIMARY SCALING METRIC
+        in_progress: Number of messages currently being processed (pending)
         
     Returns:
         True if published successfully, False otherwise
@@ -81,41 +105,58 @@ async def publish_to_cloudwatch(workflow_count: int) -> bool:
     try:
         cloudwatch.put_metric_data(
             Namespace='Kortix',
-            MetricData=[{
-                'MetricName': 'TemporalWorkflowCount',
-                'Value': workflow_count,
-                'Unit': 'Count',
-                'Dimensions': [
-                    {'Name': 'Service', 'Value': 'worker'}
-                ]
-            }]
+            MetricData=[
+                {
+                    # PRIMARY SCALING METRIC - messages waiting in queue
+                    'MetricName': 'RedisStreamsQueueBacklog',
+                    'Value': queue_backlog,
+                    'Unit': 'Count',
+                    'Dimensions': [{'Name': 'Service', 'Value': 'worker'}]
+                },
+                {
+                    # Tasks currently being processed
+                    'MetricName': 'RedisStreamsInProgress',
+                    'Value': in_progress,
+                    'Unit': 'Count',
+                    'Dimensions': [{'Name': 'Service', 'Value': 'worker'}]
+                },
+                {
+                    # Deprecated - keep for backward compatibility during migration
+                    'MetricName': 'RedisStreamsPendingMessages',
+                    'Value': in_progress,
+                    'Unit': 'Count',
+                    'Dimensions': [{'Name': 'Service', 'Value': 'worker'}]
+                }
+            ]
         )
-        logger.debug(f"Published workflow count to CloudWatch: {workflow_count}")
+        logger.debug(f"Published Redis Streams metrics to CloudWatch: backlog={queue_backlog}, in_progress={in_progress}")
         return True
     except Exception as e:
-        logger.error(f"Failed to publish workflow metrics to CloudWatch: {e}")
+        logger.error(f"Failed to publish Redis Streams metrics to CloudWatch: {e}")
         return False
 
 
 async def start_cloudwatch_publisher(interval_seconds: int = 60):
     """
-    Background task to publish workflow metrics to CloudWatch periodically.
+    Background task to publish Redis Streams metrics to CloudWatch periodically.
     
     Args:
         interval_seconds: How often to publish (default 60s)
     """
-    logger.info(f"Starting CloudWatch Temporal metrics publisher (interval: {interval_seconds}s)")
+    logger.info(f"Starting CloudWatch Redis Streams metrics publisher (interval: {interval_seconds}s)")
     
     while True:
         try:
             await asyncio.sleep(interval_seconds)
             
             metrics = await get_queue_metrics()
-            # Use running_workflows as approximate queue depth
-            await publish_to_cloudwatch(metrics.get("running_workflows", 0))
+            await publish_to_cloudwatch(
+                queue_backlog=metrics["queue_backlog"],
+                in_progress=metrics["in_progress"]
+            )
             
         except asyncio.CancelledError:
-            logger.info("CloudWatch Temporal metrics publisher stopped")
+            logger.info("CloudWatch Redis Streams metrics publisher stopped")
             raise
         except Exception as e:
             logger.error(f"Error in CloudWatch publisher loop: {e}")

@@ -141,7 +141,7 @@ class VersionService:
         if not result.data:
             raise Exception("Failed to update agent current version")
         
-        from core.runtime_cache import invalidate_mcp_version_config
+        from core.cache.runtime_cache import invalidate_mcp_version_config
         await invalidate_mcp_version_config(agent_id)
         logger.debug(f"Invalidated MCP config cache for agent {agent_id} after version update")
     
@@ -292,7 +292,7 @@ class VersionService:
         
         # Invalidate agent config cache (MCPs may have changed)
         try:
-            from core.runtime_cache import invalidate_agent_config_cache
+            from core.cache.runtime_cache import invalidate_agent_config_cache
             await invalidate_agent_config_cache(agent_id)
             logger.debug(f"🗑️ Invalidated cache for agent {agent_id} after version create")
         except Exception as e:
@@ -389,7 +389,7 @@ class VersionService:
         
         # Invalidate agent config cache (active version changed)
         try:
-            from core.runtime_cache import invalidate_agent_config_cache
+            from core.cache.runtime_cache import invalidate_agent_config_cache
             await invalidate_agent_config_cache(agent_id)
             logger.debug(f"🗑️ Invalidated cache for agent {agent_id} after version activate")
         except Exception as e:
@@ -488,16 +488,13 @@ class VersionService:
         return new_version
     
     async def get_current_mcp_config(self, agent_id: str, user_id: str = "system") -> Optional[Dict[str, Any]]:
-        logger.info(f"🔍 [VERSION-MCP-DEBUG] Loading current MCP config for agent {agent_id}")
-        
-        from core.runtime_cache import (
+        from core.cache.runtime_cache import (
             get_cached_mcp_version_config,
             set_cached_mcp_version_config
         )
         
         cached = await get_cached_mcp_version_config(agent_id)
         if cached:
-            logger.info(f"🔍 [VERSION-MCP-DEBUG] ⚡ Cache hit for agent {agent_id}")
             cached['account_id'] = user_id
             return cached
         
@@ -506,25 +503,21 @@ class VersionService:
                 client = await self._get_client()
                 
                 agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).execute()
-                logger.info(f"🔍 [VERSION-MCP-DEBUG] Agent query result: {agent_result.data}")
                 
                 if not agent_result.data or not agent_result.data[0].get('current_version_id'):
-                    logger.error(f"🔍 [VERSION-MCP-DEBUG] ❌ No current_version_id found for agent {agent_id}")
+                    logger.error(f"❌ No current_version_id found for agent {agent_id}")
                     empty_config = {'custom_mcp': [], 'configured_mcps': [], 'account_id': user_id}
                     await set_cached_mcp_version_config(agent_id, {'custom_mcp': [], 'configured_mcps': []})
                     return empty_config
                 
                 current_version_id = agent_result.data[0]['current_version_id']
-                logger.info(f"🔍 [VERSION-MCP-DEBUG] Agent {agent_id} current_version_id: {current_version_id}")
                 
                 version_result = await client.table('agent_versions').select('config').eq(
                     'version_id', current_version_id
                 ).eq('agent_id', agent_id).execute()
                 
-                logger.info(f"🔍 [VERSION-MCP-DEBUG] Version query result: found {len(version_result.data) if version_result.data else 0} records")
-                
                 if not version_result.data:
-                    logger.error(f"🔍 [VERSION-MCP-DEBUG] ❌ Version {current_version_id} not found for agent {agent_id}")
+                    logger.error(f"❌ Version {current_version_id} not found for agent {agent_id}")
                     empty_config = {'custom_mcp': [], 'configured_mcps': [], 'account_id': user_id}
                     await set_cached_mcp_version_config(agent_id, {'custom_mcp': [], 'configured_mcps': []})
                     return empty_config
@@ -534,19 +527,6 @@ class VersionService:
                 
                 configured_mcps = tools.get('mcp', [])
                 custom_mcps = tools.get('custom_mcp', [])
-                
-                logger.info(f"🔍 [VERSION-MCP-DEBUG] Found raw MCP config:")
-                logger.info(f"🔍 [VERSION-MCP-DEBUG]   configured_mcps: {len(configured_mcps)}")
-                logger.info(f"🔍 [VERSION-MCP-DEBUG]   custom_mcps: {len(custom_mcps)}")
-                
-                for i, mcp in enumerate(configured_mcps):
-                    logger.info(f"🔍 [VERSION-MCP-DEBUG]   configured_mcp[{i}]: name={mcp.get('name')}, toolkit_slug={mcp.get('toolkit_slug')}")
-                
-                for i, mcp in enumerate(custom_mcps):
-                    toolkit_slug = mcp.get('toolkit_slug')
-                    mcp_type = mcp.get('type') or mcp.get('customType')
-                    enabled_tools = mcp.get('enabledTools', [])
-                    logger.info(f"🔍 [VERSION-MCP-DEBUG]   custom_mcp[{i}]: name={mcp.get('name')}, type={mcp_type}, toolkit_slug={toolkit_slug}, tools={len(enabled_tools)}")
                 
                 cache_data = {
                     'custom_mcp': custom_mcps,
@@ -560,18 +540,14 @@ class VersionService:
                     'account_id': user_id
                 }
                 
-                logger.info(f"🔍 [VERSION-MCP-DEBUG] ✅ Returning standardized config:")
-                logger.info(f"🔍 [VERSION-MCP-DEBUG]   final custom_mcp: {len(final_config['custom_mcp'])}")
-                logger.info(f"🔍 [VERSION-MCP-DEBUG]   final configured_mcps: {len(final_config['configured_mcps'])}")
-                
                 return final_config
             
         except asyncio.TimeoutError:
-            logger.error(f"🔍 [VERSION-MCP-DEBUG] ❌ TIMEOUT ({MCP_CONFIG_QUERY_TIMEOUT}s) loading MCP config for agent {agent_id}")
+            logger.error(f"❌ TIMEOUT ({MCP_CONFIG_QUERY_TIMEOUT}s) loading MCP config for agent {agent_id}")
             return {'custom_mcp': [], 'configured_mcps': [], 'account_id': user_id}
             
         except Exception as e:
-            logger.error(f"🔍 [VERSION-MCP-DEBUG] ❌ Error loading current MCP config for agent {agent_id}: {e}", exc_info=True)
+            logger.error(f"❌ Error loading current MCP config for agent {agent_id}: {e}", exc_info=True)
             return {'custom_mcp': [], 'configured_mcps': [], 'account_id': user_id}
 
     async def update_version_details(

@@ -234,3 +234,5 @@ apps/mobile/app-example
 
 # Infra (separate repository)
 infra/
+
+dump.rdb

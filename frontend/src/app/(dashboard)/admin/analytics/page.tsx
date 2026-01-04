@@ -55,6 +55,7 @@ import {
   useThreadBrowser,
   useMessageDistribution,
   useCategoryDistribution,
+  useTierDistribution,
   useConversionFunnel,
   useRetentionData,
   useTranslate,
@@ -159,12 +160,14 @@ function StatCard({ title, value, description, icon, trend, className }: StatCar
 
 interface ThreadBrowserProps {
   categoryFilter?: string | null;
-  filterDate?: string | null;  // Date string in YYYY-MM-DD format for filtering when category is selected
+  tierFilter?: string | null;
+  filterDate?: string | null;  // Date string in YYYY-MM-DD format for filtering when category/tier is selected
   onClearCategory?: () => void;
+  onClearTier?: () => void;
   onUserClick: (email: string) => void;
 }
 
-function ThreadBrowser({ categoryFilter, filterDate, onClearCategory, onUserClick }: ThreadBrowserProps) {
+function ThreadBrowser({ categoryFilter, tierFilter, filterDate, onClearCategory, onClearTier, onUserClick }: ThreadBrowserProps) {
   const [params, setParams] = useState<ThreadBrowseParams>({
     page: 1,
     page_size: 15,
@@ -175,28 +178,33 @@ function ThreadBrowser({ categoryFilter, filterDate, onClearCategory, onUserClic
   const [messageFilter, setMessageFilter] = useState<string>('all');
   const [translations, setTranslations] = useState<Record<string, string>>({});
   
-  // Reset page to 1 when category filter or date changes (date only matters when category is active)
+  // Reset page to 1 when category/tier filter or date changes (date only matters when filter is active)
   const prevCategoryRef = useRef(categoryFilter);
+  const prevTierRef = useRef(tierFilter);
   const prevDateRef = useRef(filterDate);
   useEffect(() => {
     const categoryChanged = prevCategoryRef.current !== categoryFilter;
-    const dateChanged = prevDateRef.current !== filterDate && categoryFilter;
+    const tierChanged = prevTierRef.current !== tierFilter;
+    const dateChanged = prevDateRef.current !== filterDate && (categoryFilter || tierFilter);
     
-    if (categoryChanged || dateChanged) {
+    if (categoryChanged || tierChanged || dateChanged) {
       setParams(p => ({ ...p, page: 1 }));
     }
     
     prevCategoryRef.current = categoryFilter;
+    prevTierRef.current = tierFilter;
     prevDateRef.current = filterDate;
-  }, [categoryFilter, filterDate]);
+  }, [categoryFilter, tierFilter, filterDate]);
   
-  // Include category filter and date filter in query params
-  // When category is selected from distribution, also filter by the selected date
+  // Include category/tier filter and date filter in query params
+  // When category or tier is selected from distribution, also filter by the selected date
+  const hasActiveFilter = categoryFilter || tierFilter;
   const queryParams: ThreadBrowseParams = {
     ...params,
     category: categoryFilter || undefined,
-    date_from: categoryFilter && filterDate ? filterDate : undefined,
-    date_to: categoryFilter && filterDate ? filterDate : undefined,
+    tier: tierFilter || undefined,
+    date_from: hasActiveFilter && filterDate ? filterDate : undefined,
+    date_to: hasActiveFilter && filterDate ? filterDate : undefined,
   };
   
   const { data: threadsData, isLoading } = useThreadBrowser(queryParams);
@@ -766,10 +774,10 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   const signupsDateFrom = '2025-12-15';
   const signupsDateTo = '2026-06-15';
   
-  // Calculate current week number and month index for filtering chart data
+  // Calculate current week number and month index for filtering chart data (Berlin timezone)
   const { currentWeekNumber, currentMonthIndex } = useMemo(() => {
     const startDate = new Date(2025, 11, 15); // Dec 15, 2025
-    const today = new Date();
+    const today = getBerlinToday();
     const daysSinceStart = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
     const weekNum = Math.max(1, Math.floor(daysSinceStart / 7) + 1);
     
@@ -1102,7 +1110,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     // Map field names for API
     const apiData: WeeklyActualData = {
       week_number: week,
-      week_start_date: new Date(2025, 11, 15 + (week - 1) * 7).toISOString().split('T')[0],
+      week_start_date: formatDateBerlin(new Date(2025, 11, 15 + (week - 1) * 7)),
       platform: platform,
       views: updatedData.views,
       signups: updatedData.signups,
@@ -1494,7 +1502,7 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     
     const currentDate = new Date(startDate);
     while (currentDate <= endDate) {
-      const dateStr = currentDate.toISOString().split('T')[0];
+      const dateStr = formatDateBerlin(currentDate);
       
       // For Dec 1-14, use hardcoded daily averages; for Dec 15+, use API data
       let dayNewPaid: number;
@@ -3154,16 +3162,25 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
 // MAIN PAGE COMPONENT
 // ============================================================================
 
-// Get current date in UTC
-function getUTCToday(): Date {
+// Get current date in Berlin timezone
+function getBerlinToday(): Date {
   const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  // Format in Berlin timezone to get the correct date
+  const berlinDate = now.toLocaleDateString('en-CA', { timeZone: 'Europe/Berlin' }); // YYYY-MM-DD format
+  const [year, month, day] = berlinDate.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+// Format a date as YYYY-MM-DD in Berlin timezone (avoids toISOString UTC conversion)
+function formatDateBerlin(date: Date): string {
+  return date.toLocaleDateString('en-CA', { timeZone: 'Europe/Berlin' });
 }
 
 export default function AdminAnalyticsPage() {
-  const [distributionDate, setDistributionDate] = useState<Date>(getUTCToday);
+  const [distributionDate, setDistributionDate] = useState<Date>(getBerlinToday);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [tierFilter, setTierFilter] = useState<string | null>(null);
   const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('vercel');
   
   // User details dialog state
@@ -3218,16 +3235,17 @@ export default function AdminAnalyticsPage() {
     refreshUserStats();
   };
   
-  const utcToday = getUTCToday();
+  const berlinToday = getBerlinToday();
   const dateString = format(distributionDate, 'yyyy-MM-dd');
   
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
   const { data: distribution, isFetching: distributionFetching } = useMessageDistribution(dateString);
-  const { data: categoryDistribution, isFetching: categoryFetching } = useCategoryDistribution(dateString);
+  const { data: categoryDistribution, isFetching: categoryFetching } = useCategoryDistribution(dateString, tierFilter);
+  const { data: tierDistribution, isFetching: tierFetching } = useTierDistribution(dateString);
   const { data: conversionFunnel, isLoading: funnelLoading, isFetching: funnelFetching } = useConversionFunnel(dateString, analyticsSource);
   
   // Combined fetching state for the Daily Analytics card
-  const isDailyAnalyticsFetching = distributionFetching || categoryFetching || funnelFetching;
+  const isDailyAnalyticsFetching = distributionFetching || categoryFetching || tierFetching || funnelFetching;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
@@ -3298,7 +3316,7 @@ export default function AdminAnalyticsPage() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5" />
-                Daily Analytics (UTC)
+                Daily Analytics (Berlin)
               </CardTitle>
               <CardDescription>
                 Conversion funnel, threads, and categories
@@ -3334,7 +3352,7 @@ export default function AdminAnalyticsPage() {
                         setCalendarOpen(false);
                       }
                     }}
-                    disabled={(date) => date > utcToday}
+                    disabled={(date) => date > berlinToday}
                     initialFocus
                   />
                 </PopoverContent>
@@ -3343,7 +3361,7 @@ export default function AdminAnalyticsPage() {
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
-                disabled={format(distributionDate, 'yyyy-MM-dd') === format(utcToday, 'yyyy-MM-dd')}
+                disabled={format(distributionDate, 'yyyy-MM-dd') === format(berlinToday, 'yyyy-MM-dd')}
                 onClick={() => {
                   const next = new Date(distributionDate);
                   next.setDate(next.getDate() + 1);
@@ -3457,10 +3475,43 @@ export default function AdminAnalyticsPage() {
             {/* Category Distribution Section */}
             {categoryDistribution && Object.keys(categoryDistribution.distribution).length > 0 && (
               <div>
-                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                  <Filter className="h-4 w-4" />
-                  Category Distribution
-                </h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-medium flex items-center gap-2">
+                    <Filter className="h-4 w-4" />
+                    Category Distribution
+                  </h3>
+                  {/* Tier Filter Dropdown */}
+                  {tierDistribution && Object.keys(tierDistribution.distribution).length > 0 && (
+                    <Select
+                      value={tierFilter || 'all'}
+                      onValueChange={(value) => setTierFilter(value === 'all' ? null : value)}
+                    >
+                      <SelectTrigger className="w-[150px] h-7 text-xs">
+                        <CreditCard className="h-3 w-3 mr-1 text-muted-foreground" />
+                        <SelectValue placeholder="All Tiers" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Tiers</SelectItem>
+                        {Object.entries(tierDistribution.distribution).map(([tier, count]) => {
+                          const displayName = tier === 'none' ? 'No Subscription' :
+                            tier === 'free' ? 'Free' :
+                            tier === 'tier_2_20' ? 'Plus' :
+                            tier === 'tier_6_50' ? 'Pro' :
+                            tier === 'tier_12_100' ? 'Business' :
+                            tier === 'tier_25_200' ? 'Ultra' :
+                            tier === 'tier_50_400' ? 'Enterprise' :
+                            tier === 'tier_125_800' ? 'Scale' :
+                            tier === 'tier_200_1000' ? 'Max' : tier;
+                          return (
+                            <SelectItem key={tier} value={tier} className="[font-variant-ligatures:none]">
+                              {displayName} · {count}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {Object.entries(categoryDistribution.distribution).map(([category, count]) => {
                     const percentage = categoryDistribution.total_projects > 0 
@@ -3494,6 +3545,7 @@ export default function AdminAnalyticsPage() {
                 )}
               </div>
             )}
+
           </CardContent>
         </Card>
 
@@ -3521,8 +3573,10 @@ export default function AdminAnalyticsPage() {
           <TabsContent value="threads">
             <ThreadBrowser
               categoryFilter={categoryFilter}
+              tierFilter={tierFilter}
               filterDate={dateString}
               onClearCategory={() => setCategoryFilter(null)}
+              onClearTier={() => setTierFilter(null)}
               onUserClick={handleUserEmailClick}
             />
           </TabsContent>

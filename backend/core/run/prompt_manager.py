@@ -321,16 +321,11 @@ If relevant context seems missing, ask a clarifying question.
                     custom_mcps = fresh_mcp_config.get('custom_mcp', [])
                     configured_mcps = fresh_mcp_config.get('configured_mcps', [])
                     
-                    logger.info(f"🔍 [MCP-PROMPT-DIRECT] Loading tools DIRECTLY from current version config")
-                    logger.info(f"🔍 [MCP-PROMPT-DIRECT] custom_mcp count: {len(custom_mcps)}, configured_mcps count: {len(configured_mcps)}")
-                    
                     for mcp in custom_mcps:
                         mcp_name = mcp.get('name', 'unknown')
                         toolkit_slug = mcp.get('toolkit_slug', '')
                         enabled_tools = mcp.get('enabledTools', [])
                         mcp_type = mcp.get('type') or mcp.get('customType', '')
-                        
-                        logger.info(f"🔍 [MCP-PROMPT-DIRECT] Processing custom_mcp: name={mcp_name}, toolkit={toolkit_slug}, type={mcp_type}, enabledTools={len(enabled_tools)}")
                         
                         if enabled_tools:
                             if mcp_type in ('sse', 'http', 'json'):
@@ -344,8 +339,6 @@ If relevant context seems missing, ask a clarifying question.
                             for tool in enabled_tools:
                                 if tool not in toolkit_tools[display_name]:
                                     toolkit_tools[display_name].append(tool)
-                            
-                            logger.info(f"🔍 [MCP-PROMPT-DIRECT] ✅ Added {len(enabled_tools)} tools for {display_name}")
                     
                     for mcp in configured_mcps:
                         mcp_name = mcp.get('name', 'unknown')
@@ -356,8 +349,6 @@ If relevant context seems missing, ask a clarifying question.
                         if not toolkit_slug and qualified_name:
                             toolkit_slug = qualified_name.split('.')[-1]
                         
-                        logger.info(f"🔍 [MCP-PROMPT-DIRECT] Processing configured_mcp: name={mcp_name}, toolkit={toolkit_slug}, enabledTools={len(enabled_tools)}")
-                        
                         if enabled_tools:
                             display_name = toolkit_slug.upper() if toolkit_slug else mcp_name.upper().replace(' ', '_')
                             
@@ -367,8 +358,6 @@ If relevant context seems missing, ask a clarifying question.
                             for tool in enabled_tools:
                                 if tool not in toolkit_tools[display_name]:
                                     toolkit_tools[display_name].append(tool)
-                            
-                            logger.info(f"🔍 [MCP-PROMPT-DIRECT] ✅ Added {len(enabled_tools)} tools for {display_name}")
                     
                     if mcp_loader:
                         try:
@@ -386,10 +375,6 @@ If relevant context seems missing, ask a clarifying question.
             return system_content
         
         total_tools = sum(len(tools) for tools in toolkit_tools.values())
-        
-        logger.info(f"🔍 [MCP-PROMPT-DIRECT] Final toolkit breakdown:")
-        for tk, tl in toolkit_tools.items():
-            logger.info(f"🔍 [MCP-PROMPT-DIRECT]   {tk}: {len(tl)} tools - {tl[:5]}{'...' if len(tl) > 5 else ''}")
         
         mcp_jit_info = "\n\n--- EXTERNAL MCP TOOLS ---\n"
         mcp_jit_info += f"🔥 You have {total_tools} external MCP tools from {len(toolkit_tools)} connected services.\n"
@@ -648,7 +633,7 @@ Example of correct tool call format (multiple invokes in one block):
             return None
         
         try:
-            from core.agent_runs import get_cached_file_context, format_file_context_for_agent
+            from core.agents.runs import get_cached_file_context, format_file_context_for_agent
             
             files = await get_cached_file_context(thread_id)
             if files:

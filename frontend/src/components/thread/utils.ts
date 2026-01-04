@@ -383,9 +383,9 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['initialize-tools', 'Initializing Tools'],
   ['initialize_tools', 'Initializing Tools'],
 
-  ['execute-command', 'Running Command'],
-  ['check-command-output', 'Checking Output'],
-  ['terminate-command', 'Stopping Command'],
+  ['execute-command', 'Executing Command'],
+  ['check-command-output', 'Checking Command Output'],
+  ['terminate-command', 'Terminating Command'],
   ['list-commands', 'Listing Commands'],
   
   ['create-file', 'Creating File'],
@@ -468,9 +468,9 @@ const TOOL_DISPLAY_NAMES = new Map([
 
   //V2
 
-  ['execute_command', 'Running Command'],
-  ['check_command_output', 'Checking Output'],
-  ['terminate_command', 'Stopping Command'],
+  ['execute_command', 'Executing Command'],
+  ['check_command_output', 'Checking Command Output'],
+  ['terminate_command', 'Terminating Command'],
   ['list_commands', 'Listing Commands'],
   
   ['create_file', 'Creating File'],

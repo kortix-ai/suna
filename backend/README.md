@@ -1,59 +1,62 @@
 
 **1. Launching the backend**
 
-```
-cd /backend
+```bash
+cd backend
 ```
 
-1.1 Launching REDIS for data caching
-
+**1.1 Launching Redis**
 
 ```bash
+# Option A: Use Docker
 docker compose up redis
+
+# Option B: Run locally (if installed)
+redis-server
 ```
 
+**1.2 Running the Worker**
 
-1.2 Running Temporal worker for workflow execution
-
-**IMPORTANT**: Make sure you have Temporal Cloud credentials set in your `.env` file:
-- `TEMPORAL_ADDRESS=us-west-2.aws.api.temporal.io:7233`
-- `TEMPORAL_NAMESPACE=kortix-1.d5grr`
-- `TEMPORAL_API_KEY=<your-api-key>`
+The worker processes background tasks (agent runs, memory extraction, etc.) using Redis Streams.
 
 ```bash
-uv run python -m core.temporal.worker
+uv run python run_worker.py --concurrency 8
 ```
 
-Or alternatively:
-```bash
-uv run core/temporal/worker.py
+You should see:
+```
+🚀 Starting Redis Streams Worker
+✅ Worker resources initialized
+📡 Consumer loop started
 ```
 
-1.3 Running the main API server
+
+**1.3 Running the API**
 
 ```bash
 uv run api.py
 ```
 
-Or using uvicorn directly:
-```bash
-uv run uvicorn api:app --host 0.0.0.0 --port 8000 --reload
-```
-
-1.4 Running worker health check
-
-```bash
-uv run worker_health.py
-```
+---
 
 **2. Launching the frontend**
 
 ```bash
-
-cd frontend && npm install
-
+cd frontend
+npm install
 npm run dev
 ```
 
+Access the app at `http://localhost:3000`
 
-Access the main app via `http://localhost:3000`
+## Build Verification
+
+Run `make verify` or `uv run python core/utils/scripts/verify_build.py` to check:
+- All imports work
+- No syntax errors
+- No undefined names
+- API can be imported
+- Worker can be imported
+
+See `core/utils/scripts/README.md` for more details on available scripts.
+

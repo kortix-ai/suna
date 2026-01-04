@@ -17,7 +17,7 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
         logger.debug(f"Checking agent run limit for account {account_id} since {twenty_four_hours_ago_iso}")
         
         # FAST PATH: Check Redis cache for running runs (5s TTL)
-        from core.runtime_cache import get_cached_running_runs, set_cached_running_runs
+        from core.cache.runtime_cache import get_cached_running_runs, set_cached_running_runs
         cached_runs = await get_cached_running_runs(account_id)
         
         if cached_runs:
@@ -493,7 +493,7 @@ async def check_thread_limit(client, account_id: str) -> Dict[str, Any]:
         logger.debug(f"Checking thread limit for account {account_id}")
         
         # FAST PATH: Check Redis cache for thread count (30s TTL)
-        from core.runtime_cache import get_cached_thread_count, set_cached_thread_count
+        from core.cache.runtime_cache import get_cached_thread_count, set_cached_thread_count
         cached_count = await get_cached_thread_count(account_id)
         
         if cached_count is not None:

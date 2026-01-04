@@ -22,19 +22,14 @@ import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { IframePreview } from '../iframe-preview';
 
 // Helper function to check if a filepath is a presentation attachment
-// Matches patterns like:
-// - presentations/[name]/slide_01.html
-// - /workspace/presentations/[name]/slide_01.html
-// - ./presentations/[name]/slide_01.html
-// - any/path/presentations/[name]/slide_01.html
 function isPresentationAttachment(filepath: string): boolean {
-    const presentationPattern = /presentations\/([^\/]+)\/(slide_\d+\.html|metadata\.json)$/i;
+    const presentationPattern = /^presentations\/([^\/]+)\/(slide_\d+\.html|metadata\.json)$/i;
     return presentationPattern.test(filepath);
 }
 
 // Helper function to extract presentation name from filepath
 function extractPresentationName(filepath: string): string | null {
-    const match = filepath.match(/presentations\/([^\/]+)\/(slide_\d+\.html|metadata\.json)$/i);
+    const match = filepath.match(/^presentations\/([^\/]+)\//i);
     return match ? match[1] : null;
 }
 
@@ -119,14 +114,9 @@ export function FileAttachment({
     };
     
     // Check for presentation attachments
-    const isPresentation = isPresentationAttachment(filepath);
-    console.log('[FileAttachment] Checking filepath:', filepath, '| isPresentation:', isPresentation, '| hasProject:', !!project, '| sandboxUrl:', project?.sandbox?.sandbox_url);
-    
-    if (isPresentation && project) {
+    if (isPresentationAttachment(filepath) && project) {
         const presentationName = extractPresentationName(filepath);
         const slideNumber = extractSlideNumber(filepath);
-        console.log('[FileAttachment] Presentation detected:', { presentationName, slideNumber, sandboxUrl: project?.sandbox?.sandbox_url });
-        
         if (presentationName && project?.sandbox?.sandbox_url) {
             return (
                 <PresentationSlidePreview

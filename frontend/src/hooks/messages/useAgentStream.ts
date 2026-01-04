@@ -424,10 +424,10 @@ export function useAgentStream(
       }
       if (!processedData) return;
 
-      // Early exit for non-JSON completion messages
+      // Early exit for completion messages (check for any completed status message)
       if (
-        processedData ===
-        '{"type": "status", "status": "completed", "message": "Worker run completed successfully"}'
+        processedData.includes('"type": "status"') &&
+        processedData.includes('"status": "completed"')
       ) {
         finalizeStream('completed', currentRunIdRef.current);
         return;
@@ -552,6 +552,11 @@ export function useAgentStream(
             finalizeStream('stopped', currentRunIdRef.current);
             return;
           }
+        }
+        // Handle completed status messages
+        if (jsonData.type === 'status' && jsonData.status === 'completed') {
+          finalizeStream('completed', currentRunIdRef.current);
+          return;
         }
         // Handle tool_output_stream messages for real-time shell output
         if (jsonData.type === 'tool_output_stream') {
@@ -969,113 +974,154 @@ export function useAgentStream(
     if (!isMountedRef.current) return;
 
     const runId = currentRunIdRef.current;
+    const currentStatus = status;
+
+    // If we've already finalized the stream (completed/stopped/error), don't show error
+    if (
+      currentStatus === 'completed' ||
+      currentStatus === 'stopped' ||
+      currentStatus === 'error' ||
+      currentStatus === 'agent_not_running'
+    ) {
+      // Stream closed normally after completion
+      return;
+    }
 
     if (!runId) {
       // If status was streaming, something went wrong, finalize as error
-      if (status === 'streaming' || status === 'connecting') {
+      if (currentStatus === 'streaming' || currentStatus === 'connecting') {
         finalizeStream('error');
       } else if (
-        status !== 'idle' &&
-        status !== 'completed' &&
-        status !== 'stopped' &&
-        status !== 'agent_not_running'
+        currentStatus !== 'idle' &&
+        currentStatus !== 'completed' &&
+        currentStatus !== 'stopped' &&
+        currentStatus !== 'agent_not_running'
       ) {
         finalizeStream('idle');
       }
       return;
     }
 
-    // Immediately check the agent status when the stream closes unexpectedly
-    getAgentStatus(runId)
-      .then((agentStatus) => {
-        if (!isMountedRef.current) return;
+    // Add a small delay to account for DB update race condition
+    // The stream might close normally, but status check happens before DB updates
+    setTimeout(() => {
+      if (!isMountedRef.current) return;
+      if (currentRunIdRef.current !== runId) return;
 
-        // Check if this is still the current run ID
-        if (currentRunIdRef.current !== runId) {
-          return;
-        }
+      // Double-check status wasn't finalized while waiting
+      // If status changed to completed/stopped, don't show error
+      if (
+        status === 'completed' ||
+        status === 'stopped' ||
+        status === 'error' ||
+        status === 'agent_not_running'
+      ) {
+        return;
+      }
 
-        if (agentStatus.status === 'running') {
-          setError('Stream closed unexpectedly while agent was running.');
-          finalizeStream('error', runId);
-          toast.warning('Stream disconnected. Worker might still be running.');
-        } else if (agentStatus.status === 'stopped') {
-          // Check if agent stopped due to billing error
-          const errorMessage = agentStatus.error || '';
-          const lower = errorMessage.toLowerCase();
-          const isBillingError = 
-            lower.includes('insufficient credits') ||
-            lower.includes('credit') ||
-            lower.includes('balance') ||
-            lower.includes('out of credits') ||
-            lower.includes('no credits') ||
-            lower.includes('billing check failed');
-          
-          if (isBillingError && errorMessage) {
-            console.error(
-              `[useAgentStream] Agent stopped due to billing error: ${errorMessage}`,
-            );
-            setError(errorMessage);
-            callbacksRef.current.onError?.(errorMessage);
-            
-            const isCreditsExhausted = 
+      getAgentStatus(runId)
+        .then((agentStatus) => {
+          if (!isMountedRef.current) return;
+
+          // Check if this is still the current run ID
+          if (currentRunIdRef.current !== runId) {
+            return;
+          }
+
+          // Final check - if status was finalized while waiting, don't show error
+          if (
+            status === 'completed' ||
+            status === 'stopped' ||
+            status === 'error' ||
+            status === 'agent_not_running'
+          ) {
+            return;
+          }
+
+          // Only show error if agent is still running AND we didn't receive completion
+          if (agentStatus.status === 'running') {
+            setError('Stream closed unexpectedly while agent was running.');
+            finalizeStream('error', runId);
+            toast.warning('Stream disconnected. Worker might still be running.');
+          } else if (agentStatus.status === 'stopped') {
+            // Check if agent stopped due to billing error
+            const errorMessage = agentStatus.error || '';
+            const lower = errorMessage.toLowerCase();
+            const isBillingError = 
               lower.includes('insufficient credits') ||
+              lower.includes('credit') ||
+              lower.includes('balance') ||
               lower.includes('out of credits') ||
               lower.includes('no credits') ||
-              lower.includes('balance');
+              lower.includes('billing check failed');
             
-            // Extract balance from message if present
-            const balanceMatch = errorMessage.match(/balance is (-?\d+)\s*credits/i);
-            const balance = balanceMatch ? balanceMatch[1] : null;
+            if (isBillingError && errorMessage) {
+              console.error(
+                `[useAgentStream] Agent stopped due to billing error: ${errorMessage}`,
+              );
+              setError(errorMessage);
+              callbacksRef.current.onError?.(errorMessage);
+              
+              const isCreditsExhausted = 
+                lower.includes('insufficient credits') ||
+                lower.includes('out of credits') ||
+                lower.includes('no credits') ||
+                lower.includes('balance');
+              
+              // Extract balance from message if present
+              const balanceMatch = errorMessage.match(/balance is (-?\d+)\s*credits/i);
+              const balance = balanceMatch ? balanceMatch[1] : null;
+              
+              const alertTitle = isCreditsExhausted 
+                ? 'You ran out of credits'
+                : 'Billing check failed';
+              
+              const alertSubtitle = balance 
+                ? `Your current balance is ${balance} credits. Upgrade your plan to continue.`
+                : isCreditsExhausted 
+                  ? 'Upgrade your plan to get more credits and continue using the AI assistant.'
+                  : 'Please upgrade to continue.';
+              
+              usePricingModalStore.getState().openPricingModal({ 
+                isAlert: true, 
+                alertTitle,
+                alertSubtitle
+              });
+            }
             
-            const alertTitle = isCreditsExhausted 
-              ? 'You ran out of credits'
-              : 'Billing check failed';
-            
-            const alertSubtitle = balance 
-              ? `Your current balance is ${balance} credits. Upgrade your plan to continue.`
-              : isCreditsExhausted 
-                ? 'Upgrade your plan to get more credits and continue using the AI assistant.'
-                : 'Please upgrade to continue.';
-            
-            usePricingModalStore.getState().openPricingModal({ 
-              isAlert: true, 
-              alertTitle,
-              alertSubtitle
-            });
+            const finalStatus = mapAgentStatus(agentStatus.status);
+            finalizeStream(finalStatus, runId);
+          } else {
+            // Agent completed successfully or is in another valid state
+            const finalStatus = mapAgentStatus(agentStatus.status);
+            finalizeStream(finalStatus, runId);
           }
-          
-          const finalStatus = mapAgentStatus(agentStatus.status);
-          finalizeStream(finalStatus, runId);
-        } else {
-          const finalStatus = mapAgentStatus(agentStatus.status);
-          finalizeStream(finalStatus, runId);
-        }
-      })
-      .catch((err) => {
-        if (!isMountedRef.current) return;
+        })
+        .catch((err) => {
+          if (!isMountedRef.current) return;
 
-        // Check if this is still the current run ID
-        if (currentRunIdRef.current !== runId) {
-          return;
-        }
+          // Check if this is still the current run ID
+          if (currentRunIdRef.current !== runId) {
+            return;
+          }
 
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        console.error(
-          `[useAgentStream] Error checking agent status for ${runId} after stream close: ${errorMessage}`,
-        );
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          console.error(
+            `[useAgentStream] Error checking agent status for ${runId} after stream close: ${errorMessage}`,
+          );
 
-        const isNotFoundError =
-          errorMessage.includes('not found') ||
-          errorMessage.includes('404') ||
-          errorMessage.includes('does not exist');
+          const isNotFoundError =
+            errorMessage.includes('not found') ||
+            errorMessage.includes('404') ||
+            errorMessage.includes('does not exist');
 
-        if (isNotFoundError) {
-          finalizeStream('agent_not_running', runId);
-        } else {
-          finalizeStream('error', runId);
-        }
-      });
+          if (isNotFoundError) {
+            finalizeStream('agent_not_running', runId);
+          } else {
+            finalizeStream('error', runId);
+          }
+        });
+    }, 500); // Wait 500ms to allow DB to update after stream completion
   }, [status, finalizeStream]);
 
   // Effect to manage the stream lifecycle

@@ -33,8 +33,8 @@ export function getToolTitle(toolName: string): string {
 
   // Map of tool names to their display titles
   const toolTitles: Record<string, string> = {
-    'execute-command': 'Run Command',
-    'check-command-output': 'Check Output',
+    'execute-command': 'Execute Command',
+    'check-command-output': 'Check Command Output',
     'list-commands': 'Running Commands',
     'list_commands': 'Running Commands',
     'str-replace': 'String Replace',

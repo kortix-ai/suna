@@ -1111,15 +1111,13 @@ export function PricingSection({
     setPlanLoadingStates((prev) => ({ ...prev, [planId]: true }));
   };
 
-  // Helper to calculate price based on billing period (same logic as PricingTier.getDisplayPrice)
+  // Helper to calculate price based on billing period (matches displayed price)
   const calculatePriceForBillingPeriod = useCallback((tier: PricingTier, billingPeriod: string): number => {
     const basePrice = parsePriceAmount(tier.price || '$0');
     if (billingPeriod === 'yearly_commitment') {
-      // 15% discount for yearly commitment
-      return Math.round(basePrice * 0.85);
+      return Math.round(basePrice * 0.85); // 15% discount
     } else if (billingPeriod === 'yearly' && tier.yearlyPrice) {
-      // Monthly equivalent from yearly total
-      return Math.round(parsePriceAmount(tier.yearlyPrice) / 12);
+      return Math.round(parsePriceAmount(tier.yearlyPrice) / 12); // Monthly equivalent
     }
     return basePrice;
   }, []);

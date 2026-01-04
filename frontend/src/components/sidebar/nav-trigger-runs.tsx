@@ -35,8 +35,8 @@ const TriggerRunItem: React.FC<{
     return (
         <SpotlightCard
             className={cn(
-                "transition-all cursor-pointer rounded-2xl",
-                isActive ? "border-[1.5px] bg-background dark:bg-card" : "bg-transparent"
+                "transition-colors cursor-pointer",
+                isActive ? "bg-muted" : "bg-transparent"
             )}
         >
             <a
@@ -44,10 +44,10 @@ const TriggerRunItem: React.FC<{
                 onClick={(e) => handleThreadClick(e, thread.threadId, thread.url)}
                 className="block"
             >
-                <div className="flex items-center gap-2.5 py-2 px-2 text-sm">
-                    <div className="flex items-center justify-center w-5 h-5 flex-shrink-0">
+                <div className="flex items-center gap-3 p-2.5 text-sm">
+                    <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
                         {isThreadLoading ? (
-                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                         ) : (
                             <ThreadIcon
                                 iconName={thread.iconName}
@@ -153,20 +153,17 @@ export function NavTriggerRuns() {
                 </div>
             </div>
 
-            <div className="relative">
-                {/* Top fade gradient overlay */}
-                <div className="pointer-events-none absolute top-0 left-0 right-0 h-6 bg-gradient-to-b from-background to-transparent z-20" />
-            <div className="overflow-y-auto max-h-[calc(100vh-480px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] pb-10 pt-1">
+            <div className="overflow-y-auto max-h-[calc(100vh-480px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] pb-10">
                 {(state !== 'collapsed' || isMobile) && (
                     <>
                         {isLoading ? (
                             // Show skeleton loaders while loading
                             <div className="space-y-1">
                                 {Array.from({ length: 3 }).map((_, index) => (
-                                    <div key={`skeleton-${index}`} className="flex items-center gap-2.5 px-2 py-2">
-                                        <div className="h-4 w-4 bg-muted/30 rounded animate-pulse"></div>
-                                        <div className="h-3.5 bg-muted/30 rounded flex-1 animate-pulse"></div>
-                                        <div className="h-3 w-6 bg-muted/20 rounded animate-pulse"></div>
+                                    <div key={`skeleton-${index}`} className="flex items-center gap-3 px-2 py-2">
+                                        <div className="h-10 w-10 bg-muted/10 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
+                                        <div className="h-4 bg-muted rounded flex-1 animate-pulse"></div>
+                                        <div className="h-3 w-8 bg-muted rounded animate-pulse"></div>
                                     </div>
                                 ))}
                             </div>
@@ -201,7 +198,6 @@ export function NavTriggerRuns() {
                         )}
                     </>
                 )}
-            </div>
             </div>
         </div>
     );

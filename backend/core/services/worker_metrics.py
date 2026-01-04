@@ -1,11 +1,14 @@
 """
-Worker metrics service for tracking Temporal workers.
+Worker metrics service for tracking active Redis Streams workers and task utilization.
 
 Provides:
-- Simplified worker metrics (Temporal Cloud has built-in metrics)
+- Active consumer count from Redis Streams consumer groups
+- Task utilization (busy vs idle concurrent tasks)
+- Consumer health tracking via pending messages
 - CloudWatch publishing for monitoring
 """
 import asyncio
+import os
 from datetime import datetime, timezone
 from typing import Optional, Dict, List
 
@@ -36,31 +39,105 @@ def _get_cloudwatch_client():
 
 async def get_worker_metrics() -> dict:
     """
-    Get Temporal worker metrics.
+    Get active consumer count and task utilization from Redis Streams consumer groups.
     
-    Note: Temporal Cloud provides comprehensive metrics via their dashboard.
-    This function returns simplified metrics for CloudWatch integration.
+    Redis Streams stores:
+    - Consumer groups: one per stream (suna-workers)
+    - Consumers: each worker container registers as a consumer
+    - Pending messages: unacknowledged messages per consumer
     
     Returns:
-        dict with active_workers, busy_threads, idle_threads, utilization, etc.
+        dict with active_workers (consumers), busy_tasks, idle_tasks, utilization, etc.
     """
+    from core.worker.consumer import get_stream_info, CONSUMER_GROUP
+    from core.worker.tasks import StreamName
+    
     try:
-        # Temporal workers have their own metrics system
-        # For now, return placeholder metrics
-        # In production, you can query Temporal Cloud's metrics API or use their CloudWatch integration
+        # Configuration: concurrency per worker container
+        # Each ECS task runs: `python run_worker.py --concurrency 48`
+        # Each container is a consumer in the consumer group
+        WORKER_CONCURRENCY = int(os.getenv("STREAM_WORKER_CONCURRENCY", "48"))
         
-        # Placeholder values - replace with actual Temporal metrics if needed
+        stream_info = await get_stream_info()
+        
+        # Collect all unique consumers across all streams
+        all_consumers = {}  # consumer_name -> {pending, idle_ms, streams}
+        total_pending = 0
+        total_length = 0
+        
+        for stream_name in StreamName:
+            stream_data = stream_info.get("streams", {}).get(stream_name.value, {})
+            total_length += stream_data.get("length", 0)
+            
+            # Get consumers for this stream
+            consumers = stream_data.get("consumers", [])
+            for consumer in consumers:
+                consumer_name = consumer.get("name", "unknown")
+                pending = consumer.get("pending", 0)
+                idle_ms = consumer.get("idle_ms", 0)
+                
+                if consumer_name not in all_consumers:
+                    all_consumers[consumer_name] = {
+                        "pending": 0,
+                        "max_idle_ms": 0,
+                        "streams": []
+                    }
+                
+                all_consumers[consumer_name]["pending"] += pending
+                all_consumers[consumer_name]["max_idle_ms"] = max(
+                    all_consumers[consumer_name]["max_idle_ms"],
+                    idle_ms
+                )
+                all_consumers[consumer_name]["streams"].append(stream_name.value)
+                total_pending += pending
+        
+        active_worker_count = len(all_consumers)
+        
+        # Calculate task utilization
+        # Each worker has WORKER_CONCURRENCY concurrent task slots
+        total_task_slots = active_worker_count * WORKER_CONCURRENCY
+        
+        # Calculate busy_tasks per consumer (capped at concurrency limit)
+        # A consumer can't have more busy tasks than its concurrency limit
+        busy_tasks = 0
+        worker_details = []
+        for consumer_name, data in all_consumers.items():
+            # Cap busy tasks at concurrency - pending may exceed this if tasks are stuck
+            consumer_busy = min(data["pending"], WORKER_CONCURRENCY)
+            consumer_idle = max(0, WORKER_CONCURRENCY - consumer_busy)
+            busy_tasks += consumer_busy
+            
+            worker_details.append({
+                "consumer_name": consumer_name[:32] + "..." if len(consumer_name) > 32 else consumer_name,
+                "pending_messages": data["pending"],
+                "idle_ms": data["max_idle_ms"],
+                "idle_seconds": round(data["max_idle_ms"] / 1000, 2),
+                "busy_tasks": consumer_busy,
+                "idle_tasks": consumer_idle,
+                "stuck_tasks": max(0, data["pending"] - WORKER_CONCURRENCY),  # Tasks beyond capacity
+                "streams": data["streams"]
+            })
+        
+        idle_tasks = max(0, total_task_slots - busy_tasks)
+        utilization_percent = (busy_tasks / total_task_slots * 100) if total_task_slots > 0 else 0
+        
         return {
-            "active_workers": 0,  # Placeholder - use Temporal Cloud metrics
-            "worker_count": 0,
-            "total_threads": 0,
-            "busy_threads": 0,
-            "idle_threads": 0,
-            "utilization_percent": 0.0,
-            "in_progress_tasks": 0,
-            "worker_details": [],
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "note": "Use Temporal Cloud metrics dashboard for accurate worker metrics"
+            "active_workers": active_worker_count,
+            "worker_count": active_worker_count,  # Alias for consistency
+            "total_task_slots": total_task_slots,
+            "busy_tasks": busy_tasks,
+            "idle_tasks": idle_tasks,
+            "busy_threads": busy_tasks,  # Alias for backward compatibility
+            "idle_threads": idle_tasks,  # Alias for backward compatibility
+            "utilization_percent": round(utilization_percent, 2),
+            "in_progress_tasks": busy_tasks,  # Alias for backward compatibility
+            "tasks_per_worker": WORKER_CONCURRENCY,
+            "total_pending_messages": total_pending,  # Total unacknowledged (includes stuck)
+            "total_stream_length": total_length,
+            "stuck_tasks": max(0, total_pending - busy_tasks),  # Tasks beyond capacity
+            "worker_details": worker_details,
+            "consumer_group": CONSUMER_GROUP,
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
         logger.error(f"Failed to get worker metrics: {e}")

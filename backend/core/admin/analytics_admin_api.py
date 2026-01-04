@@ -398,6 +398,7 @@ async def browse_threads(
     max_messages: Optional[int] = Query(None, description="Maximum user messages"),
     search_email: Optional[str] = Query(None, description="Filter by user email"),
     category: Optional[str] = Query(None, description="Filter by project category"),
+    tier: Optional[str] = Query(None, description="Filter by subscription tier"),
     date_from: Optional[str] = Query(None, description="Filter from date (YYYY-MM-DD)"),
     date_to: Optional[str] = Query(None, description="Filter to date (YYYY-MM-DD)"),
     sort_by: str = Query("created_at", description="Sort field"),
@@ -417,6 +418,7 @@ async def browse_threads(
         pagination_params = PaginationParams(page=page, page_size=page_size)
         has_message_filter = min_messages is not None or max_messages is not None
         has_category_filter = category is not None
+        has_tier_filter = tier is not None
         
         # EMAIL SEARCH PATH: Query threads directly by account_id (no limit)
         # This must come first to avoid the 1000 thread limit in filtered path
@@ -426,20 +428,20 @@ async def browse_threads(
                 min_messages, max_messages, date_from, date_to, sort_by, sort_order
             )
         
-        # If filtering by message count or category without date range, default to last 7 days
-        if (has_message_filter or has_category_filter) and not date_from:
+        # If filtering by message count, category, or tier without date range, default to last 7 days
+        if (has_message_filter or has_category_filter or has_tier_filter) and not date_from:
             date_from = (datetime.now(BERLIN_TZ) - timedelta(days=7)).strftime('%Y-%m-%d')
         
-        # SIMPLE PATH: No message/email/category filter - paginate directly from DB
-        if not has_message_filter and not has_category_filter:
+        # SIMPLE PATH: No message/email/category/tier filter - paginate directly from DB
+        if not has_message_filter and not has_category_filter and not has_tier_filter:
             return await _browse_threads_simple(
                 client, pagination_params, date_from, date_to, sort_by, sort_order
             )
         
-        # FILTERED PATH: Need to check message counts or category
+        # FILTERED PATH: Need to check message counts, category, or tier
         return await _browse_threads_filtered(
             client, pagination_params, min_messages, max_messages,
-            None, category, date_from, date_to, sort_by, sort_order  # search_email already handled above
+            None, category, tier, date_from, date_to, sort_by, sort_order  # search_email already handled above
         )
         
     except Exception as e:
@@ -582,43 +584,44 @@ async def _browse_threads_filtered(
     client, params: PaginationParams,
     min_messages: Optional[int], max_messages: Optional[int],
     search_email: Optional[str], category: Optional[str],
+    tier: Optional[str],
     date_from: Optional[str], date_to: Optional[str],
     sort_by: str, sort_order: str
 ) -> PaginatedResponse[ThreadAnalytics]:
-    """Filtered path: fetch threads with optional category/date filtering using JOINs."""
+    """Filtered path: fetch threads with optional category/tier/date filtering using JOINs."""
     
-    # When filtering by category, use database function for efficient JOIN with pagination
-    # This fetches only the records we need (e.g., 15) instead of 1000
-    if category:
-        # Build date parameters for RPC using Berlin timezone (consistent with category distribution)
-        date_from_param = None
-        date_to_param = None
-        
-        if date_from:
-            # Parse date and convert to Berlin timezone start of day
-            from_dt = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ) if 'T' not in date_from else datetime.fromisoformat(date_from)
-            date_from_param = from_dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        if date_to:
-            # Parse date and convert to Berlin timezone end of day
-            to_dt = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ) if 'T' not in date_to else datetime.fromisoformat(date_to)
-            date_to_param = to_dt.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
-        
-        # Calculate offset for pagination
-        offset = (params.page - 1) * params.page_size
-        
+    # Build date parameters for RPC using Berlin timezone
+    date_from_param = None
+    date_to_param = None
+    
+    if date_from:
+        from_dt = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ) if 'T' not in date_from else datetime.fromisoformat(date_from)
+        date_from_param = from_dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if date_to:
+        to_dt = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ) if 'T' not in date_to else datetime.fromisoformat(date_to)
+        date_to_param = to_dt.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+    
+    # Calculate offset for pagination
+    offset = (params.page - 1) * params.page_size
+    
+    # COMBINED TIER + CATEGORY FILTER PATH: Use combined RPC function
+    # Handles tier only, category only, or both together
+    if tier or category:
         # Get total count first for pagination
         count_params = {
+            'p_tier': tier,
             'p_category': category,
             'p_date_from': date_from_param,
             'p_date_to': date_to_param,
             'p_min_messages': min_messages,
             'p_max_messages': max_messages
         }
-        count_result = await client.rpc('get_threads_by_category_count', count_params).execute()
+        count_result = await client.rpc('get_threads_by_tier_and_category_count', count_params).execute()
         total_count = count_result.data if isinstance(count_result.data, int) else 0
         
         # Get only the page of threads we need
         rpc_params = {
+            'p_tier': tier,
             'p_category': category,
             'p_date_from': date_from_param,
             'p_date_to': date_to_param,
@@ -630,13 +633,15 @@ async def _browse_threads_filtered(
             'p_offset': offset
         }
         
-        result = await client.rpc('get_threads_by_category', rpc_params).execute()
+        result = await client.rpc('get_threads_by_tier_and_category', rpc_params).execute()
         page_threads = result.data or []
         
-        logger.debug(f"Category filter via RPC: category={category}, page={params.page}, fetched {len(page_threads)} of {total_count} total")
+        filter_desc = f"tier={tier}" if tier else ""
+        if category:
+            filter_desc += f"{', ' if filter_desc else ''}category={category}"
+        logger.debug(f"Combined filter via RPC: {filter_desc}, page={params.page}, fetched {len(page_threads)} of {total_count} total")
         
         # Enrich threads with project/user data and return directly
-        # Note: Email search is handled separately in _browse_threads_by_email before this function
         enriched_threads = await _enrich_threads(client, page_threads)
         
         return await PaginationService.paginate_with_total_count(
@@ -1020,9 +1025,10 @@ async def get_message_distribution(
 @router.get("/projects/category-distribution")
 async def get_category_distribution(
     date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    tier: Optional[str] = Query(None, description="Filter by subscription tier"),
     admin: dict = Depends(require_admin)
 ) -> Dict[str, Any]:
-    """Get distribution of projects by category for a specific day."""
+    """Get distribution of projects by category for a specific day, optionally filtered by tier."""
     try:
         db = DBConnection()
         client = await db.client
@@ -1041,39 +1047,59 @@ async def get_category_distribution(
         end_of_day = selected_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
         
         # Use database function for efficient GROUP BY aggregation (bypasses row limits)
+        # Build RPC params with optional tier filter
+        rpc_params = {
+            'start_date': start_of_day,
+            'end_date': end_of_day,
+            'p_tier': tier  # Will be NULL if not provided
+        }
+        
+        # Build count query with optional tier filter
+        count_query = client.from_('projects').select('project_id', count='exact').gte(
+            'created_at', start_of_day
+        ).lte('created_at', end_of_day)
+        
+        if tier:
+            # Need to join with credit_accounts for tier filtering
+            # For simplicity, we'll just use the RPC result count when tier is filtered
+            pass
+        
         # Run both queries in parallel
         result, count_result = await asyncio.gather(
-            client.rpc('get_project_category_distribution', {
-                'start_date': start_of_day,
-                'end_date': end_of_day
-            }).execute(),
-            # Get actual project count (not sum of categories which overcounts multi-category projects)
-            client.from_('projects').select('project_id', count='exact').gte(
-                'created_at', start_of_day
-            ).lte('created_at', end_of_day).limit(1).execute()
+            client.rpc('get_project_category_distribution', rpc_params).execute(),
+            count_query.limit(1).execute() if not tier else asyncio.sleep(0)  # Skip count query if tier filter
         )
         
         if not result.data:
             return {
                 "distribution": {},
                 "total_projects": 0,
-                "date": date or selected_date.strftime("%Y-%m-%d")
+                "date": date or selected_date.strftime("%Y-%m-%d"),
+                "tier": tier
             }
         
         # Build distribution from aggregated results
         distribution = {}
+        total_from_distribution = 0
         for row in result.data:
             category = row.get('category', 'Uncategorized')
             count = row.get('count', 0)
             distribution[category] = count
+            total_from_distribution += count
         
-        # Use actual distinct project count
-        total_projects = count_result.count or 0
+        # Use actual distinct project count when no tier filter, otherwise use sum from distribution
+        if tier:
+            # When tier filter is applied, sum the distribution counts
+            # Note: This may overcount multi-category projects, but is accurate for filtered view
+            total_projects = total_from_distribution
+        else:
+            total_projects = count_result.count or 0
         
         return {
             "distribution": distribution,
             "total_projects": total_projects,
-            "date": date or selected_date.strftime("%Y-%m-%d")
+            "date": date or selected_date.strftime("%Y-%m-%d"),
+            "tier": tier
         }
         
     except HTTPException:
@@ -1081,6 +1107,64 @@ async def get_category_distribution(
     except Exception as e:
         logger.error(f"Failed to get category distribution: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get category distribution")
+
+
+@router.get("/threads/tier-distribution")
+async def get_tier_distribution(
+    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    admin: dict = Depends(require_admin)
+) -> Dict[str, Any]:
+    """Get distribution of threads by subscription tier for a specific day."""
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        # Parse date or default to today
+        if date:
+            try:
+                selected_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+        else:
+            selected_date = datetime.now(BERLIN_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Filter to selected day
+        start_of_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        end_of_day = selected_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+        
+        # Use database function for efficient GROUP BY aggregation
+        result = await client.rpc('get_thread_tier_distribution', {
+            'start_date': start_of_day,
+            'end_date': end_of_day
+        }).execute()
+        
+        if not result.data:
+            return {
+                "distribution": {},
+                "total_threads": 0,
+                "date": date or selected_date.strftime("%Y-%m-%d")
+            }
+        
+        # Build distribution from aggregated results
+        distribution = {}
+        total_threads = 0
+        for row in result.data:
+            tier = row.get('tier', 'none')
+            count = row.get('count', 0)
+            distribution[tier] = count
+            total_threads += count
+        
+        return {
+            "distribution": distribution,
+            "total_threads": total_threads,
+            "date": date or selected_date.strftime("%Y-%m-%d")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get tier distribution: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get tier distribution")
 
 
 @router.get("/visitors")

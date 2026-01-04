@@ -42,10 +42,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    # Temporal worker now handles multiple queues:
-    # - agent-runs: High-priority, long-running agent executions
-    # - background: Memory extraction, categorization, etc.
-    command: uv run python -m core.temporal.worker
+    command: uv run python run_worker.py --concurrency 48
     env_file:
       - .env
     volumes:
@@ -63,16 +60,13 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=
       - LOG_LEVEL=INFO
-      # Optional: Override auto-tuned concurrency settings
-      # - MAX_CONCURRENT_AGENT_RUNS=8
-      # - MAX_CONCURRENT_BACKGROUND_TASKS=50
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD", "uv", "run", "worker_health.py"]
+      test: ["CMD", "uv", "run", "python", "core/utils/scripts/worker_health.py"]
       timeout: 30s
       interval: 30s
       retries: 3

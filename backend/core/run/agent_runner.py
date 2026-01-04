@@ -18,8 +18,39 @@ from core.run.config import AgentConfig
 from core.run.tool_manager import ToolManager
 from core.run.mcp_manager import MCPManager
 from core.run.prompt_manager import PromptManager
+from core.worker.tool_output_streaming_context import get_tool_output_streaming_context
 
 load_dotenv()
+
+async def _stream_status_message(status: str, message: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+    """Helper function to write status messages to Redis stream via streaming context."""
+    ctx = get_tool_output_streaming_context()
+    if not ctx:
+        return  # No streaming context available
+    
+    try:
+        from core.services import redis
+        
+        status_msg = {
+            "type": "status",
+            "status": status,
+            "message": message
+        }
+        if metadata:
+            status_msg["metadata"] = metadata
+        
+        status_json = json.dumps(status_msg)
+        await asyncio.wait_for(
+            redis.stream_add(
+                ctx.stream_key,
+                {"data": status_json},
+                maxlen=200,
+                approximate=True
+            ),
+            timeout=2.0
+        )
+    except (asyncio.TimeoutError, Exception):
+        pass  # Non-critical, don't log
 
 class AgentRunner:
     def __init__(self, config: AgentConfig):
@@ -34,6 +65,8 @@ class AgentRunner:
         from core.utils.config import config
         setup_start = time.time()
         
+        await _stream_status_message("initializing", "Starting bootstrap setup...")
+        
         if self.cancellation_event and self.cancellation_event.is_set():
             raise asyncio.CancelledError("Cancelled before bootstrap")
         
@@ -47,6 +80,7 @@ class AgentRunner:
             disabled_tools=disabled_tools
         )
         
+        await _stream_status_message("initializing", "Creating thread manager...")
         self.thread_manager = ThreadManager(
             trace=self.config.trace,
             agent_config=self.config.agent_config,
@@ -68,9 +102,12 @@ class AgentRunner:
         else:
             self.account_id = self.config.account_id
         
+        await _stream_status_message("initializing", "Setting up MCP tools...")
         await self._initialize_mcp_jit_loader(cache_only=False)
         
         elapsed_ms = (time.time() - setup_start) * 1000
+        
+        await _stream_status_message("initializing", "Bootstrap setup complete, initializing tools...")
         
         if config.ENABLE_BOOTSTRAP_MODE:
             if elapsed_ms > config.BOOTSTRAP_SLO_CRITICAL_MS:
@@ -94,7 +131,7 @@ class AgentRunner:
                 logger.info("⚠️ [ENRICHMENT] Cancelled before starting")
                 return
             
-            from core.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
+            from core.cache.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
             
             cached_project = await get_cached_project_metadata(self.config.project_id)
             if not cached_project:
@@ -203,7 +240,7 @@ class AgentRunner:
             self.account_id = self.config.account_id
             
             q_start = time.time()
-            from core.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
+            from core.cache.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
             
             cached_project = await get_cached_project_metadata(self.config.project_id)
             if cached_project:
@@ -240,7 +277,7 @@ class AgentRunner:
         else:
             parallel_start = time.time()
             
-            from core.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
+            from core.cache.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
             
             thread_query = self.client.table('threads').select('account_id').eq('thread_id', self.config.thread_id).execute()
             project_query = self.client.table('projects').select('project_id, sandbox_resource_id').eq('project_id', self.config.project_id).execute()
@@ -420,6 +457,7 @@ class AgentRunner:
                 logger.info(f"⏱️ [TIMING] AgentRunner.setup() completed in {(time.time() - setup_start) * 1000:.1f}ms")
             
             parallel_start = time.time()
+            await _stream_status_message("initializing", "Registering tools...")
             setup_tools_task = asyncio.create_task(self._setup_tools_async())
             await setup_tools_task
 
@@ -438,6 +476,7 @@ class AgentRunner:
             tools_elapsed = (time.time() - parallel_start) * 1000
             logger.info(f"⏱️ [TIMING] Tool setup: {tools_elapsed:.1f}ms (MCP deferred to enrichment)")
             
+            await _stream_status_message("initializing", "Building system prompt...")
             prompt_start = time.time()
             
             logger.debug(f"⚡ [PROMPT_CHECK] ENABLE_MINIMAL={config.ENABLE_MINIMAL_PROMPT}, ENABLE_BOOTSTRAP={config.ENABLE_BOOTSTRAP_MODE}, enrichment_complete={self.enrichment_complete}")
@@ -480,6 +519,8 @@ class AgentRunner:
             
             total_setup = (time.time() - run_start) * 1000
             logger.info(f"⏱️ [TIMING] 🚀 TOTAL AgentRunner setup: {total_setup:.1f}ms (ready for first LLM call) [Message query deferred]")
+            
+            await _stream_status_message("ready", "Agent ready, starting execution...")
 
             while continue_execution and iteration_count < self.config.max_iterations:
                 self.turn_number += 1
@@ -679,59 +720,29 @@ class AgentRunner:
         if not self.config.agent_config:
             return
         
-        logger.info(f"🔍 [AGENT-MCP-DEBUG] Loading fresh MCP config from current version")
-        
         try:
             agent_id = self.config.agent_config.get('agent_id')
-            logger.info(f"🔍 [AGENT-MCP-DEBUG] Loading fresh config for agent_id: {agent_id}, account_id: {self.account_id}")
             
             from core.versioning.version_service import get_version_service
             version_service = await get_version_service()
             fresh_config = await version_service.get_current_mcp_config(agent_id, self.account_id)
-            
-            logger.info(f"🔍 [AGENT-MCP-DEBUG] Version service returned: {fresh_config is not None}")
-            if fresh_config:
-                logger.info(f"🔍 [AGENT-MCP-DEBUG] Fresh config keys: {list(fresh_config.keys())}")
-            else:
-                logger.warning(f"🔍 [AGENT-MCP-DEBUG] ❌ Version service returned None/empty config")
                 
         except Exception as e:
-            logger.error(f"🔍 [AGENT-MCP-DEBUG] ❌ Failed to load fresh config via version service: {e}", exc_info=True)
+            logger.error(f"❌ Failed to load fresh config via version service: {e}", exc_info=True)
             fresh_config = None
         
         if fresh_config:
-            logger.info(f"🔍 [AGENT-MCP-DEBUG] ✅ Got fresh config:")
-            logger.info(f"🔍 [AGENT-MCP-DEBUG]   custom_mcp: {len(fresh_config.get('custom_mcp', []))}")
-            logger.info(f"🔍 [AGENT-MCP-DEBUG]   configured_mcps: {len(fresh_config.get('configured_mcps', []))}")
-            
-            for i, mcp in enumerate(fresh_config.get('custom_mcp', [])):
-                logger.info(f"🔍 [AGENT-MCP-DEBUG] fresh custom_mcp[{i}]: name={mcp.get('name')}, toolkit_slug={mcp.get('toolkit_slug')}")
-            
-            for i, mcp in enumerate(fresh_config.get('configured_mcps', [])):
-                logger.info(f"🔍 [AGENT-MCP-DEBUG] fresh configured_mcp[{i}]: name={mcp.get('name')}, toolkit_slug={mcp.get('toolkit_slug')}")
-            
-            old_custom_mcps = len(self.config.agent_config.get("custom_mcps", []))
-            old_configured_mcps = len(self.config.agent_config.get("configured_mcps", []))
-            
             agent_config_update = {
                 'custom_mcps': fresh_config.get('custom_mcp', []),
                 'configured_mcps': fresh_config.get('configured_mcps', [])
             }
             self.config.agent_config.update(agent_config_update)
-            
-            logger.info(f"🔍 [AGENT-MCP-DEBUG] Updated agent config: old custom={old_custom_mcps}, new custom={len(self.config.agent_config.get('custom_mcps', []))}")
-            logger.info(f"🔍 [AGENT-MCP-DEBUG] Updated agent config: old configured={old_configured_mcps}, new configured={len(self.config.agent_config.get('configured_mcps', []))}")
-            
             self.thread_manager.tool_registry.invalidate_mcp_cache()
-        else:
-            logger.warning(f"🔍 [AGENT-MCP-DEBUG] ❌ No fresh config loaded")
         
         custom_mcps = self.config.agent_config.get("custom_mcps", [])
         configured_mcps = self.config.agent_config.get("configured_mcps", [])
         
         logger.debug(f"⚡ [MCP JIT] Loading MCPs: {len(custom_mcps)} custom, {len(configured_mcps)} configured")
-        for i, mcp in enumerate(custom_mcps):
-            logger.debug(f"⚡ [MCP JIT] Custom MCP {i}: name={mcp.get('name')}, toolkit_slug={mcp.get('toolkit_slug')}, type={mcp.get('type')}")
         
         if custom_mcps or configured_mcps:
             try:
@@ -748,12 +759,7 @@ class AgentRunner:
                     await self.thread_manager.mcp_loader.build_tool_map(cache_only=cache_only)
                 else:
                     if fresh_config:
-                        logger.info(f"🔍 [AGENT-MCP-DEBUG] ✅ Using FRESH config for loader rebuild")
-                        logger.info(f"🔍 [AGENT-MCP-DEBUG] Fresh config: custom_mcp={len(fresh_config.get('custom_mcp', []))}, configured_mcps={len(fresh_config.get('configured_mcps', []))}")
                         await self.thread_manager.mcp_loader.rebuild_tool_map(fresh_config)
-                    else:
-                        logger.error(f"🔍 [AGENT-MCP-DEBUG] ❌ CRITICAL: No fresh config available! Skipping rebuild to avoid stale data")
-                        logger.error(f"🔍 [AGENT-MCP-DEBUG] This means the system prompt will have stale MCP tools!")
                     if cache_only:
                         await self.thread_manager.mcp_loader.build_tool_map(cache_only=cache_only)
                 
