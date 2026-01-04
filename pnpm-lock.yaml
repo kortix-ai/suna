@@ -715,8 +715,8 @@ importers:
         specifier: ^3.0.5
         version: 3.0.6
       '@expensify/react-native-live-markdown':
-        specifier: ^0.1.317
-        version: 0.1.319(expensify-common@2.0.169)(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0)
+        specifier: 0.1.317
+        version: 0.1.317(expensify-common@2.0.169)(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0)
       '@gorhom/bottom-sheet':
         specifier: ^5.2.6
         version: 5.2.8(@types/react@19.2.7)(react-native-gesture-handler@2.28.0)(react-native-reanimated@4.1.6)(react-native@0.81.5)(react@19.1.0)
@@ -2906,8 +2906,8 @@ packages:
       levn: 0.4.1
     dev: true
 
-  /@expensify/react-native-live-markdown@0.1.319(expensify-common@2.0.169)(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0):
-    resolution: {integrity: sha512-FLiJ9wWSUPzbE87ftXrgf8GxM3Yawu8vQwAVhnTBNhMMs6fMEEp9cIShIYYNJ43oAiAb6KYNvU25YxVMvDk+WQ==}
+  /@expensify/react-native-live-markdown@0.1.317(expensify-common@2.0.169)(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0):
+    resolution: {integrity: sha512-B5KYLH7O8jHiP5AWQJ+n/fXPN4XldH+ODiwAylEVUOWEcbI0WztFYWK4fCsCq6kx3ajYl0Y58nfza3jnSuj95g==}
     engines: {node: '>= 18.0.0'}
     peerDependencies:
       expensify-common: '>=2.0.148'
