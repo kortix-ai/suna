@@ -32,6 +32,13 @@ export interface ContainerLoadData {
   language: string;
 }
 
+/**
+ * Pages documented for routeChange tracking (from Miro/data dictionary)
+ * Only these page types should trigger routeChange events
+ */
+export const TRACKED_PAGE_TYPES = ['home', 'auth', 'plans', 'order_confirm'] as const;
+export type TrackedPageType = typeof TRACKED_PAGE_TYPES[number];
+
 export function getPageContext(pathname: string): ContainerLoadData {
   // Determine language from document or default to 'en'
   const language = typeof document !== 'undefined' 
@@ -39,6 +46,7 @@ export function getPageContext(pathname: string): ContainerLoadData {
     : 'en';
 
   // Map pathname to page context
+  // Homepage
   if (pathname === '/' || pathname === '') {
     return {
       master_group: 'General',
@@ -48,6 +56,7 @@ export function getPageContext(pathname: string): ContainerLoadData {
     };
   }
   
+  // Auth pages
   if (pathname.startsWith('/auth')) {
     return {
       master_group: 'General',
@@ -57,6 +66,7 @@ export function getPageContext(pathname: string): ContainerLoadData {
     };
   }
   
+  // Dashboard (main dashboard page only)
   if (pathname === '/dashboard') {
     return {
       master_group: 'Platform',
@@ -66,6 +76,27 @@ export function getPageContext(pathname: string): ContainerLoadData {
     };
   }
   
+  // Plans/Subscription page
+  if (pathname === '/subscription' || pathname.startsWith('/subscription')) {
+    return {
+      master_group: 'Platform',
+      content_group: 'Dashboard',
+      page_type: 'plans',
+      language,
+    };
+  }
+  
+  // Checkout page (Stripe embedded checkout)
+  if (pathname === '/checkout' || pathname.startsWith('/checkout')) {
+    return {
+      master_group: 'Platform',
+      content_group: 'Dashboard',
+      page_type: 'checkout',
+      language,
+    };
+  }
+  
+  // Projects/Threads - NOT tracked for routeChange (internal navigation)
   if (pathname.startsWith('/projects') || pathname.startsWith('/thread')) {
     return {
       master_group: 'Platform',
@@ -75,6 +106,7 @@ export function getPageContext(pathname: string): ContainerLoadData {
     };
   }
   
+  // Settings - NOT tracked for routeChange (internal navigation)
   if (pathname.startsWith('/settings')) {
     return {
       master_group: 'Platform',
@@ -91,6 +123,14 @@ export function getPageContext(pathname: string): ContainerLoadData {
     page_type: 'other',
     language,
   };
+}
+
+/**
+ * Check if a page type should trigger routeChange events
+ * Only documented pages (Homepage, Auth, Dashboard, Plans, Order Confirm) should be tracked
+ */
+export function shouldTrackRouteChange(pageType: string): boolean {
+  return TRACKED_PAGE_TYPES.includes(pageType as TrackedPageType);
 }
 
 export function pushContainerLoad(pathname: string) {
@@ -155,19 +195,42 @@ export interface RouteChangeData {
   page_title: string;
   page_referrer: string;
   is_initial_load: boolean;
+  // Contextual variables included when they change during navigation
+  master_group: string;
+  content_group: string;
+  page_type: string;
 }
 
 /**
  * Push a routeChange event to the dataLayer
  * This tracks SPA navigation for accurate GA4 page views
+ * 
+ * Only fires for documented pages: Homepage, Auth, Dashboard, Plans, Order Confirm
+ * Does NOT fire for internal navigation (threads, settings, etc.)
  */
 export function trackRouteChange(pathname: string, searchParams?: string) {
   if (typeof window === 'undefined') return;
   
+  // Get contextual variables for the current page
+  const pageContext = getPageContext(pathname);
+  
+  // Determine if this is an order confirmation (returning from Stripe checkout)
+  const isOrderConfirm = pathname === '/dashboard' && searchParams?.includes('subscription=activated');
+  const effectivePageType = isOrderConfirm ? 'order_confirm' : pageContext.page_type;
+  
+  // Only track documented pages (Homepage, Auth, Dashboard, Plans, Order Confirm)
+  // Skip internal navigation like threads, settings, etc.
+  if (!shouldTrackRouteChange(effectivePageType)) {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[GTM] routeChange skipped (not a tracked page):', pathname, effectivePageType);
+    }
+    return;
+  }
+  
   // Initialize dataLayer if needed
   initDataLayer();
   
-  // Construct the full path with search params
+  // Construct the full URL with search params for page_location only
   const fullPath = searchParams ? `${pathname}?${searchParams}` : pathname;
   const pageLocation = `${window.location.origin}${fullPath}`;
   
@@ -181,13 +244,17 @@ export function trackRouteChange(pathname: string, searchParams?: string) {
   const initialLoad = isInitialLoad();
   
   // Construct the data object according to data dictionary
+  // Note: page_path should NOT include query strings (only page_location does)
   const routeChangeData: RouteChangeData = {
     event: 'routeChange',
     page_location: pageLocation,
-    page_path: fullPath,
+    page_path: pathname,
     page_title: pageTitle,
     page_referrer: pageReferrer,
     is_initial_load: initialLoad,
+    master_group: pageContext.master_group,
+    content_group: pageContext.content_group,
+    page_type: effectivePageType,
   };
   
   // Push to dataLayer
@@ -213,6 +280,59 @@ export function clearGTMSession() {
   if (typeof window === 'undefined') return;
   sessionStorage.removeItem('gtm_previous_page');
   sessionStorage.removeItem('gtm_has_tracked');
+}
+
+/**
+ * Track routeChange for modal views (like Plans modal)
+ * Used when a modal opens but URL doesn't change
+ */
+export function trackRouteChangeForModal(pageType: 'plans' | 'order_confirm') {
+  if (typeof window === 'undefined') return;
+  
+  initDataLayer();
+  
+  const pageLocation = window.location.href;
+  const pathname = window.location.pathname;
+  const pageTitle = document.title || pathname;
+  const pageReferrer = getPageReferrer();
+  const initialLoad = isInitialLoad();
+  
+  // Get context based on modal type
+  const contextMap = {
+    plans: {
+      master_group: 'Platform',
+      content_group: 'Dashboard',
+      page_type: 'plans',
+    },
+    order_confirm: {
+      master_group: 'Platform',
+      content_group: 'Dashboard',
+      page_type: 'order_confirm',
+    },
+  };
+  
+  const context = contextMap[pageType];
+  
+  const routeChangeData: RouteChangeData = {
+    event: 'routeChange',
+    page_location: pageLocation,
+    page_path: pathname,
+    page_title: pageTitle,
+    page_referrer: pageReferrer,
+    is_initial_load: initialLoad,
+    master_group: context.master_group,
+    content_group: context.content_group,
+    page_type: context.page_type,
+  };
+  
+  window.dataLayer?.push(routeChangeData);
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[GTM] routeChange (modal) pushed:', routeChangeData);
+  }
+  
+  storePreviousPage();
+  markAsTracked();
 }
 
 // =============================================================================
