@@ -74,15 +74,12 @@ export function useSmoothAnimation(config: SmoothAnimationConfig = {}): SmoothAn
     onFrame: (displayedLength: number) => void,
     onComplete?: () => void
   ) => {
-    // Update target tracking
     stateRef.current.lastTargetLength = targetLength;
 
-    // If already caught up, no animation needed
     if (stateRef.current.displayedLength >= targetLength) {
       return;
     }
 
-    // Initialize timing if needed
     if (stateRef.current.lastUpdateTime === null) {
       stateRef.current.lastUpdateTime = performance.now();
     }
@@ -92,20 +89,28 @@ export function useSmoothAnimation(config: SmoothAnimationConfig = {}): SmoothAn
       
       if (state.lastUpdateTime === null) {
         state.lastUpdateTime = currentTime;
-        state.rafId = requestAnimationFrame(animateFrame);
+        scheduleNextFrame();
         return;
       }
 
-      const deltaTime = (currentTime - state.lastUpdateTime) / 1000;
+      let deltaTime = (currentTime - state.lastUpdateTime) / 1000;
+      
+      if (deltaTime > 0.5) {
+        deltaTime = 0.016;
+      }
+      
       state.lastUpdateTime = currentTime;
 
-      // Calculate how many characters to reveal
       const charsBehind = targetLength - state.displayedLength;
       
-      // Speed up if we're far behind
-      const effectiveSpeed = charsBehind > catchUpThreshold 
-        ? charsPerSecond * catchUpMultiplier 
-        : charsPerSecond;
+      let effectiveSpeed: number;
+      if (charsBehind > 500) {
+        effectiveSpeed = charsPerSecond * 10;
+      } else if (charsBehind > catchUpThreshold) {
+        effectiveSpeed = charsPerSecond * catchUpMultiplier;
+      } else {
+        effectiveSpeed = charsPerSecond;
+      }
       
       const charsToAdd = deltaTime * effectiveSpeed;
       const newLength = Math.min(
@@ -118,9 +123,8 @@ export function useSmoothAnimation(config: SmoothAnimationConfig = {}): SmoothAn
         onFrame(state.displayedLength);
       }
 
-      // Continue if more to reveal
       if (state.displayedLength < targetLength) {
-        state.rafId = requestAnimationFrame(animateFrame);
+        scheduleNextFrame();
       } else {
         state.rafId = null;
         state.lastUpdateTime = null;
@@ -128,9 +132,18 @@ export function useSmoothAnimation(config: SmoothAnimationConfig = {}): SmoothAn
       }
     };
 
-    // Start animation if not already running
+    const scheduleNextFrame = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        stateRef.current.rafId = window.setTimeout(() => {
+          animateFrame(performance.now());
+        }, 16) as unknown as number;
+      } else {
+        stateRef.current.rafId = requestAnimationFrame(animateFrame);
+      }
+    };
+
     if (stateRef.current.rafId === null) {
-      stateRef.current.rafId = requestAnimationFrame(animateFrame);
+      scheduleNextFrame();
     }
   }, [charsPerSecond, catchUpThreshold, catchUpMultiplier]);
 

@@ -1,9 +1,4 @@
-/**
- * Core streaming hook logic - platform agnostic
- * Accepts platform-specific dependencies via adapter pattern
- */
-
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useCallback, useRef, useEffect, useState, useMemo } from 'react';
 import type { UnifiedMessage, ParsedContent, ParsedMetadata } from '../types';
 import type { TextChunk } from './text-ordering';
 import { safeJsonParse } from '../utils';
@@ -94,8 +89,13 @@ export function useAgentStreamCore(
   // Tool call throttling refs
   const previousToolCallStateRef = useRef<string | null>(null);
   const lastToolCallUpdateTimeRef = useRef<number>(0);
-  const toolCallArgumentsRef = useRef<Map<string, string>>(new Map()); // Track accumulated arguments per tool call
-  const THROTTLE_MS = 100; // Increased throttle time to allow smooth streaming (100ms = ~10 updates/sec)
+  const toolCallArgumentsRef = useRef<Map<string, string>>(new Map());
+  const THROTTLE_MS = 100;
+  
+  // Heartbeat detection refs
+  const lastMessageTimeRef = useRef<number>(0);
+  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const HEARTBEAT_TIMEOUT_MS = 30000;
   
   // Callbacks ref for stable access
   const callbacksRef = useRef(callbacks);
@@ -120,12 +120,14 @@ export function useAgentStreamCore(
       if (streamCleanupRef.current) {
         streamCleanupRef.current();
       }
-      // Clean up throttling
       if (rafRef.current && typeof (globalThis as any).cancelAnimationFrame !== 'undefined') {
         (globalThis as any).cancelAnimationFrame(rafRef.current);
       }
       if (throttleTimeoutRef.current) {
         (globalThis as any).clearTimeout(throttleTimeoutRef.current);
+      }
+      if (heartbeatIntervalRef.current) {
+        (globalThis as any).clearInterval(heartbeatIntervalRef.current);
       }
     };
   }, []);
@@ -234,7 +236,6 @@ export function useAgentStreamCore(
         streamCleanupRef.current = null;
       }
 
-      // Clean up throttling
       if (rafRef.current && typeof (globalThis as any).cancelAnimationFrame !== 'undefined') {
         (globalThis as any).cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
@@ -242,6 +243,10 @@ export function useAgentStreamCore(
       if (throttleTimeoutRef.current) {
         (globalThis as any).clearTimeout(throttleTimeoutRef.current);
         throttleTimeoutRef.current = null;
+      }
+      if (heartbeatIntervalRef.current) {
+        (globalThis as any).clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
       }
       pendingContentRef.current = [];
 
@@ -294,6 +299,8 @@ export function useAgentStreamCore(
   const handleStreamMessage = useCallback((rawData: string) => {
     if (!isMountedRef.current) return;
     if (threadIdRef.current !== threadId) return;
+
+    lastMessageTimeRef.current = Date.now();
 
     const processedData = preprocessStreamData(rawData);
     if (!processedData || processedData.trim() === '') {
@@ -627,7 +634,7 @@ export function useAgentStreamCore(
 
       // Get agent status using shared API call
       getAgentStatus(runId, config)
-        .then((agentStatus) => {
+        .then((agentStatus: { status: string; error?: string }) => {
           if (!isMountedRef.current) return;
           if (currentRunIdRef.current !== runId) return;
           if (['completed', 'stopped', 'error', 'agent_not_running'].includes(status)) {
@@ -662,7 +669,7 @@ export function useAgentStreamCore(
             finalizeStream(finalStatus, runId);
           }
         })
-        .catch((err) => {
+        .catch((err: unknown) => {
           if (!isMountedRef.current) return;
           if (currentRunIdRef.current !== runId) return;
 
@@ -804,6 +811,33 @@ export function useAgentStreamCore(
     const openHandler = () => {
       if (currentRunIdRef.current === runId) {
         updateStatus('streaming');
+        lastMessageTimeRef.current = Date.now();
+        
+        if (heartbeatIntervalRef.current) {
+          (globalThis as any).clearInterval(heartbeatIntervalRef.current);
+        }
+        heartbeatIntervalRef.current = (globalThis as any).setInterval(() => {
+          if (!isMountedRef.current || currentRunIdRef.current !== runId) {
+            if (heartbeatIntervalRef.current) {
+              (globalThis as any).clearInterval(heartbeatIntervalRef.current);
+              heartbeatIntervalRef.current = null;
+            }
+            return;
+          }
+          
+          const timeSinceLastMessage = Date.now() - lastMessageTimeRef.current;
+          if (timeSinceLastMessage > HEARTBEAT_TIMEOUT_MS) {
+            console.warn(`[useAgentStreamCore] No message received for ${timeSinceLastMessage}ms, checking agent status`);
+            getAgentStatus(runId, config)
+              .then((statusResult: { status: string; error?: string }) => {
+                if (!isMountedRef.current || currentRunIdRef.current !== runId) return;
+                if (statusResult.status !== 'running') {
+                  finalizeStream(mapAgentStatus(statusResult.status), runId);
+                }
+              })
+              .catch(() => {});
+          }
+        }, 10000);
       }
     };
 
@@ -812,7 +846,7 @@ export function useAgentStreamCore(
     } else if (eventSource.onopen) {
       eventSource.onopen = openHandler;
     }
-  }, [config, callbacks, threadId, handleStreamMessage, handleStreamError, handleStreamClose, updateStatus, getAgentStatus]);
+  }, [config, callbacks, threadId, handleStreamMessage, handleStreamError, handleStreamClose, updateStatus, getAgentStatus, finalizeStream]);
 
   const stopStreaming = useCallback(async () => {
     if (streamCleanupRef.current) {
