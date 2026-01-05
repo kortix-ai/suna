@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Callable, TypeVar, Any
 from supabase import create_async_client, AsyncClient
 from core.utils.logger import logger
 from core.utils.config import config
@@ -10,6 +10,7 @@ import threading
 import httpx
 import time
 import asyncio
+import random
 
 # =============================================================================
 # Connection Pool Configuration
@@ -44,11 +45,20 @@ SUPABASE_POOL_TIMEOUT = float(os.getenv("SUPABASE_POOL_TIMEOUT", "30.0"))       
 SUPABASE_HTTP2_ENABLED = os.getenv("SUPABASE_HTTP2_ENABLED", "true").lower() == "true"
 SUPABASE_RETRIES = int(os.getenv("SUPABASE_RETRIES", "3"))  # Transport-level retries
 
+# PostgREST route error retry settings
+POSTGREST_ROUTE_ERROR_MAX_RETRIES = int(os.getenv("POSTGREST_ROUTE_ERROR_MAX_RETRIES", "5"))
+POSTGREST_ROUTE_ERROR_BASE_DELAY = float(os.getenv("POSTGREST_ROUTE_ERROR_BASE_DELAY", "0.5"))
+POSTGREST_ROUTE_ERROR_MAX_DELAY = float(os.getenv("POSTGREST_ROUTE_ERROR_MAX_DELAY", "8.0"))
+
+T = TypeVar('T')
+
 
 class DBConnection:
     _instance: Optional['DBConnection'] = None
     _lock = threading.Lock()
     _async_lock: Optional[asyncio.Lock] = None
+    _reconnect_lock: Optional[asyncio.Lock] = None
+    _reconnect_in_progress: bool = False
 
     def __new__(cls):
         if cls._instance is None:
@@ -60,14 +70,19 @@ class DBConnection:
                     cls._instance._http_client = None
                     cls._instance._last_reset_time = 0
                     cls._instance._consecutive_errors = 0
+                    cls._instance._reconnect_in_progress = False
         return cls._instance
 
     def __init__(self):
         pass
     
+    async def _get_reconnect_lock(self) -> asyncio.Lock:
+        if self._reconnect_lock is None:
+            self._reconnect_lock = asyncio.Lock()
+        return self._reconnect_lock
+    
     @classmethod
     def is_route_not_found_error(cls, error) -> bool:
-        """Check if an error is a PostgREST 'Route not found' error indicating stale connection."""
         error_str = str(error).lower()
         return (
             'route' in error_str and 'not found' in error_str
@@ -75,30 +90,44 @@ class DBConnection:
             'statuscode' in error_str and '404' in error_str and 'route' in error_str
         )
     
-    async def force_reconnect(self):
-        """Force reconnection - call this when you detect route-not-found errors."""
-        current_time = time.time()
-        # Prevent reconnection spam (max once per 5 seconds)
-        if current_time - self._last_reset_time < 5:
-            logger.debug("Skipping reconnect - too soon since last reset")
-            return
+    @classmethod
+    def is_transient_error(cls, error) -> bool:
+        if cls.is_route_not_found_error(error):
+            return True
+        error_str = str(error).lower()
+        transient_indicators = [
+            'connection', 'timeout', 'timed out', 'temporarily unavailable',
+            'service unavailable', '503', '502', '504', 'connection reset',
+            'connection refused', 'network', 'socket', 'eof'
+        ]
+        return any(indicator in error_str for indicator in transient_indicators)
+    
+    async def force_reconnect(self, wait_if_in_progress: bool = True) -> bool:
+        lock = await self._get_reconnect_lock()
         
-        logger.warning("🔄 Forcing Supabase reconnection due to connection issues...")
-        self._last_reset_time = current_time
-        await self.reset_connection()
-        await self.initialize()
-        logger.info("✅ Supabase connection re-established")
+        if lock.locked():
+            if wait_if_in_progress:
+                logger.debug("🔄 Reconnection in progress, waiting for it to complete...")
+                async with lock:
+                    return True
+            else:
+                logger.debug("Skipping reconnect - already in progress")
+                return False
+        
+        async with lock:
+            current_time = time.time()
+            if current_time - self._last_reset_time < 2:
+                logger.debug("Skipping reconnect - completed very recently")
+                return True
+            
+            logger.warning("🔄 Forcing Supabase reconnection due to connection issues...")
+            self._last_reset_time = current_time
+            await self.reset_connection()
+            await self.initialize()
+            logger.info("✅ Supabase connection re-established")
+            return True
 
     def _create_http_client(self) -> httpx.AsyncClient:
-        """
-        Create an HTTP client with optimized settings for high-concurrency workloads.
-        
-        Features:
-        - Connection pooling with keepalive
-        - Transport-level retries for transient failures
-        - HTTP/2 multiplexing (configurable)
-        - Generous timeouts for stability under load
-        """
         limits = httpx.Limits(
             max_connections=SUPABASE_MAX_CONNECTIONS,
             max_keepalive_connections=SUPABASE_MAX_KEEPALIVE,
@@ -231,12 +260,6 @@ class DBConnection:
 
 
 async def execute_with_reconnect(db: DBConnection, operation, max_retries: int = 2):
-    """
-    Execute a database operation with automatic reconnection on route-not-found errors.
-    
-    Usage:
-        result = await execute_with_reconnect(db, lambda client: client.table('x').select('*').execute())
-    """
     last_error = None
     for attempt in range(max_retries + 1):
         try:
@@ -250,3 +273,82 @@ async def execute_with_reconnect(db: DBConnection, operation, max_retries: int =
             else:
                 raise
     raise last_error
+
+
+async def db_query_with_retry(
+    client_or_db,
+    query_fn: Callable[[AsyncClient], Any],
+    operation_name: str = "db_query",
+    max_retries: int = POSTGREST_ROUTE_ERROR_MAX_RETRIES,
+    base_delay: float = POSTGREST_ROUTE_ERROR_BASE_DELAY,
+    max_delay: float = POSTGREST_ROUTE_ERROR_MAX_DELAY,
+) -> T:
+    from core.utils.db_helpers import get_db
+    
+    db = None
+    if isinstance(client_or_db, DBConnection):
+        db = client_or_db
+    else:
+        db = await get_db()
+    
+    last_error = None
+    
+    for attempt in range(max_retries + 1):
+        try:
+            client = await db.client
+            return await query_fn(client)
+        except Exception as e:
+            last_error = e
+            is_last_attempt = attempt >= max_retries
+            
+            if is_last_attempt:
+                logger.error(
+                    f"❌ [{operation_name}] Failed after {max_retries + 1} attempts: {e}",
+                    exc_info=False
+                )
+                raise
+            
+            is_route_error = DBConnection.is_route_not_found_error(e)
+            is_transient = DBConnection.is_transient_error(e)
+            
+            if is_route_error or is_transient:
+                delay = min(base_delay * (2 ** attempt), max_delay)
+                jitter = random.uniform(0, delay * 0.3)
+                total_delay = delay + jitter
+                
+                error_type = "Route-not-found" if is_route_error else "Transient"
+                logger.warning(
+                    f"🔄 [{operation_name}] {error_type} error (attempt {attempt + 1}/{max_retries + 1}), "
+                    f"retrying in {total_delay:.2f}s: {str(e)[:200]}"
+                )
+                
+                if is_route_error:
+                    await db.force_reconnect(wait_if_in_progress=True)
+                
+                await asyncio.sleep(total_delay)
+            else:
+                logger.error(f"❌ [{operation_name}] Non-retryable error: {e}")
+                raise
+    
+    raise last_error
+
+
+async def db_query_with_fallback(
+    client_or_db,
+    query_fn: Callable[[AsyncClient], Any],
+    fallback_value: T,
+    operation_name: str = "db_query",
+    max_retries: int = POSTGREST_ROUTE_ERROR_MAX_RETRIES,
+) -> T:
+    try:
+        return await db_query_with_retry(
+            client_or_db,
+            query_fn,
+            operation_name=operation_name,
+            max_retries=max_retries,
+        )
+    except Exception as e:
+        logger.warning(
+            f"⚠️ [{operation_name}] All retries exhausted, using fallback value. Error: {str(e)[:200]}"
+        )
+        return fallback_value

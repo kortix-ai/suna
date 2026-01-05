@@ -112,8 +112,15 @@ async def acquire_run_lock(agent_run_id: str, instance_id: str, client) -> bool:
             
             db_run_status = None
             try:
-                run_result = await client.table('agent_runs').select('status').eq('id', agent_run_id).maybe_single().execute()
-                if run_result.data:
+                from core.services.supabase import db_query_with_fallback, DBConnection
+                run_result = await db_query_with_fallback(
+                    DBConnection(),
+                    lambda c: c.table('agent_runs').select('status').eq('id', agent_run_id).maybe_single().execute(),
+                    fallback_value=None,
+                    operation_name=f"check_agent_run_status:{agent_run_id[:8]}",
+                    max_retries=3
+                )
+                if run_result and run_result.data:
                     db_run_status = run_result.data.get('status')
             except Exception as db_err:
                 logger.warning(f"Failed to check database status for {agent_run_id}: {db_err}")
@@ -548,8 +555,8 @@ async def update_agent_run_status(
     error: Optional[str] = None,
     account_id: Optional[str] = None,
 ) -> bool:
-    """Update agent run status in database."""
-    from core.services.supabase import DBConnection
+    from core.services.supabase import DBConnection, db_query_with_retry
+    import random
     
     try:
         update_data = {
@@ -560,49 +567,38 @@ async def update_agent_run_status(
             update_data["error"] = error
 
         db = DBConnection()
-        current_client = client
         
-        for retry_num in range(3):
-            try:
-                update_result = await current_client.table('agent_runs').update(update_data).eq("id", agent_run_id).execute()
+        update_result = await db_query_with_retry(
+            db,
+            lambda c: c.table('agent_runs').update(update_data).eq("id", agent_run_id).execute(),
+            operation_name=f"update_agent_run_status:{agent_run_id[:8]}",
+            max_retries=5,
+            base_delay=0.5,
+            max_delay=8.0
+        )
 
-                if hasattr(update_result, 'data') and update_result.data:
-                    if account_id:
-                        try:
-                            from core.cache.runtime_cache import invalidate_running_runs_cache
-                            await invalidate_running_runs_cache(account_id)
-                        except:
-                            pass
-                        
-                        try:
-                            from core.billing.shared.cache_utils import invalidate_account_state_cache
-                            await invalidate_account_state_cache(account_id)
-                        except:
-                            pass
-                    
-                    return True
-                else:
-                    if retry_num == 2:
-                        logger.error(f"Failed to update agent run status after all retries: {agent_run_id}")
-                        return False
-            except Exception as db_error:
-                logger.error(f"Database error on retry {retry_num} for {agent_run_id}: {db_error}")
-                # Check if this is a route-not-found error and try reconnecting
-                if DBConnection.is_route_not_found_error(db_error) and retry_num < 2:
-                    logger.warning(f"🔄 Route-not-found error, forcing reconnection...")
-                    await db.force_reconnect()
-                    # Wait for reconnection to stabilize before retrying
-                    await asyncio.sleep(1.0)
-                    current_client = await db.client
-                elif retry_num < 2:
-                    await asyncio.sleep(0.5 * (2 ** retry_num))
-                else:
-                    return False
+        if hasattr(update_result, 'data') and update_result.data:
+            if account_id:
+                try:
+                    from core.cache.runtime_cache import invalidate_running_runs_cache
+                    await invalidate_running_runs_cache(account_id)
+                except:
+                    pass
+                
+                try:
+                    from core.billing.shared.cache_utils import invalidate_account_state_cache
+                    await invalidate_account_state_cache(account_id)
+                except:
+                    pass
+            
+            return True
+        else:
+            logger.error(f"Failed to update agent run status - no data returned: {agent_run_id}")
+            return False
+            
     except Exception as e:
-        logger.error(f"Unexpected error updating status for {agent_run_id}: {e}")
+        logger.error(f"Failed to update agent run status after all retries for {agent_run_id}: {e}")
         return False
-
-    return False
 
 
 async def ensure_project_metadata_cached(project_id: str, client) -> None:

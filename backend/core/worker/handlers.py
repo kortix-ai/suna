@@ -1,9 +1,3 @@
-"""
-Task handlers for Redis Streams worker.
-
-All handlers for processing background tasks.
-"""
-
 import asyncio
 import time
 import uuid
@@ -13,7 +7,7 @@ from typing import Optional
 
 from core.utils.logger import logger, structlog
 from core.utils.tool_discovery import warm_up_tools_cache
-from core.services.supabase import DBConnection
+from core.services.supabase import DBConnection, db_query_with_retry, db_query_with_fallback
 from core.services import redis
 from core.services.langfuse import langfuse
 from .tasks import (
@@ -24,7 +18,7 @@ from .tasks import (
     CategorizationTask,
     StaleProjectsTask,
 )
-from .dispatcher import dispatch_agent_run, dispatch_memory_extraction, dispatch_memory_embedding, dispatch_categorization
+from .dispatcher import dispatch_memory_extraction, dispatch_memory_embedding, dispatch_categorization
 from .helpers import (
     initialize,
     acquire_run_lock,
@@ -180,13 +174,18 @@ async def handle_agent_run(task: AgentRunTask):
         if redis_keys:
             await cleanup_redis_keys(agent_run_id, instance_id)
         
-        # Queue memory extraction on success (only if memory is enabled)
-        if final_status == "completed" and account_id and client:
+        if final_status == "completed" and account_id:
             from core.utils.config import config
             if config.ENABLE_MEMORY:
                 try:
-                    messages_result = await client.table('messages').select('message_id').eq('thread_id', thread_id).execute()
-                    if messages_result.data:
+                    messages_result = await db_query_with_fallback(
+                        db,
+                        lambda c: c.table('messages').select('message_id').eq('thread_id', thread_id).execute(),
+                        fallback_value=None,
+                        operation_name="fetch_message_ids_for_memory",
+                        max_retries=3
+                    )
+                    if messages_result and messages_result.data:
                         message_ids = [m['message_id'] for m in messages_result.data]
                         await dispatch_memory_extraction(thread_id, account_id, message_ids)
                 except Exception as e:
@@ -231,8 +230,11 @@ async def handle_memory_extraction(task: MemoryExtractionTask):
             logger.debug(f"Memory disabled for tier {tier_info['name']}")
             return
         
-        # Get messages
-        messages_result = await client.table('messages').select('*').in_('message_id', message_ids).execute()
+        messages_result = await db_query_with_retry(
+            db,
+            lambda c: c.table('messages').select('*').in_('message_id', message_ids).execute(),
+            operation_name="fetch_messages_for_memory_extraction"
+        )
         if not messages_result.data:
             return
         
@@ -285,22 +287,22 @@ async def handle_memory_embedding(task: MemoryEmbeddingTask):
         from core.billing import subscription_service
         from core.billing.shared.config import get_memory_config
         
-        client = await db.client
         embedding_service = EmbeddingService()
         
         tier_info = await subscription_service.get_user_subscription_tier(account_id)
         memory_config = get_memory_config(tier_info['name'])
         max_memories = memory_config.get('max_memories', 0)
         
-        # Get current count
-        current_count_result = await client.table('user_memories').select('memory_id', count='exact').eq('account_id', account_id).execute()
+        current_count_result = await db_query_with_retry(
+            db,
+            lambda c: c.table('user_memories').select('memory_id', count='exact').eq('account_id', account_id).execute(),
+            operation_name="count_user_memories"
+        )
         current_count = current_count_result.count or 0
         
-        # Embed
         texts = [m['content'] for m in memories]
         embeddings = await embedding_service.embed_texts(texts)
         
-        # Prepare inserts
         to_insert = []
         for i, mem in enumerate(memories):
             to_insert.append({
@@ -313,15 +315,26 @@ async def handle_memory_embedding(task: MemoryEmbeddingTask):
                 'metadata': mem.get('metadata', {})
             })
         
-        # Handle overflow
         if current_count + len(to_insert) > max_memories:
             overflow = (current_count + len(to_insert)) - max_memories
-            old = await client.table('user_memories').select('memory_id').eq('account_id', account_id).order('confidence_score', desc=False).limit(overflow).execute()
+            old = await db_query_with_retry(
+                db,
+                lambda c: c.table('user_memories').select('memory_id').eq('account_id', account_id).order('confidence_score', desc=False).limit(overflow).execute(),
+                operation_name="fetch_old_memories_for_deletion"
+            )
             if old.data:
                 ids_to_delete = [m['memory_id'] for m in old.data]
-                await client.table('user_memories').delete().in_('memory_id', ids_to_delete).execute()
+                await db_query_with_retry(
+                    db,
+                    lambda c: c.table('user_memories').delete().in_('memory_id', ids_to_delete).execute(),
+                    operation_name="delete_old_memories"
+                )
         
-        await client.table('user_memories').insert(to_insert).execute()
+        await db_query_with_retry(
+            db,
+            lambda c: c.table('user_memories').insert(to_insert).execute(),
+            operation_name="insert_new_memories"
+        )
         logger.info(f"✅ Stored {len(to_insert)} memories")
         
     except Exception as e:
@@ -352,30 +365,46 @@ async def handle_categorization(task: CategorizationTask):
     try:
         from core.categorization.service import categorize_from_messages
         
-        client = await db.client
-        
-        # Get threads
-        threads = await client.table('threads').select('thread_id').eq('project_id', project_id).limit(1).execute()
+        threads = await db_query_with_retry(
+            db,
+            lambda c: c.table('threads').select('thread_id').eq('project_id', project_id).limit(1).execute(),
+            operation_name="fetch_threads_for_categorization"
+        )
         if not threads.data:
-            await client.table('projects').update({'last_categorized_at': datetime.now(timezone.utc).isoformat()}).eq('project_id', project_id).execute()
+            await db_query_with_retry(
+                db,
+                lambda c: c.table('projects').update({'last_categorized_at': datetime.now(timezone.utc).isoformat()}).eq('project_id', project_id).execute(),
+                operation_name="update_project_categorized_at_empty"
+            )
             return
         
         thread_id = threads.data[0]['thread_id']
         
-        # Get messages
-        messages = await client.table('messages').select('type', 'content').eq('thread_id', thread_id).order('created_at').execute()
+        messages = await db_query_with_retry(
+            db,
+            lambda c: c.table('messages').select('type', 'content').eq('thread_id', thread_id).order('created_at').execute(),
+            operation_name="fetch_messages_for_categorization"
+        )
         
         user_count = sum(1 for m in (messages.data or []) if m.get('type') == 'user')
         if user_count < 1:
-            await client.table('projects').update({'last_categorized_at': datetime.now(timezone.utc).isoformat()}).eq('project_id', project_id).execute()
+            await db_query_with_retry(
+                db,
+                lambda c: c.table('projects').update({'last_categorized_at': datetime.now(timezone.utc).isoformat()}).eq('project_id', project_id).execute(),
+                operation_name="update_project_categorized_at_no_messages"
+            )
             return
         
         categories = await categorize_from_messages(messages.data) or ["Other"]
         
-        await client.table('projects').update({
-            'categories': categories,
-            'last_categorized_at': datetime.now(timezone.utc).isoformat()
-        }).eq('project_id', project_id).execute()
+        await db_query_with_retry(
+            db,
+            lambda c: c.table('projects').update({
+                'categories': categories,
+                'last_categorized_at': datetime.now(timezone.utc).isoformat()
+            }).eq('project_id', project_id).execute(),
+            operation_name="update_project_categories"
+        )
         
         logger.info(f"✅ Categorized project {project_id}: {categories}")
         
@@ -384,7 +413,6 @@ async def handle_categorization(task: CategorizationTask):
 
 
 async def handle_stale_projects(task: StaleProjectsTask):
-    """Handle stale projects processing."""
     logger.info("🕐 Processing stale projects")
     
     await initialize()

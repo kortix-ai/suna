@@ -20,6 +20,7 @@ from core.run.tool_manager import ToolManager
 from core.run.mcp_manager import MCPManager
 from core.run.prompt_manager import PromptManager
 from core.worker.helpers import stream_status_message, ensure_project_metadata_cached
+from core.services.supabase import db_query_with_retry, db_query_with_fallback, DBConnection
 
 load_dotenv()
 
@@ -94,9 +95,16 @@ class AgentRunner:
         self.client = await self.thread_manager.db.client
         logger.debug(f"⏱️ [TIMING] DB client acquire: {(time.time() - db_start) * 1000:.1f}ms")
         
-        # Get account_id if not provided
         if not self.config.account_id:
-            response = await self.client.table('threads').select('account_id').eq('thread_id', self.config.thread_id).maybe_single().execute()
+            response = await db_query_with_retry(
+                self.thread_manager.db,
+                lambda c: c.table('threads')
+                    .select('account_id')
+                    .eq('thread_id', self.config.thread_id)
+                    .maybe_single()
+                    .execute(),
+                operation_name="fetch_thread_account_id"
+            )
             if not response.data:
                 raise ValueError(f"Thread {self.config.thread_id} not found")
             self.account_id = response.data.get('account_id')
@@ -350,11 +358,20 @@ class AgentRunner:
             }
             return
 
-        latest_message = await self.client.table('messages').select('type').eq('thread_id', self.config.thread_id).in_('type', ['assistant', 'tool', 'user']).order('created_at', desc=True).limit(1).execute()
+        latest_message = await db_query_with_retry(
+            self.thread_manager.db,
+            lambda c: c.table('messages')
+                .select('type')
+                .eq('thread_id', self.config.thread_id)
+                .in_('type', ['assistant', 'tool', 'user'])
+                .order('created_at', desc=True)
+                .limit(1)
+                .execute(),
+            operation_name="fetch_latest_message_type"
+        )
         if latest_message.data and len(latest_message.data) > 0:
             message_type = latest_message.data[0].get('type')
             if message_type == 'assistant':
-                # No new user message after assistant response - stop the loop
                 logger.debug(f"Last message is assistant, no new input - stopping execution for {self.config.thread_id}")
                 yield {
                     "type": "status",
@@ -465,7 +482,6 @@ class AgentRunner:
             yield processed_error.to_stream_dict()
     
     def _process_chunk(self, chunk: Dict[str, Any]) -> tuple[bool, bool, Optional[str]]:
-        """Process a single chunk from the stream. Returns (should_terminate, error_detected, last_tool_call)."""
         if isinstance(chunk, dict) and chunk.get('type') == 'status' and chunk.get('status') == 'error':
             logger.error(f"Error in thread execution: {chunk.get('message', 'Unknown error')}")
             return True, True, None
@@ -511,8 +527,6 @@ class AgentRunner:
         return False, False, None
     
     async def _cleanup(self) -> None:
-        """Cleanup resources after execution."""
-
         try:
             if hasattr(self, 'thread_manager') and self.thread_manager:
                 await self.thread_manager.cleanup()
@@ -525,27 +539,19 @@ class AgentRunner:
             logger.warning(f"Failed to flush Langfuse: {e}")
     
     async def _restore_dynamic_tools(self) -> None:
-        """
-        Restore dynamically loaded tools from previous turns.
-        
-        SIMPLIFIED: Tools are now loaded on-demand via JIT when actually called.
-        This method just pre-warms the tool registry with tool names so the LLM
-        knows they're available, but doesn't do expensive activation.
-        
-        This reduced 34-41 second hangs to <100ms.
-        """
         restore_start = time.time()
         
         try:
-            # Quick DB fetch with timeout
-            result = await with_timeout(
-                self.client.table('threads')
+            result = await db_query_with_fallback(
+                self.thread_manager.db,
+                lambda c: c.table('threads')
                     .select('metadata')
                     .eq('thread_id', self.config.thread_id)
                     .single()
                     .execute(),
-                timeout_seconds=TIMEOUT_DB_QUERY,
-                operation_name="fetch thread metadata for dynamic tools"
+                fallback_value=None,
+                operation_name="fetch_thread_metadata_dynamic_tools",
+                max_retries=3
             )
             
             if not result or not result.data:
@@ -559,18 +565,13 @@ class AgentRunner:
                 logger.debug("📦 [DYNAMIC TOOLS] No previously loaded tools to restore")
                 return
             
-            # Just log what tools were previously used - they'll be JIT-loaded when needed
-            # This avoids the 34-41 second activation delays
             logger.info(f"📦 [DYNAMIC TOOLS] {len(dynamic_tools)} tools from previous session (JIT-loaded on demand): {dynamic_tools}")
             
-            # Store in thread_manager for reference (no actual activation)
             if hasattr(self.thread_manager, 'jit_config') and self.thread_manager.jit_config:
-                # Mark these tools as "previously used" for prioritization
                 self.thread_manager.jit_config.previously_used_tools = set(dynamic_tools)
             
             elapsed_ms = (time.time() - restore_start) * 1000
             logger.info(f"✅ [DYNAMIC TOOLS] Metadata check completed in {elapsed_ms:.1f}ms")
         
         except Exception as e:
-            # Non-fatal - just log and continue
             logger.warning(f"⚠️ [DYNAMIC TOOLS] Failed to check previous tools (non-fatal): {e}")
