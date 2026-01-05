@@ -58,11 +58,11 @@ export interface InputProps extends Omit<TextInputProps, 'className'> {
  * - Customizable styling via className props
  * - Consistent design system integration
  * 
- * Default Specifications:
+ * Default Specifications (Kortix Brand Styleguide):
  * - Height: 48px (h-12)
- * - Border radius: 16px (rounded-2xl)
- * - Background: bg-muted/5
- * - Border: border-border/40
+ * - Border radius: 24px (rounded-3xl)
+ * - Background: bg-input (#fbf9fa light / #232324 dark)
+ * - Border: border-border/14 (#050505 @ 14% opacity)
  * - Font: Roobert-Regular
  */
 export const Input = React.forwardRef<TextInput, InputProps>(
@@ -100,7 +100,7 @@ export const Input = React.forwardRef<TextInput, InputProps>(
 
                 <View
                     className={cn(
-                        'bg-border/40 rounded-2xl justify-center',
+                        'bg-input border border-border rounded-3xl justify-center',
                         error && 'border-destructive',
                         wrapperClassName
                     )}

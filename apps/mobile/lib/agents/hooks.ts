@@ -58,9 +58,33 @@ export function useAgents(
       const res = await fetch(url, { headers });
 
       if (!res.ok) {
-        const errorText = await res.text();
-        console.error('❌ Failed to fetch agents:', res.status);
-        throw new Error(`Failed to fetch agents: ${res.status} - ${errorText}`);
+        let errorText = '';
+        const contentType = res.headers.get('content-type') || '';
+        
+        try {
+          if (contentType.includes('application/json')) {
+            const errorData = await res.json();
+            errorText = errorData.detail?.message || errorData.detail || errorData.message || res.statusText;
+          } else {
+            const text = await res.text();
+            // Truncate HTML responses to avoid huge error messages
+            if (text.length > 500) {
+              errorText = text.substring(0, 500) + '...';
+            } else {
+              errorText = text;
+            }
+          }
+        } catch (parseError) {
+          errorText = res.statusText || 'Unknown error';
+        }
+        
+        // For 502 errors, provide a more user-friendly message
+        const errorMessage = res.status === 502
+          ? `Service temporarily unavailable (502). Please try again in a moment.`
+          : `Failed to fetch agents: ${res.status}${errorText ? ` - ${errorText}` : ''}`;
+        
+        console.error('❌ Failed to fetch agents:', res.status, errorText.substring(0, 100));
+        throw new Error(errorMessage);
       }
 
       const data = await res.json();
@@ -79,8 +103,17 @@ export function useAgents(
         console.log('🚫 Not retrying due to client error:', error.message);
         return false;
       }
-      // Only retry server errors (5xx) up to 2 times
-      console.log(`🔄 Retry attempt ${failureCount} for agents fetch:`, error.message);
+      // Retry server errors (5xx) including 502 up to 3 times with exponential backoff
+      const is5xxError = error.message.includes('502') ||
+                         error.message.includes('503') ||
+                         error.message.includes('504') ||
+                         error.message.includes('500');
+      if (is5xxError) {
+        console.log(`🔄 Retry attempt ${failureCount} for agents fetch (server error):`, error.message.substring(0, 100));
+        return failureCount < 3;
+      }
+      // For other errors, retry up to 2 times
+      console.log(`🔄 Retry attempt ${failureCount} for agents fetch:`, error.message.substring(0, 100));
       return failureCount < 2;
     },
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000), // Exponential backoff: 1s, 2s, 4s...

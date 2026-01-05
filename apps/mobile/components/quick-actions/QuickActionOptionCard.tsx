@@ -183,7 +183,7 @@ export function QuickActionOptionCard({ option, actionId, onPress, isSelected = 
               className={`rounded-xl items-center justify-center mb-2 relative ${
                 isSelected 
                   ? 'bg-primary/10 border-[3px] border-primary' 
-                  : 'bg-card border border-border/30'
+                  : 'bg-muted border border-border'
               }`} 
               style={{ width: cardWidth, height: cardHeight }}
             >

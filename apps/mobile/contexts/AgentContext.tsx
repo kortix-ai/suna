@@ -53,7 +53,12 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   // Handle error state - if agents fail to load, still mark as initialized
   React.useEffect(() => {
     if (error && !hasInitialized) {
-      console.error('❌ Failed to load agents, marking as initialized to unblock UI:', error);
+      // Truncate long error messages in logs
+      const errorMessage = error.message || String(error);
+      const logMessage = errorMessage.length > 200
+        ? errorMessage.substring(0, 200) + '...'
+        : errorMessage;
+      console.error('❌ Failed to load agents, marking as initialized to unblock UI:', logMessage);
       setHasInitialized(true);
     }
   }, [error, hasInitialized]);

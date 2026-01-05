@@ -1036,7 +1036,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                     <View
                       className="max-w-[280px]"
                       style={{
-                        borderRadius: 16,
+                        borderTopLeftRadius: 24,
+                        borderTopRightRadius: 24,
+                        borderBottomLeftRadius: 24,
+                        borderBottomRightRadius: 8,
                       }}>
                       {ContextMenu ? (
                         <ContextMenu
@@ -1047,16 +1050,21 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                             }
                           }}
                           dropdownMenuMode={false}
-                          borderTopLeftRadius={16}
-                          borderTopRightRadius={16}
-                          borderBottomLeftRadius={16}
-                          borderBottomRightRadius={16}>
+                          borderTopLeftRadius={24}
+                          borderTopRightRadius={24}
+                          borderBottomLeftRadius={24}
+                          borderBottomRightRadius={8}>
                           <View
                             className="px-4 py-3"
                             style={{
-                              borderRadius: 16,
+                              borderTopLeftRadius: 24,
+                              borderTopRightRadius: 24,
+                              borderBottomLeftRadius: 24,
+                              borderBottomRightRadius: 8,
                               overflow: 'hidden',
-                              backgroundColor: isDark ? 'rgba(64, 64, 64, 0.6)' : 'rgba(229, 229, 229, 0.6)',
+                              backgroundColor: isDark ? '#232324' : '#fbf9fa',
+                              borderWidth: 1,
+                              borderColor: isDark ? 'rgba(250, 250, 250, 0.14)' : 'rgba(5, 5, 5, 0.14)',
                             }}>
                             <RNText
                               selectable
@@ -1079,9 +1087,14 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                           <View
                             className="px-4 py-3"
                             style={{
-                              borderRadius: 16,
+                              borderTopLeftRadius: 24,
+                              borderTopRightRadius: 24,
+                              borderBottomLeftRadius: 24,
+                              borderBottomRightRadius: 8,
                               overflow: 'hidden',
-                              backgroundColor: isDark ? 'rgba(64, 64, 64, 0.6)' : 'rgba(229, 229, 229, 0.6)',
+                              backgroundColor: isDark ? '#232324' : '#fbf9fa',
+                              borderWidth: 1,
+                              borderColor: isDark ? 'rgba(250, 250, 250, 0.14)' : 'rgba(5, 5, 5, 0.14)',
                             }}>
                             <RNText
                               selectable

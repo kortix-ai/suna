@@ -210,7 +210,9 @@ function TemplateCard({ template, actionId, isSelected, onPress }: TemplateCardP
     >
       {/* Template Image or Icon */}
       <View 
-        className="rounded-xl overflow-hidden mb-2 items-center justify-center bg-muted relative"
+        className={`rounded-xl overflow-hidden mb-2 items-center justify-center relative ${
+          isSelected ? 'bg-primary/10' : 'bg-muted'
+        }`}
         style={{ width: containerWidth, height: containerHeight }}
       >
         {template.imageUrl ? (

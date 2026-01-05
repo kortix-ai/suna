@@ -1,8 +1,8 @@
 /**
  * Conversation Item Component - Pill-shaped container design
  *
- * Matches Figma design: rounded-full container with icon and text
- * Selected items have bg-neutral-200 background
+ * Matches Kortix Brand Styleguide: rounded-full container with icon and text
+ * Selected items have bg-muted background (#e4e4e7 light / #3f3f46 dark)
  */
 
 import * as React from 'react';
@@ -27,7 +27,7 @@ interface ConversationItemProps {
  * ConversationItem Component
  *
  * Pill-shaped container with icon on left and text on right.
- * Selected items have bg-neutral-200 background.
+ * Selected items have bg-muted background (#e4e4e7 light / #3f3f46 dark).
  * Icons are dynamically loaded based on conversation.iconName or conversation.icon
  */
 export function ConversationItem({
@@ -58,7 +58,7 @@ export function ConversationItem({
       className={cn(
         'h-12 flex-row items-center gap-3 px-4 rounded-full',
         isSelected
-          ? 'bg-neutral-200 dark:bg-neutral-700'
+          ? 'bg-muted'
           : 'bg-transparent'
       )}
       accessibilityRole="button"

@@ -391,7 +391,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   // Determine button icon
   const ButtonIcon = React.useMemo(() => {
     if (isAgentRunning) return StopIcon;
-    if (hasContent) return ArrowUp;
+    if (hasContent) return CornerDownLeft;
     return AudioLines;
   }, [isAgentRunning, hasContent]);
 
@@ -400,7 +400,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   return (
     <View
-      className="relative rounded-[28px] overflow-hidden bg-neutral-200 dark:bg-neutral-800"
+      className="relative rounded-3xl overflow-hidden bg-input border border-border"
       style={[
         containerStyle,
         { minHeight: 100 }
@@ -506,21 +506,21 @@ const RecordingMode = React.memo(({
         onPressIn={onCancelPressIn}
         onPressOut={onCancelPressOut}
         onPress={onCancelRecording}
-        className="bg-neutral-50 dark:bg-neutral-900 rounded-full items-center justify-center"
+        className="bg-input border border-border rounded-2xl items-center justify-center"
         style={[{ width: 40, height: 40 }, cancelAnimatedStyle]}
         hitSlop={ANDROID_HIT_SLOP}
       >
-        <Icon as={X} size={18} className="text-neutral-700 dark:text-neutral-300" strokeWidth={2} />
+        <Icon as={X} size={18} className="text-foreground" strokeWidth={2} />
       </AnimatedPressable>
       <AnimatedPressable
         onPressIn={onStopPressIn}
         onPressOut={onStopPressOut}
         onPress={onSendAudio}
-        className="bg-neutral-900 dark:bg-neutral-50 rounded-full items-center justify-center"
+        className="bg-primary rounded-2xl items-center justify-center"
         style={[{ width: 40, height: 40 }, stopAnimatedStyle]}
         hitSlop={ANDROID_HIT_SLOP}
       >
-        <Icon as={ArrowUp} size={18} className="text-neutral-50 dark:text-neutral-900" strokeWidth={2} />
+        <Icon as={CornerDownLeft} size={18} className="text-primary-foreground" strokeWidth={2} />
       </AnimatedPressable>
     </View>
   </>
@@ -633,12 +633,12 @@ const NormalMode = React.memo(({
             onAttachPress?.();
           }}
           disabled={isDisabled}
-          className="h-10 w-10 rounded-full bg-neutral-50 dark:bg-neutral-900 items-center justify-center"
+          className="h-10 w-10 rounded-2xl bg-input border border-border items-center justify-center"
           style={{ opacity: isDisabled ? 0.4 : 1 }}
           hitSlop={ANDROID_HIT_SLOP}
           activeOpacity={0.7}
         >
-          <Icon as={Paperclip} size={18} className="text-neutral-700 dark:text-neutral-300" />
+          <Icon as={Paperclip} size={18} className="text-foreground" />
         </TouchableOpacity>
 
         {/* Advanced Button (AgentSelector) */}
@@ -654,8 +654,8 @@ const NormalMode = React.memo(({
           onButtonPress();
         }}
         disabled={isSendingMessage || isTranscribing || !hasAgent}
-        className={`h-10 w-10 rounded-full items-center justify-center ${
-          isAgentRunning ? 'bg-neutral-900 dark:bg-neutral-50' : hasContent ? 'bg-neutral-900 dark:bg-neutral-50' : 'bg-neutral-50 dark:bg-neutral-900'
+        className={`h-10 w-10 rounded-2xl items-center justify-center ${
+          isAgentRunning ? 'bg-primary' : hasContent ? 'bg-primary' : 'bg-input border border-border'
         }`}
         style={{ opacity: (!hasAgent && !isAgentRunning) ? 0.4 : 1 }}
         hitSlop={ANDROID_HIT_SLOP}
@@ -663,13 +663,13 @@ const NormalMode = React.memo(({
       >
         {isSendingMessage || isTranscribing ? (
           <AnimatedView style={rotationAnimatedStyle}>
-            <Icon as={Loader2} size={18} className={hasContent ? "text-neutral-50 dark:text-neutral-900" : "text-neutral-700 dark:text-neutral-300"} strokeWidth={2} />
+            <Icon as={Loader2} size={18} className={hasContent ? "text-primary-foreground" : "text-foreground"} strokeWidth={2} />
           </AnimatedView>
         ) : (
           ButtonIcon === StopIcon ? (
-            <StopIcon size={buttonIconSize} className={buttonIconClass} />
+            <StopIcon size={buttonIconSize} className={isAgentRunning ? "text-primary-foreground" : "text-foreground"} />
           ) : (
-            <Icon as={ButtonIcon as any} size={18} className={hasContent ? "text-neutral-50 dark:text-neutral-900" : "text-neutral-700 dark:text-neutral-300"} strokeWidth={2} />
+            <Icon as={ButtonIcon as any} size={18} className={hasContent ? "text-primary-foreground" : "text-foreground"} strokeWidth={2} />
           )
         )}
       </TouchableOpacity>

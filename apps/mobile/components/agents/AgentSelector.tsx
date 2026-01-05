@@ -107,7 +107,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
   return (
     <TouchableOpacity
       onPress={onPress}
-      className="h-10 rounded-full bg-neutral-50 dark:bg-neutral-900 flex-row items-center gap-2 px-[10px]"
+      className="h-10 rounded-2xl bg-input border border-border flex-row items-center gap-2 px-[10px]"
       hitSlop={ANDROID_HIT_SLOP}
       activeOpacity={0.7}
     >
@@ -118,7 +118,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
           resizeMode="cover"
         />
       </View>
-      <Text className="text-neutral-700 dark:text-neutral-300 text-sm font-roobert-medium">{modeText}</Text>
+      <Text className="text-foreground text-sm font-roobert-medium">{modeText}</Text>
     </TouchableOpacity>
   );
 }

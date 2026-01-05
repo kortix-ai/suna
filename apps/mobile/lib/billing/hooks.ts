@@ -60,11 +60,17 @@ export function invalidateAccountState(queryClient: ReturnType<typeof useQueryCl
 }
 
 // Don't retry on auth errors (401/403)
+// Retry server errors (5xx) more aggressively, especially 502
 const shouldRetry = (failureCount: number, error: Error) => {
   const message = error.message || '';
   if (message.includes('401') || message.includes('403') || message.includes('authentication')) {
     return false;
   }
+  // Retry 502/503/504 errors more aggressively (up to 3 times)
+  if (message.includes('502') || message.includes('503') || message.includes('504') || message.includes('500')) {
+    return failureCount < 3;
+  }
+  // For other errors, retry up to 2 times
   return failureCount < 2;
 };
 
@@ -100,6 +106,7 @@ export function useAccountState(options?: UseAccountStateOptions) {
     refetchOnMount: options?.refetchOnMount ?? false,
     refetchOnReconnect: true,
     retry: enabled ? shouldRetry : false,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000), // Exponential backoff: 1s, 2s, 4s...
   });
 }
 

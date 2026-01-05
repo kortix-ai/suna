@@ -215,20 +215,51 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ message: response.statusText }));
+    let errorData: any = { message: response.statusText };
+    const contentType = response.headers.get('content-type') || '';
+    
+    try {
+      if (contentType.includes('application/json')) {
+        errorData = await response.json();
+      } else {
+        // Handle HTML or other non-JSON responses (e.g., 502 error pages)
+        const text = await response.text();
+        // Truncate HTML responses to avoid huge error messages
+        if (text.length > 500) {
+          errorData = { message: text.substring(0, 500) + '...' };
+        } else {
+          errorData = { message: text };
+        }
+      }
+    } catch (parseError) {
+      // If parsing fails, use status text
+      errorData = { message: response.statusText || 'Unknown error' };
+    }
 
     // Only log non-auth errors (401/403 are expected when not authenticated)
     if (response.status !== 401 && response.status !== 403) {
+      const errorMessage = errorData.detail?.message || errorData.detail || errorData.message || response.statusText;
+      // Truncate long error messages in logs
+      const logMessage = typeof errorMessage === 'string' && errorMessage.length > 200
+        ? errorMessage.substring(0, 200) + '...'
+        : errorMessage;
+      
       console.error('❌ Billing API Error:', {
         endpoint,
         status: response.status,
-        error: errorData,
+        error: logMessage,
       });
     }
 
+    // For 502 errors, provide a more user-friendly message
     const errorMessage =
       errorData.detail?.message || errorData.detail || errorData.message || response.statusText;
-    throw new Error(`HTTP ${response.status}: ${errorMessage}`);
+    
+    const finalMessage = response.status === 502
+      ? 'Service temporarily unavailable (502). Please try again in a moment.'
+      : `HTTP ${response.status}: ${errorMessage}`;
+    
+    throw new Error(finalMessage);
   }
 
   return response.json();

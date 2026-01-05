@@ -29,11 +29,11 @@ export function BackgroundLogo({ onSuggestionClick }: BackgroundLogoProps) {
 
   const SymbolComponent = colorScheme === 'dark' ? KortixSymbolWhite : KortixSymbolBlack;
 
-  // Gradient colors for top fade - using neutral colors that match bg-background
+  // Gradient colors for top fade - matches Kortix Brand Styleguide bg-background
   const gradientColors = React.useMemo(
     () => colorScheme === 'dark' 
-      ? ['rgba(23, 23, 23, 1)', 'rgba(23, 23, 23, 0.6)', 'rgba(23, 23, 23, 0)'] as const // neutral-900
-      : ['rgba(250, 250, 250, 1)', 'rgba(250, 250, 250, 0.6)', 'rgba(250, 250, 250, 0)'] as const, // neutral-50
+      ? ['rgba(23, 23, 23, 1)', 'rgba(23, 23, 23, 0.6)', 'rgba(23, 23, 23, 0)'] as const // #171717 - dark bg
+      : ['rgba(246, 246, 246, 1)', 'rgba(246, 246, 246, 0.6)', 'rgba(246, 246, 246, 0)'] as const, // #f6f6f6 - brand bg
     [colorScheme]
   );
 

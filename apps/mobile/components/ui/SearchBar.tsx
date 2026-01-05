@@ -19,9 +19,14 @@ interface SearchBarProps {
  * - Compact design with search icon
  * - Clear button appears when text is entered
  * - Proper keyboard handling
- * - Theme-aware styling
+ * - Theme-aware styling (Kortix Brand Styleguide)
  * - Accessibility support
  * - Customizable placeholder and styling
+ * 
+ * Styling (Brand Styleguide):
+ * - Border radius: rounded-2xl (16px)
+ * - Background: #fbf9fa (light) / #232324 (dark)
+ * - Border: #050505 @ 14% opacity (light) / #fafafa @ 14% opacity (dark)
  */
 export function SearchBar({
   value,
@@ -38,7 +43,7 @@ export function SearchBar({
 
   return (
     <View
-      className={`bg-neutral-50 dark:bg-neutral-800 border-[1.5px] border-neutral-200 dark:border-neutral-700 rounded-full flex-row items-center px-3.5 h-12 ${className}`}
+      className={`bg-input border border-border rounded-2xl flex-row items-center px-3.5 h-12 ${className}`}
     >
       <Icon
         as={Search}
