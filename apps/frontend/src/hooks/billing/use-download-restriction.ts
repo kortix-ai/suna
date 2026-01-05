@@ -51,8 +51,7 @@ export function useDownloadRestriction(options?: UseDownloadRestrictionOptions):
   const accountState = useSubscriptionStore((state) => state.accountState);
   const { openPricingModal } = usePricingModalStore();
 
-  // Check if user is on free tier
-  const isFreeTier = accountState && (
+  const isFreeTier = accountState?.subscription && (
     accountState.subscription.tier_key === 'free' ||
     accountState.subscription.tier_key === 'none' ||
     !accountState.subscription.tier_key

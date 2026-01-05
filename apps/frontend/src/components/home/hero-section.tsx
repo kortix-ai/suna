@@ -90,8 +90,7 @@ export function HeroSection() {
     const pricingModalStore = usePricingModalStore();
     const { data: accountState } = useAccountState({ enabled: !!user });
     
-    // Check if user is on free tier (for video generation lock)
-    const isFreeTier = accountState && (
+    const isFreeTier = accountState?.subscription && (
         accountState.subscription.tier_key === 'free' ||
         accountState.subscription.tier_key === 'none' ||
         !accountState.subscription.tier_key

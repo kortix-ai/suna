@@ -140,8 +140,7 @@ export function DashboardContent() {
   const hasLowCredits = accountStateSelectors.totalCredits(accountState) <= 10;
   const hasDailyRefresh = dailyCreditsInfo?.enabled && dailyCreditsInfo?.seconds_until_refresh;
   
-  // Check if user is on free tier (for video generation lock)
-  const isFreeTier = accountState && (
+  const isFreeTier = accountState?.subscription && (
     accountState.subscription.tier_key === 'free' ||
     accountState.subscription.tier_key === 'none' ||
     !accountState.subscription.tier_key
