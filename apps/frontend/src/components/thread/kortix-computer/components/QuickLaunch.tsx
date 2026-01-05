@@ -106,7 +106,7 @@ export const QuickLaunch = memo(function QuickLaunch({
       onFileSelect?.(item.path);
       onClose();
     }
-  }, [allResults, onClose, onFileSelect, onOpenFiles, onOpenBrowser, onOpenTerminal, onOpenSystemInfo]);
+  }, [allResults, onClose, onFileSelect, onOpenFiles, onOpenBrowser, onOpenTerminal, onOpenSystemInfo, onOpenSpreadsheets]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     switch (e.key) {

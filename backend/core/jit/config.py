@@ -16,6 +16,8 @@ class JITConfig:
         self.agent_config = agent_config
         self.disabled_tools = set(disabled_tools or [])
         self._enabled_tools: Optional[Set[str]] = None
+        # Tools from previous session - used for prioritization, not pre-loading
+        self.previously_used_tools: Set[str] = set()
         
     def is_tool_allowed(self, tool_name: str) -> bool:
         if tool_name in self.disabled_tools:

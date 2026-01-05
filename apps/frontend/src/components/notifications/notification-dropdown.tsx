@@ -1,7 +1,6 @@
 'use client';
 
-import React from 'react';
-import { useAuth } from '@/components/AuthProvider';
+import React, { memo, useMemo } from 'react';
 import { Inbox } from '@novu/nextjs';
 import { Circle, Check } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -9,6 +8,7 @@ import { Badge } from '../ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { UnifiedMarkdown } from '@/components/markdown';
 import { useAnnouncementStore, AnnouncementData } from '@/stores/announcement-store';
+import { useNovuInbox, useNovuAppearance } from './novu-inbox-provider';
 
 type ChannelType = 'in_app' | 'email' | 'sms' | 'push' | 'chat';
 
@@ -242,40 +242,63 @@ const NotificationItem = (notification: Notification) => {
         </div>
     </div>
   );
-}
+};
 
-export function NotificationDropdown() {
-  const { user } = useAuth();
-  const applicationIdentifier = process.env.NEXT_PUBLIC_NOVU_APP_IDENTIFIER;
+/**
+ * Memoized Inbox wrapper that uses stable props from context
+ * This prevents re-initialization of the Inbox component on every parent re-render
+ */
+const MemoizedInbox = memo(function MemoizedInbox({ 
+  applicationIdentifier, 
+  subscriberId,
+  appearance,
+}: { 
+  applicationIdentifier: string;
+  subscriberId: string;
+  appearance: ReturnType<typeof useNovuAppearance>;
+}) {
+  // Memoize the render function to prevent unnecessary re-renders
+  const renderNotification = useMemo(() => NotificationItem as any, []);
+  
+  console.log('[NovuInbox] Rendering with session key:', `${subscriberId}-${applicationIdentifier}`);
+  
+  return (
+    <Inbox
+      applicationIdentifier={applicationIdentifier}
+      subscriberId={subscriberId}
+      appearance={appearance}
+      renderNotification={renderNotification}
+    />
+  );
+});
 
-  if (!applicationIdentifier) {
+/**
+ * NotificationDropdown component
+ * 
+ * Uses the NovuInboxProvider context to get stable session credentials
+ * and React.memo to prevent unnecessary re-renders that cause
+ * excessive /v1/inbox/session API calls.
+ * 
+ * IMPORTANT: This component must be wrapped in NovuInboxProvider
+ */
+export const NotificationDropdown = memo(function NotificationDropdown() {
+  const { applicationIdentifier, subscriberId, isReady, sessionKey } = useNovuInbox();
+  const appearance = useNovuAppearance();
+
+  // Don't render if not ready
+  if (!isReady || !applicationIdentifier || !subscriberId) {
     return null;
   }
 
-  const appearance = {
-    variables: {
-      colorBackground: 'var(--card)',
-      borderRadius: '8px',
-      colorForeground: 'var(--foreground)',
-      colorPrimary: 'var(--primary)',
-      colorSecondary: 'var(--secondary)',
-      colorDestructive: 'var(--destructive)',
-      colorMuted: 'var(--muted)',
-      colorAccent: 'var(--accent)',
-      colorPopover: 'var(--popover)',
-    },
-  };
-
   return (
-    <div className='z-12'>
-      <Inbox
+    <div className='z-12' key={sessionKey}>
+      <MemoizedInbox
         applicationIdentifier={applicationIdentifier}
-        subscriberId={user.id}
+        subscriberId={subscriberId}
         appearance={appearance}
-        renderNotification={NotificationItem as any}
       />
     </div>
   );
-}
+});
 
 export { NotificationItem };

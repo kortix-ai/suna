@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useAgent, useUpdateAgent } from '@/hooks/agents/use-agents';
 import { ExpandableMarkdownEditor } from '@/components/ui/expandable-markdown-editor';
 import { Label } from '@/components/ui/label';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface InstructionsScreenProps {

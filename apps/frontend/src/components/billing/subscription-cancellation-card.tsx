@@ -11,7 +11,8 @@ import {
   Calendar,
   Shield
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { KortixLoader } from '@/components/ui/kortix-loader';
+import { toast } from '@/lib/toast';
 import { useReactivateSubscription } from '@/hooks/billing';
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 
@@ -112,7 +113,7 @@ export function SubscriptionCancellationCard({
             >
               {reactivateSubscriptionMutation.isPending ? (
                 <>
-                  <RotateCcw className="h-4 w-4 animate-spin" />
+                  <KortixLoader size="small" />
                   Reactivating...
                 </>
               ) : (

@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   ExternalLink,
-  Loader2,
   Code,
   Eye,
   File,
@@ -13,6 +12,7 @@ import {
   Minus,
   Plus,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import {
   formatTimestamp,
   getToolTitle,
@@ -67,10 +67,11 @@ import {
 } from './_utils';
 import { ToolViewProps } from '../types';
 import { LoadingState } from '../shared/LoadingState';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { PresentationSlidePreview } from '../presentation-tools/PresentationSlidePreview';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
 
 const UnifiedDiffView: React.FC<{ lineDiff: LineDiff[]; fileName?: string }> = ({ lineDiff, fileName }) => (
   <div className="font-mono text-[13px] leading-relaxed">
@@ -271,6 +272,22 @@ export function FileOperationToolView({
   
   const streamingSource = isStreaming ? throttledStreamingSource : rawStreamingSource;
 
+  // Apply smooth text streaming for file_contents (create/rewrite operations)
+  const { displayedValue: smoothFileContents, isAnimating: isFileContentsAnimating } = useSmoothToolField(
+    rawStreamingSource,
+    'file_contents',
+    120,
+    isStreaming && (operation === 'create' || operation === 'rewrite') && !toolResult
+  );
+
+  // Apply smooth text streaming for code_edit (edit operations)
+  const { displayedValue: smoothCodeEdit, isAnimating: isCodeEditAnimating } = useSmoothToolField(
+    rawStreamingSource,
+    'code_edit',
+    120,
+    isStreaming && operation === 'edit' && !toolResult
+  );
+
   const extractedContent = useMemo(() => {
     let filePath: string | null = args.file_path || args.target_file || args.path || null;
     let fileContent: string | null = null;
@@ -289,9 +306,143 @@ export function FileOperationToolView({
     }
 
     if (isStreaming && streamingSource) {
+      // Use smooth streaming content when available
+      if (operation === 'create' || operation === 'rewrite') {
+        if (smoothFileContents) {
+          fileContent = smoothFileContents;
+        } else {
+          try {
+            const parsed = JSON.parse(streamingSource);
+            if (parsed.file_contents) {
+              fileContent = parsed.file_contents;
+            }
+            if (!filePath && parsed.file_path) {
+              filePath = parsed.file_path;
+            }
+          } catch (e) {
+            // Fallback to regex parsing
+            const startMatch = streamingSource.match(/"file_contents"\s*:\s*"/);
+            if (startMatch) {
+              const startIndex = startMatch.index! + startMatch[0].length;
+              let rawContent = streamingSource.substring(startIndex);
+              const endQuoteMatch = rawContent.match(/(?<!\\)"/);
+              if (endQuoteMatch) {
+                rawContent = rawContent.substring(0, endQuoteMatch.index);
+              }
+              try {
+                fileContent = JSON.parse('"' + rawContent + '"');
+              } catch {
+                fileContent = rawContent
+                  .replace(/\\n/g, '\n')
+                  .replace(/\\t/g, '\t')
+                  .replace(/\\r/g, '\r')
+                  .replace(/\\"/g, '"')
+                  .replace(/\\\\/g, '\\');
+              }
+            }
+            if (!filePath) {
+              const pathMatch = streamingSource.match(/"file_path"\s*:\s*"([^"]+)"/);
+              if (pathMatch) {
+                filePath = pathMatch[1];
+              }
+            }
+          }
+        }
+      } else if (operation === 'edit') {
+        if (smoothCodeEdit) {
+          fileContent = smoothCodeEdit;
+        } else {
+          try {
+            const parsed = JSON.parse(streamingSource);
+            if (parsed.code_edit) {
+              fileContent = parsed.code_edit;
+            }
+            if (!filePath && parsed.file_path) {
+              filePath = parsed.file_path;
+            }
+          } catch (e) {
+            // Fallback to regex parsing
+            const startMatch = streamingSource.match(/"code_edit"\s*:\s*"/);
+            if (startMatch) {
+              const startIndex = startMatch.index! + startMatch[0].length;
+              let rawContent = streamingSource.substring(startIndex);
+              const endQuoteMatch = rawContent.match(/(?<!\\)"/);
+              if (endQuoteMatch) {
+                rawContent = rawContent.substring(0, endQuoteMatch.index);
+              }
+              try {
+                fileContent = JSON.parse('"' + rawContent + '"');
+              } catch {
+                fileContent = rawContent
+                  .replace(/\\n/g, '\n')
+                  .replace(/\\t/g, '\t')
+                  .replace(/\\r/g, '\r')
+                  .replace(/\\"/g, '"')
+                  .replace(/\\\\/g, '\\');
+              }
+            }
+            if (!filePath) {
+              const pathMatch = streamingSource.match(/"file_path"\s*:\s*"([^"]+)"/);
+              if (pathMatch) {
+                filePath = pathMatch[1];
+              }
+            }
+          }
+        }
+      } else if (isStrReplace) {
+        try {
+          const parsed = JSON.parse(streamingSource);
+          if (parsed.old_str || parsed.old_string) {
+            oldStr = parsed.old_str || parsed.old_string;
+          }
+          if (parsed.new_str || parsed.new_string) {
+            newStr = parsed.new_str || parsed.new_string;
+          }
+          if (!filePath && parsed.file_path) {
+            filePath = parsed.file_path;
+          }
+        } catch (e) {
+          // Fallback to regex parsing
+          const oldStrMatch = streamingSource.match(/"(?:old_str|old_string)"\s*:\s*"/);
+          if (oldStrMatch) {
+            const startIndex = oldStrMatch.index! + oldStrMatch[0].length;
+            let rawContent = streamingSource.substring(startIndex);
+            const endQuoteMatch = rawContent.match(/(?<!\\)"/);
+            if (endQuoteMatch) {
+              rawContent = rawContent.substring(0, endQuoteMatch.index);
+            }
+            try {
+              oldStr = JSON.parse('"' + rawContent + '"');
+            } catch {
+              oldStr = rawContent.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+            }
+          }
+          const newStrMatch = streamingSource.match(/"(?:new_str|new_string)"\s*:\s*"/);
+          if (newStrMatch) {
+            const startIndex = newStrMatch.index! + newStrMatch[0].length;
+            let rawContent = streamingSource.substring(startIndex);
+            const endQuoteMatch = rawContent.match(/(?<!\\)"/);
+            if (endQuoteMatch) {
+              rawContent = rawContent.substring(0, endQuoteMatch.index);
+            }
+            try {
+              newStr = JSON.parse('"' + rawContent + '"');
+            } catch {
+              newStr = rawContent.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+            }
+          }
+          if (!filePath) {
+            const pathMatch = streamingSource.match(/"file_path"\s*:\s*"([^"]+)"/);
+            if (pathMatch) {
+              filePath = pathMatch[1];
+            }
+          }
+        }
+      }
+    } else if (streamingSource) {
+      // Non-streaming but have source: try to parse once
       try {
         const parsed = JSON.parse(streamingSource);
-
         if (operation === 'create' || operation === 'rewrite') {
           if (parsed.file_contents) {
             fileContent = parsed.file_contents;
@@ -308,11 +459,11 @@ export function FileOperationToolView({
             newStr = parsed.new_str || parsed.new_string;
           }
         }
-
         if (!filePath && parsed.file_path) {
           filePath = parsed.file_path;
         }
       } catch (e) {
+        // Fallback regex parsing for non-streaming (should rarely happen)
         if (operation === 'create' || operation === 'rewrite') {
           const startMatch = streamingSource.match(/"file_contents"\s*:\s*"/);
           if (startMatch) {
@@ -432,7 +583,7 @@ export function FileOperationToolView({
     }
 
     return { filePath, fileContent, oldStr, newStr };
-  }, [args, output, isStreaming, streamingSource, operation, isStrReplace]);
+  }, [args, output, isStreaming, streamingSource, operation, isStrReplace, smoothFileContents, smoothCodeEdit]);
 
   const { filePath, fileContent, oldStr, newStr } = extractedContent;
 
@@ -611,7 +762,7 @@ export function FileOperationToolView({
               {presentationName}{slideNumber ? ` - Slide ${slideNumber}` : ''}
             </p>
             <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400">
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <KortixLoader customSize={16} />
               <span>Writing slide content...</span>
             </div>
           </div>
@@ -715,7 +866,7 @@ export function FileOperationToolView({
     // For markdown files
     if (isMarkdown) {
       return (
-        <div className="h-full overflow-auto p-4 bg-white dark:bg-zinc-900">
+        <div className="h-full overflow-auto px-6 py-4 bg-white dark:bg-zinc-900">
           <UnifiedMarkdown content={processUnicodeContent(fileContent)} />
         </div>
       );
@@ -959,7 +1110,7 @@ export function FileOperationToolView({
               ) : !fileContent && isStreaming ? (
                 <div className="flex items-center justify-center h-full p-12 bg-white dark:bg-zinc-900">
                   <div className="text-center">
-                    <Loader2 className="h-8 w-8 mx-auto mb-4 text-zinc-400 animate-spin" />
+                    <KortixLoader customSize={32} className="mx-auto mb-4" />
                     <p className="text-sm text-zinc-500 dark:text-zinc-400">Waiting for content...</p>
                   </div>
                 </div>
@@ -1011,7 +1162,7 @@ export function FileOperationToolView({
                 ) : !fileContent && isStreaming ? (
                   <div className="flex items-center justify-center h-full p-12 bg-white dark:bg-zinc-900">
                     <div className="text-center">
-                      <Loader2 className="h-8 w-8 mx-auto mb-4 text-zinc-400 animate-spin" />
+                      <KortixLoader customSize={32} className="mx-auto mb-4" />
                       <p className="text-sm text-zinc-500 dark:text-zinc-400">Waiting for content...</p>
                     </div>
                   </div>
@@ -1087,7 +1238,7 @@ export function FileOperationToolView({
                   </ScrollArea>
                   {isStreaming && oldStr && newStr && (
                     <div className="px-4 py-2 bg-violet-50 dark:bg-violet-950/30 border-t border-violet-200 dark:border-violet-800 flex items-center gap-2">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-500" />
+                      <KortixLoader customSize={14} />
                       <span className="text-xs text-violet-600 dark:text-violet-400">Streaming changes...</span>
                     </div>
                   )}

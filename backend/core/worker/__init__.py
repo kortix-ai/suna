@@ -5,7 +5,6 @@ from .tasks import (
     StreamName,
     TaskMessage,
     AgentRunTask,
-    ThreadInitTask,
     MemoryExtractionTask,
     MemoryEmbeddingTask,
     MemoryConsolidationTask,
@@ -17,7 +16,6 @@ from .tasks import (
 # Dispatch functions
 from .dispatcher import (
     dispatch_agent_run,
-    dispatch_thread_init,
     dispatch_memory_extraction,
     dispatch_memory_embedding,
     dispatch_memory_consolidation,

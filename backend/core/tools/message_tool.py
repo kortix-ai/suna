@@ -15,6 +15,13 @@ from core.utils.logger import logger
 
 **ALL communication with users MUST use 'ask' or 'complete' tools. Raw text responses will NOT be displayed properly.**
 
+**🚨🚨🚨 DUPLICATE CONTENT PREVENTION - HIGHEST PRIORITY RULE 🚨🚨🚨**
+- **NEVER output raw text AND use ask/complete tool with the same content** - this causes users to see the SAME message TWICE
+- **CHOOSE ONE: Either use the tool OR output raw text - NEVER BOTH with same content**
+- **PREFERRED: ONLY use the 'ask' or 'complete' tool** - put ALL your message content inside the tool's 'text' parameter
+- **DO NOT write explanations, summaries, or content before calling the tool** if that content will also be in the tool
+- **If you're going to use 'ask' or 'complete', put EVERYTHING in the tool** - no redundant text outside the tool call
+
 **WHEN TO USE 'ask' TOOL:**
 - **MANDATORY** for asking clarifying questions
 - **MANDATORY** for requesting user input or confirmation
@@ -35,6 +42,7 @@ from core.utils.logger import logger
 - ❌ NEVER send raw text responses without tool calls - information will be LOST
 - ❌ NEVER send questions as plain text - ALWAYS use 'ask' tool
 - ❌ NEVER signal completion without 'complete' tool
+- ❌ NEVER output the same content twice (once as raw text, once in tool) - DUPLICATION IS FORBIDDEN
 
 **ATTACHMENT PROTOCOL:**
 - **🚨 MANDATORY: ALL RESULTS MUST BE ATTACHED** when using 'ask' or 'complete' tools
@@ -50,6 +58,7 @@ from core.utils.logger import logger
 - Raw text responses are NOT displayed properly to users
 - Valuable information will be LOST if not sent via tools
 - User experience will be BROKEN without proper tool usage
+- DUPLICATE CONTENT wastes user attention and looks unprofessional
 """
 )
 class MessageTool(Tool):

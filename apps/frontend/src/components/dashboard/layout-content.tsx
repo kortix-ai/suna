@@ -16,6 +16,7 @@ import { useProjects } from '@/hooks/sidebar/use-sidebar';
 import { useIsMobile } from '@/hooks/utils';
 import { AppProviders } from '@/components/layout/app-providers';
 import { AnnouncementDialog } from '../announcements/announcement-dialog';
+import { NovuInboxProvider } from '../notifications/novu-inbox-provider';
 
 // Lazy load heavy components that aren't needed for initial render
 const FloatingMobileMenuButton = lazy(() => 
@@ -165,6 +166,7 @@ export default function DashboardLayoutContent({
   }
 
   return (
+    <NovuInboxProvider>
     <AppProviders 
       showSidebar={true}
       sidebarSiblings={
@@ -216,5 +218,6 @@ export default function DashboardLayoutContent({
         ) : null}
       </div>
     </AppProviders>
+    </NovuInboxProvider>
   );
 }

@@ -28,6 +28,8 @@ import {
 } from "@/hooks/messages/utils";
 import { AppIcon } from "../tool-views/shared/AppIcon";
 import { useSmoothText } from "@/hooks/messages/useSmoothText";
+import { isHiddenTool } from "@agentpress/shared/tools";
+import { MeshGradientLoader } from "./MeshGradientLoader";
 
 export function renderAttachments(
   attachments: string[],
@@ -167,18 +169,14 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   threadId?: string;
   onPromptFill?: (message: string) => void;
 }) {
-  // Apply smooth typewriter effect to streaming text (120 chars/sec for snappy feel)
-  // Returns { text, isAnimating } - we continue rendering while animation is in progress
+  const hasToolCall = !!streamingToolCall;
   const { text: smoothStreamingText, isAnimating: isSmoothAnimating } = useSmoothText(
     streamingTextContent || "",
     120,
-    true
+    !hasToolCall
   );
-
-  // Debug logging for smooth text effect
-  if (streamingTextContent && isLastGroup) {
-    console.log('[SmoothText] Raw length:', streamingTextContent.length, '| Displayed:', smoothStreamingText.length, '| Animating:', isSmoothAnimating);
-  }
+  
+  const displayText = hasToolCall ? (streamingTextContent || "") : smoothStreamingText;
 
   const toolResultsMap = useMemo(() => {
     const map = new Map<string | null, UnifiedMessage[]>();
@@ -256,11 +254,10 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   ]);
 
   const streamingContent = useMemo(() => {
-    // Continue rendering if:
-    // 1. Currently streaming, OR
-    // 2. Animation is still in progress (let it finish even after stream ends)
     const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
-    const shouldRender = isLastGroup && !readOnly && smoothStreamingText && (isStreaming || isSmoothAnimating);
+    const isAgentRunning = agentStatus === "running" || agentStatus === "connecting";
+    
+    const shouldRender = isLastGroup && !readOnly && displayText && (isStreaming || isSmoothAnimating || isAgentRunning);
     
     if (!shouldRender) {
       return null;
@@ -269,8 +266,8 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     let detectedTag: string | null = null;
     let tagStartIndex = -1;
 
-    const askIndex = smoothStreamingText.indexOf("<ask");
-    const completeIndex = smoothStreamingText.indexOf("<complete");
+    const askIndex = displayText.indexOf("<ask");
+    const completeIndex = displayText.indexOf("<complete");
     if (askIndex !== -1 && (completeIndex === -1 || askIndex < completeIndex)) {
       detectedTag = "ask";
       tagStartIndex = askIndex;
@@ -279,10 +276,10 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       tagStartIndex = completeIndex;
     } else {
       const functionCallsIndex =
-        smoothStreamingText.indexOf("<function_calls>");
+        displayText.indexOf("<function_calls>");
       if (functionCallsIndex !== -1) {
         const functionCallsContent =
-          smoothStreamingText.substring(functionCallsIndex);
+          displayText.substring(functionCallsIndex);
         if (
           functionCallsContent.includes('<invoke name="ask"') ||
           functionCallsContent.includes("<invoke name='ask'")
@@ -303,7 +300,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
         for (const tag of HIDE_STREAMING_XML_TAGS) {
           if (tag === "ask" || tag === "complete") continue;
           const openingTagPattern = `<${tag}`;
-          const index = smoothStreamingText.indexOf(openingTagPattern);
+          const index = displayText.indexOf(openingTagPattern);
           if (index !== -1) {
             detectedTag = tag;
             tagStartIndex = index;
@@ -313,7 +310,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       }
     }
 
-    const textToRender = smoothStreamingText;
+    const textToRender = displayText;
     const textBeforeTag = detectedTag
       ? textToRender.substring(0, tagStartIndex)
       : textToRender;
@@ -362,9 +359,10 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   }, [
     isLastGroup,
     readOnly,
-    smoothStreamingText,
+    displayText,
     isSmoothAnimating,
     streamHookStatus,
+    agentStatus,
     visibleMessages,
     handleToolClick,
   ]);
@@ -455,7 +453,13 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   }, [readOnly, isLastGroup, isStreamingText, streamingText, handleToolClick]);
 
   const streamingToolCallContent = useMemo(() => {
+    // Don't show streaming tool call if not streaming or agent is not running
     if (!isLastGroup || readOnly || !streamingToolCall) return null;
+    
+    // Don't show if agent is not in a streaming state
+    const isActivelyStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
+    const isAgentRunning = agentStatus === "running" || agentStatus === "connecting";
+    if (!isActivelyStreaming && !isAgentRunning) return null;
 
     const parsedMetadata = safeJsonParse<ParsedMetadata>(
       streamingToolCall.metadata,
@@ -513,20 +517,14 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
 
       const toolName =
         askOrCompleteTool.function_name?.replace(/_/g, "-").toLowerCase() || "";
-      const textToShow =
-        askCompleteText || (toolName === "ask" ? "Asking..." : "Completing...");
-      const isCurrentlyStreaming =
-        streamHookStatus === "streaming" || streamHookStatus === "connecting";
 
       return (
         <div className="mt-1.5">
-          <ComposioUrlDetector
-            content={textToShow}
-            isStreaming={isCurrentlyStreaming}
-          />
+          <MeshGradientLoader variant={toolName === "complete" ? "complete" : "ask"} />
         </div>
       );
     }
+    
 
     const isAskOrComplete = toolCalls.some((tc: any) => {
       const toolName = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
@@ -535,11 +533,22 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
 
     if (isAskOrComplete) return null;
 
+    // Filter out hidden tools (internal/initialization tools)
+    const visibleToolCalls = toolCalls.filter((tc: any) => {
+      const toolName = tc.function_name?.replace(/_/g, "-") || "";
+      return !isHiddenTool(toolName);
+    });
+
+    // If all tools were hidden, don't render anything
+    if (visibleToolCalls.length === 0 && toolCalls.length > 0) {
+      return null;
+    }
+
     return (
       <div className="mt-1.5">
         <div className="flex flex-col gap-2">
-          {toolCalls.length > 0 ? (
-            toolCalls.map((tc: any, tcIndex: number) => {
+          {visibleToolCalls.length > 0 ? (
+            visibleToolCalls.map((tc: any, tcIndex: number) => {
               const toolName = tc.function_name?.replace(/_/g, "-") || "";
               const toolCallContent = JSON.stringify({
                 function: { name: toolName },
@@ -580,6 +589,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     streamingToolCall,
     group.messages,
     streamHookStatus,
+    agentStatus,
     handleToolClick,
   ]);
 
@@ -618,10 +628,21 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     <div key={group.key} ref={isLastGroup ? latestMessageRef : null}>
       <div className="flex flex-col gap-2">
         <div className="flex items-center">
-          <div className="rounded-md flex items-center justify-center relative">
-            {agentInfo.avatar}
-          </div>
-          <p className="ml-2 text-sm text-muted-foreground">{agentInfo.name}</p>
+          {agentInfo.name === "Kortix" ? (
+            <img
+              src="/kortix-logomark-white.svg"
+              alt="Kortix"
+              className="dark:invert-0 invert flex-shrink-0"
+              style={{ height: '12px', width: 'auto' }}
+            />
+          ) : (
+            <>
+              <div className="rounded-md flex items-center justify-center relative">
+                {agentInfo.avatar}
+              </div>
+              <p className="ml-2 text-sm text-muted-foreground">{agentInfo.name}</p>
+            </>
+          )}
         </div>
         <div className="flex w-full break-words">
           <div className="space-y-1.5 min-w-0 flex-1">

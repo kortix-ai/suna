@@ -13,6 +13,7 @@ import { PricingSection } from './pricing-section';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
+import { trackRouteChangeForModal } from '@/lib/analytics/gtm';
 
 interface PlanSelectionModalProps {
     open?: boolean;
@@ -37,6 +38,13 @@ export function PlanSelectionModal({
     const onOpenChange = controlledOnOpenChange || ((open: boolean) => !open && closePricingModal());
     const returnUrl = controlledReturnUrl || storeReturnUrl || defaultReturnUrl;
     const displayReason = controlledUpgradeReason || storeCustomTitle;
+
+    // Track routeChange when Plans modal opens
+    React.useEffect(() => {
+        if (isOpen) {
+            trackRouteChangeForModal('plans');
+        }
+    }, [isOpen]);
 
     // Note: Checkout success detection is handled by dashboard-content.tsx
     // The modal just needs to close after subscription updates

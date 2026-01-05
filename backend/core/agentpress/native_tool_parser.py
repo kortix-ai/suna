@@ -43,7 +43,8 @@ def extract_tool_call_chunk_data(tool_call_chunk: Any) -> Dict[str, Any]:
                 if isinstance(args, str):
                     tool_call_data_chunk['function']['arguments'] = args
                 else:
-                    tool_call_data_chunk['function']['arguments'] = json.dumps(args)
+                    # Use ensure_ascii=False to preserve Unicode characters without escaping
+                    tool_call_data_chunk['function']['arguments'] = json.dumps(args, ensure_ascii=False)
     
     return tool_call_data_chunk
 
@@ -175,7 +176,8 @@ def convert_to_exec_tool_call(
         if raw_arguments_str is None:
             if hasattr(tool_call, 'function') and hasattr(tool_call.function, 'arguments'):
                 args = tool_call.function.arguments
-                raw_arguments_str = args if isinstance(args, str) else json.dumps(args)
+                # Use ensure_ascii=False to preserve Unicode characters without escaping
+                raw_arguments_str = args if isinstance(args, str) else json.dumps(args, ensure_ascii=False)
             else:
                 raw_arguments_str = ''
     
@@ -186,7 +188,8 @@ def convert_to_exec_tool_call(
         "function_name": function_name,
         "arguments": parsed_args if isinstance(parsed_args, dict) else raw_arguments_str,
         "id": tool_call_id,
-        "raw_arguments": raw_arguments_str if isinstance(raw_arguments_str, str) else json.dumps(raw_arguments_str),
+        # Use ensure_ascii=False to preserve Unicode characters without escaping
+        "raw_arguments": raw_arguments_str if isinstance(raw_arguments_str, str) else json.dumps(raw_arguments_str, ensure_ascii=False),
         "source": "native"
     }
 

@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { GitBranch, ChevronDown, Clock, RotateCcw, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { GitBranch, ChevronDown, Clock, RotateCcw, Check, AlertCircle } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAgentVersions, useActivateAgentVersion, useCreateAgentVersion } from '@/hooks/agents/use-agent-versions';
 import { formatDistanceToNow } from 'date-fns';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import type { AgentVersion } from '@/hooks/agents/utils';
 import { VersionInlineEditor } from './version-inline-editor';
 
@@ -112,7 +113,7 @@ export function AgentVersionSwitcher({
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 px-3 py-2">
-        <Loader2 className="h-4 w-4 animate-spin" />
+        <KortixLoader customSize={16} />
       </div>
     );
   }

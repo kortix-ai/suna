@@ -5,12 +5,12 @@ import {
   AlertTriangle,
   CircleDashed,
   Clock,
-  Loader2,
   ArrowRight,
   TerminalIcon,
   Power,
   StopCircle
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ToolViewProps } from '../types';
 import { formatTimestamp, getToolTitle } from '../utils';
 import { cn } from '@/lib/utils';
@@ -130,23 +130,6 @@ export function TerminateCommandToolView({
             </div>
           </div>
 
-          {!isStreaming && (
-            <Badge
-              variant="secondary"
-              className={
-                terminationSuccess
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                  : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              }
-            >
-              {terminationSuccess ? (
-                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-              ) : (
-                <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-              )}
-              {terminationSuccess ? 'Session terminated' : 'Termination failed'}
-            </Badge>
-          )}
         </div>
       </CardHeader>
 
@@ -155,7 +138,7 @@ export function TerminateCommandToolView({
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="text-center w-full max-w-xs">
               <div className="w-16 h-16 rounded-full mx-auto mb-6 flex items-center justify-center bg-gradient-to-b from-red-100 to-red-50 shadow-inner dark:from-red-800/40 dark:to-red-900/60 dark:shadow-red-950/20">
-                <Loader2 className="h-8 w-8 animate-spin text-red-500 dark:text-red-400" />
+                <KortixLoader customSize={32} />
               </div>
               <h3 className="text-lg font-medium text-zinc-900 dark:text-zinc-100 mb-2">
                 Terminating session

@@ -36,7 +36,7 @@ import {
   type FileInfo,
 } from '@/lib/api/sandbox';
 import { Project } from '@/lib/api/threads';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/components/AuthProvider';
 import {
@@ -248,7 +248,7 @@ export function FileBrowserView({
     await exploreDirectory(startPath);
 
     return { files: allFiles, totalSize };
-  }, [sandboxId]);
+  }, [sandboxId, currentPath]);
 
   // Function to download all files as a zip from current directory
   const handleDownloadFolder = useCallback(async () => {
@@ -575,6 +575,7 @@ export function FileBrowserView({
     if (selectedVersion) {
       loadFilesAtVersion(selectedVersion, false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPath, selectedVersion]); // Don't include loadFilesAtVersion to avoid loops
 
   // Open revert modal and fetch commit info

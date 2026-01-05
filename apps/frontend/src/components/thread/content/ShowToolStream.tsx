@@ -4,6 +4,79 @@ import { getToolIcon, getUserFriendlyToolName, extractPrimaryParam } from '@/com
 import { AppIcon } from '../tool-views/shared/AppIcon';
 import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
 
+/**
+ * Optimistically extract a string field from partial/streaming JSON.
+ * Works even when JSON is incomplete (still streaming).
+ * 
+ * @param jsonString - The potentially incomplete JSON string
+ * @param fieldName - The field name to extract (e.g., 'file_path', 'file_contents')
+ * @returns The extracted field value or null if not found
+ */
+function extractFieldFromPartialJson(jsonString: string, fieldName: string): string | null {
+    if (!jsonString || typeof jsonString !== 'string') return null;
+    
+    // Look for the field in the JSON string
+    // Pattern: "field_name": "value" or "field_name":"value"
+    const pattern = new RegExp(`"${fieldName}"\\s*:\\s*"`, 'i');
+    const match = jsonString.match(pattern);
+    
+    if (!match || match.index === undefined) return null;
+    
+    // Find the start of the value (after the opening quote)
+    const valueStart = match.index + match[0].length;
+    let value = '';
+    let i = valueStart;
+    let escaped = false;
+    
+    // Parse the string value, handling escape sequences
+    while (i < jsonString.length) {
+        const char = jsonString[i];
+        
+        if (escaped) {
+            // Handle escape sequences
+            switch (char) {
+                case 'n': value += '\n'; break;
+                case 't': value += '\t'; break;
+                case 'r': value += '\r'; break;
+                case '"': value += '"'; break;
+                case '\\': value += '\\'; break;
+                default: value += char;
+            }
+            escaped = false;
+        } else if (char === '\\') {
+            escaped = true;
+        } else if (char === '"') {
+            // End of string value
+            return value;
+        } else {
+            value += char;
+        }
+        i++;
+    }
+    
+    // If we didn't find a closing quote, the JSON is still streaming
+    // Return what we have so far (partial value)
+    return value;
+}
+
+/**
+ * Extract file path from partial JSON - tries multiple field names
+ */
+function extractFilePathFromPartialJson(jsonString: string): string | null {
+    return extractFieldFromPartialJson(jsonString, 'file_path') ||
+           extractFieldFromPartialJson(jsonString, 'target_file') ||
+           extractFieldFromPartialJson(jsonString, 'path');
+}
+
+/**
+ * Extract file contents from partial JSON
+ */
+function extractFileContentsFromPartialJson(jsonString: string): string | null {
+    return extractFieldFromPartialJson(jsonString, 'file_contents') ||
+           extractFieldFromPartialJson(jsonString, 'code_edit') ||
+           extractFieldFromPartialJson(jsonString, 'content');
+}
+
 // Media generation tools that show shimmer preview
 const MEDIA_GENERATION_TOOLS = new Set([
     'image-edit-or-generate',
@@ -108,25 +181,32 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
     const stableStartTimeRef = useRef<number | null>(null);
 
+    // Throttle content updates to allow smooth streaming even when chunks arrive rapidly
+    // Increased throttle time to 150ms to better handle rapid tool call chunks
     const [throttledContent, setThrottledContent] = useState(content);
     const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const lastUpdateRef = useRef<number>(0);
+    const pendingContentRef = useRef<string>(content);
 
     useEffect(() => {
+        // Always update pending content immediately
+        pendingContentRef.current = content;
+        
         const now = Date.now();
         const timeSinceLastUpdate = now - lastUpdateRef.current;
+        const THROTTLE_MS = 150; // Increased from 100ms to allow smoother streaming
 
-        if (timeSinceLastUpdate >= 100) {
-            setThrottledContent(content);
+        if (timeSinceLastUpdate >= THROTTLE_MS) {
+            setThrottledContent(pendingContentRef.current);
             lastUpdateRef.current = now;
         } else {
             if (throttleTimeoutRef.current) {
                 clearTimeout(throttleTimeoutRef.current);
             }
             throttleTimeoutRef.current = setTimeout(() => {
-                setThrottledContent(content);
+                setThrottledContent(pendingContentRef.current);
                 lastUpdateRef.current = Date.now();
-            }, 100 - timeSinceLastUpdate);
+            }, THROTTLE_MS - timeSinceLastUpdate);
         }
 
         return () => {
@@ -301,20 +381,105 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 }
             }
 
-            // Fallback: return content or arguments as string
+            // Fallback: try to extract meaningful content from any tool
+            // First check for common content fields
+            if (parsed.file_contents) {
+                const value = isFieldAnimating ? smoothFieldValue : parsed.file_contents;
+                return { html: value, plainText: value };
+            }
+            if (parsed.code_edit) {
+                const value = isFieldAnimating ? smoothFieldValue : parsed.code_edit;
+                return { html: value, plainText: value };
+            }
             if (parsed.content) {
                 return { html: parsed.content, plainText: parsed.content };
             }
-            if (parsed.arguments) {
-                const argsStr = typeof parsed.arguments === 'string' ? parsed.arguments : JSON.stringify(parsed.arguments);
-                return { html: argsStr, plainText: argsStr };
+            if (parsed.text) {
+                return { html: parsed.text, plainText: parsed.text };
             }
+            if (parsed.message) {
+                return { html: parsed.message, plainText: parsed.message };
+            }
+            // Check nested arguments for content fields
+            if (parsed.arguments) {
+                const args = typeof parsed.arguments === 'string' ? 
+                    (() => { try { return JSON.parse(parsed.arguments); } catch { return null; } })() 
+                    : parsed.arguments;
+                if (args) {
+                    if (args.file_contents) {
+                        const value = isFieldAnimating ? smoothFieldValue : args.file_contents;
+                        return { html: value, plainText: value };
+                    }
+                    if (args.code_edit) {
+                        const value = isFieldAnimating ? smoothFieldValue : args.code_edit;
+                        return { html: value, plainText: value };
+                    }
+                    if (args.content) {
+                        return { html: args.content, plainText: args.content };
+                    }
+                    if (args.text) {
+                        return { html: args.text, plainText: args.text };
+                    }
+                    if (args.command) {
+                        return { html: `$ ${args.command}`, plainText: `$ ${args.command}` };
+                    }
+                    if (args.query) {
+                        return { html: args.query, plainText: args.query };
+                    }
+                    if (args.url) {
+                        return { html: args.url, plainText: args.url };
+                    }
+                }
+            }
+            // If we couldn't extract meaningful content, return empty for streaming display
+            // This prevents showing raw JSON in the preview
+            return { html: '', plainText: '' };
         } catch (e) {
-            // Not JSON, return as-is
+            // JSON parse failed - this is streaming/partial JSON
+            // Use optimistic parsing to extract fields from incomplete JSON
+            
+            // Try to extract file contents from partial JSON (for file operations)
+            const partialFileContents = extractFileContentsFromPartialJson(throttledContent);
+            if (partialFileContents) {
+                // Use smooth animation value if animating, otherwise use extracted content
+                const value = isFieldAnimating && smoothFieldValue ? smoothFieldValue : partialFileContents;
+                return { html: value, plainText: value };
+            }
+            
+            // Try to extract command from partial JSON
+            const partialCommand = extractFieldFromPartialJson(throttledContent, 'command');
+            if (partialCommand) {
+                const value = isFieldAnimating && smoothFieldValue ? smoothFieldValue : partialCommand;
+                return { html: `$ ${value}`, plainText: `$ ${value}` };
+            }
+            
+            // Try to extract query from partial JSON
+            const partialQuery = extractFieldFromPartialJson(throttledContent, 'query');
+            if (partialQuery) {
+                const value = isFieldAnimating && smoothFieldValue ? smoothFieldValue : partialQuery;
+                return { html: value, plainText: value };
+            }
+            
+            // Try to extract url from partial JSON
+            const partialUrl = extractFieldFromPartialJson(throttledContent, 'url');
+            if (partialUrl) {
+                return { html: partialUrl, plainText: partialUrl };
+            }
+            
+            // Try to extract text/message from partial JSON
+            const partialText = extractFieldFromPartialJson(throttledContent, 'text') ||
+                               extractFieldFromPartialJson(throttledContent, 'message');
+            if (partialText) {
+                return { html: partialText, plainText: partialText };
+            }
         }
 
-        // Fallback: return content as-is
-        return { html: throttledContent, plainText: throttledContent };
+        // Fallback: return content as-is only if it looks like actual content (not JSON)
+        if (throttledContent && !throttledContent.startsWith('{') && !throttledContent.startsWith('[')) {
+            return { html: throttledContent, plainText: throttledContent };
+        }
+        // Return empty to avoid showing raw JSON
+        return { html: '', plainText: '' };
     }, [throttledContent, toolName, isEditFile, isCreateFile, isFullFileRewrite, smoothFieldValue, isFieldAnimating]);
 
     // Show streaming content for all streamable tools with delayed transitions

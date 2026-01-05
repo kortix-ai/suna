@@ -3,7 +3,8 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Download, File, Loader } from 'lucide-react';
+import { Download, File } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useDownloadRestriction } from '@/hooks/billing';
 
 interface BinaryRendererProps {
@@ -74,7 +75,7 @@ export function BinaryRenderer({
           disabled={isDownloading}
         >
           {isDownloading ? (
-            <Loader className="h-4 w-4 animate-spin" />
+            <KortixLoader size="small" />
           ) : (
             <Download className="h-4 w-4" />
           )}

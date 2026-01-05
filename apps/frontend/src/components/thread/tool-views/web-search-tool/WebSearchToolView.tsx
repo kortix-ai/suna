@@ -12,7 +12,6 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
-  Loader2,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
 import { cleanUrl, formatTimestamp, getToolTitle } from '../utils';
@@ -21,8 +20,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { LoadingState } from '../shared/LoadingState';
+import { WebSearchLoadingState } from './WebSearchLoadingState';
 import { extractWebSearchData } from './_utils';
+import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
 
 export function WebSearchToolView({
   toolCall,
@@ -34,6 +34,15 @@ export function WebSearchToolView({
 }: ToolViewProps) {
   const [expandedResults, setExpandedResults] = useState<Record<number, boolean>>({});
   const [currentQueryIndex, setCurrentQueryIndex] = useState(0);
+
+  // Apply smooth text streaming for query field
+  const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
+  const { displayedValue: smoothQuery, isAnimating: isQueryAnimating } = useSmoothToolField(
+    rawArguments,
+    'query',
+    120,
+    isStreaming && !toolResult
+  );
 
   const {
     query,
@@ -52,6 +61,9 @@ export function WebSearchToolView({
     toolTimestamp,
     assistantTimestamp
   );
+
+  // Use smooth query when streaming
+  const displayQuery = isStreaming && smoothQuery ? smoothQuery : query;
 
   // Reset to first query when batch results change
   useEffect(() => {
@@ -120,37 +132,36 @@ export function WebSearchToolView({
             </div>
           </div>
 
-          {!isStreaming && (
-            <Badge
-              variant="secondary"
-              className={
-                actualIsSuccess
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                  : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              }
-            >
-              {actualIsSuccess ? 'Search completed' : 'Search failed'}
-            </Badge>
-          )}
-
-          {isStreaming && (
-            <Badge className="bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300">
-              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-              Searching
-            </Badge>
-          )}
         </div>
       </CardHeader>
 
       <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
         {isStreaming && searchResults.length === 0 && !answer && images.length === 0 ? (
-          <LoadingState
-            icon={Search}
-            iconColor="text-blue-500 dark:text-blue-400"
-            bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
+          <WebSearchLoadingState
+            queries={
+              // Parse queries from toolCall arguments
+              (() => {
+                const args = toolCall?.arguments || {};
+                const rawQuery = args.query || args.queries;
+                if (Array.isArray(rawQuery)) {
+                  return rawQuery.filter((q): q is string => typeof q === 'string');
+                }
+                if (typeof rawQuery === 'string') {
+                  // Try to parse as JSON array
+                  try {
+                    const parsed = JSON.parse(rawQuery);
+                    if (Array.isArray(parsed)) {
+                      return parsed.filter((q): q is string => typeof q === 'string');
+                    }
+                  } catch {
+                    // Not JSON, treat as single query
+                  }
+                  return [rawQuery];
+                }
+                return query ? [query] : ['Searching...'];
+              })()
+            }
             title={name === 'image-search' ? "Searching for images" : "Searching the web"}
-            filePath={typeof query === 'string' ? query : undefined}
-            showProgress={true}
           />
         ) : searchResults.length > 0 || answer || images.length > 0 ? (
           <ScrollArea className="h-full w-full">

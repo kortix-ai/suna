@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { ImageLoader } from './shared/ImageLoader';
 import { JsonViewer } from './shared/JsonViewer';
 import { KortixComputerHeader } from '../kortix-computer/KortixComputerHeader';
+import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
 
 interface BrowserHeaderProps {
   isConnected: boolean;
@@ -79,6 +80,23 @@ export function BrowserToolView({
   const [progress, setProgress] = React.useState(100);
   const [isImageLoading, setIsImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
+
+  // Prepare raw arguments for hooks - must be done before hooks are called
+  const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
+
+  // Apply smooth text streaming for URL/instruction fields - MUST be called unconditionally
+  const { displayedValue: smoothUrl, isAnimating: isUrlAnimating } = useSmoothToolField(
+    rawArguments,
+    'url',
+    120,
+    isStreaming && !toolResult && !!toolCall
+  );
+  const { displayedValue: smoothInstruction, isAnimating: isInstructionAnimating } = useSmoothToolField(
+    rawArguments,
+    'instruction',
+    120,
+    isStreaming && !toolResult && !!toolCall
+  );
 
   React.useEffect(() => {
     if (isRunning) {
@@ -214,6 +232,10 @@ export function BrowserToolView({
   const url = toolCall.arguments?.url || toolCall.arguments?.target_url || null;
   const parameters = toolCall.arguments || null;
 
+  // Use smooth URL/instruction when streaming
+  const displayUrl = isStreaming && smoothUrl ? smoothUrl : url;
+  const displayInstruction = isStreaming && smoothInstruction ? smoothInstruction : parameters?.instruction;
+
   // Use computed values from useMemo
   const screenshotUrlFinal = computedValues.screenshotUrlFinal;
   const browserStateMessageId = computedValues.browserStateMessageId;
@@ -279,23 +301,6 @@ export function BrowserToolView({
           </div>
 
           <div className='flex items-center gap-2'>
-            {!isRunning && (
-              <Badge
-              variant="secondary"
-              className={
-                isSuccess
-                ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              }
-              >
-                {isSuccess ? (
-                  <CheckCircle className="h-3.5 w-3.5 mr-1" />
-                ) : (
-                  <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-                )}
-                {isSuccess ? 'Browser action completed' : 'Browser action failed'}
-              </Badge>
-            )}
             {viewToggle}
             {(result || parameters) && <Button
               variant="ghost"
@@ -345,19 +350,32 @@ export function BrowserToolView({
                   ? 'Browser action in progress...'
                   : 'Screenshot will appear here when available.'}
               </p>
-              {url && (
+              {(displayUrl || url) && (
                 <div className="mt-4">
+                  <div className="mb-2">
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 font-mono break-all">
+                      {displayUrl || url}
+                      {isUrlAnimating && <span className="animate-pulse text-muted-foreground ml-1">▌</span>}
+                    </p>
+                  </div>
                   <Button
                     variant="outline"
                     size="sm"
                     className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 shadow-sm hover:shadow-md transition-shadow"
                     asChild
                   >
-                    <a href={url} target="_blank" rel="noopener noreferrer">
+                    <a href={displayUrl || url} target="_blank" rel="noopener noreferrer">
                       <ExternalLink className="h-3.5 w-3.5 mr-2" />
                       Visit URL
                     </a>
                   </Button>
+                </div>
+              )}
+              {displayInstruction && (
+                <div className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                  <span className="font-medium">Instruction: </span>
+                  <span className="font-mono">{displayInstruction}</span>
+                  {isInstructionAnimating && <span className="animate-pulse text-muted-foreground ml-1">▌</span>}
                 </div>
               )}
             </div>
@@ -373,9 +391,10 @@ export function BrowserToolView({
               {operation}
             </Badge>
           )}
-          {url && (
+          {(displayUrl || url) && (
             <span className="text-xs truncate max-w-[200px] hidden sm:inline-block">
-              {url}
+              {displayUrl || url}
+              {isUrlAnimating && <span className="animate-pulse text-muted-foreground ml-1">▌</span>}
             </span>
           )}
         </div>

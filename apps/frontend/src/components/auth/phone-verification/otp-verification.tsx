@@ -14,12 +14,12 @@ import {
 } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
-  Loader2,
   Shield,
   RotateCcw,
   Trash2,
   MessageSquare,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 
 interface OtpVerificationProps {
   phoneNumber?: string;
@@ -213,7 +213,7 @@ export function OtpVerification({
               >
                 {isLoading ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <KortixLoader size="small" />
                     {t('verifying')}
                   </>
                 ) : (
@@ -248,7 +248,7 @@ export function OtpVerification({
                 >
                   {isLoading ? (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <KortixLoader size="small" />
                       {t('sending')}
                     </>
                   ) : (

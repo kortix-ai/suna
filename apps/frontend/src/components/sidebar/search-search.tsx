@@ -2,7 +2,8 @@
 
 import * as React from 'react';
 import { useState, useEffect, useCallback } from 'react';
-import { Search, X, FileText, Loader2 } from 'lucide-react';
+import { Search, X, FileText } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useRouter, usePathname } from 'next/navigation';
 import { format } from 'date-fns';
 
@@ -247,7 +248,7 @@ export function SidebarSearch() {
                   >
                     <div className="flex items-center">
                       {isThreadLoading ? (
-                        <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" />
+                        <KortixLoader size="small" className="mr-2" />
                       ) : (
                         <FileText className="mr-2 h-4 w-4 shrink-0" />
                       )}

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import { useAgents, useUpdateAgent, useDeleteAgent, useOptimisticAgentUpdate, useAgentDeletionState } from '@/hooks/agents/use-agents';

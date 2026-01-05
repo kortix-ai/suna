@@ -18,7 +18,6 @@ from core.services import redis
 from core.services.langfuse import langfuse
 from .tasks import (
     AgentRunTask,
-    ThreadInitTask,
     MemoryExtractionTask,
     MemoryEmbeddingTask,
     MemoryConsolidationTask,
@@ -89,7 +88,7 @@ async def handle_agent_run(task: AgentRunTask):
         cancellation_event = asyncio.Event()
         redis_keys = create_redis_keys(agent_run_id, instance_id)
         
-        await stream_status_message(redis_keys['response_stream'], "initializing", "Worker started...")
+        await stream_status_message("initializing", "Worker started...", stream_key=redis_keys['response_stream'])
         await redis.verify_stream_writable(redis_keys['response_stream'])
         
         from core.ai_models import model_manager
@@ -125,7 +124,9 @@ async def handle_agent_run(task: AgentRunTask):
         except:
             pass
         
+        t_agent_config = time.time()
         agent_config = await load_agent_config(agent_id, account_id)
+        logger.info(f"⏱️ [HANDLER TIMING] load_agent_config: {(time.time() - t_agent_config) * 1000:.1f}ms")
         
         set_tool_output_streaming_context(
             agent_run_id=agent_run_id,
@@ -179,102 +180,33 @@ async def handle_agent_run(task: AgentRunTask):
         if redis_keys:
             await cleanup_redis_keys(agent_run_id, instance_id)
         
-        # Queue memory extraction on success
+        # Queue memory extraction on success (only if memory is enabled)
         if final_status == "completed" and account_id and client:
-            try:
-                messages_result = await client.table('messages').select('message_id').eq('thread_id', thread_id).execute()
-                if messages_result.data:
-                    message_ids = [m['message_id'] for m in messages_result.data]
-                    await dispatch_memory_extraction(thread_id, account_id, message_ids)
-            except Exception as e:
-                logger.warning(f"Failed to queue memory extraction: {e}")
+            from core.utils.config import config
+            if config.ENABLE_MEMORY:
+                try:
+                    messages_result = await client.table('messages').select('message_id').eq('thread_id', thread_id).execute()
+                    if messages_result.data:
+                        message_ids = [m['message_id'] for m in messages_result.data]
+                        await dispatch_memory_extraction(thread_id, account_id, message_ids)
+                except Exception as e:
+                    logger.warning(f"Failed to queue memory extraction: {e}")
+            else:
+                logger.debug("Memory extraction skipped: ENABLE_MEMORY is False")
         
         # Force GC
         gc.collect()
 
 
-async def handle_thread_init(task: ThreadInitTask):
-    """Handle thread initialization task - optimized for TTFT."""
-    import time
-    t_start = time.time()
-    
-    thread_id = task.thread_id
-    project_id = task.project_id
-    account_id = task.account_id
-    agent_id = task.agent_id
-    model_name = task.model_name
-    
-    structlog.contextvars.clear_contextvars()
-    structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id)
-    
-    logger.info(f"🧵 Initializing thread: {thread_id}")
-    
-    await initialize()
-    
-    try:
-        client = await db.client
-        now_iso = datetime.now(timezone.utc).isoformat()
-        
-        # Import early to avoid import overhead during parallel execution
-        from core.ai_models import model_manager
-        from core.agents.runs import _load_agent_config, _get_effective_model, _create_agent_run_record
-        
-        # Resolve model (usually a quick sync operation)
-        effective_model = model_name
-        if not effective_model:
-            effective_model = await model_manager.get_default_model_for_user(client, account_id)
-        else:
-            effective_model = model_manager.resolve_model_id(effective_model)
-        
-        # Load agent config and create agent_run record (can be done before status update)
-        t_config = time.time()
-        agent_config = await _load_agent_config(client, agent_id, account_id, account_id, is_new_thread=False)
-        effective_model = await _get_effective_model(model_name, agent_config, client, account_id)
-        agent_run_id = await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id)
-        logger.debug(f"⏱️ [TIMING] Agent config + run record: {(time.time() - t_config) * 1000:.1f}ms")
-        
-        # Update thread status and dispatch agent run in parallel
-        worker_instance_id = str(uuid.uuid4())[:8]
-        
-        async def update_status():
-            await client.table('threads').update({
-                "status": "ready",
-                "initialization_started_at": now_iso,
-                "initialization_completed_at": now_iso
-            }).eq('thread_id', thread_id).execute()
-        
-        async def dispatch():
-            await dispatch_agent_run(
-                agent_run_id=agent_run_id,
-                thread_id=thread_id,
-                instance_id=worker_instance_id,
-                project_id=project_id,
-                model_name=effective_model,
-                agent_id=agent_id,
-                account_id=account_id,
-            )
-        
-        t_parallel = time.time()
-        await asyncio.gather(update_status(), dispatch())
-        logger.debug(f"⏱️ [TIMING] Parallel status+dispatch: {(time.time() - t_parallel) * 1000:.1f}ms")
-        
-        logger.info(f"✅ Thread init complete: {thread_id} → {agent_run_id} ({(time.time() - t_start) * 1000:.1f}ms)")
-        
-    except Exception as e:
-        logger.error(f"Thread init failed for {thread_id}: {e}", exc_info=True)
-        try:
-            client = await db.client
-            await client.table('threads').update({
-                "status": "error",
-                "initialization_error": str(e)[:1000],
-            }).eq('thread_id', thread_id).execute()
-        except:
-            pass
-        raise
-
-
 async def handle_memory_extraction(task: MemoryExtractionTask):
     """Handle memory extraction task."""
+    from core.utils.config import config
+    
+    # Early return if memory is globally disabled
+    if not config.ENABLE_MEMORY:
+        logger.debug("Memory extraction skipped: ENABLE_MEMORY is False")
+        return
+    
     thread_id = task.thread_id
     account_id = task.account_id
     message_ids = task.message_ids
@@ -330,6 +262,13 @@ async def handle_memory_extraction(task: MemoryExtractionTask):
 
 async def handle_memory_embedding(task: MemoryEmbeddingTask):
     """Handle memory embedding task."""
+    from core.utils.config import config
+    
+    # Early return if memory is globally disabled
+    if not config.ENABLE_MEMORY:
+        logger.debug("Memory embedding skipped: ENABLE_MEMORY is False")
+        return
+    
     account_id = task.account_id
     thread_id = task.thread_id
     memories = task.extracted_memories
@@ -391,6 +330,13 @@ async def handle_memory_embedding(task: MemoryEmbeddingTask):
 
 async def handle_memory_consolidation(task: MemoryConsolidationTask):
     """Handle memory consolidation."""
+    from core.utils.config import config
+    
+    # Early return if memory is globally disabled
+    if not config.ENABLE_MEMORY:
+        logger.debug("Memory consolidation skipped: ENABLE_MEMORY is False")
+        return
+    
     logger.info(f"🔄 Consolidating memories for {task.account_id}")
     # Placeholder - implement if needed
 
@@ -466,7 +412,6 @@ def get_handlers():
     """Get all task handlers."""
     return {
         "agent_run": handle_agent_run,
-        "thread_init": handle_thread_init,
         "memory_extraction": handle_memory_extraction,
         "memory_embedding": handle_memory_embedding,
         "memory_consolidation": handle_memory_consolidation,

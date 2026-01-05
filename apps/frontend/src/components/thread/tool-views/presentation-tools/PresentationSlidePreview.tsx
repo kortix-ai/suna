@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PresentationSlideCard } from './PresentationSlideCard';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { Project } from '@/lib/api/threads';
-import { Loader2, RefreshCw, Presentation } from 'lucide-react';
+import { RefreshCw, Presentation } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { Button } from '@/components/ui/button';
 
@@ -116,7 +117,7 @@ export function PresentationSlidePreview({
   if (isLoading) {
     return (
       <div className={`flex flex-col items-center justify-center p-8 bg-muted/30 rounded-lg border ${className}`}>
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mb-2" />
+        <KortixLoader customSize={24} className="mb-2" />
         <span className="text-sm text-muted-foreground">Loading presentation...</span>
         {retryCount > 0 && (
           <span className="text-xs text-muted-foreground/70 mt-1">

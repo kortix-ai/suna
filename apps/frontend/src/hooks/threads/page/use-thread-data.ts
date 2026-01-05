@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Project } from '@/lib/api/threads';
 import { useThreadQuery } from '@/hooks/threads/use-threads';
 import { useMessagesQuery } from '@/hooks/messages';
@@ -98,7 +98,34 @@ export function useThreadData(
     setAgentStatus('idle');
   }, [threadId]);
 
-  // Manual retry with exponential backoff for agent detection
+  // Check for pre-stored agent_run_id from optimistic start (eliminates polling)
+  useEffect(() => {
+    if (!waitingForAgent || isShared || foundRunningAgentRef.current || agentRunId) {
+      return;
+    }
+
+    try {
+      const storedAgentRunId = sessionStorage.getItem('optimistic_agent_run_id');
+      const storedAgentRunThread = sessionStorage.getItem('optimistic_agent_run_thread');
+      
+      if (storedAgentRunId && storedAgentRunThread === threadId) {
+        console.log('[useThreadData] Using pre-stored agent_run_id:', storedAgentRunId);
+        foundRunningAgentRef.current = true;
+        lastDetectedRunIdRef.current = storedAgentRunId;
+        setAgentRunId(storedAgentRunId);
+        setAgentStatus('running');
+        
+        // Clean up sessionStorage
+        sessionStorage.removeItem('optimistic_agent_run_id');
+        sessionStorage.removeItem('optimistic_agent_run_thread');
+        return;
+      }
+    } catch (e) {
+      // sessionStorage not available
+    }
+  }, [waitingForAgent, isShared, agentRunId, threadId]);
+
+  // Manual retry with exponential backoff for agent detection (fallback if sessionStorage doesn't have it yet)
   // This is more efficient than constant polling
   useEffect(() => {
     if (!waitingForAgent || isShared || foundRunningAgentRef.current || agentRunId) {
@@ -114,6 +141,25 @@ export function useThreadData(
     };
 
     const retryTimeout = setTimeout(() => {
+      // Double-check sessionStorage before polling
+      try {
+        const storedAgentRunId = sessionStorage.getItem('optimistic_agent_run_id');
+        const storedAgentRunThread = sessionStorage.getItem('optimistic_agent_run_thread');
+        
+        if (storedAgentRunId && storedAgentRunThread === threadId) {
+          console.log('[useThreadData] Found agent_run_id in sessionStorage during retry:', storedAgentRunId);
+          foundRunningAgentRef.current = true;
+          lastDetectedRunIdRef.current = storedAgentRunId;
+          setAgentRunId(storedAgentRunId);
+          setAgentStatus('running');
+          sessionStorage.removeItem('optimistic_agent_run_id');
+          sessionStorage.removeItem('optimistic_agent_run_thread');
+          return;
+        }
+      } catch (e) {
+        // sessionStorage not available
+      }
+      
       if (!foundRunningAgentRef.current && !agentRunId) {
         retryCountRef.current += 1;
         if (process.env.NODE_ENV !== 'production') {
@@ -124,7 +170,7 @@ export function useThreadData(
     }, getRetryDelay(retryCountRef.current));
 
     return () => clearTimeout(retryTimeout);
-  }, [waitingForAgent, isShared, agentRunId, agentRunsQuery, agentRunsQuery.dataUpdatedAt]);
+  }, [waitingForAgent, isShared, agentRunId, agentRunsQuery, agentRunsQuery.dataUpdatedAt, threadId]);
 
   // Detect running agent from query data
   useEffect(() => {

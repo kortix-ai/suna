@@ -33,7 +33,6 @@ import {
   BookOpen,
   Zap,
   Download,
-  Loader2,
   Check,
   X,
   Edit3,
@@ -45,7 +44,8 @@ import {
   Lock,
   Sparkles,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { KortixLoader } from '@/components/ui/kortix-loader';
+import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -596,7 +596,7 @@ export function AgentConfigurationDialog({
                   disabled={exportMutation.isPending}
                 >
                   {exportMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <KortixLoader customSize={16} />
                   ) : (
                     <Download className="h-4 w-4" />
                   )}
@@ -606,7 +606,7 @@ export function AgentConfigurationDialog({
           </DialogHeader>
           {isLoading ? (
             <div className="flex-1 flex items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <KortixLoader size="large" />
             </div>
           ) : (
             <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)} className="flex-1 flex flex-col min-h-0">
@@ -827,7 +827,7 @@ export function AgentConfigurationDialog({
             >
               {isSaving ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <KortixLoader customSize={16} className="mr-1" />
                   Saving...
                 </>
               ) : (

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Eye, Check, Loader2, Info } from 'lucide-react';
+import { Eye, Check, Info } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

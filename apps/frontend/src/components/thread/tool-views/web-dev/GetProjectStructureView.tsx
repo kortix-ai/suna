@@ -10,7 +10,6 @@ import {
   FolderTree,
   Code2,
   Package,
-  Loader2,
   ExternalLink,
   FileCode,
   Maximize2,
@@ -19,6 +18,7 @@ import {
   Globe,
   Play
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ToolViewProps } from '../types';
 import { getToolTitle, normalizeContentToString } from '../utils';
 import { cn } from '@/lib/utils';
@@ -37,7 +37,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import {
   Tooltip,
   TooltipContent,
@@ -361,7 +361,7 @@ const FileExplorer: React.FC<{
             <div className="flex-1 overflow-hidden">
               {loadingFile ? (
                 <div className="flex items-center justify-center h-full p-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+                  <KortixLoader customSize={24} />
                 </div>
               ) : fileContent ? (
                 <ScrollArea className="h-full w-full">
@@ -707,23 +707,6 @@ export function GetProjectStructureView({
                 </Tooltip>
               </TooltipProvider>
               
-              {!isStreaming && (
-                <Badge
-                  variant="secondary"
-                  className={
-                    isSuccess
-                      ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                      : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-                  }
-                >
-                  {isSuccess ? (
-                    <CheckCircle className="h-3.5 w-3.5" />
-                  ) : (
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                  )}
-                  {isSuccess ? 'Loaded' : 'Failed'}
-                </Badge>
-              )}
             </div>
           </div>
         </CardHeader>

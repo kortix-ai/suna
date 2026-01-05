@@ -96,25 +96,6 @@ export function DocumentParserToolView({
             </div>
           </div>
 
-          {!isStreaming && (
-            <div className="flex items-center gap-2">
-              <Badge
-                variant="secondary"
-                className={
-                  actualIsSuccess
-                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-                    : "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"
-                }
-              >
-                {actualIsSuccess ? (
-                  <CheckCircle className="h-3.5 w-3.5" />
-                ) : (
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                )}
-                {actualIsSuccess ? 'Parse completed' : 'Parse failed'}
-              </Badge>
-            </div>
-          )}
         </div>
       </CardHeader>
 

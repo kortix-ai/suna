@@ -1,4 +1,4 @@
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { createClient } from '@/lib/supabase/client';
 import { backendApi } from '../api-client';
 

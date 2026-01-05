@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/button';
 import {
   ChevronLeft,
   ChevronRight,
-  Loader,
   AlertTriangle,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 
 // Import styles for annotations and text layer
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -149,7 +149,7 @@ export function PdfRenderer({ url, className, compact = false }: PdfRendererProp
             file={url} 
             loading={
               <div className="flex items-center justify-center h-40">
-                <Loader className="h-6 w-6 animate-spin text-muted-foreground" />
+                <KortixLoader size="medium" />
               </div>
             }
             error={
@@ -201,7 +201,7 @@ export function PdfRenderer({ url, className, compact = false }: PdfRendererProp
               onLoadError={onDocumentLoadError}
               loading={
                 <div className="flex flex-col items-center justify-center h-64 gap-3">
-                  <Loader className="h-8 w-8 animate-spin text-primary" />
+                  <KortixLoader size="medium" />
                   <p className="text-sm text-muted-foreground">Loading PDF...</p>
                 </div>
               }
@@ -214,7 +214,7 @@ export function PdfRenderer({ url, className, compact = false }: PdfRendererProp
                 renderAnnotationLayer={true}
                 loading={
                   <div className="flex items-center justify-center h-64">
-                    <Loader className="h-6 w-6 animate-spin text-muted-foreground" />
+                    <KortixLoader size="medium" />
                   </div>
                 }
                 className="shadow-lg rounded-lg overflow-hidden bg-white max-w-full"

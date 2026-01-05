@@ -3,7 +3,6 @@ import {
   Palette,
   CheckCircle,
   AlertTriangle,
-  Loader2,
   Download,
   ZoomIn,
   ZoomOut,
@@ -16,6 +15,7 @@ import {
   Lock,
   Unlock,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ToolViewProps } from '../types';
 import { formatTimestamp } from '../utils';
 import { extractDesignerData } from './_utils';
@@ -78,7 +78,7 @@ function DesignElementImage({
   if (!element.directUrl && isLoading && !finalUrl) {
     return (
       <div className="flex items-center justify-center w-full h-full bg-muted/50 animate-pulse rounded-lg">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <KortixLoader customSize={32} />
       </div>
     );
   }
@@ -536,30 +536,6 @@ export function DesignerToolView({
               </div>
             </TooltipProvider>
 
-            {!isStreaming && (
-              <Badge
-                className={cn(
-                  "px-3",
-                  actualIsSuccess
-                    ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white"
-                    : "bg-gradient-to-r from-rose-500 to-rose-600 text-white"
-                )}
-              >
-                {actualIsSuccess ? (
-                  <CheckCircle className="h-3.5 w-3.5 mr-1" />
-                ) : (
-                  <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-                )}
-                {actualIsSuccess ? 'Ready' : 'Failed'}
-              </Badge>
-            )}
-
-            {isStreaming && (
-              <Badge className="bg-gradient-to-r from-purple-500 to-purple-600 text-white">
-                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                Creating Design
-              </Badge>
-            )}
           </div>
         </div>
       </CardHeader>
@@ -650,7 +626,7 @@ export function DesignerToolView({
               )}
               {isStreaming && (
                 <div className="flex flex-col items-center justify-center h-96 text-center">
-                  <Loader2 className="h-10 w-10 text-purple-600 dark:text-purple-400 animate-spin mb-4" />
+                  <KortixLoader size="medium" className="mb-4" />
                   <h3 className="text-lg font-medium text-foreground mb-2">
                     Generating Design
                   </h3>

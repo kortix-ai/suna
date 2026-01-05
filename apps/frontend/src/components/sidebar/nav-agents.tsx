@@ -5,15 +5,15 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   MoreHorizontal,
   Trash2,
-  Loader2,
   ChevronRight,
   ChevronLeft,
   Frown,
   Plus,
   ChevronDown
 } from "lucide-react"
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ThreadIcon } from "./thread-icon"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { usePathname, useRouter } from "next/navigation"
 import {
   Collapsible,
@@ -106,7 +106,7 @@ const SingleChatCard: React.FC<{
           {/* Icon */}
           <div className="relative flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
             {isThreadLoading ? (
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              <KortixLoader size="small" />
             ) : (
               <ThreadIcon
                 iconName={projectGroup.iconName}
@@ -157,7 +157,7 @@ const SingleChatCard: React.FC<{
                   disabled={isCreatingChat}
                 >
                   {isCreatingChat ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <KortixLoader size="small" className="mr-2" />
                   ) : (
                     <Plus className="mr-2 h-4 w-4" />
                   )}
@@ -789,7 +789,7 @@ export function NavAgents() {
                                     }}
                                   >
                                     {isCreatingChat ? (
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      <KortixLoader size="small" />
                                     ) : (
                                       <Plus className="h-3.5 w-3.5" />
                                     )}
@@ -900,7 +900,7 @@ export function NavAgents() {
                     
                     <span className="text-xs text-muted-foreground flex items-center gap-1.5 tabular-nums">
                       {isThreadsFetching && (
-                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <KortixLoader size="small" />
                       )}
                       <span className="font-medium">{currentPage}</span>
                       <span>/</span>
@@ -944,7 +944,7 @@ export function NavAgents() {
         <div className="mx-3 mt-3 p-3 bg-muted/30 rounded-xl border border-border">
           <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
             <span className="flex items-center gap-2">
-              <Loader2 className="h-3 w-3 animate-spin" />
+              <KortixLoader size="small" />
               Deleting...
             </span>
             <span className="tabular-nums font-medium">{Math.floor(deleteProgress)}%</span>

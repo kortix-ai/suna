@@ -11,9 +11,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { billingApi } from '@/lib/api/billing';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { formatCredits } from '@/lib/utils/credit-formatter';
 import { useUserCurrency } from '@/hooks/use-user-currency';
 import { formatPrice, getCurrencySymbol } from '@/lib/utils/currency';
@@ -185,7 +186,7 @@ export function CreditPurchaseModal({
                     >
                         {isProcessing ? (
                             <>
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                <KortixLoader size="small" className="mr-2" />
                                 Processing...
                             </>
                         ) : (

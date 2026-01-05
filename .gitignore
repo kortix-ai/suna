@@ -215,7 +215,11 @@ dump.rdb
 # Node.js dependencies
 node_modules/
 **/node_modules/
-
+**/node_modules/**
+.pnpm-store/**
+# Ensure .bin directories in node_modules are ignored
+**/node_modules/.bin/**
+**/.bin/**
 # mobile specific
 apps/mobile/node_modules/
 apps/mobile/.expo/

@@ -1,28 +1,24 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSmoothAnimation, type SmoothAnimationConfig } from './useSmoothAnimation';
 
 export interface SmoothTextResult {
-  /** The currently displayed portion of the text */
   text: string;
-  /** Whether animation is still in progress (text not fully revealed) */
   isAnimating: boolean;
 }
 
-/**
- * Hook that gradually reveals text character-by-character for a smooth typewriter effect.
- * Automatically catches up when new content arrives faster than the display rate.
- * 
- * @param targetText - The full text to reveal
- * @param charsPerSecond - Characters to reveal per second (default: 120)
- * @param enabled - Whether to enable smooth streaming (default: true)
- * @returns Object with `text` (displayed portion) and `isAnimating` (whether animation is in progress)
- */
 export function useSmoothText(
   targetText: string,
   charsPerSecond: number = 120,
   enabled: boolean = true
 ): SmoothTextResult {
-  const [displayedLength, setDisplayedLength] = useState(0);
+  const previousContentRef = useRef<string>('');
+  const wasFullyDisplayedRef = useRef<boolean>(false);
+  const contentPrefixRef = useRef<string>('');
+  
+  const [displayedLength, setDisplayedLength] = useState(() => {
+    if (!enabled) return targetText.length;
+    return 0;
+  });
   
   const animationConfig: SmoothAnimationConfig = useMemo(() => ({
     charsPerSecond,
@@ -32,15 +28,30 @@ export function useSmoothText(
   
   const { animate, stop, reset, didTargetShrink, stateRef } = useSmoothAnimation(animationConfig);
 
-  // Handle content reset (when text shrinks)
   useEffect(() => {
-    if (didTargetShrink(targetText.length)) {
+    const currentPrefix = targetText.slice(0, 50);
+    const previousPrefix = contentPrefixRef.current;
+    
+    const isNewContent = didTargetShrink(targetText.length) || 
+      (previousPrefix && currentPrefix && !currentPrefix.startsWith(previousPrefix.slice(0, 20)) && !previousPrefix.startsWith(currentPrefix.slice(0, 20)));
+    
+    if (isNewContent) {
       reset();
       setDisplayedLength(0);
+      previousContentRef.current = '';
+      wasFullyDisplayedRef.current = false;
     }
-  }, [targetText.length, didTargetShrink, reset]);
+    
+    contentPrefixRef.current = currentPrefix;
+  }, [targetText, didTargetShrink, reset]);
 
-  // Handle animation
+  useEffect(() => {
+    if (displayedLength >= targetText.length && targetText.length > 0) {
+      wasFullyDisplayedRef.current = true;
+      previousContentRef.current = targetText;
+    }
+  }, [displayedLength, targetText]);
+
   useEffect(() => {
     if (!enabled || !targetText) {
       setDisplayedLength(targetText.length);
@@ -48,7 +59,12 @@ export function useSmoothText(
       return;
     }
 
-    // If we've already displayed everything, no need to animate
+    if (previousContentRef.current === targetText && wasFullyDisplayedRef.current) {
+      setDisplayedLength(targetText.length);
+      stateRef.current.displayedLength = targetText.length;
+      return;
+    }
+
     if (stateRef.current.displayedLength >= targetText.length) {
       return;
     }
@@ -61,12 +77,10 @@ export function useSmoothText(
     return () => stop();
   }, [targetText, enabled, animate, stop, stateRef]);
 
-  // Sync state with ref after external reset
   useEffect(() => {
     stateRef.current.displayedLength = displayedLength;
   }, [displayedLength, stateRef]);
 
-  // Memoize the result object to prevent unnecessary re-renders
   const result = useMemo((): SmoothTextResult => {
     const text = enabled ? targetText.slice(0, displayedLength) : targetText;
     const isAnimating = enabled && displayedLength < targetText.length;
@@ -75,4 +89,3 @@ export function useSmoothText(
 
   return result;
 }
-

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Globe, Wrench, MessageSquare, ChevronLeft } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import {
   Dialog,
   DialogContent,
@@ -11,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { useCreateNewAgent } from '@/hooks/agents/use-agents';
 import { useKortixTeamTemplates } from '@/hooks/secure-mcp/use-secure-mcp';
 import { AgentCountLimitError } from '@/lib/api/errors';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import type { BaseAgentData } from '@/components/ui/unified-agent-card';
 import type { MarketplaceTemplate } from './installation/types';
 import { MarketplaceAgentPreviewDialog } from './marketplace-agent-preview-dialog';
@@ -247,7 +248,7 @@ export function AgentCreationModal({ open, onOpenChange, onSuccess }: AgentCreat
                             {option.label}
                           </span>
                           {isLoading && (
-                            <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                            <KortixLoader customSize={16} />
                           )}
                         </div>
                         <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">

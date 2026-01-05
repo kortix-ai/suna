@@ -27,7 +27,7 @@ import { SyncStatusIndicator } from '../../tool-views/spreadsheet/SyncStatusIndi
 import { SpreadsheetLoader } from '../../tool-views/spreadsheet/SpreadsheetLoader';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/AuthProvider';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useDownloadRestriction } from '@/hooks/billing';
 
 import '../../../../../node_modules/@syncfusion/ej2-base/styles/material.css';

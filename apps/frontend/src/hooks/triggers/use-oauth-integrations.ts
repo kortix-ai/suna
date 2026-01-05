@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 

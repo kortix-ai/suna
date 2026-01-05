@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Loader2, Plus, FileJson, Code } from 'lucide-react';
+import { Plus, FileJson, Code } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,7 +16,7 @@ import {
 import { useCreateNewAgent } from '@/hooks/agents/use-agents';
 import { JsonImportDialog } from './json-import-dialog';
 import { AgentCountLimitError } from '@/lib/api/errors';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { AgentCreationModal } from './agent-creation-modal';
 import { isLocalMode, isStagingMode } from '@/lib/config';
 
@@ -151,7 +152,7 @@ export function NewAgentDialogLegacy({ open, onOpenChange, onSuccess }: NewAgent
           >
             {createNewAgentMutation.isPending ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <KortixLoader customSize={16} className="mr-1" />
                 Creating...
               </>
             ) : (

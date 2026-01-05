@@ -2,11 +2,13 @@
 
 import { Project } from '@/lib/api/threads';
 import { getUserFriendlyToolName, HIDE_BROWSER_TAB } from '@/components/thread/utils';
+import { isHiddenTool } from '@agentpress/shared/tools';
 import React, { memo, useMemo, useCallback, useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiMessageType } from '@/components/thread/types';
-import { CircleDashed, Globe } from 'lucide-react';
+import { Globe, CircleDashed } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useIsMobile } from '@/hooks/utils';
 import { ToolView } from '../tool-views/wrapper';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -243,14 +245,22 @@ export const KortixComputer = memo(function KortixComputer({
     setIsMaximized(!isMaximized);
   }, [isMaximized]);
 
+  // Filter out hidden tools (internal/initialization tools) before creating snapshots
+  const visibleToolCalls = useMemo(() => {
+    return toolCalls.filter(tc => {
+      const toolName = tc.toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || '';
+      return !isHiddenTool(toolName);
+    });
+  }, [toolCalls]);
+
   const newSnapshots = useMemo(() => {
-    return toolCalls.map((toolCall, index) => ({
+    return visibleToolCalls.map((toolCall, index) => ({
       id: `${index}-${toolCall.assistantTimestamp || Date.now()}`,
       toolCall,
       index,
       timestamp: Date.now(),
     }));
-  }, [toolCalls, isOpen]);
+  }, [visibleToolCalls]);
 
   useEffect(() => {
     const hadSnapshots = toolCallSnapshots.length > 0;
@@ -329,7 +339,7 @@ export const KortixComputer = memo(function KortixComputer({
       completedToolCalls: completed,
       totalCompletedCalls: completedCount
     };
-  }, [internalIndex, toolCallSnapshots, isOpen, currentIndex]);
+  }, [internalIndex, toolCallSnapshots]);
 
   let displayToolCall = currentToolCall;
   let displayIndex = safeInternalIndex;

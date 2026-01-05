@@ -19,7 +19,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { DeleteConfirmationDialog } from "@/components/thread/DeleteConfirmationDialog";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useQueryClient } from '@tanstack/react-query';
 import { agentKeys } from '@/hooks/agents/keys';
 

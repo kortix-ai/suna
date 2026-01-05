@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Pagination } from '@/components/agents/pagination';
 import { DataTable, DataTableColumn } from '@/components/ui/data-table';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import {
   Users,
   MessageSquare,

@@ -15,11 +15,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Search, Save, AlertCircle, Loader2, Filter, X, ChevronDown } from 'lucide-react';
+import { Search, Save, AlertCircle, Filter, X, ChevronDown } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { backendApi } from '@/lib/api-client';
 import { useComposioTools } from '@/hooks/composio/use-composio';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import type { ComposioTool } from '@/hooks/composio/utils';
 
 interface ComposioToolsSelectorProps {
@@ -550,7 +551,7 @@ export const ComposioToolsSelector: React.FC<ComposioToolsSelectorProps> = ({
               >
                 {isSaving ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <KortixLoader customSize={16} className="mr-1" />
                     Saving...
                   </>
                 ) : (

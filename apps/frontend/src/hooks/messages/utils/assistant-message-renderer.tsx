@@ -9,7 +9,7 @@ import React from 'react';
 import { Clock } from 'lucide-react';
 import { UnifiedMessage, ParsedMetadata } from '@/components/thread/types';
 import { safeJsonParse, getToolIcon } from '@/components/thread/utils';
-import { getUserFriendlyToolName } from '@agentpress/shared/tools';
+import { getUserFriendlyToolName, isHiddenTool } from '@agentpress/shared/tools';
 import { normalizeArrayValue, normalizeAttachments } from '@agentpress/shared/utils';
 import { ComposioUrlDetector } from '@/components/thread/content/composio-url-detector';
 import { FileAttachmentGrid, FileAttachment } from '@/components/thread/file-attachment';
@@ -238,6 +238,11 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
   // Render tool calls
   toolCalls.forEach((toolCall, index) => {
     const toolName = toolCall.function_name.replace(/_/g, '-');
+    
+    // Skip hidden tools (internal/initialization tools that don't provide meaningful user feedback)
+    if (isHiddenTool(toolName)) {
+      return;
+    }
     
     // Normalize arguments - handle both string and object types
     let normalizedArguments: Record<string, any> = {};

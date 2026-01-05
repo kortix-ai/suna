@@ -32,8 +32,8 @@ export interface UnifiedAgentStartResponse {
 export interface OptimisticAgentStartResponse {
   thread_id: string;
   project_id: string;
-  agent_run_id: null;
-  status: 'pending';
+  agent_run_id: string | null;  // Now synchronously created, so usually non-null
+  status: 'pending' | 'running';
 }
 
 export interface AgentIconGenerationRequest {
@@ -521,35 +521,6 @@ export const optimisticAgentStart = async (options: {
   }
 };
 
-export const startAgentOnThread = async (
-  threadId: string,
-  options?: {
-    model_name?: string;
-    agent_id?: string;
-  }
-): Promise<{ thread_id: string; agent_run_id: string; status: string }> => {
-  try {
-    const response = await backendApi.post<{ thread_id: string; agent_run_id: string; status: string }>(
-      `/thread/${threadId}/start-agent`,
-      {
-        model_name: options?.model_name,
-        agent_id: options?.agent_id,
-      },
-      { showErrors: true, cache: 'no-store' }
-    );
-
-    if (response.error) {
-      throw new Error(`Error starting agent on thread: ${response.error.message}`);
-    }
-
-    return response.data!;
-  } catch (error) {
-    console.error('[API] Failed to start agent on thread:', error);
-    handleApiError(error, { operation: 'start agent on thread', resource: 'AI assistant' });
-    throw error;
-  }
-};
-
 export const streamAgent = (
   agentRunId: string,
   callbacks: {
@@ -683,7 +654,13 @@ export const streamAgent = (
       };
 
       eventSource.onerror = (event) => {
-        console.error(`[STREAM] EventSource error for ${agentRunId}:`, event);
+        // EventSource.onerror fires on normal close too, check readyState first
+        // Only log if it's actually an error (readyState !== CLOSED) or if we can't determine
+        const isActualError = eventSource.readyState !== EventSource.CLOSED;
+        
+        if (isActualError) {
+          console.error(`[STREAM] EventSource error for ${agentRunId}:`, event);
+        }
         
         getAgentStatus(agentRunId)
           .then((status) => {
@@ -694,22 +671,24 @@ export const streamAgent = (
             }
           })
           .catch((err) => {
-            console.error(
-              `[STREAM] Error checking agent status after stream error:`,
-              err,
-            );
-
             const errMsg = err instanceof Error ? err.message : String(err);
             const isNotFoundErr =
               errMsg.includes('not found') ||
               errMsg.includes('404') ||
-              errMsg.includes('does not exist');
+              errMsg.includes('does not exist') ||
+              errMsg.includes('is not running');
 
             if (isNotFoundErr) {
+              // Expected: agent run completed or doesn't exist
               nonRunningAgentRuns.add(agentRunId);
               cleanupEventSource(agentRunId, 'agent not found');
               callbacks.onClose();
             } else {
+              // Only log actual errors
+              console.error(
+                `[STREAM] Error checking agent status after stream error:`,
+                err,
+              );
               console.warn(`[STREAM] Cleaning up stream for ${agentRunId} due to persistent error`);
               cleanupEventSource(agentRunId, 'persistent error');
               callbacks.onError(errMsg);

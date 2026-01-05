@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import Image from 'next/image';
-import { Computer, CornerDownLeft, Paperclip, Mic, Zap, FolderOpen, Globe, CircleDashed, Presentation, BarChart3, FileText, Search, Image as ImageIcon, ChevronRight, File, Database } from 'lucide-react';
+import { Computer, CornerDownLeft, Paperclip, Mic, Zap, FolderOpen, Globe, Presentation, BarChart3, FileText, Search, Image as ImageIcon, ChevronRight, File, Database } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { motion } from 'framer-motion';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
@@ -330,8 +331,12 @@ export function ExampleShowcase() {
                     <div key={idx} className="flex justify-start">
                       <div className="max-w-[90%] space-y-1">
                         <div className="flex items-center gap-1 mb-1">
-                          <KortixLogo size={10} />
-                          <span className="text-[10px] font-medium">Kortix</span>
+                          <img
+                            src="/kortix-logomark-white.svg"
+                            alt="Kortix"
+                            className="dark:invert-0 invert flex-shrink-0"
+                            style={{ height: '8px', width: 'auto' }}
+                          />
                         </div>
                         <p className="text-[9px] leading-relaxed text-foreground">
                           {displayText}
@@ -353,7 +358,7 @@ export function ExampleShowcase() {
                         <IconComponent className="h-2.5 w-2.5 text-muted-foreground flex-shrink-0" />
                         <span className="font-mono text-[9px] text-foreground">{step.title}</span>
                         {isCurrentStep && (
-                          <CircleDashed className="h-2.5 w-2.5 text-muted-foreground flex-shrink-0 animate-spin ml-0.5" />
+                          <KortixLoader size="small" className="ml-0.5" />
                         )}
                       </button>
                     </div>

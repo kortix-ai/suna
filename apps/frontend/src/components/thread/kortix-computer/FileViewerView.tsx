@@ -25,7 +25,7 @@ import {
   type MarkdownEditorControls,
 } from '@/components/file-editors';
 import { Project } from '@/lib/api/threads';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useAuth } from '@/components/AuthProvider';
 import {
   useFileContentQuery,

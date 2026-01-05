@@ -12,9 +12,9 @@ import {
 import {
   CheckCircle2,
   XCircle,
-  Loader2,
   Plus,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useCredentialProfilesForMcp } from '@/hooks/mcp/use-credential-profiles';
 
 interface ComposioCredentialProfileSelectorProps {
@@ -47,7 +47,7 @@ export const ComposioCredentialProfileSelector: React.FC<ComposioCredentialProfi
     return (
       <div className={className}>
         <div className="flex items-center gap-2">
-          <Loader2 className="h-4 w-4 animate-spin" />
+          <KortixLoader customSize={16} />
           <span className="text-sm text-muted-foreground">Loading profiles...</span>
         </div>
       </div>

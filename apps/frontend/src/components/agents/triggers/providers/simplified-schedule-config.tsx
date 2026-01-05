@@ -19,7 +19,6 @@ import {
   Sparkles,
   Activity,
   Globe,
-  Loader2,
   CheckCircle2,
   Settings,
   Info

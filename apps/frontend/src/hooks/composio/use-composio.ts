@@ -11,7 +11,7 @@ import {
   type ComposioToolsResponse,
 } from './utils';
 import { composioKeys } from './keys';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { useState, useEffect } from 'react';
 
 export const useComposioCategories = () => {

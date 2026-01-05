@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Save, Loader2 } from 'lucide-react';
+import { Save } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useCreateAgentVersion } from '@/hooks/agents/use-agent-versions';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 
 interface CreateVersionButtonProps {
   agentId: string;
@@ -143,7 +144,7 @@ export function CreateVersionButton({
             >
               {createVersionMutation.isPending ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <KortixLoader customSize={16} className="mr-2" />
                   Creating...
                 </>
               ) : (

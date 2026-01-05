@@ -96,24 +96,6 @@ export function ConfigureAgentIntegrationToolView({
             </div>
           </div>
 
-          {!isStreaming && (
-            <Badge
-              variant="secondary"
-              className={cn(
-                "text-xs font-medium",
-                actualIsSuccess
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800"
-                  : "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800"
-              )}
-            >
-              {actualIsSuccess ? (
-                <CheckCircle className="h-3 w-3" />
-              ) : (
-                <AlertTriangle className="h-3 w-3" />
-              )}
-              {actualIsSuccess ? 'Integration configured' : 'Configuration failed'}
-            </Badge>
-          )}
         </div>
       </CardHeader>
 

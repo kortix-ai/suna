@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Edit2, Check, X, Loader2 } from 'lucide-react';
+import { Edit2, Check, X } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useUpdateVersionDetails } from '@/hooks/agents/use-agent-versions';
 import { cn } from '@/lib/utils';
 
@@ -117,7 +118,7 @@ export function VersionInlineEditor({
               className="h-8 w-8 p-0"
             >
               {updateVersionMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <KortixLoader customSize={16} />
               ) : (
                 <Check className="h-4 w-4" />
               )}

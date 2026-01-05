@@ -2,8 +2,9 @@
 
 import React, { forwardRef, useEffect, memo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Paperclip, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { Paperclip } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
+import { toast } from '@/lib/toast';
 import { createClient } from '@/lib/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { fileQueryKeys } from '@/hooks/files/use-file-queries';
@@ -560,7 +561,7 @@ export const FileUploadHandler = memo(forwardRef<
                 }
               >
                 {isUploading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <KortixLoader size="small" />
                 ) : (
                   <Paperclip className="h-5 w-5" />
                 )}

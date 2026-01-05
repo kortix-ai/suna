@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useAgent } from '@/hooks/agents/use-agents';
 import { useUpdateAgentMCPs } from '@/hooks/agents/use-update-agent-mcps';
 import { AgentMCPConfiguration } from '@/components/agents/agent-mcp-configuration';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface IntegrationsScreenProps {

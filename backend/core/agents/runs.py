@@ -61,121 +61,6 @@ async def _get_agent_run_with_access_check(client, agent_run_id: str, user_id: s
     return agent_run_data
 
 
-async def _find_shared_suna_agent(client):
-    from .agent_loader import get_agent_loader
-    from core.utils.config import config
-    
-    admin_user_id = config.SYSTEM_ADMIN_USER_ID
-    
-    if admin_user_id:
-        admin_suna = await client.table('agents').select('agent_id').eq('account_id', admin_user_id).eq('metadata->>is_suna_default', 'true').maybe_single().execute()
-        
-        if admin_suna and admin_suna.data:
-            loader = await get_agent_loader()
-            agent_data = await loader.load_agent(admin_suna.data['agent_id'], admin_user_id, load_config=True)
-            logger.info(f"✅ Using system Suna agent from admin user: {agent_data.name} ({agent_data.agent_id})")
-            return agent_data
-        else:
-            logger.warning(f"⚠️ SYSTEM_ADMIN_USER_ID configured but no Suna agent found for user {admin_user_id}")
-    
-    any_suna = await client.table('agents').select('agent_id, account_id').eq('metadata->>is_suna_default', 'true').limit(1).maybe_single().execute()
-    
-    if any_suna and any_suna.data:
-        loader = await get_agent_loader()
-        agent_data = await loader.load_agent(any_suna.data['agent_id'], any_suna.data['account_id'], load_config=True)
-        logger.info(f"Using shared Suna agent: {agent_data.name} ({agent_data.agent_id})")
-        return agent_data
-    
-    logger.error("❌ No Suna agent found! Set SYSTEM_ADMIN_USER_ID in .env")
-    return None
-
-
-async def _load_agent_config(client, agent_id: Optional[str], account_id: str, user_id: str, is_new_thread: bool = False):
-    import time
-    t_start = time.time()
-    
-    from .agent_loader import get_agent_loader
-    loader = await get_agent_loader()
-    
-    agent_data = None
-    
-    logger.debug(f"[AGENT LOAD] Loading agent: {agent_id or 'default'}")
-
-    if agent_id:
-        from core.cache.runtime_cache import get_static_suna_config, get_cached_user_mcps
-        
-        static_config = get_static_suna_config()
-        cached_mcps = await get_cached_user_mcps(agent_id)
-        
-        if static_config and cached_mcps is not None:
-            from .agent_loader import AgentData
-            agent_data = AgentData(
-                agent_id=agent_id,
-                name="Kortix",
-                description=None,
-                account_id=account_id,
-                is_default=True,
-                is_public=False,
-                tags=[],
-                icon_name=None,
-                icon_color=None,
-                icon_background=None,
-                created_at="",
-                updated_at="",
-                current_version_id=None,
-                version_count=1,
-                metadata={'is_suna_default': True},
-                system_prompt=static_config['system_prompt'],
-                model=static_config['model'],
-                agentpress_tools=static_config['agentpress_tools'],
-                configured_mcps=cached_mcps.get('configured_mcps', []),
-                custom_mcps=cached_mcps.get('custom_mcps', []),
-                triggers=cached_mcps.get('triggers', []),
-                is_suna_default=True,
-                centrally_managed=True,
-                config_loaded=True,
-                restrictions=static_config['restrictions']
-            )
-            logger.info(f"⚡ [FAST PATH] Suna config from memory + Redis MCPs: {(time.time() - t_start)*1000:.1f}ms (zero DB calls)")
-        else:
-            t_loader = time.time()
-            agent_data = await loader.load_agent(agent_id, user_id, load_config=True)
-            logger.info(f"⏱️ [TIMING] Agent loader (DB path): {(time.time() - t_loader)*1000:.1f}ms | Total: {(time.time() - t_start)*1000:.1f}ms")
-            logger.debug(f"Using agent {agent_data.name} ({agent_id}) version {agent_data.version_name}")
-    else:
-        logger.debug(f"[AGENT LOAD] Loading default agent")
-        
-        if is_new_thread:
-            from core.utils.ensure_suna import ensure_suna_installed
-            await ensure_suna_installed(account_id)
-        
-        default_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('metadata->>is_suna_default', 'true').maybe_single().execute()
-        
-        if default_agent and default_agent.data:
-            agent_data = await loader.load_agent(default_agent.data['agent_id'], user_id, load_config=True)
-            logger.debug(f"Using default agent: {agent_data.name} ({agent_data.agent_id}) version {agent_data.version_name}")
-        else:
-            logger.warning(f"[AGENT LOAD] No default agent found for account {account_id}, searching for shared Suna")
-            agent_data = await _find_shared_suna_agent(client)
-            
-            if not agent_data:
-                any_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).limit(1).maybe_single().execute()
-                
-                if any_agent and any_agent.data:
-                    agent_data = await loader.load_agent(any_agent.data['agent_id'], user_id, load_config=True)
-                    logger.info(f"[AGENT LOAD] Using fallback agent: {agent_data.name} ({agent_data.agent_id})")
-                else:
-                    logger.error(f"[AGENT LOAD] No agents found for account {account_id}")
-                    raise HTTPException(status_code=404, detail="No agents available. Please create an agent first.")
-    
-    agent_config = agent_data.to_dict() if agent_data else None
-    
-    if agent_config:
-        logger.debug(f"Using agent {agent_config['agent_id']} for this agent run")
-    
-    return agent_config
-
-
 async def _check_billing_and_limits(client, account_id: str, model_name: Optional[str], check_project_limit: bool = False, check_thread_limit: bool = False):
     import time
     from core.utils.limits_checker import check_thread_limit as _check_thread_limit
@@ -318,35 +203,6 @@ async def _create_agent_run_record(
         logger.warning(f"Failed to invalidate account-state cache: {cache_error}")
 
     return agent_run_id
-
-
-async def _trigger_agent_background(
-    agent_run_id: str, 
-    thread_id: str, 
-    project_id: str, 
-    effective_model: str, 
-    agent_id: Optional[str],
-    account_id: Optional[str] = None
-):
-    request_id = structlog.contextvars.get_contextvars().get('request_id')
-
-    logger.info(f"🚀 Dispatching agent run {agent_run_id} via Redis Streams (thread: {thread_id}, model: {effective_model})")
-    
-    try:
-        entry_id = await dispatch_agent_run(
-            agent_run_id=agent_run_id,
-            thread_id=thread_id,
-            instance_id=instance_id,
-            project_id=project_id,
-            model_name=effective_model,
-            agent_id=agent_id,
-            account_id=account_id,
-            request_id=request_id,
-        )
-        logger.info(f"✅ Successfully dispatched agent run {agent_run_id} via Redis Streams (entry_id: {entry_id})")
-    except Exception as e:
-        logger.error(f"❌ Failed to dispatch agent run {agent_run_id} via Redis Streams: {e}", exc_info=True)
-        raise
 
 
 async def _fast_parse_files(files: List[UploadFile], prompt: str = "") -> Tuple[str, List[Tuple[str, bytes, str, Optional[str]]]]:
@@ -756,19 +612,34 @@ async def start_agent_run(
     message_content: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
     skip_limits_check: bool = False,
+    files: Optional[List[UploadFile]] = None,
+    staged_files: Optional[List[Dict[str, Any]]] = None,
+    memory_enabled: Optional[bool] = None,
+    is_optimistic: bool = False,
 ) -> Dict[str, Any]:
     import time
     t_start = time.time()
     
     client = await db.client
-    is_new_thread = thread_id is None
+    # In optimistic mode, thread_id/project_id are provided but need to be created in DB
+    # In normal mode, thread_id is None when we need to create a new thread
+    is_new_thread = thread_id is None or is_optimistic
+    now_iso = datetime.now(timezone.utc).isoformat()
     
+    logger.info(f"🚀 start_agent_run: is_optimistic={is_optimistic}, is_new_thread={is_new_thread}, "
+                f"thread_id={thread_id!r}, project_id={project_id!r}")
+    
+    # For new threads with files, we need to create project/thread first before processing files
+    # (files need actual project_id/thread_id for sandbox uploads)
+    # For existing threads or threads without files, we can process files later
+    image_contexts_to_inject = []
     final_message_content = message_content or prompt
     
     t_parallel = time.time()
     
     async def load_config():
-        return await _load_agent_config(client, agent_id, account_id, account_id, is_new_thread=is_new_thread)
+        from core.worker.helpers import load_agent_config
+        return await load_agent_config(agent_id, account_id, user_id=account_id, client=client, is_new_thread=is_new_thread)
     
     async def check_limits():
         if skip_limits_check:
@@ -784,42 +655,58 @@ async def start_agent_run(
     
     effective_model = await _get_effective_model(model_name, agent_config, client, account_id)
     
+    # For existing threads, fetch project_id if not provided
+    if not is_new_thread and not project_id:
+        thread_result = await client.table('threads').select('project_id').eq('thread_id', thread_id).execute()
+        if thread_result.data:
+            project_id = thread_result.data[0]['project_id']
+    
     if is_new_thread:
         project_created_here = False
         
+        # Generate or use provided project_id
         if not project_id:
-            t_project = time.time()
             project_id = str(uuid.uuid4())
-            placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt
-            
-            await client.table('projects').insert({
-                "project_id": project_id,
-                "account_id": account_id,
-                "name": placeholder_name,
-                "created_at": datetime.now(timezone.utc).isoformat()
-            }).execute()
-            project_created_here = True
-            logger.debug(f"⏱️ [TIMING] Project created: {(time.time() - t_project) * 1000:.1f}ms")
-            
-            try:
-                from core.cache.runtime_cache import set_cached_project_metadata
-                await set_cached_project_metadata(project_id, {})
-            except Exception:
-                pass
-            
-            asyncio.create_task(generate_and_update_project_name(project_id=project_id, prompt=prompt))
+        
+        # Create project in DB (needed for both optimistic and normal mode)
+        t_project = time.time()
+        placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt
+        
+        await client.table('projects').insert({
+            "project_id": project_id,
+            "account_id": account_id,
+            "name": placeholder_name,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }).execute()
+        project_created_here = True
+        logger.debug(f"⏱️ [TIMING] Project created: {(time.time() - t_project) * 1000:.1f}ms")
+        
+        try:
+            from core.cache.runtime_cache import set_cached_project_metadata
+            await set_cached_project_metadata(project_id, {})
+        except Exception:
+            pass
+        
+        asyncio.create_task(generate_and_update_project_name(project_id=project_id, prompt=prompt))
         
         t_thread = time.time()
-        thread_id = str(uuid.uuid4())
+        # Generate or use provided thread_id
+        if not thread_id:
+            thread_id = str(uuid.uuid4())
         try:
             # Create thread with default name, will be updated by LLM in background
-            await client.table('threads').insert({
+            thread_data = {
                 "thread_id": thread_id,
                 "project_id": project_id,
                 "account_id": account_id,
                 "name": "New Chat",
-                "created_at": datetime.now(timezone.utc).isoformat()
-            }).execute()
+                "created_at": now_iso,
+                "status": "pending"
+            }
+            if memory_enabled is not None:
+                thread_data["memory_enabled"] = memory_enabled
+            
+            await client.table('threads').insert(thread_data).execute()
             logger.debug(f"⏱️ [TIMING] Thread created: {(time.time() - t_thread) * 1000:.1f}ms")
             
             # Generate proper thread name in background using LLM (fire-and-forget)
@@ -855,6 +742,51 @@ async def start_agent_run(
             asyncio.create_task(increment_thread_count_cache(account_id))
         except Exception:
             pass
+        
+        # Process files for new threads (now that we have actual project_id and thread_id)
+        if staged_files and len(staged_files) > 0:
+            try:
+                final_message_content, image_contexts_to_inject = await _handle_staged_files_for_thread(
+                    staged_files=staged_files,
+                    thread_id=thread_id,
+                    project_id=project_id,
+                    prompt=prompt,
+                    account_id=account_id
+                )
+                logger.info(f"Processed {len(staged_files)} staged files for new thread")
+            except Exception as e:
+                logger.error(f"Failed to process staged files: {e}")
+                raise Exception(f"Failed to process staged files: {str(e)}")
+        elif files and len(files) > 0:
+            try:
+                final_message_content = await _handle_file_uploads_fast(files, project_id, prompt, thread_id)
+                logger.info(f"Fast-parsed {len(files)} files for new thread")
+            except Exception as e:
+                logger.error(f"Failed to process files: {e}")
+                raise Exception(f"Failed to process files: {str(e)}")
+    
+    # Process files for existing threads
+    elif not is_new_thread and (staged_files or files):
+        if staged_files and len(staged_files) > 0:
+            try:
+                final_message_content, image_contexts_to_inject = await _handle_staged_files_for_thread(
+                    staged_files=staged_files,
+                    thread_id=thread_id,
+                    project_id=project_id,
+                    prompt=prompt,
+                    account_id=account_id
+                )
+                logger.info(f"Processed {len(staged_files)} staged files for existing thread")
+            except Exception as e:
+                logger.error(f"Failed to process staged files: {e}")
+                raise Exception(f"Failed to process staged files: {str(e)}")
+        elif files and len(files) > 0:
+            try:
+                final_message_content = await _handle_file_uploads_fast(files, project_id, prompt or "", thread_id)
+                logger.info(f"Fast-parsed {len(files)} files for existing thread")
+            except Exception as e:
+                logger.error(f"Failed to process files: {e}")
+                raise Exception(f"Failed to process files: {str(e)}")
     
     t_parallel2 = time.time()
     
@@ -872,18 +804,73 @@ async def start_agent_run(
             "type": "user",
             "is_llm_message": True,
             "content": {"role": "user", "content": final_message_content},
-            "created_at": datetime.now(timezone.utc).isoformat()
+            "created_at": now_iso
         }).execute()
         logger.debug(f"Created user message for thread {thread_id}")
     
     async def create_agent_run():
         return await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id, metadata)
     
-    _, agent_run_id = await asyncio.gather(create_message(), create_agent_run())
-    logger.debug(f"⏱️ [TIMING] Parallel message+agent_run: {(time.time() - t_parallel2) * 1000:.1f}ms")
+    async def update_thread_status():
+        # Update thread status to "ready" (consistent for both optimistic and non-optimistic paths)
+        await client.table('threads').update({
+            "status": "ready",
+            "initialization_started_at": now_iso,
+            "initialization_completed_at": now_iso
+        }).eq('thread_id', thread_id).execute()
     
+    _, agent_run_id, _ = await asyncio.gather(create_message(), create_agent_run(), update_thread_status())
+    logger.debug(f"⏱️ [TIMING] Parallel message+agent_run+status: {(time.time() - t_parallel2) * 1000:.1f}ms")
+    
+    # Insert image context messages in background (don't block)
+    if image_contexts_to_inject:
+        async def insert_image_contexts():
+            for img_info in image_contexts_to_inject:
+                try:
+                    await client.table('messages').insert({
+                        "message_id": str(uuid.uuid4()),
+                        "thread_id": thread_id,
+                        "type": "image_context",
+                        "is_llm_message": True,
+                        "content": {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": f"[Image: {img_info['filename']}]"},
+                                {"type": "image_url", "image_url": {"url": img_info['url']}}
+                            ]
+                        },
+                        "metadata": {
+                            "file_path": img_info['filename'],
+                            "mime_type": img_info['mime_type'],
+                            "source": "user_upload"
+                        },
+                        "created_at": now_iso
+                    }).execute()
+                    logger.info(f"📷 Injected image context for {img_info['filename']} into thread {thread_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to inject image context: {e}")
+        asyncio.create_task(insert_image_contexts())
+    
+    # Dispatch agent run directly (removed _trigger_agent_background wrapper)
     t_dispatch = time.time()
-    await _trigger_agent_background(agent_run_id, thread_id, project_id, effective_model, agent_id, account_id)
+    request_id = structlog.contextvars.get_contextvars().get('request_id')
+    worker_instance_id = str(uuid.uuid4())[:8]
+    
+    try:
+        entry_id = await dispatch_agent_run(
+            agent_run_id=agent_run_id,
+            thread_id=thread_id,
+            instance_id=worker_instance_id,
+            project_id=project_id,
+            model_name=effective_model,
+            agent_id=agent_id,
+            account_id=account_id,
+            request_id=request_id,
+        )
+        logger.info(f"✅ Successfully dispatched agent run {agent_run_id} via Redis Streams (entry_id: {entry_id})")
+    except Exception as e:
+        logger.error(f"❌ Failed to dispatch agent run {agent_run_id} via Redis Streams: {e}", exc_info=True)
+        raise
     logger.debug(f"⏱️ [TIMING] Worker dispatch: {(time.time() - t_dispatch) * 1000:.1f}ms")
     
     logger.info(f"⏱️ [TIMING] start_agent_run total: {(time.time() - t_start) * 1000:.1f}ms")
@@ -923,6 +910,7 @@ async def unified_agent_start(
     
     logger.debug(f"Received agent start request: optimistic={is_optimistic}, thread_id={thread_id!r}, project_id={project_id!r}, prompt={prompt[:100] if prompt else None!r}, model_name={model_name!r}, agent_id={agent_id!r}, files_count={len(files)}, file_ids_count={len(file_ids)}")
     
+    # Get staged files if file_ids provided
     staged_files_data = None
     if file_ids and len(file_ids) > 0:
         from core.files import get_staged_files_for_thread
@@ -931,6 +919,7 @@ async def unified_agent_start(
         if staged_files_data:
             logger.info(f"📎 Retrieved {len(staged_files_data)} staged files for agent start")
     
+    # Validate optimistic mode requirements
     if is_optimistic:
         if not thread_id or not project_id:
             raise HTTPException(status_code=400, detail="thread_id and project_id are required for optimistic mode")
@@ -938,70 +927,18 @@ async def unified_agent_start(
         if not prompt or not prompt.strip():
             raise HTTPException(status_code=400, detail="prompt is required for optimistic mode")
         
+        # Validate UUID format for thread_id and project_id
         try:
-            # Note: uuid module is already imported at module level (line 4)
-            # Validate UUID format for thread_id and project_id
-            try:
-                uuid.UUID(thread_id)
-                uuid.UUID(project_id)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid UUID format for thread_id or project_id")
-            
-            resolved_model = model_name
-            if resolved_model is None:
-                resolved_model = await model_manager.get_default_model_for_user(client, account_id)
-            else:
-                resolved_model = model_manager.resolve_model_id(resolved_model)
-            
-            t_billing = time.time()
-            await _check_billing_and_limits(client, account_id, resolved_model, check_project_limit=True, check_thread_limit=True)
-            logger.debug(f"⏱️ [TIMING] Optimistic billing check: {(time.time() - t_billing) * 1000:.1f}ms")
-            
-            structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id, account_id=account_id)
-            
-            from core.threads import create_thread_optimistically
-            
-            memory_enabled_bool = None
-            if memory_enabled is not None:
-                memory_enabled_bool = memory_enabled.lower() == 'true'
-            
-            result = await create_thread_optimistically(
-                thread_id=thread_id,
-                project_id=project_id,
-                account_id=account_id,
-                prompt=prompt,
-                agent_id=agent_id,
-                model_name=resolved_model,
-                files=files if len(files) > 0 else None,
-                staged_files=staged_files_data,
-                memory_enabled=memory_enabled_bool,
-            )
-            
-            logger.info(f"⏱️ [TIMING] 🎯 Optimistic API Request Total: {(time.time() - api_request_start) * 1000:.1f}ms")
-            
-            return {
-                "thread_id": result["thread_id"],
-                "project_id": result["project_id"],
-                "agent_run_id": None,
-                "status": "pending"
-            }
-        
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Error in optimistic agent start: {str(e)}\n{traceback.format_exc()}")
-            error_details = {
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "traceback": traceback.format_exc()
-            }
-            logger.error(f"Full error details: {error_details}")
-            raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
+            uuid.UUID(thread_id)
+            uuid.UUID(project_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid UUID format for thread_id or project_id")
     
-    
-    if not thread_id and (not prompt or not prompt.strip()):
+    # Validate non-optimistic mode requirements
+    if not is_optimistic and not thread_id and (not prompt or not prompt.strip()):
         raise HTTPException(status_code=400, detail="prompt is required when creating a new thread")
     
+    # Resolve model name
     if model_name is None:
         model_name = await model_manager.get_default_model_for_user(client, account_id)
     elif model_name == "mock-ai":
@@ -1009,11 +946,14 @@ async def unified_agent_start(
     else:
         model_name = model_manager.resolve_model_id(model_name)
     
+    # Parse memory_enabled
+    memory_enabled_bool = None
+    if memory_enabled is not None:
+        memory_enabled_bool = memory_enabled.lower() == 'true'
+    
     try:
-        project_id = None
-        message_content = prompt or ""
-        
-        if thread_id:
+        # For existing threads, verify access
+        if thread_id and not is_optimistic:
             structlog.contextvars.bind_contextvars(thread_id=thread_id)
             
             thread_result = await client.table('threads').select('project_id, account_id').eq('thread_id', thread_id).execute()
@@ -1027,96 +967,8 @@ async def unified_agent_start(
                 await verify_and_authorize_thread_access(client, thread_id, user_id)
             
             structlog.contextvars.bind_contextvars(project_id=project_id, account_id=account_id)
-            
-            image_contexts_to_inject = []
-            
-            if staged_files_data and len(staged_files_data) > 0:
-                try:
-                    message_content, image_contexts_to_inject = await _handle_staged_files_for_thread(
-                        staged_files=staged_files_data,
-                        thread_id=thread_id,
-                        project_id=project_id,
-                        prompt=prompt or "",
-                        account_id=account_id
-                    )
-                    logger.info(f"Processed {len(staged_files_data)} staged files for existing thread {thread_id}")
-                except Exception as e:
-                    logger.error(f"Failed to process staged files for existing thread: {e}")
-                    raise HTTPException(status_code=500, detail=f"Failed to process staged files: {str(e)}")
-            elif files and len(files) > 0:
-                try:
-                    message_content = await _handle_file_uploads_fast(files, project_id, prompt or "", thread_id)
-                    logger.info(f"Fast-parsed {len(files)} files for existing thread {thread_id}, sandbox upload in background")
-                except Exception as e:
-                    logger.error(f"Failed to fast-parse files for existing thread: {e}")
-                    raise HTTPException(status_code=500, detail=f"Failed to process files: {str(e)}")
-            
-            for img_info in image_contexts_to_inject:
-                try:
-                    image_message = {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": f"[Image loaded: {img_info['filename']}]"},
-                            {"type": "image_url", "image_url": {"url": img_info['url']}}
-                        ]
-                    }
-                    await client.table('messages').insert({
-                        "message_id": str(uuid.uuid4()),
-                        "thread_id": thread_id,
-                        "type": "image_context",
-                        "is_llm_message": True,
-                        "content": image_message,
-                        "metadata": {"file_path": img_info['filename'], "mime_type": img_info['mime_type'], "source": "user_upload"},
-                        "created_at": datetime.now(timezone.utc).isoformat()
-                    }).execute()
-                    logger.info(f"📷 Injected image context for {img_info['filename']} into thread {thread_id}")
-                except Exception as img_err:
-                    logger.warning(f"Failed to inject image context: {img_err}")
         
-        else:
-            new_thread_image_contexts = []
-            has_files = (files and len(files) > 0) or (staged_files_data and len(staged_files_data) > 0)
-            
-            if has_files:
-                project_id = str(uuid.uuid4())
-                placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt
-                await client.table('projects').insert({
-                    "project_id": project_id,
-                    "account_id": account_id,
-                    "name": placeholder_name,
-                    "created_at": datetime.now(timezone.utc).isoformat()
-                }).execute()
-                
-                try:
-                    from core.cache.runtime_cache import set_cached_project_metadata
-                    await set_cached_project_metadata(project_id, {})
-                except Exception:
-                    pass
-                asyncio.create_task(generate_and_update_project_name(project_id=project_id, prompt=prompt))
-                
-                temp_thread_id = str(uuid.uuid4())
-                
-                if staged_files_data and len(staged_files_data) > 0:
-                    try:
-                        message_content, new_thread_image_contexts = await _handle_staged_files_for_thread(
-                            staged_files=staged_files_data,
-                            thread_id=temp_thread_id,
-                            project_id=project_id,
-                            prompt=prompt,
-                            account_id=account_id
-                        )
-                        logger.info(f"Processed {len(staged_files_data)} staged files for new thread")
-                    except Exception as e:
-                        await client.table('projects').delete().eq('project_id', project_id).execute()
-                        raise HTTPException(status_code=500, detail=f"Failed to process staged files: {str(e)}")
-                elif files and len(files) > 0:
-                    try:
-                        message_content = await _handle_file_uploads_fast(files, project_id, prompt)
-                        logger.info(f"Fast-parsed {len(files)} files for new thread, sandbox upload in background")
-                    except Exception as e:
-                        await client.table('projects').delete().eq('project_id', project_id).execute()
-                        raise HTTPException(status_code=500, detail=f"Failed to process files: {str(e)}")
-        
+        # Unified call to start_agent_run - handles both optimistic and non-optimistic paths
         result = await start_agent_run(
             account_id=account_id,
             prompt=prompt or "",
@@ -1124,12 +976,20 @@ async def unified_agent_start(
             model_name=model_name,
             thread_id=thread_id,
             project_id=project_id,
-            message_content=message_content,
+            files=files if len(files) > 0 else None,
+            staged_files=staged_files_data,
+            memory_enabled=memory_enabled_bool,
+            is_optimistic=is_optimistic,
         )
         
         logger.info(f"⏱️ [TIMING] 🎯 API Request Total: {(time.time() - api_request_start) * 1000:.1f}ms")
         
-        return {"thread_id": result["thread_id"], "agent_run_id": result["agent_run_id"], "status": "running"}
+        return {
+            "thread_id": result["thread_id"],
+            "agent_run_id": result["agent_run_id"],
+            "project_id": result.get("project_id"),
+            "status": result.get("status", "running")
+        }
     
     except HTTPException:
         raise
@@ -1143,73 +1003,6 @@ async def unified_agent_start(
         logger.error(f"Full error details: {error_details}")
         raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
 
-@router.post("/thread/{thread_id}/start-agent", summary="Start Agent on Initialized Thread", operation_id="start_agent_on_thread")
-async def start_agent_on_thread(
-    thread_id: str,
-    model_name: Optional[str] = None,
-    agent_id: Optional[str] = None,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
-):
-    import time
-    api_request_start = time.time()
-    
-    if not instance_id:
-        raise HTTPException(status_code=500, detail="Worker API not initialized with instance ID")
-    
-    client = await db.client
-    account_id = user_id
-    
-    try:
-        thread_result = await client.table('threads').select('project_id, account_id, status').eq('thread_id', thread_id).execute()
-        if not thread_result.data:
-            raise HTTPException(status_code=404, detail="Thread not found")
-        
-        thread_data = thread_result.data[0]
-        project_id = thread_data['project_id']
-        thread_status = thread_data.get('status', 'ready')
-        
-        if thread_data['account_id'] != user_id:
-            await verify_and_authorize_thread_access(client, thread_id, user_id)
-        
-        if thread_status == 'error':
-            raise HTTPException(status_code=400, detail="Thread initialization failed, cannot start agent")
-        
-        if thread_status in ['pending', 'initializing']:
-            raise HTTPException(status_code=409, detail=f"Thread is still {thread_status}, please wait for initialization to complete")
-        
-        structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id, account_id=account_id)
-        
-        if model_name is None:
-            model_name = await model_manager.get_default_model_for_user(client, account_id)
-        elif model_name == "mock-ai":
-            pass
-        else:
-            model_name = model_manager.resolve_model_id(model_name)
-        
-        result = await start_agent_run(
-            account_id=account_id,
-            prompt="",
-            agent_id=agent_id,
-            model_name=model_name,
-            thread_id=thread_id,
-            project_id=project_id,
-            message_content=None,
-        )
-        
-        await client.table('threads').update({
-            "status": "ready",
-        }).eq('thread_id', thread_id).execute()
-        
-        logger.info(f"⏱️ [TIMING] 🎯 Start Agent on Thread Total: {(time.time() - api_request_start) * 1000:.1f}ms")
-        
-        return {"thread_id": result["thread_id"], "agent_run_id": result["agent_run_id"], "status": "running"}
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error starting agent on thread: {str(e)}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
-
 @router.post("/agent-run/{agent_run_id}/stop", summary="Stop Agent Run", operation_id="stop_agent_run")
 async def stop_agent(agent_run_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     structlog.contextvars.bind_contextvars(
@@ -1220,6 +1013,20 @@ async def stop_agent(agent_run_id: str, user_id: str = Depends(verify_and_get_us
     await _get_agent_run_with_access_check(client, agent_run_id, user_id)
     await stop_agent_run(agent_run_id)
     return {"status": "stopped"}
+
+@router.get("/agent-runs/{agent_run_id}/status", summary="Get Agent Run Status", operation_id="get_agent_run_status")
+async def get_agent_run_status(agent_run_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
+    """Get the status of an agent run. Used by the frontend to check agent status after stream closes."""
+    structlog.contextvars.bind_contextvars(
+        agent_run_id=agent_run_id,
+    )
+    logger.debug(f"Fetching agent run status: {agent_run_id}")
+    client = await db.client
+    agent_run_data = await _get_agent_run_with_access_check(client, agent_run_id, user_id)
+    return {
+        "status": agent_run_data['status'],
+        "error": agent_run_data.get('error')
+    }
 
 @router.get("/agent-runs/active", summary="List All Active Agent Runs", operation_id="list_active_agent_runs")
 async def get_active_agent_runs(user_id: str = Depends(verify_and_get_user_id_from_jwt)):
@@ -1467,9 +1274,9 @@ async def stream_agent_run(
             pubsub = await redis.get_pubsub()
             await pubsub.subscribe(notify_channel)
             
-            # After catch-up, only read new entries
-            if last_id != "0":
-                last_id = "$"  # "$" means only new entries
+            # After catch-up, keep using the actual last entry ID to read entries after it
+            # NOTE: Do NOT use "$" here! "$" means "entries after this XREAD command", not "entries after this ID"
+            # Since worker writes entries BEFORE publishing notifications, using "$" would miss those entries
             
             # Startup timeout: if no real data received after N pings, check if worker is stuck
             consecutive_pings = 0

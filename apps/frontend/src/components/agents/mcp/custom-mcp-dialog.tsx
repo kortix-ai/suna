@@ -3,7 +3,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, AlertCircle, CheckCircle2, Zap, ChevronRight, Sparkles, Server } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Zap, ChevronRight, Sparkles, Server } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
@@ -420,7 +421,7 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
               >
                 {isSaving ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <KortixLoader customSize={16} className="mr-1" />
                     Adding MCP Server...
                   </>
                 ) : (
@@ -440,7 +441,7 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
               >
                 {isValidating ? (
                   <>
-                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <KortixLoader customSize={20} className="mr-1" />
                     Connecting to MCP server...
                   </>
                 ) : (

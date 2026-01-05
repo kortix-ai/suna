@@ -14,7 +14,6 @@ from typing import Optional, Dict, Any, List
 class StreamName(str, Enum):
     """Stream names for different task types."""
     AGENT_RUNS = "suna:agent-runs:v1"
-    THREAD_INIT = "suna:thread-init:v1"
     MEMORY = "suna:memory:v1"
     CATEGORIZATION = "suna:categorization:v1"
 
@@ -67,30 +66,6 @@ class AgentRunTask(TaskMessage):
             agent_id=data.get("agent_id") or None,
             account_id=data.get("account_id") or None,
             request_id=data.get("request_id") or None,
-            enqueued_at=float(data.get("enqueued_at", 0)),
-        )
-
-
-@dataclass
-class ThreadInitTask(TaskMessage):
-    """Task for initializing a thread."""
-    task_type: str = "thread_init"
-    thread_id: str = ""
-    project_id: str = ""
-    account_id: str = ""
-    prompt: str = ""
-    agent_id: Optional[str] = None
-    model_name: Optional[str] = None
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, str]) -> "ThreadInitTask":
-        return cls(
-            thread_id=data.get("thread_id", ""),
-            project_id=data.get("project_id", ""),
-            account_id=data.get("account_id", ""),
-            prompt=data.get("prompt", ""),
-            agent_id=data.get("agent_id") or None,
-            model_name=data.get("model_name") or None,
             enqueued_at=float(data.get("enqueued_at", 0)),
         )
 
@@ -186,7 +161,6 @@ class StaleProjectsTask(TaskMessage):
 # Task type to class mapping
 TASK_CLASSES = {
     "agent_run": AgentRunTask,
-    "thread_init": ThreadInitTask,
     "memory_extraction": MemoryExtractionTask,
     "memory_embedding": MemoryEmbeddingTask,
     "memory_consolidation": MemoryConsolidationTask,

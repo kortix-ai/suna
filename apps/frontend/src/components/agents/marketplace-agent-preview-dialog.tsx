@@ -5,9 +5,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Bot, Download, Wrench, Plug, Tag, User, Calendar, Loader2, Share, Cpu, Eye, Zap, MessageSquare, ArrowRight, Sparkles, FileText } from 'lucide-react';
+import { Bot, Download, Wrench, Plug, Tag, User, Calendar, Share, Cpu, Eye, Zap, MessageSquare, ArrowRight, Sparkles, FileText } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import type { MarketplaceTemplate, UsageExampleMessage } from '@/components/agents/installation/types';
 import { useComposioToolkitIcon } from '@/hooks/composio/use-composio';
 import { useRouter } from 'next/navigation';
@@ -298,7 +299,7 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
               >
                 {isInstalling ? (
                   <>
-                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <KortixLoader customSize={20} className="mr-1" />
                     Installing...
                   </>
                 ) : (

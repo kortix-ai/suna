@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useRef } from 'react';
-import { AlertTriangle, Play, Pause, Wand2, CheckCircle, Loader2, Download, Video as VideoIcon, Image as ImageIcon } from 'lucide-react';
+import { AlertTriangle, Play, Pause, Wand2, CheckCircle, Download, Video as VideoIcon, Image as ImageIcon } from 'lucide-react';
 import { ToolViewProps } from '../types';
 import { extractImageEditGenerateData } from './_utils';
 import { cn } from '@/lib/utils';
@@ -380,49 +380,18 @@ export function ImageEditGenerateToolView({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {!isStreaming && actualIsSuccess && (
-              <Badge
-                variant="secondary"
-                className="bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-              >
-                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-                Success
-              </Badge>
-            )}
-
-            {!isStreaming && hasActualError && (
-              <Badge
-                variant="secondary"
-                className="bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              >
-                <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-                Failed
-              </Badge>
-            )}
-
-            {isStreaming && (
-              <Badge className="bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300">
-                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                Processing
-              </Badge>
-            )}
-
-            {/* Download button */}
-            {actualIsSuccess && downloadUrl && (
-              <Button
-                onClick={handleDownload}
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1.5 px-2"
-              >
-                <Download className="h-3.5 w-3.5"
-
-                />
-                <span className="text-xs hidden sm:inline">Download</span>
-              </Button>
-            )}
-          </div>
+          {/* Download button */}
+          {actualIsSuccess && downloadUrl && (
+            <Button
+              onClick={handleDownload}
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 px-2"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span className="text-xs hidden sm:inline">Download</span>
+            </Button>
+          )}
         </div>
       </CardHeader>
 

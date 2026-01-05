@@ -27,6 +27,7 @@ interface CheckCommandOutputData {
 }
 
 import { ToolCallData, ToolResultData } from '../types';
+import { useSmoothText } from '@/hooks/messages/useSmoothText';
 
 function extractCheckCommandOutputData(
     toolCall: ToolCallData,
@@ -238,10 +239,20 @@ export function CheckCommandOutputToolView({
     const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
     const toolTitle = getToolTitle(name);
 
-    const formattedOutput = React.useMemo(() => {
-        if (!output) return [];
+    // Apply smooth text streaming for output
+    const { text: smoothOutput, isAnimating: isOutputAnimating } = useSmoothText(
+        output || '',
+        120,
+        isStreaming && !toolResult
+    );
 
-        let processedOutput = output;
+    // Use smooth output when streaming, otherwise use regular output
+    const displayOutput = isStreaming && smoothOutput ? smoothOutput : output;
+
+    const formattedOutput = React.useMemo(() => {
+        if (!displayOutput) return [];
+
+        let processedOutput = displayOutput;
 
         // Handle case where output is already an object
         if (typeof output === 'object' && output !== null) {
@@ -285,7 +296,7 @@ export function CheckCommandOutputToolView({
         });
 
         return processedOutput.split('\n');
-    }, [output]);
+    }, [displayOutput]);
 
     const hasMoreLines = formattedOutput.length > 10;
     const previewLines = formattedOutput.slice(0, 10);
@@ -311,23 +322,6 @@ export function CheckCommandOutputToolView({
                         </div>
                     </div>
 
-                    {!isStreaming && (
-                        <Badge
-                            variant="secondary"
-                            className={
-                                actualIsSuccess
-                                    ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                                    : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-                            }
-                        >
-                            {actualIsSuccess ? (
-                                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-                            ) : (
-                                <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-                            )}
-                            {actualIsSuccess ? 'Output retrieved successfully' : 'Failed to retrieve output'}
-                        </Badge>
-                    )}
                 </div>
             </CardHeader>
 
@@ -383,6 +377,7 @@ export function CheckCommandOutputToolView({
                                                 {showFullOutput && emptyLines.map((_, idx) => (
                                                     <span key={`empty-${idx}`}>{'\n'}</span>
                                                 ))}
+                                                {isOutputAnimating && <span className="animate-pulse text-muted-foreground">▌</span>}
                                             </pre>
                                             {!showFullOutput && hasMoreLines && (
                                                 <div className="text-muted-foreground mt-2 border-t border-border pt-2 text-xs font-mono">
