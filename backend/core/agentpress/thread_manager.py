@@ -546,17 +546,30 @@ class ThreadManager:
                 try:
                     from core.ai_models import model_manager
                     from litellm.utils import token_counter
-                    client = await self.db.client
+                    import time as _time
+                    
+                    _t1 = _time.time()
+                    client = await asyncio.wait_for(self.db.client, timeout=3.0)
+                    _client_time = (_time.time() - _t1) * 1000
+                    if _client_time > 100:
+                        logger.warning(f"⚠️ [SLOW] DB client acquired in {_client_time:.1f}ms for fast path check")
                     
                     # Query last llm_response_end message from messages table (already stored there!)
-                    last_usage_result = await client.table('messages')\
-                        .select('content')\
-                        .eq('thread_id', thread_id)\
-                        .eq('type', 'llm_response_end')\
-                        .order('created_at', desc=True)\
-                        .limit(1)\
-                        .maybe_single()\
-                        .execute()
+                    _t2 = _time.time()
+                    last_usage_result = await asyncio.wait_for(
+                        client.table('messages')\
+                            .select('content')\
+                            .eq('thread_id', thread_id)\
+                            .eq('type', 'llm_response_end')\
+                            .order('created_at', desc=True)\
+                            .limit(1)\
+                            .maybe_single()\
+                            .execute(),
+                        timeout=5.0
+                    )
+                    _query_time = (_time.time() - _t2) * 1000
+                    if _query_time > 500:
+                        logger.warning(f"⚠️ [SLOW] llm_response_end query took {_query_time:.1f}ms")
                     
                     if last_usage_result and last_usage_result.data:
                         llm_end_content = last_usage_result.data.get('content', {})
@@ -602,14 +615,21 @@ class ThreadManager:
                                 logger.debug(f"First turn: counting {new_msg_tokens} tokens from latest_user_message_content")
                             else:
                                 # First turn fallback: Query DB if content not provided
-                                latest_msg_result = await client.table('messages')\
-                                    .select('content')\
-                                    .eq('thread_id', thread_id)\
-                                    .eq('type', 'user')\
-                                    .order('created_at', desc=True)\
-                                    .limit(1)\
-                                    .single()\
-                                    .execute()
+                                _t3 = _time.time()
+                                latest_msg_result = await asyncio.wait_for(
+                                    client.table('messages')\
+                                        .select('content')\
+                                        .eq('thread_id', thread_id)\
+                                        .eq('type', 'user')\
+                                        .order('created_at', desc=True)\
+                                        .limit(1)\
+                                        .single()\
+                                        .execute(),
+                                    timeout=5.0
+                                )
+                                _user_msg_time = (_time.time() - _t3) * 1000
+                                if _user_msg_time > 500:
+                                    logger.warning(f"⚠️ [SLOW] latest user message query took {_user_msg_time:.1f}ms")
                                 
                                 if latest_msg_result and latest_msg_result.data:
                                     # DB stores content as {"role": "user", "content": "actual text"}
@@ -693,7 +713,7 @@ class ThreadManager:
                     # We know we're over threshold, compress now
                     compress_start = time.time()
                     logger.debug(f"Applying context compression on {len(messages)} messages")
-                    context_manager = ContextManager()
+                    context_manager = ContextManager(db=self.db)
                     compressed_messages = await context_manager.compress_messages(
                         messages, llm_model, max_tokens=llm_max_tokens, 
                         actual_total_tokens=estimated_total_tokens,  # Use estimated from fast check!
@@ -706,7 +726,7 @@ class ThreadManager:
                     # First turn or no fast path data: Run compression check
                     compress_start = time.time()
                     logger.debug(f"Running compression check on {len(messages)} messages")
-                    context_manager = ContextManager()
+                    context_manager = ContextManager(db=self.db)
                     compressed_messages = await context_manager.compress_messages(
                         messages, llm_model, max_tokens=llm_max_tokens, 
                         actual_total_tokens=None,
@@ -740,12 +760,14 @@ class ThreadManager:
             
             cache_start = time.time()
             if ENABLE_PROMPT_CACHING and len(messages_with_context) > 2:
+                client = await self.db.client
                 prepared_messages = await apply_anthropic_caching_strategy(
                     system_prompt, 
                     messages_with_context, 
                     llm_model,
                     thread_id=thread_id,
-                    force_recalc=force_rebuild
+                    force_recalc=force_rebuild,
+                    client=client
                 )
                 prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
                 logger.debug(f"⏱️ [TIMING] Prompt caching: {(time.time() - cache_start) * 1000:.1f}ms")
@@ -789,7 +811,7 @@ class ThreadManager:
             
             # Ensure we have a ContextManager instance for validation (may not exist if compression was skipped)
             if 'context_manager' not in locals():
-                context_manager = ContextManager()
+                context_manager = ContextManager(db=self.db)
             
             is_valid, orphaned_ids, unanswered_ids = context_manager.validate_tool_call_pairing(prepared_messages)
             if not is_valid:
@@ -835,7 +857,7 @@ class ThreadManager:
                 logger.warning(f"⚠️ PRE-SEND OVER THRESHOLD: actual={actual_tokens} >= threshold={safety_threshold}. Compressing now!")
                 # Compress messages (use raw messages, not prepared_messages which has cache markers)
                 if 'context_manager' not in locals():
-                    context_manager = ContextManager()
+                    context_manager = ContextManager(db=self.db)
                 compressed_messages = await context_manager.compress_messages(
                     messages, llm_model, max_tokens=llm_max_tokens,
                     actual_total_tokens=actual_tokens,
@@ -848,9 +870,10 @@ class ThreadManager:
                     messages_with_context = [self._memory_context] + compressed_messages
                 # Rebuild prepared_messages with caching
                 if ENABLE_PROMPT_CACHING and len(messages_with_context) > 2:
+                    client = await self.db.client
                     prepared_messages = await apply_anthropic_caching_strategy(
                         system_prompt, messages_with_context, llm_model,
-                        thread_id=thread_id, force_recalc=True
+                        thread_id=thread_id, force_recalc=True, client=client
                     )
                     prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
                 else:

@@ -345,9 +345,7 @@ class VapiVoiceTool(Tool):
 
             if not user_id and thread_id:
                 try:
-                    from core.services.supabase import DBConnection
-                    db = DBConnection()
-                    client = await db.client
+                    client = await self.thread_manager.db.client
                     thread = await client.from_('threads').select('account_id').eq('thread_id', thread_id).single().execute()
                     if thread.data:
                         user_id = thread.data.get('account_id')
@@ -450,9 +448,7 @@ class VapiVoiceTool(Tool):
                 response.raise_for_status()
                 call_data = response.json()
             
-            from core.services.supabase import DBConnection
-            db = DBConnection()
-            client = await db.client
+            client = await self.thread_manager.db.client
             
             call_id = call_data.get("id")
             
@@ -573,9 +569,7 @@ class VapiVoiceTool(Tool):
                 
                 response.raise_for_status()
             
-            from core.services.supabase import DBConnection
-            db = DBConnection()
-            client = await db.client
+            client = await self.thread_manager.db.client
             
             await client.table("vapi_calls").update({
                 "status": "ended",
@@ -681,9 +675,7 @@ class VapiVoiceTool(Tool):
             return self.fail_response("VAPI_PRIVATE_KEY not configured")
         
         try:
-            from core.services.supabase import DBConnection
-            db = DBConnection()
-            client = await db.client
+            client = await self.thread_manager.db.client
             
             thread_id, user_id, agent_id = await self._get_current_thread_and_user()
             
@@ -820,9 +812,7 @@ The voice call has ended. You can continue with any follow-up actions."""
         try:
             thread_id, user_id, agent_id = await self._get_current_thread_and_user()
             
-            from core.services.supabase import DBConnection
-            db = DBConnection()
-            client = await db.client
+            client = await self.thread_manager.db.client
             
             query = client.table("vapi_calls").select("*").order("created_at", desc=True).limit(limit)
             

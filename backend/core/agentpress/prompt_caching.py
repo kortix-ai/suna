@@ -39,11 +39,12 @@ from datetime import datetime, timezone
 from core.utils.logger import logger
 
 
-async def get_stored_threshold(thread_id: str, model: str) -> Optional[Dict[str, Any]]:
+async def get_stored_threshold(thread_id: str, model: str, client=None) -> Optional[Dict[str, Any]]:
     """Get stored cache threshold from thread metadata."""
-    from core.services.supabase import DBConnection
-    db = DBConnection()
-    client = await db.client
+    if client is None:
+        from core.services.supabase import DBConnection
+        db = DBConnection()
+        client = await db.client
     
     try:
         result = await client.table('threads').select('metadata').eq('thread_id', thread_id).single().execute()
@@ -60,11 +61,12 @@ async def get_stored_threshold(thread_id: str, model: str) -> Optional[Dict[str,
     return None
 
 
-async def store_threshold(thread_id: str, threshold: int, model: str, reason: str, turn: Optional[int] = None, system_prompt_tokens: Optional[int] = None):
+async def store_threshold(thread_id: str, threshold: int, model: str, reason: str, turn: Optional[int] = None, system_prompt_tokens: Optional[int] = None, client=None):
     """Store cache threshold in thread metadata."""
-    from core.services.supabase import DBConnection
-    db = DBConnection()
-    client = await db.client
+    if client is None:
+        from core.services.supabase import DBConnection
+        db = DBConnection()
+        client = await db.client
     
     try:
         # Get existing metadata
@@ -284,7 +286,8 @@ async def apply_anthropic_caching_strategy(
     turn_number: Optional[int] = None,  # NEW: for tracking
     force_recalc: bool = False,  # NEW: for compression triggers
     context_window_tokens: Optional[int] = None,  # Auto-detect from model registry
-    cache_threshold_tokens: Optional[int] = None  # Auto-calculate based on context window
+    cache_threshold_tokens: Optional[int] = None,  # Auto-calculate based on context window
+    client=None  # Optional DB client to avoid creating new connections
 ) -> List[Dict[str, Any]]:
     """
     Apply mathematically optimized token-based caching strategy for Anthropic models.
@@ -330,7 +333,7 @@ async def apply_anthropic_caching_strategy(
     system_prompt_tokens = None
     
     if thread_id and not force_recalc:
-        stored_config = await get_stored_threshold(thread_id, model_name)
+        stored_config = await get_stored_threshold(thread_id, model_name, client)
         
         if stored_config:
             cache_threshold_tokens = stored_config['threshold']
@@ -372,7 +375,7 @@ async def apply_anthropic_caching_strategy(
         # Store it if we have thread_id
         if thread_id:
             reason = "compression" if force_recalc else "initial"
-            await store_threshold(thread_id, cache_threshold_tokens, model_name, reason, turn_number, system_prompt_tokens)
+            await store_threshold(thread_id, cache_threshold_tokens, model_name, reason, turn_number, system_prompt_tokens, client)
     
     logger.info(f"📊 Applying single cache breakpoint strategy for {len(conversation_messages)} messages")
     
@@ -443,7 +446,7 @@ async def apply_anthropic_caching_strategy(
                 
                 # Save the adjusted threshold to prevent constant redistribution
                 if thread_id:
-                    await store_threshold(thread_id, cache_threshold_tokens, model_name, "dynamic_adjustment", turn_number, system_prompt_tokens)
+                    await store_threshold(thread_id, cache_threshold_tokens, model_name, "dynamic_adjustment", turn_number, system_prompt_tokens, client)
                     logger.debug(f"💾 Saved adjusted threshold to prevent cache churn")
         
         # Conversation fits within cache limits - use chunked approach
