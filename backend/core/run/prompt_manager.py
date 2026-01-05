@@ -40,8 +40,8 @@ class PromptManager:
         logger.debug(f"⏱️ [PROMPT TIMING] _append_builder_tools_prompt: {(time.time() - t2) * 1000:.1f}ms")
         
         # Start parallel fetch tasks
-        kb_task = PromptManager._fetch_knowledge_base(agent_config, client)
-        user_context_task = PromptManager._fetch_user_context_data(user_id, client)
+        kb_task = PromptManager._with_timeout(PromptManager._fetch_knowledge_base(agent_config, client), 2.0, "KB fetch")
+        user_context_task = PromptManager._with_timeout(PromptManager._fetch_user_context_data(user_id, client), 2.0, "User context")
         memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
         file_task = PromptManager._fetch_file_context(thread_id)
         
@@ -85,6 +85,17 @@ class PromptManager:
             return system_message, {"role": "user", "content": "\n\n".join(context_parts)}
         
         return system_message, None
+    
+    @staticmethod
+    async def _with_timeout(coro, timeout_s: float, label: str):
+        try:
+            return await asyncio.wait_for(coro, timeout_s)
+        except asyncio.TimeoutError:
+            logger.warning(f"[TIMEOUT] {label} timed out after {timeout_s}s")
+            return None
+        except Exception as e:
+            logger.warning(f"[TIMEOUT] {label} failed: {e}")
+            return None
     
     @staticmethod
     def _build_base_prompt(system_content: str, use_dynamic_tools: bool) -> str:
