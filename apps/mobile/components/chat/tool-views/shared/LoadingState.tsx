@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Loader2, LucideIcon } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import Animated, { useAnimatedStyle, withTiming, useSharedValue } from 'react-native-reanimated';
@@ -62,7 +63,7 @@ export function LoadingState({
           className={`w-16 h-16 rounded-full mx-auto mb-6 items-center justify-center ${bgColor}`}
         >
           {Icon === Loader2 ? (
-            <ActivityIndicator size="large" color={isDark ? '#a855f7' : '#9333ea'} />
+            <KortixLoader size="large" />
           ) : (
             <Icon size={32} color={isDark ? '#a855f7' : '#9333ea'} />
           )}

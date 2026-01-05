@@ -1,6 +1,6 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { FileText, X, Loader2, AlertCircle } from 'lucide-react-native';
+import { FileText, X, AlertCircle } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Image, Pressable, View, ActivityIndicator } from 'react-native';

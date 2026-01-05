@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import { useState, useEffect, Suspense } from 'react';
 import { AlertCircle, ArrowLeft, CheckCircle } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 
 import { Input } from '@/components/ui/input';
 import { SubmitButton } from '@/components/ui/submit-button';
@@ -185,7 +186,7 @@ export default function ResetPassword() {
     <Suspense
       fallback={
         <main className="flex flex-col items-center justify-center min-h-screen w-full">
-          <div className="w-12 h-12 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
+          <KortixLoader size="large" />
         </main>
       }
     >

@@ -153,7 +153,7 @@ export default function SettingUpPage() {
                       </div>
                     </div>
                     <div className="h-12 w-12 flex items-center justify-center">
-                      <Suspense fallback={<div className="h-6 w-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />}>
+                      <Suspense fallback={<KortixLoader size="small" />}>
                         <KortixLoader size="small" customSize={24} />
                       </Suspense>
                     </div>

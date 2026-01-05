@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { LucideIcon } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 
 export type DialogTheme = 'warning' | 'destructive' | 'primary' | 'info';
 export type DialogSize = 'sm' | 'md' | 'lg' | 'xl';
@@ -136,7 +137,7 @@ export const UpgradeDialog: React.FC<UpgradeDialogProps> = ({
                   className="flex items-center gap-2"
                 >
                   {action.loading && (
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    <KortixLoader size="small" />
                   )}
                   {ActionIcon && !action.loading && <ActionIcon className="h-4 w-4" />}
                   {action.label}

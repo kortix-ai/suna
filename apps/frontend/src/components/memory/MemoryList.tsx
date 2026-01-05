@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, AlertCircle, Brain, Search } from 'lucide-react';
+import { AlertCircle, Brain, Search } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { MemoryCard } from './MemoryCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -103,7 +104,7 @@ export function MemoryList({
               >
                 {isLoading ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <KortixLoader size="small" className="mr-2" />
                     {tCommon('loading')}
                   </>
                 ) : (
