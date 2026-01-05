@@ -61,8 +61,6 @@ async def _get_agent_run_with_access_check(client, agent_run_id: str, user_id: s
     return agent_run_data
 
 
-
-
 async def _check_billing_and_limits(client, account_id: str, model_name: Optional[str], check_project_limit: bool = False, check_thread_limit: bool = False):
     import time
     from core.utils.limits_checker import check_thread_limit as _check_thread_limit
@@ -1005,73 +1003,6 @@ async def unified_agent_start(
         logger.error(f"Full error details: {error_details}")
         raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
 
-@router.post("/thread/{thread_id}/start-agent", summary="Start Agent on Initialized Thread", operation_id="start_agent_on_thread")
-async def start_agent_on_thread(
-    thread_id: str,
-    model_name: Optional[str] = None,
-    agent_id: Optional[str] = None,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
-):
-    import time
-    api_request_start = time.time()
-    
-    if not instance_id:
-        raise HTTPException(status_code=500, detail="Worker API not initialized with instance ID")
-    
-    client = await db.client
-    account_id = user_id
-    
-    try:
-        thread_result = await client.table('threads').select('project_id, account_id, status').eq('thread_id', thread_id).execute()
-        if not thread_result.data:
-            raise HTTPException(status_code=404, detail="Thread not found")
-        
-        thread_data = thread_result.data[0]
-        project_id = thread_data['project_id']
-        thread_status = thread_data.get('status', 'ready')
-        
-        if thread_data['account_id'] != user_id:
-            await verify_and_authorize_thread_access(client, thread_id, user_id)
-        
-        if thread_status == 'error':
-            raise HTTPException(status_code=400, detail="Thread initialization failed, cannot start agent")
-        
-        if thread_status in ['pending', 'initializing']:
-            raise HTTPException(status_code=409, detail=f"Thread is still {thread_status}, please wait for initialization to complete")
-        
-        structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id, account_id=account_id)
-        
-        if model_name is None:
-            model_name = await model_manager.get_default_model_for_user(client, account_id)
-        elif model_name == "mock-ai":
-            pass
-        else:
-            model_name = model_manager.resolve_model_id(model_name)
-        
-        result = await start_agent_run(
-            account_id=account_id,
-            prompt="",
-            agent_id=agent_id,
-            model_name=model_name,
-            thread_id=thread_id,
-            project_id=project_id,
-            message_content=None,
-        )
-        
-        await client.table('threads').update({
-            "status": "ready",
-        }).eq('thread_id', thread_id).execute()
-        
-        logger.info(f"⏱️ [TIMING] 🎯 Start Agent on Thread Total: {(time.time() - api_request_start) * 1000:.1f}ms")
-        
-        return {"thread_id": result["thread_id"], "agent_run_id": result["agent_run_id"], "status": "running"}
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error starting agent on thread: {str(e)}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
-
 @router.post("/agent-run/{agent_run_id}/stop", summary="Stop Agent Run", operation_id="stop_agent_run")
 async def stop_agent(agent_run_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     structlog.contextvars.bind_contextvars(
@@ -1343,9 +1274,9 @@ async def stream_agent_run(
             pubsub = await redis.get_pubsub()
             await pubsub.subscribe(notify_channel)
             
-            # After catch-up, only read new entries
-            if last_id != "0":
-                last_id = "$"  # "$" means only new entries
+            # After catch-up, keep using the actual last entry ID to read entries after it
+            # NOTE: Do NOT use "$" here! "$" means "entries after this XREAD command", not "entries after this ID"
+            # Since worker writes entries BEFORE publishing notifications, using "$" would miss those entries
             
             # Startup timeout: if no real data received after N pings, check if worker is stuck
             consecutive_pings = 0

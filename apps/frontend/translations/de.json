@@ -418,6 +418,7 @@
     "close": "Schließen",
     "noActionsYet": "Kortix Computer",
     "workerActionsDescription": "Wird gestartet",
+    "emptyActionsDescription": "Agent-Aktionen werden hier angezeigt",
     "toolIsRunning": "Tool läuft",
     "toolCurrentlyExecuting": "{toolName} wird derzeit ausgeführt. Ergebnisse werden hier angezeigt, wenn sie abgeschlossen sind.",
     "rateThisResult": "Dieses Ergebnis bewerten",

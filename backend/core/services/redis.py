@@ -255,13 +255,13 @@ class RedisClient:
             kwargs['approximate'] = approximate
         return await client.xadd(stream_key, fields, **kwargs)
     
-    async def stream_read(self, stream_key: str, last_id: str = "0", block_ms: int = 0, count: int = None) -> List[tuple]:
+    async def stream_read(self, stream_key: str, last_id: str = "0", block_ms: int = None, count: int = None) -> List[tuple]:
         """Read entries from a Redis stream.
         
         Args:
             stream_key: Stream key name
             last_id: Last read ID (use "0" for all, "$" for new only)
-            block_ms: Block for this many milliseconds (0 = non-blocking)
+            block_ms: Block for this many milliseconds (None/0 = non-blocking, >0 = block for that duration)
             count: Maximum number of entries to return
         
         Returns:
@@ -269,7 +269,10 @@ class RedisClient:
         """
         client = await self.get_client()
         streams = {stream_key: last_id}
-        result = await client.xread(streams, count=count, block=block_ms)
+        # Note: In Redis, BLOCK 0 means block forever, not non-blocking
+        # We use block=None for non-blocking reads (when block_ms is 0 or None)
+        block_arg = block_ms if block_ms and block_ms > 0 else None
+        result = await client.xread(streams, count=count, block=block_arg)
         
         if not result:
             return []
@@ -464,8 +467,15 @@ async def stream_add(stream_key: str, fields: dict, maxlen: int = None, approxim
     """Add entry to stream (compatibility function)."""
     return await redis.stream_add(stream_key, fields, maxlen=maxlen, approximate=approximate)
 
-async def stream_read(stream_key: str, last_id: str = "0", block_ms: int = 0, count: int = None):
-    """Read from stream (compatibility function)."""
+async def stream_read(stream_key: str, last_id: str = "0", block_ms: int = None, count: int = None):
+    """Read from stream (compatibility function).
+    
+    Args:
+        stream_key: Stream key name
+        last_id: Last read ID (use "0" for all, "$" for new only)
+        block_ms: Block for this many milliseconds (None/0 = non-blocking, >0 = block for that duration)
+        count: Maximum number of entries to return
+    """
     return await redis.stream_read(stream_key, last_id, block_ms=block_ms, count=count)
 
 async def stream_range(stream_key: str, start: str = "-", end: str = "+", count: int = None):

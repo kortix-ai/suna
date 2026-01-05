@@ -100,7 +100,7 @@ class ThreadManager:
         agent_id: Optional[str] = None,
         agent_version_id: Optional[str] = None
     ):
-        client = await self.db.client
+        from core.services.supabase import execute_with_reconnect
 
         data_to_insert = {
             'thread_id': thread_id,
@@ -115,48 +115,29 @@ class ThreadManager:
         if agent_version_id:
             data_to_insert['agent_version_id'] = agent_version_id
 
-        max_retries = 2
-        last_error = None
-        
-        for attempt in range(max_retries + 1):
-            try:
-                # Re-fetch client on retry in case of reconnection
-                if attempt > 0:
-                    client = await self.db.client
-                    
-                result = await client.table('messages').insert(data_to_insert).execute()
+        result = await execute_with_reconnect(
+            self.db,
+            lambda c: c.table('messages').insert(data_to_insert).execute()
+        )
 
-                if result.data and len(result.data) > 0 and 'message_id' in result.data[0]:
-                    saved_message = result.data[0]
-                    
-                    # Invalidate message history cache when new message is added
-                    if is_llm_message:
-                        try:
-                            from core.cache.runtime_cache import invalidate_message_history_cache
-                            await invalidate_message_history_cache(thread_id)
-                        except Exception as e:
-                            logger.debug(f"Failed to invalidate message history cache: {e}")
-                    
-                    if type == "llm_response_end" and isinstance(content, dict):
-                        await self._handle_billing(thread_id, content, saved_message)
-                    
-                    return saved_message
-                else:
-                    logger.error(f"Insert operation failed for thread {thread_id}")
-                    return None
-            except Exception as e:
-                last_error = e
-                # Check if this is a route-not-found error (stale connection)
-                from core.services.supabase import DBConnection
-                if DBConnection.is_route_not_found_error(e) and attempt < max_retries:
-                    logger.warning(f"🔄 Route-not-found error in add_message (attempt {attempt + 1}/{max_retries + 1}), reconnecting...")
-                    await self.db.force_reconnect()
-                    continue
-                logger.error(f"Failed to add message to thread {thread_id}: {str(e)}", exc_info=True)
-                raise
-        
-        if last_error:
-            raise last_error
+        if result.data and len(result.data) > 0 and 'message_id' in result.data[0]:
+            saved_message = result.data[0]
+            
+            # Invalidate message history cache when new message is added
+            if is_llm_message:
+                try:
+                    from core.cache.runtime_cache import invalidate_message_history_cache
+                    await invalidate_message_history_cache(thread_id)
+                except Exception as e:
+                    logger.debug(f"Failed to invalidate message history cache: {e}")
+            
+            if type == "llm_response_end" and isinstance(content, dict):
+                await self._handle_billing(thread_id, content, saved_message)
+            
+            return saved_message
+        else:
+            logger.error(f"Insert operation failed for thread {thread_id}")
+            return None
 
     async def _handle_billing(self, thread_id: str, content: dict, saved_message: dict):
         try:
@@ -222,11 +203,21 @@ class ThreadManager:
             logger.error(f"Error handling billing: {str(e)}", exc_info=True)
 
     def _validate_tool_calls_in_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate and normalize tool_calls in an assistant message.
+        
+        This ensures:
+        1. All tool_calls have valid JSON arguments
+        2. Arguments are always strings (not dicts) for LLM API compatibility
+        3. Invalid tool_calls are filtered out to prevent API errors
+        """
         tool_calls = message.get('tool_calls') or []
         if not tool_calls or not isinstance(tool_calls, list):
             return message
         
         valid_tool_calls = []
+        needs_normalization = False
+        
         for tc in tool_calls:
             if not isinstance(tc, dict):
                 continue
@@ -244,12 +235,23 @@ class ThreadManager:
                 except json.JSONDecodeError as e:
                     logger.warning(f"Removing tool call {tc.get('id')}: invalid JSON - {str(e)[:50]}")
             elif isinstance(args, dict):
-                valid_tool_calls.append(tc)
+                # Arguments is a dict - need to convert to JSON string for LLM API compatibility
+                # This can happen when content is retrieved from JSONB and nested strings are auto-parsed
+                try:
+                    normalized_tc = tc.copy()
+                    normalized_tc['function'] = tc['function'].copy()
+                    normalized_tc['function']['arguments'] = json.dumps(args, ensure_ascii=False)
+                    valid_tool_calls.append(normalized_tc)
+                    needs_normalization = True
+                    logger.debug(f"Normalized tool call {tc.get('id')}: converted dict arguments to JSON string")
+                except (TypeError, ValueError) as e:
+                    logger.warning(f"Removing tool call {tc.get('id')}: failed to serialize dict arguments - {str(e)[:50]}")
             else:
                 logger.warning(f"Removing tool call {tc.get('id')}: unexpected arguments type {type(args)}")
         
-        if len(valid_tool_calls) != len(tool_calls):
-            logger.warning(f"Filtered {len(tool_calls) - len(valid_tool_calls)} invalid tool calls from message")
+        if len(valid_tool_calls) != len(tool_calls) or needs_normalization:
+            if len(valid_tool_calls) != len(tool_calls):
+                logger.warning(f"Filtered {len(tool_calls) - len(valid_tool_calls)} invalid tool calls from message")
             message = message.copy()
             if valid_tool_calls:
                 message['tool_calls'] = valid_tool_calls
@@ -274,7 +276,14 @@ class ThreadManager:
             cached = await get_cached_message_history(thread_id)
             if cached is not None:
                 logger.debug(f"⏱️ [TIMING] Message history: cache hit ({len(cached)} messages)")
-                return cached
+                # Validate and normalize tool_calls in cached messages
+                # This ensures consistency even if cache was populated before tool_call fixes
+                validated_cached = []
+                for msg in cached:
+                    if msg.get('role') == 'assistant' and msg.get('tool_calls'):
+                        msg = self._validate_tool_calls_in_message(msg)
+                    validated_cached.append(msg)
+                return validated_cached
         
         client = await self.db.client
 
@@ -328,6 +337,10 @@ class ThreadManager:
                             if isinstance(msg_content, str) and not msg_content.strip():
                                 logger.warning(f"Skipping empty user message {item['message_id']} from LLM context")
                                 continue
+                        
+                        # Validate and normalize tool_calls for assistant messages
+                        if parsed_item.get('role') == 'assistant' and parsed_item.get('tool_calls'):
+                            parsed_item = self._validate_tool_calls_in_message(parsed_item)
                         
                         messages.append(parsed_item)
                     except json.JSONDecodeError:
