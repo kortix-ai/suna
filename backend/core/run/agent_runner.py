@@ -32,10 +32,10 @@ _SETUP_TOOLS_EXECUTOR = ThreadPoolExecutor(max_workers=16, thread_name_prefix="s
 T = TypeVar('T')
 
 # Timeout constants (in seconds)
-TIMEOUT_MCP_INIT = 12.0         # MCP initialization (includes version_service which has 10s internal timeout)
-TIMEOUT_PROJECT_METADATA = 5.0  # Project metadata fetch
-TIMEOUT_DYNAMIC_TOOLS = 5.0     # Dynamic tool restoration
-TIMEOUT_DB_QUERY = 5.0          # Generic DB query timeout
+TIMEOUT_MCP_INIT = 3.0          # MCP initialization - was causing 10s+ hangs
+TIMEOUT_PROJECT_METADATA = 2.0  # Project metadata fetch - was causing 60s+ hangs
+TIMEOUT_DYNAMIC_TOOLS = 5.0     # Dynamic tool restoration - was causing 40s+ hangs
+TIMEOUT_DB_QUERY = 3.0          # Generic DB query timeout
 
 
 async def with_timeout(coro, timeout_seconds: float, operation_name: str, default=None):

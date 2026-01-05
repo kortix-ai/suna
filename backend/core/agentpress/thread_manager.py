@@ -396,14 +396,35 @@ class ThreadManager:
         Returns:
             True if the thread has at least one image_context message, False otherwise
         """
+        import asyncio
+        import time
+        
+        start = time.time()
         try:
+            t1 = time.time()
             client = await self.db.client
-            result = await client.table('messages').select('message_id').eq('thread_id', thread_id).eq('type', 'image_context').limit(1).execute()
+            client_time = (time.time() - t1) * 1000
+            if client_time > 100:
+                logger.warning(f"⚠️ [SLOW] DB client acquired in {client_time:.1f}ms for thread_has_images")
+            
+            t2 = time.time()
+            result = await asyncio.wait_for(
+                client.table('messages').select('message_id').eq('thread_id', thread_id).eq('type', 'image_context').limit(1).execute(),
+                timeout=5.0
+            )
+            query_time = (time.time() - t2) * 1000
+            
             has_images = bool(result.data and len(result.data) > 0)
-            logger.info(f"🖼️ Thread {thread_id} has_images check: {has_images}")
+            total_time = (time.time() - start) * 1000
+            logger.info(f"🖼️ Thread {thread_id} has_images: {has_images} (total:{total_time:.1f}ms, client:{client_time:.0f}ms, query:{query_time:.0f}ms)")
             return has_images
+        except asyncio.TimeoutError:
+            elapsed = (time.time() - start) * 1000
+            logger.warning(f"⚠️ thread_has_images timeout after {elapsed:.1f}ms for {thread_id} - assuming no images")
+            return False
         except Exception as e:
-            logger.error(f"Error checking thread for images: {str(e)}")
+            elapsed = (time.time() - start) * 1000
+            logger.error(f"Error checking thread for images after {elapsed:.1f}ms: {str(e)}")
             return False
     
     async def run_thread(
