@@ -195,7 +195,7 @@ class ApifyTool(SandboxToolsBase):
     def __init__(self, project_id: str, thread_manager: Optional[ThreadManager] = None):
         super().__init__(project_id, thread_manager)
         self.credit_manager = CreditManager()
-        self.db = DBConnection()
+        self.db = thread_manager.db if thread_manager else DBConnection()
         
         if config.APIFY_API_TOKEN:
             # Initialize Apify client with token

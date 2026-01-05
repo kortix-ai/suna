@@ -92,7 +92,7 @@ class SandboxVisionTool(SandboxToolsBase):
         self.thread_id = thread_id
         # Make thread_manager accessible within the tool instance
         self.thread_manager = thread_manager
-        self.db = DBConnection()
+        self.db = thread_manager.db if thread_manager else DBConnection()
 
     async def convert_svg_with_sandbox_browser(self, svg_full_path: str) -> Tuple[bytes, str]:
         """Convert SVG to PNG using sandbox browser API for better rendering support.

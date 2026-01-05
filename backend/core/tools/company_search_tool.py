@@ -61,7 +61,7 @@ class CompanySearchTool(Tool):
         super().__init__()
         self.thread_manager = thread_manager
         self.api_key = config.EXA_API_KEY
-        self.db = DBConnection()
+        self.db = thread_manager.db if thread_manager else DBConnection()
         self.credit_manager = CreditManager()
         self.exa_client = None
         

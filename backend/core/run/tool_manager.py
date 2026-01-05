@@ -198,9 +198,6 @@ class ToolManager:
             
     def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
         from core.tools.tool_registry import AGENT_BUILDER_TOOLS, get_tool_class
-        from core.services.supabase import DBConnection
-        
-        db = DBConnection()
 
         for tool_name, module_path, class_name in AGENT_BUILDER_TOOLS:
             if tool_name == 'agent_creation_tool':
@@ -219,7 +216,7 @@ class ToolManager:
                         tool_class, 
                         function_names=enabled_methods, 
                         thread_manager=self.thread_manager, 
-                        db_connection=db, 
+                        db_connection=self.thread_manager.db, 
                         agent_id=agent_id
                     )
                 except Exception as e:
@@ -228,9 +225,6 @@ class ToolManager:
     def _register_suna_specific_tools(self, disabled_tools: List[str]):
         if 'agent_creation_tool' not in disabled_tools and self.account_id:
             from core.tools.tool_registry import get_tool_info, get_tool_class
-            from core.services.supabase import DBConnection
-            
-            db = DBConnection()
             
             try:
                 tool_info = get_tool_info('agent_creation_tool')
@@ -245,7 +239,7 @@ class ToolManager:
                     AgentCreationTool, 
                     function_names=enabled_methods, 
                     thread_manager=self.thread_manager, 
-                    db_connection=db, 
+                    db_connection=self.thread_manager.db, 
                     account_id=self.account_id
                 )
             except (ImportError, AttributeError) as e:
@@ -333,15 +327,13 @@ class ToolManager:
         """Register Suna-specific tools like agent_creation_tool."""
         if 'agent_creation_tool' not in disabled_tools:
             from core.tools.agent_creation_tool import AgentCreationTool
-            from core.services.supabase import DBConnection
-            
-            db = DBConnection()
             
             if account_id:
                 enabled_methods = self._get_enabled_methods_for_tool('agent_creation_tool')
                 if enabled_methods is not None:
-                    self.thread_manager.add_tool(AgentCreationTool, function_names=enabled_methods, thread_manager=self.thread_manager, db_connection=db, account_id=account_id)
+                    self.thread_manager.add_tool(AgentCreationTool, function_names=enabled_methods, thread_manager=self.thread_manager, db_connection=self.thread_manager.db, account_id=account_id)
                 else:
-                    self.thread_manager.add_tool(AgentCreationTool, thread_manager=self.thread_manager, db_connection=db, account_id=account_id)
+                    self.thread_manager.add_tool(AgentCreationTool, thread_manager=self.thread_manager, db_connection=self.thread_manager.db, account_id=account_id)
             else:
                 logger.warning("Could not register agent_creation_tool: account_id not available")
+                
