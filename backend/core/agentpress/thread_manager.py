@@ -170,9 +170,7 @@ class ThreadManager:
             usage_type = "FALLBACK ESTIMATE" if is_fallback else ("ESTIMATED" if is_estimated else "EXACT")
             logger.debug(f"💰 Usage type: {usage_type} - prompt={prompt_tokens}, completion={completion_tokens}, cache_read={cache_read_tokens}, cache_creation={cache_creation_tokens}")
             
-            client = await self.db.client
-            thread_row = await client.table('threads').select('account_id').eq('thread_id', thread_id).limit(1).execute()
-            user_id = thread_row.data[0]['account_id'] if thread_row.data and len(thread_row.data) > 0 else None
+            user_id = self.account_id
             
             if user_id and (prompt_tokens > 0 or completion_tokens > 0):
 
@@ -898,14 +896,7 @@ class ThreadManager:
             logger.error(f"Invalid config type in auto-continue: {type(config)}, creating new one")
             config = ProcessorConfig()
         
-        # Get account_id once for billing checks
-        account_id = None
-        try:
-            client = await self.db.client
-            thread_row = await client.table('threads').select('account_id').eq('thread_id', thread_id).limit(1).execute()
-            account_id = thread_row.data[0]['account_id'] if thread_row.data and len(thread_row.data) > 0 else None
-        except Exception as e:
-            logger.warning(f"Failed to get account_id for thread {thread_id}: {e}")
+        account_id = self.account_id
         
         while auto_continue_state['active'] and auto_continue_state['count'] < native_max_auto_continues:
             auto_continue_state['active'] = False  # Reset for this iteration
