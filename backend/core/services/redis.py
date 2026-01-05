@@ -422,6 +422,10 @@ async def delete(key: str):
     """Delete a key (compatibility function)."""
     return await redis.delete(key)
 
+async def incr(key: str) -> int:
+    """Increment a key atomically (compatibility function)."""
+    return await redis.incr(key)
+
 async def expire(key: str, seconds: int):
     """Set expiration on a key (compatibility function)."""
     return await redis.expire(key, seconds)

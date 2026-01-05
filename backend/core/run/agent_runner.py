@@ -350,19 +350,9 @@ class AgentRunner:
             }
             return
 
-        latest_message = await self.client.table('messages').select('type').eq('thread_id', self.config.thread_id).in_('type', ['assistant', 'tool', 'user']).order('created_at', desc=True).limit(1).execute()
-        if latest_message.data and len(latest_message.data) > 0:
-            message_type = latest_message.data[0].get('type')
-            if message_type == 'assistant':
-                # No new user message after assistant response - stop the loop
-                logger.debug(f"Last message is assistant, no new input - stopping execution for {self.config.thread_id}")
-                yield {
-                    "type": "status",
-                    "status": "stopped",
-                    "message": "Execution complete - awaiting user input"
-                }
-                return
-
+        # NOTE: Removed redundant "last message is assistant" check - was causing 37s hangs and 404 errors
+        # The agent run is ALWAYS triggered by a user message, and auto-continue handles stopping logic
+        
         temporary_message = None
         max_tokens = None
         logger.debug(f"max_tokens: {max_tokens} (using provider defaults)")
