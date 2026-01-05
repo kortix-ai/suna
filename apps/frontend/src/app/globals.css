@@ -568,3 +568,159 @@
     max-width: 280px;
   }
 }
+
+.mesh-gradient-container {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: linear-gradient(
+    135deg,
+    oklch(0.97 0.01 280) 0%,
+    oklch(0.95 0.02 320) 50%,
+    oklch(0.97 0.01 240) 100%
+  );
+  border-radius: inherit;
+}
+
+.dark .mesh-gradient-container {
+  background: linear-gradient(
+    135deg,
+    oklch(0.22 0.02 280) 0%,
+    oklch(0.20 0.03 320) 50%,
+    oklch(0.22 0.02 240) 100%
+  );
+}
+
+.mesh-gradient-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(40px);
+  mix-blend-mode: soft-light;
+  will-change: transform;
+}
+
+.dark .mesh-gradient-blob {
+  mix-blend-mode: screen;
+  opacity: 0.6;
+}
+
+.mesh-blob-1 {
+  width: 60%;
+  height: 60%;
+  top: -20%;
+  left: -10%;
+  animation: mesh-float-1 8s ease-in-out infinite;
+}
+
+.mesh-blob-2 {
+  width: 50%;
+  height: 50%;
+  top: 50%;
+  right: -15%;
+  animation: mesh-float-2 10s ease-in-out infinite;
+}
+
+.mesh-blob-3 {
+  width: 45%;
+  height: 45%;
+  bottom: -10%;
+  left: 30%;
+  animation: mesh-float-3 12s ease-in-out infinite;
+}
+
+.mesh-blob-4 {
+  width: 40%;
+  height: 40%;
+  top: 20%;
+  left: 50%;
+  animation: mesh-float-4 9s ease-in-out infinite;
+}
+
+.mesh-gradient-noise {
+  position: absolute;
+  inset: 0;
+  opacity: 0.3;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+
+@keyframes mesh-float-1 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+  25% {
+    transform: translate(10%, 15%) scale(1.1) rotate(5deg);
+  }
+  50% {
+    transform: translate(5%, 5%) scale(0.95) rotate(-3deg);
+  }
+  75% {
+    transform: translate(-5%, 10%) scale(1.05) rotate(2deg);
+  }
+}
+
+@keyframes mesh-float-2 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+  33% {
+    transform: translate(-15%, -10%) scale(1.15) rotate(-5deg);
+  }
+  66% {
+    transform: translate(5%, -5%) scale(0.9) rotate(3deg);
+  }
+}
+
+@keyframes mesh-float-3 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+  20% {
+    transform: translate(15%, -15%) scale(1.1) rotate(8deg);
+  }
+  40% {
+    transform: translate(-10%, -5%) scale(0.95) rotate(-4deg);
+  }
+  60% {
+    transform: translate(5%, 10%) scale(1.05) rotate(2deg);
+  }
+  80% {
+    transform: translate(-5%, 5%) scale(1) rotate(-2deg);
+  }
+}
+
+@keyframes mesh-float-4 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-20%, 15%) scale(1.2);
+  }
+}
+
+.mesh-loader-orb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background-size: 300% 300%;
+  animation: mesh-orb-spin 2s linear infinite, mesh-orb-gradient 3s ease infinite;
+}
+
+@keyframes mesh-orb-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes mesh-orb-gradient {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
