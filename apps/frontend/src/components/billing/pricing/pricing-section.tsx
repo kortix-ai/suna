@@ -266,11 +266,14 @@ function PricingTier({
         case 'commitment_created':
           if (checkoutUrl) {
             // Store checkout data for GTM purchase tracking after Stripe redirect
-            // Use actual price (e.g., 2040 for yearly), not monthly equivalent
+            // item_id and item_name must match add_to_cart format
+            const actualPrice = getActualPrice();
+            const billingLabel = effectiveBillingPeriod === 'monthly' ? 'Monthly' : 'Yearly';
             storeCheckoutData({
-              tier_key: tierKey,
-              tier_name: tier.name,
-              price: getActualPrice(),
+              item_id: `${tier.tierKey}_${effectiveBillingPeriod}`,
+              item_name: `${tier.name} ${billingLabel}`,
+              price: actualPrice,
+              value: actualPrice, // Same as price unless discount applied (Stripe handles this)
               currency: currency,
               billing_period: effectiveBillingPeriod,
             });
@@ -286,11 +289,14 @@ function PricingTier({
         case 'upgraded':
         case 'updated':
           // Store checkout data for GTM purchase tracking
-          // Use actual price (e.g., 2040 for yearly), not monthly equivalent
+          // item_id and item_name must match add_to_cart format
+          const upgradedActualPrice = getActualPrice();
+          const upgradedBillingLabel = effectiveBillingPeriod === 'monthly' ? 'Monthly' : 'Yearly';
           storeCheckoutData({
-            tier_key: tierKey,
-            tier_name: tier.name,
-            price: getActualPrice(),
+            item_id: `${tier.tierKey}_${effectiveBillingPeriod}`,
+            item_name: `${tier.name} ${upgradedBillingLabel}`,
+            price: upgradedActualPrice,
+            value: upgradedActualPrice, // Same as price unless discount applied
             currency: currency,
             billing_period: effectiveBillingPeriod,
           });

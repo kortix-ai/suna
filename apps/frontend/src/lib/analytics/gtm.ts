@@ -530,14 +530,23 @@ export function trackPurchase(data: PurchaseData) {
 /**
  * Store checkout data before redirecting to Stripe
  * This allows us to track the purchase with full data when user returns
+ * 
+ * item_id and item_name should match the format used in add_to_cart:
+ * - item_id: e.g., "pro_yearly", "plus_monthly"
+ * - item_name: e.g., "Pro Yearly", "Plus Monthly"
+ * 
+ * price = full product price (before discounts)
+ * value = actual transaction value (after discounts/coupons)
  */
 export function storeCheckoutData(data: {
-  tier_key: string;
-  tier_name: string;
-  price: number;
+  item_id: string;       // e.g., "pro_yearly" - matches add_to_cart format
+  item_name: string;     // e.g., "Pro Yearly" - matches add_to_cart format
+  price: number;         // Full product price (before discounts)
+  value: number;         // Actual transaction value (after discounts)
   currency: string;
   billing_period: string;
   coupon?: string;
+  discount?: number;
 }) {
   if (typeof window === 'undefined') return;
   sessionStorage.setItem('gtm_checkout_data', JSON.stringify({
@@ -550,12 +559,14 @@ export function storeCheckoutData(data: {
  * Retrieve stored checkout data after returning from Stripe
  */
 export function getStoredCheckoutData(): {
-  tier_key: string;
-  tier_name: string;
+  item_id: string;
+  item_name: string;
   price: number;
+  value: number;
   currency: string;
   billing_period: string;
   coupon?: string;
+  discount?: number;
   timestamp: number;
 } | null {
   if (typeof window === 'undefined') return null;
