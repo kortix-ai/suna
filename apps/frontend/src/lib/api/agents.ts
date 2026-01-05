@@ -521,35 +521,6 @@ export const optimisticAgentStart = async (options: {
   }
 };
 
-export const startAgentOnThread = async (
-  threadId: string,
-  options?: {
-    model_name?: string;
-    agent_id?: string;
-  }
-): Promise<{ thread_id: string; agent_run_id: string; status: string }> => {
-  try {
-    const response = await backendApi.post<{ thread_id: string; agent_run_id: string; status: string }>(
-      `/thread/${threadId}/start-agent`,
-      {
-        model_name: options?.model_name,
-        agent_id: options?.agent_id,
-      },
-      { showErrors: true, cache: 'no-store' }
-    );
-
-    if (response.error) {
-      throw new Error(`Error starting agent on thread: ${response.error.message}`);
-    }
-
-    return response.data!;
-  } catch (error) {
-    console.error('[API] Failed to start agent on thread:', error);
-    handleApiError(error, { operation: 'start agent on thread', resource: 'AI assistant' });
-    throw error;
-  }
-};
-
 export const streamAgent = (
   agentRunId: string,
   callbacks: {

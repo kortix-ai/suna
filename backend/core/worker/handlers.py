@@ -88,7 +88,7 @@ async def handle_agent_run(task: AgentRunTask):
         cancellation_event = asyncio.Event()
         redis_keys = create_redis_keys(agent_run_id, instance_id)
         
-        await stream_status_message(redis_keys['response_stream'], "initializing", "Worker started...")
+        await stream_status_message("initializing", "Worker started...", stream_key=redis_keys['response_stream'])
         await redis.verify_stream_writable(redis_keys['response_stream'])
         
         from core.ai_models import model_manager

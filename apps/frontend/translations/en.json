@@ -425,6 +425,7 @@
     "close": "Close",
     "noActionsYet": "Kortix Computer",
     "workerActionsDescription": "Starting",
+    "emptyActionsDescription": "Worker actions will appear here",
     "toolIsRunning": "Tool is running",
     "toolCurrentlyExecuting": "{toolName} is currently executing. Results will appear here when complete.",
     "rateThisResult": "Rate this result",

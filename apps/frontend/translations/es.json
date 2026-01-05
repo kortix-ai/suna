@@ -417,6 +417,7 @@
     "close": "Cerrar",
     "noActionsYet": "Kortix Computer",
     "workerActionsDescription": "Iniciando",
+    "emptyActionsDescription": "Las acciones del Worker aparecerán aquí",
     "toolIsRunning": "La herramienta está ejecutando",
     "toolCurrentlyExecuting": "{toolName} está ejecutando actualmente. Los resultados aparecerán aquí cuando se complete.",
     "rateThisResult": "Califica este resultado",

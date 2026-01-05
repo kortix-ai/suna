@@ -200,7 +200,7 @@ async def update_custom_mcp_tools_for_agent(
         tools['custom_mcp'] = custom_mcps
         agent_config['tools'] = tools
         
-        from .versioning.version_service import get_version_service
+        from core.versioning.version_service import get_version_service
         try:
             version_service = await get_version_service() 
             new_version = await version_service.create_version(
@@ -322,7 +322,7 @@ async def update_agent_custom_mcps(
         tools['custom_mcp'] = existing_custom_mcps
         agent_config['tools'] = tools
         
-        from .versioning.version_service import get_version_service
+        from core.versioning.version_service import get_version_service
         import datetime
         
         try:

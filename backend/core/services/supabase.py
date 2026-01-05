@@ -75,11 +75,25 @@ class DBConnection:
             'statuscode' in error_str and '404' in error_str and 'route' in error_str
         )
     
+    @classmethod
+    def is_client_closed_error(cls, error) -> bool:
+        """Check if an error indicates the HTTP client has been closed."""
+        error_str = str(error).lower()
+        return (
+            'client has been closed' in error_str or
+            'cannot send a request' in error_str and 'closed' in error_str
+        )
+    
+    @classmethod
+    def is_recoverable_connection_error(cls, error) -> bool:
+        """Check if an error is recoverable via reconnection (route-not-found or client-closed)."""
+        return cls.is_route_not_found_error(error) or cls.is_client_closed_error(error)
+    
     async def force_reconnect(self):
         """Force reconnection - call this when you detect route-not-found errors."""
         current_time = time.time()
-        # Prevent reconnection spam (max once per 5 seconds)
-        if current_time - self._last_reset_time < 5:
+        # Prevent reconnection spam (max once per 1 second to allow retries with backoff)
+        if current_time - self._last_reset_time < 1:
             logger.debug("Skipping reconnect - too soon since last reset")
             return
         
@@ -211,8 +225,9 @@ class DBConnection:
     
     async def get_client_with_retry(self, max_retries: int = 2) -> AsyncClient:
         """
-        Get client with automatic reconnection on route-not-found errors.
+        Get client with automatic reconnection on recoverable errors.
         Use this for critical operations that need resilience.
+        Handles both route-not-found and client-closed errors.
         """
         for attempt in range(max_retries + 1):
             try:
@@ -222,8 +237,9 @@ class DBConnection:
                     raise RuntimeError("Database not initialized")
                 return self._client
             except Exception as e:
-                if self.is_route_not_found_error(e) and attempt < max_retries:
-                    logger.warning(f"🔄 DB connection error (attempt {attempt + 1}/{max_retries + 1}), forcing reconnect...")
+                if self.is_recoverable_connection_error(e) and attempt < max_retries:
+                    error_type = "client-closed" if self.is_client_closed_error(e) else "route-not-found"
+                    logger.warning(f"🔄 Recoverable {error_type} error (attempt {attempt + 1}/{max_retries + 1}), forcing reconnect...")
                     await self.force_reconnect()
                 else:
                     raise
@@ -232,7 +248,8 @@ class DBConnection:
 
 async def execute_with_reconnect(db: DBConnection, operation, max_retries: int = 2):
     """
-    Execute a database operation with automatic reconnection on route-not-found errors.
+    Execute a database operation with automatic reconnection on recoverable errors.
+    Handles both route-not-found and client-closed errors.
     
     Usage:
         result = await execute_with_reconnect(db, lambda client: client.table('x').select('*').execute())
@@ -244,8 +261,9 @@ async def execute_with_reconnect(db: DBConnection, operation, max_retries: int =
             return await operation(client)
         except Exception as e:
             last_error = e
-            if DBConnection.is_route_not_found_error(e) and attempt < max_retries:
-                logger.warning(f"🔄 Route-not-found error (attempt {attempt + 1}/{max_retries + 1}), reconnecting...")
+            if DBConnection.is_recoverable_connection_error(e) and attempt < max_retries:
+                error_type = "client-closed" if DBConnection.is_client_closed_error(e) else "route-not-found"
+                logger.warning(f"🔄 Recoverable {error_type} error (attempt {attempt + 1}/{max_retries + 1}), reconnecting...")
                 await db.force_reconnect()
             else:
                 raise

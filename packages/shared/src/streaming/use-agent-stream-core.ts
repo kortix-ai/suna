@@ -341,22 +341,24 @@ export function useAgentStreamCore(
         return;
       }
       
-      // Check for stopped status with billing error
-      if (jsonData.status === 'stopped' && jsonData.message) {
-        const message = jsonData.message.toLowerCase();
-        const isBillingError = 
-          message.includes('insufficient credits') ||
-          message.includes('credit') ||
-          message.includes('balance') ||
-          message.includes('out of credits') ||
-          message.includes('no credits') ||
-          message.includes('billing check failed');
-        
-        if (isBillingError) {
-          handleBillingError(jsonData.message);
-          finalizeStream('stopped', currentRunIdRef.current);
-          return;
+      // Handle stopped status (normal completion or billing error)
+      if (jsonData.type === 'status' && jsonData.status === 'stopped') {
+        if (jsonData.message) {
+          const message = jsonData.message.toLowerCase();
+          const isBillingError = 
+            message.includes('insufficient credits') ||
+            message.includes('credit') ||
+            message.includes('balance') ||
+            message.includes('out of credits') ||
+            message.includes('no credits') ||
+            message.includes('billing check failed');
+          
+          if (isBillingError) {
+            handleBillingError(jsonData.message);
+          }
         }
+        finalizeStream('stopped', currentRunIdRef.current);
+        return;
       }
       
       // Handle completed status
