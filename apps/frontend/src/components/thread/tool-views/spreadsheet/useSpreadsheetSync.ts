@@ -189,7 +189,9 @@ export function useSpreadsheetSync({
     try {
       const content = await getSandboxFileContent(sandboxId, filePath);
 
-      const fileName = filePath.split('/').pop() || 'spreadsheet.xlsx';
+      const rawFileName = filePath.split('/').pop() || 'spreadsheet.xlsx';
+      // Trim whitespace, newlines, and other control characters
+      const fileName = rawFileName.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '') || 'spreadsheet.xlsx';
       const fileExt = fileName.split('.').pop()?.toLowerCase();
 
       let mimeType = 'application/octet-stream';
@@ -236,7 +238,8 @@ export function useSpreadsheetSync({
       if (!isOnlineRef.current && cacheKey) {
         const cached = await getCachedFile(cacheKey);
         if (cached) {
-          const fileName = filePath.split('/').pop() || 'spreadsheet.xlsx';
+          const rawFileName = filePath.split('/').pop() || 'spreadsheet.xlsx';
+          const fileName = rawFileName.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '') || 'spreadsheet.xlsx';
           const file = new File([cached.blob], fileName, { type: cached.blob.type });
           spreadsheetRef.current.open({ file });
           currentVersionRef.current = cached.version;
@@ -270,7 +273,8 @@ export function useSpreadsheetSync({
     if (!sandboxId || !filePath) return false;
 
     try {
-      const fileName = filePath.split('/').pop() || 'spreadsheet.xlsx';
+      const rawFileName = filePath.split('/').pop() || 'spreadsheet.xlsx';
+      const fileName = rawFileName.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '') || 'spreadsheet.xlsx';
       const uploadFormData = new FormData();
       uploadFormData.append('path', filePath);
       uploadFormData.append('file', blob, fileName);
@@ -313,7 +317,8 @@ export function useSpreadsheetSync({
 
     const fileExt = filePath.split('.').pop()?.toLowerCase();
     const saveType = fileExt === 'csv' ? 'Csv' : 'Xlsx';
-    const fileName = filePath.split('/').pop() || 'spreadsheet.xlsx';
+    const rawFileName = filePath.split('/').pop() || 'spreadsheet.xlsx';
+    const fileName = rawFileName.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '') || 'spreadsheet.xlsx';
 
     spreadsheetRef.current.save({
       saveType: saveType,
@@ -589,7 +594,8 @@ export function useSpreadsheetSync({
               await setCachedFile(cacheKey, blob, hash);
             }
             
-            const fileName = filePath.split('/').pop() || 'spreadsheet.xlsx';
+            const rawFileName = filePath.split('/').pop() || 'spreadsheet.xlsx';
+            const fileName = rawFileName.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '') || 'spreadsheet.xlsx';
             const fileExt = fileName.split('.').pop()?.toLowerCase();
             let mimeType = 'application/octet-stream';
             if (fileExt === 'xlsx') {

@@ -26,7 +26,6 @@ import {
 import { AppIcon } from "../tool-views/shared/AppIcon";
 import { useSmoothText } from "@/hooks/messages/useSmoothText";
 import { isHiddenTool } from "@agentpress/shared/tools";
-import { MeshGradientLoader } from "./MeshGradientLoader";
 
 export function renderAttachments(
   attachments: string[],
@@ -166,14 +165,13 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   threadId?: string;
   onPromptFill?: (message: string) => void;
 }) {
-  const hasToolCall = !!streamingToolCall;
+  // Apply smooth typewriter effect to streaming text (120 chars/sec for snappy feel)
+  // Returns { text, isAnimating } - we continue rendering while animation is in progress
   const { text: smoothStreamingText, isAnimating: isSmoothAnimating } = useSmoothText(
     streamingTextContent || "",
     120,
-    !hasToolCall
+    true
   );
-  
-  const displayText = hasToolCall ? (streamingTextContent || "") : smoothStreamingText;
 
   const toolResultsMap = useMemo(() => {
     const map = new Map<string | null, UnifiedMessage[]>();
@@ -251,10 +249,19 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   ]);
 
   const streamingContent = useMemo(() => {
+    // Continue rendering if:
+    // 1. Currently streaming, OR
+    // 2. Animation is still in progress (let it finish even after stream ends)
+    // But immediately stop if agent is not running (user stopped)
     const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
     const isAgentRunning = agentStatus === "running" || agentStatus === "connecting";
     
-    const shouldRender = isLastGroup && !readOnly && displayText && (isStreaming || isSmoothAnimating || isAgentRunning);
+    // If agent is not running and not streaming, immediately hide
+    if (!isAgentRunning && !isStreaming) {
+      return null;
+    }
+    
+    const shouldRender = isLastGroup && !readOnly && smoothStreamingText && (isStreaming || isSmoothAnimating);
     
     if (!shouldRender) {
       return null;
@@ -263,8 +270,8 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     let detectedTag: string | null = null;
     let tagStartIndex = -1;
 
-    const askIndex = displayText.indexOf("<ask");
-    const completeIndex = displayText.indexOf("<complete");
+    const askIndex = smoothStreamingText.indexOf("<ask");
+    const completeIndex = smoothStreamingText.indexOf("<complete");
     if (askIndex !== -1 && (completeIndex === -1 || askIndex < completeIndex)) {
       detectedTag = "ask";
       tagStartIndex = askIndex;
@@ -273,10 +280,10 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       tagStartIndex = completeIndex;
     } else {
       const functionCallsIndex =
-        displayText.indexOf("<function_calls>");
+        smoothStreamingText.indexOf("<function_calls>");
       if (functionCallsIndex !== -1) {
         const functionCallsContent =
-          displayText.substring(functionCallsIndex);
+          smoothStreamingText.substring(functionCallsIndex);
         if (
           functionCallsContent.includes('<invoke name="ask"') ||
           functionCallsContent.includes("<invoke name='ask'")
@@ -297,7 +304,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
         for (const tag of HIDE_STREAMING_XML_TAGS) {
           if (tag === "ask" || tag === "complete") continue;
           const openingTagPattern = `<${tag}`;
-          const index = displayText.indexOf(openingTagPattern);
+          const index = smoothStreamingText.indexOf(openingTagPattern);
           if (index !== -1) {
             detectedTag = tag;
             tagStartIndex = index;
@@ -307,7 +314,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       }
     }
 
-    const textToRender = displayText;
+    const textToRender = smoothStreamingText;
     const textBeforeTag = detectedTag
       ? textToRender.substring(0, tagStartIndex)
       : textToRender;
@@ -356,7 +363,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   }, [
     isLastGroup,
     readOnly,
-    displayText,
+    smoothStreamingText,
     isSmoothAnimating,
     streamHookStatus,
     agentStatus,
@@ -514,14 +521,20 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
 
       const toolName =
         askOrCompleteTool.function_name?.replace(/_/g, "-").toLowerCase() || "";
+      const textToShow =
+        askCompleteText || (toolName === "ask" ? "Asking..." : "Completing...");
+      const isCurrentlyStreaming =
+        streamHookStatus === "streaming" || streamHookStatus === "connecting";
 
       return (
         <div className="mt-1.5">
-          <MeshGradientLoader variant={toolName === "complete" ? "complete" : "ask"} />
+          <ComposioUrlDetector
+            content={textToShow}
+            isStreaming={isCurrentlyStreaming}
+          />
         </div>
       );
     }
-    
 
     const isAskOrComplete = toolCalls.some((tc: any) => {
       const toolName = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
@@ -530,10 +543,27 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
 
     if (isAskOrComplete) return null;
 
-    // Filter out hidden tools (internal/initialization tools)
+    // Get all tool call IDs that are already rendered in completed messages
+    const completedToolCallIds = new Set<string>();
+    group.messages.forEach((msg) => {
+      if (msg.type === "assistant") {
+        const msgMeta = safeJsonParse<ParsedMetadata>(msg.metadata, {});
+        if (msgMeta.stream_status === "complete" && msgMeta.tool_calls) {
+          msgMeta.tool_calls.forEach((tc: any) => {
+            if (tc.tool_call_id) {
+              completedToolCallIds.add(tc.tool_call_id);
+            }
+          });
+        }
+      }
+    });
+
+    // Filter out hidden tools AND tools that are already in completed messages
     const visibleToolCalls = toolCalls.filter((tc: any) => {
       const toolName = tc.function_name?.replace(/_/g, "-") || "";
-      return !isHiddenTool(toolName);
+      const isHidden = isHiddenTool(toolName);
+      const isAlreadyCompleted = tc.tool_call_id && completedToolCallIds.has(tc.tool_call_id);
+      return !isHidden && !isAlreadyCompleted;
     });
 
     // If all tools were hidden, don't render anything

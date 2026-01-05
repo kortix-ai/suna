@@ -26,6 +26,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { LoadingState } from '../shared/LoadingState';
+import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
+import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { Button } from '@/components/ui/button';
 import { CheckCircle, AlertTriangle } from 'lucide-react';
 import { CodeBlockCode } from '@/components/ui/code-block';
@@ -138,9 +140,11 @@ function parseFileStructure(flatList: string[]): FileNode {
 }
 
 function getFileIcon(fileName: string): React.ReactNode {
-  const ext = fileName.split('.').pop()?.toLowerCase();
+  // Trim whitespace, newlines, and other control characters
+  const cleanFileName = fileName.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '');
+  const ext = cleanFileName.split('.').pop()?.toLowerCase();
   
-  if (fileName === 'package.json') {
+  if (cleanFileName === 'package.json') {
     return <FileJson className="w-4 h-4 text-green-600 dark:text-green-400" />;
   }
   
@@ -645,17 +649,7 @@ export function GetProjectStructureView({
       <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
           <div className="flex flex-row items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="relative p-2 rounded-lg bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20">
-                <FolderTree className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
-              </div>
-              <div>
-                <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-                  {toolTitle}
-                </CardTitle>
-              </div>
-            </div>
-
+            <ToolViewIconTitle icon={FolderTree} title={toolTitle} />
             <div className="flex items-center gap-2">
               <TooltipProvider>
                 <Tooltip>

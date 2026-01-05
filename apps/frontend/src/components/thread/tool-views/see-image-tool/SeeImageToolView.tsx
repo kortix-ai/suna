@@ -280,7 +280,9 @@ export function SeeImageToolView({
 
   // Image-related data (not needed for clear tool)
   const imageUrl = !isClearTool && filePath ? constructImageUrl(filePath, project) : '';
-  const filename = !isClearTool && filePath ? filePath.split('/').pop() || filePath : '';
+  const rawFilename = !isClearTool && filePath ? filePath.split('/').pop() || filePath : '';
+  // Trim whitespace, newlines, and other control characters
+  const filename = rawFilename ? rawFilename.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '') : '';
   const fileExt = filename ? filename.split('.').pop() || '' : '';
   const isAnimated = !isClearTool && ['gif', 'webp'].includes(fileExt.toLowerCase());
 

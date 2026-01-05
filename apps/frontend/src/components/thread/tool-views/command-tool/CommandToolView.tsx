@@ -12,6 +12,8 @@ import { formatTimestamp, getToolTitle } from '../utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { LoadingState } from '../shared/LoadingState';
+import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
+import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { extractCommandData } from './_utils';
 import { useToolStreamStore } from '@/stores/tool-stream-store';
 import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
@@ -182,17 +184,7 @@ export function CommandToolView({
     <Card className="flex flex-col h-full overflow-hidden border-0 shadow-none p-0 rounded-none bg-card">
       <CardHeader className="flex-shrink-0 h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-lg border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700">
-              <Terminal className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
-            </div>
-            <div>
-              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-                {toolTitle}
-              </CardTitle>
-            </div>
-          </div>
-
+          <ToolViewIconTitle icon={Terminal} title={toolTitle} />
         </div>
       </CardHeader>
 
@@ -354,25 +346,18 @@ export function CommandToolView({
         )}
       </CardContent>
 
-      <div className="flex-shrink-0 px-4 py-2 h-10 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4">
-        <div className="h-full flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-          {!isStreaming && displayText && (
-            <Badge variant="outline" className="h-6 py-0.5 bg-zinc-50 dark:bg-zinc-900">
-              <Terminal className="h-3 w-3 mr-1" />
-              {displayLabel}
-            </Badge>
-          )}
-        </div>
-
-        <div className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-2">
-          <Clock className="h-3.5 w-3.5" />
-          {actualToolTimestamp && !isStreaming
-            ? formatTimestamp(actualToolTimestamp)
-            : actualAssistantTimestamp
-              ? formatTimestamp(actualAssistantTimestamp)
-              : ''}
-        </div>
-      </div>
+      <ToolViewFooter
+        assistantTimestamp={actualAssistantTimestamp}
+        toolTimestamp={actualToolTimestamp}
+        isStreaming={isStreaming}
+      >
+        {!isStreaming && displayText && (
+          <Badge variant="outline" className="h-6 py-0.5 bg-zinc-50 dark:bg-zinc-900">
+            <Terminal className="h-3 w-3 mr-1" />
+            {displayLabel}
+          </Badge>
+        )}
+      </ToolViewFooter>
     </Card>
   );
 }
