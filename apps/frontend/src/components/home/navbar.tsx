@@ -1,19 +1,16 @@
 'use client';
 
 import { ThemeToggle } from '@/components/home/theme-toggle';
-import { LocaleSwitcher } from '@/components/home/locale-switcher';
 import { siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
-import { X, Github } from 'lucide-react';
+import { X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { useGitHubStars } from '@/hooks/utils';
 import { useRouter, usePathname } from 'next/navigation';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 
 // Scroll threshold with hysteresis to prevent flickering
@@ -61,7 +58,6 @@ export function Navbar() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('hero');
   const { user } = useAuth();
-  const { formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'suna');
   const router = useRouter();
   const pathname = usePathname();
   const t = useTranslations('common');
@@ -122,55 +118,49 @@ export function Navbar() {
               : 'px-3 md:px-6 bg-transparent border border-transparent',
           )}
         >
-          <div className="flex h-[56px] items-center p-2 md:p-4">
+          <div className="relative flex h-[56px] items-center p-2 md:p-4">
             {/* Left Section - Logo */}
-            <div className="flex items-center justify-start flex-shrink-0 w-auto md:w-[200px]">
+            <div className="flex items-center justify-start flex-shrink-0">
               <Link href="/" className="flex items-center gap-3">
                 <KortixLogo size={18} variant='logomark' />
               </Link>
             </div>
-            {/* 
-            <div className="hidden md:flex items-center justify-center flex-grow">
-              <NavMenu links={filteredNavLinks} />
-            </div> */}
+
+            {/* Center Section - Nav Links (absolutely centered) */}
+            <nav className="hidden md:flex items-center justify-center gap-1 absolute left-1/2 -translate-x-1/2">
+              {filteredNavLinks.map((item) => (
+                <Link
+                  key={item.id}
+                  href={item.href}
+                  className={cn(
+                    "px-3 py-1.5 text-sm font-medium rounded-lg transition-colors",
+                    pathname === item.href
+                      ? "text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {item.name}
+                </Link>
+              ))}
+            </nav>
 
             {/* Right Section - Actions */}
-            <div className="flex items-center justify-end flex-1 ml-auto gap-2 sm:gap-3 flex-wrap">
-              <LocaleSwitcher variant="compact" />
-              <Link
-                href="https://github.com/kortix-ai/suna"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hidden sm:flex items-center gap-1.5 h-7 px-2.5 text-xs font-medium rounded-full bg-transparent text-muted-foreground/60 hover:text-muted-foreground hover:bg-accent/30 transition-all duration-200"
-                aria-label="GitHub Repository"
-              >
-                <Github className="size-3.5" />
-                <span className={`text-xs font-medium transition-opacity duration-200 ${starsLoading ? 'opacity-50' : 'opacity-100'}`}>
-                  {formattedStars}
-                </span>
-              </Link>
+            <div className="flex items-center justify-end gap-2 sm:gap-3 ml-auto">
               {user ? (
-                <Button
-                  asChild
-                  variant="default"
-                  size="sm"
-                  className="w-fit flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
+                <Link
+                  href="/dashboard"
+                  className="h-8 px-4 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors inline-flex items-center justify-center"
                 >
-                  <Link href="/dashboard">
-                    Dashboard
-                  </Link>
-                </Button>
+                  Dashboard
+                </Link>
               ) : (
-                <Button
-                  asChild
-                  variant="default"
-                  size="sm"
-                  className="w-fit flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
+                <Link
+                  href="/auth"
+                  onClick={() => trackCtaSignup()}
+                  className="h-8 px-4 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors inline-flex items-center justify-center"
                 >
-                  <Link href="/auth" onClick={() => trackCtaSignup()}>
-                    {t('tryFree')}
-                  </Link>
-                </Button>
+                  {t('tryFree')}
+                </Link>
               )}
             </div>
           </div>
@@ -263,55 +253,29 @@ export function Navbar() {
                 {/* Action buttons */}
                 <div className="flex flex-col gap-3">
                   {user ? (
-                    <Button
-                      asChild
-                      variant="default"
-                      size="sm"
-                      className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
-                    >
-                      <Link href="/dashboard">
-                        Dashboard
-                      </Link>
-                    </Button>
-                  ) : (
-                    <Button
-                      asChild
-                      variant="default"
-                      size="sm"
-                      className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
-                    >
-                      <Link href="/auth" onClick={() => trackCtaSignup()}>
-                        {t('tryFree')}
-                      </Link>
-                    </Button>
-                  )}
-                  
-                  {/* GitHub Stars & Language Switcher Row */}
-                  <div className="flex items-center gap-2">
-                    {/* GitHub Stars Link */}
                     <Link
-                      href="https://github.com/kortix-ai/suna"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 h-9 px-3 text-xs font-medium rounded-lg bg-accent/50 hover:bg-accent text-muted-foreground hover:text-foreground transition-all duration-200 flex-1 min-w-0"
-                      aria-label="GitHub Repository"
+                      href="/dashboard"
+                      className="w-full h-10 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors inline-flex items-center justify-center"
                       onClick={() => setIsDrawerOpen(false)}
                     >
-                      <Github className="size-4 shrink-0" />
-                      <span className={`text-xs font-medium transition-opacity duration-200 truncate ${starsLoading ? 'opacity-50' : 'opacity-100'}`}>
-                        {formattedStars}
-                      </span>
+                      Dashboard
                     </Link>
-                    
-                    {/* Language Switcher */}
-                    <div className="flex-1 min-w-0">
-                      <LocaleSwitcher variant="full" />
-                    </div>
-                    
-                    {/* Theme Toggle */}
-                    <div className="shrink-0">
-                      <ThemeToggle />
-                    </div>
+                  ) : (
+                    <Link
+                      href="/auth"
+                      onClick={() => {
+                        trackCtaSignup();
+                        setIsDrawerOpen(false);
+                      }}
+                      className="w-full h-10 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors inline-flex items-center justify-center"
+                    >
+                      {t('tryFree')}
+                    </Link>
+                  )}
+                  
+                  {/* Theme Toggle */}
+                  <div className="flex justify-end">
+                    <ThemeToggle />
                   </div>
                 </div>
               </div>

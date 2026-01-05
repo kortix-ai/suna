@@ -32,6 +32,7 @@ import {
   Lock,
   Unlock,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
@@ -3618,7 +3619,7 @@ export default function AdminAnalyticsPage() {
         {/* Loading indicator when searching for user */}
         {isSearchingUser && pendingUserEmail && (
           <div className="fixed bottom-4 right-4 bg-background border rounded-lg shadow-lg p-3 flex items-center gap-2">
-            <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <KortixLoader size="small" />
             <span className="text-sm">Loading user: {pendingUserEmail}</span>
           </div>
         )}

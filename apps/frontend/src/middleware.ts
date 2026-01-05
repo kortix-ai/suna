@@ -33,7 +33,8 @@ const PUBLIC_ROUTES = [
   '/suna', // Kortix rebrand page should be public for SEO
   '/help', // Help center and documentation should be public
   '/credits-explained', // Credits explained page should be public
-  '/agents-101', 
+  '/agents-101',
+  '/about', // About page should be public 
   // Add locale routes for marketing pages
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];

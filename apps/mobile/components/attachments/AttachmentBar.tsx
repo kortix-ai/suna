@@ -13,7 +13,7 @@ import React from 'react';
 import { View, ScrollView, Image, Pressable, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { X, FileText, File, Loader2 } from 'lucide-react-native';
+import { X, FileText, File } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import Animated, {
   useAnimatedStyle,

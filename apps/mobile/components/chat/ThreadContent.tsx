@@ -40,7 +40,8 @@ import { autoLinkUrls } from '@/lib/utils/url-autolink';
 import { AgentIdentifier } from '@/components/agents';
 import { FileAttachmentsGrid } from './FileAttachmentRenderer';
 import { AgentLoader } from './AgentLoader';
-import { CircleDashed, CheckCircle2, AlertCircle, Info } from 'lucide-react-native';
+import { CheckCircle2, AlertCircle, Info, CircleDashed } from 'lucide-react-native';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { StreamingToolCard } from './StreamingToolCard';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { renderAssistantMessage } from './assistant-message-renderer';
@@ -425,7 +426,7 @@ const ToolCard = React.memo(function ToolCard({
         disabled={!onPress}
         className="flex-row items-center gap-3 rounded-3xl border border-border bg-card p-3">
         <View className="h-8 w-8 items-center justify-center rounded-xl border border-border bg-background">
-          <Icon as={CircleDashed} size={16} className="animate-spin text-primary" />
+          <KortixLoader size="small" />
         </View>
         <View className="flex-1">
           <Text className="mb-0.5 font-roobert-medium text-sm text-foreground">{displayName}</Text>
@@ -569,7 +570,7 @@ const StreamingToolCallIndicator = React.memo(function StreamingToolCallIndicato
           {isCompleted ? (
             <Icon as={CheckCircle2} size={16} className="text-emerald-500" />
           ) : (
-            <Icon as={CircleDashed} size={16} className="animate-spin text-primary" />
+            <KortixLoader size="small" />
           )}
         </View>
         
@@ -620,7 +621,7 @@ const StreamingToolCallIndicator = React.memo(function StreamingToolCallIndicato
       {isCompleted ? (
         <Icon as={CheckCircle2} size={16} className="text-emerald-500" />
       ) : (
-        <Icon as={CircleDashed} size={16} className="animate-spin text-primary" />
+        <KortixLoader size="small" />
       )}
     </View>
   );

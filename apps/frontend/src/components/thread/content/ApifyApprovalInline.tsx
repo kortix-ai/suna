@@ -1,7 +1,8 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Clock, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import { Clock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ApifyApproval } from '@/hooks/apify/use-apify-approvals';
 import { useApproveApifyRequest, useGetApifyApprovalStatus } from '@/hooks/apify/use-apify-approvals';
 
@@ -105,7 +106,7 @@ export function ApifyApprovalInline({ approval, threadId, onApproved }: ApifyApp
         >
           {approveMutation.isPending ? (
             <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <KortixLoader size="small" className="mr-2" />
               Approving...
             </>
           ) : (

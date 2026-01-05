@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Loader2 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
 import { getFileType, getFileIcon, getTypeLabel, getFileSize, getFilename } from '@/lib/utils/file-utils';
 
@@ -98,7 +98,7 @@ export function FileCard({
                 )} />
                 {(uploadStatus === 'uploading' || isLoading) && !hasError && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                        <Loader2 className="h-4 w-4 text-white animate-spin" />
+                        <KortixLoader size="small" variant="white" />
                     </div>
                 )}
             </div>

@@ -1,8 +1,5 @@
 import React, { useRef, useState, useEffect, memo, useMemo } from "react";
-import { CircleDashed as CircleDashedIcon } from "lucide-react";
-
-// Cast to fix React types version conflict in monorepo
-const CircleDashed = CircleDashedIcon as React.FC<React.SVGProps<SVGSVGElement>>;
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useTranslations } from "next-intl";
 import {
   UnifiedMessage,
@@ -574,7 +571,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
               }
               className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 max-w-full"
             >
-              <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000" />
+              <KortixLoader size="small" />
               <span className="font-mono text-xs text-foreground truncate">
                 Using Tool
               </span>
@@ -1131,7 +1128,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
                     <span className="font-mono text-xs text-primary">
                       {currentToolCall.name || "Using Tool"}
                     </span>
-                    <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000 ml-auto" />
+                    <KortixLoader size="small" className="ml-auto" />
                   </div>
                 </div>
               </div>

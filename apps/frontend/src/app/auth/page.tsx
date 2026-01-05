@@ -10,6 +10,7 @@ import { useState, useEffect, Suspense, lazy } from 'react';
 import { signUp, resendMagicLink } from './actions';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { MailCheck, Clock, ExternalLink } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useAuth } from '@/components/AuthProvider';
 import { useAuthMethodTracking } from '@/stores/auth-tracking';
 import { toast } from '@/lib/toast';
@@ -555,7 +556,7 @@ export default function Login() {
     <Suspense
       fallback={
         <div className="min-h-screen bg-background flex items-center justify-center">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <KortixLoader size="medium" />
         </div>
       }
     >

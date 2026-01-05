@@ -20,6 +20,7 @@ import {
   ArrowLeft,
   Sparkles,
 } from 'lucide-react-native';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useCreateAgent, useCreateNewAgent } from '@/lib/agents/hooks';
@@ -102,7 +103,7 @@ function OptionCard({ option, isSelected, isLoading, onPress }: OptionCardProps)
               {option.label}
             </Text>
             {isLoading && (
-              <View className="h-3.5 w-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              <KortixLoader size="small" customSize={14} />
             )}
           </View>
           <Text className="mt-0.5 font-roobert text-sm text-muted-foreground">

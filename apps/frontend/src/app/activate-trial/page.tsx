@@ -2,7 +2,8 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { CreditCard, Zap, Shield, ArrowRight, CheckCircle, LogOut, Loader2 } from 'lucide-react';
+import { CreditCard, Zap, Shield, ArrowRight, CheckCircle, LogOut } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { toast } from '@/lib/toast';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, Suspense, lazy } from 'react';
@@ -179,7 +180,7 @@ export default function ActivateTrialPage() {
             >
               {startTrialMutation.isPending ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <KortixLoader size="small" />
                   Starting trial...
                 </>
               ) : (
