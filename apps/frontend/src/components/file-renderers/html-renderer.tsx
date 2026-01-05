@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Monitor, Code, ExternalLink } from 'lucide-react';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
-import { IframePreview } from '@/components/thread/iframe-preview';
+import { Badge } from '@/components/ui/badge';
 
 interface FileRendererProject {
   id?: string;
@@ -26,6 +26,259 @@ interface HtmlRendererProps {
   previewUrl: string;
   className?: string;
   project?: FileRendererProject;
+}
+
+function getBaseHrefFromPreviewUrl(previewUrl: string): string | undefined {
+  try {
+    const url = new URL(previewUrl);
+    url.hash = '';
+    url.search = '';
+
+    const lastSlash = url.pathname.lastIndexOf('/');
+    url.pathname = lastSlash >= 0 ? url.pathname.slice(0, lastSlash + 1) : '/';
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function injectBaseHrefIntoHtml(html: string, baseHref?: string): string {
+  if (!baseHref) return html;
+  if (/<base\b/i.test(html)) return html;
+
+  const baseTag = `<base href="${baseHref}">`;
+
+  // If there's a <head>, inject right after it.
+  const headOpenMatch = html.match(/<head\b[^>]*>/i);
+  if (headOpenMatch?.index !== undefined) {
+    const insertAt = headOpenMatch.index + headOpenMatch[0].length;
+    return `${html.slice(0, insertAt)}\n    ${baseTag}\n${html.slice(insertAt)}`;
+  }
+
+  // If there's an <html>, insert a <head> after it.
+  const htmlOpenMatch = html.match(/<html\b[^>]*>/i);
+  if (htmlOpenMatch?.index !== undefined) {
+    const insertAt = htmlOpenMatch.index + htmlOpenMatch[0].length;
+    const headBlock = `\n  <head>\n    <meta charset="utf-8" />\n    ${baseTag}\n  </head>\n`;
+    return `${html.slice(0, insertAt)}${headBlock}${html.slice(insertAt)}`;
+  }
+
+  // Fallback: prepend a head block.
+  return `<head><meta charset="utf-8" />${baseTag}</head>\n${html}`;
+}
+
+function appendCacheBust(url: string, attempt: number): string {
+  try {
+    const u = new URL(url);
+    u.searchParams.set('__kortix_preview_retry', String(attempt));
+    u.searchParams.set('__kortix_preview_ts', String(Date.now()));
+    return u.toString();
+  } catch {
+    const join = url.includes('?') ? '&' : '?';
+    return `${url}${join}__kortix_preview_retry=${attempt}&__kortix_preview_ts=${Date.now()}`;
+  }
+}
+
+function ResilientHtmlPreview({
+  content,
+  liveUrl,
+  className,
+}: {
+  content: string;
+  liveUrl: string;
+  className?: string;
+}) {
+  const canUseLive = useMemo(() => /^https?:\/\//i.test(liveUrl), [liveUrl]);
+
+  // Always render something immediately via srcDoc to avoid blank states.
+  const srcDoc = useMemo(() => {
+    const baseHref = canUseLive ? getBaseHrefFromPreviewUrl(liveUrl) : undefined;
+    const safeHtml =
+      content && content.trim().length > 0
+        ? content
+        : `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HTML Preview</title>
+    <style>
+      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #111827; }
+      .card { max-width: 720px; margin: 0 auto; padding: 16px 18px; border: 1px solid rgba(0,0,0,0.1); border-radius: 12px; background: #fff; }
+      .title { font-weight: 600; margin: 0 0 6px; }
+      .muted { margin: 0; color: rgba(17,24,39,0.7); font-size: 14px; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <p class="title">No HTML content to preview yet</p>
+      <p class="muted">The file was created, but no content is available in the preview payload.</p>
+    </div>
+  </body>
+</html>`;
+    return injectBaseHrefIntoHtml(safeHtml, baseHref);
+  }, [content, liveUrl, canUseLive]);
+
+  const MAX_ATTEMPTS = 5;
+  const RETRY_DELAYS_MS = [250, 500, 1000, 2000, 4000];
+  const MIN_LOAD_MS_TO_ACCEPT = 250;
+
+  const [attempt, setAttempt] = useState(0);
+  const [isLiveVisible, setIsLiveVisible] = useState(false);
+  const [liveSrc, setLiveSrc] = useState(() => appendCacheBust(liveUrl, 0));
+  const [loadStartMs, setLoadStartMs] = useState<number>(() => Date.now());
+  const [liveIsLoading, setLiveIsLoading] = useState(true);
+  const [liveHasError, setLiveHasError] = useState(false);
+  const retryTimerRef = React.useRef<number | null>(null);
+
+  // Reset whenever the live URL changes (new file).
+  useEffect(() => {
+    setAttempt(0);
+    setIsLiveVisible(false);
+    setLiveHasError(false);
+    setLiveIsLoading(true);
+  }, [liveUrl]);
+
+  // Update live src when attempt changes.
+  useEffect(() => {
+    if (!canUseLive) return;
+    setLoadStartMs(Date.now());
+    setLiveIsLoading(true);
+    setLiveHasError(false);
+    setLiveSrc(appendCacheBust(liveUrl, attempt));
+  }, [attempt, liveUrl, canUseLive]);
+
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current) {
+        window.clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const scheduleRetry = (reason: 'fast-load' | 'error') => {
+    if (isLiveVisible) return;
+    if (attempt >= MAX_ATTEMPTS) return;
+    if (!canUseLive || !liveUrl) return;
+    if (retryTimerRef.current) return;
+
+    const delay = RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)];
+    console.debug('[ResilientHtmlPreview] scheduling retry', {
+      liveUrl,
+      attempt,
+      nextAttempt: attempt + 1,
+      reason,
+      delayMs: delay,
+      maxAttempts: MAX_ATTEMPTS,
+    });
+
+    retryTimerRef.current = window.setTimeout(() => {
+      retryTimerRef.current = null;
+      setAttempt((prev) => prev + 1);
+    }, delay);
+  };
+
+  const handleLiveLoad = () => {
+    const loadMs = Date.now() - loadStartMs;
+    setLiveIsLoading(false);
+
+    console.debug('[ResilientHtmlPreview] live iframe loaded', {
+      liveUrl,
+      attempt,
+      loadMs,
+      minAcceptMs: MIN_LOAD_MS_TO_ACCEPT,
+    });
+
+    // Heuristic: ultra-fast loads are usually a cached blank/404 placeholder right after file creation.
+    // Keep showing the srcDoc version and retry a few times.
+    if (loadMs < MIN_LOAD_MS_TO_ACCEPT && attempt < MAX_ATTEMPTS) {
+      scheduleRetry('fast-load');
+      return;
+    }
+
+    setIsLiveVisible(true);
+  };
+
+  const handleLiveError = () => {
+    setLiveIsLoading(false);
+    setLiveHasError(true);
+    scheduleRetry('error');
+  };
+
+  const handleManualRetry = () => {
+    console.debug('[ResilientHtmlPreview] manual retry', { liveUrl });
+    if (retryTimerRef.current) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    setAttempt(0);
+    setIsLiveVisible(false);
+    setLiveHasError(false);
+    setLiveIsLoading(true);
+  };
+
+  return (
+    <div className={cn('relative w-full h-full', className)}>
+      {/* Always-visible fallback (no blank state) */}
+      <iframe
+        title="HTML Preview (fallback)"
+        className="absolute inset-0 w-full h-full border-0"
+        // Important: keep srcDoc isolated from the app origin
+        sandbox="allow-scripts allow-forms allow-popups allow-downloads"
+        style={{ background: 'white' }}
+        srcDoc={srcDoc}
+      />
+
+      {/* Live preview layered on top once it looks good */}
+      {canUseLive && liveUrl ? (
+        <div
+          className={cn(
+            'absolute inset-0 transition-opacity duration-200',
+            isLiveVisible ? 'opacity-100' : 'opacity-0 pointer-events-none',
+          )}
+        >
+          <iframe
+            src={liveSrc}
+            title="HTML Preview (live)"
+            className="absolute inset-0 w-full h-full border-0"
+            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-downloads"
+            onLoad={handleLiveLoad}
+            onError={handleLiveError}
+            style={{ background: 'white' }}
+          />
+        </div>
+      ) : null}
+
+      {/* Status pill */}
+      {canUseLive ? (
+        <div className="absolute right-2 top-2 z-10 flex items-center gap-2">
+          {!isLiveVisible ? (
+            <Badge variant="secondary" className="bg-background/80 backdrop-blur-sm">
+              {liveHasError ? 'Live preview error' : liveIsLoading ? 'Live preview loading' : 'Live preview pending'}
+              {attempt > 0 ? ` (retry ${attempt}/${MAX_ATTEMPTS})` : ''}
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="bg-background/80 backdrop-blur-sm">
+              Live preview
+            </Badge>
+          )}
+
+          {!isLiveVisible && attempt >= MAX_ATTEMPTS ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 bg-background/80 backdrop-blur-sm hover:bg-background/90"
+              onClick={handleManualRetry}
+            >
+              Retry
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function HtmlRenderer({
@@ -187,9 +440,9 @@ export function HtmlRenderer({
         {viewMode === 'preview' ? (
           <div className="absolute inset-0">
             {htmlPreviewUrl ? (
-              <IframePreview
-                url={htmlPreviewUrl}
-                title="HTML Preview"
+              <ResilientHtmlPreview
+                content={content}
+                liveUrl={htmlPreviewUrl}
                 className="w-full h-full"
               />
             ) : (
