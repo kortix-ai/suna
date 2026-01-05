@@ -27,123 +27,73 @@ MAX_SUB_AGENT_DEPTH = 1
     color="bg-indigo-100 dark:bg-indigo-800/50",
     is_core=True,
     usage_guide="""
-### 🚨🚨🚨 SUB-AGENT PRIORITY OVERRIDE 🚨🚨🚨
+### 🚨 SUB-AGENT PRIORITY OVERRIDE
 
-**IF USER MENTIONS "sub-agent", "delegate", "parallel" OR SIMILAR:**
-→ ALL substantive work MUST be delegated to sub-agents
-→ Main thread ONLY does: spawn, wait, collect, present
-→ Main thread NEVER does: web_search, create_file, create_slide, image_generate
-→ This OVERRIDES any other tool guides (including presentation tool guide)
-
-**🔴 FORBIDDEN IN MAIN THREAD WHEN SUB-AGENTS REQUESTED:**
-- ❌ web_search (delegate to sub-agent)
-- ❌ image_search (delegate to sub-agent)
-- ❌ create_slide (delegate to sub-agent)
-- ❌ create_file (delegate to sub-agent)
-- ❌ execute_command for content (delegate to sub-agent)
-- ❌ Any research/content creation work
-
-**✅ ALLOWED IN MAIN THREAD:**
-- spawn_sub_agent (spawning workers)
-- wait_for_sub_agents (waiting for workers)
-- get_sub_agent_result (collecting results)
-- complete (presenting final output)
-- ask (if clarification needed)
+**IF USER MENTIONS "sub-agent", "delegate", "parallel":**
+→ ALL work MUST go to sub-agents (web_search, create_file, create_slide, etc.)
+→ Main thread ONLY: spawn → wait ONCE → collect → present
+→ This OVERRIDES other tool guides
 
 ---
 
-### SUB-AGENT ORCHESTRATION PATTERNS
+### 🚀 OPTIMAL PATTERN: SPAWN ALL → WAIT ONCE
 
-You are the ORCHESTRATOR. Your ONLY job is to DELEGATE. Sub-agents do ALL actual work.
-
-**🚨 GOLDEN RULE: MAIN THREAD = ORCHESTRATION ONLY**
-- NEVER do substantive work in main thread when sub-agents can do it
-- Main thread: spawn → wait → collect → synthesize → present
-- Sub-agents: research, create files, generate content, execute tasks
-
-**OPTIMAL ORCHESTRATION PATTERN:**
+**CRITICAL: File-based coordination for parallelism!**
 
 ```
-STEP 1: BATCH SPAWN (all at once in parallel tool calls)
-├── spawn_sub_agent(task="Research topic A", validation_level=2)
-├── spawn_sub_agent(task="Research topic B", validation_level=2)  
-├── spawn_sub_agent(task="Create presentation template", validation_level=3)
-└── spawn_sub_agent(task="Generate images", validation_level=2)
+STEP 1: SPAWN ALL (in ONE response, with file paths!)
+├── spawn(task="Research X, SAVE to /workspace/research/x.md")
+├── spawn(task="Research Y, SAVE to /workspace/research/y.md")
+├── spawn(task="Research Z, SAVE to /workspace/research/z.md")
+└── spawn(task="Create output, READ /workspace/research/*.md, SAVE /workspace/result.html", validation_level=3)
 
-STEP 2: SINGLE WAIT (don't poll manually!)
-└── wait_for_sub_agents(timeout_seconds=120)  # Waits for ALL automatically
+STEP 2: WAIT ONCE
+└── wait_for_sub_agents(timeout_seconds=300)
 
-STEP 3: BATCH COLLECT (all results at once)
-├── get_sub_agent_result(sub_agent_id="...")
-├── get_sub_agent_result(sub_agent_id="...")
-└── get_sub_agent_result(sub_agent_id="...")
-
-STEP 4: SYNTHESIZE & PRESENT (only synthesis in main thread)
-└── Combine results, present to user
+STEP 3: COLLECT + PRESENT
+└── get_sub_agent_result for each → complete(attachments=["/workspace/result.html"])
 ```
 
-**🔴 ANTI-PATTERNS TO AVOID:**
+### 🔴 ANTI-PATTERNS
 
-❌ DON'T: Manual polling loop
+❌ **Two wait phases (WRONG!):**
 ```
-wait(15s) → list_sub_agents → wait(20s) → list_sub_agents...
+spawn research → wait → collect → spawn presentation → wait  # BAD!
 ```
-✅ DO: Use wait_for_sub_agents ONCE
-
-❌ DON'T: Do work that sub-agents should do
+✅ **One wait (RIGHT):**
 ```
-Main thread: create_slide × 8, image_generate × 4
-```
-✅ DO: Spawn sub-agent for slides, spawn sub-agent for images
-
-❌ DON'T: Use TaskListTool + SubAgentTool together
-```
-create_tasks → spawn_sub_agent → update_tasks (redundant!)
-```
-✅ DO: Sub-agents ARE the tasks - skip TaskListTool
-
-❌ DON'T: Spawn one, wait, spawn another
-```
-spawn → wait → get_result → spawn → wait...
-```
-✅ DO: Spawn ALL first, then wait ONCE
-
-**VALIDATION LEVELS (optional quality gate):**
-- `validation_level=1`: Basic - has output, not broken
-- `validation_level=2`: Good - properly addresses task  
-- `validation_level=3`: Top-notch - perfect, production-ready
-
-**EXAMPLE: Research & Presentation Task**
-```
-User: "Research X and create presentation"
-
-MAIN THREAD (orchestrator):
-1. spawn_sub_agent(task="Research X biography", validation_level=2)
-2. spawn_sub_agent(task="Research X achievements", validation_level=2)
-3. spawn_sub_agent(task="Research X social media", validation_level=2)
-4. spawn_sub_agent(task="Create presentation with findings", validation_level=3)
-   context="Wait for research sub-agents, then compile into slides"
-5. wait_for_sub_agents(timeout_seconds=180)
-6. get_sub_agent_result(...) for each
-7. Present final output to user
-
-MAIN THREAD DOES: spawn, wait, collect, present
-SUB-AGENTS DO: research, web search, create files, generate images
+spawn research + spawn presentation → wait ONCE
 ```
 
-**CONTEXT SHARING:**
-- Sub-agents share same sandbox (files accessible)
-- Use context param to reference files sub-agents should read
-- Sub-agents can see files created by other sub-agents
+❌ **Huge context strings (WRONG!):**
+```
+spawn(context="[5000 chars of research text...]")  # BAD!
+```
+✅ **File paths (RIGHT):**
+```
+spawn(task="... READ from /workspace/research/*.md")
+```
 
-**CONTINUE PATTERN (for refinement):**
+❌ **Reading output files yourself (WRONG!):**
 ```
-1. spawn_sub_agent(task="Write draft")
-2. wait_for_sub_agents()
-3. get_sub_agent_result(...)
-4. If needs improvement: continue_sub_agent(sub_agent_id="...", message="Improve X")
-5. wait_for_sub_agents()
+get_result → read_file(43KB file)  # Wastes context!
 ```
+✅ **Trust sub-agent, attach file (RIGHT):**
+```
+get_result → complete(attachments=["/workspace/output.html"])
+```
+
+### 📁 FILE COORDINATION
+
+Sub-agents share /workspace. Use files for coordination:
+- Research tasks: "SAVE to /workspace/research/topic.md"
+- Content tasks: "READ from /workspace/research/*.md"
+- Final output: "SAVE to /workspace/output.html"
+
+### VALIDATION LEVELS
+- 1 = Basic (not broken)
+- 2 = Good (addresses task)
+- 3 = Top-notch (final deliverables)
 """,
     weight=8,
     visible=True
@@ -346,23 +296,23 @@ Respond in this EXACT JSON format:
         "type": "function",
         "function": {
             "name": "spawn_sub_agent",
-            "description": "🚨 DELEGATE ALL WORK HERE! Spawn a sub-agent for: web_search, research, create_file, create_slide, image_generate, any content work. Call MULTIPLE in PARALLEL (same tool call batch). If user said 'use sub-agents' or 'delegate', you MUST spawn sub-agents for ALL research/creation - NEVER do web_search or create_slide yourself. Returns immediately - use wait_for_sub_agents to wait. **PARAMS**: `task` (REQUIRED), `context` (optional), `validation_level` (optional 1-3).",
+            "description": "🚨 DELEGATE ALL WORK! Spawn ALL sub-agents in ONE response (parallel). CRITICAL: Include OUTPUT FILE PATH in task (e.g. 'SAVE to /workspace/research/topic.md'). For content creation, tell sub-agent to READ from files other sub-agents create. Returns immediately - use wait_for_sub_agents ONCE for ALL.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "task": {
                         "type": "string",
-                        "description": "**REQUIRED** - Clear description of what the sub-agent should accomplish. Be specific about: 1) The exact objective, 2) What output/files to produce, 3) Any constraints or requirements. This becomes the sub-agent's main instruction."
+                        "description": "**REQUIRED** - MUST include: 1) What to do, 2) WHERE TO SAVE output (e.g. 'SAVE to /workspace/research/bio.md'). For content tasks: 'READ from /workspace/research/*.md, CREATE at /workspace/output.html'. Sub-agents share /workspace - use files for coordination!"
                     },
                     "context": {
                         "type": "string",
-                        "description": "**OPTIONAL** - Additional context to help the sub-agent. Include: 1) Relevant file paths to read, 2) Background information, 3) Format requirements for output. Keep concise but comprehensive."
+                        "description": "**OPTIONAL** - File paths to read (not huge text!). Use: 'Read from /workspace/research/*.md' instead of pasting content. Keep SHORT - use file paths for coordination."
                     },
                     "validation_level": {
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 3,
-                        "description": "**OPTIONAL** - Quality validation strictness (1-3). 1=basic (has output, not broken), 2=good (properly addresses task), 3=top-notch (perfect, production-ready). When set, a separate LLM evaluates the output. If validation fails, sub-agent is re-prompted until it passes."
+                        "description": "**OPTIONAL** - 1=basic, 2=good, 3=top-notch (use for final deliverables)."
                     }
                 },
                 "required": ["task"],

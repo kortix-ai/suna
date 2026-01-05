@@ -10,10 +10,55 @@ from core.prompts.prompt import get_system_prompt
 from core.tools.tool_guide_registry import get_minimal_tool_index, get_tool_guide
 from core.utils.logger import logger
 
+
+# Models that trigger orchestrator mode at depth 0
+ORCHESTRATOR_MODELS = ['kortix/power', 'kortix-power', 'kortix power', 'kortix advanced mode']
+
+
 class PromptManager:
     @staticmethod
-    async def build_minimal_prompt(agent_config: Optional[dict], tool_registry=None, mcp_loader=None, user_id: Optional[str] = None, thread_id: Optional[str] = None, client=None) -> Tuple[dict, Optional[dict]]:
-        if agent_config and agent_config.get('system_prompt'):
+    async def _is_orchestrator_mode(model_name: Optional[str], thread_id: Optional[str], client) -> bool:
+        """Check if this should be orchestrator mode (kortix/power at depth 0)."""
+        if not model_name:
+            return False
+        
+        # Check if model is an orchestrator model
+        model_lower = model_name.lower()
+        is_orchestrator_model = any(m in model_lower for m in ORCHESTRATOR_MODELS)
+        
+        if not is_orchestrator_model:
+            return False
+        
+        # Check thread depth (must be 0 for orchestrator mode)
+        if not (thread_id and client):
+            return False
+        
+        try:
+            result = await client.table('threads').select('depth_level').eq(
+                'thread_id', thread_id
+            ).maybe_single().execute()
+            
+            if result.data:
+                depth = result.data.get('depth_level', 0) or 0
+                return depth == 0
+            return True  # New thread, assume depth 0
+        except Exception as e:
+            logger.warning(f"Failed to check thread depth for orchestrator mode: {e}")
+            return False
+    
+    @staticmethod
+    async def build_minimal_prompt(agent_config: Optional[dict], tool_registry=None, mcp_loader=None, 
+                                   user_id: Optional[str] = None, thread_id: Optional[str] = None, 
+                                   client=None, model_name: Optional[str] = None) -> Tuple[dict, Optional[dict]]:
+        # Check for orchestrator mode
+        is_orchestrator = await PromptManager._is_orchestrator_mode(model_name, thread_id, client)
+        
+        if is_orchestrator:
+            # Use orchestrator prompt for advanced mode main threads
+            from core.prompts.orchestrator_prompt import get_orchestrator_system_prompt
+            content = get_orchestrator_system_prompt()
+            logger.info("🎯 [ORCHESTRATOR PROMPT] Using orchestrator system prompt for advanced mode")
+        elif agent_config and agent_config.get('system_prompt'):
             content = agent_config['system_prompt'].strip()
         else:
             from core.prompts.core_prompt import get_core_system_prompt
@@ -21,7 +66,34 @@ class PromptManager:
         
         content = PromptManager._append_datetime_info(content)
         
-        content += """
+        # Add different bootstrap info for orchestrator vs worker mode
+        if is_orchestrator:
+            content += """
+
+🎯 ORCHESTRATOR MODE ACTIVE:
+You are the orchestrator. Your ONLY job is to DELEGATE work to sub-agents.
+
+✅ YOUR TOOLS (orchestration only):
+   • spawn_sub_agent - Delegate ALL work here
+   • wait_for_sub_agents - Wait for sub-agents to complete
+   • list_sub_agents - Check status (use sparingly)
+   • get_sub_agent_result - Collect results
+   • continue_sub_agent - Send follow-ups
+   • ask - Communicate with user
+   • complete - Present final output
+   • read_file, search_file - View sub-agent outputs (read-only)
+
+❌ FORBIDDEN (sub-agents do this):
+   • web_search, image_search, browser
+   • create_file, edit_file
+   • execute_command (for content)
+   • All content creation
+
+WORKFLOW: Spawn multiple sub-agents → Wait once → Collect results → Present to user
+
+"""
+        else:
+            content += """
 
 ⚠️ BOOTSTRAP MODE - FAST START:
 You are currently in fast-start mode with all core tools preloaded and ready NOW:
@@ -44,9 +116,11 @@ If relevant context seems missing, ask a clarifying question.
 
 """
         
-        preloaded_guides = PromptManager._get_preloaded_tool_guides()
-        if preloaded_guides:
-            content += preloaded_guides
+        # Skip preloaded guides for orchestrator (they don't need worker tool guides)
+        if not is_orchestrator:
+            preloaded_guides = PromptManager._get_preloaded_tool_guides()
+            if preloaded_guides:
+                content += preloaded_guides
         
         # Get agent_id for fresh config loading
         agent_id = agent_config.get('agent_id') if agent_config else None
@@ -89,14 +163,24 @@ If relevant context seems missing, ask a clarifying question.
                                   use_dynamic_tools: bool = True,
                                   mcp_loader=None) -> Tuple[dict, Optional[dict]]:
         
-        if agent_config and agent_config.get('system_prompt'):
+        # Check for orchestrator mode
+        is_orchestrator = await PromptManager._is_orchestrator_mode(model_name, thread_id, client)
+        
+        if is_orchestrator:
+            # Use orchestrator prompt for advanced mode main threads
+            from core.prompts.orchestrator_prompt import get_orchestrator_system_prompt
+            system_content = get_orchestrator_system_prompt()
+            logger.info("🎯 [ORCHESTRATOR PROMPT] Using orchestrator system prompt for build_system_prompt")
+            # Skip dynamic tools and tool guides for orchestrator - they don't need them
+        elif agent_config and agent_config.get('system_prompt'):
             system_content = agent_config['system_prompt'].strip()
+            system_content = PromptManager._build_base_prompt(system_content, use_dynamic_tools)
+            system_content = await PromptManager._append_builder_tools_prompt(system_content, agent_config)
         else:
             from core.prompts.core_prompt import get_core_system_prompt
             system_content = get_core_system_prompt()
-        
-        system_content = PromptManager._build_base_prompt(system_content, use_dynamic_tools)
-        system_content = await PromptManager._append_builder_tools_prompt(system_content, agent_config)
+            system_content = PromptManager._build_base_prompt(system_content, use_dynamic_tools)
+            system_content = await PromptManager._append_builder_tools_prompt(system_content, agent_config)
         
         kb_task = PromptManager._fetch_knowledge_base(agent_config, client)
         user_context_task = PromptManager._fetch_user_context_data(user_id, client)

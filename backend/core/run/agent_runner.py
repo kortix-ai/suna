@@ -236,6 +236,11 @@ class AgentRunner:
         self.client = await self.thread_manager.db.client
         logger.debug(f"⏱️ [TIMING] DB client acquire: {(time.time() - db_start) * 1000:.1f}ms")
         
+        # Fetch thread depth for orchestrator mode detection
+        depth_start = time.time()
+        self.thread_depth = await self._get_thread_depth()
+        logger.debug(f"⏱️ [TIMING] Thread depth fetch: {(time.time() - depth_start) * 1000:.1f}ms (depth={self.thread_depth})")
+        
         if self.config.account_id:
             self.account_id = self.config.account_id
             
@@ -321,7 +326,17 @@ class AgentRunner:
     def setup_tools(self):
         start = time.time()
         
-        tool_manager = ToolManager(self.thread_manager, self.config.project_id, self.config.thread_id, self.config.agent_config)
+        # Get thread_depth (set in setup() async method)
+        thread_depth = getattr(self, 'thread_depth', 0)
+        
+        tool_manager = ToolManager(
+            self.thread_manager, 
+            self.config.project_id, 
+            self.config.thread_id, 
+            self.config.agent_config,
+            model_name=self.config.model_name,
+            thread_depth=thread_depth
+        )
         
         agent_id = None
         if self.config.agent_config:
@@ -338,16 +353,20 @@ class AgentRunner:
         tool_manager.register_all_tools(agent_id=agent_id, disabled_tools=disabled_tools, use_spark=use_spark)
         logger.info(f"⏱️ [TIMING] register_all_tools() with SPARK={use_spark}: {(time.time() - register_start) * 1000:.1f}ms")
         
-        is_suna_agent = (self.config.agent_config and self.config.agent_config.get('is_suna_default', False)) or (self.config.agent_config is None)
-        logger.debug(f"Agent config check: agent_config={self.config.agent_config is not None}, is_suna_default={is_suna_agent}")
-        
-        if is_suna_agent:
-            suna_start = time.time()
-            logger.debug("Registering Suna-specific tools...")
-            self._register_suna_specific_tools(disabled_tools)
-            logger.debug(f"⏱️ [TIMING] Suna-specific tools: {(time.time() - suna_start) * 1000:.1f}ms")
+        # Skip Suna-specific tools in orchestrator mode (orchestrator only needs delegation tools)
+        if tool_manager.is_orchestrator:
+            logger.debug("🎯 [ORCHESTRATOR] Skipping Suna-specific tools (orchestrator mode)")
         else:
-            logger.debug("Not a Suna agent, skipping Suna-specific tool registration")
+            is_suna_agent = (self.config.agent_config and self.config.agent_config.get('is_suna_default', False)) or (self.config.agent_config is None)
+            logger.debug(f"Agent config check: agent_config={self.config.agent_config is not None}, is_suna_default={is_suna_agent}")
+            
+            if is_suna_agent:
+                suna_start = time.time()
+                logger.debug("Registering Suna-specific tools...")
+                self._register_suna_specific_tools(disabled_tools or [])
+                logger.debug(f"⏱️ [TIMING] Suna-specific tools: {(time.time() - suna_start) * 1000:.1f}ms")
+            else:
+                logger.debug("Not a Suna agent, skipping Suna-specific tool registration")
         
         logger.info(f"⏱️ [TIMING] setup_tools() total: {(time.time() - start) * 1000:.1f}ms")
     
@@ -377,6 +396,7 @@ class AgentRunner:
         return get_enabled_methods_for_tool(tool_name, self.migrated_tools)
     
     def _register_suna_specific_tools(self, disabled_tools: List[str]):
+        disabled_tools = disabled_tools or []  # Defensive: ensure not None
         if 'agent_creation_tool' not in disabled_tools:
             from core.tools.agent_creation_tool import AgentCreationTool
             from core.services.supabase import DBConnection
@@ -431,6 +451,24 @@ class AgentRunner:
         for tool_name in all_tools:
             if not is_tool_enabled(tool_name):
                 disabled_tools.append(tool_name)
+    
+    async def _get_thread_depth(self) -> int:
+        """Get the depth level of the current thread for orchestrator mode detection.
+        
+        Returns:
+            0 for main threads, 1+ for sub-agent threads
+        """
+        try:
+            result = await self.client.table('threads').select('depth_level').eq(
+                'thread_id', self.config.thread_id
+            ).maybe_single().execute()
+            
+            if result.data:
+                return result.data.get('depth_level', 0) or 0
+            return 0
+        except Exception as e:
+            logger.warning(f"Failed to get thread depth, assuming 0: {e}")
+            return 0
                 
         logger.debug(f"Disabled tools from config: {disabled_tools}")
         return disabled_tools
@@ -489,7 +527,8 @@ class AgentRunner:
                     mcp_loader=getattr(self.thread_manager, 'mcp_loader', None),
                     user_id=self.account_id,
                     thread_id=self.config.thread_id,
-                    client=self.client
+                    client=self.client,
+                    model_name=self.config.model_name  # For orchestrator mode detection
                 )
                 logger.info(f"⏱️ [TIMING] build_minimal_prompt() in {(time.time() - prompt_start) * 1000:.1f}ms ({len(str(system_message.get('content', '')))} chars) [BOOTSTRAP MODE]")
             else:
