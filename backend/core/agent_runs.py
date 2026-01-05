@@ -245,7 +245,7 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
     
     if check_thread_limit and not thread_result.get('can_create', True):
         error_detail = {
-            "message": f"Maximum of {thread_result['limit']} threads allowed for your current plan. You have {thread_result['current_count']} threads.",
+            "message": f"You've reached your plan's limit of {thread_result['limit']} chats. You currently have {thread_result['current_count']} chats. Please delete some old chats or upgrade your plan to create new ones.",
             "current_count": thread_result['current_count'],
             "limit": thread_result['limit'],
             "tier_name": thread_result['tier_name'],

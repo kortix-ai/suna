@@ -761,6 +761,32 @@ export function useChat(): UseChatReturn {
             return;
           }
           
+          // Handle thread limit
+          if (agentStartError?.status === 402 && errorCode === 'THREAD_LIMIT_EXCEEDED') {
+            const detail = agentStartError?.detail || {};
+            const currentCount = detail.current_count || 0;
+            const limit = detail.limit || 10;
+            
+            console.log('💳 Thread limit exceeded - opening billing modal');
+            Alert.alert(
+              'Chat Limit Reached',
+              `You've reached your plan's limit of ${limit} chats. Please delete some old chats or upgrade your plan to create new ones.`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Upgrade',
+                  onPress: () => {
+                    router.push({
+                      pathname: '/plans',
+                      params: { creditsExhausted: 'true' },
+                    });
+                  }
+                }
+              ]
+            );
+            return;
+          }
+          
           // Handle project limit
           if (agentStartError?.status === 402 && errorCode === 'PROJECT_LIMIT_EXCEEDED') {
             console.log('💳 Project limit exceeded - opening billing modal');

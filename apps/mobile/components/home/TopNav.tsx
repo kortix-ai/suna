@@ -3,6 +3,7 @@ import { Text } from '@/components/ui/text';
 import { TierBadge } from '@/components/menu/TierBadge';
 import * as React from 'react';
 import { Pressable, View, Dimensions, Platform, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Menu, Coins, TextAlignStart } from 'lucide-react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
@@ -99,6 +100,7 @@ export function TopNav({
   const { subscriptionData } = useBillingContext();
   const { data: creditBalance, refetch: refetchCredits } = useCreditBalance();
   const { data: accountState } = useAccountState();
+  const insets = useSafeAreaInsets();
   const menuScale = useSharedValue(1);
   const upgradeScale = useSharedValue(1);
   const creditsScale = useSharedValue(1);
@@ -163,8 +165,14 @@ export function TopNav({
 
   return (
     <View 
-      className="absolute left-0 right-0 top-[62px] z-50 h-[41px] flex-row items-center justify-between px-6"
-      style={Platform.OS === 'android' ? { elevation: 50, zIndex: 50 } : undefined}
+      className="absolute left-0 right-0 top-0 z-50 flex-row items-center justify-between px-5"
+      style={[
+        { 
+          paddingTop: insets.top + 8,
+          paddingBottom: 24,
+        },
+        Platform.OS === 'android' ? { elevation: 50, zIndex: 50 } : undefined
+      ]}
     >
       {/* Left: Menu Icon */}
       <TouchableOpacity
@@ -175,7 +183,7 @@ export function TopNav({
         accessibilityRole="button"
         accessibilityLabel="Open menu"
         accessibilityHint="Opens the navigation drawer">
-        <Icon as={TextAlignStart} size={20} className="text-foreground" strokeWidth={2} />
+        <Icon as={Menu} size={24} className="text-neutral-900 dark:text-neutral-100" strokeWidth={2} />
       </TouchableOpacity>
 
       {/* Right: Upgrade Button and Token Usage Circle */}

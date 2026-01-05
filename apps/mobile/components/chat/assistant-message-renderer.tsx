@@ -22,6 +22,7 @@ import { FileAttachmentsGrid } from './FileAttachmentRenderer';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { PromptExamples } from '@/components/shared';
 import { parseXmlToolCalls, preprocessTextOnlyTools } from '@/lib/utils/tool-parser';
+import { extractToolAttachments } from '@/lib/utils/extract-tool-attachments';
 
 export interface AssistantMessageRendererProps {
   message: UnifiedMessage;
@@ -34,6 +35,10 @@ export interface AssistantMessageRendererProps {
   threadId?: string;
   onPromptFill?: (message: string) => void;
   isDark?: boolean; // Pass color scheme from parent to avoid hooks violation
+  /** Tool calls to render (positioned before ASK/COMPLETE special sections) */
+  toolCallsToRender?: React.ReactNode;
+  /** Tool messages for extracting inline attachments */
+  toolMessages?: UnifiedMessage[];
 }
 
 /**
@@ -281,7 +286,7 @@ function convertXmlToolCallToUnified(xmlToolCall: { functionName: string; parame
  */
 
 export function renderAssistantMessage(props: AssistantMessageRendererProps): React.ReactNode {
-  const { message, isDark = false } = props;
+  const { message, isDark = false, toolCallsToRender, toolMessages = [], onFileClick, sandboxId, sandboxUrl } = props;
   const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
 
   let toolCalls = metadata.tool_calls || [];
@@ -312,6 +317,7 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
   }
 
   const contentParts: React.ReactNode[] = [];
+  const specialSections: React.ReactNode[] = []; // For ASK/COMPLETE sections
 
   // Render text content first (if any)
   if (textContent.trim()) {
@@ -322,18 +328,44 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
     );
   }
 
+  // Extract and render inline attachments from completed tools (images, presentations, etc.)
+  const inlineAttachments = extractToolAttachments(toolMessages);
+  if (inlineAttachments.length > 0) {
+    const attachmentPaths = inlineAttachments.map(a => a.filePath);
+    contentParts.push(
+      <View key="inline-attachments">
+        <FileAttachmentsGrid
+          filePaths={attachmentPaths}
+          sandboxId={sandboxId}
+          sandboxUrl={sandboxUrl}
+          compact={false}
+          showPreviews={true}
+          onFilePress={onFileClick}
+        />
+      </View>
+    );
+  }
+
   // Render tool calls from metadata (or parsed from XML)
   // Only render ask/complete tools inline - regular tool calls are rendered via ToolCard components
   toolCalls.forEach((toolCall, index) => {
     const toolName = toolCall.function_name?.replace(/_/g, '-') || '';
 
     if (toolName === 'ask') {
-      contentParts.push(renderAskToolCall(toolCall, index, props));
+      specialSections.push(renderAskToolCall(toolCall, index, props));
     } else if (toolName === 'complete') {
-      contentParts.push(renderCompleteToolCall(toolCall, index, props));
+      specialSections.push(renderCompleteToolCall(toolCall, index, props));
     }
     // Regular tool calls are rendered via ToolCard components in ThreadContent, not here
   });
+
+  // Insert tool calls BEFORE special sections (ASK/COMPLETE)
+  if (toolCallsToRender) {
+    contentParts.push(toolCallsToRender);
+  }
+
+  // Add special sections at the end
+  contentParts.push(...specialSections);
 
   if (contentParts.length === 0) return null;
 

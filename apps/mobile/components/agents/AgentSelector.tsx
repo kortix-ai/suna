@@ -22,6 +22,31 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
+  // All hooks must be called before any conditional returns to follow Rules of Hooks
+  // For non-compact mode, determine if Basic or Advanced mode based on agent model
+  const isBasicMode = React.useMemo(() => {
+    if (!agent?.model) {
+      // Fallback to agent metadata
+      return agent?.metadata?.is_suna_default || false;
+    }
+    // List of basic (free) models
+    const basicModels = ['gpt-4o-mini', 'gpt-4o', 'claude-3-5-sonnet-20241022'];
+    return basicModels.includes(agent.model);
+  }, [agent]);
+
+  const modeText = isBasicMode ? 'Basic' : 'Advanced';
+  const modeImage = React.useMemo(() => {
+    if (isBasicMode) {
+      return isDark 
+        ? require('@/assets/images/Basic-Agent-Dark.png')
+        : require('@/assets/images/Basic-Agent.png');
+    } else {
+      return isDark 
+        ? require('@/assets/images/Advanced-Agent-Dark.png')
+        : require('@/assets/images/Advanced-Agent.png');
+    }
+  }, [isBasicMode, isDark]);
+
   // Show loading until initialization is complete
   // Don't wait for agents.length > 0 in case of errors
   if (isLoading || !hasInitialized) {
@@ -78,34 +103,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
     );
   }
 
-  // For non-compact mode, show as "Basic" or "Advanced" button with mode-specific image
-  // Determine mode based on selected model ID or agent metadata
-  // Basic models: gpt-4o-mini, etc. (models that don't require subscription)
-  // Advanced models: o1, o1-mini, o1-preview, etc. (models that require subscription)
-  const isBasicMode = React.useMemo(() => {
-    // Check agent's model if we have a selected agent
-    if (agent?.model) {
-      // List of basic (free) models
-      const basicModels = ['gpt-4o-mini', 'gpt-4o', 'claude-3-5-sonnet-20241022'];
-      return basicModels.includes(agent.model);
-    }
-    // Fallback to agent metadata
-    return agent?.metadata?.is_suna_default || false;
-  }, [agent]);
-
-  const modeText = isBasicMode ? 'Basic' : 'Advanced';
-  const modeImage = React.useMemo(() => {
-    if (isBasicMode) {
-      return isDark 
-        ? require('@/assets/images/Basic-Agent-Dark.png')
-        : require('@/assets/images/Basic-Agent.png');
-    } else {
-      return isDark 
-        ? require('@/assets/images/Advanced-Agent-Dark.png')
-        : require('@/assets/images/Advanced-Agent.png');
-    }
-  }, [isBasicMode, isDark]);
-
+  // Non-compact mode: show as "Basic" or "Advanced" button with mode-specific image
   return (
     <TouchableOpacity
       onPress={onPress}

@@ -9,6 +9,7 @@ export {
 } from './FileAttachmentRenderer';
 export type { ChatInputRef } from './ChatInput';
 export { StreamingToolCard } from './StreamingToolCard';
+export { ToolCallItem } from './ToolCallItem';
 
 export { ChatInputSection, ChatDrawers, CHAT_INPUT_SECTION_HEIGHT } from './shared';
 export type { ChatInputSectionProps, ChatInputSectionRef, ChatDrawersProps } from './shared';

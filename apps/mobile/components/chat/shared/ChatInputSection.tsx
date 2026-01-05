@@ -158,13 +158,18 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
   isAuthenticated,
   isSendingMessage,
   isTranscribing,
-  containerClassName = "mx-4 mb-3",
+  containerClassName,
   showQuickActions = false,
 }, ref) => {
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const chatInputRef = React.useRef<ChatInputRef>(null);
+
+  // Default container class based on whether quick actions are shown
+  // HomePage (with quick actions): has mb-3 for spacing
+  // ThreadPage (no quick actions): no bottom margin
+  const defaultContainerClassName = showQuickActions ? "mx-4 mb-3" : "mx-4";
 
   // Get keyboard animation progress for smooth padding transitions
   // progress goes from 0 (closed) to 1 (open)
@@ -175,7 +180,9 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
   ? Math.max(insets.bottom, 0)  // iOS: 0px extra, use safe area
   : Math.max(insets.bottom, 32);  // Android: 8px minimum
   const quickActionsPaddingOpened = 8;
-  const nonQuickActionsPaddingClosed = Math.max(insets.bottom, 8);
+  // For ThreadPage (no quick actions): use only OS safe area
+  // For HomePage (with quick actions): maintain original spacing with Math.max(insets.bottom, 8)
+  const nonQuickActionsPaddingClosed = showQuickActions ? Math.max(insets.bottom, 8) : insets.bottom;
   const nonQuickActionsPaddingOpened = 8;
 
   // Animated style for quick actions bar bottom padding
@@ -257,7 +264,7 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
         )}
 
         {/* Chat Input */}
-        <View className={containerClassName}>
+        <View className={containerClassName || defaultContainerClassName}>
           <ChatInput
             ref={chatInputRef}
             value={value}

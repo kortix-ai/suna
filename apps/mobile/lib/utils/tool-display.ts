@@ -431,3 +431,75 @@ export function getUserFriendlyToolName(toolName: string): string {
   return TOOL_DISPLAY_NAMES.get(toolName) || toolName;
 }
 
+/**
+ * Get tool display name with correct tense based on completion state
+ * @param toolName - The tool name (e.g., 'execute-command')
+ * @param isComplete - Whether the tool execution is complete
+ * @returns Display name with correct tense (e.g., 'Executing Command' vs 'Executed Command')
+ */
+export function getToolDisplayName(toolName: string, isComplete: boolean): string {
+  const baseName = getUserFriendlyToolName(toolName);
+  
+  if (!isComplete) {
+    // Already in present continuous form, return as is
+    return baseName;
+  }
+  
+  // Convert to past tense for completed actions
+  // Handle common patterns
+  if (baseName.endsWith('ing')) {
+    // Remove 'ing' and add 'ed' with special cases
+    const root = baseName.slice(0, -3);
+    
+    // Special cases that don't follow standard rules
+    if (root === 'Creat') return baseName.replace('Creating', 'Created');
+    if (root === 'Delet') return baseName.replace('Deleting', 'Deleted');
+    if (root === 'Updat') return baseName.replace('Updating', 'Updated');
+    if (root === 'Execut') return baseName.replace('Executing', 'Executed');
+    if (root === 'Generat') return baseName.replace('Generating', 'Generated');
+    if (root === 'Navigat') return baseName.replace('Navigating', 'Navigated');
+    if (root === 'Terminat') return baseName.replace('Terminating', 'Terminated');
+    if (root === 'Call') return baseName.replace('Calling', 'Called');
+    if (root === 'Build') return baseName.replace('Building', 'Built');
+    if (root === 'Load') return baseName.replace('Loading', 'Loaded');
+    if (root === 'Upload') return baseName.replace('Uploading', 'Uploaded');
+    if (root === 'List') return baseName.replace('Listing', 'Listed');
+    if (root === 'Read') return baseName.replace('Reading', 'Read');
+    if (root === 'Writ') return baseName.replace('Writing', 'Written');
+    if (root === 'Rewr it') return baseName.replace('Rewriting', 'Rewritten');
+    if (root === 'Edit') return baseName.replace('Editing', 'Edited');
+    if (root === 'Search') return baseName.replace('Searching', 'Searched');
+    if (root === 'Crawl') return baseName.replace('Crawling', 'Crawled');
+    if (root === 'Scrap') return baseName.replace('Scraping', 'Scraped');
+    if (root === 'Check') return baseName.replace('Checking', 'Checked');
+    if (root === 'Get') return baseName.replace('Getting', 'Got');
+    if (root === 'Test') return baseName.replace('Testing', 'Tested');
+    if (root === 'Monitor') return baseName.replace('Monitoring', 'Monitored');
+    if (root === 'Mak') return baseName.replace('Making', 'Made');
+    if (root === 'End') return baseName.replace('Ending', 'Ended');
+    if (root === 'Perform') return baseName.replace('Performing', 'Performed');
+    if (root === 'Extract') return baseName.replace('Extracting', 'Extracted');
+    if (root === 'Tak') return baseName.replace('Taking', 'Taken');
+    if (root === 'Discov er') return baseName.replace('Discovering', 'Discovered');
+    if (root === 'Configur') return baseName.replace('Configuring', 'Configured');
+    if (root === 'Add') return baseName.replace('Adding', 'Added');
+    if (root === 'Validat') return baseName.replace('Validating', 'Validated');
+    if (root === 'Format') return baseName.replace('Formatting', 'Formatted');
+    if (root === 'Analyz') return baseName.replace('Analyzing', 'Analyzed');
+    if (root === 'Visualiz') return baseName.replace('Visualizing', 'Visualized');
+    if (root === 'Expos') return baseName.replace('Exposing', 'Exposed');
+    if (root === 'Find') return baseName.replace('Finding', 'Found');
+    if (root === 'Complet') return baseName.replace('Completing', 'Completed');
+    if (root === 'Clear') return baseName.replace('Clearing', 'Cleared');
+    if (root === 'View') return baseName.replace('Viewing', 'Viewed');
+    if (root === 'Wait') return baseName.replace('Waiting', 'Waited');
+    
+    // Default: add 'ed'
+    return root + 'ed';
+  }
+  
+  // Already in past tense or doesn't follow -ing pattern
+  return baseName;
+}
+
+

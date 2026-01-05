@@ -22,7 +22,7 @@ import {
   formatToolOutput,
   HIDE_STREAMING_XML_TAGS,
 } from '@/lib/utils/tool-parser';
-import { getToolIcon, getUserFriendlyToolName } from '@/lib/utils/tool-display';
+import { getToolIcon, getUserFriendlyToolName, getToolDisplayName } from '@/lib/utils/tool-display';
 import {
   extractTextFromPartialJson,
   extractTextFromArguments,
@@ -36,7 +36,15 @@ import { autoLinkUrls } from '@/lib/utils/url-autolink';
 import { AgentIdentifier } from '@/components/agents';
 import { FileAttachmentsGrid } from './FileAttachmentRenderer';
 import { AgentLoader } from './AgentLoader';
-import { CircleDashed, CheckCircle2, AlertCircle, Info } from 'lucide-react-native';
+import { ToolCallItem } from './ToolCallItem';
+import { Loader2, Check, CheckCircle2, AlertCircle, Info, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { StreamingToolCard } from './StreamingToolCard';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { renderAssistantMessage } from './assistant-message-renderer';
@@ -425,6 +433,126 @@ const MarkdownContent = React.memo(function MarkdownContent({
   );
 });
 
+/**
+ * CompletedActionItem - A single completed action with tool-specific icon
+ * Uses ToolCallItem component matching Figma design
+ */
+const CompletedActionItem = React.memo(function CompletedActionItem({
+  message,
+  onPress,
+}: {
+  message: UnifiedMessage;
+  onPress?: () => void;
+}) {
+  const parsed = parseToolMessage(message);
+  const toolName = parsed?.toolName || 'unknown';
+
+  return (
+    <ToolCallItem
+      toolName={toolName}
+      isComplete={true}
+      isProcessing={false}
+      onPress={onPress}
+    />
+  );
+});
+
+/**
+ * CollapsibleToolActions - Groups multiple completed tool actions into a collapsible section
+ * Matches Figma design with count, "Tool calls" text, and chevron icons
+ */
+const CollapsibleToolActions = React.memo(function CollapsibleToolActions({
+  tools,
+  onToolPress,
+}: {
+  tools: UnifiedMessage[];
+  onToolPress?: (tool: UnifiedMessage) => void;
+}) {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const [isExpanded, setIsExpanded] = React.useState(false);
+  const chevronRotation = useSharedValue(0);
+  const scale = useSharedValue(1);
+
+  const toggleExpanded = React.useCallback(() => {
+    setIsExpanded((prev) => !prev);
+    chevronRotation.value = withTiming(isExpanded ? 0 : 180, { duration: 200 });
+  }, [isExpanded, chevronRotation]);
+
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${chevronRotation.value}deg` }],
+  }));
+
+  const scaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const toolCount = tools.length;
+  const toolText = toolCount === 1 ? 'Tool call' : 'Tool calls';
+
+  return (
+    <View className="py-2">
+      {/* Collapsed/Expanded Header */}
+      <Animated.View style={scaleStyle}>
+        <Pressable
+          onPress={toggleExpanded}
+          onPressIn={() => {
+            scale.value = withTiming(0.97, { duration: 100 });
+          }}
+          onPressOut={() => {
+            scale.value = withTiming(1, { duration: 100 });
+          }}
+          style={{
+            backgroundColor: isDark 
+              ? 'rgba(64, 64, 64, 0.4)'
+              : 'rgba(229, 229, 229, 0.4)',
+            borderRadius: 16,
+            paddingVertical: 12,
+            paddingHorizontal: 12,
+          }}
+          className="flex-row items-center"
+          hitSlop={8}
+        >
+          <Text 
+            className="text-base font-roobert-medium text-neutral-900 dark:text-neutral-50 text-center min-w-[20px]"
+            style={{ opacity: 0.6 }}
+          >
+            {toolCount}
+          </Text>
+          <Text 
+            className="flex-1 text-base font-roobert-medium text-neutral-900 dark:text-neutral-50 ml-2"
+            style={{ opacity: 0.6 }}
+          >
+            {toolText}
+          </Text>
+          <Animated.View style={chevronStyle}>
+            <Icon
+              as={ChevronDown}
+              size={20}
+              className="text-neutral-900 dark:text-neutral-50"
+              strokeWidth={2}
+            />
+          </Animated.View>
+        </Pressable>
+      </Animated.View>
+
+      {/* Expanded Actions List */}
+      {isExpanded && (
+        <View className="mt-2 gap-2">
+          {tools.map((tool, idx) => (
+            <CompletedActionItem
+              key={tool.message_id || `tool-${idx}`}
+              message={tool}
+              onPress={() => onToolPress?.(tool)}
+            />
+          ))}
+        </View>
+      )}
+    </View>
+  );
+});
+
+// Legacy ToolCard kept for compatibility but simplified
 const ToolCard = React.memo(function ToolCard({
   message,
   isLoading = false,
@@ -436,8 +564,6 @@ const ToolCard = React.memo(function ToolCard({
   toolCall?: ParsedContent;
   onPress?: () => void;
 }) {
-  const { colorScheme } = useColorScheme();
-
   const completedData = useMemo(() => {
     if (!message || isLoading) return null;
 
@@ -468,24 +594,24 @@ const ToolCard = React.memo(function ToolCard({
     return { toolName, displayName };
   }, [isLoading, toolCall]);
 
-  const toolName = isLoading ? loadingData?.toolName : completedData?.toolName;
   const displayName = isLoading ? loadingData?.displayName : completedData?.displayName;
-  const IconComponent = toolName ? getToolIcon(toolName) : CircleDashed;
 
+  // Simplified: show just label with check or loader
   if (isLoading) {
     return (
-      <Pressable
-        onPress={onPress}
-        disabled={!onPress}
-        className="flex-row items-center gap-3 rounded-3xl border border-border bg-card p-3">
-        <View className="h-8 w-8 items-center justify-center rounded-xl border border-border bg-background">
-          <Icon as={CircleDashed} size={16} className="animate-spin text-primary" />
-        </View>
-        <View className="flex-1">
-          <Text className="mb-0.5 font-roobert-medium text-sm text-foreground">{displayName}</Text>
-          <Text className="text-xs text-muted-foreground">Executing...</Text>
-        </View>
-      </Pressable>
+      <View className="flex-row items-center gap-2 py-4">
+        <Animated.View className="w-5 h-5 items-center justify-center">
+          <Icon
+            as={Loader2}
+            size={20}
+            className="text-neutral-500 dark:text-neutral-400 animate-spin"
+            strokeWidth={2}
+          />
+        </Animated.View>
+        <Text className="text-sm font-roobert text-neutral-500 dark:text-neutral-400">
+          {displayName}
+        </Text>
+      </View>
     );
   }
 
@@ -495,23 +621,19 @@ const ToolCard = React.memo(function ToolCard({
     <Pressable
       onPress={onPress}
       disabled={!onPress}
-      className="flex-row items-center gap-3 rounded-3xl border border-border bg-card p-3">
-      <View
-        className={`h-8 w-8 items-center justify-center rounded-xl border border-border ${isError ? 'bg-destructive/10' : 'bg-background'}`}>
+      className="flex-row items-center gap-2 py-2"
+    >
+      <View className="w-5 h-5 items-center justify-center">
         <Icon
-          as={isError ? AlertCircle : IconComponent}
-          size={16}
-          className={isError ? 'text-destructive' : 'text-primary'}
+          as={isError ? AlertCircle : Check}
+          size={20}
+          className={isError ? 'text-red-500' : 'text-neutral-500 dark:text-neutral-400'}
+          strokeWidth={2}
         />
       </View>
-      <View className="flex-1">
-        <Text className="mb-0.5 font-roobert-medium text-sm text-foreground">{displayName}</Text>
-      </View>
-      <Icon
-        as={isError ? AlertCircle : CheckCircle2}
-        size={16}
-        className={isError ? 'text-destructive' : 'text-primary'}
-      />
+      <Text className={`text-sm font-roobert ${isError ? 'text-red-500' : 'text-neutral-500 dark:text-neutral-400'}`}>
+        {displayName}
+      </Text>
     </Pressable>
   );
 });
@@ -536,119 +658,18 @@ const isStreamableToolMobile = (toolName: string): boolean => {
 const StreamingToolCallIndicator = React.memo(function StreamingToolCallIndicator({
   toolCall,
   toolName,
-  showExpanded = false,
 }: {
   toolCall: { function_name?: string; arguments?: Record<string, any> | string } | null;
   toolName: string;
   showExpanded?: boolean;
 }) {
-  const scrollViewRef = React.useRef<any>(null);
-  
-  // Extract display parameter and streaming content
-  const { paramDisplay, streamingContent } = useMemo(() => {
-    if (!toolCall?.arguments) return { paramDisplay: '', streamingContent: '' };
-    let args: Record<string, any> = {};
-    if (typeof toolCall.arguments === 'string') {
-      try {
-        args = JSON.parse(toolCall.arguments);
-      } catch {
-        // For partial JSON, just use the raw string as content
-        return { 
-          paramDisplay: '', 
-          streamingContent: toolCall.arguments 
-        };
-      }
-    } else {
-      args = toolCall.arguments;
-    }
-    
-    const param = args.file_path || args.path || args.command || args.query || args.url || args.slide_number?.toString() || '';
-    
-    // Extract streamable content based on tool type
-    let content = '';
-    const displayName = getUserFriendlyToolName(toolName);
-    
-    if (MOBILE_STREAMABLE_TOOLS.FILE_OPERATIONS.has(displayName)) {
-      content = args.file_contents || args.code_edit || args.content || '';
-    } else if (MOBILE_STREAMABLE_TOOLS.COMMAND_TOOLS.has(displayName)) {
-      content = args.command || '';
-    } else if (displayName === 'Creating Presentation' || displayName === 'Creating Presentation Outline') {
-      // For presentations, show slide content
-      content = args.content || args.title || args.slide_content || JSON.stringify(args, null, 2);
-    } else {
-      // For other tools, show JSON representation
-      content = Object.keys(args).length > 0 ? JSON.stringify(args, null, 2) : '';
-    }
-    
-    return { paramDisplay: param, streamingContent: content };
-  }, [toolCall, toolName]);
-
-  const displayName = toolName ? getUserFriendlyToolName(toolName) : 'Using Tool';
-  const IconComponent = toolName ? getToolIcon(toolName) : CircleDashed;
-  const shouldShowContent = showExpanded && isStreamableToolMobile(displayName) && streamingContent.length > 0;
-
-  // Auto-scroll to bottom when content changes
-  React.useEffect(() => {
-    if (scrollViewRef.current && shouldShowContent) {
-      scrollViewRef.current.scrollToEnd?.({ animated: false });
-    }
-  }, [streamingContent, shouldShowContent]);
-
-  // Expanded card with streaming content
-  if (shouldShowContent) {
-    return (
-      <View className="rounded-3xl border border-border bg-card overflow-hidden">
-        {/* Header */}
-        <View className="flex-row items-center gap-3 p-3 border-b border-border">
-          <View className="h-8 w-8 items-center justify-center rounded-xl border border-border bg-background">
-            <Icon as={IconComponent} size={16} className="text-primary" />
-          </View>
-          <View className="flex-1">
-            <Text className="mb-0.5 font-roobert-medium text-sm text-foreground">{displayName}</Text>
-            {paramDisplay && (
-              <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-                {paramDisplay}
-              </Text>
-            )}
-          </View>
-          <Icon as={CircleDashed} size={16} className="animate-spin text-primary" />
-        </View>
-        
-        {/* Streaming content */}
-        <ScrollView
-          ref={scrollViewRef}
-          style={{ maxHeight: 200 }}
-          showsVerticalScrollIndicator={true}
-        >
-          <View className="p-3">
-            <Text
-              className="text-xs text-foreground font-roobert-mono"
-              style={{ fontFamily: 'monospace' }}
-            >
-              {streamingContent}
-            </Text>
-          </View>
-        </ScrollView>
-      </View>
-    );
-  }
-
-  // Simple indicator - matches finished ToolCard style exactly
+  // Use ToolCallItem component for consistency
   return (
-    <View className="flex-row items-center gap-3 rounded-3xl border border-border bg-card p-3">
-      <View className="h-8 w-8 items-center justify-center rounded-xl border border-border bg-background">
-        <Icon as={IconComponent} size={16} className="text-primary" />
-      </View>
-      <View className="flex-1">
-        <Text className="mb-0.5 font-roobert-medium text-sm text-foreground">{displayName}</Text>
-        {paramDisplay && (
-          <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-            {paramDisplay}
-          </Text>
-        )}
-      </View>
-      <Icon as={CircleDashed} size={16} className="animate-spin text-primary" />
-    </View>
+    <ToolCallItem
+      toolName={toolName}
+      isComplete={false}
+      isProcessing={true}
+    />
   );
 });
 
@@ -954,7 +975,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
     );
 
     return (
-      <View className="flex-1 pt-4" pointerEvents="box-none">
+      <View className="flex-1 pt-2" pointerEvents="box-none">
         {groupedMessages.map((group, groupIndex) => {
           if (group.type === 'user') {
             const message = group.messages[0];
@@ -1001,7 +1022,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
             const cleanContent = messageContent.replace(/\[Uploaded File: .*?\]/g, '').trim();
 
             return (
-              <View key={group.key} className="mb-6">
+              <View key={group.key} className="mt-8 mb-8">
                 {renderStandaloneAttachments(
                   attachments as string[],
                   sandboxId,
@@ -1013,10 +1034,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                 {cleanContent && (
                   <View className="flex-row justify-end">
                     <View
-                      className="max-w-[85%] border border-border"
+                      className="max-w-[280px]"
                       style={{
-                        borderRadius: 24,
-                        borderBottomRightRadius: 8,
+                        borderRadius: 16,
                       }}>
                       {ContextMenu ? (
                         <ContextMenu
@@ -1027,23 +1047,24 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                             }
                           }}
                           dropdownMenuMode={false}
-                          borderTopLeftRadius={24}
-                          borderTopRightRadius={24}
-                          borderBottomLeftRadius={24}
-                          borderBottomRightRadius={8}>
+                          borderTopLeftRadius={16}
+                          borderTopRightRadius={16}
+                          borderBottomLeftRadius={16}
+                          borderBottomRightRadius={16}>
                           <View
-                            className="bg-card px-4 py-3"
+                            className="px-4 py-3"
                             style={{
-                              borderRadius: 24,
-                              borderBottomRightRadius: 8,
+                              borderRadius: 16,
                               overflow: 'hidden',
+                              backgroundColor: isDark ? 'rgba(64, 64, 64, 0.6)' : 'rgba(229, 229, 229, 0.6)',
                             }}>
                             <RNText
                               selectable
                               style={{
                                 fontSize: 16,
                                 lineHeight: 24,
-                                color: isDark ? '#fafafa' : '#18181b',
+                                fontFamily: 'Roobert-Regular',
+                                color: isDark ? '#fafafa' : '#121215',
                               }}>
                               {cleanContent}
                             </RNText>
@@ -1056,18 +1077,19 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                           }}
                           delayLongPress={500}>
                           <View
-                            className="bg-card px-4 py-3"
+                            className="px-4 py-3"
                             style={{
-                              borderRadius: 24,
-                              borderBottomRightRadius: 8,
+                              borderRadius: 16,
                               overflow: 'hidden',
+                              backgroundColor: isDark ? 'rgba(64, 64, 64, 0.6)' : 'rgba(229, 229, 229, 0.6)',
                             }}>
                             <RNText
                               selectable
                               style={{
                                 fontSize: 16,
                                 lineHeight: 24,
-                                color: isDark ? '#fafafa' : '#18181b',
+                                fontFamily: 'Roobert-Regular',
+                                color: isDark ? '#fafafa' : '#121215',
                               }}>
                               {cleanContent}
                             </RNText>
@@ -1087,13 +1109,39 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
             const assistantMessages = group.messages.filter((m) => m.type === 'assistant');
             const toolResultsMap = toolResultsMaps.get(group.key) || new Map();
 
-            return (
-              <View key={group.key} className="mb-6">
-                <View className="mb-3 flex-row items-center">
-                  <AgentIdentifier agentId={groupAgentId} size={24} showName />
-                </View>
+            // Collect all tools from all messages in this group
+            const allGroupTools: UnifiedMessage[] = [];
+            assistantMessages.forEach((message) => {
+              const linkedTools = toolResultsMap.get(message.message_id || null);
+              if (linkedTools && linkedTools.length > 0) {
+                allGroupTools.push(...linkedTools);
+              }
+            });
 
-                <View className="gap-3">
+            // Render tool calls component to pass to renderAssistantMessage
+            const toolCallsComponent = allGroupTools.length > 0 ? (
+              <View key="action-tools">
+                {allGroupTools.length >= 2 ? (
+                  <CollapsibleToolActions
+                    tools={allGroupTools}
+                    onToolPress={handleToolPressInternal}
+                  />
+                ) : (
+                  allGroupTools.map((toolMsg: UnifiedMessage, toolIdx: number) => (
+                    <CompletedActionItem
+                      key={`tool-${toolMsg.message_id || toolIdx}`}
+                      message={toolMsg}
+                      onPress={() => handleToolPressInternal(toolMsg)}
+                    />
+                  ))
+                )}
+              </View>
+            ) : null;
+
+            return (
+              <View key={group.key}>
+                {/* Agent response content with 16px gap between elements */}
+                <View className="gap-4">
                   {assistantMessages.map((message, msgIndex) => {
                     const msgKey = message.message_id || `submsg-assistant-${msgIndex}`;
 
@@ -1109,14 +1157,13 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                       if (!parsedContent.content) return null;
                     }
 
-                    const linkedTools = toolResultsMap.get(message.message_id || null);
-
                     // Check if this is the latest message (last assistant message in the last group)
                     const isLastGroup = groupIndex === groupedMessages.length - 1;
                     const isLastAssistantMessage = msgIndex === assistantMessages.length - 1;
                     const isLatestMessage = isLastGroup && isLastAssistantMessage;
 
                     // Use metadata-based rendering (new approach)
+                    // Pass tool calls only to the last message in the group
                     const renderedContent = renderAssistantMessage({
                       message,
                       onToolClick: handleToolClick || (() => { }),
@@ -1127,29 +1174,20 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                       threadId: message.thread_id,
                       onPromptFill,
                       isDark, // Pass color scheme from parent
+                      toolCallsToRender: isLastAssistantMessage ? toolCallsComponent : undefined,
+                      toolMessages: isLastAssistantMessage ? allGroupTools : undefined, // Pass tool messages for inline attachments
                     });
 
                     return (
                       <View key={msgKey}>
                         {renderedContent && <View className="gap-2">{renderedContent}</View>}
-
-                        {linkedTools && linkedTools.length > 0 && (
-                          <View className="mt-2 gap-1">
-                            {linkedTools.map((toolMsg: UnifiedMessage, toolIdx: number) => (
-                              <ToolCard
-                                key={`tool-${toolMsg.message_id || toolIdx}`}
-                                message={toolMsg}
-                                onPress={() => handleToolPressInternal(toolMsg)}
-                              />
-                            ))}
-                          </View>
-                        )}
                       </View>
                     );
                   })}
+                </View>
 
-                  {/* Render streaming text content (XML tool calls or regular text) */}
-                  {groupIndex === groupedMessages.length - 1 &&
+                {/* Render streaming text content (XML tool calls or regular text) */}
+                {groupIndex === groupedMessages.length - 1 &&
                     (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') &&
                     streamingTextContent && (
                       <View className="mt-2">
@@ -1346,7 +1384,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                         <AgentLoader />
                       </View>
                     )}
-                </View>
               </View>
             );
           }
@@ -1359,9 +1396,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
           !streamingToolCall &&
           (messages.length === 0 || messages[messages.length - 1].type === 'user') && (
             <View className="mb-6">
-              <View className="mb-3 flex-row items-center">
-                <AgentIdentifier size={24} showName />
-              </View>
               <AgentLoader />
             </View>
           )}

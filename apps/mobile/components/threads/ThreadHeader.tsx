@@ -1,17 +1,16 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { KortixLoader } from '@/components/ui';
 import { useLanguage } from '@/contexts';
 import * as React from 'react';
 import { Pressable, TextInput, View, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import {
-  TextAlignStart,
+  Menu,
   Share2,
   FolderOpen,
   Trash2,
-  MoreHorizontal,
+  MoreVertical,
   X,
   Check,
   type LucideIcon,
@@ -22,7 +21,6 @@ import Animated, {
   withSpring,
   FadeIn,
   FadeOut,
-  SlideInRight,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 
@@ -38,68 +36,44 @@ interface ThreadHeaderProps {
   isLoading?: boolean;
 }
 
-interface ActionPillProps {
+interface ActionButtonProps {
   icon: LucideIcon;
   label: string;
   onPress: () => void;
   destructive?: boolean;
-  delay?: number;
 }
 
-const ActionPill = React.memo(function ActionPill({
+const ActionButton = React.memo(function ActionButton({
   icon,
   label,
   onPress,
   destructive = false,
-  delay = 0,
-}: ActionPillProps) {
+}: ActionButtonProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    scale.value = withSpring(0.92, { damping: 15, stiffness: 400 });
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
 
   const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onPress();
   };
 
-  const bgColor = destructive
-    ? isDark
-      ? 'rgba(239, 68, 68, 0.12)'
-      : 'rgba(239, 68, 68, 0.08)'
-    : isDark
-      ? 'rgba(255, 255, 255, 0.06)'
-      : 'rgba(0, 0, 0, 0.04)';
-
-  const textColor = destructive ? '#ef4444' : isDark ? '#f8f8f8' : '#121215';
-
   return (
-    <Animated.View entering={SlideInRight.delay(delay).duration(200).springify()}>
-      <AnimatedPressable
-        onPress={handlePress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        style={[animatedStyle, { backgroundColor: bgColor }]}
-        className="flex-row items-center gap-2 rounded-full px-3.5 py-2"
-        hitSlop={4}
+    <Pressable
+      onPress={handlePress}
+      className="flex-row items-center gap-3 px-5 py-3 active:bg-neutral-100 dark:active:bg-neutral-800"
+    >
+      <Icon 
+        as={icon} 
+        size={20} 
+        className={destructive ? "text-red-500" : "text-neutral-900 dark:text-neutral-100"} 
+        strokeWidth={2} 
+      />
+      <Text 
+        className={`font-roobert-medium text-base ${destructive ? "text-red-500" : "text-neutral-900 dark:text-neutral-100"}`}
       >
-        <Icon as={icon} size={16} color={textColor} strokeWidth={2} />
-        <Text style={{ color: textColor }} className="font-roobert-medium text-sm">
-          {label}
-        </Text>
-      </AnimatedPressable>
-    </Animated.View>
+        {label}
+      </Text>
+    </Pressable>
   );
 });
 
@@ -123,11 +97,11 @@ export function ThreadHeader({
   const [showActions, setShowActions] = React.useState(false);
   const titleInputRef = React.useRef<TextInput>(null);
 
-  const backScale = useSharedValue(1);
+  const menuScale = useSharedValue(1);
   const moreScale = useSharedValue(1);
 
-  const backAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: backScale.value }],
+  const menuAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: menuScale.value }],
   }));
 
   const moreAnimatedStyle = useAnimatedStyle(() => ({
@@ -200,160 +174,192 @@ export function ThreadHeader({
 
   const displayTitle = threadTitle && threadTitle.trim() 
     ? threadTitle 
-    : '';
+    : t('threadHeader.untitled');
 
   return (
-    <View
-      className="absolute top-0 left-0 right-0 bg-background border-b border-border/20"
-      style={{
-        paddingTop: Math.max(insets.top, 16) + 8,
-        zIndex: 50,
-      }}
-    >
-      {/* Header Content */}
-      <View className="px-4 pb-3 flex-row items-center gap-3">
-        {/* Menu Button */}
-        <AnimatedPressable
-          onPressIn={() => {
-            backScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+    <>
+      {/* Full-screen backdrop - closes menu when tapped outside */}
+      {showActions && (
+        <Pressable
+          className="absolute inset-0"
+          onPress={() => setShowActions(false)}
+          style={{ 
+            position: 'absolute',
+            top: 0, 
+            bottom: 0, 
+            left: 0, 
+            right: 0,
+            zIndex: 49, // Just below the header (which has z-50)
           }}
-          onPressOut={() => {
-            backScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+        />
+      )}
+
+      <View 
+        className="absolute top-0 left-0 right-0 bg-background z-50"
+      >
+        {/* Main Header Bar */}
+        <View
+          className="px-5 flex-row items-center gap-5"
+          style={{
+            paddingTop: insets.top + 16,
+            paddingBottom: 24,
           }}
-          onPress={handleMenuPress}
-          style={backAnimatedStyle}
-          className="w-8 h-8 items-center justify-center rounded-full"
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={t('threadHeader.openMenu')}
         >
-          <Icon
-            as={TextAlignStart}
-            size={20}
-            className="text-foreground"
-            strokeWidth={2}
-          />
-        </AnimatedPressable>
-
-        {/* Title Section */}
-        <View className="flex-1 flex-row items-center">
-          {isEditingTitle ? (
-            <View className="flex-1 flex-row items-center gap-2">
-              <TextInput
-                ref={titleInputRef}
-                value={editedTitle}
-                onChangeText={setEditedTitle}
-                onBlur={handleTitleBlur}
-                onSubmitEditing={handleTitleBlur}
-                className="flex-1 text-xl font-roobert-medium text-foreground tracking-tight"
-                placeholder={t('threadHeader.enterTitle')}
-                placeholderTextColor={isDark ? 'rgba(248,248,248,0.4)' : 'rgba(18,18,21,0.4)'}
-                selectTextOnFocus
-                maxLength={50}
-                returnKeyType="done"
-                blurOnSubmit
-                multiline={false}
-                numberOfLines={1}
-              />
-              <Pressable
-                onPress={handleTitleBlur}
-                className="w-7 h-7 items-center justify-center rounded-full bg-primary/15"
-                hitSlop={8}
-              >
-                <Icon as={Check} size={14} className="text-primary" strokeWidth={3} />
-              </Pressable>
-            </View>
-          ) : (
-            <Pressable
-              onPress={handleTitlePress}
-              className="flex-1"
-              hitSlop={8}
-            >
-              <Text
-                className="text-xl font-roobert-medium text-foreground tracking-tight"
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {displayTitle}
-              </Text>
-            </Pressable>
-          )}
-
-          {(isUpdating || isLoading) && (
-            <View className="ml-2">
-              <KortixLoader size="large" />
-            </View>
-          )}
-        </View>
-
-        {/* More/Close Button */}
-        {!isEditingTitle && (
+          {/* Menu Button (Left Icon) */}
           <AnimatedPressable
             onPressIn={() => {
-              moreScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+              menuScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
             }}
             onPressOut={() => {
-              moreScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+              menuScale.value = withSpring(1, { damping: 15, stiffness: 400 });
             }}
-            onPress={handleMorePress}
-            style={moreAnimatedStyle}
-            className="w-8 h-8 items-center justify-center rounded-full"
+            onPress={handleMenuPress}
+            style={menuAnimatedStyle}
+            className="w-6 h-6 items-center justify-center"
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel={showActions ? t('common.close') : t('threadHeader.threadActions')}
+            accessibilityLabel={t('threadHeader.openMenu')}
           >
             <Icon
-              as={showActions ? X : MoreHorizontal}
-              size={20}
-              className="text-foreground"
+              as={Menu}
+              size={24}
+              className="text-neutral-900 dark:text-neutral-100"
               strokeWidth={2}
             />
           </AnimatedPressable>
-        )}
-      </View>
 
-      {/* Expandable Actions Row */}
-      {showActions && (
-        <Animated.View
-          entering={FadeIn.duration(150)}
-          exiting={FadeOut.duration(100)}
-          className="px-4 pb-3"
-        >
-          <View className="flex-row items-center gap-2 flex-wrap">
-            {onShare && (
-              <ActionPill
-                icon={Share2}
-                label={t('threadActions.share')}
-                onPress={() => {
-                  setShowActions(false);
-                  onShare();
-                }}
-                delay={0}
-              />
-            )}
-            {onFiles && (
-              <ActionPill
-                icon={FolderOpen}
-                label={t('threadActions.files')}
-                onPress={() => {
-                  setShowActions(false);
-                  onFiles();
-                }}
-                delay={40}
-              />
-            )}
-            {onDelete && (
-              <ActionPill
-                icon={Trash2}
-                label={t('threadActions.delete')}
-                onPress={handleDelete}
-                destructive
-                delay={80}
-              />
+          {/* Title Section (Center) */}
+          <View className="flex-1">
+            {isEditingTitle ? (
+              <View className="flex-row items-center gap-2">
+                <TextInput
+                  ref={titleInputRef}
+                  value={editedTitle}
+                  onChangeText={setEditedTitle}
+                  onBlur={handleTitleBlur}
+                  onSubmitEditing={handleTitleBlur}
+                  className="flex-1 text-lg font-roobert-medium text-neutral-900 dark:text-neutral-100"
+                  placeholder={t('threadHeader.enterTitle')}
+                  placeholderTextColor={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'}
+                  selectTextOnFocus
+                  maxLength={100}
+                  returnKeyType="done"
+                  blurOnSubmit
+                  multiline={false}
+                  numberOfLines={1}
+                />
+                <Pressable
+                  onPress={handleTitleBlur}
+                  className="w-6 h-6 items-center justify-center rounded-full bg-primary/15"
+                  hitSlop={8}
+                >
+                  <Icon as={Check} size={14} className="text-primary" strokeWidth={3} />
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                onPress={handleTitlePress}
+                className="flex-1"
+                hitSlop={8}
+              >
+                <Text
+                  className="text-lg font-roobert-medium text-neutral-900 dark:text-neutral-100"
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {displayTitle}
+                </Text>
+              </Pressable>
             )}
           </View>
-        </Animated.View>
-      )}
-    </View>
+
+          {/* More Button (Right Icon) */}
+          {!isEditingTitle && (
+            <AnimatedPressable
+              onPressIn={() => {
+                moreScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+              }}
+              onPressOut={() => {
+                moreScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+              }}
+              onPress={handleMorePress}
+              style={moreAnimatedStyle}
+              className="w-6 h-6 items-center justify-center"
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={showActions ? t('common.close') : t('threadHeader.threadActions')}
+            >
+              <Icon
+                as={showActions ? X : MoreVertical}
+                size={24}
+                className="text-neutral-900 dark:text-neutral-100"
+                strokeWidth={2}
+              />
+            </AnimatedPressable>
+          )}
+        </View>
+
+        {/* Dropdown Actions Menu - Right Aligned */}
+        {showActions && (
+    <Animated.View
+      entering={FadeIn.duration(200)}
+      exiting={FadeOut.duration(150)}
+      className="absolute right-4"
+      style={{
+        top: insets.top + 24 + 24 + 12, // paddingTop + bottom padding + gap
+        width: 144,
+        zIndex: 51, // Above both backdrop and header
+
+        // iOS Shadow
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: isDark ? 0.4 : 0.15,
+        shadowRadius: 12,
+
+        // Android Shadow
+        elevation: 8,
+
+        // Required for iOS shadow
+        backgroundColor: isDark ? '#262626' : '#FFFFFF',
+        borderRadius: 16,
+      }}
+    >
+      {/* Inner container clips content but NOT shadow */}
+      <View className="rounded-2xl overflow-hidden py-2 bg-background dark:bg-neutral-800">
+        {onShare && (
+          <ActionButton
+            icon={Share2}
+            label={t('threadActions.share')}
+            onPress={() => {
+              setShowActions(false);
+              onShare();
+            }}
+          />
+        )}
+
+        {onFiles && (
+          <ActionButton
+            icon={FolderOpen}
+            label={t('threadActions.files')}
+            onPress={() => {
+              setShowActions(false);
+              onFiles();
+            }}
+          />
+        )}
+
+        {onDelete && (
+          <ActionButton
+            icon={Trash2}
+            label={t('threadActions.delete')}
+            onPress={handleDelete}
+            destructive
+          />
+        )}
+      </View>
+    </Animated.View>
+  )}
+      </View>
+    </>
   );
 }

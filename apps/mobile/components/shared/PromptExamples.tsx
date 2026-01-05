@@ -3,14 +3,14 @@
  * 
  * A reusable component for displaying prompt suggestions/follow-ups.
  * Used by ASK tool, COMPLETE tool, and inline message rendering.
- * Matches the frontend design: minimal list with hover states.
+ * Matches the frontend design: clean list with dividers and press states.
  */
 
 import React from 'react';
 import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { ArrowUpRight } from 'lucide-react-native';
+import { ChevronRight } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Animated, { 
   useAnimatedStyle, 
@@ -96,20 +96,20 @@ const PromptItem = React.memo(function PromptItem({
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       onPress={handlePress}
-      className="rounded-lg active:bg-accent/50"
+      className="active:opacity-70"
     >
-      <View className="flex-row items-center justify-between gap-3 py-2.5">
+      <View className="flex-row items-center justify-between gap-4 py-4">
         <Text 
-          className="text-sm font-roobert text-foreground/70 flex-1 leading-relaxed"
+          className="text-sm font-roobert-medium text-neutral-900 dark:text-neutral-50 flex-1"
           numberOfLines={3}
         >
           {prompt.text}
         </Text>
         <Animated.View style={iconAnimatedStyle}>
           <Icon 
-            as={ArrowUpRight} 
-            size={14} 
-            className="text-muted-foreground/40 flex-shrink-0" 
+            as={ChevronRight} 
+            size={20} 
+            className="text-neutral-900 dark:text-neutral-50 opacity-70 flex-shrink-0" 
           />
         </Animated.View>
       </View>
@@ -121,8 +121,8 @@ const PromptItem = React.memo(function PromptItem({
  * PromptExamples - Displays a list of clickable prompt suggestions
  * 
  * Matches frontend design:
- * - Minimal list style with subtle hover states
- * - ArrowUpRight icon that animates on interaction
+ * - Clean list style with dividers between items
+ * - ChevronRight icon that animates on interaction
  * - Optional title above the prompts
  */
 export function PromptExamples({
@@ -150,18 +150,22 @@ export function PromptExamples({
   return (
     <View className={className}>
       {showTitle && (
-        <Text className="text-xs font-roobert text-muted-foreground/60 mb-2">
+        <Text className="text-base font-roobert-medium text-neutral-900 dark:text-neutral-50 opacity-50 mb-2">
           {title}
         </Text>
       )}
-      <View className="gap-1">
+      <View className="overflow-hidden">
         {normalizedPrompts.map((prompt, index) => (
-          <PromptItem
-            key={`prompt-${index}-${prompt.text.substring(0, 20)}`}
-            prompt={prompt}
-            index={index}
-            onPress={() => onPromptClick?.(prompt.text)}
-          />
+          <React.Fragment key={`prompt-${index}-${prompt.text.substring(0, 20)}`}>
+            <PromptItem
+              prompt={prompt}
+              index={index}
+              onPress={() => onPromptClick?.(prompt.text)}
+            />
+            {index < normalizedPrompts.length - 1 && (
+              <View className="h-[1px] bg-neutral-200 dark:bg-neutral-800" />
+            )}
+          </React.Fragment>
         ))}
       </View>
     </View>

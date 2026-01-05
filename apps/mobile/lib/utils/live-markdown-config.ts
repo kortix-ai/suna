@@ -216,6 +216,12 @@ if (__DEV__) {
 
 /**
  * Light mode markdown styles
+ * Typography follows exact Figma specs
+ * H1: 24px SemiBold, line-height 32px
+ * H2: 20px SemiBold, line-height 28px
+ * H3: 18px SemiBold, line-height 28px
+ * P: 16px Regular, line-height 24px
+ * Color: #121215 (kortix-black)
  */
 export const lightMarkdownStyle: MarkdownStyle = {
   syntax: {
@@ -223,61 +229,70 @@ export const lightMarkdownStyle: MarkdownStyle = {
     fontSize: 0.01, // Make syntax characters nearly invisible (collapses width)
   } as any,
   link: {
-    color: '#2563eb', // blue-600
-    get textDecorationLine() { return LINK_UNDERLINE_ENABLED ? 'underline' : 'none'; }, // Dynamic value
+    color: '#121215', // kortix-black
+    get textDecorationLine() { return LINK_UNDERLINE_ENABLED ? 'underline' : 'none'; },
+    fontWeight: '500',
   } as any,
   h1: {
-    fontSize: 26,
-    get marginLeft() { return HEADING_MARGIN_LEFT; }, // Dynamic value
+    fontSize: 24,
+    fontWeight: '600',
+    lineHeight: 32,
+    color: '#121215',
+    get marginLeft() { return HEADING_MARGIN_LEFT; },
     paddingLeft: 0,
-  } as any, // Cast to any because we patched the library to add these fields
+  } as any,
   emoji: {
     fontSize: 20,
     fontFamily: FONT_FAMILY_EMOJI,
   },
   blockquote: {
-    borderColor: '#71717a', // zinc-500
+    borderColor: '#a3a3a3',
     borderWidth: 4,
     marginLeft: 6,
-    paddingLeft: 6,
+    paddingLeft: 6
   },
   code: {
     fontFamily: FONT_FAMILY_MONOSPACE,
     fontSize: 14,
-    color: '#dc2626', // red-600
-    backgroundColor: '#f4f4f5', // zinc-100
+    color: '#121215',
+    backgroundColor: '#f5f5f5',
   },
   pre: {
     fontFamily: FONT_FAMILY_MONOSPACE,
     fontSize: 14,
-    color: '#18181b', // zinc-900
-    backgroundColor: '#f4f4f5', // zinc-100
+    color: '#121215',
+    backgroundColor: '#f5f5f5',
   },
 };
 
 /**
  * Dark mode markdown styles
+ * Typography follows exact Figma specs (inverted for dark mode)
  */
 export const darkMarkdownStyle: MarkdownStyle = {
   syntax: {
     color: 'transparent',
-    fontSize: 0.01, // Make syntax characters nearly invisible (collapses width)
+    fontSize: 0.01,
   } as any,
   link: {
-    color: '#3b82f6', // blue-500
-    get textDecorationLine() { return LINK_UNDERLINE_ENABLED ? 'underline' : 'none'; }, // Dynamic value
+    color: '#fafafa',
+    get textDecorationLine() { return LINK_UNDERLINE_ENABLED ? 'underline' : 'none'; },
+    fontWeight: '500',
   } as any,
   h1: {
-    fontSize: 26,
-    get marginLeft() { return HEADING_MARGIN_LEFT; }, // Dynamic value
+    fontSize: 24,
+    fontWeight: '600',
+    lineHeight: 32,
+    color: '#fafafa',
+    get marginLeft() { return HEADING_MARGIN_LEFT; },
     paddingLeft: 0,
-  } as any, // Cast to any because we patched the library to add these fields
+  } as any,
   emoji: {
     fontSize: 20,
     fontFamily: FONT_FAMILY_EMOJI,
   },
   blockquote: {
-    borderColor: '#a1a1aa', // zinc-400
+    borderColor: '#737373',
     borderWidth: 4,
     marginLeft: 6,
     paddingLeft: 6,
@@ -285,14 +300,14 @@ export const darkMarkdownStyle: MarkdownStyle = {
   code: {
     fontFamily: FONT_FAMILY_MONOSPACE,
     fontSize: 14,
-    color: '#fca5a5', // red-300
-    backgroundColor: '#27272a', // zinc-800
+    color: '#fafafa',
+    backgroundColor: '#262626',
   },
   pre: {
     fontFamily: FONT_FAMILY_MONOSPACE,
     fontSize: 14,
-    color: '#fafafa', // zinc-50
-    backgroundColor: '#27272a', // zinc-800
+    color: '#fafafa',
+    backgroundColor: '#262626',
   },
 };
 

@@ -333,7 +333,7 @@ async def create_thread_in_project(
             thread_limit_check = await check_thread_limit(client, account_id)
             if not thread_limit_check['can_create']:
                 error_detail = {
-                    "message": f"Maximum of {thread_limit_check['limit']} threads allowed for your current plan. You have {thread_limit_check['current_count']} threads.",
+                    "message": f"You've reached your plan's limit of {thread_limit_check['limit']} chats. You currently have {thread_limit_check['current_count']} chats. Please delete some old chats or upgrade your plan to create new ones.",
                     "current_count": thread_limit_check['current_count'],
                     "limit": thread_limit_check['limit'],
                     "tier_name": thread_limit_check['tier_name'],
@@ -585,7 +585,7 @@ async def create_thread(
             thread_limit_check = await check_thread_limit(client, account_id)
             if not thread_limit_check['can_create']:
                 error_detail = {
-                    "message": f"Maximum of {thread_limit_check['limit']} threads allowed for your current plan. You have {thread_limit_check['current_count']} threads.",
+                    "message": f"You've reached your plan's limit of {thread_limit_check['limit']} chats. You currently have {thread_limit_check['current_count']} chats. Please delete some old chats or upgrade your plan to create new ones.",
                     "current_count": thread_limit_check['current_count'],
                     "limit": thread_limit_check['limit'],
                     "tier_name": thread_limit_check['tier_name'],

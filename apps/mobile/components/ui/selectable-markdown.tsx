@@ -33,10 +33,10 @@ LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into 
 
 /**
  * LINE HEIGHT CONFIGURATION
- * Adjust these values to tune text spacing and eliminate extra bottom space
+ * Figma specs: 16px font, 24px line-height for paragraphs
  */
-const MARKDOWN_LINE_HEIGHT = 26; // Main line height for readability (increased from 20)
-const MARKDOWN_FONT_SIZE = 16;
+const MARKDOWN_LINE_HEIGHT = 24; // Matches Figma: line-height 24px
+const MARKDOWN_FONT_SIZE = 16; // Matches Figma: 16px
 
 /**
  * HEIGHT BUFFER ADJUSTMENT
@@ -56,6 +56,16 @@ export function setMarkdownHeightBuffer(buffer: number) {
     `[SelectableMarkdown] Height buffer set to ${buffer}px. ` +
     `Press 'r' in Metro to reload and see changes.`
   );
+}
+
+/**
+ * Convert markdown list markers (- or *) to actual bullet characters
+ * This preprocesses the text before rendering to show proper bullets
+ */
+function convertListMarkersToBullets(text: string): string {
+  // Match lines starting with - or * followed by space (unordered list items)
+  // Handles indentation for nested lists
+  return text.replace(/^(\s*)([-*])\s+/gm, '$1•  ');
 }
 
 export function getMarkdownHeightBuffer() {
@@ -253,14 +263,16 @@ function splitIntoBlocks(
 
 /**
  * Simple horizontal separator
+ * 32px gap above, 24px below to compensate for heading line-height
  */
 function Separator({ isDark }: { isDark: boolean }) {
   return (
     <View
       style={{
         height: 1,
-        backgroundColor: isDark ? '#3f3f46' : '#e4e4e7',
-        marginVertical: 12, // Consistent with code blocks and tables
+        backgroundColor: isDark ? 'rgba(250, 250, 250, 0.15)' : 'rgba(18, 18, 21, 0.1)', // subtle divider
+        marginTop: 32,    // 32px above
+        marginBottom: 24, // 24px below
       }}
     />
   );
@@ -290,12 +302,10 @@ function MarkdownWithLinkHandling({
   text,
   isDark,
   style,
-  needsSpacing,
 }: {
   text: string;
   isDark: boolean;
   style?: TextStyle;
-  needsSpacing?: boolean;
 }) {
   const blocks = useMemo(() => splitIntoBlocks(text), [text]);
 
@@ -306,7 +316,7 @@ function MarkdownWithLinkHandling({
     const maxHeight = calculateTextHeight(text);
 
     return (
-      <View style={[needsSpacing && styles.partSpacing, styles.textWrapper]} pointerEvents="box-none">
+      <View style={styles.textWrapper} pointerEvents="box-none">
         <View 
           style={[styles.textWrapperInner, { maxHeight }]} 
           pointerEvents={Platform.OS === 'android' ? 'none' : 'box-none'}
@@ -333,7 +343,7 @@ function MarkdownWithLinkHandling({
 
   // Render blocks with separators
   return (
-    <View style={needsSpacing && styles.partSpacing}>
+    <View>
       {blocks.map((block, idx) => {
         if (!block.content.trim() && block.type !== 'separator') return null;
 
@@ -386,10 +396,11 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
   const { colorScheme } = useColorScheme();
   const isDark = isDarkProp ?? colorScheme === 'dark';
 
-  // Ensure children is a string and trim trailing whitespace to prevent extra spacing on iOS
-  const text = typeof children === 'string'
+  // Ensure children is a string, trim trailing whitespace, and convert list markers to bullets
+  const rawText = typeof children === 'string'
     ? children.trimEnd()
     : String(children || '').trimEnd();
+  const text = convertListMarkersToBullets(rawText);
 
   // Split content by code blocks and tables
   const contentParts = useMemo(() => {
@@ -506,11 +517,8 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
     (contentParts.length === 1 && contentParts[0].type !== 'markdown')
   ) {
     return (
-      <View style={styles.partsContainer}>
+      <View style={{ gap: 16 }}>
         {contentParts.map((part, idx) => {
-          // Check if we need spacing (skip if current or previous part is just whitespace)
-          const needsSpacing = idx > 0 && part.content.trim().length > 0;
-
           if (part.type === 'table') {
             return <SimpleTable key={idx} text={part.content} isDark={isDark} />;
           }
@@ -534,7 +542,6 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
               text={part.content}
               isDark={isDark}
               style={style}
-              needsSpacing={needsSpacing}
             />
           );
         })}
@@ -547,12 +554,6 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
 };
 
 const styles = StyleSheet.create({
-  partsContainer: {
-    // No extra spacing - handled by partSpacing on children
-  },
-  partSpacing: {
-    marginTop: 8, // Fixed 8px spacing between all parts
-  },
   textWrapper: {
     // Wrapper to clip extra TextInput spacing
     overflow: Platform.OS === 'android' ? 'visible' : 'hidden',
@@ -579,76 +580,77 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   } as any, // Cast to any because getters aren't in StyleSheet types
   lightText: {
-    color: '#18181b', // zinc-900
+    color: '#121215', // kortix-black per Figma
   },
   darkText: {
-    color: '#fafafa', // zinc-50
+    color: '#fafafa', // white for dark mode
   },
   table: {
-    borderWidth: 1,
-    borderRadius: 24, // 2xl
+    borderWidth: 1.5,
+    borderRadius: 24, // rounded-3xl per Figma
     overflow: 'hidden',
-    marginVertical: 12, // Consistent vertical spacing with code blocks and separators
   },
   tableLight: {
-    borderColor: '#e4e4e7', // zinc-200
+    borderColor: '#e5e5e5', // #e5e5e5 per Figma
     backgroundColor: '#ffffff',
   },
   tableDark: {
-    borderColor: '#3f3f46', // zinc-700
-    backgroundColor: '#27272a', // zinc-800
+    borderColor: '#404040',
+    backgroundColor: '#1a1a1a',
   },
   tableRow: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
+    borderBottomWidth: 1.5,
   },
   tableRowLight: {
-    borderBottomColor: '#e4e4e7', // zinc-200
+    borderBottomColor: '#e5e5e5',
   },
   tableRowDark: {
-    borderBottomColor: '#3f3f46', // zinc-700
+    borderBottomColor: '#404040',
   },
   tableCell: {
     flex: 1,
     padding: 12,
-    borderRightWidth: 1,
+    borderRightWidth: 1.5,
   },
   tableCellLight: {
-    borderRightColor: '#e4e4e7', // zinc-200
+    borderRightColor: '#e5e5e5',
   },
   tableCellDark: {
-    borderRightColor: '#3f3f46', // zinc-700
+    borderRightColor: '#404040',
   },
   tableHeaderCell: {
-    paddingVertical: 10,
+    paddingVertical: 8,
+    height: 40,
   },
   tableHeaderCellLight: {
-    backgroundColor: '#f4f4f5', // zinc-100
+    backgroundColor: '#f5f5f5', // per Figma
   },
   tableHeaderCellDark: {
-    backgroundColor: '#3f3f46', // zinc-700
+    backgroundColor: '#2a2a2a',
   },
   tableCellText: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15, // 15px per Figma
+    lineHeight: 24,
+    fontFamily: 'Roobert-Regular',
   },
   tableHeaderText: {
-    fontWeight: '600',
-    fontSize: 14,
+    fontWeight: '500', // Medium
+    fontSize: 15, // 15px per Figma
+    fontFamily: 'Roobert-Medium',
   },
   codeBlock: {
-    borderRadius: 24, // 2xl
+    borderRadius: 12, // rounded-lg
     borderWidth: 1,
     overflow: 'hidden',
-    marginVertical: 12, // Consistent vertical spacing with tables and separators
   },
   codeBlockLight: {
-    borderColor: '#DCDDDE',
-    backgroundColor: '#DCDDDE80',
+    borderColor: '#e5e5e5', // neutral-200
+    backgroundColor: '#f5f5f5', // neutral-100
   },
   codeBlockDark: {
-    borderColor: '#232324',
-    backgroundColor: '#232324',
+    borderColor: '#404040', // neutral-700
+    backgroundColor: '#262626', // neutral-800
   },
   codeBlockHeader: {
     flexDirection: 'row',
@@ -657,12 +659,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
+    borderBottomColor: '#e5e5e5', // neutral-200 default, overridden per theme
   },
   codeBlockLanguage: {
     fontSize: 12,
     fontWeight: '500',
     textTransform: 'uppercase',
-    opacity: 0.5,
+    color: '#737373', // neutral-500
     letterSpacing: 0.8,
   },
   copyButton: {
@@ -671,10 +674,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   copyButtonLight: {
-    backgroundColor: 'rgba(0,0,0,0.06)',
+    backgroundColor: '#e5e5e5', // neutral-200
   },
   copyButtonDark: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: '#404040', // neutral-700
   },
   copyButtonText: {
     fontSize: 12,
@@ -683,7 +686,7 @@ const styles = StyleSheet.create({
   codeBlockText: {
     fontFamily: 'Menlo, Monaco, Courier New, monospace',
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 24, // leading-relaxed
     padding: 16,
   },
 });
