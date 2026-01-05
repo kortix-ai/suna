@@ -699,14 +699,6 @@
   }
 }
 
-.mesh-loader-orb {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background-size: 300% 300%;
-  animation: mesh-orb-spin 2s linear infinite, mesh-orb-gradient 3s ease infinite;
-}
-
 @keyframes mesh-orb-spin {
   0% {
     transform: rotate(0deg);
@@ -722,5 +714,28 @@
   }
   50% {
     background-position: 100% 50%;
+  }
+}
+
+.animate-shimmer-text {
+  background: linear-gradient(
+    -65deg,
+    var(--muted-foreground) 0%,
+    var(--foreground) 50%,
+    var(--muted-foreground) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer-text 800ms linear infinite;
+}
+
+@keyframes shimmer-text {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: -100% 50%;
   }
 }
