@@ -218,21 +218,26 @@ export function DashboardContent() {
       celebrationTriggeredRef.current = true;
       
       // Track purchase event for GTM/GA4
+      // item_id, item_name match add_to_cart format
+      // value = actual transaction value (after discounts), price = product price
       const checkoutData = getStoredCheckoutData();
       if (checkoutData) {
         trackPurchase({
           transaction_id: sessionId || `txn_${Date.now()}`,
-          value: checkoutData.price,
+          value: checkoutData.value, // Actual transaction value after discounts
           currency: checkoutData.currency,
+          coupon: checkoutData.coupon,
           customer_type: 'new', // Could be enhanced to detect returning customers
           items: [{
-            item_id: checkoutData.tier_key,
-            item_name: checkoutData.tier_name,
+            item_id: checkoutData.item_id,       // e.g., "pro_yearly" - matches add_to_cart
+            item_name: checkoutData.item_name,   // e.g., "Pro Yearly" - matches add_to_cart
+            coupon: checkoutData.coupon,
+            discount: checkoutData.discount,
             item_brand: 'Kortix AI',
             item_category: 'Plans',
             item_list_id: 'plans_listing',
             item_list_name: 'Plans Listing',
-            price: checkoutData.price,
+            price: checkoutData.price, // Product price (before discounts)
             quantity: 1,
           }],
           customer: {
