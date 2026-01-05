@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import datetime
+import time
 from typing import Optional, Tuple
 from core.tools.mcp_tool_wrapper import MCPToolWrapper
 from core.agentpress.tool import SchemaType
@@ -11,73 +12,6 @@ from core.tools.tool_guide_registry import get_minimal_tool_index, get_tool_guid
 from core.utils.logger import logger
 
 class PromptManager:
-    @staticmethod
-    async def build_minimal_prompt(agent_config: Optional[dict], tool_registry=None, mcp_loader=None, user_id: Optional[str] = None, thread_id: Optional[str] = None, client=None) -> Tuple[dict, Optional[dict]]:
-        if agent_config and agent_config.get('system_prompt'):
-            content = agent_config['system_prompt'].strip()
-        else:
-            from core.prompts.core_prompt import get_core_system_prompt
-            content = get_core_system_prompt()
-        
-        content = PromptManager._append_datetime_info(content)
-        
-        content += """
-
-⚠️ BOOTSTRAP MODE - FAST START:
-You are currently in fast-start mode with all core tools preloaded and ready NOW:
-
-✅ Ready immediately (no initialize_tools needed):
-   • Files & Shell: sb_files_tool, sb_shell_tool, sb_git_sync
-   • Search: web_search_tool, image_search_tool
-   • Images: sb_vision_tool (view/analyze), sb_image_edit_tool (generate/edit)
-   • Web: browser_tool (interactive browsing)
-   • Deployment: sb_upload_file_tool, sb_expose_tool
-   • Communication: message_tool, task_list_tool, expand_msg_tool
-
-⏳ Advanced tools available via initialize_tools():
-   • Content: sb_presentation_tool, sb_canvas_tool
-   • Research: people_search_tool, company_search_tool, paper_search_tool
-   • Data: apify_tool, sb_kb_tool
-
-If you need specialized tools, use initialize_tools() to load them.
-If relevant context seems missing, ask a clarifying question.
-
-"""
-        
-        preloaded_guides = PromptManager._get_preloaded_tool_guides()
-        if preloaded_guides:
-            content += preloaded_guides
-        
-        # Get agent_id for fresh config loading
-        agent_id = agent_config.get('agent_id') if agent_config else None
-        
-        content = await PromptManager._append_jit_mcp_info(content, mcp_loader, agent_id, user_id)
-        
-        # Fetch user context (locale, username), memory, and file context in parallel
-        user_context_task = PromptManager._fetch_user_context_data(user_id, client)
-        memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
-        file_task = PromptManager._fetch_file_context(thread_id)
-        
-        user_context_data, memory_data, file_data = await asyncio.gather(
-            user_context_task, memory_task, file_task
-        )
-        
-        if user_context_data:
-            content += user_context_data
-        
-        system_message = {"role": "system", "content": content}
-        
-        context_parts = []
-        if memory_data:
-            context_parts.append(f"[CONTEXT - User Memory]\n{memory_data}\n[END CONTEXT]")
-        if file_data:
-            context_parts.append(f"[CONTEXT - Attached Files]\n{file_data}\n[END CONTEXT]")
-        
-        if context_parts:
-            return system_message, {"role": "user", "content": "\n\n".join(context_parts)}
-        
-        return system_message, None
-    
     @staticmethod
     async def build_system_prompt(model_name: str, agent_config: Optional[dict], 
                                   thread_id: str, 
@@ -89,29 +23,54 @@ If relevant context seems missing, ask a clarifying question.
                                   use_dynamic_tools: bool = True,
                                   mcp_loader=None) -> Tuple[dict, Optional[dict]]:
         
+        build_start = time.time()
+        
         if agent_config and agent_config.get('system_prompt'):
             system_content = agent_config['system_prompt'].strip()
         else:
             from core.prompts.core_prompt import get_core_system_prompt
             system_content = get_core_system_prompt()
         
+        t1 = time.time()
         system_content = PromptManager._build_base_prompt(system_content, use_dynamic_tools)
-        system_content = await PromptManager._append_builder_tools_prompt(system_content, agent_config)
+        logger.debug(f"⏱️ [PROMPT TIMING] _build_base_prompt: {(time.time() - t1) * 1000:.1f}ms")
         
-        kb_task = PromptManager._fetch_knowledge_base(agent_config, client)
-        user_context_task = PromptManager._fetch_user_context_data(user_id, client)
+        t2 = time.time()
+        system_content = await PromptManager._append_builder_tools_prompt(system_content, agent_config)
+        logger.debug(f"⏱️ [PROMPT TIMING] _append_builder_tools_prompt: {(time.time() - t2) * 1000:.1f}ms")
+        
+        # Start parallel fetch tasks
+        kb_task = PromptManager._with_timeout(PromptManager._fetch_knowledge_base(agent_config, client), 2.0, "KB fetch")
+        user_context_task = PromptManager._with_timeout(PromptManager._fetch_user_context_data(user_id, client), 2.0, "User context")
         memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
         file_task = PromptManager._fetch_file_context(thread_id)
         
-        # Get agent_id for fresh config loading
         agent_id = agent_config.get('agent_id') if agent_config else None
         
-        system_content = await PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance, agent_id, user_id)
-        system_content = await PromptManager._append_jit_mcp_info(system_content, mcp_loader, agent_id, user_id)
+        t_mcp = time.time()
+        fresh_mcp_config = None
+        if agent_id and user_id:
+            fresh_mcp_config = await PromptManager._with_timeout(
+                PromptManager._fetch_mcp_config(agent_id, user_id), 2.0, "MCP config"
+            )
+        logger.debug(f"⏱️ [PROMPT TIMING] MCP config fetch: {(time.time() - t_mcp) * 1000:.1f}ms")
+        
+        t3 = time.time()
+        system_content = await PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance, fresh_mcp_config)
+        logger.debug(f"⏱️ [PROMPT TIMING] _append_mcp_tools_info: {(time.time() - t3) * 1000:.1f}ms")
+        
+        t4 = time.time()
+        system_content = await PromptManager._append_jit_mcp_info(system_content, mcp_loader, fresh_mcp_config)
+        logger.debug(f"⏱️ [PROMPT TIMING] _append_jit_mcp_info: {(time.time() - t4) * 1000:.1f}ms")
+        
         system_content = PromptManager._append_xml_tool_calling_instructions(system_content, xml_tool_calling, tool_registry)
         system_content = PromptManager._append_datetime_info(system_content)
         
+        t5 = time.time()
         kb_data, user_context_data, memory_data, file_data = await asyncio.gather(kb_task, user_context_task, memory_task, file_task)
+        logger.debug(f"⏱️ [PROMPT TIMING] parallel fetches (kb/user_context/memory/file): {(time.time() - t5) * 1000:.1f}ms")
+        
+        logger.info(f"⏱️ [PROMPT TIMING] Total build_system_prompt: {(time.time() - build_start) * 1000:.1f}ms")
         
         if kb_data:
             system_content += kb_data
@@ -133,6 +92,27 @@ If relevant context seems missing, ask a clarifying question.
             return system_message, {"role": "user", "content": "\n\n".join(context_parts)}
         
         return system_message, None
+    
+    @staticmethod
+    async def _with_timeout(coro, timeout_s: float, label: str):
+        try:
+            return await asyncio.wait_for(coro, timeout_s)
+        except asyncio.TimeoutError:
+            logger.warning(f"[TIMEOUT] {label} timed out after {timeout_s}s")
+            return None
+        except Exception as e:
+            logger.warning(f"[TIMEOUT] {label} failed: {e}")
+            return None
+    
+    @staticmethod
+    async def _fetch_mcp_config(agent_id: str, user_id: str) -> Optional[dict]:
+        try:
+            from core.versioning.version_service import get_version_service
+            version_service = await get_version_service()
+            return await version_service.get_current_mcp_config(agent_id, user_id)
+        except Exception as e:
+            logger.warning(f"Failed to fetch MCP config: {e}")
+            return None
     
     @staticmethod
     def _build_base_prompt(system_content: str, use_dynamic_tools: bool) -> str:
@@ -211,21 +191,62 @@ If relevant context seems missing, ask a clarifying question.
         if not (agent_config and client and 'agent_id' in agent_config):
             return None
         
+        agent_id = agent_config['agent_id']
+        fetch_start = time.time()
+        
         try:
-            logger.debug(f"Retrieving agent knowledge base context for agent {agent_config['agent_id']}")
+            # Check cache first
+            from core.cache.runtime_cache import get_cached_kb_context, set_cached_kb_context
+            cached = await get_cached_kb_context(agent_id)
+            if cached is not None:  # None = miss, empty string = no entries (cached)
+                elapsed = (time.time() - fetch_start) * 1000
+                logger.debug(f"⏱️ [TIMING] KB fetch: {elapsed:.1f}ms (cache: hit)")
+                if cached:
+                    kb_section = f"""
+
+                === AGENT KNOWLEDGE BASE ===
+                NOTICE: The following is your specialized knowledge base. This information should be considered authoritative for your responses and should take precedence over general knowledge when relevant.
+
+                {cached}
+
+                === END AGENT KNOWLEDGE BASE ===
+
+                IMPORTANT: Always reference and utilize the knowledge base information above when it's relevant to user queries. This knowledge is specific to your role and capabilities."""
+                    return kb_section
+                return None
+            
+            # Quick EXISTS check before expensive RPC
+            logger.debug(f"Checking if agent {agent_id} has knowledge base entries...")
+            exists_result = await client.table('agent_knowledge_entry_assignments') \
+                .select('agent_id', count='exact', head=True) \
+                .eq('agent_id', agent_id).execute()
+            
+            if not exists_result.count or exists_result.count == 0:
+                # Cache empty result to avoid future EXISTS checks
+                await set_cached_kb_context(agent_id, "")
+                elapsed = (time.time() - fetch_start) * 1000
+                logger.debug(f"⏱️ [TIMING] KB fetch: {elapsed:.1f}ms (cache: miss, no entries)")
+                return None
+            
+            # Only call RPC if entries exist
+            logger.debug(f"Retrieving agent knowledge base context for agent {agent_id}")
             kb_result = await client.rpc('get_agent_knowledge_base_context', {
-                'p_agent_id': agent_config['agent_id']
+                'p_agent_id': agent_id
             }).execute()
             
-            if kb_result and kb_result.data and kb_result.data.strip():
-                logger.debug(f"Found agent knowledge base context, adding to system prompt (length: {len(kb_result.data)} chars)")
+            kb_data = kb_result.data if kb_result and kb_result.data else None
+            if kb_data and kb_data.strip():
+                # Cache the result
+                await set_cached_kb_context(agent_id, kb_data)
+                elapsed = (time.time() - fetch_start) * 1000
+                logger.debug(f"⏱️ [TIMING] KB fetch: {elapsed:.1f}ms (cache: miss, found {len(kb_data)} chars)")
                 
                 kb_section = f"""
 
                 === AGENT KNOWLEDGE BASE ===
                 NOTICE: The following is your specialized knowledge base. This information should be considered authoritative for your responses and should take precedence over general knowledge when relevant.
 
-                {kb_result.data}
+                {kb_data}
 
                 === END AGENT KNOWLEDGE BASE ===
 
@@ -233,32 +254,26 @@ If relevant context seems missing, ask a clarifying question.
                 
                 return kb_section
             else:
-                logger.debug("No knowledge base context found for this agent")
+                # Cache empty result
+                await set_cached_kb_context(agent_id, "")
+                elapsed = (time.time() - fetch_start) * 1000
+                logger.debug(f"⏱️ [TIMING] KB fetch: {elapsed:.1f}ms (cache: miss, no context)")
                 return None
         except Exception as e:
+            elapsed = (time.time() - fetch_start) * 1000
+            logger.error(f"⏱️ [TIMING] KB fetch: {elapsed:.1f}ms (error: {e})")
             logger.error(f"Error retrieving knowledge base context for agent {agent_config.get('agent_id', 'unknown')}: {e}")
             return None
     
     @staticmethod
     async def _append_mcp_tools_info(system_content: str, agent_config: Optional[dict], mcp_wrapper_instance: Optional[MCPToolWrapper], 
-                                     agent_id: Optional[str] = None, user_id: Optional[str] = None) -> str:
-        fresh_mcp_config = None
-        if agent_id and user_id:
-            try:
-                # Get standardized config directly from version service - no mapping needed
-                from core.versioning.version_service import get_version_service
-                version_service = await get_version_service()
-                fresh_mcp_config = await version_service.get_current_mcp_config(agent_id, user_id)
-                
-                if fresh_mcp_config:
-                    logger.debug(f"🔄 [MCP PROMPT] Using fresh MCP config from current version: {len(fresh_mcp_config.get('configured_mcps', []))} configured, {len(fresh_mcp_config.get('custom_mcp', []))} custom")
-                    # Map to the format this method expects (custom_mcps vs custom_mcp)
-                    agent_config = {
-                        'configured_mcps': fresh_mcp_config.get('configured_mcps', []),
-                        'custom_mcps': fresh_mcp_config.get('custom_mcp', [])  # Map custom_mcp to custom_mcps for this method
-                    }
-            except Exception as e:
-                logger.warning(f"Failed to load fresh MCP config, using provided config: {e}")
+                                     fresh_mcp_config: Optional[dict] = None) -> str:
+        if fresh_mcp_config:
+            logger.debug(f"🔄 [MCP PROMPT] Using fresh MCP config: {len(fresh_mcp_config.get('configured_mcps', []))} configured, {len(fresh_mcp_config.get('custom_mcp', []))} custom")
+            agent_config = {
+                'configured_mcps': fresh_mcp_config.get('configured_mcps', []),
+                'custom_mcps': fresh_mcp_config.get('custom_mcp', [])
+            }
         
         if not (agent_config and (agent_config.get('configured_mcps') or agent_config.get('custom_mcps')) and mcp_wrapper_instance and mcp_wrapper_instance._initialized):
             return system_content
@@ -308,68 +323,51 @@ If relevant context seems missing, ask a clarifying question.
         return system_content + mcp_info
     
     @staticmethod
-    async def _append_jit_mcp_info(system_content: str, mcp_loader, agent_id: Optional[str] = None, user_id: Optional[str] = None) -> str:
+    async def _append_jit_mcp_info(system_content: str, mcp_loader, fresh_mcp_config: Optional[dict] = None) -> str:
         toolkit_tools = {}
         
-        if agent_id and user_id:
-            try:
-                from core.versioning.version_service import get_version_service
-                version_service = await get_version_service()
-                fresh_mcp_config = await version_service.get_current_mcp_config(agent_id, user_id)
+        if fresh_mcp_config:
+            custom_mcps = fresh_mcp_config.get('custom_mcp', [])
+            configured_mcps = fresh_mcp_config.get('configured_mcps', [])
+            
+            for mcp in custom_mcps:
+                mcp_name = mcp.get('name', 'unknown')
+                toolkit_slug = mcp.get('toolkit_slug', '')
+                enabled_tools = mcp.get('enabledTools', [])
+                mcp_type = mcp.get('type') or mcp.get('customType', '')
                 
-                if fresh_mcp_config:
-                    custom_mcps = fresh_mcp_config.get('custom_mcp', [])
-                    configured_mcps = fresh_mcp_config.get('configured_mcps', [])
+                if enabled_tools:
+                    if mcp_type in ('sse', 'http', 'json'):
+                        display_name = mcp_name.upper().replace(' ', '_')
+                    else:
+                        display_name = toolkit_slug.upper() if toolkit_slug else mcp_name.upper().replace(' ', '_')
                     
-                    for mcp in custom_mcps:
-                        mcp_name = mcp.get('name', 'unknown')
-                        toolkit_slug = mcp.get('toolkit_slug', '')
-                        enabled_tools = mcp.get('enabledTools', [])
-                        mcp_type = mcp.get('type') or mcp.get('customType', '')
-                        
-                        if enabled_tools:
-                            if mcp_type in ('sse', 'http', 'json'):
-                                display_name = mcp_name.upper().replace(' ', '_')
-                            else:
-                                display_name = toolkit_slug.upper() if toolkit_slug else mcp_name.upper().replace(' ', '_')
-                            
-                            if display_name not in toolkit_tools:
-                                toolkit_tools[display_name] = []
-                            
-                            for tool in enabled_tools:
-                                if tool not in toolkit_tools[display_name]:
-                                    toolkit_tools[display_name].append(tool)
+                    if display_name not in toolkit_tools:
+                        toolkit_tools[display_name] = []
                     
-                    for mcp in configured_mcps:
-                        mcp_name = mcp.get('name', 'unknown')
-                        toolkit_slug = mcp.get('toolkit_slug', '')
-                        enabled_tools = mcp.get('enabledTools', [])
-                        qualified_name = mcp.get('qualifiedName', '')
-                        
-                        if not toolkit_slug and qualified_name:
-                            toolkit_slug = qualified_name.split('.')[-1]
-                        
-                        if enabled_tools:
-                            display_name = toolkit_slug.upper() if toolkit_slug else mcp_name.upper().replace(' ', '_')
-                            
-                            if display_name not in toolkit_tools:
-                                toolkit_tools[display_name] = []
-                            
-                            for tool in enabled_tools:
-                                if tool not in toolkit_tools[display_name]:
-                                    toolkit_tools[display_name].append(tool)
+                    for tool in enabled_tools:
+                        if tool not in toolkit_tools[display_name]:
+                            toolkit_tools[display_name].append(tool)
+            
+            for mcp in configured_mcps:
+                mcp_name = mcp.get('name', 'unknown')
+                toolkit_slug = mcp.get('toolkit_slug', '')
+                enabled_tools = mcp.get('enabledTools', [])
+                qualified_name = mcp.get('qualifiedName', '')
+                
+                if not toolkit_slug and qualified_name:
+                    toolkit_slug = qualified_name.split('.')[-1]
+                
+                if enabled_tools:
+                    display_name = toolkit_slug.upper() if toolkit_slug else mcp_name.upper().replace(' ', '_')
                     
-                    if mcp_loader:
-                        try:
-                            await mcp_loader.rebuild_tool_map(fresh_mcp_config)
-                            logger.debug(f"🔄 [MCP JIT] Updated loader with current version config")
-                        except Exception as e:
-                            logger.warning(f"Failed to update mcp_loader (non-critical): {e}")
-                else:
-                    logger.warning(f"🔍 [MCP-PROMPT-DIRECT] ❌ No fresh config returned from version service")
-            except Exception as e:
-                logger.warning(f"Failed to load MCP config from version service: {e}")
-        
+                    if display_name not in toolkit_tools:
+                        toolkit_tools[display_name] = []
+                    
+                    for tool in enabled_tools:
+                        if tool not in toolkit_tools[display_name]:
+                            toolkit_tools[display_name].append(tool)
+            
         if not toolkit_tools:
             logger.debug("⚡ [MCP PROMPT] No toolkit tools found, skipping JIT MCP info")
             return system_content
@@ -506,6 +504,16 @@ Example of correct tool call format (multiple invokes in one block):
         if not (user_id and client):
             return None
         
+        fetch_start = time.time()
+        
+        # Check cache first
+        from core.cache.runtime_cache import get_cached_user_context, set_cached_user_context
+        cached = await get_cached_user_context(user_id)
+        if cached is not None:  # None = miss, empty string = no context (cached)
+            elapsed = (time.time() - fetch_start) * 1000
+            logger.debug(f"⏱️ [TIMING] User context: {elapsed:.1f}ms (cache: hit)")
+            return cached if cached else None
+        
         # Fetch locale and username in parallel
         async def fetch_locale():
             try:
@@ -551,10 +559,23 @@ Example of correct tool call format (multiple invokes in one block):
             context_parts.append(username_info)
             logger.debug(f"Added username ({username}) to system prompt for user {user_id}")
         
-        return ''.join(context_parts) if context_parts else None
+        context = ''.join(context_parts) if context_parts else None
+        context_str = context if context else ""
+        
+        # Cache the result (even if empty)
+        await set_cached_user_context(user_id, context_str)
+        elapsed = (time.time() - fetch_start) * 1000
+        logger.debug(f"⏱️ [TIMING] User context: {elapsed:.1f}ms (cache: miss)")
+        
+        return context
     
     @staticmethod
     async def _fetch_user_memories(user_id: Optional[str], thread_id: str, client) -> Optional[str]:
+        from core.utils.config import config
+        if not config.ENABLE_MEMORY:
+            logger.debug("Memory fetch skipped: ENABLE_MEMORY=False")
+            return None
+        
         if not (user_id and client):
             logger.debug(f"Memory fetch skipped: user_id={user_id}, client={'yes' if client else 'no'}")
             return None
@@ -633,7 +654,7 @@ Example of correct tool call format (multiple invokes in one block):
             return None
         
         try:
-            from core.agent_runs import get_cached_file_context, format_file_context_for_agent
+            from core.agents.runs import get_cached_file_context, format_file_context_for_agent
             
             files = await get_cached_file_context(thread_id)
             if files:

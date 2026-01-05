@@ -761,7 +761,7 @@ async def create_file_in_project(
     
     try:
         # Reuse existing sandbox creation/retrieval logic from agent_runs
-        from core.agent_runs import _ensure_sandbox_for_thread
+        from core.agents.runs import _ensure_sandbox_for_thread
         
         # Check if sandbox existed before
         from core.resources import ResourceService

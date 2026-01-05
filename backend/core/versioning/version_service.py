@@ -9,7 +9,7 @@ from enum import Enum
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 
-MCP_CONFIG_QUERY_TIMEOUT = 10.0
+MCP_CONFIG_QUERY_TIMEOUT = 2.0
 
 
 class VersionStatus(Enum):
@@ -141,7 +141,7 @@ class VersionService:
         if not result.data:
             raise Exception("Failed to update agent current version")
         
-        from core.runtime_cache import invalidate_mcp_version_config
+        from core.cache.runtime_cache import invalidate_mcp_version_config
         await invalidate_mcp_version_config(agent_id)
         logger.debug(f"Invalidated MCP config cache for agent {agent_id} after version update")
     
@@ -292,7 +292,7 @@ class VersionService:
         
         # Invalidate agent config cache (MCPs may have changed)
         try:
-            from core.runtime_cache import invalidate_agent_config_cache
+            from core.cache.runtime_cache import invalidate_agent_config_cache
             await invalidate_agent_config_cache(agent_id)
             logger.debug(f"🗑️ Invalidated cache for agent {agent_id} after version create")
         except Exception as e:
@@ -389,7 +389,7 @@ class VersionService:
         
         # Invalidate agent config cache (active version changed)
         try:
-            from core.runtime_cache import invalidate_agent_config_cache
+            from core.cache.runtime_cache import invalidate_agent_config_cache
             await invalidate_agent_config_cache(agent_id)
             logger.debug(f"🗑️ Invalidated cache for agent {agent_id} after version activate")
         except Exception as e:
@@ -488,7 +488,7 @@ class VersionService:
         return new_version
     
     async def get_current_mcp_config(self, agent_id: str, user_id: str = "system") -> Optional[Dict[str, Any]]:
-        from core.runtime_cache import (
+        from core.cache.runtime_cache import (
             get_cached_mcp_version_config,
             set_cached_mcp_version_config
         )

@@ -212,7 +212,14 @@ dump.rdb
 # CodeWebChat state and logs (auto-added)
 .cwc/
 
-
+# Node.js dependencies
+node_modules/
+**/node_modules/
+**/node_modules/**
+.pnpm-store/**
+# Ensure .bin directories in node_modules are ignored
+**/node_modules/.bin/**
+**/.bin/**
 # mobile specific
 apps/mobile/node_modules/
 apps/mobile/.expo/
@@ -220,7 +227,7 @@ apps/mobile/dist/
 apps/mobile/web-build/
 apps/mobile/expo-env.d.ts
 apps/mobile/.metro-health-check*
-apps/mobile/npm-debug.*
+apps/mobile/npm-debug.*apps/mobile/npm-debug.*
 apps/mobile/yarn-debug.*
 apps/mobile/yarn-error.*
 apps/mobile/*.tsbuildinfo
@@ -234,3 +241,5 @@ apps/mobile/app-example
 
 # Infra (separate repository)
 infra/
+
+dump.rdb

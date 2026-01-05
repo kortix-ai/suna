@@ -72,7 +72,7 @@ class ExecutionService:
                 trigger_event
             )
             
-            from core.agent_runs import start_agent_run
+            from core.agents.runs import start_agent_run
             
             model_name = trigger_result.model if hasattr(trigger_result, 'model') and trigger_result.model else None
             

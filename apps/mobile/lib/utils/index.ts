@@ -15,13 +15,13 @@ export * from './fonts';
 export * from './icon-mapping';
 
 // Parsing & formatting
-export * from './message-grouping';
-export * from './tool-parser';
-export * from './tool-display';
+// message-grouping moved to @agentpress/shared/utils
+// tool-parser moved to @agentpress/shared/tools
+// tool-display moved to @agentpress/shared/tools
 export * from './credit-formatter';
 
 // Streaming & tool call utilities (portable from frontend)
-export * from './streaming-utils';
+// streaming-utils moved to @agentpress/shared/streaming
 export * from './tool-call-utils';
 export * from './tool-data-extractor';
 

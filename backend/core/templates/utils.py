@@ -43,7 +43,7 @@ def build_unified_config(
     custom_mcps: List[ConfigType]
 ) -> ConfigType:
     try:
-        from core.config_helper import build_unified_config as build_config
+        from core.config.config_helper import build_unified_config as build_config
         return build_config(
             system_prompt=system_prompt,
             agentpress_tools=agentpress_tools,

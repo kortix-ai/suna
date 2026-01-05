@@ -17,7 +17,7 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
         logger.debug(f"Checking agent run limit for account {account_id} since {twenty_four_hours_ago_iso}")
         
         # FAST PATH: Check Redis cache for running runs (5s TTL)
-        from core.runtime_cache import get_cached_running_runs, set_cached_running_runs
+        from core.cache.runtime_cache import get_cached_running_runs, set_cached_running_runs
         cached_runs = await get_cached_running_runs(account_id)
         
         if cached_runs:
@@ -45,11 +45,22 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
         # CACHE MISS: Run tier lookup and join query in parallel
         async def get_tier_info():
             try:
+                # Check Redis cache first (5 min TTL)
+                from core.cache.runtime_cache import get_cached_tier_info, set_cached_tier_info
+                cached_tier = await get_cached_tier_info(account_id)
+                if cached_tier:
+                    concurrent_runs_limit = cached_tier.get('concurrent_runs', 1)
+                    logger.debug(f"⚡ Tier from cache: {cached_tier.get('name')}, limit: {concurrent_runs_limit}")
+                    return concurrent_runs_limit
+                
                 from core.billing import subscription_service
-                # Use cache (60s TTL) - tiers don't change frequently
                 tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=False)
                 tier_name = tier_info['name']
                 concurrent_runs_limit = tier_info.get('concurrent_runs', 1)
+                
+                # Cache the tier info
+                await set_cached_tier_info(account_id, tier_info)
+                
                 logger.debug(f"Account {account_id} tier: {tier_name}, concurrent runs limit: {concurrent_runs_limit}")
                 return concurrent_runs_limit
             except Exception as billing_error:
@@ -493,7 +504,7 @@ async def check_thread_limit(client, account_id: str) -> Dict[str, Any]:
         logger.debug(f"Checking thread limit for account {account_id}")
         
         # FAST PATH: Check Redis cache for thread count (30s TTL)
-        from core.runtime_cache import get_cached_thread_count, set_cached_thread_count
+        from core.cache.runtime_cache import get_cached_thread_count, set_cached_thread_count
         cached_count = await get_cached_thread_count(account_id)
         
         if cached_count is not None:

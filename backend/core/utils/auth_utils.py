@@ -1,5 +1,4 @@
 import hmac
-import sentry
 from fastapi import HTTPException, Request, Header
 from typing import Optional
 import jwt
@@ -173,7 +172,6 @@ async def verify_and_get_user_id_from_jwt(request: Request) -> str:
                 user_id = await _get_user_id_from_account_cached(str(validation_result.account_id))
                 
                 if user_id:
-                    sentry.sentry.set_user({ "id": user_id })
                     structlog.contextvars.bind_contextvars(
                         user_id=user_id,
                         auth_method="api_key",
@@ -229,7 +227,6 @@ async def verify_and_get_user_id_from_jwt(request: Request) -> str:
                 headers={"WWW-Authenticate": "Bearer"}
             )
 
-        sentry.sentry.set_user({ "id": user_id })
         structlog.contextvars.bind_contextvars(
             user_id=user_id,
             auth_method="jwt"
@@ -280,7 +277,6 @@ async def get_user_id_from_stream_auth(
                 payload = _decode_jwt_with_verification(token)
                 user_id = payload.get('sub')
                 if user_id:
-                    sentry.sentry.set_user({ "id": user_id })
                     structlog.contextvars.bind_contextvars(
                         user_id=user_id,
                         auth_method="jwt_query"
@@ -318,7 +314,6 @@ async def get_optional_user_id(request: Request) -> Optional[str]:
         
         user_id = payload.get('sub')
         if user_id:
-            sentry.sentry.set_user({ "id": user_id })
             structlog.contextvars.bind_contextvars(
                 user_id=user_id
             )

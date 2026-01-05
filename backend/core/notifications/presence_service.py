@@ -5,11 +5,31 @@ from core.utils.config import config
 from core.services.supabase import DBConnection
 import uuid
 
+# Namespace UUID for generating deterministic UUIDs from non-UUID session IDs
+PRESENCE_SESSION_NAMESPACE = uuid.UUID('a1b2c3d4-e5f6-7890-abcd-ef1234567890')
+
+
 class PresenceService:
     def __init__(self):
         self.db = DBConnection()
         self.activity_threshold_minutes = 2
         self.stale_session_threshold_minutes = 5
+    
+    def _normalize_session_id(self, session_id: str) -> str:
+        """
+        Convert session_id to a valid UUID format.
+        If session_id is already a valid UUID, return it as-is.
+        Otherwise, generate a deterministic UUID5 from the session_id.
+        """
+        try:
+            # Check if it's already a valid UUID
+            uuid.UUID(session_id)
+            return session_id
+        except (ValueError, AttributeError):
+            # Not a valid UUID - generate a deterministic UUID5 from the session_id
+            deterministic_uuid = uuid.uuid5(PRESENCE_SESSION_NAMESPACE, session_id)
+            logger.debug(f"Converted non-UUID session_id '{session_id}' to UUID '{deterministic_uuid}'")
+            return str(deterministic_uuid)
     
     async def _validate_account_id(self, account_id: str) -> bool:
         """Validate that account_id exists and is a valid UUID."""
@@ -135,6 +155,9 @@ class PresenceService:
         if config.DISABLE_PRESENCE:
             return True
         
+        # Normalize session_id to valid UUID format
+        session_id = self._normalize_session_id(session_id)
+        
         try:
             existing = await self._fetch_session(session_id)
             # Handle None result (session not found) gracefully - 204 responses return None
@@ -184,6 +207,9 @@ class PresenceService:
     async def clear_presence(self, session_id: str, account_id: str) -> bool:
         if config.DISABLE_PRESENCE:
             return True
+        
+        # Normalize session_id to valid UUID format
+        session_id = self._normalize_session_id(session_id)
         
         try:
             await self._delete_session(session_id)

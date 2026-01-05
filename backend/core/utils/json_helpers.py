@@ -125,6 +125,9 @@ def to_json_string(value: Any) -> str:
     This is used for backwards compatibility when yielding data that
     expects JSON strings.
     
+    Uses ensure_ascii=False to preserve Unicode characters without escaping,
+    preventing double-escaping issues when JSON strings are nested.
+    
     Args:
         value: The value to convert
         
@@ -138,10 +141,10 @@ def to_json_string(value: Any) -> str:
             return value  # It's already a JSON string
         except (json.JSONDecodeError, TypeError):
             # It's a plain string, encode it as JSON
-            return json.dumps(value)
+            return json.dumps(value, ensure_ascii=False)
     
     # For all other types, convert to JSON
-    return json.dumps(value)
+    return json.dumps(value, ensure_ascii=False)
 
 
 def to_json_string_fast(value: Any) -> str:
@@ -151,13 +154,16 @@ def to_json_string_fast(value: Any) -> str:
     Use this when you KNOW the value is a dict/list that needs serialization.
     This is optimized for the streaming hot path where we serialize every chunk.
     
+    Uses ensure_ascii=False to preserve Unicode characters without escaping,
+    preventing double-escaping issues when JSON strings are nested.
+    
     Args:
         value: The value to convert (must be JSON-serializable)
         
     Returns:
         JSON string representation
     """
-    return json.dumps(value, separators=(',', ':'))  # Compact JSON, no extra whitespace
+    return json.dumps(value, separators=(',', ':'), ensure_ascii=False)  # Compact JSON, no extra whitespace
 
 
 def format_for_yield(message_object: Dict[str, Any]) -> Dict[str, Any]:
