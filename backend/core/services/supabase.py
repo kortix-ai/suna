@@ -129,13 +129,14 @@ class DBConnection:
         
         # Create transport with retries for connection-level failures
         # This handles TCP connect failures, TLS handshake failures, etc.
+        # IMPORTANT: limits must be passed to transport, not client (when using custom transport)
         transport = httpx.AsyncHTTPTransport(
             retries=SUPABASE_RETRIES,
             http2=SUPABASE_HTTP2_ENABLED,
+            limits=limits,  # Connection pool limits go on transport, not client!
         )
         
         return httpx.AsyncClient(
-            limits=limits,
             timeout=timeout,
             transport=transport,
         )
