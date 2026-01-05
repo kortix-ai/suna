@@ -76,8 +76,17 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-eng \
     # File system monitoring
     inotify-tools \
+    # SSL/TLS support
+    openssl \
     && rm -rf /var/lib/apt/lists/* \
-    && update-ca-certificates
+    && update-ca-certificates \
+    && mkdir -p /etc/ssl/certs \
+    && ln -sf /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-bundle.crt \
+    && echo "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt" >> /etc/environment \
+    && echo "SSL_CERT_DIR=/etc/ssl/certs" >> /etc/environment \
+    && echo "ca_directory=/etc/ssl/certs" > /etc/wgetrc \
+    && echo "ca_certificate=/etc/ssl/certs/ca-certificates.crt" >> /etc/wgetrc \
+    && chmod 644 /etc/wgetrc
 
 # Install Node.js and npm (primary package manager)
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
@@ -100,17 +109,42 @@ RUN git clone https://github.com/novnc/noVNC.git /opt/novnc \
 
 
 # Clone Anthropics skills repository with sparse checkout
-# This downloads only the slack-gif-creator skill to /skills
+# This downloads only the slack-gif-creator, algorithmic-art, and webapp-testing skills to /skills
+# Each skill is moved as a complete directory to maintain its structure (including SKILL.md)
 RUN mkdir -p /tmp/skills-clone \
-&& cd /tmp/skills-clone \
-&& git clone --no-checkout --filter=blob:none https://github.com/anthropics/skills.git . \
-&& git sparse-checkout init --cone \
-&& git sparse-checkout set skills/slack-gif-creator \
-&& git checkout main \
-&& mkdir -p /skills \
-&& mv skills/slack-gif-creator/* /skills/ \
-&& rm -rf /tmp/skills-clone \
-&& ls -la /skills
+    && cd /tmp/skills-clone \
+    && git clone --no-checkout --filter=blob:none --depth 1 https://github.com/anthropics/skills.git . \
+    && git sparse-checkout init --cone \
+    && git sparse-checkout set skills/algorithmic-art skills/webapp-testing skills/slack-gif-creator \
+    && git checkout main \
+    && echo "=== Checking sparse checkout structure ===" \
+    && ls -la skills/ 2>/dev/null || echo "WARNING: skills/ directory not found" \
+    && ls -la skills/algorithmic-art/ 2>/dev/null | head -5 || echo "WARNING: algorithmic-art not found" \
+    && ls -la skills/webapp-testing/ 2>/dev/null | head -5 || echo "WARNING: webapp-testing not found" \
+    && ls -la skills/slack-gif-creator/ 2>/dev/null | head -5 || echo "WARNING: slack-gif-creator not found" \
+    && mkdir -p /skills \
+    && test -d skills/algorithmic-art && mv skills/algorithmic-art /skills/ || (echo "ERROR: algorithmic-art directory missing" && exit 1) \
+    && test -d skills/webapp-testing && mv skills/webapp-testing /skills/ || (echo "ERROR: webapp-testing directory missing" && exit 1) \
+    && test -d skills/slack-gif-creator && mv skills/slack-gif-creator /skills/ || (echo "ERROR: slack-gif-creator directory missing" && exit 1) \
+    && rm -rf /tmp/skills-clone \
+    && echo "=== Skills installed in /skills ===" && ls -la /skills \
+    && echo "=== Verifying skill directory structures ===" \
+    && echo "algorithmic-art contents:" && find /skills/algorithmic-art -type f | head -10 \
+    && echo "webapp-testing contents:" && find /skills/webapp-testing -type f | head -10 \
+    && echo "slack-gif-creator contents:" && find /skills/slack-gif-creator -type f | head -10 \
+    && echo "=== Verifying SKILL.md files ===" \
+    && test -f /skills/algorithmic-art/SKILL.md && echo "  ✓ algorithmic-art/SKILL.md" || (echo "  ✗ algorithmic-art/SKILL.md missing" && exit 1) \
+    && test -f /skills/webapp-testing/SKILL.md && echo "  ✓ webapp-testing/SKILL.md" || (echo "  ✗ webapp-testing/SKILL.md missing" && exit 1) \
+    && test -f /skills/slack-gif-creator/SKILL.md && echo "  ✓ slack-gif-creator/SKILL.md" || (echo "  ✗ slack-gif-creator/SKILL.md missing" && exit 1) \
+    && echo "=== Verifying file counts ===" \
+    && echo "  algorithmic-art: $(find /skills/algorithmic-art -type f | wc -l) files" \
+    && echo "  webapp-testing: $(find /skills/webapp-testing -type f | wc -l) files" \
+    && echo "  slack-gif-creator: $(find /skills/slack-gif-creator -type f | wc -l) files" \
+    && echo "=== Verifying directory structure ===" \
+    && test -d /skills/algorithmic-art && echo "  ✓ algorithmic-art directory exists" || (echo "  ✗ algorithmic-art directory missing" && exit 1) \
+    && test -d /skills/webapp-testing && echo "  ✓ webapp-testing directory exists" || (echo "  ✗ webapp-testing directory missing" && exit 1) \
+    && test -d /skills/slack-gif-creator && echo "  ✓ slack-gif-creator directory exists" || (echo "  ✗ slack-gif-creator directory missing" && exit 1) \
+    && echo "=== All skills verified successfully ==="
 
 # Set platform for ARM64 compatibility
 ARG TARGETPLATFORM=linux/amd64
@@ -149,6 +183,11 @@ ENV RESOLUTION_WIDTH=1024
 ENV RESOLUTION_HEIGHT=768
 ENV VITE_TELEMETRY_DISABLED=1
 ENV NODE_OPTIONS=--max-old-space-size=2048
+# SSL/TLS certificate paths
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV SSL_CERT_DIR=/etc/ssl/certs
+ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+ENV CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 # Add Chrome flags to prevent multiple tabs/windows
 ENV CHROME_FLAGS="--single-process --no-first-run --no-default-browser-check --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-breakpad --disable-component-extensions-with-background-pages --disable-dev-shm-usage --disable-extensions --disable-features=TranslateUI --disable-ipc-flooding-protection --disable-renderer-backgrounding --enable-features=NetworkServiceInProcess2 --force-color-profile=srgb --metrics-recording-only --mute-audio --no-sandbox --disable-gpu"
 

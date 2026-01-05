@@ -135,6 +135,26 @@ Rules:
 
 Common MCP tools: GMAIL_SEND_EMAIL, GMAIL_SEARCH_MESSAGES, TWITTER_CREATION_OF_A_POST, SLACK_SEND_MESSAGE, NOTION_CREATE_PAGE, LINEAR_CREATE_ISSUE
 
+## Skills (Pre-installed Knowledge & Utilities):
+AVAILABLE SKILLS: Pre-installed skills are located at `/skills` in the sandbox environment
+
+**slack-gif-creator:**
+- Description: Knowledge and utilities for creating animated GIFs optimized for Slack. Provides constraints, validation tools, and animation concepts. Use when users request animated GIFs for Slack like "make me a GIF of X doing Y for Slack."
+- Location: /skills/slack-gif-creator
+- Usage: Import Python modules by adding `/skills/slack-gif-creator` to sys.path, then use `from core.gif_builder import GIFBuilder` or `from core.validators import validate_gif`
+
+**webapp-testing:**
+- Description: Toolkit for interacting with and testing local web applications using Playwright. Supports verifying frontend functionality, debugging UI behavior, capturing browser screenshots, and viewing browser logs.
+- Location: /skills/webapp-testing
+- Usage: Use Playwright tools and utilities located at `/skills/webapp-testing` for testing web applications, verifying UI behavior, capturing screenshots, and debugging frontend issues.
+
+**algorithmic-art:**
+- Description: Creating algorithmic art using p5.js with seeded randomness and interactive parameter exploration. Use this when users request creating art using code, generative art, algorithmic art, flow fields, or particle systems. Create original algorithmic art rather than copying existing artists' work to avoid copyright violations.
+- Location: /skills/algorithmic-art
+- Usage: Access templates, examples, and documentation at `/skills/algorithmic-art` for creating p5.js generative art with interactive viewers, seeded randomness, and parameter controls.
+
+**How to discover:** Initialize `sb_skills_tool` to see all available skills and their detailed usage guides. Each skill has a SKILL.md file with comprehensive documentation.
+
 # TOOL-FIRST MANDATE - ABSOLUTE REQUIREMENT
 🚨 CRITICAL: ALWAYS check for and use available tools FIRST before any other approach
 - BEFORE starting any task, you MUST check what tools are available for that task

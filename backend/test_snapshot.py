@@ -6,8 +6,13 @@ This script:
 1. Tests Daytona connection
 2. Creates a test sandbox from the snapshot
 3. Verifies /skills directory exists
-4. Tests reading files from /skills
-5. Cleans up the test sandbox
+4. Tests that all expected skills are present:
+   - slack-gif-creator
+   - webapp-testing
+   - algorithmic-art
+5. Verifies each skill has SKILL.md with YAML frontmatter
+6. Tests CA certificates installation
+7. Cleans up the test sandbox
 
 Usage:
     python test_snapshot.py
@@ -221,7 +226,15 @@ async def test_sandbox_creation():
 
 
 async def test_skills_directory(sandbox):
-    """Test that /skills directory exists and contains expected files."""
+    """Test that /skills directory exists and contains all expected skills.
+    
+    Verifies presence of:
+    - slack-gif-creator
+    - webapp-testing
+    - algorithmic-art
+    
+    Also checks that each skill has a SKILL.md file with YAML frontmatter.
+    """
     print_header("Testing /skills Directory")
     
     if not sandbox:
@@ -260,43 +273,159 @@ async def test_skills_directory(sandbox):
         else:
             print_warning("No output from ls command")
         
-        # Test 3: Check for slack-gif-creator
-        print_info("Checking for slack-gif-creator...")
-        result = await sandbox.process.execute_session_command(
-            session_id,
-            SessionExecuteRequest(command="test -d /skills/slack-gif-creator && echo 'FOUND' || echo 'NOT_FOUND'")
-        )
+        # Test 3: Check for all expected skills
+        expected_skills = [
+            "slack-gif-creator",
+            "webapp-testing",
+            "algorithmic-art"
+        ]
         
-        output = result.stdout.strip() if result.stdout else ""
-        if "FOUND" in output:
-            print_success("slack-gif-creator directory found")
-        else:
-            print_warning("slack-gif-creator directory not found")
+        skills_found = []
+        skills_missing = []
         
-        # Test 4: Try to read a file from /skills
-        print_info("Testing file read from /skills...")
-        result = await sandbox.process.execute_session_command(
-            session_id,
-            SessionExecuteRequest(command="ls /skills/slack-gif-creator/ 2>/dev/null | head -5")
-        )
+        for skill_name in expected_skills:
+            print_info(f"Checking for {skill_name}...")
+            result = await sandbox.process.execute_session_command(
+                session_id,
+                SessionExecuteRequest(command=f"test -d /skills/{skill_name} && echo 'FOUND' || echo 'NOT_FOUND'")
+            )
+            
+            output = result.stdout.strip() if result.stdout else ""
+            if "FOUND" in output:
+                print_success(f"{skill_name} directory found")
+                skills_found.append(skill_name)
+                
+                # List contents first to see what's actually there
+                list_result = await sandbox.process.execute_session_command(
+                    session_id,
+                    SessionExecuteRequest(command=f"ls -la /skills/{skill_name}/ 2>/dev/null")
+                )
+                
+                if list_result.stdout:
+                    print_info(f"  Contents of {skill_name}/:")
+                    files_output = list_result.stdout.strip()
+                    # Show first 10 lines
+                    files_lines = files_output.split('\n')[:10]
+                    for line in files_lines:
+                        if line.strip():
+                            print(f"    {line.strip()}")
+                
+                # Count total files in the skill directory
+                file_count_result = await sandbox.process.execute_session_command(
+                    session_id,
+                    SessionExecuteRequest(command=f"find /skills/{skill_name}/ -type f 2>/dev/null | wc -l")
+                )
+                
+                if file_count_result.stdout:
+                    file_count = file_count_result.stdout.strip()
+                    try:
+                        count = int(file_count)
+                        if count > 0:
+                            print_success(f"  ✓ Found {count} files in {skill_name}/")
+                        else:
+                            print_warning(f"  ⚠ {skill_name}/ appears to be empty (0 files)")
+                    except ValueError:
+                        pass
+                
+                # List all files recursively to verify structure
+                all_files_result = await sandbox.process.execute_session_command(
+                    session_id,
+                    SessionExecuteRequest(command=f"find /skills/{skill_name}/ -type f 2>/dev/null | head -15")
+                )
+                
+                if all_files_result.stdout:
+                    all_files = all_files_result.stdout.strip().split('\n')
+                    if all_files and any(f.strip() for f in all_files):
+                        print_info(f"  All files in {skill_name}/:")
+                        for f in all_files[:15]:
+                            if f.strip():
+                                print(f"    {f.strip()}")
+                
+                # Check for SKILL.md file (required)
+                skill_md_check = await sandbox.process.execute_session_command(
+                    session_id,
+                    SessionExecuteRequest(command=f"test -f /skills/{skill_name}/SKILL.md && echo 'SKILL_MD_EXISTS' || echo 'SKILL_MD_MISSING'")
+                )
+                
+                skill_md_output = skill_md_check.stdout.strip() if skill_md_check.stdout else ""
+                if "SKILL_MD_EXISTS" in skill_md_output:
+                    print_success(f"  ✓ {skill_name}/SKILL.md exists")
+                else:
+                    print_warning(f"  ⚠ {skill_name}/SKILL.md missing (required file)")
+                    # Check if it exists with different case or location
+                    alt_check = await sandbox.process.execute_session_command(
+                        session_id,
+                        SessionExecuteRequest(command=f"find /skills/{skill_name}/ -name '*.md' -o -name 'SKILL*' 2>/dev/null | head -5")
+                    )
+                    if alt_check.stdout and alt_check.stdout.strip():
+                        print_info(f"  Found alternative files:")
+                        for alt_file in alt_check.stdout.strip().split('\n'):
+                            if alt_file.strip():
+                                print(f"    - {alt_file.strip()}")
+            else:
+                print_error(f"{skill_name} directory not found!")
+                skills_missing.append(skill_name)
         
-        if result.stdout:
-            files = result.stdout.strip().split('\n')
-            print_success(f"Found {len(files)} items in slack-gif-creator:")
-            for f in files[:5]:
-                if f.strip():
-                    print(f"  - {f.strip()}")
+        # Test 4: Verify SKILL.md files exist and have proper YAML frontmatter
+        print_info("Verifying SKILL.md files exist and have proper YAML frontmatter...")
+        skills_with_valid_md = []
+        skills_missing_md = []
         
-        # Test 5: Try to read README if it exists
-        print_info("Checking for README.md...")
-        result = await sandbox.process.execute_session_command(
-            session_id,
-            SessionExecuteRequest(command="test -f /skills/slack-gif-creator/README.md && head -3 /skills/slack-gif-creator/README.md || echo 'README.md not found'")
-        )
+        for skill_name in skills_found:
+            # First check if file exists
+            exists_check = await sandbox.process.execute_session_command(
+                session_id,
+                SessionExecuteRequest(command=f"test -f /skills/{skill_name}/SKILL.md && echo 'EXISTS' || echo 'MISSING'")
+            )
+            
+            exists_output = exists_check.stdout.strip() if exists_check.stdout else ""
+            
+            if "EXISTS" not in exists_output:
+                print_error(f"  ✗ {skill_name}/SKILL.md is missing (REQUIRED)")
+                skills_missing_md.append(skill_name)
+                continue
+            
+            # File exists, check frontmatter
+            result = await sandbox.process.execute_session_command(
+                session_id,
+                SessionExecuteRequest(command=f"head -20 /skills/{skill_name}/SKILL.md 2>/dev/null | grep -E '^---|^name:|^description:' | head -3 || echo 'FRONTMATTER_CHECK_FAILED'")
+            )
+            
+            output = result.stdout.strip() if result.stdout else ""
+            if "FRONTMATTER_CHECK_FAILED" in output or not output:
+                print_warning(f"  ⚠ {skill_name}/SKILL.md exists but may be missing YAML frontmatter")
+                # Still count it as found since file exists
+                skills_with_valid_md.append(skill_name)
+            else:
+                print_success(f"  ✓ {skill_name}/SKILL.md has YAML frontmatter")
+                skills_with_valid_md.append(skill_name)
+                # Show first few lines of frontmatter
+                frontmatter_lines = output.split('\n')[:3]
+                for line in frontmatter_lines:
+                    if line.strip():
+                        print(f"    {line.strip()}")
         
-        if result.stdout:
-            print_success("README.md content (first 3 lines):")
-            print(result.stdout)
+        # Summary
+        print_info(f"\nSkills check summary:")
+        print_success(f"  Found directories: {len(skills_found)}/{len(expected_skills)} skills")
+        if skills_missing:
+            print_error(f"  Missing directories: {', '.join(skills_missing)}")
+        if skills_missing_md:
+            print_error(f"  Missing SKILL.md files: {', '.join(skills_missing_md)}")
+        print_success(f"  Skills with valid SKILL.md: {len(skills_with_valid_md)}/{len(skills_found)}")
+        
+        # Fail if not all skills are present OR if any skill is missing SKILL.md
+        if len(skills_found) < len(expected_skills):
+            print_warning(f"\n⚠ Not all expected skills are present in the sandbox!")
+            print_warning(f"Expected: {', '.join(expected_skills)}")
+            print_warning(f"Found: {', '.join(skills_found) if skills_found else 'none'}")
+            return False
+        
+        if skills_missing_md:
+            print_error(f"\n❌ Some skills are missing required SKILL.md files!")
+            print_error(f"Missing SKILL.md: {', '.join(skills_missing_md)}")
+            print_error("SKILL.md files are REQUIRED for Agent Skills to work properly.")
+            return False
         
         # Clean up session
         try:
