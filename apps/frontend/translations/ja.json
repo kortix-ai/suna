@@ -417,7 +417,7 @@
     "close": "閉じる",
     "noActionsYet": "Kortix Computer",
     "workerActionsDescription": "起動中",
-    "emptyActionsDescription": "エージェントのアクションがここに表示されます",
+    "emptyActionsDescription": "ワーカーのアクションがここに表示されます",
     "toolIsRunning": "ツールが実行中です",
     "toolCurrentlyExecuting": "{toolName} が現在実行中です。完了すると結果がここに表示されます。",
     "rateThisResult": "この結果を評価",
