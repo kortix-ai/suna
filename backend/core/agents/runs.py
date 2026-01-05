@@ -1083,6 +1083,20 @@ async def stop_agent(agent_run_id: str, user_id: str = Depends(verify_and_get_us
     await stop_agent_run(agent_run_id)
     return {"status": "stopped"}
 
+@router.get("/agent-runs/{agent_run_id}/status", summary="Get Agent Run Status", operation_id="get_agent_run_status")
+async def get_agent_run_status(agent_run_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
+    """Get the status of an agent run. Used by the frontend to check agent status after stream closes."""
+    structlog.contextvars.bind_contextvars(
+        agent_run_id=agent_run_id,
+    )
+    logger.debug(f"Fetching agent run status: {agent_run_id}")
+    client = await db.client
+    agent_run_data = await _get_agent_run_with_access_check(client, agent_run_id, user_id)
+    return {
+        "status": agent_run_data['status'],
+        "error": agent_run_data.get('error')
+    }
+
 @router.get("/agent-runs/active", summary="List All Active Agent Runs", operation_id="list_active_agent_runs")
 async def get_active_agent_runs(user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     try:

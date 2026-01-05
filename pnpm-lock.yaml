@@ -945,6 +945,9 @@ importers:
       react-native-context-menu-view:
         specifier: ^1.21.0
         version: 1.21.0(react-native@0.81.5)(react@19.1.0)
+      react-native-css-interop:
+        specifier: ^0.2.1
+        version: 0.2.1(react-native-reanimated@4.1.6)(react-native-safe-area-context@5.6.2)(react-native-svg@15.12.1)(react-native@0.81.5)(react@19.1.0)(tailwindcss@3.4.19)
       react-native-drawer-layout:
         specifier: ^4.1.13
         version: 4.2.1(react-native-gesture-handler@2.28.0)(react-native-reanimated@4.1.6)(react-native@0.81.5)(react@19.1.0)
@@ -1044,6 +1047,13 @@ importers:
         version: 5.9.3
 
   packages/shared:
+    dependencies:
+      react:
+        specifier: ^18.0.0 || ^19.0.0
+        version: 18.3.1
+      zustand:
+        specifier: ^5.0.9
+        version: 5.0.9(@types/react@19.2.7)(react@19.1.0)
     devDependencies:
       '@types/react':
         specifier: ^19.2.7
@@ -1051,9 +1061,6 @@ importers:
       '@types/react-dom':
         specifier: ^19.1.7
         version: 19.2.3(@types/react@19.2.7)
-      react:
-        specifier: ^18.3.1
-        version: 18.3.1
       typescript:
         specifier: ^5.0.0
         version: 5.9.3
@@ -20811,6 +20818,7 @@ packages:
     engines: {node: '>=0.10.0'}
     dependencies:
       loose-envify: 1.4.0
+    dev: false
 
   /react@19.1.0:
     resolution: {integrity: sha512-FS+XFBNvn3GTAWq26joslQgWNoFu08F4kl0J4CgdNKADkdSGXQyTCnKteIAJy96Br6YbpEU1LSzV5dYtjMkMDg==}

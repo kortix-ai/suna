@@ -606,37 +606,71 @@ async def update_agent_run_status(
 
 
 async def ensure_project_metadata_cached(project_id: str, client) -> None:
-    """Ensure project metadata (sandbox info) is cached. Non-blocking if already cached."""
+    """
+    Ensure project metadata (sandbox info) is cached. Non-blocking if already cached.
+    
+    REFACTORED: Removed lazy migration from hot path.
+    - Was causing 10-64 second hangs due to multiple DB queries
+    - Migration now runs in background job (see dispatch_sandbox_migration)
+    - This function now just does a simple single-query fetch
+    """
     from core.cache.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
     
+    # Check cache first (fast path)
     cached_project = await get_cached_project_metadata(project_id)
-    if cached_project:
-        return  # Already cached
+    if cached_project is not None:  # Note: empty dict {} is valid cached value
+        return
     
-    # Cache miss - fetch and cache
-    from core.resources import ResourceService
-    resource_service = ResourceService(client)
-    
-    # Lazy migration: Migrate sandbox JSONB to resources table if needed
-    await resource_service.migrate_project_sandbox_if_needed(project_id)
-    
-    project = await client.table('projects').select('project_id, sandbox_resource_id').eq('project_id', project_id).execute()
-    
-    if not project.data or len(project.data) == 0:
-        raise ValueError(f"Project {project_id} not found")
-    
-    project_data = project.data[0]
-    sandbox_resource_id = project_data.get('sandbox_resource_id')
-    
-    # Get sandbox info from resource if it exists
-    sandbox_info = {}
-    if sandbox_resource_id:
-        resource = await resource_service.get_resource_by_id(sandbox_resource_id)
-        if resource:
+    try:
+        # Single optimized query - fetch project with sandbox resource in one go
+        # This replaces 4-5 separate queries that were causing hangs
+        project = await client.table('projects')\
+            .select('project_id, sandbox_resource_id, resources!sandbox_resource_id(id, external_id, config)')\
+            .eq('project_id', project_id)\
+            .maybe_single()\
+            .execute()
+        
+        if not project.data:
+            # Project not found - cache empty dict to prevent repeated lookups
+            logger.warning(f"Project {project_id} not found, caching empty metadata")
+            await set_cached_project_metadata(project_id, {})
+            return
+        
+        project_data = project.data
+        sandbox_info = {}
+        
+        # Extract sandbox info from joined resource data
+        resource_data = project_data.get('resources')
+        if resource_data:
             sandbox_info = {
-                'id': resource.get('external_id'),
-                **resource.get('config', {})
+                'id': resource_data.get('external_id'),
+                **(resource_data.get('config') or {})
             }
-    
-    await set_cached_project_metadata(project_id, sandbox_info)
+        
+        await set_cached_project_metadata(project_id, sandbox_info)
+        logger.debug(f"✅ Cached project metadata for {project_id} (has_sandbox={bool(sandbox_info)})")
+        
+    except Exception as e:
+        # Non-fatal - log and cache empty to prevent repeated failures
+        logger.warning(f"Failed to fetch project metadata for {project_id}: {e}")
+        await set_cached_project_metadata(project_id, {})
+
+
+async def dispatch_sandbox_migration(project_id: str, client) -> None:
+    """
+    Background job to migrate sandbox data from legacy JSONB to resources table.
+    This is called asynchronously and does NOT block the agent run.
+    """
+    try:
+        from core.resources import ResourceService
+        resource_service = ResourceService(client)
+        
+        result = await resource_service.migrate_project_sandbox_if_needed(project_id)
+        if result:
+            logger.info(f"🔄 Background migration completed for project {project_id}")
+            # Invalidate cache so next request gets fresh data
+            from core.cache.runtime_cache import invalidate_project_metadata
+            await invalidate_project_metadata(project_id)
+    except Exception as e:
+        logger.warning(f"Background sandbox migration failed for {project_id}: {e}")
 

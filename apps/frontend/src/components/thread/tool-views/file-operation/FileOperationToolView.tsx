@@ -439,8 +439,8 @@ export function FileOperationToolView({
           }
         }
       }
-    } else {
-      // Non-streaming: try to parse once
+    } else if (streamingSource) {
+      // Non-streaming but have source: try to parse once
       try {
         const parsed = JSON.parse(streamingSource);
         if (operation === 'create' || operation === 'rewrite') {

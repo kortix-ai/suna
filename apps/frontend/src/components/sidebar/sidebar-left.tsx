@@ -44,7 +44,6 @@ import { getPlanIcon } from '@/components/billing/plan-utils';
 import { Kbd } from '../ui/kbd';
 import { useTranslations } from 'next-intl';
 import { KbdGroup } from '../ui/kbd';
-import { NotificationDropdown } from '../notifications/notification-dropdown';
 
 
 function UserProfileSection({ user }: { user: any }) {

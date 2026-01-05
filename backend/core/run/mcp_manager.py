@@ -1,10 +1,26 @@
 import asyncio
 import time
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TypeVar
 from core.agentpress.thread_manager import ThreadManager
 from core.tools.mcp_tool_wrapper import MCPToolWrapper
 from core.agentpress.tool import SchemaType
 from core.utils.logger import logger
+
+# Timeout for version service calls (was causing 10s+ hangs)
+TIMEOUT_VERSION_SERVICE = 2.0
+TIMEOUT_BUILD_TOOL_MAP = 2.0
+
+
+async def _with_timeout(coro, timeout_seconds: float, operation_name: str, default=None):
+    """Execute a coroutine with a timeout. Returns default value on timeout."""
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        logger.warning(f"⚠️ [MCP TIMEOUT] {operation_name} timed out after {timeout_seconds}s")
+        return default
+    except Exception as e:
+        logger.warning(f"⚠️ [MCP ERROR] {operation_name} failed: {e}")
+        return default
 
 class MCPManager:
     def __init__(self, thread_manager: ThreadManager, account_id: str):
@@ -71,23 +87,39 @@ class MCPManager:
             return None
     
     async def initialize_jit_loader(self, agent_config: Dict[str, Any], cache_only: bool = False) -> None:
-        """Initialize MCP JIT loader with optional cache-only mode."""
+        """
+        Initialize MCP JIT loader with optional cache-only mode.
+        
+        REFACTORED: Added timeouts to prevent 10s+ hangs from version_service calls.
+        - Version service call: 2s timeout
+        - Build tool map: 2s timeout
+        - Total function is called with 3s timeout from agent_runner.py
+        """
         jit_start = time.time()
         if not agent_config:
             return
         
-        try:
-            agent_id = agent_config.get('agent_id')
-            
+        fresh_config = None
+        agent_id = agent_config.get('agent_id')
+        
+        # Version service call with timeout - was causing 10s hangs
+        if agent_id:
             version_start = time.time()
-            from core.versioning.version_service import get_version_service
-            version_service = await get_version_service()
-            fresh_config = await version_service.get_current_mcp_config(agent_id, self.account_id)
-            logger.info(f"⏱️ [MCP JIT TIMING] get_current_mcp_config: {(time.time() - version_start) * 1000:.1f}ms")
+            try:
+                from core.versioning.version_service import get_version_service
+                version_service = await get_version_service()
                 
-        except Exception as e:
-            logger.error(f"❌ Failed to load fresh config via version service: {e}", exc_info=True)
-            fresh_config = None
+                # Timeout the slow get_current_mcp_config call
+                fresh_config = await _with_timeout(
+                    version_service.get_current_mcp_config(agent_id, self.account_id),
+                    timeout_seconds=TIMEOUT_VERSION_SERVICE,
+                    operation_name=f"get_current_mcp_config({agent_id})"
+                )
+                logger.info(f"⏱️ [MCP JIT TIMING] get_current_mcp_config: {(time.time() - version_start) * 1000:.1f}ms")
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ [MCP JIT] Version service unavailable, using cached config: {e}")
+                fresh_config = None
         
         if fresh_config:
             agent_config_update = {
@@ -115,19 +147,33 @@ class MCPManager:
                 build_map_start = time.time()
                 if not hasattr(self.thread_manager, 'mcp_loader') or self.thread_manager.mcp_loader is None:
                     self.thread_manager.mcp_loader = MCPJITLoader(mcp_config)
-                    await self.thread_manager.mcp_loader.build_tool_map(cache_only=cache_only)
+                    # Timeout the build_tool_map call
+                    await _with_timeout(
+                        self.thread_manager.mcp_loader.build_tool_map(cache_only=cache_only),
+                        timeout_seconds=TIMEOUT_BUILD_TOOL_MAP,
+                        operation_name="build_tool_map"
+                    )
                 else:
                     if fresh_config:
-                        await self.thread_manager.mcp_loader.rebuild_tool_map(fresh_config)
+                        await _with_timeout(
+                            self.thread_manager.mcp_loader.rebuild_tool_map(fresh_config),
+                            timeout_seconds=TIMEOUT_BUILD_TOOL_MAP,
+                            operation_name="rebuild_tool_map"
+                        )
                     if cache_only:
-                        await self.thread_manager.mcp_loader.build_tool_map(cache_only=cache_only)
+                        await _with_timeout(
+                            self.thread_manager.mcp_loader.build_tool_map(cache_only=cache_only),
+                            timeout_seconds=TIMEOUT_BUILD_TOOL_MAP,
+                            operation_name="build_tool_map (cache_only)"
+                        )
                 logger.info(f"⏱️ [MCP JIT TIMING] build_tool_map: {(time.time() - build_map_start) * 1000:.1f}ms")
                 
-                stats = self.thread_manager.mcp_loader.get_activation_stats()
-                toolkits = await self.thread_manager.mcp_loader.get_toolkits()
+                # Get stats (quick, no timeout needed)
+                stats = self.thread_manager.mcp_loader.get_activation_stats() if self.thread_manager.mcp_loader else {'total_tools': 0}
+                toolkits = await self.thread_manager.mcp_loader.get_toolkits() if self.thread_manager.mcp_loader else []
                 
                 mode_str = "cache-only" if cache_only else "full discovery"
-                logger.info(f"⚡ [MCP JIT] Initialized: {stats['total_tools']} tools from {len(toolkits)} toolkits ({mode_str})")
+                logger.info(f"⚡ [MCP JIT] Initialized: {stats.get('total_tools', 0)} tools from {len(toolkits)} toolkits ({mode_str})")
                 logger.info(f"⏱️ [MCP JIT TIMING] Total initialize_jit_loader: {(time.time() - jit_start) * 1000:.1f}ms")
                 
                 if not cache_only:

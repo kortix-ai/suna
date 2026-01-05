@@ -176,11 +176,6 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     true
   );
 
-  // Debug logging for smooth text effect
-  if (streamingTextContent && isLastGroup) {
-    console.log('[SmoothText] Raw length:', streamingTextContent.length, '| Displayed:', smoothStreamingText.length, '| Animating:', isSmoothAnimating);
-  }
-
   const toolResultsMap = useMemo(() => {
     const map = new Map<string | null, UnifiedMessage[]>();
     group.messages.forEach((msg) => {
@@ -260,7 +255,15 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     // Continue rendering if:
     // 1. Currently streaming, OR
     // 2. Animation is still in progress (let it finish even after stream ends)
+    // But immediately stop if agent is not running (user stopped)
     const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
+    const isAgentRunning = agentStatus === "running" || agentStatus === "connecting";
+    
+    // If agent is not running and not streaming, immediately hide
+    if (!isAgentRunning && !isStreaming) {
+      return null;
+    }
+    
     const shouldRender = isLastGroup && !readOnly && smoothStreamingText && (isStreaming || isSmoothAnimating);
     
     if (!shouldRender) {
@@ -366,6 +369,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     smoothStreamingText,
     isSmoothAnimating,
     streamHookStatus,
+    agentStatus,
     visibleMessages,
     handleToolClick,
   ]);
@@ -456,7 +460,13 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   }, [readOnly, isLastGroup, isStreamingText, streamingText, handleToolClick]);
 
   const streamingToolCallContent = useMemo(() => {
+    // Don't show streaming tool call if not streaming or agent is not running
     if (!isLastGroup || readOnly || !streamingToolCall) return null;
+    
+    // Don't show if agent is not in a streaming state
+    const isActivelyStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
+    const isAgentRunning = agentStatus === "running" || agentStatus === "connecting";
+    if (!isActivelyStreaming && !isAgentRunning) return null;
 
     const parsedMetadata = safeJsonParse<ParsedMetadata>(
       streamingToolCall.metadata,
@@ -592,6 +602,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     streamingToolCall,
     group.messages,
     streamHookStatus,
+    agentStatus,
     handleToolClick,
   ]);
 

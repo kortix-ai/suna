@@ -49,6 +49,16 @@ class ModelRegistry:
         # Register Haiku Bedrock ARN pricing for billing resolution
         self._litellm_id_to_pricing[HAIKU_BEDROCK_ARN] = HAIKU_PRICING
         
+        # MiniMax M2.1 pricing (LiteLLM may return model ID without openrouter/ prefix)
+        minimax_m2_pricing = ModelPricing(
+            input_cost_per_million_tokens=0.30,
+            output_cost_per_million_tokens=1.20,
+            cached_read_cost_per_million_tokens=0.03,
+            cache_write_5m_cost_per_million_tokens=0.375,
+        )
+        self._litellm_id_to_pricing["minimax/minimax-m2.1"] = minimax_m2_pricing
+        self._litellm_id_to_pricing["openrouter/minimax/minimax-m2.1"] = minimax_m2_pricing
+        
         # Kortix Basic - using MiniMax M2.1
         # basic_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
         basic_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input tokens $1.20/M output tokens

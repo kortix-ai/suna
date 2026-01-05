@@ -144,8 +144,57 @@ export function useSmoothAnimation(config: SmoothAnimationConfig = {}): SmoothAn
 }
 
 /**
+ * Extract a string field from partial/streaming JSON.
+ * Works even when JSON is incomplete.
+ */
+function extractFieldFromPartialJson(jsonString: string, fieldName: string): string | null {
+  if (!jsonString || typeof jsonString !== 'string') return null;
+  
+  // Look for the field in the JSON string
+  const pattern = new RegExp(`"${fieldName}"\\s*:\\s*"`, 'i');
+  const match = jsonString.match(pattern);
+  
+  if (!match || match.index === undefined) return null;
+  
+  // Find the start of the value (after the opening quote)
+  const valueStart = match.index + match[0].length;
+  let value = '';
+  let i = valueStart;
+  let escaped = false;
+  
+  // Parse the string value, handling escape sequences
+  while (i < jsonString.length) {
+    const char = jsonString[i];
+    
+    if (escaped) {
+      switch (char) {
+        case 'n': value += '\n'; break;
+        case 't': value += '\t'; break;
+        case 'r': value += '\r'; break;
+        case '"': value += '"'; break;
+        case '\\': value += '\\'; break;
+        default: value += char;
+      }
+      escaped = false;
+    } else if (char === '\\') {
+      escaped = true;
+    } else if (char === '"') {
+      // End of string value
+      return value;
+    } else {
+      value += char;
+    }
+    i++;
+  }
+  
+  // If we didn't find a closing quote, return partial value
+  return value;
+}
+
+/**
  * Extract a specific field from JSON arguments for smooth display.
  * Handles both string and object argument formats.
+ * Uses optimistic parsing for streaming/incomplete JSON.
  */
 export function extractFieldFromArguments(
   args: string | Record<string, any> | undefined,
@@ -153,8 +202,22 @@ export function extractFieldFromArguments(
 ): string {
   if (!args) return '';
   
+  // If it's already an object, extract directly
+  if (typeof args === 'object') {
+    const keys = fieldPath.split('.');
+    let value: any = args;
+    
+    for (const key of keys) {
+      if (value === undefined || value === null) return '';
+      value = value[key];
+    }
+    
+    return typeof value === 'string' ? value : (value ? JSON.stringify(value) : '');
+  }
+  
+  // It's a string - try full JSON parse first
   try {
-    const parsed = typeof args === 'string' ? JSON.parse(args) : args;
+    const parsed = JSON.parse(args);
     const keys = fieldPath.split('.');
     let value: any = parsed;
     
@@ -163,12 +226,28 @@ export function extractFieldFromArguments(
       value = value[key];
     }
     
-    return typeof value === 'string' ? value : JSON.stringify(value);
+    return typeof value === 'string' ? value : (value ? JSON.stringify(value) : '');
   } catch {
-    // If parsing fails and it's a string, return it for partial JSON streaming
-    if (typeof args === 'string') {
-      return args;
+    // JSON parse failed - use optimistic partial parsing
+    // For simple field paths (no dots), use partial JSON extraction
+    if (!fieldPath.includes('.')) {
+      const extracted = extractFieldFromPartialJson(args, fieldPath);
+      if (extracted !== null) {
+        return extracted;
+      }
     }
+    
+    // For nested paths, try extracting the first level then recurse
+    const keys = fieldPath.split('.');
+    if (keys.length > 1) {
+      const firstKey = keys[0];
+      const extracted = extractFieldFromPartialJson(args, firstKey);
+      if (extracted !== null) {
+        // Try to parse the extracted value and continue
+        return extractFieldFromArguments(extracted, keys.slice(1).join('.'));
+      }
+    }
+    
     return '';
   }
 }

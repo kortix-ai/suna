@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSmoothAnimation, extractFieldFromArguments, type SmoothAnimationConfig } from './useSmoothAnimation';
 
 export interface SmoothToolArgumentsResult {
@@ -20,6 +20,7 @@ export interface SmoothToolFieldResult {
 /**
  * Hook that smoothly reveals tool call arguments character-by-character.
  * Designed for streaming tool calls where arguments come in as deltas.
+ * Preserves progress when component re-mounts with same content.
  * 
  * @param rawArguments - The accumulated arguments string (from tool call accumulator)
  * @param charsPerSecond - Characters to reveal per second (default: 150 for snappy tool display)
@@ -31,7 +32,14 @@ export function useSmoothToolArguments(
   charsPerSecond: number = 150,
   enabled: boolean = true
 ): SmoothToolArgumentsResult {
-  const [displayedLength, setDisplayedLength] = useState(0);
+  // Track previous content to detect if it's the same content on re-mount
+  const previousContentRef = useRef<string>('');
+  const wasFullyDisplayedRef = useRef<boolean>(false);
+  
+  const [displayedLength, setDisplayedLength] = useState(() => {
+    if (!enabled) return 0;
+    return 0;
+  });
   
   // Normalize arguments to string
   const targetArgs = useMemo(() => {
@@ -53,12 +61,29 @@ export function useSmoothToolArguments(
     if (didTargetShrink(targetArgs.length)) {
       reset();
       setDisplayedLength(0);
+      previousContentRef.current = '';
+      wasFullyDisplayedRef.current = false;
     }
   }, [targetArgs.length, didTargetShrink, reset]);
+
+  // Track when content was fully displayed
+  useEffect(() => {
+    if (displayedLength >= targetArgs.length && targetArgs.length > 0) {
+      wasFullyDisplayedRef.current = true;
+      previousContentRef.current = targetArgs;
+    }
+  }, [displayedLength, targetArgs]);
 
   // Handle animation
   useEffect(() => {
     if (!enabled || !targetArgs) {
+      setDisplayedLength(targetArgs.length);
+      stateRef.current.displayedLength = targetArgs.length;
+      return;
+    }
+
+    // If content is the same as before and was fully displayed, skip animation
+    if (previousContentRef.current === targetArgs && wasFullyDisplayedRef.current) {
       setDisplayedLength(targetArgs.length);
       stateRef.current.displayedLength = targetArgs.length;
       return;
@@ -96,11 +121,6 @@ export function useSmoothToolArguments(
     const displayedArgs = enabled ? targetArgs.slice(0, displayedLength) : targetArgs;
     const isAnimating = enabled && displayedLength < targetArgs.length;
     
-    // Debug logging for smooth tool arguments
-    if (enabled && targetArgs.length > 0) {
-      console.log('[SmoothToolArgs] Raw length:', targetArgs.length, '| Displayed:', displayedLength, '| Animating:', isAnimating);
-    }
-    
     return { displayedArgs, isAnimating, parsedArgs };
   }, [enabled, targetArgs, displayedLength, parsedArgs]);
 
@@ -110,6 +130,7 @@ export function useSmoothToolArguments(
 /**
  * Hook that smoothly reveals a specific field from tool call arguments.
  * Useful for extracting and animating specific content like file_contents, command, etc.
+ * Preserves progress when component re-mounts with same content.
  * 
  * @param rawArguments - The accumulated arguments (string or object)
  * @param fieldPath - Dot-separated path to the field (e.g., 'file_contents', 'code_edit')
@@ -123,6 +144,10 @@ export function useSmoothToolField(
   charsPerSecond: number = 120,
   enabled: boolean = true
 ): SmoothToolFieldResult {
+  // Track previous content to detect if it's the same content on re-mount
+  const previousContentRef = useRef<string>('');
+  const wasFullyDisplayedRef = useRef<boolean>(false);
+  
   const [displayedLength, setDisplayedLength] = useState(0);
   
   // Extract the field value - ensure it's always a string
@@ -147,12 +172,29 @@ export function useSmoothToolField(
     if (didTargetShrink(fieldLength)) {
       reset();
       setDisplayedLength(0);
+      previousContentRef.current = '';
+      wasFullyDisplayedRef.current = false;
     }
   }, [fieldLength, didTargetShrink, reset]);
+
+  // Track when content was fully displayed
+  useEffect(() => {
+    if (displayedLength >= fieldLength && fieldLength > 0) {
+      wasFullyDisplayedRef.current = true;
+      previousContentRef.current = fieldValue;
+    }
+  }, [displayedLength, fieldValue, fieldLength]);
 
   // Handle animation
   useEffect(() => {
     if (!enabled || !fieldValue) {
+      setDisplayedLength(fieldLength);
+      stateRef.current.displayedLength = fieldLength;
+      return;
+    }
+
+    // If content is the same as before and was fully displayed, skip animation
+    if (previousContentRef.current === fieldValue && wasFullyDisplayedRef.current) {
       setDisplayedLength(fieldLength);
       stateRef.current.displayedLength = fieldLength;
       return;
@@ -180,13 +222,8 @@ export function useSmoothToolField(
     const displayedValue = enabled ? safeFieldValue.slice(0, displayedLength) : safeFieldValue;
     const isAnimating = enabled && displayedLength < fieldLength;
     
-    // Debug logging for smooth tool field
-    if (enabled && fieldLength > 0) {
-      console.log('[SmoothToolField]', fieldPath, '| Raw length:', fieldLength, '| Displayed:', displayedLength, '| Animating:', isAnimating);
-    }
-    
     return { displayedValue, isAnimating };
-  }, [enabled, fieldValue, fieldLength, displayedLength, fieldPath]);
+  }, [enabled, fieldValue, fieldLength, displayedLength]);
 
   return result;
 }

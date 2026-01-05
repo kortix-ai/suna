@@ -297,6 +297,10 @@ async def invalidate_project_cache(project_id: str) -> None:
         logger.warning(f"Failed to invalidate project cache: {e}")
 
 
+# Alias for backwards compatibility
+invalidate_project_metadata = invalidate_project_cache
+
+
 # ============================================================================
 # RUNNING RUNS CACHE - Short TTL for concurrent runs limit checks
 # ============================================================================
