@@ -52,7 +52,7 @@ class Configuration:
     # ============================================
     
     # ===== PRESENCE CONFIGURATION =====
-    DISABLE_PRESENCE: bool = False  # Disable presence tracking entirely
+    DISABLE_PRESENCE: bool = True  # Disable presence tracking entirely
     # ==================================
     
     SYSTEM_ADMIN_USER_ID: Optional[str] = None  # User ID that owns shared/fallback agents
