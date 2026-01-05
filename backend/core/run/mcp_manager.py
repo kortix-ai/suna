@@ -6,13 +6,12 @@ from core.tools.mcp_tool_wrapper import MCPToolWrapper
 from core.agentpress.tool import SchemaType
 from core.utils.logger import logger
 
-# Timeout for version service calls (was causing 10s+ hangs)
-TIMEOUT_VERSION_SERVICE = 2.0
-TIMEOUT_BUILD_TOOL_MAP = 2.0
+# Timeout for version service calls
+TIMEOUT_VERSION_SERVICE = 10.0
+TIMEOUT_BUILD_TOOL_MAP = 5.0
 
 
 async def _with_timeout(coro, timeout_seconds: float, operation_name: str, default=None):
-    """Execute a coroutine with a timeout. Returns default value on timeout."""
     try:
         return await asyncio.wait_for(coro, timeout=timeout_seconds)
     except asyncio.TimeoutError:
@@ -109,7 +108,6 @@ class MCPManager:
                 from core.versioning.version_service import get_version_service
                 version_service = await get_version_service()
                 
-                # Timeout the slow get_current_mcp_config call
                 fresh_config = await _with_timeout(
                     version_service.get_current_mcp_config(agent_id, self.account_id),
                     timeout_seconds=TIMEOUT_VERSION_SERVICE,
