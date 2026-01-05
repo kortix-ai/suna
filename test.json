@@ -1,1981 +1,513 @@
 {
-    "event": "🚀 Processing agent run: a013cd50-8703-44d8-a913-f52c490413be",
-    "level": "info",
-    "filename": "handlers.py",
-    "func_name": "handle_agent_run",
-    "lineno": 69,
-    "timestamp": "2026-01-05T03:59:54.058449Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "✅ Redis stream agent_run:a013cd50-8703-44d8-a913-f52c490413be:stream is writable",
-    "level": "info",
-    "filename": "redis.py",
-    "func_name": "verify_stream_writable",
-    "lineno": 163,
-    "timestamp": "2026-01-05T03:59:54.059412Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [AGENT CONFIG] Starting load_agent_config for agent_id=788cf757-6f21-4b5a-8e3a-c05e76e53eee",
-    "level": "info",
-    "filename": "helpers.py",
-    "func_name": "load_agent_config",
-    "lineno": 157,
-    "timestamp": "2026-01-05T03:59:54.060047Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ Redis cache hit for user MCPs: 788cf757-6f21-4b5a-8e3a-c05e76e53eee",
+    "event": "Fetching agent runs for thread: 6e24dc4f-f3cb-446a-a216-a6c3100093d7",
     "level": "debug",
-    "filename": "runtime_cache.py",
-    "func_name": "get_cached_user_mcps",
-    "lineno": 92,
-    "timestamp": "2026-01-05T03:59:54.060532Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [AGENT CONFIG] memory + Redis MCPs: 0.6ms (CACHE HIT)",
-    "level": "info",
-    "filename": "helpers.py",
-    "func_name": "load_agent_config",
-    "lineno": 222,
-    "timestamp": "2026-01-05T03:59:54.060621Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "Using agent 788cf757-6f21-4b5a-8e3a-c05e76e53eee for this agent run",
-    "level": "debug",
-    "filename": "helpers.py",
-    "func_name": "load_agent_config",
-    "lineno": 247,
-    "timestamp": "2026-01-05T03:59:54.060700Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [HANDLER TIMING] load_agent_config: 0.7ms",
-    "level": "info",
-    "filename": "handlers.py",
-    "func_name": "handle_agent_run",
-    "lineno": 129,
-    "timestamp": "2026-01-05T03:59:54.060785Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "Disabled tools from config: []",
-    "level": "debug",
-    "filename": "agent_runner.py",
-    "func_name": "_get_disabled_tools_from_config",
-    "lineno": 185,
-    "timestamp": "2026-01-05T03:59:54.061261Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "Initialized new ToolRegistry instance",
-    "level": "debug",
-    "filename": "tool_registry.py",
-    "func_name": "__init__",
-    "lineno": 11,
-    "timestamp": "2026-01-05T03:59:54.061687Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [TIMING] ThreadManager init: 0.1ms",
-    "level": "debug",
-    "filename": "agent_runner.py",
-    "func_name": "setup",
-    "lineno": 91,
-    "timestamp": "2026-01-05T03:59:54.061773Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [TIMING] DB client acquire: 0.0ms",
-    "level": "debug",
-    "filename": "agent_runner.py",
-    "func_name": "setup",
-    "lineno": 95,
-    "timestamp": "2026-01-05T03:59:54.061876Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ Redis cache hit for MCP version config: 788cf757-6f21-4b5a-8e3a-c05e76e53eee",
-    "level": "debug",
-    "filename": "runtime_cache.py",
-    "func_name": "get_cached_mcp_version_config",
-    "lineno": 137,
-    "timestamp": "2026-01-05T03:59:54.062724Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [MCP JIT TIMING] get_current_mcp_config: 0.4ms",
-    "level": "info",
-    "filename": "mcp_manager.py",
-    "func_name": "initialize_jit_loader",
-    "lineno": 118,
-    "timestamp": "2026-01-05T03:59:54.062829Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "🔄 [TOOL REGISTRY] Invalidated MCP-related caches",
-    "level": "debug",
-    "filename": "tool_registry.py",
-    "func_name": "invalidate_mcp_cache",
-    "lineno": 127,
-    "timestamp": "2026-01-05T03:59:54.062909Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] Loading MCPs: 3 custom, 0 configured",
-    "level": "debug",
-    "filename": "mcp_manager.py",
-    "func_name": "initialize_jit_loader",
-    "lineno": 135,
-    "timestamp": "2026-01-05T03:59:54.062979Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] Processing 3 custom MCPs and 0 configured MCPs (cache-only)",
-    "level": "debug",
-    "filename": "mcp_loader.py",
-    "func_name": "build_tool_map",
-    "lineno": 68,
-    "timestamp": "2026-01-05T03:59:54.063104Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] custom_mcp[0]: name=Gmail, toolkit=gmail",
-    "level": "debug",
-    "filename": "mcp_loader.py",
-    "func_name": "build_tool_map",
-    "lineno": 71,
-    "timestamp": "2026-01-05T03:59:54.063175Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] custom_mcp[1]: name=Supabase, toolkit=supabase",
-    "level": "debug",
-    "filename": "mcp_loader.py",
-    "func_name": "build_tool_map",
-    "lineno": 71,
-    "timestamp": "2026-01-05T03:59:54.063240Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] custom_mcp[2]: name=Stripe, toolkit=stripe",
-    "level": "debug",
-    "filename": "mcp_loader.py",
-    "func_name": "build_tool_map",
-    "lineno": 71,
-    "timestamp": "2026-01-05T03:59:54.063300Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] Built tool map: 135 tools from 3 servers in 0.5ms (cache-only)",
-    "level": "info",
-    "filename": "mcp_loader.py",
-    "func_name": "build_tool_map",
-    "lineno": 89,
-    "timestamp": "2026-01-05T03:59:54.063624Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] gmail: 23 tools",
-    "level": "debug",
-    "filename": "mcp_loader.py",
-    "func_name": "build_tool_map",
-    "lineno": 97,
-    "timestamp": "2026-01-05T03:59:54.063712Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] supabase: 79 tools",
-    "level": "debug",
-    "filename": "mcp_loader.py",
-    "func_name": "build_tool_map",
-    "lineno": 97,
-    "timestamp": "2026-01-05T03:59:54.063780Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] stripe: 33 tools",
-    "level": "debug",
-    "filename": "mcp_loader.py",
-    "func_name": "build_tool_map",
-    "lineno": 97,
-    "timestamp": "2026-01-05T03:59:54.063844Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [MCP JIT TIMING] build_tool_map: 0.9ms",
-    "level": "info",
-    "filename": "mcp_manager.py",
-    "func_name": "initialize_jit_loader",
-    "lineno": 169,
-    "timestamp": "2026-01-05T03:59:54.063947Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] Initialized: 135 tools from 3 toolkits (cache-only)",
-    "level": "info",
-    "filename": "mcp_manager.py",
-    "func_name": "initialize_jit_loader",
-    "lineno": 176,
-    "timestamp": "2026-01-05T03:59:54.064080Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [MCP JIT TIMING] Total initialize_jit_loader: 1.8ms",
-    "level": "info",
-    "filename": "mcp_manager.py",
-    "func_name": "initialize_jit_loader",
-    "lineno": 177,
-    "timestamp": "2026-01-05T03:59:54.064152Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [SETUP TIMING] MCP initialize_jit_loader: 1.9ms",
-    "level": "info",
-    "filename": "agent_runner.py",
-    "func_name": "setup",
-    "lineno": 119,
-    "timestamp": "2026-01-05T03:59:54.064255Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ Redis cache hit for project metadata: bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "level": "debug",
-    "filename": "runtime_cache.py",
-    "func_name": "get_cached_project_metadata",
-    "lineno": 269,
-    "timestamp": "2026-01-05T03:59:54.064651Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [SETUP TIMING] ensure_project_metadata_cached: 0.4ms",
-    "level": "info",
-    "filename": "agent_runner.py",
-    "func_name": "setup",
-    "lineno": 129,
-    "timestamp": "2026-01-05T03:59:54.064756Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "✅ [SETUP] Complete in 120.9ms",
-    "level": "info",
-    "filename": "agent_runner.py",
-    "func_name": "setup",
-    "lineno": 142,
-    "timestamp": "2026-01-05T03:59:54.181881Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [TIMING] AgentRunner.setup() completed in 121.1ms",
-    "level": "info",
-    "filename": "agent_runner.py",
-    "func_name": "_prepare_execution",
-    "lineno": 257,
-    "timestamp": "2026-01-05T03:59:54.181993Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [EXECUTOR] Total: 4.8ms",
-    "level": "info",
-    "filename": "agent_runner.py",
-    "func_name": "_setup_tools_async",
-    "lineno": 231,
-    "timestamp": "2026-01-05T03:59:54.187342Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [PREPARE TIMING] _setup_tools_async: 5.3ms",
-    "level": "info",
-    "filename": "agent_runner.py",
-    "func_name": "_prepare_execution",
-    "lineno": 263,
-    "timestamp": "2026-01-05T03:59:54.187426Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚠️ [ERROR] fetch thread metadata for dynamic tools failed: {'message': 'JSON could not be generated', 'code': 404, 'hint': 'Refer to full message for details', 'details': 'b\\'{\"message\":\"Route GET:/threads?select=metadata&thread_id=eq.9e70cc3f-01b9-4d54-a8df-1fb172e9e667 not found\",\"error\":\"Not Found\",\"statusCode\":404}\\''} - continuing with default",
-    "level": "warning",
-    "filename": "agent_runner.py",
-    "func_name": "with_timeout",
-    "lineno": 49,
-    "timestamp": "2026-01-05T03:59:54.406933Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📦 [DYNAMIC TOOLS] No thread metadata found",
-    "level": "debug",
-    "filename": "agent_runner.py",
-    "func_name": "_restore_dynamic_tools",
-    "lineno": 552,
-    "timestamp": "2026-01-05T03:59:54.407026Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [PREPARE TIMING] _restore_dynamic_tools: 219.6ms",
-    "level": "info",
-    "filename": "agent_runner.py",
-    "func_name": "_prepare_execution",
-    "lineno": 267,
-    "timestamp": "2026-01-05T03:59:54.407098Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] Using JIT MCP system",
-    "level": "info",
-    "filename": "agent_runner.py",
-    "func_name": "_prepare_execution",
-    "lineno": 273,
-    "timestamp": "2026-01-05T03:59:54.407159Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [PREPARE TIMING] MCP cleanup: 0.1ms",
-    "level": "info",
-    "filename": "agent_runner.py",
-    "func_name": "_prepare_execution",
-    "lineno": 278,
-    "timestamp": "2026-01-05T03:59:54.407297Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [TIMING] Tool setup total: 225.3ms",
-    "level": "info",
-    "filename": "agent_runner.py",
-    "func_name": "_prepare_execution",
-    "lineno": 281,
-    "timestamp": "2026-01-05T03:59:54.407368Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [PREPARE TIMING] About to call build_system_prompt...",
-    "level": "info",
-    "filename": "agent_runner.py",
-    "func_name": "_prepare_execution",
-    "lineno": 285,
-    "timestamp": "2026-01-05T03:59:54.407895Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "🚀 [DYNAMIC TOOLS] Using dynamic tool loading system (minimal index only)",
-    "level": "info",
-    "filename": "prompt_manager.py",
-    "func_name": "_build_base_prompt",
-    "lineno": 92,
-    "timestamp": "2026-01-05T03:59:54.408090Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📊 [DYNAMIC TOOLS] Core prompt + minimal index: 31,490 chars",
-    "level": "info",
-    "filename": "prompt_manager.py",
-    "func_name": "_build_base_prompt",
-    "lineno": 95,
-    "timestamp": "2026-01-05T03:59:54.408279Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📖 [DYNAMIC TOOLS] Loaded guide for 'expand_msg_tool' (1,174 chars)",
-    "level": "info",
-    "filename": "tool_guide_registry.py",
-    "func_name": "get_guide",
-    "lineno": 156,
-    "timestamp": "2026-01-05T03:59:54.408403Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📖 [DYNAMIC TOOLS] Loaded guide for 'message_tool' (2,273 chars)",
-    "level": "info",
-    "filename": "tool_guide_registry.py",
-    "func_name": "get_guide",
-    "lineno": 156,
-    "timestamp": "2026-01-05T03:59:54.408514Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📖 [DYNAMIC TOOLS] Loaded guide for 'task_list_tool' (8,017 chars)",
-    "level": "info",
-    "filename": "tool_guide_registry.py",
-    "func_name": "get_guide",
-    "lineno": 156,
-    "timestamp": "2026-01-05T03:59:54.408611Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📖 [DYNAMIC TOOLS] Loaded guide for 'sb_shell_tool' (1,658 chars)",
-    "level": "info",
-    "filename": "tool_guide_registry.py",
-    "func_name": "get_guide",
-    "lineno": 156,
-    "timestamp": "2026-01-05T03:59:54.408687Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📖 [DYNAMIC TOOLS] Loaded guide for 'sb_files_tool' (1,965 chars)",
-    "level": "info",
-    "filename": "tool_guide_registry.py",
-    "func_name": "get_guide",
-    "lineno": 156,
-    "timestamp": "2026-01-05T03:59:54.408761Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📖 [DYNAMIC TOOLS] Loaded guide for 'sb_file_reader_tool' (1,260 chars)",
-    "level": "info",
-    "filename": "tool_guide_registry.py",
-    "func_name": "get_guide",
-    "lineno": 156,
-    "timestamp": "2026-01-05T03:59:54.408835Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📖 [DYNAMIC TOOLS] Loaded guide for 'sb_spreadsheet_tool' (13,816 chars)",
-    "level": "info",
-    "filename": "tool_guide_registry.py",
-    "func_name": "get_guide",
-    "lineno": 156,
-    "timestamp": "2026-01-05T03:59:54.408967Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📖 [DYNAMIC TOOLS] Loaded guide for 'web_search_tool' (4,987 chars)",
-    "level": "info",
-    "filename": "tool_guide_registry.py",
-    "func_name": "get_guide",
-    "lineno": 156,
-    "timestamp": "2026-01-05T03:59:54.409051Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📖 [DYNAMIC TOOLS] Loaded guide for 'image_search_tool' (1,142 chars)",
-    "level": "info",
-    "filename": "tool_guide_registry.py",
-    "func_name": "get_guide",
-    "lineno": 156,
-    "timestamp": "2026-01-05T03:59:54.409126Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📖 [DYNAMIC TOOLS] Loaded guide for 'sb_vision_tool' (1,886 chars)",
-    "level": "info",
-    "filename": "tool_guide_registry.py",
-    "func_name": "get_guide",
-    "lineno": 156,
-    "timestamp": "2026-01-05T03:59:54.409201Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📖 [DYNAMIC TOOLS] Loaded guide for 'sb_image_edit_tool' (1,036 chars)",
-    "level": "info",
-    "filename": "tool_guide_registry.py",
-    "func_name": "get_guide",
-    "lineno": 156,
-    "timestamp": "2026-01-05T03:59:54.409278Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📖 [DYNAMIC TOOLS] Loaded guide for 'browser_tool' (2,468 chars)",
-    "level": "info",
-    "filename": "tool_guide_registry.py",
-    "func_name": "get_guide",
-    "lineno": 156,
-    "timestamp": "2026-01-05T03:59:54.409359Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚠️  [DYNAMIC TOOLS] Tool 'sb_git_sync' exists but has no usage guide",
-    "level": "warning",
-    "filename": "tool_guide_registry.py",
-    "func_name": "get_guide",
-    "lineno": 159,
-    "timestamp": "2026-01-05T03:59:54.409435Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📖 [DYNAMIC TOOLS] Loaded guide for 'sb_upload_file_tool' (1,470 chars)",
-    "level": "info",
-    "filename": "tool_guide_registry.py",
-    "func_name": "get_guide",
-    "lineno": 156,
-    "timestamp": "2026-01-05T03:59:54.409508Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📖 [DYNAMIC TOOLS] Loaded guide for 'sb_expose_tool' (1,142 chars)",
-    "level": "info",
-    "filename": "tool_guide_registry.py",
-    "func_name": "get_guide",
-    "lineno": 156,
-    "timestamp": "2026-01-05T03:59:54.409578Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📖 [PRELOADED GUIDES] Loaded 14 guides for core tools",
-    "level": "info",
-    "filename": "prompt_manager.py",
-    "func_name": "_get_preloaded_tool_guides",
-    "lineno": 127,
-    "timestamp": "2026-01-05T03:59:54.409908Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "📖 [DYNAMIC TOOLS] Added preloaded tool guides: 44,446 chars",
-    "level": "info",
-    "filename": "prompt_manager.py",
-    "func_name": "_build_base_prompt",
-    "lineno": 100,
-    "timestamp": "2026-01-05T03:59:54.410194Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [PROMPT TIMING] _build_base_prompt: 2.3ms",
-    "level": "debug",
-    "filename": "prompt_manager.py",
-    "func_name": "build_system_prompt",
-    "lineno": 36,
-    "timestamp": "2026-01-05T03:59:54.410340Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [PROMPT TIMING] _append_builder_tools_prompt: 0.4ms",
-    "level": "debug",
-    "filename": "prompt_manager.py",
-    "func_name": "build_system_prompt",
-    "lineno": 40,
-    "timestamp": "2026-01-05T03:59:54.410790Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ Redis cache hit for MCP version config: 788cf757-6f21-4b5a-8e3a-c05e76e53eee",
-    "level": "debug",
-    "filename": "runtime_cache.py",
-    "func_name": "get_cached_mcp_version_config",
-    "lineno": 137,
-    "timestamp": "2026-01-05T03:59:54.411267Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "🔄 [MCP PROMPT] Using fresh MCP config from current version: 0 configured, 3 custom",
-    "level": "debug",
-    "filename": "prompt_manager.py",
-    "func_name": "_append_mcp_tools_info",
-    "lineno": 252,
-    "timestamp": "2026-01-05T03:59:54.411340Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [PROMPT TIMING] _append_mcp_tools_info: 0.6ms",
-    "level": "debug",
-    "filename": "prompt_manager.py",
-    "func_name": "build_system_prompt",
-    "lineno": 53,
-    "timestamp": "2026-01-05T03:59:54.411419Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ Redis cache hit for MCP version config: 788cf757-6f21-4b5a-8e3a-c05e76e53eee",
-    "level": "debug",
-    "filename": "runtime_cache.py",
-    "func_name": "get_cached_mcp_version_config",
-    "lineno": 137,
-    "timestamp": "2026-01-05T03:59:54.411785Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] Processing 3 custom MCPs and 0 configured MCPs (full discovery)",
-    "level": "debug",
-    "filename": "mcp_loader.py",
-    "func_name": "build_tool_map",
-    "lineno": 68,
-    "timestamp": "2026-01-05T03:59:54.412013Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] custom_mcp[0]: name=Gmail, toolkit=gmail",
-    "level": "debug",
-    "filename": "mcp_loader.py",
-    "func_name": "build_tool_map",
-    "lineno": 71,
-    "timestamp": "2026-01-05T03:59:54.412082Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] custom_mcp[1]: name=Supabase, toolkit=supabase",
-    "level": "debug",
-    "filename": "mcp_loader.py",
-    "func_name": "build_tool_map",
-    "lineno": 71,
-    "timestamp": "2026-01-05T03:59:54.412149Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] custom_mcp[2]: name=Stripe, toolkit=stripe",
-    "level": "debug",
-    "filename": "mcp_loader.py",
-    "func_name": "build_tool_map",
-    "lineno": 71,
-    "timestamp": "2026-01-05T03:59:54.412218Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] Built tool map: 135 tools from 3 servers in 0.5ms (full discovery)",
-    "level": "info",
-    "filename": "mcp_loader.py",
-    "func_name": "build_tool_map",
-    "lineno": 89,
-    "timestamp": "2026-01-05T03:59:54.412519Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] gmail: 23 tools",
-    "level": "debug",
-    "filename": "mcp_loader.py",
-    "func_name": "build_tool_map",
-    "lineno": 97,
-    "timestamp": "2026-01-05T03:59:54.412608Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] supabase: 79 tools",
-    "level": "debug",
-    "filename": "mcp_loader.py",
-    "func_name": "build_tool_map",
-    "lineno": 97,
-    "timestamp": "2026-01-05T03:59:54.412681Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] stripe: 33 tools",
-    "level": "debug",
-    "filename": "mcp_loader.py",
-    "func_name": "build_tool_map",
-    "lineno": 97,
-    "timestamp": "2026-01-05T03:59:54.412747Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP JIT] Rebuilt tool map: 135 tools loaded",
-    "level": "debug",
-    "filename": "mcp_loader.py",
-    "func_name": "rebuild_tool_map",
-    "lineno": 52,
-    "timestamp": "2026-01-05T03:59:54.412817Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "🔄 [MCP JIT] Updated loader with current version config",
-    "level": "debug",
-    "filename": "prompt_manager.py",
-    "func_name": "_append_jit_mcp_info",
-    "lineno": 363,
-    "timestamp": "2026-01-05T03:59:54.412886Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [MCP PROMPT] Appended MCP info (6004 chars) for 3 toolkits, 135 total tools",
-    "level": "info",
-    "filename": "prompt_manager.py",
-    "func_name": "_append_jit_mcp_info",
-    "lineno": 407,
-    "timestamp": "2026-01-05T03:59:54.413006Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [PROMPT TIMING] _append_jit_mcp_info: 1.9ms",
-    "level": "debug",
-    "filename": "prompt_manager.py",
-    "func_name": "build_system_prompt",
-    "lineno": 57,
-    "timestamp": "2026-01-05T03:59:54.413358Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "Memory fetch skipped: ENABLE_MEMORY=False",
-    "level": "debug",
-    "filename": "prompt_manager.py",
-    "func_name": "_fetch_user_memories",
-    "lineno": 576,
-    "timestamp": "2026-01-05T03:59:54.413894Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ Redis cache hit for KB context: 788cf757-6f21-4b5a-8e3a-c05e76e53eee",
-    "level": "debug",
-    "filename": "runtime_cache.py",
-    "func_name": "get_cached_kb_context",
-    "lineno": 455,
-    "timestamp": "2026-01-05T03:59:54.414320Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [TIMING] KB fetch: 0.6ms (cache: hit)",
-    "level": "debug",
-    "filename": "prompt_manager.py",
-    "func_name": "_fetch_knowledge_base",
-    "lineno": 175,
-    "timestamp": "2026-01-05T03:59:54.414392Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ Redis cache hit for user context: 83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "level": "debug",
-    "filename": "runtime_cache.py",
-    "func_name": "get_cached_user_context",
-    "lineno": 512,
-    "timestamp": "2026-01-05T03:59:54.414628Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [TIMING] User context: 0.9ms (cache: hit)",
-    "level": "debug",
-    "filename": "prompt_manager.py",
-    "func_name": "_fetch_user_context_data",
-    "lineno": 514,
-    "timestamp": "2026-01-05T03:59:54.414724Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [PROMPT TIMING] parallel fetches (kb/user_context/memory/file): 1.1ms",
-    "level": "debug",
-    "filename": "prompt_manager.py",
-    "func_name": "build_system_prompt",
-    "lineno": 64,
-    "timestamp": "2026-01-05T03:59:54.414859Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [PROMPT TIMING] Total build_system_prompt: 7.0ms",
-    "level": "info",
-    "filename": "prompt_manager.py",
-    "func_name": "build_system_prompt",
-    "lineno": 66,
-    "timestamp": "2026-01-05T03:59:54.414937Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "✅ [DYNAMIC TOOLS] Final system prompt: 103,531 chars (est. 71% reduction vs legacy)",
-    "level": "info",
-    "filename": "prompt_manager.py",
-    "func_name": "_log_prompt_stats",
-    "lineno": 675,
-    "timestamp": "2026-01-05T03:59:54.415057Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [PREPARE TIMING] build_system_prompt: 7.2ms (103531 chars)",
-    "level": "info",
-    "filename": "agent_runner.py",
-    "func_name": "_prepare_execution",
-    "lineno": 296,
-    "timestamp": "2026-01-05T03:59:54.415142Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [TIMING] 🚀 TOTAL AgentRunner setup: 354.3ms (ready for first LLM call)",
-    "level": "info",
-    "filename": "agent_runner.py",
-    "func_name": "_prepare_execution",
-    "lineno": 302,
-    "timestamp": "2026-01-05T03:59:54.415215Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⚡ [CREDIT_CACHE] Daily refresh already checked for 83e1c69c-28bb-4229-985e-0ed34cc51762 today (cached)",
-    "level": "debug",
-    "filename": "integration.py",
-    "func_name": "check_and_reserve_credits",
-    "lineno": 31,
-    "timestamp": "2026-01-05T03:59:54.415930Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "⏱️ [BILLING] Balance query (use_cache=True): 0.3ms",
-    "level": "debug",
-    "filename": "integration.py",
-    "func_name": "check_and_reserve_credits",
-    "lineno": 49,
-    "timestamp": "2026-01-05T03:59:54.416321Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "Error in agent run a013cd50-8703-44d8-a913-f52c490413be: {'message': 'JSON could not be generated', 'code': 404, 'hint': 'Refer to full message for details', 'details': 'b\\'{\"message\":\"Route GET:/messages?select=type&thread_id=eq.9e70cc3f-01b9-4d54-a8df-1fb172e9e667&type=in.%28assistant%2Ctool%2Cuser%29&order=created_at.desc&limit=1 not found\",\"error\":\"Not Found\",\"statusCode\":404}\\''}",
-    "level": "error",
-    "exception": [
-        {
-            "exc_type": "APIError",
-            "exc_value": "{'message': 'JSON could not be generated', 'code': 404, 'hint': 'Refer to full message for details', 'details': 'b\\'{\"message\":\"Route GET:/messages?select=type&thread_id=eq.9e70cc3f-01b9-4d54-a8df-1fb172e9e667&type=in.%28assistant%2Ctool%2Cuser%29&order=created_at.desc&limit=1 not found\",\"error\":\"Not Found\",\"statusCode\":404}\\''}",
-            "exc_notes": [],
-            "syntax_error": null,
-            "is_cause": false,
-            "frames": [
-                {
-                    "filename": "/app/core/worker/handlers.py",
-                    "lineno": 146,
-                    "name": "handle_agent_run",
-                    "locals": {
-                        "task": "\"AgentRunTask(task_type='agent_run', enqueued_at=1767585594.0566952, agent_run_id\"+343",
-                        "thread_id": "'9e70cc3f-01b9-4d54-a8df-1fb172e9e667'",
-                        "instance_id": "'f1c099f2'",
-                        "project_id": "'bc6f5d9b-9379-40d6-babc-931e57d90714'",
-                        "model_name": "'kortix/power'",
-                        "agent_id": "'788cf757-6f21-4b5a-8e3a-c05e76e53eee'",
-                        "account_id": "'83e1c69c-28bb-4229-985e-0ed34cc51762'",
-                        "worker_start": "1767585594.0584118",
-                        "client": "<supabase._async.client.AsyncClient object at 0x7f3fd23fc7d0>",
-                        "stop_checker": "\"<Task pending name='Task-49636' coro=<handle_agent_run.<locals>.check_for_stop_s\"+103",
-                        "final_status": "'failed'",
-                        "redis_keys": "\"{'response_stream': 'agent_run:a013cd50-8703-44d8-a913-f52c490413be:stream', 'in\"+75",
-                        "trace": "<langfuse.client.StatefulTraceClient object at 0x7f3fd2f25d50>",
-                        "lock_acquired": "True",
-                        "e": "'Error 404:\\nMessage: JSON could not be generated\\nHint: Refer to full message for '+230",
-                        "start_time": "datetime.datetime(2026, 1, 5, 3, 59, 54, 58889, tzinfo=datetime.timezone.utc)",
-                        "model_manager": "<core.ai_models.registry.ModelRegistry object at 0x7f3fe59d4910>",
-                        "effective_model": "'kortix/power'",
-                        "check_for_stop_signal": "<function handle_agent_run.<locals>.check_for_stop_signal at 0x7f3fd4782b60>",
-                        "t_agent_config": "1767585594.060022",
-                        "agent_config": "\"{'agent_id': '788cf757-6f21-4b5a-8e3a-c05e76e53eee', 'system_prompt': '\\\\nYou are\"+37679",
-                        "agent_gen": "<async_generator object run_agent at 0x7f3fdd217290>",
-                        "agent_run_id": "'a013cd50-8703-44d8-a913-f52c490413be'",
-                        "cancellation_event": "<asyncio.locks.Event object at 0x7f3fd23c40d0 [unset]>",
-                        "stop_signal_checker_state": "{'stop_signal_received': False, 'total_responses': 0, 'stop_reason': None}"
-                    }
-                },
-                {
-                    "filename": "/app/core/worker/helpers.py",
-                    "lineno": 346,
-                    "name": "process_agent_responses",
-                    "locals": {
-                        "agent_gen": "<async_generator object run_agent at 0x7f3fdd217290>",
-                        "agent_run_id": "'a013cd50-8703-44d8-a913-f52c490413be'",
-                        "redis_keys": "\"{'response_stream': 'agent_run:a013cd50-8703-44d8-a913-f52c490413be:stream', 'in\"+75",
-                        "trace": "<langfuse.client.StatefulTraceClient object at 0x7f3fd2f25d50>",
-                        "worker_start": "1767585594.0584118",
-                        "stop_signal_checker_state": "{'stop_signal_received': False, 'total_responses': 0, 'stop_reason': None}",
-                        "final_status": "'running'",
-                        "error_message": "None",
-                        "first_response_logged": "False",
-                        "complete_tool_called": "False",
-                        "total_responses": "0",
-                        "stream_key": "'agent_run:a013cd50-8703-44d8-a913-f52c490413be:stream'",
-                        "stream_ttl_set": "False"
-                    }
-                },
-                {
-                    "filename": "/app/core/run/__init__.py",
-                    "lineno": 48,
-                    "name": "run_agent",
-                    "locals": {
-                        "thread_id": "'9e70cc3f-01b9-4d54-a8df-1fb172e9e667'",
-                        "project_id": "'bc6f5d9b-9379-40d6-babc-931e57d90714'",
-                        "thread_manager": "None",
-                        "native_max_auto_continues": "25",
-                        "max_iterations": "100",
-                        "model_name": "'kortix/power'",
-                        "agent_config": "\"{'agent_id': '788cf757-6f21-4b5a-8e3a-c05e76e53eee', 'system_prompt': '\\\\nYou are\"+37679",
-                        "trace": "<langfuse.client.StatefulTraceClient object at 0x7f3fd2f25d50>",
-                        "cancellation_event": "<asyncio.locks.Event object at 0x7f3fd23c40d0 [unset]>",
-                        "account_id": "'83e1c69c-28bb-4229-985e-0ed34cc51762'",
-                        "effective_model": "'kortix/power'",
-                        "config": "\"AgentConfig(thread_id='9e70cc3f-01b9-4d54-a8df-1fb172e9e667', project_id='bc6f5d\"+38004",
-                        "runner": "<core.run.agent_runner.AgentRunner object at 0x7f3fd2efa350>"
-                    }
-                },
-                {
-                    "filename": "/app/core/run/agent_runner.py",
-                    "lineno": 245,
-                    "name": "run",
-                    "locals": {
-                        "self": "<core.run.agent_runner.AgentRunner object at 0x7f3fd2efa350>",
-                        "cancellation_event": "<asyncio.locks.Event object at 0x7f3fd23c40d0 [unset]>",
-                        "system_message": "\"{'role': 'system', 'content': 'You are Kortix, an autonomous AI Worker created b\"+105819"
-                    }
-                },
-                {
-                    "filename": "/app/core/run/agent_runner.py",
-                    "lineno": 318,
-                    "name": "_run_loop",
-                    "locals": {
-                        "self": "<core.run.agent_runner.AgentRunner object at 0x7f3fd2efa350>",
-                        "system_message": "\"{'role': 'system', 'content': 'You are Kortix, an autonomous AI Worker created b\"+105819",
-                        "cancellation_event": "<asyncio.locks.Event object at 0x7f3fd23c40d0 [unset]>",
-                        "iteration_count": "1",
-                        "continue_execution": "True",
-                        "should_continue": "True"
-                    }
-                },
-                {
-                    "filename": "/app/core/run/agent_runner.py",
-                    "lineno": 353,
-                    "name": "_execute_single_turn",
-                    "locals": {
-                        "self": "<core.run.agent_runner.AgentRunner object at 0x7f3fd2efa350>",
-                        "system_message": "\"{'role': 'system', 'content': 'You are Kortix, an autonomous AI Worker created b\"+105819",
-                        "cancellation_event": "<asyncio.locks.Event object at 0x7f3fd23c40d0 [unset]>",
-                        "config": "SafeConfigWrapper(config=loaded)",
-                        "can_run": "True",
-                        "message": "'Credits available: 90874 credits'",
-                        "reservation_id": "None"
-                    }
-                },
-                {
-                    "filename": "/app/.venv/lib/python3.11/site-packages/postgrest/_async/request_builder.py",
-                    "lineno": 80,
-                    "name": "execute",
-                    "locals": {
-                        "self": "'<postgrest._async.request_builder.AsyncSelectRequestBuilder object at 0x7f3fd237'+5",
-                        "r": "<Response [404 Not Found]>"
-                    }
-                }
-            ],
-            "is_group": false,
-            "exceptions": []
-        },
-        {
-            "exc_type": "ValidationError",
-            "exc_value": "3 validation errors for APIErrorFromJSON\ncode\n  Field required [type=missing, input_value={'message': 'Route GET:/m...und', 'statusCode': 404}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/missing\nhint\n  Field required [type=missing, input_value={'message': 'Route GET:/m...und', 'statusCode': 404}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/missing\ndetails\n  Field required [type=missing, input_value={'message': 'Route GET:/m...und', 'statusCode': 404}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/missing",
-            "exc_notes": [],
-            "syntax_error": null,
-            "is_cause": false,
-            "frames": [
-                {
-                    "filename": "/app/.venv/lib/python3.11/site-packages/postgrest/_async/request_builder.py",
-                    "lineno": 77,
-                    "name": "execute",
-                    "locals": {
-                        "self": "'<postgrest._async.request_builder.AsyncSelectRequestBuilder object at 0x7f3fd237'+5",
-                        "r": "<Response [404 Not Found]>"
-                    }
-                },
-                {
-                    "filename": "/app/.venv/lib/python3.11/site-packages/postgrest/utils.py",
-                    "lineno": 69,
-                    "name": "model_validate_json",
-                    "locals": {
-                        "model": "<class 'postgrest.exceptions.APIErrorFromJSON'>",
-                        "contents": "b'{\"message\":\"Route GET:/messages?select=type&thread_id=eq.9e70cc3f-01b9-4d54-a8df'+130"
-                    }
-                },
-                {
-                    "filename": "/app/.venv/lib/python3.11/site-packages/pydantic/main.py",
-                    "lineno": 746,
-                    "name": "model_validate_json",
-                    "locals": {
-                        "cls": "<class 'postgrest.exceptions.APIErrorFromJSON'>",
-                        "json_data": "b'{\"message\":\"Route GET:/messages?select=type&thread_id=eq.9e70cc3f-01b9-4d54-a8df'+130",
-                        "strict": "None",
-                        "context": "None",
-                        "by_alias": "None",
-                        "by_name": "None"
-                    }
-                }
-            ],
-            "is_group": false,
-            "exceptions": []
-        }
-    ],
-    "filename": "handlers.py",
-    "func_name": "handle_agent_run",
-    "lineno": 165,
-    "timestamp": "2026-01-05T03:59:54.633673Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "Database error on retry 0 for a013cd50-8703-44d8-a913-f52c490413be: {'message': 'JSON could not be generated', 'code': 404, 'hint': 'Refer to full message for details', 'details': 'b\\'{\"message\":\"Route PATCH:/agent_runs?id=eq.a013cd50-8703-44d8-a913-f52c490413be not found\",\"error\":\"Not Found\",\"statusCode\":404}\\''}",
-    "level": "error",
-    "filename": "helpers.py",
-    "func_name": "update_agent_run_status",
-    "lineno": 589,
-    "timestamp": "2026-01-05T03:59:54.840011Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "🔄 Route-not-found error, forcing reconnection...",
-    "level": "warning",
-    "filename": "helpers.py",
-    "func_name": "update_agent_run_status",
-    "lineno": 592,
-    "timestamp": "2026-01-05T03:59:54.840124Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "Skipping reconnect - too soon since last reset",
-    "level": "debug",
-    "filename": "supabase.py",
-    "func_name": "force_reconnect",
-    "lineno": 83,
-    "timestamp": "2026-01-05T03:59:54.840216Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "🗑️ Invalidated running runs cache: 83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "level": "debug",
-    "filename": "runtime_cache.py",
-    "func_name": "invalidate_running_runs_cache",
-    "lineno": 361,
-    "timestamp": "2026-01-05T03:59:56.028456Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "[ACCOUNT_STATE] Cache invalidated for 83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "level": "info",
-    "filename": "cache_utils.py",
-    "func_name": "invalidate_account_state_cache",
-    "lineno": 18,
-    "timestamp": "2026-01-05T03:59:56.028891Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "Cleaning up Redis keys for agent run: a013cd50-8703-44d8-a913-f52c490413be",
-    "level": "debug",
-    "filename": "helpers.py",
-    "func_name": "cleanup_redis_keys",
-    "lineno": 515,
-    "timestamp": "2026-01-05T03:59:56.029065Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "❌ Failed agent_run | entry_id=1767585594057-0 | error={'message': 'JSON could not be generated', 'code': 404, 'hint': 'Refer to full message for details', 'details': 'b\\'{\"message\":\"Route GET:/messages?select=type&thread_id=eq.9e70cc3f-01b9-4d54-a8df-1fb172e9e667&type=in.%28assistant%2Ctool%2Cuser%29&order=created_at.desc&limit=1 not found\",\"error\":\"Not Found\",\"statusCode\":404}\\''}",
-    "level": "error",
-    "exception": [
-        {
-            "exc_type": "APIError",
-            "exc_value": "{'message': 'JSON could not be generated', 'code': 404, 'hint': 'Refer to full message for details', 'details': 'b\\'{\"message\":\"Route GET:/messages?select=type&thread_id=eq.9e70cc3f-01b9-4d54-a8df-1fb172e9e667&type=in.%28assistant%2Ctool%2Cuser%29&order=created_at.desc&limit=1 not found\",\"error\":\"Not Found\",\"statusCode\":404}\\''}",
-            "exc_notes": [],
-            "syntax_error": null,
-            "is_cause": false,
-            "frames": [
-                {
-                    "filename": "/app/core/worker/consumer.py",
-                    "lineno": 270,
-                    "name": "_process_message",
-                    "locals": {
-                        "self": "<core.worker.consumer.StreamWorker object at 0x7f3fd6b81fd0>",
-                        "stream_name": "'suna:agent-runs:v1'",
-                        "entry_id": "'1767585594057-0'",
-                        "fields": "\"{'task_type': 'agent_run', 'enqueued_at': '1767585594.0566952', 'agent_run_id': \"+363",
-                        "task_message": "\"AgentRunTask(task_type='agent_run', enqueued_at=1767585594.0566952, agent_run_id\"+343",
-                        "pickup_latency_ms": "1.5575885772705078",
-                        "handler": "<function handle_agent_run at 0x7f400058f600>",
-                        "e": "'Error 404:\\nMessage: JSON could not be generated\\nHint: Refer to full message for '+230",
-                        "task_type": "'agent_run'"
-                    }
-                },
-                {
-                    "filename": "/app/core/worker/handlers.py",
-                    "lineno": 146,
-                    "name": "handle_agent_run",
-                    "locals": {
-                        "task": "\"AgentRunTask(task_type='agent_run', enqueued_at=1767585594.0566952, agent_run_id\"+343",
-                        "thread_id": "'9e70cc3f-01b9-4d54-a8df-1fb172e9e667'",
-                        "instance_id": "'f1c099f2'",
-                        "project_id": "'bc6f5d9b-9379-40d6-babc-931e57d90714'",
-                        "model_name": "'kortix/power'",
-                        "agent_id": "'788cf757-6f21-4b5a-8e3a-c05e76e53eee'",
-                        "account_id": "'83e1c69c-28bb-4229-985e-0ed34cc51762'",
-                        "worker_start": "1767585594.0584118",
-                        "client": "<supabase._async.client.AsyncClient object at 0x7f3fd23fc7d0>",
-                        "stop_checker": "\"<Task finished name='Task-49636' coro=<handle_agent_run.<locals>.check_for_stop_\"+72",
-                        "final_status": "'failed'",
-                        "redis_keys": "\"{'response_stream': 'agent_run:a013cd50-8703-44d8-a913-f52c490413be:stream', 'in\"+75",
-                        "trace": "<langfuse.client.StatefulTraceClient object at 0x7f3fd2f25d50>",
-                        "lock_acquired": "True",
-                        "start_time": "datetime.datetime(2026, 1, 5, 3, 59, 54, 58889, tzinfo=datetime.timezone.utc)",
-                        "model_manager": "<core.ai_models.registry.ModelRegistry object at 0x7f3fe59d4910>",
-                        "effective_model": "'kortix/power'",
-                        "check_for_stop_signal": "<function handle_agent_run.<locals>.check_for_stop_signal at 0x7f3fd4782b60>",
-                        "t_agent_config": "1767585594.060022",
-                        "agent_config": "\"{'agent_id': '788cf757-6f21-4b5a-8e3a-c05e76e53eee', 'system_prompt': '\\\\nYou are\"+37679",
-                        "agent_gen": "<async_generator object run_agent at 0x7f3fdd217290>",
-                        "agent_run_id": "'a013cd50-8703-44d8-a913-f52c490413be'",
-                        "cancellation_event": "<asyncio.locks.Event object at 0x7f3fd23c40d0 [unset]>",
-                        "stop_signal_checker_state": "{'stop_signal_received': False, 'total_responses': 0, 'stop_reason': None}"
-                    }
-                },
-                {
-                    "filename": "/app/core/worker/helpers.py",
-                    "lineno": 346,
-                    "name": "process_agent_responses",
-                    "locals": {
-                        "agent_gen": "<async_generator object run_agent at 0x7f3fdd217290>",
-                        "agent_run_id": "'a013cd50-8703-44d8-a913-f52c490413be'",
-                        "redis_keys": "\"{'response_stream': 'agent_run:a013cd50-8703-44d8-a913-f52c490413be:stream', 'in\"+75",
-                        "trace": "<langfuse.client.StatefulTraceClient object at 0x7f3fd2f25d50>",
-                        "worker_start": "1767585594.0584118",
-                        "stop_signal_checker_state": "{'stop_signal_received': False, 'total_responses': 0, 'stop_reason': None}",
-                        "final_status": "'running'",
-                        "error_message": "None",
-                        "first_response_logged": "False",
-                        "complete_tool_called": "False",
-                        "total_responses": "0",
-                        "stream_key": "'agent_run:a013cd50-8703-44d8-a913-f52c490413be:stream'",
-                        "stream_ttl_set": "False"
-                    }
-                },
-                {
-                    "filename": "/app/core/run/__init__.py",
-                    "lineno": 48,
-                    "name": "run_agent",
-                    "locals": {
-                        "thread_id": "'9e70cc3f-01b9-4d54-a8df-1fb172e9e667'",
-                        "project_id": "'bc6f5d9b-9379-40d6-babc-931e57d90714'",
-                        "thread_manager": "None",
-                        "native_max_auto_continues": "25",
-                        "max_iterations": "100",
-                        "model_name": "'kortix/power'",
-                        "agent_config": "\"{'agent_id': '788cf757-6f21-4b5a-8e3a-c05e76e53eee', 'system_prompt': '\\\\nYou are\"+37679",
-                        "trace": "<langfuse.client.StatefulTraceClient object at 0x7f3fd2f25d50>",
-                        "cancellation_event": "<asyncio.locks.Event object at 0x7f3fd23c40d0 [unset]>",
-                        "account_id": "'83e1c69c-28bb-4229-985e-0ed34cc51762'",
-                        "effective_model": "'kortix/power'",
-                        "config": "\"AgentConfig(thread_id='9e70cc3f-01b9-4d54-a8df-1fb172e9e667', project_id='bc6f5d\"+38004",
-                        "runner": "<core.run.agent_runner.AgentRunner object at 0x7f3fd2efa350>"
-                    }
-                },
-                {
-                    "filename": "/app/core/run/agent_runner.py",
-                    "lineno": 245,
-                    "name": "run",
-                    "locals": {
-                        "self": "<core.run.agent_runner.AgentRunner object at 0x7f3fd2efa350>",
-                        "cancellation_event": "<asyncio.locks.Event object at 0x7f3fd23c40d0 [unset]>",
-                        "system_message": "\"{'role': 'system', 'content': 'You are Kortix, an autonomous AI Worker created b\"+105819"
-                    }
-                },
-                {
-                    "filename": "/app/core/run/agent_runner.py",
-                    "lineno": 318,
-                    "name": "_run_loop",
-                    "locals": {
-                        "self": "<core.run.agent_runner.AgentRunner object at 0x7f3fd2efa350>",
-                        "system_message": "\"{'role': 'system', 'content': 'You are Kortix, an autonomous AI Worker created b\"+105819",
-                        "cancellation_event": "<asyncio.locks.Event object at 0x7f3fd23c40d0 [unset]>",
-                        "iteration_count": "1",
-                        "continue_execution": "True",
-                        "should_continue": "True"
-                    }
-                },
-                {
-                    "filename": "/app/core/run/agent_runner.py",
-                    "lineno": 353,
-                    "name": "_execute_single_turn",
-                    "locals": {
-                        "self": "<core.run.agent_runner.AgentRunner object at 0x7f3fd2efa350>",
-                        "system_message": "\"{'role': 'system', 'content': 'You are Kortix, an autonomous AI Worker created b\"+105819",
-                        "cancellation_event": "<asyncio.locks.Event object at 0x7f3fd23c40d0 [unset]>",
-                        "config": "SafeConfigWrapper(config=loaded)",
-                        "can_run": "True",
-                        "message": "'Credits available: 90874 credits'",
-                        "reservation_id": "None"
-                    }
-                },
-                {
-                    "filename": "/app/.venv/lib/python3.11/site-packages/postgrest/_async/request_builder.py",
-                    "lineno": 80,
-                    "name": "execute",
-                    "locals": {
-                        "self": "'<postgrest._async.request_builder.AsyncSelectRequestBuilder object at 0x7f3fd237'+5",
-                        "r": "<Response [404 Not Found]>"
-                    }
-                }
-            ],
-            "is_group": false,
-            "exceptions": []
-        },
-        {
-            "exc_type": "ValidationError",
-            "exc_value": "3 validation errors for APIErrorFromJSON\ncode\n  Field required [type=missing, input_value={'message': 'Route GET:/m...und', 'statusCode': 404}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/missing\nhint\n  Field required [type=missing, input_value={'message': 'Route GET:/m...und', 'statusCode': 404}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/missing\ndetails\n  Field required [type=missing, input_value={'message': 'Route GET:/m...und', 'statusCode': 404}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.11/v/missing",
-            "exc_notes": [],
-            "syntax_error": null,
-            "is_cause": false,
-            "frames": [
-                {
-                    "filename": "/app/.venv/lib/python3.11/site-packages/postgrest/_async/request_builder.py",
-                    "lineno": 77,
-                    "name": "execute",
-                    "locals": {
-                        "self": "'<postgrest._async.request_builder.AsyncSelectRequestBuilder object at 0x7f3fd237'+5",
-                        "r": "<Response [404 Not Found]>"
-                    }
-                },
-                {
-                    "filename": "/app/.venv/lib/python3.11/site-packages/postgrest/utils.py",
-                    "lineno": 69,
-                    "name": "model_validate_json",
-                    "locals": {
-                        "model": "<class 'postgrest.exceptions.APIErrorFromJSON'>",
-                        "contents": "b'{\"message\":\"Route GET:/messages?select=type&thread_id=eq.9e70cc3f-01b9-4d54-a8df'+130"
-                    }
-                },
-                {
-                    "filename": "/app/.venv/lib/python3.11/site-packages/pydantic/main.py",
-                    "lineno": 746,
-                    "name": "model_validate_json",
-                    "locals": {
-                        "cls": "<class 'postgrest.exceptions.APIErrorFromJSON'>",
-                        "json_data": "b'{\"message\":\"Route GET:/messages?select=type&thread_id=eq.9e70cc3f-01b9-4d54-a8df'+130",
-                        "strict": "None",
-                        "context": "None",
-                        "by_alias": "None",
-                        "by_name": "None"
-                    }
-                }
-            ],
-            "is_group": false,
-            "exceptions": []
-        }
-    ],
-    "filename": "consumer.py",
-    "func_name": "_process_message",
-    "lineno": 278,
-    "timestamp": "2026-01-05T03:59:56.395817Z",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "Fetching agent runs for thread: 9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "level": "debug",
-    "lineno": 1170,
     "filename": "runs.py",
+    "lineno": 1170,
     "func_name": "get_agent_runs",
-    "timestamp": "2026-01-05T03:59:53.644756Z",
-    "path": "/v1/thread/9e70cc3f-01b9-4d54-a8df-1fb172e9e667/agent-runs",
-    "method": "GET",
+    "timestamp": "2026-01-05T04:27:41.287788Z",
+    "path": "/v1/thread/6e24dc4f-f3cb-446a-a216-a6c3100093d7/agent-runs",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
     "client_ip": "84.17.35.79",
-    "auth_method": "jwt",
-    "request_id": "11de42c4-3ba8-43d6-8be6-cae356577e85",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
     "query_params": "",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
+    "method": "GET",
+    "request_id": "678a88d2-eeae-44ef-94bc-fe702dee665d",
+    "auth_method": "jwt"
 }
 {
-    "event": "Fetching agent runs for thread: 9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
+    "event": "Fetching agent runs for thread: 6e24dc4f-f3cb-446a-a216-a6c3100093d7",
     "level": "debug",
-    "lineno": 1170,
     "filename": "runs.py",
+    "lineno": 1170,
     "func_name": "get_agent_runs",
-    "timestamp": "2026-01-05T03:59:53.644756Z",
-    "path": "/v1/thread/9e70cc3f-01b9-4d54-a8df-1fb172e9e667/agent-runs",
-    "method": "GET",
+    "timestamp": "2026-01-05T04:27:41.287788Z",
+    "path": "/v1/thread/6e24dc4f-f3cb-446a-a216-a6c3100093d7/agent-runs",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
     "client_ip": "84.17.35.79",
-    "auth_method": "jwt",
-    "request_id": "11de42c4-3ba8-43d6-8be6-cae356577e85",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
     "query_params": "",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
+    "method": "GET",
+    "request_id": "678a88d2-eeae-44ef-94bc-fe702dee665d",
+    "auth_method": "jwt"
 }
 
 {
-    "event": "Failed to increment thread count cache: module 'core.services.redis' has no attribute 'incr'",
+    "event": "Failed to increment thread count cache: 'RedisClient' object has no attribute 'incr'",
     "level": "warning",
-    "lineno": 418,
+    "filename": "runtime_cache.py",
     "func_name": "increment_thread_count_cache",
-    "filename": "runtime_cache.py",
-    "timestamp": "2026-01-05T03:59:53.842120Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
-    "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
-    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
-}
-{
-    "event": "Failed to increment thread count cache: module 'core.services.redis' has no attribute 'incr'",
-    "level": "warning",
     "lineno": 418,
+    "timestamp": "2026-01-05T04:27:41.444807Z",
+    "method": "POST",
+    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
+}
+{
+    "event": "Failed to increment thread count cache: 'RedisClient' object has no attribute 'incr'",
+    "level": "warning",
+    "filename": "runtime_cache.py",
     "func_name": "increment_thread_count_cache",
-    "filename": "runtime_cache.py",
-    "timestamp": "2026-01-05T03:59:53.842120Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "lineno": 418,
+    "timestamp": "2026-01-05T04:27:41.444807Z",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 
 {
-    "event": "Created new agent run: a013cd50-8703-44d8-a913-f52c490413be",
+    "event": "Created new agent run: d3140c44-8794-4d5a-812d-28d3604c07ae",
     "level": "debug",
-    "lineno": 193,
-    "func_name": "_create_agent_run_record",
     "filename": "runs.py",
-    "timestamp": "2026-01-05T03:59:54.041613Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "func_name": "_create_agent_run_record",
+    "lineno": 193,
+    "timestamp": "2026-01-05T04:27:41.626063Z",
+    "agent_run_id": "d3140c44-8794-4d5a-812d-28d3604c07ae",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 {
-    "event": "Created new agent run: a013cd50-8703-44d8-a913-f52c490413be",
+    "event": "Created new agent run: d3140c44-8794-4d5a-812d-28d3604c07ae",
     "level": "debug",
-    "lineno": 193,
-    "func_name": "_create_agent_run_record",
     "filename": "runs.py",
-    "timestamp": "2026-01-05T03:59:54.041613Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "func_name": "_create_agent_run_record",
+    "lineno": 193,
+    "timestamp": "2026-01-05T04:27:41.626063Z",
+    "agent_run_id": "d3140c44-8794-4d5a-812d-28d3604c07ae",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 
 {
     "event": "🗑️ Invalidated running runs cache: 83e1c69c-28bb-4229-985e-0ed34cc51762",
     "level": "debug",
-    "lineno": 361,
-    "func_name": "invalidate_running_runs_cache",
     "filename": "runtime_cache.py",
-    "timestamp": "2026-01-05T03:59:54.043070Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "func_name": "invalidate_running_runs_cache",
+    "lineno": 361,
+    "timestamp": "2026-01-05T04:27:41.627003Z",
+    "agent_run_id": "d3140c44-8794-4d5a-812d-28d3604c07ae",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 {
     "event": "🗑️ Invalidated running runs cache: 83e1c69c-28bb-4229-985e-0ed34cc51762",
     "level": "debug",
-    "lineno": 361,
-    "func_name": "invalidate_running_runs_cache",
     "filename": "runtime_cache.py",
-    "timestamp": "2026-01-05T03:59:54.043070Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "func_name": "invalidate_running_runs_cache",
+    "lineno": 361,
+    "timestamp": "2026-01-05T04:27:41.627003Z",
+    "agent_run_id": "d3140c44-8794-4d5a-812d-28d3604c07ae",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
-}
-
-{
-    "event": "Created user message for thread 9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "level": "debug",
-    "lineno": 811,
-    "func_name": "create_message",
-    "filename": "runs.py",
-    "timestamp": "2026-01-05T03:59:54.043855Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
+    "path": "/v1/agent/start",
+    "query_params": "",
     "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
-    "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
-    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
-}
-{
-    "event": "Created user message for thread 9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "level": "debug",
-    "lineno": 811,
-    "func_name": "create_message",
-    "filename": "runs.py",
-    "timestamp": "2026-01-05T03:59:54.043855Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
-    "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
-    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 
 {
     "event": "[ACCOUNT_STATE] Cache invalidated for 83e1c69c-28bb-4229-985e-0ed34cc51762",
     "level": "info",
-    "lineno": 18,
-    "func_name": "invalidate_account_state_cache",
     "filename": "cache_utils.py",
-    "timestamp": "2026-01-05T03:59:54.044275Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "func_name": "invalidate_account_state_cache",
+    "lineno": 18,
+    "timestamp": "2026-01-05T04:27:41.627816Z",
+    "agent_run_id": "d3140c44-8794-4d5a-812d-28d3604c07ae",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 {
     "event": "[ACCOUNT_STATE] Cache invalidated for 83e1c69c-28bb-4229-985e-0ed34cc51762",
     "level": "info",
-    "lineno": 18,
-    "func_name": "invalidate_account_state_cache",
     "filename": "cache_utils.py",
-    "timestamp": "2026-01-05T03:59:54.044275Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "func_name": "invalidate_account_state_cache",
+    "lineno": 18,
+    "timestamp": "2026-01-05T04:27:41.627816Z",
+    "agent_run_id": "d3140c44-8794-4d5a-812d-28d3604c07ae",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 
 {
-    "event": "⏱️ [TIMING] Parallel message+agent_run+status: 218.0ms",
+    "event": "Created user message for thread 6e24dc4f-f3cb-446a-a216-a6c3100093d7",
     "level": "debug",
+    "filename": "runs.py",
+    "func_name": "create_message",
+    "lineno": 811,
+    "timestamp": "2026-01-05T04:27:41.631189Z",
+    "method": "POST",
+    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
+}
+{
+    "event": "Created user message for thread 6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "level": "debug",
+    "filename": "runs.py",
+    "func_name": "create_message",
+    "lineno": 811,
+    "timestamp": "2026-01-05T04:27:41.631189Z",
+    "method": "POST",
+    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
+}
+
+{
+    "event": "⏱️ [TIMING] Parallel message+agent_run+status: 189.5ms",
+    "level": "debug",
+    "filename": "runs.py",
+    "func_name": "start_agent_run",
     "lineno": 825,
-    "func_name": "start_agent_run",
-    "filename": "runs.py",
-    "timestamp": "2026-01-05T03:59:54.056508Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "timestamp": "2026-01-05T04:27:41.631385Z",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 {
-    "event": "⏱️ [TIMING] Parallel message+agent_run+status: 218.0ms",
+    "event": "⏱️ [TIMING] Parallel message+agent_run+status: 189.5ms",
     "level": "debug",
+    "filename": "runs.py",
+    "func_name": "start_agent_run",
     "lineno": 825,
-    "func_name": "start_agent_run",
-    "filename": "runs.py",
-    "timestamp": "2026-01-05T03:59:54.056508Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "timestamp": "2026-01-05T04:27:41.631385Z",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 
 {
-    "event": "📤 [STREAM] Dispatched agent_run | stream=suna:agent-runs:v1 | entry_id=1767585594057-0",
+    "event": "📤 [STREAM] Dispatched agent_run | stream=suna:agent-runs:v1 | entry_id=1767587261631-0",
     "level": "info",
-    "lineno": 103,
-    "func_name": "_dispatch_task",
     "filename": "dispatcher.py",
-    "timestamp": "2026-01-05T03:59:54.058046Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
-    "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
-    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
-}
-{
-    "event": "📤 [STREAM] Dispatched agent_run | stream=suna:agent-runs:v1 | entry_id=1767585594057-0",
-    "level": "info",
-    "lineno": 103,
     "func_name": "_dispatch_task",
+    "lineno": 103,
+    "timestamp": "2026-01-05T04:27:41.632531Z",
+    "method": "POST",
+    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
+}
+{
+    "event": "📤 [STREAM] Dispatched agent_run | stream=suna:agent-runs:v1 | entry_id=1767587261631-0",
+    "level": "info",
     "filename": "dispatcher.py",
-    "timestamp": "2026-01-05T03:59:54.058046Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "func_name": "_dispatch_task",
+    "lineno": 103,
+    "timestamp": "2026-01-05T04:27:41.632531Z",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 
 {
-    "event": "✅ Successfully dispatched agent run a013cd50-8703-44d8-a913-f52c490413be via Redis Streams (entry_id: 1767585594057-0)",
+    "event": "✅ Successfully dispatched agent run d3140c44-8794-4d5a-812d-28d3604c07ae via Redis Streams (entry_id: 1767587261631-0)",
     "level": "info",
+    "filename": "runs.py",
+    "func_name": "start_agent_run",
     "lineno": 872,
-    "func_name": "start_agent_run",
-    "filename": "runs.py",
-    "timestamp": "2026-01-05T03:59:54.058335Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "timestamp": "2026-01-05T04:27:41.632631Z",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 {
-    "event": "✅ Successfully dispatched agent run a013cd50-8703-44d8-a913-f52c490413be via Redis Streams (entry_id: 1767585594057-0)",
+    "event": "✅ Successfully dispatched agent run d3140c44-8794-4d5a-812d-28d3604c07ae via Redis Streams (entry_id: 1767587261631-0)",
     "level": "info",
+    "filename": "runs.py",
+    "func_name": "start_agent_run",
     "lineno": 872,
-    "func_name": "start_agent_run",
-    "filename": "runs.py",
-    "timestamp": "2026-01-05T03:59:54.058335Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "timestamp": "2026-01-05T04:27:41.632631Z",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 
 {
-    "event": "⏱️ [TIMING] Worker dispatch: 1.8ms",
+    "event": "⏱️ [TIMING] Worker dispatch: 1.3ms",
     "level": "debug",
+    "filename": "runs.py",
+    "func_name": "start_agent_run",
     "lineno": 876,
-    "func_name": "start_agent_run",
-    "filename": "runs.py",
-    "timestamp": "2026-01-05T03:59:54.058556Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "timestamp": "2026-01-05T04:27:41.632798Z",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 {
-    "event": "⏱️ [TIMING] Worker dispatch: 1.8ms",
+    "event": "⏱️ [TIMING] Worker dispatch: 1.3ms",
     "level": "debug",
+    "filename": "runs.py",
+    "func_name": "start_agent_run",
     "lineno": 876,
-    "func_name": "start_agent_run",
-    "filename": "runs.py",
-    "timestamp": "2026-01-05T03:59:54.058556Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "timestamp": "2026-01-05T04:27:41.632798Z",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 
 {
-    "event": "⏱️ [TIMING] start_agent_run total: 1032.7ms",
+    "event": "⏱️ [TIMING] start_agent_run total: 1148.8ms",
     "level": "info",
+    "filename": "runs.py",
+    "func_name": "start_agent_run",
     "lineno": 878,
-    "func_name": "start_agent_run",
-    "filename": "runs.py",
-    "timestamp": "2026-01-05T03:59:54.058685Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "timestamp": "2026-01-05T04:27:41.632910Z",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 {
-    "event": "⏱️ [TIMING] start_agent_run total: 1032.7ms",
+    "event": "⏱️ [TIMING] start_agent_run total: 1148.8ms",
     "level": "info",
+    "filename": "runs.py",
+    "func_name": "start_agent_run",
     "lineno": 878,
-    "func_name": "start_agent_run",
-    "filename": "runs.py",
-    "timestamp": "2026-01-05T03:59:54.058685Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "timestamp": "2026-01-05T04:27:41.632910Z",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 
 {
-    "event": "⏱️ [TIMING] 🎯 API Request Total: 1033.1ms",
+    "event": "⏱️ [TIMING] 🎯 API Request Total: 1149.1ms",
     "level": "info",
-    "lineno": 987,
-    "func_name": "unified_agent_start",
     "filename": "runs.py",
-    "timestamp": "2026-01-05T03:59:54.058863Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "func_name": "unified_agent_start",
+    "lineno": 987,
+    "timestamp": "2026-01-05T04:27:41.633041Z",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "path": "/v1/agent/start",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "path": "/v1/agent/start",
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 {
-    "event": "⏱️ [TIMING] 🎯 API Request Total: 1033.1ms",
+    "event": "⏱️ [TIMING] 🎯 API Request Total: 1149.1ms",
     "level": "info",
-    "lineno": 987,
+    "filename": "runs.py",
     "func_name": "unified_agent_start",
-    "filename": "runs.py",
-    "timestamp": "2026-01-05T03:59:54.058863Z",
-    "project_id": "bc6f5d9b-9379-40d6-babc-931e57d90714",
-    "client_ip": "84.17.35.79",
-    "request_id": "e0f211dc-d971-4be9-822a-ee3d34059621",
+    "lineno": 987,
+    "timestamp": "2026-01-05T04:27:41.633041Z",
     "method": "POST",
-    "query_params": "",
-    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
+    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
     "path": "/v1/agent/start",
-    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "auth_method": "jwt"
+    "query_params": "",
+    "client_ip": "84.17.35.79",
+    "project_id": "83cec6f6-41e2-46d7-9fa9-0dab48372db1",
+    "auth_method": "jwt",
+    "request_id": "a41b6f8c-c92d-4475-9c37-aa8ca9ed18a6",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "account_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
 }
 
 {
     "user_role": "super_admin",
-    "event": "Admin access granted for thread 9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "level": "debug",
-    "lineno": 381,
-    "filename": "auth_utils.py",
-    "func_name": "verify_and_authorize_thread_access",
-    "timestamp": "2026-01-05T03:59:54.258579Z",
-    "path": "/v1/thread/9e70cc3f-01b9-4d54-a8df-1fb172e9e667/agent-runs",
-    "method": "GET",
-    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "client_ip": "84.17.35.79",
-    "auth_method": "jwt",
-    "request_id": "11de42c4-3ba8-43d6-8be6-cae356577e85",
-    "query_params": "",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "user_role": "super_admin",
-    "event": "Admin access granted for thread 9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "level": "debug",
-    "lineno": 381,
-    "filename": "auth_utils.py",
-    "func_name": "verify_and_authorize_thread_access",
-    "timestamp": "2026-01-05T03:59:54.258579Z",
-    "path": "/v1/thread/9e70cc3f-01b9-4d54-a8df-1fb172e9e667/agent-runs",
-    "method": "GET",
-    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "client_ip": "84.17.35.79",
-    "auth_method": "jwt",
-    "request_id": "11de42c4-3ba8-43d6-8be6-cae356577e85",
-    "query_params": "",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-
-{
-    "event": "Found 1 agent runs for thread: 9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "level": "debug",
-    "lineno": 1174,
-    "filename": "runs.py",
-    "func_name": "get_agent_runs",
-    "timestamp": "2026-01-05T03:59:54.455004Z",
-    "path": "/v1/thread/9e70cc3f-01b9-4d54-a8df-1fb172e9e667/agent-runs",
-    "method": "GET",
-    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "client_ip": "84.17.35.79",
-    "auth_method": "jwt",
-    "request_id": "11de42c4-3ba8-43d6-8be6-cae356577e85",
-    "query_params": "",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-{
-    "event": "Found 1 agent runs for thread: 9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "level": "debug",
-    "lineno": 1174,
-    "filename": "runs.py",
-    "func_name": "get_agent_runs",
-    "timestamp": "2026-01-05T03:59:54.455004Z",
-    "path": "/v1/thread/9e70cc3f-01b9-4d54-a8df-1fb172e9e667/agent-runs",
-    "method": "GET",
-    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "client_ip": "84.17.35.79",
-    "auth_method": "jwt",
-    "request_id": "11de42c4-3ba8-43d6-8be6-cae356577e85",
-    "query_params": "",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667"
-}
-
-{
-    "event": "Stream generator cancelled for a013cd50-8703-44d8-a913-f52c490413be",
-    "level": "debug",
-    "filename": "runs.py",
-    "func_name": "stream_generator",
-    "lineno": 1421,
-    "timestamp": "2026-01-05T04:04:36.918101Z",
-    "method": "GET",
-    "request_id": "e2b5eab1-590f-4229-ad76-60eb7edaec3e",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "query_params": "token=eyJhbGciOiJIUzI1NiIsImtpZCI6ImIycFhGd20raW10TEx4QkkiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2picml3YXNzZWJ4ZHdvaWVpa2dhLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiI4M2UxYzY5Yy0yOGJiLTQyMjktOTg1ZS0wZWQzNGNjNTE3NjIiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzY3NTg3MDU1LCJpYXQiOjE3Njc1ODM0NTUsImVtYWlsIjoibWFya29Aa29ydGl4LmFpIiwicGhvbmUiOiIiLCJhcHBfbWV0YWRhdGEiOnsicHJvdmlkZXIiOiJnb29nbGUiLCJwcm92aWRlcnMiOlsiZ29vZ2xlIl19LCJ1c2VyX21ldGFkYXRhIjp7ImF2YXRhcl91cmwiOiJodHRwczovL2xoMy5nb29nbGV1c2VyY29udGVudC5jb20vYS9BQ2c4b2NLOGFuTFY5emJ0WkZqMHlpbk9oUkIwWG1zYkJPTnRSVDhSajZiclhKQUI1MGUwWWtvPXM5Ni1jIiwiY3VzdG9tX2NsYWltcyI6eyJoZCI6ImtvcnRpeC5haSJ9LCJlbWFpbCI6Im1hcmtvQGtvcnRpeC5haSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJmdWxsX25hbWUiOiJNYXJrbyBLcmFlbWVyIiwiaXNzIjoiaHR0cHM6Ly9hY2NvdW50cy5nb29nbGUuY29tIiwibG9jYWxlIjoiZW4iLCJuYW1lIjoiTWFya28gS3JhZW1lciIsIm9uYm9hcmRpbmdfY29tcGxldGVkIjp0cnVlLCJwaG9uZV92ZXJpZmllZCI6ZmFsc2UsInBpY3R1cmUiOiJodHRwczovL2xoMy5nb29nbGV1c2VyY29udGVudC5jb20vYS9BQ2c4b2NLOGFuTFY5emJ0WkZqMHlpbk9oUkIwWG1zYkJPTnRSVDhSajZiclhKQUI1MGUwWWtvPXM5Ni1jIiwicHJvdmlkZXJfaWQiOiIxMDk5MDg5MDI1OTQ1ODE0ODgzNzQiLCJzdWIiOiIxMDk5MDg5MDI1OTQ1ODE0ODgzNzQiLCJ0ZXJtc19hY2NlcHRlZF9hdCI6IjIwMjUtMTEtMjZUMTc6NDA6MzMuNjkxWiJ9LCJyb2xlIjoiYXV0aGVudGljYXRlZCIsImFhbCI6ImFhbDEiLCJhbXIiOlt7Im1ldGhvZCI6Im9hdXRoIiwidGltZXN0YW1wIjoxNzY3MjA0MTcyfV0sInNlc3Npb25faWQiOiI2OTA3ZDc2Ni0yOTk5LTQ5NTctYWUxMC1jYzk3ZmQ4ZjdmYjIiLCJpc19hbm9ueW1vdXMiOmZhbHNlfQ.5LTB2taWSemXKmwd2WiiYCh079hF1zwL-tD3sIjd6P4",
-    "client_ip": "84.17.35.79",
-    "path": "/v1/agent-run/a013cd50-8703-44d8-a913-f52c490413be/stream",
-    "auth_method": "jwt_query",
-    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
-}
-{
-    "event": "Stream generator cancelled for a013cd50-8703-44d8-a913-f52c490413be",
-    "level": "debug",
-    "filename": "runs.py",
-    "func_name": "stream_generator",
-    "lineno": 1421,
-    "timestamp": "2026-01-05T04:04:36.918101Z",
-    "method": "GET",
-    "request_id": "e2b5eab1-590f-4229-ad76-60eb7edaec3e",
-    "agent_run_id": "a013cd50-8703-44d8-a913-f52c490413be",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "query_params": "token=eyJhbGciOiJIUzI1NiIsImtpZCI6ImIycFhGd20raW10TEx4QkkiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2picml3YXNzZWJ4ZHdvaWVpa2dhLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiI4M2UxYzY5Yy0yOGJiLTQyMjktOTg1ZS0wZWQzNGNjNTE3NjIiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzY3NTg3MDU1LCJpYXQiOjE3Njc1ODM0NTUsImVtYWlsIjoibWFya29Aa29ydGl4LmFpIiwicGhvbmUiOiIiLCJhcHBfbWV0YWRhdGEiOnsicHJvdmlkZXIiOiJnb29nbGUiLCJwcm92aWRlcnMiOlsiZ29vZ2xlIl19LCJ1c2VyX21ldGFkYXRhIjp7ImF2YXRhcl91cmwiOiJodHRwczovL2xoMy5nb29nbGV1c2VyY29udGVudC5jb20vYS9BQ2c4b2NLOGFuTFY5emJ0WkZqMHlpbk9oUkIwWG1zYkJPTnRSVDhSajZiclhKQUI1MGUwWWtvPXM5Ni1jIiwiY3VzdG9tX2NsYWltcyI6eyJoZCI6ImtvcnRpeC5haSJ9LCJlbWFpbCI6Im1hcmtvQGtvcnRpeC5haSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJmdWxsX25hbWUiOiJNYXJrbyBLcmFlbWVyIiwiaXNzIjoiaHR0cHM6Ly9hY2NvdW50cy5nb29nbGUuY29tIiwibG9jYWxlIjoiZW4iLCJuYW1lIjoiTWFya28gS3JhZW1lciIsIm9uYm9hcmRpbmdfY29tcGxldGVkIjp0cnVlLCJwaG9uZV92ZXJpZmllZCI6ZmFsc2UsInBpY3R1cmUiOiJodHRwczovL2xoMy5nb29nbGV1c2VyY29udGVudC5jb20vYS9BQ2c4b2NLOGFuTFY5emJ0WkZqMHlpbk9oUkIwWG1zYkJPTnRSVDhSajZiclhKQUI1MGUwWWtvPXM5Ni1jIiwicHJvdmlkZXJfaWQiOiIxMDk5MDg5MDI1OTQ1ODE0ODgzNzQiLCJzdWIiOiIxMDk5MDg5MDI1OTQ1ODE0ODgzNzQiLCJ0ZXJtc19hY2NlcHRlZF9hdCI6IjIwMjUtMTEtMjZUMTc6NDA6MzMuNjkxWiJ9LCJyb2xlIjoiYXV0aGVudGljYXRlZCIsImFhbCI6ImFhbDEiLCJhbXIiOlt7Im1ldGhvZCI6Im9hdXRoIiwidGltZXN0YW1wIjoxNzY3MjA0MTcyfV0sInNlc3Npb25faWQiOiI2OTA3ZDc2Ni0yOTk5LTQ5NTctYWUxMC1jYzk3ZmQ4ZjdmYjIiLCJpc19hbm9ueW1vdXMiOmZhbHNlfQ.5LTB2taWSemXKmwd2WiiYCh079hF1zwL-tD3sIjd6P4",
-    "client_ip": "84.17.35.79",
-    "path": "/v1/agent-run/a013cd50-8703-44d8-a913-f52c490413be/stream",
-    "auth_method": "jwt_query",
-    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762"
-}
-
-{
-    "event": "Fetching agent runs for thread: 9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "level": "debug",
-    "filename": "runs.py",
-    "func_name": "get_agent_runs",
-    "lineno": 1170,
-    "timestamp": "2026-01-05T04:04:38.176092Z",
-    "request_id": "01697115-f651-4197-9404-79dfaf0736f8",
-    "client_ip": "84.17.35.79",
-    "method": "GET",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "query_params": "",
-    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "path": "/v1/thread/9e70cc3f-01b9-4d54-a8df-1fb172e9e667/agent-runs",
-    "auth_method": "jwt"
-}
-{
-    "event": "Fetching agent runs for thread: 9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "level": "debug",
-    "filename": "runs.py",
-    "func_name": "get_agent_runs",
-    "lineno": 1170,
-    "timestamp": "2026-01-05T04:04:38.176092Z",
-    "request_id": "01697115-f651-4197-9404-79dfaf0736f8",
-    "client_ip": "84.17.35.79",
-    "method": "GET",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "query_params": "",
-    "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "path": "/v1/thread/9e70cc3f-01b9-4d54-a8df-1fb172e9e667/agent-runs",
-    "auth_method": "jwt"
-}
-
-{
-    "user_role": "super_admin",
-    "event": "Admin access granted for thread 9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
+    "event": "Admin access granted for thread 6e24dc4f-f3cb-446a-a216-a6c3100093d7",
     "level": "debug",
     "filename": "auth_utils.py",
-    "func_name": "verify_and_authorize_thread_access",
     "lineno": 381,
-    "timestamp": "2026-01-05T04:04:38.731273Z",
-    "request_id": "01697115-f651-4197-9404-79dfaf0736f8",
-    "client_ip": "84.17.35.79",
-    "method": "GET",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "query_params": "",
+    "func_name": "verify_and_authorize_thread_access",
+    "timestamp": "2026-01-05T04:27:41.873477Z",
+    "path": "/v1/thread/6e24dc4f-f3cb-446a-a216-a6c3100093d7/agent-runs",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "path": "/v1/thread/9e70cc3f-01b9-4d54-a8df-1fb172e9e667/agent-runs",
+    "client_ip": "84.17.35.79",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "query_params": "",
+    "method": "GET",
+    "request_id": "678a88d2-eeae-44ef-94bc-fe702dee665d",
     "auth_method": "jwt"
 }
 {
     "user_role": "super_admin",
-    "event": "Admin access granted for thread 9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
+    "event": "Admin access granted for thread 6e24dc4f-f3cb-446a-a216-a6c3100093d7",
     "level": "debug",
     "filename": "auth_utils.py",
-    "func_name": "verify_and_authorize_thread_access",
     "lineno": 381,
-    "timestamp": "2026-01-05T04:04:38.731273Z",
-    "request_id": "01697115-f651-4197-9404-79dfaf0736f8",
-    "client_ip": "84.17.35.79",
-    "method": "GET",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "query_params": "",
+    "func_name": "verify_and_authorize_thread_access",
+    "timestamp": "2026-01-05T04:27:41.873477Z",
+    "path": "/v1/thread/6e24dc4f-f3cb-446a-a216-a6c3100093d7/agent-runs",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "path": "/v1/thread/9e70cc3f-01b9-4d54-a8df-1fb172e9e667/agent-runs",
+    "client_ip": "84.17.35.79",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "query_params": "",
+    "method": "GET",
+    "request_id": "678a88d2-eeae-44ef-94bc-fe702dee665d",
     "auth_method": "jwt"
 }
 
 {
-    "event": "Found 1 agent runs for thread: 9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
+    "event": "Found 1 agent runs for thread: 6e24dc4f-f3cb-446a-a216-a6c3100093d7",
     "level": "debug",
     "filename": "runs.py",
-    "func_name": "get_agent_runs",
     "lineno": 1174,
-    "timestamp": "2026-01-05T04:04:38.908215Z",
-    "request_id": "01697115-f651-4197-9404-79dfaf0736f8",
-    "client_ip": "84.17.35.79",
-    "method": "GET",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "query_params": "",
+    "func_name": "get_agent_runs",
+    "timestamp": "2026-01-05T04:27:42.045304Z",
+    "path": "/v1/thread/6e24dc4f-f3cb-446a-a216-a6c3100093d7/agent-runs",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "path": "/v1/thread/9e70cc3f-01b9-4d54-a8df-1fb172e9e667/agent-runs",
+    "client_ip": "84.17.35.79",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "query_params": "",
+    "method": "GET",
+    "request_id": "678a88d2-eeae-44ef-94bc-fe702dee665d",
     "auth_method": "jwt"
 }
 {
-    "event": "Found 1 agent runs for thread: 9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
+    "event": "Found 1 agent runs for thread: 6e24dc4f-f3cb-446a-a216-a6c3100093d7",
     "level": "debug",
     "filename": "runs.py",
-    "func_name": "get_agent_runs",
     "lineno": 1174,
-    "timestamp": "2026-01-05T04:04:38.908215Z",
-    "request_id": "01697115-f651-4197-9404-79dfaf0736f8",
-    "client_ip": "84.17.35.79",
-    "method": "GET",
-    "thread_id": "9e70cc3f-01b9-4d54-a8df-1fb172e9e667",
-    "query_params": "",
+    "func_name": "get_agent_runs",
+    "timestamp": "2026-01-05T04:27:42.045304Z",
+    "path": "/v1/thread/6e24dc4f-f3cb-446a-a216-a6c3100093d7/agent-runs",
     "user_id": "83e1c69c-28bb-4229-985e-0ed34cc51762",
-    "path": "/v1/thread/9e70cc3f-01b9-4d54-a8df-1fb172e9e667/agent-runs",
+    "client_ip": "84.17.35.79",
+    "thread_id": "6e24dc4f-f3cb-446a-a216-a6c3100093d7",
+    "query_params": "",
+    "method": "GET",
+    "request_id": "678a88d2-eeae-44ef-94bc-fe702dee665d",
     "auth_method": "jwt"
 }
-

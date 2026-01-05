@@ -191,6 +191,11 @@ class RedisClient:
         client = await self.get_client()
         return await client.delete(key)
     
+    async def incr(self, key: str) -> int:
+        """Increment a key atomically."""
+        client = await self.get_client()
+        return await client.incr(key)
+    
     async def expire(self, key: str, seconds: int) -> bool:
         """Set expiration on a key."""
         client = await self.get_client()
@@ -530,6 +535,7 @@ __all__ = [
     'set',
     'setex',
     'delete',
+    'incr',
     'expire',
     'ttl',
     'scard',
