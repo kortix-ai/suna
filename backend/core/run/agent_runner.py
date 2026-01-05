@@ -350,17 +350,31 @@ class AgentRunner:
             }
             return
 
-        latest_message = await self.client.table('messages').select('type').eq('thread_id', self.config.thread_id).in_('type', ['assistant', 'tool', 'user']).order('created_at', desc=True).limit(1).execute()
-        if latest_message.data and len(latest_message.data) > 0:
-            message_type = latest_message.data[0].get('type')
-            if message_type == 'assistant':
-                # No new user message after assistant response - stop the loop
-                logger.debug(f"Last message is assistant, no new input - stopping execution for {self.config.thread_id}")
-                yield {
-                    "type": "status",
-                    "status": "stopped",
-                    "message": "Execution complete - awaiting user input"
-                }
+        # Check for new user input (only on turn > 1 - first turn is always triggered by user message)
+        if self.turn_number > 1:
+            try:
+                latest_message = await asyncio.wait_for(
+                    self.client.table('messages').select('type').eq('thread_id', self.config.thread_id).in_('type', ['assistant', 'tool', 'user']).order('created_at', desc=True).limit(1).execute(),
+                    timeout=2.0
+                )
+                if latest_message.data and len(latest_message.data) > 0:
+                    message_type = latest_message.data[0].get('type')
+                    if message_type == 'assistant':
+                        # No new user message after assistant response - stop the loop
+                        logger.debug(f"Last message is assistant, no new input - stopping execution for {self.config.thread_id}")
+                        yield {
+                            "type": "status",
+                            "status": "stopped",
+                            "message": "Execution complete - awaiting user input"
+                        }
+                        return
+            except asyncio.TimeoutError:
+                logger.warning(f"⚠️ [TIMEOUT] Latest message check timed out after 2s for {self.config.thread_id} - stopping to be safe")
+                yield {"type": "status", "status": "stopped", "message": "Execution complete - awaiting user input"}
+                return
+            except Exception as e:
+                logger.warning(f"⚠️ [ERROR] Latest message check failed: {e} - stopping to be safe")
+                yield {"type": "status", "status": "stopped", "message": "Execution complete - awaiting user input"}
                 return
 
         temporary_message = None
