@@ -29,20 +29,20 @@ import asyncio
 # =============================================================================
 
 # Connection limits (per worker process)
-# With 12 workers: 12 * 120 = 1440 max connections (within Supabase 1500 limit)
-SUPABASE_MAX_CONNECTIONS = int(os.getenv("SUPABASE_MAX_CONNECTIONS", "120"))
-SUPABASE_MAX_KEEPALIVE = int(os.getenv("SUPABASE_MAX_KEEPALIVE", "60"))
-SUPABASE_KEEPALIVE_EXPIRY = float(os.getenv("SUPABASE_KEEPALIVE_EXPIRY", "120.0"))  # 2 min keepalive
+# With 12 workers: 12 * 30 = 360 max connections (reduced to avoid overwhelming PostgREST)
+SUPABASE_MAX_CONNECTIONS = 30
+SUPABASE_MAX_KEEPALIVE = 20
+SUPABASE_KEEPALIVE_EXPIRY = 30.0  # 30s keepalive
 
-# Timeout settings (in seconds)
-SUPABASE_CONNECT_TIMEOUT = float(os.getenv("SUPABASE_CONNECT_TIMEOUT", "10.0"))  # TCP connect
-SUPABASE_READ_TIMEOUT = float(os.getenv("SUPABASE_READ_TIMEOUT", "30.0"))        # Response read
-SUPABASE_WRITE_TIMEOUT = float(os.getenv("SUPABASE_WRITE_TIMEOUT", "30.0"))      # Request write
-SUPABASE_POOL_TIMEOUT = float(os.getenv("SUPABASE_POOL_TIMEOUT", "30.0"))        # Wait for pool slot
+# Timeout settings (in seconds) - aggressive to fail fast
+SUPABASE_CONNECT_TIMEOUT = 5.0   # TCP connect
+SUPABASE_READ_TIMEOUT = 10.0        # Response read
+SUPABASE_WRITE_TIMEOUT = 10.0      # Request write
+SUPABASE_POOL_TIMEOUT = 5.0         # Wait for pool slot
 
 # HTTP transport settings
-SUPABASE_HTTP2_ENABLED = os.getenv("SUPABASE_HTTP2_ENABLED", "true").lower() == "true"
-SUPABASE_RETRIES = int(os.getenv("SUPABASE_RETRIES", "3"))  # Transport-level retries
+SUPABASE_HTTP2_ENABLED = True
+SUPABASE_RETRIES = 1  # Single retry only
 
 
 class DBConnection:
