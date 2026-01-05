@@ -9,6 +9,8 @@ export interface ToolCallData {
   arguments: Record<string, any>;
   /** Raw string arguments for streaming partial JSON parsing */
   rawArguments?: string;
+  /** Optional UI display hint injected by backend (e.g., "Presentation Mode activated") */
+  _display_hint?: string;
   source: 'native' | 'xml';
 }
 

@@ -29,10 +29,10 @@ interface UseThreadToolCallsReturn {
 
 // Helper function to check if a tool should be filtered out from the side panel
 // Uses the shared utility from streaming-utils
-function shouldFilterTool(toolName: string): boolean {
+function shouldFilterTool(toolName: string, toolArgs?: Record<string, any> | string | null): boolean {
   // Always filter out ask and complete tools - they're rendered inline in ThreadContent
   // Also filter out hidden tools (internal/initialization tools that don't provide meaningful user feedback)
-  return isAskOrCompleteTool(toolName) || isHiddenTool(toolName);
+  return isAskOrCompleteTool(toolName) || isHiddenTool(toolName, toolArgs);
 }
 
 export function useThreadToolCalls(
@@ -126,7 +126,7 @@ export function useThreadToolCalls(
         const toolNumber = getOrAssignToolNumber(toolCallId);
 
         // Check if this tool should be filtered out
-        if (shouldFilterTool(toolName)) {
+        if (shouldFilterTool(toolName, normalizedArguments)) {
           return;
         }
 
@@ -149,6 +149,7 @@ export function useThreadToolCalls(
             tool_call_id: matchingToolCall.tool_call_id,
             function_name: matchingToolCall.function_name,
             arguments: normalizedArguments,
+            _display_hint: (matchingToolCall as any)?._display_hint,
             source: matchingToolCall.source || 'xml',
           },
           toolResult: {
@@ -339,7 +340,7 @@ export function useThreadToolCalls(
       // Filter out ask and complete tools, and hidden tools (internal/initialization tools)
       const filteredToolCalls = toolCallsFromMetadata.filter(tc => {
         const toolName = tc.function_name.replace(/_/g, '-').toLowerCase();
-        return toolName !== 'ask' && toolName !== 'complete' && !isHiddenTool(toolName);
+        return toolName !== 'ask' && toolName !== 'complete' && !isHiddenTool(toolName, (tc as any).arguments);
       });
 
       if (filteredToolCalls.length === 0) return;
@@ -392,6 +393,7 @@ export function useThreadToolCalls(
               arguments: parsedArgs,
               // Store raw string for streaming partial JSON parsing
               rawArguments: typeof rawArgs === 'string' ? rawArgs : undefined,
+              _display_hint: (metadataToolCall as any)?._display_hint,
               source: metadataToolCall.source || 'native',
             },
             // Merge tool result if available (real-time result from useAgentStream)
@@ -435,6 +437,7 @@ export function useThreadToolCalls(
                 ...updated[existingIndex].toolCall,
                 arguments: normalizedArgs,
                 rawArguments: rawArgsStr,
+                _display_hint: (metadataToolCall as any)?._display_hint ?? (updated[existingIndex].toolCall as any)?._display_hint,
               },
               // Update tool result if available (real-time merge)
               toolResult: mergedToolResult,

@@ -358,6 +358,36 @@ class ResponseProcessor:
                 transformed_tc['_app_filter'] = filter_val
                 logger.debug(f"🔍 [STREAM TRANSFORM] Added discovery display hint: {transformed_tc['_display_hint']}")
                 return transformed_tc
+
+            elif function_name in ('initialize_tools', 'initialize-tools'):
+                # Show a user-friendly "mode activated" label for Presentation tool initialization.
+                arguments = unified_tool_call.get("arguments", {})
+                if isinstance(arguments, str):
+                    try:
+                        import json
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        return unified_tool_call
+
+                raw_tool_names = None
+                if isinstance(arguments, dict):
+                    raw_tool_names = arguments.get('tool_names') or arguments.get('tool_name')
+
+                tool_names = []
+                if isinstance(raw_tool_names, list):
+                    tool_names = [str(t).strip().lower() for t in raw_tool_names]
+                elif isinstance(raw_tool_names, str):
+                    tool_names = [t.strip().lower() for t in raw_tool_names.split(',')]
+                elif raw_tool_names is not None:
+                    tool_names = [str(raw_tool_names).strip().lower()]
+
+                if 'sb_presentation_tool' in tool_names:
+                    transformed_tc = unified_tool_call.copy()
+                    transformed_tc['_display_hint'] = "Presentation Mode activated"
+                    logger.info(
+                        f"🧩 [STREAM TRANSFORM] initialize_tools -> Presentation Mode activated (tool_call_id: {unified_tool_call.get('tool_call_id')})"
+                    )
+                    return transformed_tc
             
             elif function_name == 'execute_tool':
                 arguments = unified_tool_call.get("arguments", {})

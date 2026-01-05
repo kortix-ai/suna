@@ -240,7 +240,7 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
     const toolName = toolCall.function_name.replace(/_/g, '-');
     
     // Skip hidden tools (internal/initialization tools that don't provide meaningful user feedback)
-    if (isHiddenTool(toolName)) {
+    if (isHiddenTool(toolName, (toolCall as any).arguments)) {
       return;
     }
     

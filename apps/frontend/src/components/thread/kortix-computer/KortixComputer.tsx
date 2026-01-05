@@ -249,7 +249,7 @@ export const KortixComputer = memo(function KortixComputer({
   const visibleToolCalls = useMemo(() => {
     return toolCalls.filter(tc => {
       const toolName = tc.toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || '';
-      return !isHiddenTool(toolName);
+      return !isHiddenTool(toolName, tc.toolCall?.arguments);
     });
   }, [toolCalls]);
 

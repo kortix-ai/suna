@@ -233,9 +233,57 @@ export const HIDDEN_TOOLS: ReadonlySet<string> = new Set([
 /**
  * Check if a tool should be hidden from the user
  */
-export function isHiddenTool(toolName: string): boolean {
+type ToolCallArgsLike = Record<string, any> | string | null | undefined;
+
+function safeParseToolArgs(toolArgs: ToolCallArgsLike): Record<string, any> {
+  if (!toolArgs) return {};
+  if (typeof toolArgs === 'string') {
+    try {
+      const parsed = JSON.parse(toolArgs);
+      return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, any>) : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof toolArgs === 'object') return toolArgs;
+  return {};
+}
+
+function toolArgsIncludeToolName(toolArgs: ToolCallArgsLike, expectedToolName: string): boolean {
+  const args = safeParseToolArgs(toolArgs);
+  const raw = args.tool_names ?? args.tool_name ?? args.toolNames;
+  const expected = expectedToolName.toLowerCase();
+
+  const normalize = (v: unknown) => String(v ?? '').toLowerCase().trim();
+
+  if (Array.isArray(raw)) {
+    return raw.some((t) => normalize(t) === expected);
+  }
+
+  if (typeof raw === 'string') {
+    // Allow comma-separated strings: "a,b,c"
+    return raw
+      .split(',')
+      .map((t) => normalize(t))
+      .some((t) => t === expected);
+  }
+
+  if (raw != null) {
+    return normalize(raw) === expected;
+  }
+
+  return false;
+}
+
+export function isHiddenTool(toolName: string, toolArgs?: ToolCallArgsLike): boolean {
   if (!toolName) return false;
   const normalizedName = toolName.toLowerCase().replace(/_/g, '-');
+
+  // Special-case: show tool initialization when it activates Presentation mode.
+  if (normalizedName === 'initialize-tools' && toolArgsIncludeToolName(toolArgs, 'sb_presentation_tool')) {
+    return false;
+  }
+
   return HIDDEN_TOOLS.has(normalizedName) || HIDDEN_TOOLS.has(toolName);
 }
 

@@ -1369,7 +1369,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                       // Filter out hidden tools (internal/initialization tools)
                       const visibleToolCalls = toolCalls.filter((tc: any) => {
                         const toolName = tc.function_name?.replace(/_/g, '-') || '';
-                        return !isHiddenTool(toolName);
+                        return !isHiddenTool(toolName, tc.arguments);
                       });
 
                       // If all tools were hidden, don't render anything
