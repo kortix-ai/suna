@@ -49,11 +49,15 @@ class PromptManager:
         
         t_mcp = time.time()
         fresh_mcp_config = None
-        if agent_id and user_id:
-            fresh_mcp_config = await PromptManager._with_timeout(
-                PromptManager._fetch_mcp_config(agent_id, user_id), 2.0, "MCP config"
-            )
-        logger.debug(f"⏱️ [PROMPT TIMING] MCP config fetch: {(time.time() - t_mcp) * 1000:.1f}ms")
+        if agent_config and (agent_config.get('custom_mcps') or agent_config.get('configured_mcps')):
+            fresh_mcp_config = {
+                'custom_mcp': agent_config.get('custom_mcps', []),
+                'configured_mcps': agent_config.get('configured_mcps', []),
+                'account_id': user_id
+            }
+            logger.debug(f"⏱️ [PROMPT TIMING] MCP config from agent_config (no re-fetch): 0.0ms")
+        else:
+            logger.debug(f"⏱️ [PROMPT TIMING] No MCP config in agent_config: 0.0ms")
         
         t3 = time.time()
         system_content = await PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance, fresh_mcp_config)
