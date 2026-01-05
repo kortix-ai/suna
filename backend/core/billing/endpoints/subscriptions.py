@@ -221,3 +221,80 @@ async def preview_proration(
     except Exception as e:
         logger.error(f"[BILLING] Error previewing proration: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/checkout-session/{session_id}")
+async def get_checkout_session(
+    session_id: str,
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+) -> Dict:
+    """
+    Retrieve checkout session details from Stripe.
+    Used to get actual transaction amounts after checkout completes (for analytics).
+    Returns amount_total, discount, coupon, and promotion code info.
+    """
+    try:
+        # Validate session_id format (starts with cs_)
+        if not session_id.startswith('cs_'):
+            raise HTTPException(status_code=400, detail="Invalid session ID format")
+        
+        # Retrieve checkout session with expanded discounts and promotion code
+        # Note: session.discounts contains promotion_code, not total_details.breakdown
+        session = await stripe.checkout.Session.retrieve_async(
+            session_id,
+            expand=['discounts.promotion_code']
+        )
+        
+        # Extract amounts
+        amount_total = session.amount_total or 0  # In cents
+        amount_subtotal = session.amount_subtotal or 0  # In cents (before discounts/tax)
+        amount_discount = 0
+        amount_tax = 0
+        coupon_id = None
+        coupon_name = None
+        promotion_code = None  # The customer-facing code (e.g., "HEHE2020")
+        
+        # Get discount and tax amounts from total_details
+        if session.total_details:
+            amount_discount = session.total_details.amount_discount or 0
+            amount_tax = session.total_details.amount_tax or 0
+        
+        # Get promotion code and coupon info from session.discounts
+        # This is the correct way to get the customer-facing promotion code
+        if session.discounts and len(session.discounts) > 0:
+            discount = session.discounts[0]
+            
+            # Get promotion code (customer-facing code like "HEHE2020")
+            if hasattr(discount, 'promotion_code') and discount.promotion_code:
+                promo = discount.promotion_code
+                if hasattr(promo, 'code'):
+                    promotion_code = promo.code
+                # Get coupon info from the promotion code's coupon
+                if hasattr(promo, 'coupon') and promo.coupon:
+                    coupon_id = promo.coupon.id
+                    coupon_name = promo.coupon.name
+            # Fallback: get coupon directly if no promotion code
+            elif hasattr(discount, 'coupon') and discount.coupon:
+                coupon_id = discount.coupon.id
+                coupon_name = discount.coupon.name
+        
+        return {
+            'session_id': session_id,
+            'amount_total': amount_total,           # Final amount in cents (after discounts and tax)
+            'amount_subtotal': amount_subtotal,     # Amount before discounts/tax in cents
+            'amount_discount': amount_discount,     # Discount amount in cents
+            'amount_tax': amount_tax,               # Tax amount in cents
+            'currency': session.currency or 'usd',
+            'coupon_id': coupon_id,                 # Internal Stripe coupon ID
+            'coupon_name': coupon_name,             # Coupon display name
+            'promotion_code': promotion_code,       # Customer-facing code (e.g., "HEHE2020")
+            'status': session.status,
+            'payment_status': session.payment_status
+        }
+        
+    except stripe.error.InvalidRequestError as e:
+        logger.warning(f"[BILLING] Invalid checkout session request: {e}")
+        raise HTTPException(status_code=404, detail="Checkout session not found")
+    except Exception as e:
+        logger.error(f"[BILLING] Error retrieving checkout session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -251,7 +251,8 @@ function PricingTier({
       const response: CreateCheckoutSessionResponse =
         await createCheckoutSession({
           tier_key: tierKey,
-          success_url: `${window.location.origin}/dashboard?subscription=success`,
+          // Include {CHECKOUT_SESSION_ID} placeholder - Stripe replaces this with actual session ID
+          success_url: `${window.location.origin}/dashboard?subscription=success&session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: returnUrl,
           commitment_type: commitmentType,
           locale: locale, // Pass locale for Stripe adaptive pricing
@@ -269,6 +270,7 @@ function PricingTier({
             // item_id and item_name must match add_to_cart format
             const actualPrice = getActualPrice();
             const billingLabel = effectiveBillingPeriod === 'monthly' ? 'Monthly' : 'Yearly';
+            const previousTier = currentSubscription?.subscription.tier_key || currentSubscription?.tier?.name || 'none';
             storeCheckoutData({
               item_id: `${tier.tierKey}_${effectiveBillingPeriod}`,
               item_name: `${tier.name} ${billingLabel}`,
@@ -276,6 +278,7 @@ function PricingTier({
               value: actualPrice, // Same as price unless discount applied (Stripe handles this)
               currency: currency,
               billing_period: effectiveBillingPeriod,
+              previous_tier: previousTier, // To determine customer_type (new vs returning)
             });
             posthog.capture('plan_purchase_attempted');
             window.location.href = checkoutUrl;
@@ -292,6 +295,7 @@ function PricingTier({
           // item_id and item_name must match add_to_cart format
           const upgradedActualPrice = getActualPrice();
           const upgradedBillingLabel = effectiveBillingPeriod === 'monthly' ? 'Monthly' : 'Yearly';
+          const upgradedPreviousTier = currentSubscription?.subscription.tier_key || currentSubscription?.tier?.name || 'none';
           storeCheckoutData({
             item_id: `${tier.tierKey}_${effectiveBillingPeriod}`,
             item_name: `${tier.name} ${upgradedBillingLabel}`,
@@ -299,6 +303,7 @@ function PricingTier({
             value: upgradedActualPrice, // Same as price unless discount applied
             currency: currency,
             billing_period: effectiveBillingPeriod,
+            previous_tier: upgradedPreviousTier, // To determine customer_type (new vs returning)
           });
           posthog.capture('plan_upgraded');
           if (onSubscriptionUpdate) onSubscriptionUpdate();

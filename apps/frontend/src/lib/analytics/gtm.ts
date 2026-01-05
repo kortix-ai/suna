@@ -537,6 +537,7 @@ export function trackPurchase(data: PurchaseData) {
  * 
  * price = full product price (before discounts)
  * value = actual transaction value (after discounts/coupons)
+ * previous_tier = user's tier before checkout (to determine customer_type)
  */
 export function storeCheckoutData(data: {
   item_id: string;       // e.g., "pro_yearly" - matches add_to_cart format
@@ -547,6 +548,7 @@ export function storeCheckoutData(data: {
   billing_period: string;
   coupon?: string;
   discount?: number;
+  previous_tier?: string; // User's tier before checkout (e.g., "free", "tier_2_20")
 }) {
   if (typeof window === 'undefined') return;
   sessionStorage.setItem('gtm_checkout_data', JSON.stringify({
@@ -567,6 +569,7 @@ export function getStoredCheckoutData(): {
   billing_period: string;
   coupon?: string;
   discount?: number;
+  previous_tier?: string;
   timestamp: number;
 } | null {
   if (typeof window === 'undefined') return null;
