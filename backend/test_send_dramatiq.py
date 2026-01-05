@@ -25,3 +25,4 @@ print(f"   Queue: {msg.queue_name}")
 print(f"   Actor: {msg.actor_name}")
 print("\n👀 Check your worker logs to see it being processed!")
 
+

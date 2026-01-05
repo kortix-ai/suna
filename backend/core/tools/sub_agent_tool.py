@@ -27,73 +27,71 @@ MAX_SUB_AGENT_DEPTH = 1
     color="bg-indigo-100 dark:bg-indigo-800/50",
     is_core=True,
     usage_guide="""
-### 🚨 SUB-AGENT PRIORITY OVERRIDE
+### SUB-AGENT CAPABILITIES
 
-**IF USER MENTIONS "sub-agent", "delegate", "parallel":**
-→ ALL work MUST go to sub-agents (web_search, create_file, create_slide, etc.)
-→ Main thread ONLY: spawn → wait ONCE → collect → present
-→ This OVERRIDES other tool guides
+Sub-agents have ALL tools:
+- Research: web_search, browser, scraping
+- Visuals: image_generate, image_edit  
+- Files: create_file, edit_file, code
+- Presentations: create_slide, HTML/CSS
+- Code: execute_command, dev tools
 
----
+### TASK DESIGN
 
-### 🚀 OPTIMAL PATTERN: SPAWN ALL → WAIT ONCE
+**1. DIVERSITY over QUANTITY**
+- Don't spawn multiple agents for same work type
+- Spawn agents for DIFFERENT types of tasks
 
-**CRITICAL: File-based coordination for parallelism!**
+**2. CONSOLIDATE similar work**
+- Research = 1-2 agents (comprehensive)
+- Images = 1 agent for all visuals
+- Final output = 1 agent
 
+### HANDLING DEPENDENCIES
+
+**CRITICAL: Tasks that need outputs from other tasks require PHASES!**
+
+**INDEPENDENT tasks** → spawn together
+**DEPENDENT tasks** → spawn AFTER dependencies complete
+
+**Example: Presentation with images**
 ```
-STEP 1: SPAWN ALL (in ONE response, with file paths!)
-├── spawn(task="Research X, SAVE to /workspace/research/x.md")
-├── spawn(task="Research Y, SAVE to /workspace/research/y.md")
-├── spawn(task="Research Z, SAVE to /workspace/research/z.md")
-└── spawn(task="Create output, READ /workspace/research/*.md, SAVE /workspace/result.html", validation_level=3)
+# Phase 1: Independent work
+spawn("Research topic. SAVE to /workspace/research/")
+spawn("Generate images. SAVE to /workspace/images/")
+wait_for_sub_agents()
 
-STEP 2: WAIT ONCE
-└── wait_for_sub_agents(timeout_seconds=300)
-
-STEP 3: COLLECT + PRESENT
-└── get_sub_agent_result for each → complete(attachments=["/workspace/result.html"])
-```
-
-### 🔴 ANTI-PATTERNS
-
-❌ **Two wait phases (WRONG!):**
-```
-spawn research → wait → collect → spawn presentation → wait  # BAD!
-```
-✅ **One wait (RIGHT):**
-```
-spawn research + spawn presentation → wait ONCE
-```
-
-❌ **Huge context strings (WRONG!):**
-```
-spawn(context="[5000 chars of research text...]")  # BAD!
-```
-✅ **File paths (RIGHT):**
-```
-spawn(task="... READ from /workspace/research/*.md")
+# Phase 2: Dependent work (needs phase 1 outputs)
+spawn("Create presentation. READ from /workspace/research/. EMBED images from /workspace/images/ as <img> tags. SAVE to /workspace/output/")
+wait_for_sub_agents()
 ```
 
-❌ **Reading output files yourself (WRONG!):**
-```
-get_result → read_file(43KB file)  # Wastes context!
-```
-✅ **Trust sub-agent, attach file (RIGHT):**
-```
-get_result → complete(attachments=["/workspace/output.html"])
-```
+**WHY?** If you spawn presentation with research/images, it STARTS before they finish and WON'T use them!
 
-### 📁 FILE COORDINATION
+### MAKING FILES USED
 
-Sub-agents share /workspace. Use files for coordination:
-- Research tasks: "SAVE to /workspace/research/topic.md"
-- Content tasks: "READ from /workspace/research/*.md"
-- Final output: "SAVE to /workspace/output.html"
+Be EXPLICIT about file usage in dependent tasks:
+- "READ research from /workspace/research/data.md"
+- "EMBED images from /workspace/images/*.png as <img src='...'>"
+- "List all images and INCLUDE each in final output"
+
+### FILE COORDINATION
+
+Sub-agents share /workspace:
+- Research: /workspace/research/
+- Images: /workspace/images/
+- Output: /workspace/output/
 
 ### VALIDATION LEVELS
 - 1 = Basic (not broken)
 - 2 = Good (addresses task)
 - 3 = Top-notch (final deliverables)
+
+### ANTI-PATTERNS
+❌ Multiple agents for same task type
+❌ Spawning dependent tasks with independent ones
+❌ Huge context strings (use file paths)
+❌ Assuming files will be used (be EXPLICIT!)
 """,
     weight=8,
     visible=True
@@ -296,23 +294,23 @@ Respond in this EXACT JSON format:
         "type": "function",
         "function": {
             "name": "spawn_sub_agent",
-            "description": "🚨 DELEGATE ALL WORK! Spawn ALL sub-agents in ONE response (parallel). CRITICAL: Include OUTPUT FILE PATH in task (e.g. 'SAVE to /workspace/research/topic.md'). For content creation, tell sub-agent to READ from files other sub-agents create. Returns immediately - use wait_for_sub_agents ONCE for ALL.",
+            "description": "Spawn a sub-agent worker with ALL tools (web_search, image_generate, create_file, browser, etc). IMPORTANT: 1) Spawn DIVERSE task types, consolidate similar work. 2) For tasks that DEPEND on other outputs (like presentation needing research+images), spawn them in a SECOND phase after dependencies complete. 3) Be EXPLICIT about using files: 'EMBED images as <img> tags'.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "task": {
                         "type": "string",
-                        "description": "**REQUIRED** - MUST include: 1) What to do, 2) WHERE TO SAVE output (e.g. 'SAVE to /workspace/research/bio.md'). For content tasks: 'READ from /workspace/research/*.md, CREATE at /workspace/output.html'. Sub-agents share /workspace - use files for coordination!"
+                        "description": "Task description with output path. For DEPENDENT tasks that need files from other agents, be EXPLICIT: 'READ from /workspace/research/. EMBED images from /workspace/images/ as <img src=\"...\"> tags in HTML. SAVE to /workspace/output/'. One agent can handle comprehensive work!"
                     },
                     "context": {
                         "type": "string",
-                        "description": "**OPTIONAL** - File paths to read (not huge text!). Use: 'Read from /workspace/research/*.md' instead of pasting content. Keep SHORT - use file paths for coordination."
+                        "description": "Optional context. Use file paths not content: 'Read from /workspace/research/*.md'"
                     },
                     "validation_level": {
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 3,
-                        "description": "**OPTIONAL** - 1=basic, 2=good, 3=top-notch (use for final deliverables)."
+                        "description": "Quality validation: 1=basic, 2=good, 3=top-notch (final deliverables)."
                     }
                 },
                 "required": ["task"],
