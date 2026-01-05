@@ -3,7 +3,7 @@ import { Icon } from '@/components/ui/icon';
 import * as React from 'react';
 import { View, Pressable, ScrollView, Image } from 'react-native';
 import { ChevronDown, X } from 'lucide-react-native';
-import { IMAGE_STYLES } from './quickActionViews';
+import { IMAGE_STYLES, SLIDES_TEMPLATES, DOCUMENT_TYPES, DATA_TYPES } from './quickActionViews';
 import type { QuickActionOption } from './quickActionViews';
 import * as Haptics from 'expo-haptics';
 
@@ -19,27 +19,15 @@ interface LibraryTemplateSelectorProps {
 const LIBRARY_BUTTON_CONFIG = {
   slides: {
     text: 'Templates',
-    image: require('@/assets/images/Template-Slides-Icon.png'),
-  },
-  research: {
-    text: 'Prompts',
-    image: require('@/assets/images/Template-Research-Icon.png'),
   },
   docs: {
     text: 'Styles',
-    image: require('@/assets/images/Template-Docs-Icon.png'),
   },
   image: {
     text: 'Styles',
-    image: require('@/assets/images/Template-Image-Icon.png'),
   },
   data: {
     text: 'Styles',
-    image: require('@/assets/images/Template-Data-Icon.png'),
-  },
-  people: {
-    text: 'Prompts',
-    image: require('@/assets/images/Template-People-Icon.png'),
   },
 } as const;
 
@@ -62,17 +50,23 @@ export function LibraryTemplateSelector({
   const buttonConfig = React.useMemo(() => {
     return LIBRARY_BUTTON_CONFIG[actionId as keyof typeof LIBRARY_BUTTON_CONFIG] || {
       text: 'Library',
-      image: require('@/assets/images/Library-Image.png'),
     };
   }, [actionId]);
 
   // Get templates based on action mode
   const templates = React.useMemo(() => {
-    if (actionId === 'image') {
-      return IMAGE_STYLES;
+    switch (actionId) {
+      case 'image':
+        return IMAGE_STYLES;
+      case 'slides':
+        return SLIDES_TEMPLATES;
+      case 'docs':
+        return DOCUMENT_TYPES;
+      case 'data':
+        return DATA_TYPES;
+      default:
+        return [];
     }
-    // Add other modes here as needed
-    return [];
   }, [actionId]);
 
   const selectedTemplate = React.useMemo(() => {
@@ -101,6 +95,11 @@ export function LibraryTemplateSelector({
     onSelectTemplate?.(null as any);
   }, [onSelectTemplate]);
 
+  // Hide button for research and people modes (after all hooks)
+  if (actionId === 'research' || actionId === 'people') {
+    return null;
+  }
+
   // If expanded, show dismiss button + horizontal template options
   if (isExpanded) {
     return (
@@ -120,33 +119,48 @@ export function LibraryTemplateSelector({
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: 12 }}
         >
-          {templates.map((template) => (
-            <Pressable
-              key={template.id}
-              onPress={() => handleTemplateSelect(template.id)}
-              className="items-center"
-              style={{ width: 80 }}
-            >
-              {/* Template Image */}
-              <View className="w-[80px] h-[80px] rounded-2xl overflow-hidden bg-muted mb-2">
-                {template.imageUrl && (
-                  <Image
-                    source={template.imageUrl}
-                    style={{ width: '100%', height: '100%' }}
-                    resizeMode="cover"
-                  />
-                )}
-              </View>
-
-              {/* Template Name */}
-              <Text
-                className="text-xs font-roobert-medium text-foreground text-center"
-                numberOfLines={2}
+          {templates.map((template) => {
+            // Use 16:9 aspect ratio for slides (142px width), square (80px) for others
+            const containerWidth = actionId === 'slides' ? 142 : 80;
+            const containerHeight = 80;
+            
+            return (
+              <Pressable
+                key={template.id}
+                onPress={() => handleTemplateSelect(template.id)}
+                className="items-center"
+                style={{ width: containerWidth }}
               >
-                {template.label}
-              </Text>
-            </Pressable>
-          ))}
+                {/* Template Image or Icon */}
+                <View 
+                  className="rounded-xl overflow-hidden bg-muted mb-2 items-center justify-center"
+                  style={{ width: containerWidth, height: containerHeight }}
+                >
+                  {template.imageUrl ? (
+                    <Image
+                      source={template.imageUrl}
+                      style={{ width: '100%', height: '100%' }}
+                      resizeMode="cover"
+                    />
+                  ) : template.icon ? (
+                    <Icon
+                      as={template.icon}
+                      size={32}
+                      className="text-foreground opacity-70"
+                    />
+                  ) : null}
+                </View>
+
+                {/* Template Name */}
+                <Text
+                  className="text-xs font-roobert-medium text-foreground text-center"
+                  numberOfLines={2}
+                >
+                  {template.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </ScrollView>
       </View>
     );
@@ -161,8 +175,8 @@ export function LibraryTemplateSelector({
           className="border-[1.5px] border-black/10 rounded-full flex-row items-center gap-2 h-10 self-start pl-2 pr-3"
           style={{ opacity: 0.7 }}
         >
-          {/* Template Image (smaller) */}
-          {selectedTemplate.imageUrl && (
+          {/* Template Image or Icon (smaller) */}
+          {selectedTemplate.imageUrl ? (
             <View className="w-5 h-5 rounded-full overflow-hidden">
               <Image
                 source={selectedTemplate.imageUrl}
@@ -170,7 +184,15 @@ export function LibraryTemplateSelector({
                 resizeMode="cover"
               />
             </View>
-          )}
+          ) : selectedTemplate.icon ? (
+            <View className="w-5 h-5 items-center justify-center">
+              <Icon
+                as={selectedTemplate.icon}
+                size={16}
+                className="text-foreground opacity-70"
+              />
+            </View>
+          ) : null}
 
           {/* Template Name */}
           <Text className="text-sm font-roobert-medium text-neutral-900 dark:text-neutral-50">
@@ -193,11 +215,6 @@ export function LibraryTemplateSelector({
         style={{ opacity: 0.7 }}
       >
         <Text className="text-base font-roobert-medium text-neutral-900 dark:text-neutral-50">{buttonConfig.text}</Text>
-        <Image
-          source={buttonConfig.image}
-          style={{ width: 20, height: 20 }}
-          resizeMode="contain"
-        />
       </Pressable>
     </View>
   );
