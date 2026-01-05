@@ -9,7 +9,7 @@ from enum import Enum
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 
-MCP_CONFIG_QUERY_TIMEOUT = 10.0
+MCP_CONFIG_QUERY_TIMEOUT = 2.0
 
 
 class VersionStatus(Enum):
