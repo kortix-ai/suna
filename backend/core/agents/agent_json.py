@@ -308,7 +308,7 @@ class JsonImportService:
         try:
             logger.debug(f"Creating initial version for JSON imported agent {agent_id} with system_prompt: {system_prompt[:100]}...")
             
-            from .versioning.version_service import VersionService
+            from core.versioning.version_service import VersionService
             version_service = VersionService()
             
             version = await version_service.create_version(
