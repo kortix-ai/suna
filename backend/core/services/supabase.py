@@ -29,20 +29,21 @@ import asyncio
 # =============================================================================
 
 # Connection limits (per worker process)
-# With 12 workers: 12 * 30 = 360 max connections (reduced to avoid overwhelming PostgREST)
-SUPABASE_MAX_CONNECTIONS = 30
-SUPABASE_MAX_KEEPALIVE = 20
-SUPABASE_KEEPALIVE_EXPIRY = 30.0  # 30s keepalive
+# With 12 workers x 60 = 720 max connections (well within 1500 limit for 2XL tier)
+# Worker concurrency is 48, so we need at least 48+ connections per worker
+SUPABASE_MAX_CONNECTIONS = 60
+SUPABASE_MAX_KEEPALIVE = 40
+SUPABASE_KEEPALIVE_EXPIRY = 60.0  # 60s keepalive
 
-# Timeout settings (in seconds) - aggressive to fail fast
-SUPABASE_CONNECT_TIMEOUT = 5.0   # TCP connect
-SUPABASE_READ_TIMEOUT = 10.0        # Response read
-SUPABASE_WRITE_TIMEOUT = 10.0      # Request write
-SUPABASE_POOL_TIMEOUT = 5.0         # Wait for pool slot
+# Timeout settings (in seconds) - increased for stability under load
+SUPABASE_CONNECT_TIMEOUT = 10.0   # TCP connect
+SUPABASE_READ_TIMEOUT = 60.0      # Response read - increased for complex queries
+SUPABASE_WRITE_TIMEOUT = 60.0     # Request write - increased for large payloads
+SUPABASE_POOL_TIMEOUT = 15.0      # Wait for pool slot - increased for high concurrency
 
 # HTTP transport settings
 SUPABASE_HTTP2_ENABLED = True
-SUPABASE_RETRIES = 1  # Single retry only
+SUPABASE_RETRIES = 3  # Increased retries for transient failures
 
 
 class DBConnection:
