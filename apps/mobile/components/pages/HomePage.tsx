@@ -5,7 +5,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { ChatInputSection, ChatDrawers, type ChatInputSectionRef } from '@/components/chat';
 import { QUICK_ACTIONS, ModeThreadListView } from '@/components/quick-actions';
-import { TopNav, GreetingSuggestions } from '@/components/home';
+import { TopNav, BackgroundLogo } from '@/components/home';
 import { useRouter } from 'expo-router';
 import { UsageDrawer } from '@/components/settings/UsageDrawer';
 import { useChatCommons } from '@/hooks';
@@ -219,24 +219,22 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
                     onThreadPress={handleQuickActionThreadPress}
                   />
                 ) : (
-                  <View className="flex-1 items-center justify-center">
-                    <GreetingSuggestions 
-                      onSuggestionClick={(suggestion) => {
-                        // If there's a selected agent, send the message directly
-                        if (agentManager.selectedAgent?.agent_id) {
-                          handleSendMessage(
-                            suggestion,
-                            agentManager.selectedAgent.agent_id,
-                            agentManager.selectedAgent.name || ''
-                          );
-                        } else {
-                          // Otherwise, set the input value and focus it
-                          chat.setInputValue(suggestion);
-                          chatInputRef.current?.focusInput();
-                        }
-                      }}
-                    />
-                  </View>
+                  <BackgroundLogo 
+                    onSuggestionClick={(suggestion) => {
+                      // If there's a selected agent, send the message directly
+                      if (agentManager.selectedAgent?.agent_id) {
+                        handleSendMessage(
+                          suggestion,
+                          agentManager.selectedAgent.agent_id,
+                          agentManager.selectedAgent.name || ''
+                        );
+                      } else {
+                        // Otherwise, set the input value and focus it
+                        chat.setInputValue(suggestion);
+                        chatInputRef.current?.focusInput();
+                      }
+                    }}
+                  />
                 )}
               </View>
             </GestureDetector>

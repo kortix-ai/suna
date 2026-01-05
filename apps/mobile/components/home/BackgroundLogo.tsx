@@ -4,7 +4,6 @@ import { useColorScheme } from 'nativewind';
 import { LinearGradient } from 'expo-linear-gradient';
 import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
 import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
-import { GreetingSuggestions } from './GreetingSuggestions';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -76,23 +75,6 @@ export function BackgroundLogo({ onSuggestionClick }: BackgroundLogoProps) {
         />
       </Animated.View>
 
-      {/* Greeting and Suggestions - Centered on logo */}
-      <Animated.View
-        style={{
-          position: 'absolute',
-          top: logoCenterY,
-          left: 0,
-          right: 0,
-          opacity: fadeAnim,
-          alignItems: 'center',
-          justifyContent: 'center',
-          transform: [{ translateY: -34 }], // Offset to visually center the content (-8px adjustment)
-        }}
-      >
-        {onSuggestionClick ? (
-          <GreetingSuggestions onSuggestionClick={onSuggestionClick} />
-        ) : null}
-      </Animated.View>
     </View>
   );
 }

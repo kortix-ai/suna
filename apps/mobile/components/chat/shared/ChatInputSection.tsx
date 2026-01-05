@@ -260,6 +260,7 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
             actionId={selectedQuickAction}
             selectedTemplateId={selectedQuickActionOption}
             onSelectTemplate={onQuickActionSelectOption}
+            onSelectPrompt={onQuickActionSelectPrompt}
           />
         )}
 

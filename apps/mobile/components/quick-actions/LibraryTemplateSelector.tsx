@@ -2,57 +2,33 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import * as React from 'react';
 import { View, Pressable, ScrollView, Image } from 'react-native';
-import { ChevronDown, X } from 'lucide-react-native';
 import { IMAGE_STYLES, SLIDES_TEMPLATES, DOCUMENT_TYPES, DATA_TYPES } from './quickActionViews';
-import type { QuickActionOption } from './quickActionViews';
 import * as Haptics from 'expo-haptics';
+import { Check } from 'lucide-react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring } from 'react-native-reanimated';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface LibraryTemplateSelectorProps {
   actionId: string;
   selectedTemplateId?: string | null;
   onSelectTemplate?: (templateId: string) => void;
+  onSelectPrompt?: (prompt: string) => void;
 }
-
-/**
- * Configuration for library button appearance based on quick action
- */
-const LIBRARY_BUTTON_CONFIG = {
-  slides: {
-    text: 'Templates',
-  },
-  docs: {
-    text: 'Styles',
-  },
-  image: {
-    text: 'Styles',
-  },
-  data: {
-    text: 'Styles',
-  },
-} as const;
 
 /**
  * LibraryTemplateSelector Component
  * 
- * Interactive library button that expands to show template options.
- * - Initial: Shows dynamic button based on quick action (e.g., "Templates", "Prompts", "Styles")
- * - Expanded: Shows dismiss button + horizontal scrollable template options
- * - Selected: Shows selected template button (tap to deselect)
+ * Always shows template options for modes that have templates (slides, docs, image, data).
+ * Templates are always visible when a mode is selected, with selected state indicated.
  */
 export function LibraryTemplateSelector({
   actionId,
   selectedTemplateId,
   onSelectTemplate,
+  onSelectPrompt,
 }: LibraryTemplateSelectorProps) {
-  const [isExpanded, setIsExpanded] = React.useState(false);
-
-  // Get button configuration based on action ID
-  const buttonConfig = React.useMemo(() => {
-    return LIBRARY_BUTTON_CONFIG[actionId as keyof typeof LIBRARY_BUTTON_CONFIG] || {
-      text: 'Library',
-    };
-  }, [actionId]);
-
+  
   // Get templates based on action mode
   const templates = React.useMemo(() => {
     switch (actionId) {
@@ -69,154 +45,269 @@ export function LibraryTemplateSelector({
     }
   }, [actionId]);
 
-  const selectedTemplate = React.useMemo(() => {
-    if (!selectedTemplateId) return null;
-    return templates.find(t => t.id === selectedTemplateId) || null;
-  }, [selectedTemplateId, templates]);
-
-  const handleLibraryPress = React.useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setIsExpanded(true);
-  }, []);
-
-  const handleDismiss = React.useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setIsExpanded(false);
-  }, []);
+  // Short, mode-specific prompts
+  const prompts = React.useMemo(() => {
+    if (actionId === 'research') {
+      return [
+        'AI trends 2024',
+        'Competitor analysis',
+        'Market research',
+        'Industry insights',
+        'Tech news',
+        'Data analysis',
+        'Trends report',
+        'Market size',
+        'Industry report',
+        'Research summary',
+      ];
+    }
+    if (actionId === 'people') {
+      return [
+        'Find engineers',
+        'Hire developers',
+        'Find CTOs',
+        'Sales candidates',
+        'Marketing leads',
+        'Product managers',
+        'Designers',
+        'Data scientists',
+        'Find experts',
+        'Team members',
+      ];
+    }
+    return [];
+  }, [actionId]);
 
   const handleTemplateSelect = React.useCallback((templateId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onSelectTemplate?.(templateId);
-    setIsExpanded(false);
-  }, [onSelectTemplate]);
+    // Toggle selection: if already selected, deselect; otherwise select
+    if (selectedTemplateId === templateId) {
+      onSelectTemplate?.(null as any);
+    } else {
+      onSelectTemplate?.(templateId);
+    }
+  }, [onSelectTemplate, selectedTemplateId]);
 
-  const handleDeselectTemplate = React.useCallback(() => {
+  const handlePromptSelect = React.useCallback((prompt: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onSelectTemplate?.(null as any);
-  }, [onSelectTemplate]);
+    onSelectPrompt?.(prompt);
+  }, [onSelectPrompt]);
 
-  // Hide button for research and people modes (after all hooks)
+  // Show prompts for research and people modes
   if (actionId === 'research' || actionId === 'people') {
-    return null;
-  }
+    if (prompts.length === 0) {
+      return null;
+    }
 
-  // If expanded, show dismiss button + horizontal template options
-  if (isExpanded) {
     return (
-      <View className="px-4 mb-3">
-        {/* Dismiss Button */}
-        <Pressable
-          onPress={handleDismiss}
-          className="border-[1.5px] border-black/10 rounded-full flex-row items-center justify-center px-4 h-8 self-center mb-2"
-          style={{ opacity: 0.7 }}
-        >
-          <Icon as={ChevronDown} size={24} className="text-foreground" strokeWidth={2} />
-        </Pressable>
-
-        {/* Horizontal Scrollable Template Options */}
+      <View className="mb-3" style={{ overflow: 'visible' }}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 12 }}
+          contentContainerStyle={{ 
+            gap: 12,
+            paddingHorizontal: 16,
+          }}
+          style={{ overflow: 'visible' }}
         >
-          {templates.map((template) => {
-            // Use 16:9 aspect ratio for slides (142px width), square (80px) for others
-            const containerWidth = actionId === 'slides' ? 142 : 80;
-            const containerHeight = 80;
-            
-            return (
-              <Pressable
-                key={template.id}
-                onPress={() => handleTemplateSelect(template.id)}
-                className="items-center"
-                style={{ width: containerWidth }}
-              >
-                {/* Template Image or Icon */}
-                <View 
-                  className="rounded-xl overflow-hidden bg-muted mb-2 items-center justify-center"
-                  style={{ width: containerWidth, height: containerHeight }}
-                >
-                  {template.imageUrl ? (
-                    <Image
-                      source={template.imageUrl}
-                      style={{ width: '100%', height: '100%' }}
-                      resizeMode="cover"
-                    />
-                  ) : template.icon ? (
-                    <Icon
-                      as={template.icon}
-                      size={32}
-                      className="text-foreground opacity-70"
-                    />
-                  ) : null}
-                </View>
-
-                {/* Template Name */}
-                <Text
-                  className="text-xs font-roobert-medium text-foreground text-center"
-                  numberOfLines={2}
-                >
-                  {template.label}
-                </Text>
-              </Pressable>
-            );
-          })}
+          {prompts.map((prompt, index) => (
+            <PromptCard
+              key={`${prompt}-${index}`}
+              prompt={prompt}
+              onPress={() => handlePromptSelect(prompt)}
+            />
+          ))}
         </ScrollView>
       </View>
     );
   }
 
-  // If template is selected, show selected template button
-  if (selectedTemplate) {
-    return (
-      <View className="px-4 mb-3">
-        <Pressable
-          onPress={handleDeselectTemplate}
-          className="border-[1.5px] border-black/10 rounded-full flex-row items-center gap-2 h-10 self-start pl-2 pr-3"
-          style={{ opacity: 0.7 }}
-        >
-          {/* Template Image or Icon (smaller) */}
-          {selectedTemplate.imageUrl ? (
-            <View className="w-5 h-5 rounded-full overflow-hidden">
-              <Image
-                source={selectedTemplate.imageUrl}
-                style={{ width: '100%', height: '100%' }}
-                resizeMode="cover"
-              />
-            </View>
-          ) : selectedTemplate.icon ? (
-            <View className="w-5 h-5 items-center justify-center">
-              <Icon
-                as={selectedTemplate.icon}
-                size={16}
-                className="text-foreground opacity-70"
-              />
-            </View>
-          ) : null}
-
-          {/* Template Name */}
-          <Text className="text-sm font-roobert-medium text-neutral-900 dark:text-neutral-50">
-            {selectedTemplate.label}
-          </Text>
-
-          {/* Remove Icon */}
-          <Icon as={X} size={16} className="text-foreground" strokeWidth={2} />
-        </Pressable>
-      </View>
-    );
+  // Hide if no templates available
+  if (templates.length === 0) {
+    return null;
   }
 
-  // Default: Show dynamic library button based on quick action
+  // Always show horizontal scrollable template options
   return (
-    <View className="px-4 mb-3">
-      <Pressable
-        onPress={handleLibraryPress}
-        className="border-[1.5px] border-neutral-900/10 dark:border-neutral-50/10 rounded-full flex-row items-center gap-1 px-4 h-10 self-start"
-        style={{ opacity: 0.7 }}
+    <View className="mb-3" style={{ overflow: 'visible' }}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ 
+          gap: 12,
+          paddingHorizontal: 16,
+        }}
+        style={{ overflow: 'visible' }}
       >
-        <Text className="text-base font-roobert-medium text-neutral-900 dark:text-neutral-50">{buttonConfig.text}</Text>
-      </Pressable>
+        {templates.map((template) => {
+          return (
+            <TemplateCard
+              key={template.id}
+              template={template}
+              actionId={actionId}
+              isSelected={selectedTemplateId === template.id}
+              onPress={() => handleTemplateSelect(template.id)}
+            />
+          );
+        })}
+      </ScrollView>
     </View>
+  );
+}
+
+interface TemplateCardProps {
+  template: {
+    id: string;
+    label: string;
+    icon?: any;
+    imageUrl?: any;
+  };
+  actionId: string;
+  isSelected: boolean;
+  onPress: () => void;
+}
+
+function TemplateCard({ template, actionId, isSelected, onPress }: TemplateCardProps) {
+  const checkmarkScale = useSharedValue(isSelected ? 1 : 0);
+  const borderOpacity = useSharedValue(isSelected ? 1 : 0);
+  const overlayOpacity = useSharedValue(isSelected ? 1 : 0);
+
+  // Update animations when selection changes
+  React.useEffect(() => {
+    if (isSelected) {
+      checkmarkScale.value = withTiming(1, { duration: 200 });
+      borderOpacity.value = withTiming(1, { duration: 200 });
+      overlayOpacity.value = withTiming(1, { duration: 200 });
+    } else {
+      checkmarkScale.value = withTiming(0, { duration: 150 });
+      borderOpacity.value = withTiming(0, { duration: 150 });
+      overlayOpacity.value = withTiming(0, { duration: 150 });
+    }
+  }, [isSelected, checkmarkScale, borderOpacity, overlayOpacity]);
+
+  const checkmarkStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: checkmarkScale.value }],
+    opacity: checkmarkScale.value,
+  }), [checkmarkScale]);
+
+  const borderStyle = useAnimatedStyle(() => ({
+    opacity: borderOpacity.value,
+  }), [borderOpacity]);
+
+  const overlayStyle = useAnimatedStyle(() => ({
+    opacity: overlayOpacity.value,
+  }), [overlayOpacity]);
+
+  // Use 16:9 aspect ratio for slides (142px width), square (80px) for others
+  const containerWidth = actionId === 'slides' ? 142 : 80;
+  const containerHeight = 80;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      className="items-center"
+      style={{ width: containerWidth }}
+    >
+      {/* Template Image or Icon */}
+      <View 
+        className="rounded-xl overflow-hidden mb-2 items-center justify-center bg-muted relative"
+        style={{ width: containerWidth, height: containerHeight }}
+      >
+        {template.imageUrl ? (
+          <Image
+            source={template.imageUrl}
+            style={{ width: '100%', height: '100%' }}
+            resizeMode="cover"
+          />
+        ) : template.icon ? (
+          <Icon
+            as={template.icon}
+            size={32}
+            className="text-foreground opacity-70"
+          />
+        ) : null}
+
+        {/* Subtle selection overlay */}
+        {isSelected && (
+          <Animated.View 
+            style={overlayStyle}
+            className="absolute inset-0 bg-primary/10 pointer-events-none"
+          />
+        )}
+
+        {/* Subtle border highlight */}
+        {isSelected && (
+          <Animated.View 
+            style={borderStyle}
+            className="absolute inset-0 border-2 border-primary rounded-xl pointer-events-none"
+          />
+        )}
+
+        {/* Checkmark badge */}
+        {isSelected && (
+          <Animated.View 
+            style={checkmarkStyle}
+            className="absolute top-1.5 right-1.5 bg-primary rounded-full p-1 shadow-lg"
+          >
+            <Icon 
+              as={Check} 
+              size={12} 
+              className="text-primary-foreground"
+              strokeWidth={3}
+            />
+          </Animated.View>
+        )}
+      </View>
+
+      {/* Template Name */}
+      <Text
+        className={`text-xs font-roobert-medium text-center ${
+          isSelected ? 'text-primary' : 'text-foreground'
+        }`}
+        numberOfLines={2}
+      >
+        {template.label}
+      </Text>
+    </Pressable>
+  );
+}
+
+interface PromptCardProps {
+  prompt: string;
+  onPress: () => void;
+}
+
+function PromptCard({ prompt, onPress }: PromptCardProps) {
+  const scale = useSharedValue(1);
+  
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }), [scale]);
+
+  const handlePressIn = () => {
+    scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
+  };
+
+  const handlePressOut = () => {
+    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
+  };
+
+  return (
+    <AnimatedPressable
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      style={animatedStyle}
+      className="border border-border dark:border-border/80 rounded-full h-12 px-4 flex flex-row items-center justify-center active:opacity-80"
+    >
+      <Text 
+        className="text-base font-medium text-foreground"
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
+        {prompt}
+      </Text>
+    </AnimatedPressable>
   );
 }
 
