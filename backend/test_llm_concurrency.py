@@ -15,15 +15,37 @@ if not os.environ.get("AWS_DEFAULT_REGION"):
     os.environ["AWS_DEFAULT_REGION"] = "us-west-2"
 
 VERBOSE = False
+LARGE_PROMPT = False
+LARGE_PROMPT_TOKENS = 10000
+
+def generate_large_prompt(target_tokens: int = 10000) -> str:
+    base = "You are a helpful AI assistant. " * 100
+    multiplier = max(1, target_tokens // 400)
+    return base * multiplier
+
+CACHED_LARGE_PROMPT = None
+
+def get_large_prompt():
+    global CACHED_LARGE_PROMPT
+    if CACHED_LARGE_PROMPT is None:
+        CACHED_LARGE_PROMPT = generate_large_prompt(LARGE_PROMPT_TOKENS)
+        print(f"  Generated large prompt: ~{len(CACHED_LARGE_PROMPT.split())} words, ~{len(CACHED_LARGE_PROMPT)//4} tokens")
+    return CACHED_LARGE_PROMPT
 
 async def make_single_call(call_id: int, model: str, semaphore_test: bool = False):
     from core.services.llm import make_llm_api_call, LLMError
     
     start = time.monotonic()
     
-    messages = [
-        {"role": "user", "content": f"Say 'ok {call_id}' and nothing else."}
-    ]
+    if LARGE_PROMPT:
+        messages = [
+            {"role": "system", "content": get_large_prompt()},
+            {"role": "user", "content": f"Say 'ok {call_id}' and nothing else."}
+        ]
+    else:
+        messages = [
+            {"role": "user", "content": f"Say 'ok {call_id}' and nothing else."}
+        ]
     
     try:
         response = await make_llm_api_call(
@@ -72,6 +94,10 @@ async def run_concurrent_test(
     print(f"Model: {model}")
     print(f"Total requests: {num_requests}")
     print(f"Batch size: {batch_size}")
+    print(f"Large prompt mode: {LARGE_PROMPT}")
+    if LARGE_PROMPT:
+        est_tokens = LARGE_PROMPT_TOKENS * num_requests
+        print(f"Est. total tokens: ~{est_tokens:,} ({est_tokens/1000:.0f}k)")
     print(f"Redis limiter: {os.environ.get('LLM_USE_REDIS_LIMITER', 'false')}")
     
     from core.services.llm import LLM_INFLIGHT_LIMIT, USE_REDIS_LIMITER, LLM_GLOBAL_LIMIT
@@ -245,6 +271,8 @@ async def main():
     parser.add_argument("--prod", action="store_true", help="Run production load simulation")
     parser.add_argument("-d", "--duration", type=int, default=60, help="Duration in seconds (for --prod)")
     parser.add_argument("-r", "--rate", type=float, default=5.0, help="Requests per second (for --prod)")
+    parser.add_argument("--large-prompt", action="store_true", help="Use large system prompt (~10k tokens) to test TPM limits")
+    parser.add_argument("--prompt-tokens", type=int, default=50000, help="Target tokens for large prompt (default: 10000)")
     
     args = parser.parse_args()
     
@@ -254,6 +282,13 @@ async def main():
     if args.verbose:
         global VERBOSE
         VERBOSE = True
+    
+    if args.large_prompt:
+        global LARGE_PROMPT, LARGE_PROMPT_TOKENS
+        LARGE_PROMPT = True
+        LARGE_PROMPT_TOKENS = args.prompt_tokens
+        print(f"\n⚠️  LARGE PROMPT MODE: ~{args.prompt_tokens} tokens per request")
+        print(f"   This tests TPM (Tokens Per Minute) limits\n")
     
     model = "mock-ai" if args.mock else args.model
     

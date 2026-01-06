@@ -14,14 +14,11 @@ from datetime import datetime, timezone
 litellm.modify_params = True
 litellm.drop_params = True
 
-if os.environ.get("LITELLM_NUM_RETRIES") is None:
-    litellm.num_retries = 3
-
-litellm.set_verbose = False
-litellm.request_timeout = 600
+litellm.set_verbose = True
+litellm.request_timeout = 60
 
 if os.environ.get("LITELLM_NUM_RETRIES") is None:
-    litellm.num_retries = 3
+    litellm.num_retries = 2
 
 if os.getenv("BRAINTRUST_API_KEY"):
     litellm.callbacks = ["braintrust"]
@@ -316,17 +313,15 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
         model_list=model_list,
         num_retries=num_retries,
         fallbacks=fallbacks,
-        timeout=300,
+        timeout=litellm.request_timeout,
         allowed_fails=3,
         cooldown_time=30,
     )
 
     logger.info(
         f"LiteLLM Router configured with fallbacks: minimax -> glm-4.6v, haiku-4.5 -> 3.5 -> 3, "
-        f"inflight_limit={LLM_INFLIGHT_LIMIT}, timeout=300s, retries={num_retries}"
+        f"inflight_limit={LLM_INFLIGHT_LIMIT}, timeout={litellm.request_timeout}s, retries={num_retries}"
     )
-    
-    logger.info("LiteLLM Router configured with fallbacks: minimax -> glm-4.6v, haiku-4.5 -> 3.5 -> 3")
 
 def _configure_openai_compatible(model_name: str, api_key: Optional[str], api_base: Optional[str]) -> None:
     if not model_name.startswith("openai-compatible/"):
