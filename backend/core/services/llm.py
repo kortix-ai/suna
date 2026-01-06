@@ -566,7 +566,11 @@ async def _wrap_streaming_response_with_slot(response, slot, start_time: float =
 
 setup_api_keys()
 setup_provider_router()
-
+logger.info(
+    f"[LLM] Module initialized: inflight_limit={LLM_INFLIGHT_LIMIT}, "
+    f"redis_limiter={USE_REDIS_LIMITER}, global_limit={LLM_GLOBAL_LIMIT}, "
+    f"debug={LLM_DEBUG}, retries={litellm.num_retries}"
+)
 
 if __name__ == "__main__":
     from litellm import completion
