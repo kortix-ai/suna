@@ -2073,6 +2073,7 @@ dependencies = [
     { name = "novu-py" },
     { name = "openai" },
     { name = "openpyxl" },
+    { name = "orjson" },
     { name = "packaging" },
     { name = "paramiko" },
     { name = "phonenumbers" },
@@ -2116,11 +2117,6 @@ dependencies = [
     { name = "vncdotool" },
     { name = "vtracer" },
     { name = "weasyprint" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "orjson" },
 ]
 
 [package.metadata]
@@ -2168,6 +2164,7 @@ requires-dist = [
     { name = "novu-py", specifier = ">=3.11.0" },
     { name = "openai", specifier = ">=1.99.5" },
     { name = "openpyxl", specifier = "==3.1.2" },
+    { name = "orjson", specifier = ">=3.11.1" },
     { name = "packaging", specifier = "==24.1" },
     { name = "paramiko", specifier = ">=3.4.0" },
     { name = "phonenumbers", specifier = "==8.13.50" },
@@ -2214,7 +2211,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "orjson", specifier = ">=3.11.1" }]
+dev = []
 
 [[package]]
 name = "langfuse"

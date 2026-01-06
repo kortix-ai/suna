@@ -695,7 +695,9 @@ class ThreadManager:
                                 auto_continue_state['tool_result_tokens'] = 0
                             elif latest_user_message_content:
                                 # First turn: Use passed content (avoids DB query)
-                                new_msg_tokens = token_counter(
+                                # Wrap token_counter in thread pool (CPU-heavy tiktoken operation)
+                                new_msg_tokens = await asyncio.to_thread(
+                                    token_counter,
                                     model=llm_model, 
                                     messages=[{"role": "user", "content": latest_user_message_content}]
                                 )
@@ -726,7 +728,9 @@ class ThreadManager:
                                     else:
                                         new_msg_content = db_content
                                     if new_msg_content:
-                                        new_msg_tokens = token_counter(
+                                        # Wrap token_counter in thread pool (CPU-heavy tiktoken operation)
+                                        new_msg_tokens = await asyncio.to_thread(
+                                            token_counter,
                                             model=llm_model, 
                                             messages=[{"role": "user", "content": new_msg_content}]
                                         )
@@ -735,7 +739,9 @@ class ThreadManager:
                             # Count memory context tokens (only on first turn - auto-continue already has it in last_total_tokens)
                             memory_context_tokens = 0
                             if not is_auto_continue and self._memory_context:
-                                memory_context_tokens = token_counter(
+                                # Wrap token_counter in thread pool (CPU-heavy tiktoken operation)
+                                memory_context_tokens = await asyncio.to_thread(
+                                    token_counter,
                                     model=llm_model,
                                     messages=[self._memory_context]
                                 )
@@ -916,7 +922,8 @@ class ThreadManager:
                 logger.debug(f"✅ Pre-send validation passed: all tool calls properly paired")
             logger.debug(f"⏱️ [TIMING] Pre-send validation: {(time.time() - validation_start) * 1000:.1f}ms")
             
-            actual_tokens = token_counter(model=llm_model, messages=prepared_messages)
+            # Wrap token_counter in thread pool (CPU-heavy tiktoken operation)
+            actual_tokens = await asyncio.to_thread(token_counter, model=llm_model, messages=prepared_messages)
             if estimated_total_tokens is not None:
                 token_diff = actual_tokens - estimated_total_tokens
                 diff_pct = (token_diff / estimated_total_tokens * 100) if estimated_total_tokens > 0 else 0
@@ -965,8 +972,8 @@ class ThreadManager:
                     prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
                 else:
                     prepared_messages = [system_prompt] + messages_with_context
-                # Recount tokens
-                actual_tokens = token_counter(model=llm_model, messages=prepared_messages)
+                # Recount tokens (wrap in thread pool - CPU-heavy tiktoken operation)
+                actual_tokens = await asyncio.to_thread(token_counter, model=llm_model, messages=prepared_messages)
                 estimated_total_tokens = actual_tokens
                 logger.info(f"📤 POST-COMPRESSION: {len(prepared_messages)} messages, {actual_tokens} tokens")
             
@@ -1100,7 +1107,9 @@ class ThreadManager:
                                 # Extract the actual content string for token counting
                                 content_str = content.get('content', '') if isinstance(content, dict) else str(content)
                                 if content_str:
-                                    tool_tokens = token_counter(
+                                    # Wrap token_counter in thread pool (CPU-heavy tiktoken operation)
+                                    tool_tokens = await asyncio.to_thread(
+                                        token_counter,
                                         model=llm_model,
                                         messages=[{"role": "tool", "content": content_str}]
                                     )
