@@ -91,6 +91,15 @@ export function FullScreenFileViewer({
         return;
       }
 
+      // For CSV files, get text content
+      const ext = fileName?.split('.').pop()?.toLowerCase();
+      if (fileType === 'spreadsheet' && ext === 'csv') {
+        const text = await response.text();
+        setTextContent(text);
+        setIsLoading(false);
+        return;
+      }
+
       // For binary files, create blob URL
       const blob = await response.blob();
       const newBlobUrl = URL.createObjectURL(blob);
@@ -204,7 +213,12 @@ export function FullScreenFileViewer({
       );
     }
 
-    if (!blobUrl && !textContent) {
+    // Check if we have content based on file type
+    const ext = fileName?.split('.').pop()?.toLowerCase();
+    const isCsv = fileType === 'spreadsheet' && ext === 'csv';
+    const hasContent = isCsv ? textContent : (blobUrl || textContent);
+    
+    if (!hasContent) {
       return (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
@@ -233,16 +247,21 @@ export function FullScreenFileViewer({
       case 'spreadsheet':
         // Check if it's CSV or XLSX
         const ext = fileName?.split('.').pop()?.toLowerCase();
-        if (ext === 'csv') {
+        if (ext === 'csv' && textContent) {
           return (
             <div className="flex-1 overflow-auto p-4">
-              <CsvRenderer url={blobUrl!} className="h-full w-full" />
+              <CsvRenderer content={textContent} className="h-full w-full" />
             </div>
           );
         }
         return (
           <div className="flex-1 overflow-auto p-4">
-            <XlsxRenderer url={blobUrl!} className="h-full w-full" />
+            <XlsxRenderer 
+              filePath={filePath} 
+              fileName={fileName || 'spreadsheet.xlsx'} 
+              sandboxId={sandboxId}
+              className="h-full w-full" 
+            />
           </div>
         );
 
@@ -250,16 +269,11 @@ export function FullScreenFileViewer({
         // Check if it's JSON
         const docExt = fileName?.split('.').pop()?.toLowerCase();
         if (docExt === 'json' && textContent) {
-          try {
-            const jsonData = JSON.parse(textContent);
-            return (
-              <div className="flex-1 overflow-auto p-4">
-                <JsonRenderer data={jsonData} />
-              </div>
-            );
-          } catch {
-            // Fall through to text display
-          }
+          return (
+            <div className="flex-1 overflow-auto p-4">
+              <JsonRenderer content={textContent} />
+            </div>
+          );
         }
         
         // Display as text
