@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, startTransition } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { MoreHorizontal, Trash2, ExternalLink, Frown } from 'lucide-react';
 import { useSidebar } from '@/components/ui/sidebar';
@@ -18,7 +18,6 @@ import { DeleteConfirmationDialog } from "@/components/thread/DeleteConfirmation
 import { toast } from "@/lib/toast";
 import { useQueryClient } from '@tanstack/react-query';
 import { ThreadIcon } from "./thread-icon";
-import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useThreads } from '@/hooks/threads/use-threads';
 import { useThreadAgentStatuses } from '@/hooks/threads';
 import { useDeleteThread } from '@/hooks/sidebar/use-sidebar';
@@ -81,7 +80,7 @@ const ThreadActivityItem: React.FC<{
                     onMouseEnter={() => setIsHoveringCard(true)}
                     onMouseLeave={() => setIsHoveringCard(false)}
                 >
-                    {/* Icon with running indicator */}
+                    {/* Icon */}
                     <div className="relative flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
                         <ThreadIcon
                             iconName={iconName}
@@ -92,19 +91,9 @@ const ThreadActivityItem: React.FC<{
                             <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 rounded-full border border-background animate-pulse" />
                         )}
                     </div>
-
-                    {/* Name and status */}
-                    <div className="flex-1 min-w-0">
-                        <span className="block truncate text-foreground/90">{projectName}</span>
-                        {isAgentRunning && (
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                                <div className="flex items-center gap-1 text-[11px] text-green-600 dark:text-green-400">
-                                    <KortixLoader size="small" className="scale-75" />
-                                    <span>Running...</span>
-                                </div>
-                            </div>
-                        )}
-                    </div>
+                    
+                    {/* Name */}
+                    <span className="flex-1 truncate">{projectName}</span>
 
                     {/* Date & Menu */}
                     <div className="flex-shrink-0 relative">
@@ -210,10 +199,13 @@ export function NavAgentsView() {
     }, [threads, agentStatusMap]);
 
     const handleNavigateToLibrary = useCallback((thread: any) => {
-        router.push(`/library/${thread.project_id}`);
         if (isMobile) {
             setOpenMobile(false);
         }
+        // Use startTransition for non-blocking navigation
+        startTransition(() => {
+            router.push(`/library/${thread.project_id}`);
+        });
     }, [router, isMobile, setOpenMobile]);
 
     const handleDeleteThread = (threadId: string, threadName: string) => {
@@ -265,10 +257,7 @@ export function NavAgentsView() {
                                 {Array.from({ length: 3 }).map((_, index) => (
                                     <div key={`skeleton-${index}`} className="flex items-center gap-3 px-2 py-2">
                                         <div className="h-10 w-10 bg-muted/10 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
-                                        <div className="flex-1">
-                                            <div className="h-4 bg-muted rounded w-3/4 animate-pulse mb-1.5"></div>
-                                            <div className="h-3 bg-muted rounded w-1/2 animate-pulse"></div>
-                                        </div>
+                                        <div className="h-4 bg-muted rounded flex-1 animate-pulse"></div>
                                         <div className="h-3 w-8 bg-muted rounded animate-pulse"></div>
                                     </div>
                                 ))}

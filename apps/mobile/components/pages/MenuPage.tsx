@@ -31,11 +31,12 @@ import { SettingsPage } from '@/components/settings/SettingsPage';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { AgentList } from '@/components/agents/AgentList';
+import { LibrarySection } from '@/components/agents/LibrarySection';
 import { useAgent } from '@/contexts/AgentContext';
 import { useSearch } from '@/lib/utils/search';
 import { useThreads } from '@/lib/chat';
 import { useAllTriggers } from '@/lib/triggers';
-import { groupThreadsByMonth } from '@/lib/utils/thread-utils';
+import { groupThreadsByMonth, groupAgentsByTimePeriod } from '@/lib/utils/thread-utils';
 import { TriggerCreationDrawer, TriggerList } from '@/components/triggers';
 import { WorkerCreationDrawer } from '@/components/workers/WorkerCreationDrawer';
 import { WorkerConfigDrawer } from '@/components/workers/WorkerConfigDrawer';
@@ -385,7 +386,7 @@ export function MenuPage({
   workerConfigInitialView,
   onCloseWorkerConfigDrawer,
 }: MenuPageProps) {
-  const { t } = useLanguage();
+  const { t, currentLanguage } = useLanguage();
   const { colorScheme } = useColorScheme();
   const { user } = useAuthContext();
   const router = useRouter();
@@ -757,13 +758,30 @@ export function MenuPage({
                       }
                     />
                   ) : (
-                    <AgentList
-                      agents={agentResults}
-                      selectedAgentId={selectedAgentId}
-                      onAgentPress={handleWorkerPress}
-                      showChevron={false}
-                      compact={false}
-                    />
+                    <View className="gap-8">
+                      {groupAgentsByTimePeriod(agentResults, currentLanguage).map((section) => {
+                        // Filter agents in section based on search
+                        const filteredAgents = workersSearch.isSearching
+                          ? section.agents.filter((agent) =>
+                              workersSearch.results.some((result) => result.id === agent.agent_id)
+                            )
+                          : section.agents;
+
+                        if (filteredAgents.length === 0 && workersSearch.isSearching) {
+                          return null;
+                        }
+
+                        return (
+                          <LibrarySection
+                            key={section.id}
+                            label={section.label}
+                            agents={filteredAgents}
+                            selectedAgentId={selectedAgentId}
+                            onAgentPress={handleWorkerPress}
+                          />
+                        );
+                      })}
+                    </View>
                   )}
                 </>
               )}

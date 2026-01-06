@@ -11,7 +11,7 @@ export const roobertMono = localFont({
   declarations: [
     {
       prop: "font-feature-settings",
-      value: "'salt' on, 'ss10' on, 'ss09' on, 'ss01' on, 'ss02' on, 'ss03' on, 'ss04' on, 'ss14' on",
+      value: "'ss10' on, 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on",
     },
   ],
 });

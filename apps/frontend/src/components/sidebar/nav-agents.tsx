@@ -48,7 +48,8 @@ import { formatDateForList } from '@/lib/utils/date-formatting';
 import { createThreadInProject } from '@/lib/api/threads';
 import { useThreads } from '@/hooks/threads/use-threads';
 import { useTranslations } from 'next-intl';
-import { useMemo } from 'react';
+import { useMemo, startTransition } from 'react';
+import { useStartNavigation } from '@/stores/thread-navigation-store';
 
 // Date group header component
 const DateGroupHeader: React.FC<{ dateGroup: string }> = ({ dateGroup }) => {
@@ -95,7 +96,7 @@ const SingleChatCard: React.FC<{
       <Link
         href={thread.url}
         onClick={(e) => handleThreadClick(e, thread.threadId, thread.url)}
-        prefetch={false}
+        prefetch={true}
         className="block"
       >
         <div
@@ -188,6 +189,7 @@ export function NavAgents() {
   const [loadingThreadId, setLoadingThreadId] = useState<string | null>(null)
   const pathname = usePathname()
   const router = useRouter()
+  const startNavigation = useStartNavigation();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [threadToDelete, setThreadToDelete] = useState<{ id: string; name: string } | null>(null)
   const isNavigatingRef = useRef(false)
@@ -418,7 +420,7 @@ export function NavAgents() {
     document.body.style.pointerEvents = 'auto';
   }, [pathname]);
 
-  // Function to handle thread click with loading state
+  // Function to handle thread click with optimistic navigation
   const handleThreadClick = (e: React.MouseEvent<HTMLAnchorElement>, threadId: string, url: string) => {
     // If thread is selected, prevent navigation 
     if (selectedThreads.has(threadId)) {
@@ -426,15 +428,38 @@ export function NavAgents() {
       return;
     }
 
-    // Set loading state for normal clicks (not meta key)
-    if (!e.metaKey) {
-      setLoadingThreadId(threadId);
+    // Don't do optimistic navigation for cmd/ctrl+click (opens new tab)
+    if (e.metaKey || e.ctrlKey) {
+      return; // Let the default link behavior handle it
     }
+
+    // Prevent default link behavior - we'll handle navigation ourselves
+    e.preventDefault();
+
+    // Find the thread info for optimistic UI
+    const thread = combinedThreads.find(t => t.threadId === threadId);
+    if (thread) {
+      // Start optimistic navigation - shows skeleton immediately
+      startNavigation({
+        threadId: thread.threadId,
+        projectId: thread.projectId,
+        projectName: thread.projectName,
+        iconName: thread.iconName,
+      });
+    }
+
+    // Set loading state
+    setLoadingThreadId(threadId);
 
     // Close mobile menu on navigation
     if (isMobile) {
       setOpenMobile(false);
     }
+
+    // Navigate using startTransition for non-blocking UI
+    startTransition(() => {
+      router.push(url);
+    });
   }
 
   // Toggle thread selection for multi-select
@@ -820,7 +845,7 @@ export function NavAgents() {
                                   key={`thread-${thread.threadId}`}
                                   href={thread.url}
                                   onClick={(e) => handleThreadClick(e, thread.threadId, thread.url)}
-                                  prefetch={false}
+                                  prefetch={true}
                                   className={cn(
                                     "flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg transition-colors group/chat",
                                     isThreadActive 
