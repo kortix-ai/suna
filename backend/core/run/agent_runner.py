@@ -249,10 +249,6 @@ class AgentRunner:
                 logger.debug("Not a Suna agent, skipping Suna-specific tool registration")
         
         logger.info(f"⏱️ [TIMING] setup_tools() total: {(time.time() - start) * 1000:.1f}ms")
-        tool_manager = ToolManager(self.thread_manager, self.config.project_id, self.config.thread_id, self.config.agent_config)
-        tool_manager.register_core_tools()
-        
-        logger.info(f"⏱️ [TIMING] setup_tools(): {(time.time() - start) * 1000:.1f}ms")
     
     async def _setup_tools_async(self):
         loop = asyncio.get_event_loop()
@@ -402,20 +398,20 @@ class AgentRunner:
                     message_type = latest_message.data[0].get('type')
                     if message_type == 'assistant':
                         # No new user message after assistant response - stop the loop
-                        logger.debug(f"Last message is assistant, no new input - stopping execution for {self.config.thread_id}")
+                        logger.debug(f"Last message is assistant, no new input - execution complete for {self.config.thread_id}")
                         yield {
                             "type": "status",
-                            "status": "stopped",
+                            "status": "completed",
                             "message": "Execution complete - awaiting user input"
                         }
                         return
             except asyncio.TimeoutError:
-                logger.warning(f"⚠️ [TIMEOUT] Latest message check timed out after 2s for {self.config.thread_id} - stopping to be safe")
-                yield {"type": "status", "status": "stopped", "message": "Execution complete - awaiting user input"}
+                logger.warning(f"⚠️ [TIMEOUT] Latest message check timed out after 2s for {self.config.thread_id} - completing to be safe")
+                yield {"type": "status", "status": "completed", "message": "Execution complete - awaiting user input"}
                 return
             except Exception as e:
-                logger.warning(f"⚠️ [ERROR] Latest message check failed: {e} - stopping to be safe")
-                yield {"type": "status", "status": "stopped", "message": "Execution complete - awaiting user input"}
+                logger.warning(f"⚠️ [ERROR] Latest message check failed: {e} - completing to be safe")
+                yield {"type": "status", "status": "completed", "message": "Execution complete - awaiting user input"}
                 return
 
         temporary_message = None

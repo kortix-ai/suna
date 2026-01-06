@@ -18,11 +18,6 @@ from core.utils.logger import logger
 # Orchestrator mode detection
 ORCHESTRATOR_MODELS = ['kortix/power', 'kortix-power', 'Kortix Power', 'Kortix Advanced Mode']
 
-
-class ToolManager:
-    def __init__(self, thread_manager: ThreadManager, project_id: str, thread_id: str, 
-                 agent_config: Optional[dict] = None, model_name: Optional[str] = None,
-                 thread_depth: int = 0):
 # Default core tools - can be overridden by agent config
 DEFAULT_CORE_TOOLS = [
     'expand_msg_tool',      # Always needed for tool loading
@@ -60,7 +55,9 @@ class ToolManager:
     }
     """
     
-    def __init__(self, thread_manager: ThreadManager, project_id: str, thread_id: str, agent_config: Optional[dict] = None):
+    def __init__(self, thread_manager: ThreadManager, project_id: str, thread_id: str, 
+                 agent_config: Optional[dict] = None, model_name: Optional[str] = None,
+                 thread_depth: int = 0):
         self.thread_manager = thread_manager
         self.project_id = project_id
         self.thread_id = thread_id
@@ -74,6 +71,7 @@ class ToolManager:
         # Workers: sub-agents (depth > 0) or kortix/basic
         self.is_orchestrator = self._is_orchestrator_mode()
         self.is_sub_agent = thread_depth > 0
+        self.disabled_tools = self._get_disabled_tools()
         
         if self.is_orchestrator:
             logger.info(f"🎯 [ORCHESTRATOR MODE] Main thread running as orchestrator (model={model_name}, depth={thread_depth})")
@@ -103,7 +101,6 @@ class ToolManager:
                 return True
         
         return False
-        self.disabled_tools = self._get_disabled_tools()
     
     def _get_disabled_tools(self) -> Set[str]:
         """Get set of disabled tools from agent config."""
@@ -133,11 +130,21 @@ class ToolManager:
         """Check if a tool is enabled based on agent config."""
         return tool_name not in self.disabled_tools
     
-    def register_core_tools(self):
+    def get_disabled_tools_from_config(self) -> List[str]:
+        """Get list of disabled tools from agent config (for compatibility with agent_runner)."""
+        return list(self.disabled_tools)
+    
+    def register_all_tools(self, agent_id: Optional[str] = None, disabled_tools: Optional[List[str]] = None, use_spark: bool = True):
+        """Register all tools (alias for register_core_tools for compatibility)."""
+        self.register_core_tools(use_spark=use_spark, agent_id=agent_id)
+    
+    def register_core_tools(self, use_spark: bool = True, agent_id: Optional[str] = None):
         """Register core tools that are enabled in agent config."""
         start = time.time()
+        timings = {}
         
         self.migrated_tools = self._get_migrated_tools_config()
+        disabled_tools = list(self.disabled_tools)
         
         # ORCHESTRATOR MODE: Only register orchestration tools
         if self.is_orchestrator:
@@ -155,7 +162,7 @@ class ToolManager:
         if self.is_sub_agent:
             # Add SubAgentTool to disabled list for sub-agents
             if 'sub_agent_tool' not in disabled_tools:
-                disabled_tools = list(disabled_tools) + ['sub_agent_tool']
+                disabled_tools = disabled_tools + ['sub_agent_tool']
             logger.info("⚙️ [WORKER] Registering worker tools (no sub-agent spawning)")
         
         if use_spark:
@@ -209,7 +216,6 @@ class ToolManager:
         
         They do NOT have any work-doing tools (web_search, file creation, etc.)
         """
-        from core.jit.loader import JITLoader
         from core.tools.tool_registry import get_tool_info, get_tool_class
         
         # Core orchestration tools
@@ -236,17 +242,14 @@ class ToolManager:
         logger.info("🎯 [ORCHESTRATOR] Registered: MessageTool, SubAgentTool, ExpandMessageTool, sb_file_reader_tool")
     
     def _register_core_tools(self, disabled_tools: Optional[List[str]] = None):
+        """Register core tools that are enabled."""
         disabled_tools = disabled_tools or []
-        from core.jit.loader import JITLoader
-        self._register_enabled_core_tools()
-        
-        total = (time.time() - start) * 1000
-        tool_count = len(self.thread_manager.tool_registry.tools)
-        logger.info(f"✅ Registered {tool_count} core tool functions in {total:.1f}ms")
+        self._register_enabled_core_tools(disabled_tools)
     
-    def _register_enabled_core_tools(self):
+    def _register_enabled_core_tools(self, disabled_tools: Optional[List[str]] = None):
         """Register core tools that are enabled."""
         from core.tools.tool_registry import get_tool_info, get_tool_class
+        disabled_tools = disabled_tools or []
         
         # These are ALWAYS loaded (required for agent operation)
         self.thread_manager.add_tool(ExpandMessageTool, thread_id=self.thread_id, thread_manager=self.thread_manager)
@@ -257,7 +260,6 @@ class ToolManager:
         if 'sub_agent_tool' not in disabled_tools:
             self.thread_manager.add_tool(SubAgentTool, project_id=self.project_id, thread_manager=self.thread_manager, thread_id=self.thread_id)
         
-        if config.TAVILY_API_KEY or config.FIRECRAWL_API_KEY:
         # Search tools (if API keys configured AND enabled in config)
         if (config.TAVILY_API_KEY or config.FIRECRAWL_API_KEY) and self._is_tool_enabled('web_search_tool'):
             enabled_methods = self._get_enabled_methods_for_tool('web_search_tool')
@@ -313,6 +315,50 @@ class ToolManager:
                     self.thread_manager.add_tool(tool_class, function_names=enabled_methods, **kwargs)
                 except (ImportError, AttributeError) as e:
                     logger.warning(f"Failed to load core tool {tool_name}: {e}")
+    
+    def _register_sandbox_tools(self, disabled_tools: Optional[List[str]] = None):
+        """Register sandbox tools (legacy mode only)."""
+        # Sandbox tools are now registered in _register_enabled_core_tools
+        pass
+    
+    def _register_utility_tools(self, disabled_tools: Optional[List[str]] = None):
+        """Register utility tools (legacy mode only)."""
+        disabled_tools = disabled_tools or []
+        
+        # People search
+        if config.SERPER_API_KEY and 'people_search_tool' not in disabled_tools:
+            self.thread_manager.add_tool(PeopleSearchTool)
+        
+        # Company search
+        if config.SERPER_API_KEY and 'company_search_tool' not in disabled_tools:
+            self.thread_manager.add_tool(CompanySearchTool)
+        
+        # Paper search
+        if config.SERPER_API_KEY and 'paper_search_tool' not in disabled_tools:
+            self.thread_manager.add_tool(PaperSearchTool)
+        
+        # Voice tool
+        if config.VAPI_API_KEY and 'vapi_voice_tool' not in disabled_tools:
+            self.thread_manager.add_tool(VapiVoiceTool)
+    
+    def _register_agent_builder_tools(self, agent_id: str, disabled_tools: Optional[List[str]] = None):
+        """Register agent builder tools (legacy mode only)."""
+        disabled_tools = disabled_tools or []
+        # Agent builder tools would go here if needed
+        pass
+    
+    def _register_suna_specific_tools(self, disabled_tools: Optional[List[str]] = None):
+        """Register Suna-specific tools (legacy mode only)."""
+        disabled_tools = disabled_tools or []
+        # Suna-specific tools would go here if needed
+        pass
+    
+    def register_suna_specific_tools(self, disabled_tools: Optional[List[str]] = None, account_id: Optional[str] = None):
+        """Register Suna-specific tools (public method for agent_runner compatibility)."""
+        disabled_tools = disabled_tools or []
+        # Suna-specific tools registration
+        # This is called separately from register_core_tools for non-orchestrator agents
+        pass
     
     def _get_migrated_tools_config(self) -> dict:
         """Get migrated tool configuration from agent config."""
