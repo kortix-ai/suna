@@ -350,21 +350,26 @@ Respond in this EXACT JSON format:
             }).execute()
             
             # Compose the sub-agent's instruction message with result format requirement
-            result_format_instruction = """
+            # Put the format requirement FIRST so it's not missed
+            result_format_prefix = """🚨 CRITICAL: REQUIRED OUTPUT FORMAT (READ THIS FIRST!)
 
----
-⚠️ REQUIRED OUTPUT FORMAT:
-When you complete this task, you MUST end your final message with a clear summary in this format:
+Before you begin, understand that your FINAL message MUST contain this exact structure:
 
 ## TASK RESULT
-**Status:** [Completed/Failed]
-**Files Created:** [List any files you created with full paths]
-**Summary:** [2-3 sentence summary of what you accomplished]
+**Status:** Completed
+**Files Created:** /workspace/path/to/file.ext
+**Summary:** 2-3 sentences describing what you accomplished.
+
+DO NOT skip this. The orchestrator needs this format to understand your results.
+
+---
+
+YOUR TASK:
 """
             
-            instruction = task + result_format_instruction
+            instruction = result_format_prefix + task
             if context:
-                instruction = f"{task}\n\n---\nContext:\n{context}{result_format_instruction}"
+                instruction = f"{result_format_prefix}{task}\n\n---\nContext:\n{context}"
             
             # Add instruction as user message
             await client.table('messages').insert({

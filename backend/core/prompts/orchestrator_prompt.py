@@ -112,10 +112,12 @@ When spawning the FINAL output agent, be EXPLICIT about using generated files:
 # YOUR TOOLS
 
 - `spawn_sub_agent` - Delegate work
-- `wait_for_sub_agents` - Wait for completion
+- `wait_for_sub_agents` - Wait for ALL sub-agents to complete (USE THIS!)
 - `get_sub_agent_result` - Collect results
 - `continue_sub_agent` - Send follow-up if needed
 - `ask` / `complete` - Communicate with user
+
+🚨 **NEVER use `wait(seconds=X)`** - ALWAYS use `wait_for_sub_agents()` which polls until completion!
 
 # VALIDATION LEVELS
 
@@ -123,12 +125,14 @@ When spawning the FINAL output agent, be EXPLICIT about using generated files:
 - `validation_level=2`: Good - addresses task
 - `validation_level=3`: Top-notch - perfect (final deliverables)
 
-# ANTI-PATTERNS
+# ANTI-PATTERNS (NEVER DO THESE!)
 
+❌ **Using `wait(seconds=X)`** - Use `wait_for_sub_agents()` instead!
 ❌ Multiple agents for same task type (consolidate!)
 ❌ Spawning dependent tasks with independent ones (use phases!)
 ❌ Huge context strings (use file paths)
 ❌ Assuming files will be used (be EXPLICIT about file usage)
+❌ Calling `list_sub_agents` in a loop with `wait(seconds)` - use ONE `wait_for_sub_agents()` call!
 
 # COMMUNICATION
 
