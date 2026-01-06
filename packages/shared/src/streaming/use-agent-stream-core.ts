@@ -425,11 +425,13 @@ export function useAgentStreamCore(
             );
             
             // Throttle tool call updates to allow smooth streaming
-            // Check if structure changed (new tool calls, different function names)
+            // Include argument lengths to detect content changes (not just structure)
             const currentStateKey = JSON.stringify({
               toolCallIds: reconstructedToolCalls.map(tc => tc.tool_call_id),
               functionNames: reconstructedToolCalls.map(tc => tc.function_name),
               count: reconstructedToolCalls.length,
+              // Include argument lengths so we detect content updates
+              argLengths: reconstructedToolCalls.map(tc => tc.arguments?.length || 0),
             });
             
             const hasChanged = previousToolCallStateRef.current !== currentStateKey;
@@ -452,7 +454,7 @@ export function useAgentStreamCore(
             }
             
             // Always update immediately if structure changed (new tool calls)
-            // Otherwise throttle to allow smooth streaming of arguments
+            // Otherwise throttle argument updates, but still update regularly
             const shouldUpdate = structureChanged || (hasChanged && timeSinceLastUpdate >= THROTTLE_MS);
             
             if (shouldUpdate) {
@@ -493,7 +495,9 @@ export function useAgentStreamCore(
         break;
         
       case 'tool':
-        // Handle tool result
+        // Handle tool result - DON'T re-set toolCall state!
+        // The stream is already complete (stream_status: 'complete' was received earlier)
+        // Re-setting toolCall would cause the streaming content to re-appear and re-animate
         const reconstructedToolCallsFromResult = handleToolResult(
           message,
           parsedMetadata,
@@ -507,7 +511,8 @@ export function useAgentStreamCore(
             reconstructedToolCallsFromResult
           );
           
-          setToolCall(updatedMessageWithResults);
+          // Only call the callback for tool view updates, don't update streaming state
+          // This prevents the ask/complete animation from replaying after stream completes
           callbacksRef.current.onToolCallChunk?.(updatedMessageWithResults);
         }
         

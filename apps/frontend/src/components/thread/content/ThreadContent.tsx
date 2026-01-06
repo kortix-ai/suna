@@ -60,6 +60,28 @@ interface AgentInfo {
   avatar: React.ReactNode;
 }
 
+// Reusable agent header - shows Kortix logo for Kortix, avatar+name for others
+const AgentHeader = memo(function AgentHeader({ agentInfo }: { agentInfo: AgentInfo }) {
+  if (agentInfo.name === "Kortix") {
+    return (
+      <img
+        src="/kortix-logomark-white.svg"
+        alt="Kortix"
+        className="dark:invert-0 invert flex-shrink-0"
+        style={{ height: '12px', width: 'auto' }}
+      />
+    );
+  }
+  return (
+    <>
+      <div className="rounded-md flex items-center justify-center">
+        {agentInfo.avatar}
+      </div>
+      <p className="ml-2 text-sm text-muted-foreground">{agentInfo.name}</p>
+    </>
+  );
+});
+
 const UserMessageRow = memo(function UserMessageRow({
   message,
   groupKey,
@@ -174,9 +196,38 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   );
 
   // Extract ask/complete text from streaming tool call for smooth animation
+  // Handles both raw streaming format AND accumulated format from useToolCallAccumulator
   const rawAskCompleteText = useMemo(() => {
     if (!streamingToolCall) return "";
-    const parsedMetadata = safeJsonParse<ParsedMetadata>(streamingToolCall.metadata, {});
+    
+    const parsedMetadata = safeJsonParse<any>(streamingToolCall.metadata, {});
+    const parsedContent = safeJsonParse<any>(streamingToolCall.content, {});
+    
+    // Try accumulated format first (from useToolCallAccumulator)
+    // Structure: metadata.function_name, content.arguments (accumulated)
+    if (parsedMetadata.function_name) {
+      const toolName = parsedMetadata.function_name.replace(/_/g, "-").toLowerCase();
+      if (toolName === "ask" || toolName === "complete") {
+        const toolArgs = parsedContent.arguments;
+        if (toolArgs) {
+          let extractedText = "";
+          if (typeof toolArgs === "string") {
+            try {
+              const parsed = JSON.parse(toolArgs);
+              extractedText = parsed?.text || "";
+            } catch {
+              extractedText = extractTextFromPartialJson(toolArgs);
+            }
+          } else if (typeof toolArgs === "object" && toolArgs !== null) {
+            extractedText = toolArgs?.text || "";
+          }
+          if (extractedText) return extractedText;
+        }
+      }
+    }
+    
+    // Fall back to raw streaming format
+    // Structure: metadata.tool_calls[].arguments_delta
     const toolCalls = parsedMetadata.tool_calls || [];
     const askOrCompleteTool = toolCalls.find((tc: any) => {
       const toolName = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
@@ -184,7 +235,12 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     });
     if (!askOrCompleteTool) return "";
     
-    const toolArgs: any = askOrCompleteTool.arguments;
+    // Try arguments first (accumulated), then arguments_delta (streaming)
+    let toolArgs: any = askOrCompleteTool.arguments;
+    if (!toolArgs || (typeof toolArgs === "object" && Object.keys(toolArgs).length === 0)) {
+      toolArgs = askOrCompleteTool.arguments_delta;
+    }
+    
     if (!toolArgs) return "";
     
     let extractedText = "";
@@ -193,20 +249,11 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
         const parsed = JSON.parse(toolArgs);
         extractedText = parsed?.text || "";
       } catch {
+        // Partial JSON during streaming - extract text field
         extractedText = extractTextFromPartialJson(toolArgs);
       }
     } else if (typeof toolArgs === "object" && toolArgs !== null) {
       extractedText = toolArgs?.text || "";
-    }
-    
-    // Debug logging for streaming ask/complete text
-    if (extractedText) {
-      console.log("[ThreadContent] Streaming ask/complete text:", {
-        toolName: askOrCompleteTool.function_name,
-        rawArgsType: typeof toolArgs,
-        extractedText: extractedText.slice(0, 100) + (extractedText.length > 100 ? "..." : ""),
-        textLength: extractedText.length,
-      });
     }
     
     return extractedText;
@@ -511,27 +558,21 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     const isAgentRunning = agentStatus === "running" || agentStatus === "connecting";
     if (!isActivelyStreaming && !isAgentRunning && !isAskCompleteAnimating) return null;
 
-    const parsedMetadata = safeJsonParse<ParsedMetadata>(
-      streamingToolCall.metadata,
-      {},
-    );
+    const parsedMetadata = safeJsonParse<any>(streamingToolCall.metadata, {});
     const toolCalls = parsedMetadata.tool_calls || [];
 
-    // Debug logging for streaming tool calls
-    console.log("[ThreadContent] streamingToolCallContent:", {
-      toolCallCount: toolCalls.length,
-      toolNames: toolCalls.map((tc: any) => tc.function_name),
-      rawAskCompleteText: rawAskCompleteText?.slice(0, 50),
-      smoothAskCompleteText: smoothAskCompleteText?.slice(0, 50),
-      isAskCompleteAnimating,
-    });
-
+    // Check for ask/complete in both formats:
+    // 1. Accumulated format: metadata.function_name
+    // 2. Raw streaming format: metadata.tool_calls[].function_name
+    const isAccumulatedAskComplete = parsedMetadata.function_name && 
+      ["ask", "complete"].includes(parsedMetadata.function_name.replace(/_/g, "-").toLowerCase());
+    
     const askOrCompleteTool = toolCalls.find((tc: any) => {
       const toolName = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
       return toolName === "ask" || toolName === "complete";
     });
 
-    if (askOrCompleteTool) {
+    if (isAccumulatedAskComplete || askOrCompleteTool) {
       const currentGroupAssistantMessages = group.messages.filter(
         (m) => m.type === "assistant",
       );
@@ -559,40 +600,24 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
         }
       }
 
-      // Use smooth animated text for display
+      // Use smooth animated text for display - render like regular streaming text
       const isCurrentlyStreaming =
         streamHookStatus === "streaming" || streamHookStatus === "connecting" || isAskCompleteAnimating;
 
-      // If we have smooth text to show, render it with animation
-      if (smoothAskCompleteText) {
+      // Prefer smooth animated text, fall back to raw text
+      const textToRender = smoothAskCompleteText || rawAskCompleteText;
+      
+      if (textToRender) {
         return (
-          <div className="mt-1.5">
-            <ComposioUrlDetector
-              content={smoothAskCompleteText}
-              isStreaming={isCurrentlyStreaming}
-            />
-          </div>
+          <ComposioUrlDetector
+            content={textToRender}
+            isStreaming={isCurrentlyStreaming}
+          />
         );
       }
 
-      // No text yet - show the raw text if available, otherwise show loader
-      if (rawAskCompleteText) {
-        return (
-          <div className="mt-1.5">
-            <ComposioUrlDetector
-              content={rawAskCompleteText}
-              isStreaming={isCurrentlyStreaming}
-            />
-          </div>
-        );
-      }
-
-      // No text at all yet - show loader
-      return (
-        <div className="mt-1.5">
-          <AgentLoader />
-        </div>
-      );
+      // No text at all yet - return null, the showLoader will handle it
+      return null;
     }
 
     const isAskOrComplete = toolCalls.some((tc: any) => {
@@ -617,12 +642,13 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       }
     });
 
-    // Filter out hidden tools AND tools that are already in completed messages
+    // Filter out hidden tools, ask/complete tools, AND tools that are already in completed messages
     const visibleToolCalls = toolCalls.filter((tc: any) => {
-      const toolName = tc.function_name?.replace(/_/g, "-") || "";
+      const toolName = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
       const isHidden = isHiddenTool(toolName);
+      const isAskComplete = toolName === "ask" || toolName === "complete";
       const isAlreadyCompleted = tc.tool_call_id && completedToolCallIds.has(tc.tool_call_id);
-      return !isHidden && !isAlreadyCompleted;
+      return !isHidden && !isAskComplete && !isAlreadyCompleted;
     });
 
     // If all tools were hidden, don't render anything
@@ -721,21 +747,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     <div key={group.key} ref={isLastGroup ? latestMessageRef : null}>
       <div className="flex flex-col gap-2">
         <div className="flex items-center">
-          {agentInfo.name === "Kortix" ? (
-            <img
-              src="/kortix-logomark-white.svg"
-              alt="Kortix"
-              className="dark:invert-0 invert flex-shrink-0"
-              style={{ height: '12px', width: 'auto' }}
-            />
-          ) : (
-            <>
-              <div className="rounded-md flex items-center justify-center relative">
-                {agentInfo.avatar}
-              </div>
-              <p className="ml-2 text-sm text-muted-foreground">{agentInfo.name}</p>
-            </>
-          )}
+          <AgentHeader agentInfo={agentInfo} />
         </div>
         <div className="flex w-full break-words">
           <div className="space-y-1.5 min-w-0 flex-1">
@@ -1189,12 +1201,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
             <div ref={latestMessageRef} className="w-full h-22 rounded mt-6">
               <div className="flex flex-col gap-2">
                 <div className="flex items-center">
-                  <div className="rounded-md flex items-center justify-center">
-                    {agentInfo.avatar}
-                  </div>
-                  <p className="ml-2 text-sm text-muted-foreground">
-                    {agentInfo.name}
-                  </p>
+                  <AgentHeader agentInfo={agentInfo} />
                 </div>
                 <div className="space-y-2 w-full h-12">
                   <AgentLoader />
@@ -1206,13 +1213,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
           {readOnly && currentToolCall && (
             <div ref={latestMessageRef} className="mt-6">
               <div className="flex flex-col gap-2">
-                <div className="flex justify-start">
-                  <div className="rounded-md flex items-center justify-center">
-                    {agentInfo.avatar}
-                  </div>
-                  <p className="ml-2 text-sm text-muted-foreground">
-                    {agentInfo.name}
-                  </p>
+                <div className="flex items-center">
+                  <AgentHeader agentInfo={agentInfo} />
                 </div>
                 <div className="space-y-2">
                   <div className="animate-shimmer inline-flex items-center gap-1.5 py-1.5 px-3 text-xs font-medium text-primary bg-primary/10 rounded-md border border-primary/20">
@@ -1237,13 +1239,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
             isStreamingText && (
               <div ref={latestMessageRef} className="mt-6">
                 <div className="flex flex-col gap-2">
-                  <div className="flex justify-start">
-                    <div className="rounded-md flex items-center justify-center">
-                      {agentInfo.avatar}
-                    </div>
-                    <p className="ml-2 text-sm text-muted-foreground">
-                      {agentInfo.name}
-                    </p>
+                  <div className="flex items-center">
+                    <AgentHeader agentInfo={agentInfo} />
                   </div>
                   <div className="max-w-[90%] px-4 py-3 text-sm">
                     <div className="flex items-center gap-1.5 py-1">

@@ -1,73 +1,137 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
-import { useSmoothAnimation, type SmoothAnimationConfig } from './useSmoothAnimation';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 
 export interface SmoothTextResult {
   text: string;
   isAnimating: boolean;
 }
 
+/**
+ * Smooth text animation hook - displays text character by character.
+ * NEVER stops mid-stream. Once started, continues until unmount.
+ */
 export function useSmoothText(
   targetText: string,
   charsPerSecond: number = 120,
   enabled: boolean = true
 ): SmoothTextResult {
-  const contentPrefixRef = useRef<string>('');
-  
   const [displayedLength, setDisplayedLength] = useState(0);
   
-  const animationConfig: SmoothAnimationConfig = useMemo(() => ({
-    charsPerSecond,
-    catchUpThreshold: 100,
-    catchUpMultiplier: 4,
-  }), [charsPerSecond]);
-  
-  const { animate, stop, reset, didTargetShrink, stateRef } = useSmoothAnimation(animationConfig);
+  // Track the highest target we've seen to detect true resets
+  const maxTargetSeenRef = useRef(0);
+  const rafIdRef = useRef<number | null>(null);
+  const lastUpdateTimeRef = useRef<number | null>(null);
+  const targetLengthRef = useRef(0);
+  const displayedLengthRef = useRef(0);
 
-  // Detect content reset (new message, different content)
+  // Update target ref whenever targetText changes
+  targetLengthRef.current = targetText.length;
+
+  // Sync displayedLengthRef with state
   useEffect(() => {
-    const currentPrefix = targetText.slice(0, 50);
-    const previousPrefix = contentPrefixRef.current;
+    displayedLengthRef.current = displayedLength;
+  }, [displayedLength]);
+
+  // Stop animation - only called on unmount
+  const stopAnimation = useCallback(() => {
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+  }, []);
+
+  // The core animation loop - NEVER stops on its own
+  const animationLoop = useCallback((currentTime: number) => {
+    // Initialize timing on first frame
+    if (lastUpdateTimeRef.current === null) {
+      lastUpdateTimeRef.current = currentTime;
+    }
+
+    let deltaTime = (currentTime - lastUpdateTimeRef.current) / 1000;
     
-    const isNewContent = didTargetShrink(targetText.length) || 
-      (previousPrefix && currentPrefix && !currentPrefix.startsWith(previousPrefix.slice(0, 20)) && !previousPrefix.startsWith(currentPrefix.slice(0, 20)));
-    
-    if (isNewContent) {
-      reset();
-      setDisplayedLength(0);
+    // Clamp very large deltas (e.g., after tab switch)
+    if (deltaTime > 0.5) {
+      deltaTime = 0.016;
     }
     
-    contentPrefixRef.current = currentPrefix;
-  }, [targetText, didTargetShrink, reset]);
+    lastUpdateTimeRef.current = currentTime;
 
-  // Main animation effect - just update target, let the loop handle it
+    const currentTarget = targetLengthRef.current;
+    const currentDisplayed = displayedLengthRef.current;
+    const charsBehind = currentTarget - currentDisplayed;
+    
+    // Animate if behind target
+    if (charsBehind > 0) {
+      // Speed calculation with catch-up
+      let effectiveSpeed: number;
+      if (charsBehind > 500) {
+        effectiveSpeed = charsPerSecond * 10; // Way behind, speed up a lot
+      } else if (charsBehind > 100) {
+        effectiveSpeed = charsPerSecond * 4; // Behind, speed up
+      } else {
+        effectiveSpeed = charsPerSecond; // Normal speed
+      }
+      
+      const charsToAdd = Math.max(deltaTime * effectiveSpeed, 0.5);
+      const newLength = Math.min(
+        Math.floor(currentDisplayed + charsToAdd),
+        currentTarget
+      );
+
+      if (newLength > currentDisplayed) {
+        displayedLengthRef.current = newLength;
+        setDisplayedLength(newLength);
+      }
+    }
+
+    // ALWAYS schedule next frame - loop runs forever until unmount
+    rafIdRef.current = requestAnimationFrame(animationLoop);
+  }, [charsPerSecond]);
+
+  // Start loop on mount, stop on unmount
+  useEffect(() => {
+    if (!enabled) return;
+    
+    // Start the animation loop if not already running
+    if (rafIdRef.current === null) {
+      rafIdRef.current = requestAnimationFrame(animationLoop);
+    }
+
+    return () => {
+      stopAnimation();
+    };
+  }, [enabled, animationLoop, stopAnimation]);
+
+  // Handle target changes - only reset for truly new content
   useEffect(() => {
     if (!enabled) {
+      // When disabled, show full text immediately
       setDisplayedLength(targetText.length);
-      stateRef.current.displayedLength = targetText.length;
+      displayedLengthRef.current = targetText.length;
+      maxTargetSeenRef.current = targetText.length;
       return;
     }
 
-    if (!targetText) {
+    // Ignore empty targets - don't reset animation state
+    // This prevents blips during format switches
+    if (targetText.length === 0) {
       return;
     }
 
-    // Always call animate - it will update the target and keep the loop running
-    // The loop never stops, so there's no stutter between updates
-    animate(
-      targetText.length,
-      (newLength) => setDisplayedLength(newLength)
-    );
-  }, [targetText, enabled, animate, stateRef]);
-  
-  // Cleanup only on unmount
-  useEffect(() => {
-    return () => stop();
-  }, [stop]);
-
-  // Sync state ref with displayed length
-  useEffect(() => {
-    stateRef.current.displayedLength = displayedLength;
-  }, [displayedLength, stateRef]);
+    // Update max target seen
+    if (targetText.length > maxTargetSeenRef.current) {
+      maxTargetSeenRef.current = targetText.length;
+    }
+    
+    // Only reset if target shrunk significantly below what we've displayed
+    // This means truly new content, not just temporary extraction hiccups
+    if (targetText.length < displayedLengthRef.current - 10) {
+      // New content - reset
+      setDisplayedLength(0);
+      displayedLengthRef.current = 0;
+      maxTargetSeenRef.current = targetText.length;
+      lastUpdateTimeRef.current = null;
+    }
+  }, [targetText, enabled]);
 
   const result = useMemo((): SmoothTextResult => {
     const text = enabled ? targetText.slice(0, displayedLength) : targetText;
