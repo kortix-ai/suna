@@ -13,7 +13,21 @@ from datetime import datetime, timezone
 
 litellm.modify_params = True
 litellm.drop_params = True
-litellm.set_verbose = False
+
+# Enable verbose logging for debugging
+litellm.set_verbose = True
+litellm._turn_on_debug()  # Enable all debug logging
+import logging
+litellm.verbose_logger.setLevel(logging.DEBUG)
+
+# Ensure verbose logger has a handler (uses structlog format)
+if not litellm.verbose_logger.handlers:
+    from core.utils.logger import logger as app_logger
+    # Add a handler that writes to the same destination as our app logger
+    import sys
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter('[LITELLM] %(levelname)s - %(message)s'))
+    litellm.verbose_logger.addHandler(handler)
 
 # Retries: Keep low to fail fast. Each retry waits stream_timeout (60s)
 # 1 retry = max 120s delay, 2 retries = max 180s delay
@@ -22,40 +36,8 @@ litellm.num_retries = int(os.environ.get("LITELLM_NUM_RETRIES", 1))
 # Timeout for complete request (high for long streams)
 litellm.request_timeout = 1800  # 30 min - matches Router timeout
 
-# ============================================================================
-# HIGH-PERFORMANCE HTTP CONNECTION POOL FOR PRODUCTION
-# ============================================================================
-# Default LiteLLM connection pool is too small for high concurrency.
-# This caused 100+ second delays when pool was exhausted.
-# ============================================================================
-def _setup_high_performance_http_handler():
-    """Configure LiteLLM with unlimited connection pool for production."""
-    try:
-        import aiohttp
-        from litellm.llms.custom_httpx.aiohttp_handler import BaseLLMAIOHTTPHandler
-        
-        # Create session with NO connection limits
-        connector = aiohttp.TCPConnector(
-            limit=0,                # 0 = UNLIMITED connections
-            limit_per_host=0,       # 0 = UNLIMITED per host
-            ttl_dns_cache=600,      # Cache DNS for 10 minutes
-            keepalive_timeout=60,   # Keep connections alive for reuse
-            enable_cleanup_closed=True,
-        )
-        
-        session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=120),  # Match litellm.request_timeout
-            connector=connector,
-        )
-        
-        litellm.base_llm_aiohttp_handler = BaseLLMAIOHTTPHandler(client_session=session)
-        logger.info(f"[LLM] ✅ HTTP handler configured: UNLIMITED connections, keepalive=60s")
-        
-    except Exception as e:
-        logger.warning(f"[LLM] ⚠️ Failed to configure custom HTTP handler, using defaults: {e}")
-
-# Initialize on module load
-_setup_high_performance_http_handler()
+# LiteLLM will use its default HTTP client (httpx)
+# This is simpler and works fine for most use cases
 
 # Custom callback to track LiteLLM retries and timing
 from litellm.integrations.custom_logger import CustomLogger
@@ -63,27 +45,48 @@ from litellm.integrations.custom_logger import CustomLogger
 class LLMTimingCallback(CustomLogger):
     """Callback to log LiteLLM call timing and retry behavior."""
     
+    def __init__(self):
+        super().__init__()
+        self.call_times = {}  # Track timing per call
+    
     def log_pre_api_call(self, model, messages, kwargs):
         """Called before each API call attempt (including retries)."""
+        import time
+        call_id = id(kwargs)
+        self.call_times[call_id] = time.monotonic()
+        
         # Check retry information from litellm_params
         litellm_params = kwargs.get("litellm_params", {})
         metadata = litellm_params.get("metadata", {})
         
         # Log model and message count
         msg_count = len(messages) if messages else 0
-        logger.debug(f"[LLM] 🚀 pre-call: model={model}, messages={msg_count}")
+        logger.info(f"[LLM] 🚀 PRE-API-CALL: model={model}, messages={msg_count}, call_id={call_id}")
+        
+        # Log if this is a retry
+        retry_count = metadata.get("_litellm_retry_count", 0)
+        if retry_count > 0:
+            logger.warning(f"[LLM] 🔄 RETRY ATTEMPT #{retry_count} for {model}")
     
     def log_post_api_call(self, kwargs, response_obj, start_time, end_time):
         """Called after each API call attempt (success or retry pending)."""
+        import time
+        call_id = id(kwargs)
         model = kwargs.get("model", "unknown")
+        
         # Calculate duration - start_time and end_time are datetime objects
         try:
             duration = (end_time - start_time).total_seconds()
         except:
             duration = 0
         
-        if duration > 5.0:
-            logger.info(f"[LLM] ⏱️ post-call: {model} took {duration:.2f}s")
+        # Calculate time since pre_api_call if we have it
+        if call_id in self.call_times:
+            since_pre = time.monotonic() - self.call_times[call_id]
+            logger.info(f"[LLM] ⏱️ POST-API-CALL: {model} | litellm_duration={duration:.2f}s | since_pre={since_pre:.2f}s | call_id={call_id}")
+            del self.call_times[call_id]  # Clean up
+        else:
+            logger.info(f"[LLM] ⏱️ POST-API-CALL: {model} | duration={duration:.2f}s | call_id={call_id}")
     
     def log_success_event(self, kwargs, response_obj, start_time, end_time):
         """Called when an API call succeeds (synchronous handler)."""
@@ -380,9 +383,23 @@ async def make_llm_api_call(
         if LLM_DEBUG and cpu_at_start is not None:
             logger.debug(f"[LLM] Starting call: model={model_name} cpu={cpu_at_start}% mem={mem_at_start:.0f}MB")
         
+        logger.info(f"[LLM] 🎯 BEFORE Router.acompletion: {actual_model}")
+        logger.info(f"[LLM] 📋 Router state: num_retries={provider_router.num_retries}, timeout={provider_router.timeout}, stream_timeout={getattr(provider_router, 'stream_timeout', 'N/A')}")
+        
         if stream:
+            pre_call_time = time_module.monotonic()
+            logger.info(f"[LLM] ⏰ T+{(pre_call_time - call_start)*1000:.1f}ms: Calling Router.acompletion()")
+            
             response = await provider_router.acompletion(**params)
-            ttft = time_module.monotonic() - call_start
+            
+            post_call_time = time_module.monotonic()
+            ttft = post_call_time - call_start
+            router_time = post_call_time - pre_call_time
+            
+            logger.info(f"[LLM] ⏰ T+{(post_call_time - call_start)*1000:.1f}ms: Router.acompletion() returned (router_time={router_time:.2f}s)")
+            
+            # Check what type of response we got
+            logger.info(f"[LLM] 📦 Response type: {type(response).__name__}, hasattr(__aiter__)={hasattr(response, '__aiter__')}")
             
             if ttft > 30.0:
                 try:
@@ -390,17 +407,18 @@ async def make_llm_api_call(
                     cpu_now = psutil.cpu_percent(interval=None)
                     mem_now = psutil.Process().memory_info().rss / 1024 / 1024
                     logger.error(
-                        f"[LLM] 🚨 CRITICAL SLOW: TTFT={ttft:.2f}s model={model_name} "
+                        f"[LLM] 🚨 CRITICAL SLOW: TTFT={ttft:.2f}s model={model_name} (router_time={router_time:.2f}s) "
                         f"cpu_start={cpu_at_start}% cpu_now={cpu_now}% mem_start={mem_at_start:.0f}MB mem_now={mem_now:.0f}MB"
                     )
                 except Exception:
-                    logger.error(f"[LLM] 🚨 CRITICAL SLOW: TTFT={ttft:.2f}s model={model_name}")
+                    logger.error(f"[LLM] 🚨 CRITICAL SLOW: TTFT={ttft:.2f}s model={model_name} (router_time={router_time:.2f}s)")
             elif ttft > 10.0:
-                logger.warning(f"[LLM] ⚠️ SLOW TTFT: {ttft:.2f}s for {model_name}")
+                logger.warning(f"[LLM] ⚠️ SLOW TTFT: {ttft:.2f}s for {model_name} (router_time={router_time:.2f}s)")
             elif LLM_DEBUG:
-                logger.info(f"[LLM] TTFT: {ttft:.2f}s for {model_name}")
+                logger.info(f"[LLM] TTFT: {ttft:.2f}s for {model_name} (router_time={router_time:.2f}s)")
             
             if hasattr(response, '__aiter__'):
+                logger.info(f"[LLM] 🎁 Wrapping streaming response")
                 return _wrap_streaming_response(response, call_start, model_name)
             return response
         else:
